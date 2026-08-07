@@ -40,7 +40,6 @@ const app = express();
 app.disable('x-powered-by');
 
 app.use(express.json({ limit: '50mb' }));
-app.use(errorMiddleware);
 
 // Mounted before the authenticated routes: the probe must answer regardless of
 // how the instance is locked down.
@@ -69,5 +68,11 @@ if (buildExists) {
 } else {
     app.get("*all", (req, res) => res.status(500).type('html').send(devModeHtml));
 }
+
+// Last, not first: an error handler only sees what is thrown downstream of
+// where it is mounted. In front of the routers it caught the body parser and
+// nothing else, so anything a route threw fell through to Express's default
+// handler and came back as an HTML page with a stack trace in it.
+app.use(errorMiddleware);
 
 export default app;
