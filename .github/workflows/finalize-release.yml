@@ -21,7 +21,7 @@ jobs:
       # fetch-depth: 0 so the tag list below is complete. The version bump moved
       # to create-release, where it lands before the tag is cut; this job only
       # writes the notes and flips the draft.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: v${{ inputs.version }}
@@ -34,7 +34,7 @@ jobs:
           echo "tag=$PREV" >> $GITHUB_OUTPUT
 
       - name: Publish release notes
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           VERSION: ${{ inputs.version }}
           PREV_TAG: ${{ steps.prev.outputs.tag }}

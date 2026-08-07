@@ -16,7 +16,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Download Windows server binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: MySpeed-windows-x64.exe
           path: ./installer
@@ -150,7 +150,7 @@ jobs:
           light myspeed.wixobj -o MySpeed-installer.msi
 
       - name: Upload to Release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           RELEASE_ID: ${{ inputs.release_id }}
           ASSET_NAME: MySpeed-installer.msi

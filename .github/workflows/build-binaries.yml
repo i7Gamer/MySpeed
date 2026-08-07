@@ -20,7 +20,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: v${{ inputs.version }}
 
@@ -56,7 +56,7 @@ jobs:
         run: bun build --compile --compile-autoload-package-json --external pg-hstore --external pg --target=bun-windows-x64 server/index.js --outfile MySpeed.exe
 
       - name: Upload to Release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           RELEASE_ID: ${{ inputs.release_id }}
           ASSET_NAME: MySpeed-windows-x64.exe
@@ -73,7 +73,7 @@ jobs:
             });
 
       - name: Upload artifact for MSI
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: MySpeed-windows-x64.exe
           path: MySpeed.exe
@@ -96,7 +96,7 @@ jobs:
 
     steps:
       - name: Checkout project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: v${{ inputs.version }}
 
@@ -135,7 +135,7 @@ jobs:
         run: mv MySpeed ${{ matrix.artifact_name }}
 
       - name: Upload to Release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           RELEASE_ID: ${{ inputs.release_id }}
           ASSET_NAME: ${{ matrix.artifact_name }}
@@ -166,7 +166,7 @@ jobs:
 
     steps:
       - name: Checkout project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: v${{ inputs.version }}
 
@@ -205,7 +205,7 @@ jobs:
         run: mv MySpeed ${{ matrix.artifact_name }}
 
       - name: Upload to Release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           RELEASE_ID: ${{ inputs.release_id }}
           ASSET_NAME: ${{ matrix.artifact_name }}
@@ -225,7 +225,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: v${{ inputs.version }}
 
@@ -258,7 +258,7 @@ jobs:
         run: zip -r MySpeed.zip build server package.json
 
       - name: Upload to Release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           RELEASE_ID: ${{ inputs.release_id }}
           ASSET_NAME: MySpeed.zip
