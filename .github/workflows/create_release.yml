@@ -166,7 +166,7 @@ jobs:
       # spliced into the source produced a SyntaxError that masked the real error.
       - name: Delete release
         if: needs.create-release.outputs.release_id != ''
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
         with:
@@ -184,7 +184,7 @@ jobs:
 
       - name: Delete tag
         if: needs.create-release.outputs.version != ''
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
         with:

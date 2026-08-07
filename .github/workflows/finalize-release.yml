@@ -34,7 +34,7 @@ jobs:
           echo "tag=$PREV" >> $GITHUB_OUTPUT
 
       - name: Publish release notes
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           VERSION: ${{ inputs.version }}
           PREV_TAG: ${{ steps.prev.outputs.tag }}

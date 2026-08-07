@@ -56,7 +56,7 @@ jobs:
         run: bun build --compile --compile-autoload-package-json --external pg-hstore --external pg --target=bun-windows-x64 server/index.js --outfile MySpeed.exe
 
       - name: Upload to Release
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           RELEASE_ID: ${{ inputs.release_id }}
           ASSET_NAME: MySpeed-windows-x64.exe
@@ -135,7 +135,7 @@ jobs:
         run: mv MySpeed ${{ matrix.artifact_name }}
 
       - name: Upload to Release
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           RELEASE_ID: ${{ inputs.release_id }}
           ASSET_NAME: ${{ matrix.artifact_name }}
@@ -205,7 +205,7 @@ jobs:
         run: mv MySpeed ${{ matrix.artifact_name }}
 
       - name: Upload to Release
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           RELEASE_ID: ${{ inputs.release_id }}
           ASSET_NAME: ${{ matrix.artifact_name }}
@@ -258,7 +258,7 @@ jobs:
         run: zip -r MySpeed.zip build server package.json
 
       - name: Upload to Release
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           RELEASE_ID: ${{ inputs.release_id }}
           ASSET_NAME: MySpeed.zip
