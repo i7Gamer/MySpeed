@@ -186,6 +186,54 @@ describe("password middleware", () => {
     });
 });
 
+describe("GET /api/health", () => {
+    it("reports healthy while the database is reachable", async () => {
+        const {status, body} = await api(server.baseUrl, "/health");
+        assert.equal(status, 200);
+        assert.equal(body.status, "ok");
+        assert.equal(body.database, "up");
+    });
+
+    it("reports the process uptime as a number", async () => {
+        const {body} = await api(server.baseUrl, "/health");
+        assert.equal(typeof body.uptime, "number");
+        assert.ok(body.uptime >= 0);
+    });
+
+    // A container healthcheck cannot authenticate, so this endpoint has to stay
+    // reachable no matter how the instance is locked down.
+    it("stays reachable when a password is configured", async () => {
+        await setConfig(server.config, "password", "hunter2");
+
+        const {status, body} = await api(server.baseUrl, "/health");
+        assert.equal(status, 200);
+        assert.equal(body.status, "ok");
+    });
+
+    it("stays reachable at passwordLevel read", async () => {
+        await setConfig(server.config, "password", "hunter2");
+        await setConfig(server.config, "passwordLevel", "read");
+
+        assert.equal((await api(server.baseUrl, "/health")).status, 200);
+    });
+
+    // Health is unauthenticated, so it must not become an information leak.
+    it("discloses nothing beyond liveness", async () => {
+        const {body} = await api(server.baseUrl, "/health");
+        assert.deepEqual(Object.keys(body).sort(), ["database", "status", "uptime"]);
+    });
+
+    it("does not depend on any outbound network call", async () => {
+        // /info/version reaches GitHub and is therefore unusable as a health
+        // probe; /health must answer promptly and offline.
+        const startedAt = process.hrtime.bigint();
+        await api(server.baseUrl, "/health");
+        const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+
+        assert.ok(elapsedMs < 1000, `health took ${Math.round(elapsedMs)}ms`);
+    });
+});
+
 describe("routing", () => {
     it("404s an unknown api route as JSON", async () => {
         const {status, body} = await api(server.baseUrl, "/does-not-exist");

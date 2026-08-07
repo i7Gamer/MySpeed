@@ -16,6 +16,7 @@ import nodesRoutes from './routes/nodes.js';
 import integrationsRoutes from './routes/integrations.js';
 import prometheusRoutes from './routes/prometheus.js';
 import opengraphRoutes from './routes/opengraph.js';
+import healthRoutes from './routes/health.js';
 
 /**
  * The HTTP layer on its own: routing, middleware and client delivery.
@@ -40,6 +41,10 @@ app.disable('x-powered-by');
 
 app.use(express.json({ limit: '50mb' }));
 app.use(errorMiddleware);
+
+// Mounted before the authenticated routes: the probe must answer regardless of
+// how the instance is locked down.
+app.use("/api/health", healthRoutes);
 
 app.use("/api/config", configRoutes);
 app.use("/api/speedtests", speedtestsRoutes);
