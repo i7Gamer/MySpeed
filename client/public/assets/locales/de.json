@@ -281,6 +281,7 @@
       "title": "Testergebnis",
       "description": "<Link>Bei diesem Test</Link> wurde eine maximale Download-Geschwindigkeit von <Bold>{{down}} Mbps</Bold> und eine maximale Upload-Geschwindigkeit von <Bold>{{up}} Mbps</Bold> erreicht. Er wurde erstellt <Bold>{{type}}</Bold> und dauerte <Bold>{{duration}} Sekunden</Bold>.",
       "jitter": " Die Verbindung Jitter war <Bold>{{jitter}} ms</Bold>.",
+      "server": " Der Test lief über <Bold>{{server}}</Bold>.",
       "from_you": "von dir",
       "automatic": "automatisch"
     },
@@ -301,6 +302,7 @@
   },
   "statistics": {
     "average": "Durchschnitt",
+    "downsampled": "Gemittelt · {{shown}} von {{total}} Tests",
     "export": {
       "button": "Exportieren"
     },

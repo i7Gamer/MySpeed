@@ -163,6 +163,8 @@ const TestArea = () => {
                             duration={test.time}
                             amount={test.amount}
                             resultId={test.resultId}
+                            serverName={test.serverName}
+                            serverHost={test.serverHost}
                             id={test.id}
                         />
                     );

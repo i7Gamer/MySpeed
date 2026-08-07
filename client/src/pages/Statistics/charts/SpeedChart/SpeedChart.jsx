@@ -4,9 +4,10 @@ import { t } from "i18next";
 import { ThemeContext } from "@/common/contexts/Theme";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { convertSpeed, getSpeedUnit, TIME_FORMAT_12H } from "@/common/utils/FormatUtil";
+import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
 import "./styles.sass";
 
-export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClick, failed, errors, compact = false }) => {
+export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClick, failed, errors, compact = false, downsampled, dataPoints, rawDataPoints }) => {
     const [isDarkMode] = useContext(ThemeContext);
     const [preferences] = useContext(PreferencesContext);
     const speedUnit = getSpeedUnit(preferences);
@@ -253,6 +254,7 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClic
             <div className="chart-body">
                 <ChartWrapper type="line" data={chartData} options={chartOptions} />
             </div>
+            <DownsampleNote downsampled={downsampled} shown={dataPoints} total={rawDataPoints} />
         </div>
     );
 });

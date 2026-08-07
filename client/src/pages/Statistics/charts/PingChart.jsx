@@ -4,6 +4,7 @@ import { t } from "i18next";
 import { ThemeContext } from "@/common/contexts/Theme";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { TIME_FORMAT_12H } from "@/common/utils/FormatUtil";
+import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
 import "./SpeedChart/styles.sass";
 
 const PingChart = memo(({ compact = false, ...props }) => {
@@ -280,6 +281,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
             <div className="chart-body">
                 <ChartWrapper type="line" data={chartData} options={chartOptions} />
             </div>
+            <DownsampleNote downsampled={props.downsampled} shown={props.dataPoints} total={props.rawDataPoints} />
         </div>
     );
 });

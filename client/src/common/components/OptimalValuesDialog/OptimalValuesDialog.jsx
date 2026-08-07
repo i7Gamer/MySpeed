@@ -4,9 +4,12 @@ import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faArrowDown, faArrowUp, faCheck, faExclamationTriangle, faTableTennis, faWandMagicSparkles} from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
 import React, {useContext, useEffect, useState} from "react";
+import {Trans} from "react-i18next";
 import {jsonRequest, patchRequest} from "@/common/utils/RequestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
+
+const NOT_ENOUGH_TESTS_STATUS = 501;
 
 export const OptimalValuesDialog = ({open, onClose}) => {
     const [config, reloadConfig] = useContext(ConfigContext);
@@ -15,12 +18,19 @@ export const OptimalValuesDialog = ({open, onClose}) => {
     const [download, setDownload] = useState(config.download || "");
     const [upload, setUpload] = useState(config.upload || "");
     const [recommendations, setRecommendations] = useState(null);
+    // Distinguishes "not enough tests yet", which the API reports as 501, from a
+    // genuine failure - only the former earns an explanation.
+    const [tooFewTests, setTooFewTests] = useState(false);
 
     useEffect(() => {
         if (!open) return;
-        jsonRequest("/recommendations").then((result) => {
-            if (!result.message) setRecommendations(result);
-        }).catch(() => {});
+
+        setRecommendations(null);
+        setTooFewTests(false);
+
+        jsonRequest("/recommendations")
+            .then((result) => setRecommendations(result))
+            .catch((error) => setTooFewTests(error?.status === NOT_ENOUGH_TESTS_STATUS));
     }, [open]);
 
     const applyRecommendations = () => {
@@ -90,6 +100,18 @@ export const OptimalValuesDialog = ({open, onClose}) => {
                                            value={upload} onChange={(e) => setUpload(e.target.value)}/>
                                 </div>
                             </div>
+
+                            {recommendations && (
+                                <p className="optimal-values-note">
+                                    <Trans components={{Bold: <span className="dialog-value"/>}}
+                                           values={{ping: recommendations.ping, down: recommendations.download,
+                                               up: recommendations.upload}}>info.recommendations_info</Trans>
+                                </p>
+                            )}
+
+                            {tooFewTests && (
+                                <p className="optimal-values-note">{t("info.recommendations_error")}</p>
+                            )}
                         </div>
                     </DialogBody>
                     <DialogFooter>

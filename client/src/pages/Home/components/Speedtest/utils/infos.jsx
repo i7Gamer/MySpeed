@@ -18,4 +18,10 @@ export const resultDialog = (props) => <>
         <Trans components={{Bold: <span className="dialog-value"/>}}
                values={{jitter: props.jitter}}>test.result.jitter</Trans>
     )}
+    {/* The host is the fallback: it is always set when a name is not, and is
+        still more useful than saying nothing about which server was measured. */}
+    {(props.serverName || props.serverHost) && (
+        <Trans components={{Bold: <span className="dialog-value"/>}}
+               values={{server: props.serverName || props.serverHost}}>test.result.server</Trans>
+    )}
 </>;
