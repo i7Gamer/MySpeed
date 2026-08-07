@@ -35,7 +35,9 @@ const createRecommendations = async () => {
 }
 
 export const run = async (retryAuto = false) => {
-    setRunning(true);
+    // The retry is the same logical test, so integrations are told it started
+    // once rather than twice.
+    setRunning(true, !retryAuto);
     let mode = await config.getValue("provider");
 
     if (mode === "none") {
@@ -83,22 +85,24 @@ export const create = async (type = "auto", retried = false) => {
     if (_isRunning && !retried) return 500;
     if (!retried) _isRunning = true;
 
-    const release = () => {
-        if (!retried) _isRunning = false;
-    };
-
-    let mode;
     try {
-        mode = await config.getValue("provider");
-    } catch (e) {
-        release();
-        throw e;
+        // Awaited, not returned: a bare return would settle the finally before
+        // the retry it hands back has finished.
+        return await execute(type, retried);
+    } finally {
+        // The one guarantee that the latch is dropped however this ends. It
+        // used to be cleared only on the paths that were thought of, so a throw
+        // from the failure handler - which is where a broken database or a
+        // failing notification surfaces - wedged every later speedtest.
+        // A retried call shares the outer call's latch and must not clear it.
+        if (!retried) _isRunning = false;
     }
+}
 
-    if (mode === "none") {
-        release();
-        return 400;
-    }
+const execute = async (type, retried) => {
+    const mode = await config.getValue("provider");
+
+    if (mode === "none") return 400;
 
     try {
         let test;
@@ -118,12 +122,14 @@ export const create = async (type = "auto", retried = false) => {
 
         let testResult = await tests.create(ping, download, upload, time, test.serverId, type, resultId, null, jitter, serverName, serverHost);
         console.log(`Test #${testResult} was executed successfully in ${time}s. 🏓 ${ping} (±${jitter || 'N/A'}) ⬇ ${download}️ ⬆ ${upload}️`);
-        createRecommendations().then(() => "");
+        createRecommendations().catch(err =>
+            console.error(`Could not update the recommendations: ${toErrorMessage(err)}`));
         setRunning(false);
-        sendFinished({ping, jitter, download, upload, time}).then(() => "");
+        sendFinished({ping, jitter, download, upload, time}).catch(err =>
+            console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
     } catch (e) {
         console.log(e)
-        if (!retried) return create(type, true);
+        if (!retried) return await create(type, true);
 
         // A thrown string or a plain object has no `message`, and storing
         // undefined writes NULL - which marks the row as *successful* and lets

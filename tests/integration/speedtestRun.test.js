@@ -85,4 +85,17 @@ describe("a speedtest that cannot start", () => {
         const {body} = await api(server.baseUrl, "/speedtests/status");
         assert.equal(body.running, false);
     });
+
+    // The lock is cleared in a finally rather than on the paths that were
+    // thought of, so a second failure is still able to start and be recorded.
+    it("still accepts a run after an earlier one failed", async () => {
+        await api(server.baseUrl, "/speedtests/run", {method: "POST"});
+        await waitForTest();
+        await seedTests(server.tests, []);
+
+        const {status} = await api(server.baseUrl, "/speedtests/run", {method: "POST"});
+        assert.equal(status, 200);
+
+        assert.notEqual(await waitForTest(), null, "the second failure was never recorded");
+    });
 });
