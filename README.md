@@ -27,12 +27,50 @@ MySpeed is a speed test analysis software that records your internet speed over 
 - 📆 Test results can be stored for any retention period you configure - from a few days to forever
 - 🔥 Support for Prometheus and Grafana
 - 🗳️ Choose between Ookla, LibreSpeed and Cloudflare speed test servers
-- 💁 Learn more about MySpeed on our [website](https://myspeed.dev)
-
 ### ⬇️ Installation
 
-- **🐧 Guide for [Linux](https://docs.myspeed.dev/setup/linux)**
-- **🪟 Guide for [Windows](https://docs.myspeed.dev/setup/windows)**
+#### 🐳 Docker (recommended)
+
+```bash
+docker run -d -p 5216:5216 -v myspeed:/myspeed/data --restart=unless-stopped --name MySpeed i7gamer/myspeed
+```
+
+Or with Compose:
+
+```yaml
+services:
+  myspeed:
+    image: i7gamer/myspeed
+    container_name: MySpeed
+    restart: unless-stopped
+    ports:
+      - "5216:5216"
+    volumes:
+      - myspeed:/myspeed/data
+
+volumes:
+  myspeed:
+```
+
+#### 🪟 Windows
+
+Download `MySpeed-windows-x64.exe` (or the MSI installer, which registers MySpeed as a
+Windows service) from the [releases page](https://github.com/i7Gamer/MySpeed/releases/latest),
+place it in a folder of your choice and run it.
+
+#### 🔧 From source
+
+Requires [bun](https://bun.sh).
+
+```bash
+git clone https://github.com/i7Gamer/MySpeed.git
+cd MySpeed
+bun install
+bun run build
+bun run server/index.js
+```
+
+MySpeed then listens on **http://localhost:5216**.
 
 ### 📸 Example Screenshots
 

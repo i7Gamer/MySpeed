@@ -1,1 +1,0 @@
-export {GetStarted as default} from "./GetStarted.jsx";
