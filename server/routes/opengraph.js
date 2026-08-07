@@ -12,7 +12,7 @@ app.get("/image", passwordWrapper(true, (req, res) => {
 }), async (req, res) => {
 
   try {
-    const png = await generateOpenGraphImage(req);
+    const png = await generateOpenGraphImage();
 
     if (!png) {
       return res.redirect(BANNER_URL);

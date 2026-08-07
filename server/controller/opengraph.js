@@ -27,21 +27,43 @@ const readStatistics = async () => {
   return {ping: {avg: latest.ping}, download: {avg: latest.download}, upload: {avg: latest.upload}};
 };
 
-const readAsset = async (req, path) => {
+// The compiled binary ships the client inside the executable rather than on
+// disk, so assets have to be readable from there too.
+let embeddedClient = null;
+try {
+  embeddedClient = await import('../clientEmbed.js');
+} catch {
+
+}
+
+/**
+ * Loads a bundled asset.
+ *
+ * Reads from disk or from the embedded client, never over the network. This
+ * used to fall back to fetching the asset from the running instance, building
+ * the URL out of the request's own Host header - which an unauthenticated
+ * caller controls, making the server issue a request to any host they named.
+ * Returns null when the asset is not bundled; the caller falls back to the
+ * project banner.
+ */
+const readAsset = async (path) => {
   const local = [`build${path}`, `client/public${path}`].find(candidate => fs.existsSync(candidate));
   if (local) return fs.promises.readFile(local);
 
-  const url = `${req.protocol}://${req.headers.host || req.hostname}${path}`;
-  return Buffer.from(await fetch(url).then(res => res.arrayBuffer()));
+  return embeddedClient?.readEmbeddedFile?.(path) ?? null;
 };
 
-async function generateOpenGraphImage(req) {
+async function generateOpenGraphImage() {
   const test = await readStatistics();
 
   if (!hasValues(test)) return null;
 
-  const font = await readAsset(req, "/assets/fonts/inter-v12-latin-regular.ttf");
-  const logo = await readAsset(req, "/assets/img/logo192.png");
+  const font = await readAsset("/assets/fonts/inter-v12-latin-regular.ttf");
+  const logo = await readAsset("/assets/img/logo192.png");
+
+  // satori cannot render without a font, and the route answers a missing image
+  // with the project banner.
+  if (!font) return null;
 
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const date = moment().tz(timeZone).format("MM/DD/YYYY");

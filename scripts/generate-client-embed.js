@@ -81,6 +81,9 @@ export const createEmbeddedFallback = () => (req, res) => {
     if (indexHtml) res.type('text/html').send(indexHtml);
     else res.status(404).send('Not found');
 };
+
+/** Reads an embedded asset by its url path. Returns null when it is not bundled. */
+export const readEmbeddedFile = (url) => cache.get(url)?.content ?? null;
 `;
 
 fs.writeFileSync(outputFile, output);
