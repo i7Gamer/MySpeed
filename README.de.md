@@ -78,6 +78,13 @@ Lade `MySpeed-windows-x64.exe` (oder den MSI-Installer, der MySpeed als
 Windows-Dienst einrichtet) von der [Releases-Seite](https://github.com/i7Gamer/MySpeed/releases/latest)
 herunter, lege die Datei in einen Ordner deiner Wahl und starte sie.
 
+Die Exe legt ihre Daten im Ordner `data` neben dem Verzeichnis ab, aus dem du sie
+startest - starte sie also aus dem Ordner, in dem die Daten liegen sollen. Der
+MSI-Installer installiert nach `C:\Program Files\MySpeed` und legt die Daten
+stattdessen unter `C:\ProgramData\MySpeed` ab. Beim Update einer MSI-Installation von
+1.1.0 oder älter wandert das Programm aus `C:\Program Files (x86)` heraus und die
+vorhandene Datenbank wird an den neuen Ort kopiert.
+
 #### 🔧 Aus dem Quellcode
 
 Benötigt [bun](https://bun.sh).

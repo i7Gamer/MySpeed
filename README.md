@@ -76,6 +76,12 @@ Download `MySpeed-windows-x64.exe` (or the MSI installer, which registers MySpee
 Windows service) from the [releases page](https://github.com/i7Gamer/MySpeed/releases/latest),
 place it in a folder of your choice and run it.
 
+The exe keeps its data in a `data` folder next to the directory you start it from, so
+run it from the folder you want that data to live in. The MSI installs to
+`C:\Program Files\MySpeed` and keeps its data in `C:\ProgramData\MySpeed` instead.
+Upgrading an MSI install from 1.1.0 or earlier moves the program out of
+`C:\Program Files (x86)` and copies the existing database over to the new location.
+
 #### 🔧 From source
 
 Requires [bun](https://bun.sh).
