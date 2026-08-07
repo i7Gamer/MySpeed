@@ -16,6 +16,10 @@ on:
 jobs:
   publish:
     name: "Publish"
+    # Only the checkout inside build-docker.yml needs the token; the push
+    # authenticates against Docker Hub separately.
+    permissions:
+      contents: read
     uses: ./.github/workflows/build-docker.yml
     with:
       ref: ${{ github.ref }}

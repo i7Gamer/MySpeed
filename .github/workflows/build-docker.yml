@@ -19,6 +19,12 @@ on:
 env:
   REGISTRY_IMAGE: i7gamer/myspeed
 
+# Publishing authenticates against Docker Hub with its own secrets, so the
+# GITHUB_TOKEN only ever needs to read the repository. Leaving it unset means it
+# inherits whatever the caller holds - contents: write, in the release chain.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: "Docker (${{ matrix.platform }})"
@@ -101,6 +107,9 @@ jobs:
     name: "Merge Docker Manifests"
     runs-on: ubuntu-latest
     needs: build
+    # Never checks the repository out - it only pulls the digest artifacts and
+    # pushes the manifest list - so it needs no token scopes at all.
+    permissions: {}
 
     steps:
       - name: Download digests
