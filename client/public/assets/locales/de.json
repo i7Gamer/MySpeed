@@ -287,6 +287,19 @@
     },
     "overview": {
       "title_range": "Testübersicht von {{from}} bis {{to}}"
+    },
+    "details": {
+      "show": "Details anzeigen",
+      "hide": "Details ausblenden",
+      "of_target": "{{percent}} % deines Zielwerts",
+      "unchanged": "Unverändert zum letzten Test",
+      "measured_at": "Gemessen am",
+      "duration": "Dauer",
+      "seconds": "{{seconds}} s",
+      "trigger": "Gestartet",
+      "server": "Server",
+      "result": "Vollständiges Ergebnis",
+      "open_result": "Auf speedtest.net ansehen"
     }
   },
   "errors": {

@@ -158,13 +158,17 @@ const TestArea = () => {
                             up={test.upload}
                             upLevel={getIconBySpeed(test.upload, config.upload, true)}
                             error={test.error}
-                            url={test.url}
                             type={test.type}
                             duration={test.time}
                             amount={test.amount}
                             resultId={test.resultId}
                             serverName={test.serverName}
                             serverHost={test.serverHost}
+                            created={test.created}
+                            // Newest first, so the next entry is the
+                            // chronologically earlier test - what the detail
+                            // view compares against.
+                            previous={speedtests[index + 1]}
                             id={test.id}
                         />
                     );

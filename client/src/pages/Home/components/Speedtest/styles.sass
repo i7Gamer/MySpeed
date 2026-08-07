@@ -1,30 +1,48 @@
 @use "@/common/styles/colors" as *
 
-.speedtest
+// The card chrome lives on the wrapper so the detail panel opens inside the
+// same card rather than under a detached one.
+.speedtest-entry
   margin-bottom: 2rem
-  display: flex
-  padding: 1.5rem 2rem
   border: 1px solid $light-gray
   background-color: var(--glass-bg)
   backdrop-filter: blur(16px)
   -webkit-backdrop-filter: blur(16px)
   border-radius: 1rem
-  justify-content: space-between
   width: 100%
-  flex-wrap: wrap
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1)
   animation: fadeIn 0.5s ease-out
-  cursor: pointer
-  user-select: none
   box-sizing: border-box
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1)
   position: relative
   overflow: hidden
 
-.speedtest:hover
+  &:hover
+    border-color: var(--accent-primary)
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(16, 185, 129, 0.1)
+
+  // Lifting an open card drags its whole panel with it, which reads as the page
+  // jumping rather than as a hover.
+  &:not(.speedtest-expanded):hover
+    transform: translateY(-4px)
+
+.speedtest-expanded
   border-color: var(--accent-primary)
-  transform: translateY(-4px)
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(16, 185, 129, 0.1)
+
+  .speedtest-chevron
+    transform: rotate(180deg)
+
+.speedtest
+  display: flex
+  padding: 1.5rem 2rem
+  justify-content: space-between
+  align-items: center
+  width: 100%
+  flex-wrap: wrap
+  cursor: pointer
+  user-select: none
+  box-sizing: border-box
+  gap: 0.5rem
 
 .speedtest-hidden
   visibility: hidden
@@ -34,6 +52,14 @@
 .speedtest-row
   display: flex
   align-items: center
+
+.speedtest-chevron
+  width: 1rem
+  height: 1rem
+  color: $subtext
+  opacity: 0.6
+  transition: transform 0.25s ease
+  flex-shrink: 0
 
 .date
   display: flex
@@ -69,12 +95,213 @@
     width: 0.9rem
     height: 0.9rem
 
+.speedtest-details
+  border-top: 1px solid $light-gray
+  padding: 1.5rem 2rem
+  animation: detailsIn 0.2s ease-out
+
+@keyframes detailsIn
+  from
+    opacity: 0
+    transform: translateY(-6px)
+  to
+    opacity: 1
+    transform: translateY(0)
+
+.detail-metrics
+  display: grid
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr))
+  gap: 1.25rem
+  margin-bottom: 1.5rem
+
+.detail-metric
+  background-color: $darker-gray
+  border: 1px solid $light-gray
+  border-radius: 0.75rem
+  padding: 1rem
+
+.detail-metric-head
+  display: flex
+  align-items: center
+  gap: 0.5rem
+  margin-bottom: 0.5rem
+
+.detail-metric-icon
+  width: 1rem
+  height: 1rem
+
+.detail-metric-label
+  font-size: 0.85rem
+  font-weight: 500
+  color: $subtext
+  text-transform: uppercase
+  letter-spacing: 0.03em
+
+.detail-metric-value
+  font-size: 1.75rem
+  font-weight: 600
+  color: $white
+  line-height: 1.1
+
+.detail-metric-unit
+  font-size: 0.9rem
+  font-weight: 400
+  color: $subtext
+  margin-left: 0.35rem
+
+.detail-target
+  margin-top: 0.75rem
+
+.detail-target-track
+  height: 0.375rem
+  border-radius: 0.25rem
+  background-color: $light-gray
+  overflow: hidden
+
+.detail-target-fill
+  height: 100%
+  border-radius: 0.25rem
+  transition: width 0.3s ease
+
+  &.icon-green
+    background-color: $accent-primary
+  &.icon-orange
+    background-color: $accent-warning
+  &.icon-red
+    background-color: $accent-danger
+  &.icon-blue
+    background-color: var(--blue)
+  &.icon-error
+    background-color: $accent-danger
+
+.detail-target-label
+  display: block
+  margin-top: 0.35rem
+  font-size: 0.8rem
+  color: $subtext
+
+.detail-change
+  display: flex
+  align-items: center
+  gap: 0.35rem
+  margin-top: 0.6rem
+  font-size: 0.85rem
+
+  svg
+    width: 0.75rem
+    height: 0.75rem
+
+.detail-change-better
+  color: $accent-primary
+
+.detail-change-worse
+  color: $accent-danger
+
+.detail-change-same
+  color: $subtext
+
+.detail-facts
+  display: grid
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr))
+  gap: 0.75rem 2rem
+
+.detail-fact
+  display: flex
+  justify-content: space-between
+  align-items: baseline
+  gap: 1rem
+  padding-bottom: 0.5rem
+  border-bottom: 1px solid $light-gray
+
+.detail-fact-label
+  font-size: 0.85rem
+  color: $subtext
+  flex-shrink: 0
+
+.detail-fact-value
+  font-size: 0.9rem
+  color: $white
+  text-align: right
+  word-break: break-word
+
+  a
+    color: $accent-secondary
+    text-decoration: none
+    display: inline-flex
+    align-items: center
+    gap: 0.35rem
+
+    &:hover
+      text-decoration: underline
+
+.detail-link-icon
+  width: 0.7rem
+  height: 0.7rem
+
+.detail-error
+  h3
+    margin: 0 0 0.5rem
+    font-size: 1.05rem
+    color: $accent-danger
+
+  p
+    margin: 0 0 0.75rem
+    color: $subtext
+    font-size: 0.95rem
+
+.detail-error-raw
+  display: block
+  padding: 0.75rem
+  border-radius: 0.5rem
+  background-color: $darker-gray
+  border: 1px solid $light-gray
+  color: $subtext
+  font-size: 0.8rem
+  word-break: break-all
+
+.detail-actions
+  display: flex
+  justify-content: flex-end
+  margin-top: 1.25rem
+
+.detail-delete
+  display: inline-flex
+  align-items: center
+  gap: 0.5rem
+  padding: 0.5rem 0.9rem
+  border-radius: 0.5rem
+  border: 1px solid $light-gray
+  background: none
+  color: $subtext
+  font-size: 0.875rem
+  font-family: inherit
+  cursor: pointer
+  transition: all 0.15s ease
+
+  &:hover
+    color: $accent-danger
+    border-color: $accent-danger
+    background-color: rgba(239, 68, 68, 0.08)
+
+  svg
+    width: 0.85rem
+    height: 0.85rem
+
 @media (max-width: 605px)
   .speedtest
     flex-direction: column
+    align-items: flex-start
   .date-text
     font-size: 32pt
   .speedtest-text
     font-size: 32pt
   .jitter-suffix
     font-size: 16pt
+  .speedtest-chevron
+    position: absolute
+    top: 1.5rem
+    right: 1.5rem
+  .speedtest-details
+    padding: 1.25rem
+  .detail-fact
+    font-size: 0.9rem
