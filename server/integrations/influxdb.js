@@ -1,9 +1,22 @@
 import os from "os";
 import { postText } from "../util/http.js";
+import { stripTrailingSlashes } from "../util/helpers.js";
 
-const escapeTag = (value) => String(value).replace(/[ ,=]/g, "\\$&");
+/**
+ * Line protocol escaping.
+ *
+ * The backslash has to be inside the character class, not escaped in a second
+ * pass - a separate pass would double the backslashes this one just inserted.
+ * Leaving it out entirely meant a tag value ending in a backslash escaped the
+ * delimiter that follows it, merging the next tag into the value.
+ *
+ * Measurement names take the same treatment minus the equals sign, which
+ * carries no meaning there.
+ */
+const escapeTag = (value) => String(value).replace(/[\\ ,=]/g, "\\$&");
+const escapeMeasurement = (value) => String(value).replace(/[\\ ,]/g, "\\$&");
 
-const buildLine = (measurement, tags, fields, timestampSeconds) => {
+export const buildLine = (measurement, tags, fields, timestampSeconds) => {
     const tagPart = Object.entries(tags)
         .filter(([, v]) => v !== undefined && v !== null && v !== "")
         .map(([k, v]) => `${escapeTag(k)}=${escapeTag(v)}`)
@@ -14,12 +27,13 @@ const buildLine = (measurement, tags, fields, timestampSeconds) => {
         .map(([k, v]) => `${k}=${v}`)
         .join(",");
 
-    const prefix = tagPart ? `${measurement},${tagPart}` : measurement;
+    const name = escapeMeasurement(measurement);
+    const prefix = tagPart ? `${name},${tagPart}` : name;
     return `${prefix} ${fieldPart} ${timestampSeconds}`;
 };
 
 const send = (c, line, activity) => {
-    const baseUrl = c.url.replace(/\/+$/, "");
+    const baseUrl = stripTrailingSlashes(c.url);
     const url = `${baseUrl}/api/v2/write?org=${encodeURIComponent(c.org)}` +
         `&bucket=${encodeURIComponent(c.bucket)}&precision=s`;
     return postText(url, line, {
@@ -35,7 +49,10 @@ export default (registerEvent) => {
     registerEvent("testFinished", async ({data: c}, data, activity) => {
         const tags = {
             host: c.host || os.hostname(),
-            ...(c.tags ? Object.fromEntries(c.tags.split(",")
+            // Only the UI guarantees a string here; a hand-crafted PATCH can
+            // store a number, and .split would then throw inside the event
+            // loop and abort every integration queued behind this one.
+            ...(typeof c.tags === "string" && c.tags ? Object.fromEntries(c.tags.split(",")
                 .map(t => t.split("=").map(s => s.trim()))
                 .filter(([k, v]) => k && v)) : {})
         };
