@@ -21,11 +21,17 @@ const standardDeviation = (values) => {
     return Math.sqrt(average(values.map(value => Math.pow(value - mean, 2))));
 };
 
+// The score is presented as a percentage, but the formula is unbounded below:
+// once the standard deviation exceeds the mean it goes negative, and a single
+// outlier among a few slow tests is enough. "-240% consistent" is not a reading
+// anyone can act on, so it is clamped to the range it claims to be in.
 const consistencyScore = (values) => {
     const mean = values.length > 0 ? average(values) : 0;
+    const score = mean > 0 ? PERCENT - (standardDeviation(values) / mean * PERCENT) : PERCENT;
+
     return {
         stdDev: round(standardDeviation(values)),
-        consistency: mean > 0 ? round(PERCENT - (standardDeviation(values) / mean * PERCENT), 1) : PERCENT
+        consistency: round(Math.min(Math.max(score, 0), PERCENT), 1)
     };
 };
 
