@@ -23,13 +23,17 @@ export const updateState = (newState) => {
 }
 
 export const resumeIn = (hours) => {
-    if (/[^0-9]/.test(hours)) return false;
+    // A digits-only test rejected every fractional value, including the 0.5
+    // steps the pause dialog's own input offers - and postRequest does not
+    // check the status, so the dialog reported those pauses as applied.
+    const value = Number(hours);
+    if (!Number.isFinite(value) || value <= 0) return false;
 
     updateState(true);
 
     // Beyond the cap the pause simply stays on until it is lifted by hand,
     // which is what someone asking for a 25-day pause meant anyway.
-    const delay = Math.min(hours * MS_PER_HOUR, MAX_TIMEOUT_MS);
+    const delay = Math.min(value * MS_PER_HOUR, MAX_TIMEOUT_MS);
     if (delay < MAX_TIMEOUT_MS) updateTimer = setTimeout(() => updateState(false), delay);
 
     return true;
