@@ -1,5 +1,6 @@
 import React, {useState, createContext, useEffect, useCallback, useRef} from "react";
 import {jsonRequest} from "@/common/utils/RequestUtil";
+import {mergeNewTests} from "./merge";
 
 export const SpeedtestContext = createContext({});
 
@@ -74,20 +75,21 @@ export const SpeedtestProvider = (props) => {
     }, [hasMore, lastId]);
 
     const refreshTests = useCallback(async () => {
-        const latestId = speedtests.length > 0 ? speedtests[0].id : null;
+        const hasTests = speedtests.length > 0;
 
         try {
             const newTests = await jsonRequest("/speedtests?limit=30");
+            if (newTests.length === 0) return;
 
-            if (newTests.length > 0) {
-                if (latestId) {
-                    const newerTests = newTests.filter(test => test.id > latestId);
-                    if (newerTests.length > 0) setSpeedtests(prev => [...newerTests, ...prev]);
-                } else {
-                    setSpeedtests(newTests);
-                    if (newTests.length > 0) setLastId(newTests[newTests.length - 1].id);
-                    setHasMore(newTests.length === 30);
-                }
+            if (hasTests) {
+                // mergeNewTests decides what is actually new. Doing it by id here
+                // grew the list without bound on any instance restored from a
+                // backup - see the note in merge.js.
+                setSpeedtests(prev => mergeNewTests(prev, newTests));
+            } else {
+                setSpeedtests(newTests);
+                setLastId(newTests[newTests.length - 1].id);
+                setHasMore(newTests.length === 30);
             }
         } catch (error) {
             console.error("Failed to refresh tests:", error);
