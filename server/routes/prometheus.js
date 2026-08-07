@@ -4,8 +4,76 @@ import promClient from 'prom-client';
 import * as config from '../controller/config.js';
 import * as serverController from '../controller/servers.js';
 import bcrypt from 'bcryptjs';
+import { allowsPasswordlessAccess, clearFailedAttempts, isThrottled, recordFailedAttempt } from '../middlewares/password.js';
+import { matchesSetupToken } from '../util/setupToken.js';
 
 const app = express.Router();
+
+const METRICS_USERNAME = "prometheus";
+
+const unauthorized = (res) => {
+    res.setHeader('WWW-Authenticate', 'Basic realm="MySpeed metrics"');
+    return res.status(401).end('Unauthorized');
+};
+
+/**
+ * Splits a Basic credential into its two halves.
+ *
+ * A value with no colon yields an undefined password, which bcrypt throws on -
+ * answering a malformed header with a 500 and a stack trace instead of the 401
+ * it deserves.
+ */
+const readBasicAuth = (req) => {
+    const header = req.headers.authorization;
+    if (!header || !header.startsWith('Basic ')) return null;
+
+    const credentials = Buffer.from(header.slice('Basic '.length), 'base64').toString('utf8');
+    const separator = credentials.indexOf(':');
+    if (separator === -1) return null;
+
+    return {username: credentials.slice(0, separator), password: credentials.slice(separator + 1)};
+};
+
+/**
+ * Authenticates a scrape.
+ *
+ * This route deliberately does not use the shared password middleware - it
+ * speaks Basic auth rather than the x-password header - but it must not skip
+ * the middleware's throttle. Without it this was an unmetered online password
+ * oracle, and at one bcrypt comparison per request a way to saturate the event
+ * loop from outside. It also used to serve metrics to anyone at all whenever no
+ * password was configured.
+ */
+const authorizeMetrics = async (req, res) => {
+    const passwordHash = await config.getValue("password");
+    const unconfigured = passwordHash === config.NO_PASSWORD;
+
+    if (unconfigured && allowsPasswordlessAccess(req)) return true;
+
+    if (isThrottled(req)) {
+        res.status(429).end('Too many failed attempts');
+        return false;
+    }
+
+    const credentials = readBasicAuth(req);
+    if (credentials === null || credentials.username !== METRICS_USERNAME) {
+        unauthorized(res);
+        return false;
+    }
+
+    const valid = unconfigured
+        ? matchesSetupToken(credentials.password)
+        : await bcrypt.compare(credentials.password, passwordHash);
+
+    if (!valid) {
+        recordFailedAttempt(req);
+        unauthorized(res);
+        return false;
+    }
+
+    clearFailedAttempts(req);
+    return true;
+};
 
 const speedLabels = ['server_id', 'server_name', 'server_host'];
 
@@ -47,29 +115,7 @@ const resolveServerLabels = (latest) => {
 };
 
 app.get('/metrics', async (req, res) => {
-    let passwordHash = await config.getValue("password");
-
-    if (passwordHash !== "none") {
-        if (!req.headers.authorization || req.headers.authorization.indexOf('Basic ') === -1) {
-            res.setHeader('WWW-Authenticate', 'Basic realm="User Visible Realm"');
-            return res.status(401).end('Unauthorized');
-        }
-
-        const base64Credentials =  req.headers.authorization.split(' ')[1];
-        const credentials = Buffer.from(base64Credentials ?? "", 'base64').toString('utf8');
-
-        // A value with no colon yields an undefined password, which bcrypt
-        // throws on - answering a malformed header with a 500 and a stack
-        // trace instead of the 401 it deserves.
-        const separator = credentials.indexOf(':');
-        const username = separator === -1 ? null : credentials.slice(0, separator);
-        const password = separator === -1 ? null : credentials.slice(separator + 1);
-
-        if (username !== "prometheus" || password === null || !await bcrypt.compare(password, passwordHash)) {
-            res.setHeader('WWW-Authenticate', 'Basic realm="User Visible Realm"');
-            return res.status(401).end('Unauthorized');
-        }
-    }
+    if (!await authorizeMetrics(req, res)) return;
 
     const latest = await testController.getLatest();
     if (!latest) return res.status(500).end('No test found');

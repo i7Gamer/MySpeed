@@ -7,10 +7,14 @@ import fs from 'node:fs';
 import './util/createFolders.js';
 
 import errorMiddleware from './middlewares/error.js';
+import securityHeaders from './middlewares/securityHeaders.js';
+import httpsRedirect from './middlewares/httpsRedirect.js';
+import { createRateLimit } from './middlewares/rateLimit.js';
+import { parseTrustProxy } from './util/trustProxy.js';
 import configRoutes from './routes/config.js';
 import speedtestsRoutes from './routes/speedtests.js';
 import systemRoutes from './routes/system.js';
-import storageRoutes from './routes/storage.js';
+import storageRoutes, { LARGE_BODY_PATHS } from './routes/storage.js';
 import recommendationsRoutes from './routes/recommendations.js';
 import nodesRoutes from './routes/nodes.js';
 import integrationsRoutes from './routes/integrations.js';
@@ -25,6 +29,27 @@ import healthRoutes from './routes/health.js';
  * timers, downloads nothing and reaches no network. Everything that does live
  * in index.js, which keeps this module importable by tests.
  */
+// Enough for every request the UI makes. The two import endpoints opt back into
+// a large body themselves, behind their own authentication. It used to be 50mb
+// for everything, applied before any password check ran, so an anonymous caller
+// could make the server buffer and parse 50mb of JSON at will.
+const JSON_BODY_LIMIT = '100kb';
+const IMPORT_BODY_LIMIT = '50mb';
+
+const RATE_LIMIT_WINDOW_MS = 60000;
+
+// Generous: the dashboard polls for new tests every five seconds and several
+// tabs may be open. This is a backstop against a stranger monopolising the
+// instance, not a quota.
+const API_REQUESTS_PER_MINUTE = 300;
+
+// Rendering the OpenGraph PNG runs a database query, a satori layout pass and a
+// resvg rasterisation, and the range export can walk a year of rows.
+const EXPENSIVE_REQUESTS_PER_MINUTE = 20;
+
+// A scrape every fifteen seconds is four a minute.
+const METRICS_REQUESTS_PER_MINUTE = 60;
+
 const devModeHtmlPath = path.join(process.cwd(), 'server', 'templates', 'env.html');
 const devModeHtml = fs.existsSync(devModeHtmlPath) ? fs.readFileSync(devModeHtmlPath, 'utf-8') : '';
 
@@ -39,11 +64,45 @@ const app = express();
 
 app.disable('x-powered-by');
 
-app.use(express.json({ limit: '50mb' }));
+// Opt-in, and only the operator knows the answer: see util/trustProxy.js. It has
+// to be set before anything reads req.ip, which both rate limiters and the
+// password throttle do.
+const trustProxy = parseTrustProxy(process.env.TRUST_PROXY);
+if (trustProxy !== undefined) app.set('trust proxy', trustProxy);
 
-// Mounted before the authenticated routes: the probe must answer regardless of
-// how the instance is locked down.
+app.use(httpsRedirect());
+app.use(securityHeaders());
+
+// body-parser marks the request as read, so whichever parser runs first wins.
+// The import routes are skipped here and parse their own body after their
+// password check, which is what keeps the large limit behind authentication.
+const largeBodyPaths = new Set(LARGE_BODY_PATHS);
+const smallJsonBody = express.json({ limit: JSON_BODY_LIMIT });
+
+app.use((req, res, next) => {
+    const normalised = req.path.length > 1 && req.path.endsWith("/") ? req.path.slice(0, -1) : req.path;
+    return largeBodyPaths.has(normalised) ? next() : smallJsonBody(req, res, next);
+});
+
+// Mounted before the authenticated routes and before the rate limiter: the
+// probe must answer regardless of how the instance is locked down, and a
+// container healthcheck must never be throttled out of existence.
 app.use("/api/health", healthRoutes);
+
+app.use("/api", createRateLimit({limit: API_REQUESTS_PER_MINUTE, windowMs: RATE_LIMIT_WINDOW_MS}));
+
+const expensiveLimit = () => createRateLimit({
+    limit: EXPENSIVE_REQUESTS_PER_MINUTE,
+    windowMs: RATE_LIMIT_WINDOW_MS
+});
+
+app.use("/api/opengraph", expensiveLimit());
+app.use("/api/speedtests/export", expensiveLimit());
+app.use("/api/speedtests/run", expensiveLimit());
+app.use("/api/prometheus", createRateLimit({
+    limit: METRICS_REQUESTS_PER_MINUTE,
+    windowMs: RATE_LIMIT_WINDOW_MS
+}));
 
 app.use("/api/config", configRoutes);
 app.use("/api/speedtests", speedtestsRoutes);

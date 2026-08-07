@@ -115,8 +115,10 @@ describe("PUT /api/storage/config", () => {
         assert.equal(await server.config.getValue("retentionDays"), "30");
     });
 
+    // includeSecrets is what makes an export a complete backup. Without it the
+    // credentials are deliberately blanked, which is covered below.
     it("round-trips its own export", async () => {
-        const {body: exported} = await api(server.baseUrl, "/storage/config");
+        const {body: exported} = await api(server.baseUrl, "/storage/config?includeSecrets=true");
 
         const {status} = await importConfig(exported);
         assert.equal(status, 200);
@@ -130,6 +132,26 @@ describe("PUT /api/storage/config", () => {
         const [integration] = await integrationModel.findAll();
         const data = typeof integration.data === "string" ? JSON.parse(integration.data) : integration.data;
         assert.deepEqual(data, EXISTING_INTEGRATION.data);
+    });
+
+    /**
+     * The default export is the one people download and share, so it must not
+     * carry credentials - a Discord webhook URL is a bearer token. Everything
+     * else about the integration still restores; only the secret comes back
+     * blank and has to be re-entered.
+     */
+    it("restores the structure but not the credentials from a redacted export", async () => {
+        const {body: exported} = await api(server.baseUrl, "/storage/config");
+        assert.equal(exported.secretsRedacted, true);
+
+        assert.equal((await importConfig(exported)).status, 200);
+        assert.deepEqual(await counts(), {nodes: 1, integrations: 1, recommendations: 1});
+
+        const [integration] = await integrationModel.findAll();
+        const data = typeof integration.data === "string" ? JSON.parse(integration.data) : integration.data;
+
+        assert.equal(integration.displayName, EXISTING_INTEGRATION.displayName);
+        assert.equal(data.url, null);
     });
 
     it("never writes the password key from an imported payload", async () => {

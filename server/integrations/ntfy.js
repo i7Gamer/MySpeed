@@ -1,5 +1,5 @@
 import { postText } from "../util/http.js";
-import { replaceVariables } from "../util/helpers.js";
+import { replaceVariables, stripTrailingSlashes } from "../util/helpers.js";
 
 const defaults = {
     finished: "A speedtest is finished:\nPing: %ping% ms (±%jitter% ms)\nUpload: %upload% Mbps\nDownload: %download% Mbps",
@@ -39,7 +39,7 @@ export default (registerEvent) => {
         fields: [
             {name: "url", type: "text", required: true, regex: /^https?:\/\/.+/},
             {name: "topic", type: "text", required: true, regex: /^[A-Za-z0-9_\-]{1,64}$/},
-            {name: "token", type: "text", required: false},
+            {name: "token", type: "text", required: false, secret: true},
             {name: "title", type: "text", required: false},
             {name: "tags", type: "text", required: false},
             {name: "priority", type: "text", required: false, regex: /^[1-5]$/},

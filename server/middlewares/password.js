@@ -1,6 +1,8 @@
 import * as config from '../controller/config.js';
 import bcrypt from 'bcryptjs';
 import { readPasswords } from '../util/passwordHeader.js';
+import { matchesSetupToken } from '../util/setupToken.js';
+import { isLoopbackRequest } from '../util/clientAddress.js';
 
 /**
  * Every wrong password costs a full bcrypt comparison, so an unauthenticated
@@ -27,9 +29,12 @@ const recordFailure = (key) => {
     const entry = failedAttempts.get(key);
 
     if (entry === undefined || now >= entry.resetAt) {
-        // The map only grows on failures. Dropping it wholesale once it gets
-        // large costs a single window of tracking and bounds the memory.
-        if (failedAttempts.size >= MAX_TRACKED_CLIENTS) failedAttempts.clear();
+        // Evict the single oldest entry rather than dropping the whole map.
+        // Clearing it wholesale meant an attacker rotating source addresses -
+        // trivial with an IPv6 /64 - reset every counter including their own.
+        if (failedAttempts.size >= MAX_TRACKED_CLIENTS)
+            failedAttempts.delete(failedAttempts.keys().next().value);
+
         failedAttempts.set(key, {count: 1, resetAt: now + ATTEMPT_WINDOW_MS});
         return;
     }
@@ -40,16 +45,68 @@ const recordFailure = (key) => {
 /** Clears the throttle. Exists so tests do not have to wait out the window. */
 export const resetFailedAttempts = () => failedAttempts.clear();
 
+/**
+ * The throttle, for routes that authenticate outside this middleware.
+ *
+ * /api/prometheus/metrics runs its own bcrypt comparison against the same hash;
+ * without these it was an unlimited online password oracle and, at one bcrypt
+ * per request, a way to saturate the event loop.
+ */
+export const isThrottled = (req) => isLockedOut(clientKey(req));
+export const recordFailedAttempt = (req) => recordFailure(clientKey(req));
+export const clearFailedAttempts = (req) => failedAttempts.delete(clientKey(req));
+
+/**
+ * Whether an instance with no password may serve this caller unchallenged.
+ *
+ * Local callers keep working so development, the console and the container
+ * healthcheck are unaffected; everyone else needs the setup token.
+ */
+export const allowsPasswordlessAccess = (req) =>
+    process.env.ALLOW_NO_PASSWORD === "true" || isLoopbackRequest(req);
+
+const tooManyAttempts = (res) =>
+    res.status(429).json({message: "Too many failed password attempts. Please try again later"});
+
+/**
+ * Handles a request against an instance that has no password configured.
+ *
+ * Waving these through unconditionally is what made a fresh install on a public
+ * address an unauthenticated admin API. Callers that are demonstrably local, or
+ * an operator who has set ALLOW_NO_PASSWORD, still get in unchallenged; everyone
+ * else has to present the setup token printed to the server log at boot.
+ */
+const handleUnconfigured = (req, res, next) => {
+    if (allowsPasswordlessAccess(req)) {
+        req.viewMode = false;
+        return next();
+    }
+
+    const candidates = readPasswords(req);
+    const key = clientKey(req);
+
+    if (candidates.length > 0 && isLockedOut(key)) return tooManyAttempts(res);
+
+    if (candidates.some(matchesSetupToken)) {
+        failedAttempts.delete(key);
+        req.viewMode = false;
+        return next();
+    }
+
+    if (candidates.length > 0) recordFailure(key);
+
+    return res.status(401).json({
+        message: "This instance has no password set. Use the setup token from the server log, then set a password"
+    });
+};
+
 export default (allowViewAccess) => async (req, res, next) => {
     if (process.env.PREVIEW_MODE === "true") return next();
 
     const passwordHash = await config.getValue("password");
     const passwordLevel = await config.getValue("passwordLevel");
 
-    if (passwordHash === config.NO_PASSWORD) {
-        req.viewMode = false;
-        return next();
-    }
+    if (passwordHash === config.NO_PASSWORD) return handleUnconfigured(req, res, next);
 
     // The candidates are encoding variants of the one password the caller sent,
     // not separate guesses, so they count as a single attempt.
@@ -77,8 +134,7 @@ export default (allowViewAccess) => async (req, res, next) => {
         return next();
     }
 
-    if (throttled)
-        return res.status(429).json({message: "Too many failed password attempts. Please try again later"});
+    if (throttled) return tooManyAttempts(res);
 
     return res.status(401).json({message: "Please provide the correct password in the header"});
 };

@@ -1,7 +1,8 @@
 import https from 'node:https';
-import path from 'node:path';
 import fs from 'node:fs';
 import app from './app.js';
+import { certPath, keyPath, httpsPort, hasSSLCerts } from './config/tls.js';
+import { getSetupToken } from './util/setupToken.js';
 import * as timerTask from './tasks/timer.js';
 import * as integrationTask from './tasks/integrations.js';
 import './util/loadServers.js';
@@ -18,21 +19,45 @@ const INTERFACE_REFRESH_INTERVAL = 3600000;
 const RETENTION_SWEEP_INTERVAL = 60000;
 
 const port = process.env.SERVER_PORT || 5216;
-const httpsPort = process.env.HTTPS_PORT || 5217;
 
-const certsDir = path.join(process.cwd(), 'data', 'certs');
-const certPath = path.join(certsDir, 'cert.pem');
-const keyPath = path.join(certsDir, 'key.pem');
+/**
+ * Tells the operator how to reach an instance that has no password yet.
+ *
+ * Requests from the network are refused until either a password is set or the
+ * token below is presented, so this banner is the only way in on a fresh
+ * install that is not being driven from the console.
+ */
+const announceAccess = async () => {
+    if (process.env.PREVIEW_MODE === "true") return;
+    if (await config.getValue("password") !== config.NO_PASSWORD) return;
 
-const hasSSLCerts = () => fs.existsSync(certPath) && fs.existsSync(keyPath);
+    if (process.env.ALLOW_NO_PASSWORD === "true") {
+        console.warn("WARNING: no password is set and ALLOW_NO_PASSWORD is enabled. " +
+            "Anyone who can reach this instance has full control of it.");
+        return;
+    }
+
+    console.log("");
+    console.log("  No password is configured yet. Requests from other machines need this");
+    console.log("  one-time setup token - enter it when the interface asks for a password,");
+    console.log("  then set a real password from the settings menu.");
+    console.log("");
+    console.log(`      Setup token: ${getSetupToken()}`);
+    console.log("");
+    console.log("  A new token is issued every restart. Set ALLOW_NO_PASSWORD=true to run");
+    console.log("  without one, only on a network you trust.");
+    console.log("");
+};
 
 process.on('uncaughtException', err => errorHandler(err));
 
 // Node terminates the process on an unhandled rejection. Several background
 // tasks deliberately do not await their promise, so without this a single
-// failing integration or scheduled test takes the whole server down.
+// failing integration or scheduled test takes the whole server down. Logging it
+// and carrying on is the entire point - handling it and then exiting anyway,
+// which is what this did, left the server crash-looping on any such throw.
 process.on('unhandledRejection', reason =>
-    errorHandler(reason instanceof Error ? reason : new Error(String(reason))));
+    errorHandler(reason instanceof Error ? reason : new Error(String(reason)), {fatal: false}));
 
 const run = async () => {
     await runMigrations();
@@ -55,6 +80,8 @@ const run = async () => {
         timerTask.runTask().catch(err =>
             console.error(`The startup speedtest failed: ${err?.message ?? err}`));
     }
+
+    await announceAccess();
 
     app.listen(port, () => console.log(`Server listening on port ${port}`));
 

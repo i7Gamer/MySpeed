@@ -6,6 +6,13 @@ const MS_PER_MINUTE = 60 * 1000;
 // Widest real-world UTC offsets are UTC-12 (+720) and UTC+14 (-840).
 const MAX_OFFSET_MINUTES = 14 * MINUTES_PER_HOUR;
 
+// Matches the largest retention period the config accepts, so no range that
+// could contain data is ever refused. Without a ceiling, from=0001-01-01 to
+// 9999-12-31 was a valid request that walked the whole table.
+const MAX_RANGE_DAYS = 10000;
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 const LAST_HOUR = 23;
 const LAST_MINUTE = 59;
 const LAST_SECOND = 59;
@@ -67,6 +74,9 @@ export const parseDateRange = (from, to, {offsetMinutes} = {}) => {
             LAST_HOUR, LAST_MINUTE, LAST_SECOND, LAST_MILLISECOND);
 
     if (start > end) return invalid("The 'from' date must be before the 'to' date");
+
+    if ((end - start) / MS_PER_DAY > MAX_RANGE_DAYS)
+        return invalid(`The range must not span more than ${MAX_RANGE_DAYS} days`);
 
     return {valid: true, from: start, to: end};
 };

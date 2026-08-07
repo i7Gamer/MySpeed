@@ -3,6 +3,7 @@ import * as nodes from '../controller/node.js';
 import password from '../middlewares/password.js';
 import { passwordHeaderNames, writePasswordHeaders } from '../util/passwordHeader.js';
 import { stripTrailingSlashes } from '../util/helpers.js';
+import { checkNodeTarget } from '../util/safeUrl.js';
 
 const app = express.Router();
 
@@ -17,6 +18,14 @@ app.put("/", password(false), async (req, res) => {
     if (!req.body.name || !req.body.url) return res.status(400).json({message: "Missing parameters", type: "MISSING_PARAMETERS"});
 
     const url = stripTrailingSlashes(req.body.url);
+
+    // Checked before the fetch, not after: without it this endpoint made the
+    // server request any URL the caller named, which turns response timing into
+    // an internal port scanner and puts the cloud metadata service one request
+    // away. There is no route that changes a node's URL later, so validating it
+    // here covers the node for its whole life.
+    const target = await checkNodeTarget(url);
+    if (!target.safe) return res.status(400).json({message: target.reason, type: "INVALID_URL"});
 
     // Awaited rather than left as a floating .then(): a rejection in there -
     // from the database write, not the guarded fetch - was an unhandled

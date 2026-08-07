@@ -37,9 +37,16 @@ export const bootServer = async () => {
     const {runMigrations} = await import("../../../server/util/migrationRunner.js");
     const config = await import("../../../server/controller/config.js");
     const tests = await import("../../../server/models/Speedtests.js");
+    const {initialize: initializeIntegrations} = await import("../../../server/controller/integrations.js");
 
     await db.authenticate();
     await runMigrations();
+
+    // index.js does this before it listens, and several behaviours depend on the
+    // integration definitions being registered - which fields are credentials,
+    // among others. Skipping it here made the tests disagree with production.
+    await initializeIntegrations();
+
     await config.insertDefaults();
 
     const server = await new Promise((resolve) => {

@@ -7,6 +7,11 @@ const DEFAULT_RETENTION_DAYS = 365;
 const MS_PER_DAY = 86400000;
 const DEFAULT_TEST_LIMIT = 10;
 
+// The route validates that `limit` is digits, which left `?limit=99999999` a
+// perfectly valid way to pull the whole table into memory and serialise it.
+// Callers that want everything have the export endpoints.
+const MAX_TEST_LIMIT = 1000;
+
 // Columns an import has to supply as numbers. `jitter` is absent on providers
 // that do not measure it, and a failed row carries -1 placeholders, so null and
 // negative values are both legitimate.
@@ -37,7 +42,7 @@ export const listAll = async () => {
 }
 
 export const listTests = async (afterId, limit) => {
-    limit = parseInt(limit) || DEFAULT_TEST_LIMIT;
+    limit = Math.min(parseInt(limit) || DEFAULT_TEST_LIMIT, MAX_TEST_LIMIT);
 
     let whereClause = {};
 

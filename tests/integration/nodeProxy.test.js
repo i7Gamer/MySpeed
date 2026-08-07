@@ -48,6 +48,11 @@ const startUpstream = () => new Promise((resolve) => {
 });
 
 before(async () => {
+    // The stand-in node listens on loopback, which the SSRF guard refuses by
+    // default - a real node is never the machine MySpeed itself runs on. This is
+    // the documented opt-out, and exercising it here keeps it honest.
+    process.env.ALLOW_LOCAL_NODES = "true";
+
     server = await bootServer();
     upstream = await startUpstream();
     upstreamUrl = `http://127.0.0.1:${upstream.address().port}`;

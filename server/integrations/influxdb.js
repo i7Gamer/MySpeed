@@ -76,7 +76,7 @@ export default (registerEvent) => {
             {name: "url", type: "text", required: true, regex: /^https?:\/\/.+/},
             {name: "org", type: "text", required: true},
             {name: "bucket", type: "text", required: true},
-            {name: "token", type: "text", required: true},
+            {name: "token", type: "text", required: true, secret: true},
             {name: "measurement", type: "text", required: false},
             {name: "host", type: "text", required: false},
             {name: "tags", type: "text", required: false}

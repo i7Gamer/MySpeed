@@ -3,7 +3,7 @@ import node from '../models/Node.js';
 import test from '../models/Speedtests.js';
 import recommendations from '../models/Recommendations.js';
 import integration from '../models/IntegrationData.js';
-import { triggerEvent } from './integrations.js';
+import { triggerEvent, withoutSecrets } from './integrations.js';
 import bcrypt from 'bcryptjs';
 import * as timer from '../tasks/timer.js';
 import cron from 'cron-validator';
@@ -173,7 +173,17 @@ export const validateInput = async (key, value) => {
 /** Clears the password. The only way back to the unprotected sentinel. */
 export const clearPassword = async () => await updateValue("password", NO_PASSWORD);
 
-export const exportConfig = async () => {
+/**
+ * The whole configuration as a downloadable backup.
+ *
+ * Credentials are left out unless the caller explicitly asks for them. The
+ * export used to hand back node passwords and every integration token in clear,
+ * which turned a config.json - a file people attach to bug reports and sync to
+ * cloud backups - into a dump of every downstream service's secrets. A restore
+ * from a redacted export brings back the nodes and integrations themselves; only
+ * their credentials have to be re-entered.
+ */
+export const exportConfig = async ({includeSecrets = false} = {}) => {
     let obj = {};
     obj.config = {};
 
@@ -183,10 +193,17 @@ export const exportConfig = async () => {
         obj.config[configValues[i].key] = configValues[i].value;
     }
 
-    obj.nodes = await node.findAll();
+    const nodeRows = await node.findAll();
+    obj.nodes = includeSecrets ? nodeRows : nodeRows.map((row) => ({...row, password: null}));
+
     obj.recommendations = await recommendations.findAll();
 
-    obj.integrations = await integration.findAll();
+    const integrationRows = await integration.findAll();
+    obj.integrations = includeSecrets ? integrationRows : withoutSecrets(integrationRows);
+
+    // Stated in the file itself, so nobody restores a redacted backup and is
+    // left guessing why their notifications stopped.
+    obj.secretsRedacted = !includeSecrets;
 
     return obj;
 }

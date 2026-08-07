@@ -70,6 +70,44 @@ export const getActive = async () => {
 
 export const getIntegrationById = (id) => IntegrationData.findOne({where: {id: id}});
 
+/**
+ * The field names an integration declared as credentials.
+ *
+ * Returns null - not an empty list - when the integration is unknown, so the
+ * caller can tell "this one has no secrets" apart from "there is no definition
+ * to ask". The two must not be treated alike: a stale row for an integration
+ * that has since been removed would otherwise export in full.
+ */
+export const secretFieldNames = (name) => {
+    const definition = integrations[name];
+    if (!definition) return null;
+
+    return definition.fields.filter((field) => field.secret).map((field) => field.name);
+};
+
+/**
+ * Blanks every credential in a set of integration rows, keeping the keys so the
+ * shape of the payload is unchanged.
+ *
+ * The config export is a file people download and attach to bug reports. It
+ * carried Telegram bot tokens, Discord webhook URLs, Pushover keys and InfluxDB
+ * tokens in clear, so one shared config.json compromised every downstream
+ * service.
+ */
+export const withoutSecrets = (rows) => rows.map((row) => {
+    const secrets = secretFieldNames(row.name);
+    if (secrets !== null && secrets.length === 0) return row;
+
+    const data = typeof row.data === "string" ? JSON.parse(row.data) : {...row.data};
+
+    // An unrecognised integration gets everything blanked. Guessing which of its
+    // fields are harmless is exactly the mistake this function exists to stop.
+    const fields = secrets ?? Object.keys(data);
+    for (const field of fields) if (data[field] !== undefined) data[field] = null;
+
+    return {...row, data};
+});
+
 export const deleteIntegration = async (id) => {
     const data = await IntegrationData.findOne({where: {id}});
     if (!data) return null;
