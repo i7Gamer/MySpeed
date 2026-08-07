@@ -96,6 +96,83 @@ bun run server/index.js
 
 MySpeed then listens on **http://localhost:5216**.
 
+### 🔐 Exposing MySpeed to the internet
+
+MySpeed is safe to run on a trusted LAN out of the box. Putting it on a public
+address takes a few deliberate steps.
+
+#### First run
+
+A fresh instance has no password. Requests from other machines are refused until
+one is set, so the first thing MySpeed prints on startup is a one-time **setup
+token**:
+
+```
+  Setup token: 5f3c1e...
+```
+
+Enter it when the interface asks for a password, then set a real password from
+the dropdown menu. A new token is issued on every restart and is never written to
+disk. On a network you fully trust you can skip this with `ALLOW_NO_PASSWORD=true`
+— on a public address, don't.
+
+#### Put a reverse proxy in front
+
+This is the supported way to expose MySpeed. The proxy terminates TLS and, ideally,
+authenticates before MySpeed is reached at all:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name speed.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/speed.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/speed.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:5216;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Then tell MySpeed the proxy is there, or every client will look like one address
+and a single attacker can lock everybody out of the login throttle:
+
+```bash
+docker run -d -p 127.0.0.1:5216:5216 -e TRUST_PROXY=1 \
+  -v myspeed:/myspeed/data --restart=unless-stopped --name MySpeed i7gamer/myspeed
+```
+
+Binding the published port to `127.0.0.1` keeps the container reachable only
+through the proxy.
+
+#### Environment variables
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `TRUST_PROXY` | unset | Number of proxies in front (`1`), `true`, or a preset such as `loopback`. Required behind a reverse proxy so rate limiting sees real client addresses. |
+| `ALLOW_NO_PASSWORD` | `false` | Serve an instance that has no password to anyone who can reach it. LAN only. |
+| `FRAME_ANCESTORS` | `'none'` | CSP origins allowed to embed MySpeed in an iframe, for dashboards like Homepage or Heimdall. |
+| `HTTPS_REDIRECT` | `true` | Send network callers to the HTTPS listener when `data/certs` holds a certificate. Set `false` if a proxy terminates TLS and `TRUST_PROXY` is not set. |
+| `ALLOW_LOCAL_NODES` | `false` | Permit remote nodes on loopback or link-local addresses. Off by default so a node URL cannot be used to probe the host. |
+
+#### What is protected, and what is not
+
+Built in: the login throttle and per-endpoint rate limits, a 100 KB request body
+cap outside the two import endpoints, CSP and anti-framing headers, node URLs
+blocked from reaching loopback and cloud metadata addresses, and a config export
+that redacts credentials unless you add `?includeSecrets=true`.
+
+Still worth knowing: the password is held in the browser's `localStorage` and sent
+on every request, so anyone with access to the browser profile has it. There is a
+single shared password rather than per-user accounts. Secrets are stored
+unencrypted in `data/storage.db` — back that file up as carefully as you would a
+password manager export.
+
 ### 📸 Example Screenshots
 
 #### Homepage (List View)

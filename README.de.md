@@ -99,6 +99,84 @@ bun run server/index.js
 
 MySpeed ist danach unter **http://localhost:5216** erreichbar.
 
+### 🔐 MySpeed im Internet betreiben
+
+Im heimischen Netz kann MySpeed ohne weitere Schritte laufen. Für eine öffentlich
+erreichbare Adresse sind ein paar bewusste Entscheidungen nötig.
+
+#### Erster Start
+
+Eine frische Installation hat kein Passwort. Anfragen von anderen Rechnern werden
+abgelehnt, bis eines gesetzt ist – deshalb gibt MySpeed beim Start ein einmaliges
+**Setup-Token** aus:
+
+```
+  Setup token: 5f3c1e...
+```
+
+Gib es ein, wenn die Oberfläche nach dem Passwort fragt, und lege anschließend im
+Menü ein richtiges Passwort fest. Bei jedem Neustart wird ein neues Token erzeugt;
+gespeichert wird es nie. In einem vertrauenswürdigen Netz lässt sich das mit
+`ALLOW_NO_PASSWORD=true` überspringen – bei einer öffentlichen Adresse nicht.
+
+#### Einen Reverse Proxy davorsetzen
+
+Das ist der unterstützte Weg. Der Proxy übernimmt TLS und idealerweise auch die
+Authentifizierung, bevor MySpeed überhaupt erreicht wird:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name speed.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/speed.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/speed.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:5216;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Anschließend muss MySpeed vom Proxy wissen, sonst sieht es alle Clients unter
+derselben Adresse und ein einzelner Angreifer sperrt alle anderen aus:
+
+```bash
+docker run -d -p 127.0.0.1:5216:5216 -e TRUST_PROXY=1 \
+  -v myspeed:/myspeed/data --restart=unless-stopped --name MySpeed i7gamer/myspeed
+```
+
+Die Bindung des Ports an `127.0.0.1` sorgt dafür, dass der Container ausschließlich
+über den Proxy erreichbar ist.
+
+#### Umgebungsvariablen
+
+| Variable | Standard | Bedeutung |
+| --- | --- | --- |
+| `TRUST_PROXY` | nicht gesetzt | Anzahl vorgelagerter Proxys (`1`), `true` oder ein Preset wie `loopback`. Hinter einem Reverse Proxy nötig, damit die Ratenbegrenzung echte Client-Adressen sieht. |
+| `ALLOW_NO_PASSWORD` | `false` | Eine Instanz ohne Passwort für alle erreichbar machen. Nur im lokalen Netz. |
+| `FRAME_ANCESTORS` | `'none'` | CSP-Ursprünge, die MySpeed in einem iframe einbetten dürfen – etwa Dashboards wie Homepage oder Heimdall. |
+| `HTTPS_REDIRECT` | `true` | Netzwerk-Anfragen auf den HTTPS-Listener umleiten, wenn in `data/certs` ein Zertifikat liegt. Auf `false` setzen, wenn ein Proxy TLS übernimmt und `TRUST_PROXY` nicht gesetzt ist. |
+| `ALLOW_LOCAL_NODES` | `false` | Erlaubt Nodes auf Loopback- und Link-Local-Adressen. Standardmäßig aus, damit eine Node-URL den Host nicht abtasten kann. |
+
+#### Was geschützt ist – und was nicht
+
+Enthalten: Anmeldedrosselung und Ratenbegrenzung pro Endpunkt, ein Limit von 100 KB
+für Anfragen außerhalb der beiden Import-Endpunkte, CSP- und Anti-Framing-Header,
+Node-URLs ohne Zugriff auf Loopback- und Cloud-Metadaten-Adressen sowie ein
+Konfigurations-Export, der Zugangsdaten entfernt, solange nicht `?includeSecrets=true`
+angehängt wird.
+
+Trotzdem wissenswert: Das Passwort liegt im `localStorage` des Browsers und wird bei
+jeder Anfrage mitgeschickt – wer Zugriff auf das Browserprofil hat, hat es auch. Es
+gibt ein gemeinsames Passwort statt einzelner Benutzerkonten. Zugangsdaten liegen
+unverschlüsselt in `data/storage.db`; sichere diese Datei so sorgfältig wie einen
+Passwort-Manager-Export.
+
 ### 📸 Beispiel-Screenshots
 
 #### Startseite (Listen-Ansicht)
