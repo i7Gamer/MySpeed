@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { Resvg } from '@resvg/resvg-js';
 import moment from 'moment-timezone';
 import * as tests from './speedtests.js';
+import { parseDateRange } from '../util/dateRange.js';
 import htm from 'htm';
 import satori from 'satori';
 
@@ -14,7 +15,10 @@ const readStatistics = async () => {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
 
-  const stats = await tests.listStatistics(formatDate(yesterday), formatDate(new Date()));
+  const range = parseDateRange(formatDate(yesterday), formatDate(new Date()));
+  if (!range.valid) return null;
+
+  const stats = await tests.listStatistics(range);
   if (hasValues(stats)) return stats;
 
   const latest = await tests.getLatest();

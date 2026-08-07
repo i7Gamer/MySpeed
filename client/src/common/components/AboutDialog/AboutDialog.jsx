@@ -18,7 +18,7 @@ export const AboutDialog = ({ open, onClose }) => {
 
   useEffect(() => {
     if (!open) return;
-    jsonRequest("/info/version").then((data) => setVersion(data.local));
+    jsonRequest("/info/version").then((data) => setVersion(data.local)).catch(() => setVersion(null));
   }, [open]);
 
   const links = [

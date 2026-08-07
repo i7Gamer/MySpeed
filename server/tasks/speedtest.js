@@ -77,9 +77,27 @@ export const run = async (retryAuto = false) => {
 }
 
 export const create = async (type = "auto", retried = false) => {
-    const mode = await config.getValue("provider");
-    if (mode === "none") return 400;
+    // The guard has to latch synchronously: POST /speedtests/run no longer awaits
+    // this call, so checking after an await would let two requests slip past.
     if (_isRunning && !retried) return 500;
+    if (!retried) _isRunning = true;
+
+    const release = () => {
+        if (!retried) _isRunning = false;
+    };
+
+    let mode;
+    try {
+        mode = await config.getValue("provider");
+    } catch (e) {
+        release();
+        throw e;
+    }
+
+    if (mode === "none") {
+        release();
+        return 400;
+    }
 
     try {
         let test;
@@ -105,10 +123,16 @@ export const create = async (type = "auto", retried = false) => {
     } catch (e) {
         console.log(e)
         if (!retried) return create(type, true);
-        let testResult = await tests.create(-1, -1, -1, null, 0, type, null, e.message);
-        await sendError(e.message);
+
+        // A thrown string or a plain object has no `message`, and storing
+        // undefined writes NULL - which marks the row as *successful* and lets
+        // its -1 placeholder values poison every average.
+        const message = e?.message ?? String(e);
+
+        let testResult = await tests.create(-1, -1, -1, null, 0, type, null, message);
+        await sendError(message);
         setRunning(false, false);
-        console.log(`Test #${testResult} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + e.message);
+        console.log(`Test #${testResult} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
     }
 }
 

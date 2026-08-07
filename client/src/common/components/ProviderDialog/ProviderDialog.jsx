@@ -33,9 +33,9 @@ export const ProviderDialog = ({open, onClose}) => {
 
     useEffect(() => {
         if (!open) return;
-        jsonRequest("/info/server/ookla").then(setOoklaServers);
-        jsonRequest("/info/server/libre").then(setLibreServers);
-        jsonRequest("/info/interfaces").then(setInterfaces);
+        jsonRequest("/info/server/ookla").then(setOoklaServers).catch(() => setOoklaServers([]));
+        jsonRequest("/info/server/libre").then(setLibreServers).catch(() => setLibreServers([]));
+        jsonRequest("/info/interfaces").then(setInterfaces).catch(() => setInterfaces([]));
     }, [open]);
 
     useEffect(() => {

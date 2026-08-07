@@ -164,7 +164,7 @@ export const IntegrationDialog = ({open, onClose}) => {
         Promise.all([jsonRequest("/integrations"), jsonRequest("/integrations/active")]).then(([intData, activeData]) => {
             setIntegrations(intData);
             setActive(activeData.map(item => ({...item, uuid: uuid()})));
-        });
+        }).catch((error) => console.error("Failed to load the integrations:", error));
     }, [open]);
 
     const addIntegration = (item) => setActive([...active, {uuid: uuid(), name: item.key, data: {}, isNew: true}]);

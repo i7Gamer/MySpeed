@@ -94,15 +94,23 @@ export const SpeedtestProvider = (props) => {
         }
     }, [speedtests]);
 
+    // Derives the new cursor from `prev` inside the updater rather than from the
+    // captured `speedtests`, so it stays correct regardless of render timing and
+    // cannot index into an empty list.
     const deleteTest = useCallback((id) => {
-        setSpeedtests(prev => prev.filter(test => test.id !== id));
-        if (speedtests.length === 1) {
-            setLastId(null);
-            setHasMore(false);
-        } else if (speedtests[speedtests.length - 1].id === id) {
-            setLastId(speedtests[speedtests.length - 2].id);
-        }
-    });
+        setSpeedtests(prev => {
+            const remaining = prev.filter(test => test.id !== id);
+
+            if (remaining.length === 0) {
+                setLastId(null);
+                setHasMore(false);
+            } else if (remaining.length < prev.length) {
+                setLastId(remaining[remaining.length - 1].id);
+            }
+
+            return remaining;
+        });
+    }, []);
 
     const updateTests = useCallback(() => {
         refreshTests();

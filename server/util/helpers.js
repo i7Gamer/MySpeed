@@ -19,14 +19,25 @@ export const replaceVariables = (message, variables) => {
     return message;
 };
 
-export const mapFixed = (entries, type) => ({
-    min: Math.min(...entries.map((entry) => entry[type])),
-    max: Math.max(...entries.map((entry) => entry[type])),
-    avg: parseFloat((entries.reduce((a, b) => a + b[type], 0) / entries.length).toFixed(2))
-});
+const AVG_DECIMALS = 2;
 
-export const mapRounded = (entries, type) => ({
-    min: Math.min(...entries.map((entry) => entry[type])),
-    max: Math.max(...entries.map((entry) => entry[type])),
-    avg: Math.round(entries.reduce((a, b) => a + b[type], 0) / entries.length)
-});
+const EMPTY_RANGE = {min: null, max: null, avg: null};
+
+// Math.min(...[]) is Infinity and 0/0 is NaN, both of which JSON.stringify
+// silently turns into null. Returning explicit nulls keeps the value honest for
+// in-process consumers such as the Prometheus exporter.
+const mapRange = (entries, type, averageOf) => {
+    if (entries.length === 0) return {...EMPTY_RANGE};
+
+    const values = entries.map((entry) => entry[type]);
+    return {
+        min: Math.min(...values),
+        max: Math.max(...values),
+        avg: averageOf(values.reduce((a, b) => a + b, 0) / values.length)
+    };
+};
+
+export const mapFixed = (entries, type) =>
+    mapRange(entries, type, (avg) => parseFloat(avg.toFixed(AVG_DECIMALS)));
+
+export const mapRounded = (entries, type) => mapRange(entries, type, Math.round);
