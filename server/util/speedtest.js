@@ -4,6 +4,8 @@ import * as config from '../controller/config.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
+const CLI_TIMEOUT = 180000;
+
 export default async (mode, serverId, serverUrl) => {
     const binaryPath = mode === "ookla" ? './bin/speedtest' + (process.platform === "win32" ? ".exe" : "")
         : mode === "libre" ? './bin/librespeed-cli' + (process.platform === "win32" ? ".exe" : "")
@@ -58,14 +60,18 @@ export default async (mode, serverId, serverUrl) => {
 
     let result = {};
     let stdout = '';
+    let stderr = '';
 
-    const testProcess = spawn(binaryPath, args, {windowsHide: true});
+    // A CLI that accepts the connection and then stalls would hold the run lock
+    // for the lifetime of the process, and no scheduled test would ever run
+    // again. spawn's own timeout sends SIGTERM and surfaces as an 'error'.
+    const testProcess = spawn(binaryPath, args, {windowsHide: true, timeout: CLI_TIMEOUT});
 
     testProcess.stderr.on('data', (buffer) => {
-        result.error = buffer.toString();
-        if (buffer.toString().includes("Too many requests")) {
-            result.error = "Too many requests. Please try again later";
-        }
+        // Accumulated, not overwritten: stderr arrives in arbitrary chunks, so
+        // keeping only the last one reported whatever fragment happened to
+        // land last rather than the actual failure.
+        stderr += buffer.toString();
     });
 
     testProcess.stdout.on('data', (buffer) => {
@@ -103,6 +109,12 @@ export default async (mode, serverId, serverUrl) => {
             resolve();
         });
     });
+
+    if (!result.error && stderr.trim()) {
+        result.error = stderr.includes("Too many requests")
+            ? "Too many requests. Please try again later"
+            : stderr.trim();
+    }
 
     if (result.error) throw new Error(result.error);
     return {...result, elapsed: new Date().getTime() - startTime};
