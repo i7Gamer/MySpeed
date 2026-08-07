@@ -1,5 +1,10 @@
-import {t} from "i18next";
+import i18n, {t} from "i18next";
 import {SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H} from "@/common/contexts/Preferences";
+
+// Passing undefined means "whatever locale the browser is set to", which
+// ignores the language the user picked in the app - a German UI rendered
+// English month names and a 12-hour clock on an en-US browser.
+const locale = () => i18n.language || undefined;
 
 const toDate = (value) => {
     if (value instanceof Date) return value;
@@ -11,7 +16,7 @@ export const formatTime = (value, preferences) => {
     if (isNaN(date.getTime())) return "";
 
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
-    return date.toLocaleTimeString(undefined, {
+    return date.toLocaleTimeString(locale(), {
         hour: "2-digit",
         minute: "2-digit",
         hour12: use12h
@@ -23,8 +28,8 @@ export const formatDateTime = (value, preferences, dateOptions = {}) => {
     if (isNaN(date.getTime())) return "";
 
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
-    const datePart = date.toLocaleDateString(undefined, dateOptions);
-    const timePart = date.toLocaleTimeString(undefined, {
+    const datePart = date.toLocaleDateString(locale(), dateOptions);
+    const timePart = date.toLocaleTimeString(locale(), {
         hour: "2-digit",
         minute: "2-digit",
         hour12: use12h

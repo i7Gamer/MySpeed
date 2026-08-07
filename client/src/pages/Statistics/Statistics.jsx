@@ -85,6 +85,7 @@ export const Statistics = () => {
     const [statistics, setStatistics] = useState(null);
     const [latestTest, setLatestTest] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(null);
     const [expandedChart, setExpandedChart] = useState(null);
     const [mountPhase, setMountPhase] = useState(0);
 
@@ -127,7 +128,10 @@ export const Statistics = () => {
             tzOffset: String(new Date().getTimezoneOffset())
         });
 
-        startTransition(() => setLoading(true));
+        startTransition(() => {
+            setLoadError(null);
+            setLoading(true);
+        });
         Promise.all([
             jsonRequest(`/speedtests/statistics/?${query}`),
             jsonRequest("/speedtests?limit=1")
@@ -139,7 +143,10 @@ export const Statistics = () => {
             });
         }).catch(error => {
             console.error("Failed to load statistics:", error);
-            startTransition(() => setLoading(false));
+            startTransition(() => {
+                setLoadError(error);
+                setLoading(false);
+            });
         });
     }, [dateRange]);
 
@@ -176,6 +183,20 @@ export const Statistics = () => {
                 <div className="skeleton-chart skeleton-visible"></div>
                 <div className="skeleton-chart skeleton-visible"></div>
                 <div className="skeleton-chart skeleton-visible"></div>
+            </div>
+        );
+    }
+
+    // The request failing used to leave `statistics` null with loading false,
+    // which fell through to the empty fragment below: the page went completely
+    // blank, with no message and nothing to click.
+    if (loadError && !deferredStatistics) {
+        return (
+            <div className="statistic-area">
+                <div className="statistics-empty">
+                    <p className="icon-red">{loadError.message}</p>
+                    <button className="dialog-btn" onClick={updateStats}>{t("dialog.retry")}</button>
+                </div>
             </div>
         );
     }

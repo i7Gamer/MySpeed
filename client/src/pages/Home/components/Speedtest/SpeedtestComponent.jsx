@@ -37,6 +37,14 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
     const downValue = props.error ? "" : convertSpeed(props.down, preferences);
     const upValue = props.error ? "" : convertSpeed(props.up, preferences);
 
+    // The result dialogs' sentence hardcodes "Mbps" in every locale, so they are
+    // handed the raw Mbps figure rather than the card's converted one. On the
+    // MB/s preference they were showing a MB/s number labelled Mbps - off by a
+    // factor of eight. Making them unit-aware needs the translated strings to
+    // grow a {{unit}} placeholder, which is a Crowdin change.
+    const downMbps = props.error ? "" : props.down;
+    const upMbps = props.error ? "" : props.up;
+
     if (props.error) {
         for (let errorsKey in errors())
             if (props.error.includes(errorsKey)) errorMessage = errors()[errorsKey];
@@ -79,13 +87,13 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
         if (props.type === "average") {
             await alert.openAlert(
                 t("test.average.title"),
-                averageResultDialog(timeString, {...props, down: downValue, up: upValue}),
+                averageResultDialog(timeString, {...props, down: downMbps, up: upMbps}),
                 {buttonText: t("dialog.okay")}
             );
         } else {
             await alert.openAlert(
                 t("test.result.title"),
-                resultDialog({...props, down: downValue, up: upValue}),
+                resultDialog({...props, down: downMbps, up: upMbps}),
                 {
                     buttonText: t("dialog.okay"),
                     clearButton: !config.viewMode ? t("test.delete") : undefined,
