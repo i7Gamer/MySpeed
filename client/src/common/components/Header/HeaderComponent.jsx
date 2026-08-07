@@ -18,7 +18,7 @@ import { updateInfo } from "@/common/components/Header/utils/infos";
 import { t } from "i18next";
 import { ConfigContext } from "@/common/contexts/Config";
 import { NodeContext } from "@/common/contexts/Node";
-import { WEB_URL } from "@/index";
+import { INSTALL_URL, RELEASES_URL } from "@/index";
 import { Trans } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import Pagination from "./components/Pagination";
@@ -48,7 +48,7 @@ const HeaderComponent = () => {
 
     const showDemoDialog = () => alert.openAlert(
         t("preview.title"),
-        <Trans components={{ Link: <a href={WEB_URL + "/install"} target="_blank" /> }}>preview.description</Trans>,
+        <Trans components={{ Link: <a href={INSTALL_URL} target="_blank" /> }}>preview.description</Trans>,
         { buttonText: t("dialog.okay") }
     );
 
@@ -104,7 +104,7 @@ const HeaderComponent = () => {
         }
     }
 
-    const openDownloadPage = () => window.open(WEB_URL + "/install", "_blank");
+    const openDownloadPage = () => window.open(RELEASES_URL, "_blank");
 
     useEffect(() => {
         if (Object.keys(config).length === 0) return;

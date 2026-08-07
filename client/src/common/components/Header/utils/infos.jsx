@@ -1,5 +1,8 @@
 import {Trans} from "react-i18next";
-import {PROJECT_URL, PROJECT_WIKI} from "@/index";
+import {RELEASES_URL, INSTALL_URL} from "@/index";
 
-export const updateInfo = (version) => <Trans values={{version}} components={{Changes: <a href={PROJECT_URL + "/releases/latest"} target="_blank"/>,
-    DLLink: <a href={PROJECT_WIKI + "/setup/linux"} target="_blank"/>}}>info.update</Trans>
+// "the changes" goes to the release notes; "download the update" goes to the
+// README, which covers every install method rather than assuming a download -
+// updating a docker install is a pull, not a file.
+export const updateInfo = (version) => <Trans values={{version}} components={{Changes: <a href={RELEASES_URL} target="_blank"/>,
+    DLLink: <a href={INSTALL_URL} target="_blank"/>}}>info.update</Trans>

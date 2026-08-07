@@ -64,6 +64,6 @@ fi
 clear
 echo -e "$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-" #multicolor
 echo -e "$GREEN✓ Completed: $NORMAL MySpeed has been uninstalled."
-echo -e "$NORMAL You can reinstall MySpeed anytime. Find the instructions at https://myspeed.dev/install."
+echo -e "$NORMAL You can reinstall MySpeed anytime. Find the instructions at https://github.com/i7Gamer/MySpeed#readme."
 echo -e "$RED Thank you for using MySpeed!"
 echo -e "$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-" #multicolor

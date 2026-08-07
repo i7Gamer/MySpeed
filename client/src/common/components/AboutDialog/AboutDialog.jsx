@@ -3,13 +3,13 @@ import "./styles.sass";
 import React, { useEffect, useState } from "react";
 import { t } from "i18next";
 import {
-  faGlobe,
+  faDownload,
   faLanguage,
 } from "@fortawesome/free-solid-svg-icons";
 import { faGithub } from "@fortawesome/free-brands-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { jsonRequest } from "@/common/utils/RequestUtil";
-import { PROJECT_URL, WEB_URL } from "@/index";
+import { PROJECT_URL, RELEASES_URL } from "@/index";
 
 export const AboutDialog = ({ open, onClose }) => {
   const [version, setVersion] = useState("");
@@ -21,7 +21,9 @@ export const AboutDialog = ({ open, onClose }) => {
 
   const links = [
     { icon: faGithub, label: t("about.github"), url: PROJECT_URL },
-    { icon: faGlobe, label: t("about.website"), url: WEB_URL },
+    // Was a "Website" link to a site this fork does not have; a link to the
+    // downloads is useful where a second link to the same repository was not.
+    { icon: faDownload, label: t("header.download"), url: RELEASES_URL },
     {
       icon: faLanguage,
       label: t("about.translate"),
