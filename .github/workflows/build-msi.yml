@@ -62,7 +62,7 @@ jobs:
           $wxsContent = @"
           <?xml version="1.0" encoding="UTF-8"?>
           <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-            <Product Id="*" Name="MySpeed" Language="1033" Version="${{ inputs.version }}.0" Manufacturer="Mathias Wagner" UpgradeCode="A1B2C3D4-5E6F-7890-ABCD-EF1234567890">
+            <Product Id="*" Name="MySpeed" Language="1033" Version="${{ inputs.version }}.0" Manufacturer="Timo" UpgradeCode="A1B2C3D4-5E6F-7890-ABCD-EF1234567890">
               <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
           
               <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
