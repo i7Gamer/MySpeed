@@ -19,6 +19,22 @@ export const replaceVariables = (message, variables) => {
     return message;
 };
 
+/**
+ * Removes trailing slashes from a URL.
+ *
+ * Deliberately not a regex: /\/+$/ backtracks polynomially, retrying the whole
+ * run of slashes from every position, so a long enough value turns a single
+ * request into a denial of service.
+ */
+export const stripTrailingSlashes = (value) => {
+    const text = String(value ?? "");
+    let end = text.length;
+
+    while (end > 0 && text[end - 1] === "/") end--;
+
+    return text.slice(0, end);
+};
+
 const UNKNOWN_ERROR = "Unknown error";
 
 /**

@@ -2,6 +2,7 @@ import express from 'express';
 import * as nodes from '../controller/node.js';
 import password from '../middlewares/password.js';
 import { passwordHeaderNames, writePasswordHeaders } from '../util/passwordHeader.js';
+import { stripTrailingSlashes } from '../util/helpers.js';
 
 const app = express.Router();
 
@@ -15,7 +16,7 @@ app.put("/", password(false), async (req, res) => {
 
     if (!req.body.name || !req.body.url) return res.status(400).json({message: "Missing parameters", type: "MISSING_PARAMETERS"});
 
-    const url = req.body.url.replace(/\/+$/, "");
+    const url = stripTrailingSlashes(req.body.url);
 
     nodes.checkStatus(url, req.body.password).then(async (result) => {
         if (result === "INVALID_URL")

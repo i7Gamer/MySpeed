@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mapFixed, mapRounded, toErrorMessage } from "../../server/util/helpers.js";
+import { mapFixed, mapRounded, toErrorMessage, stripTrailingSlashes } from "../../server/util/helpers.js";
 
 const entries = [
     {download: 100.123, ping: 10},
@@ -38,6 +38,46 @@ describe("mapRounded", () => {
 
     it("returns nulls for an empty set instead of Infinity/NaN", () => {
         assert.deepEqual(mapRounded([], "ping"), {min: null, max: null, avg: null});
+    });
+});
+
+describe("stripTrailingSlashes", () => {
+    it("leaves a url without a trailing slash alone", () => {
+        assert.equal(stripTrailingSlashes("http://10.0.0.2:5216"), "http://10.0.0.2:5216");
+    });
+
+    it("removes a single trailing slash", () => {
+        assert.equal(stripTrailingSlashes("http://10.0.0.2:5216/"), "http://10.0.0.2:5216");
+    });
+
+    it("removes a run of trailing slashes", () => {
+        assert.equal(stripTrailingSlashes("http://10.0.0.2:5216////"), "http://10.0.0.2:5216");
+    });
+
+    it("keeps slashes that are not at the end", () => {
+        assert.equal(stripTrailingSlashes("http://host/a//b/"), "http://host/a//b");
+    });
+
+    it("handles an all-slash and an empty value", () => {
+        assert.equal(stripTrailingSlashes("////"), "");
+        assert.equal(stripTrailingSlashes(""), "");
+        assert.equal(stripTrailingSlashes(null), "");
+    });
+
+    /**
+     * Regression: /\/+$/ is polynomial. On 100k slashes followed by a
+     * non-slash the engine retries the run from every position, which took
+     * long enough to be a usable denial of service against an admin endpoint.
+     */
+    it("stays fast on a pathological run of slashes", () => {
+        const hostile = "http://host" + "/".repeat(100000) + "x";
+
+        const startedAt = process.hrtime.bigint();
+        const result = stripTrailingSlashes(hostile);
+        const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+
+        assert.equal(result, hostile);
+        assert.ok(elapsedMs < 100, `took ${Math.round(elapsedMs)}ms`);
     });
 });
 

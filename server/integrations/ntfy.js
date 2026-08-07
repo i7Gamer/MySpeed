@@ -16,7 +16,7 @@ const buildHeaders = ({token, title, tags}, priority) => {
 };
 
 const send = (config, message, priority, activity) => {
-    const url = config.url.replace(/\/+$/, "");
+    const url = stripTrailingSlashes(config.url);
     return postText(`${url}/${config.topic}`, message,
         {headers: buildHeaders(config, priority), activity});
 };
