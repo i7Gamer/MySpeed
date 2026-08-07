@@ -7,6 +7,14 @@ const DEFAULT_RETENTION_DAYS = 365;
 const MS_PER_DAY = 86400000;
 const DEFAULT_TEST_LIMIT = 10;
 
+// Columns an import has to supply as numbers. `jitter` is absent on providers
+// that do not measure it, and a failed row carries -1 placeholders, so null and
+// negative values are both legitimate.
+const NUMERIC_COLUMNS = ["ping", "download", "upload", "time"];
+
+const isImportableNumber = (value) =>
+    value === null || value === undefined || (typeof value === "number" && Number.isFinite(value));
+
 export const create = async (ping, download, upload, time, serverId, type = "auto", resultId = null, error = null, jitter = null, serverName = null, serverHost = null) => {
     return (await tests.create({ping, jitter, download, upload, error, serverId, serverName, serverHost, type, resultId, time, created: new Date().toISOString()})).id;
 }
@@ -66,6 +74,11 @@ export const importTests = async (data) => {
 
         if (!["custom", "auto"].includes(entry.type)) { skipped++; continue; }
         if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(entry.created)) { skipped++; continue; }
+
+        // sqlite stores whatever it is handed, so an imported "fast" in the
+        // download column survives the write and then poisons every average
+        // and chart built on top of it.
+        if (!NUMERIC_COLUMNS.every((column) => isImportableNumber(entry[column]))) { skipped++; continue; }
 
         try {
             await tests.create(entry);

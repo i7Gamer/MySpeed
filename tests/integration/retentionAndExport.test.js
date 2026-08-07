@@ -146,3 +146,57 @@ describe("PUT /api/storage/tests/history", () => {
         assert.equal((await importTests([])).status, 200);
     });
 });
+
+describe("import validation", () => {
+    const importTests = (body) => api(server.baseUrl, "/storage/tests/history", {
+        method: "PUT",
+        headers: {"content-type": "application/json"},
+        body: JSON.stringify(body)
+    });
+
+    const row = (overrides) => ({
+        ping: 10, download: 100, upload: 50, time: 30, type: "auto", created: daysAgo(1), ...overrides
+    });
+
+    /**
+     * Regression: only `type` and `created` were checked. sqlite stores
+     * whatever it is handed, so a string in a numeric column survived the write
+     * and then poisoned every average and chart built on top of it.
+     */
+    it("rejects a row whose numbers are strings", async () => {
+        await seedTests(server.tests, []);
+
+        assert.equal((await importTests([row({download: "fast"})])).status, 500);
+        assert.equal(await server.tests.count(), 0);
+    });
+
+    it("rejects a row with a non-finite number", async () => {
+        await seedTests(server.tests, []);
+
+        assert.equal((await importTests([row({ping: null, upload: "50"})])).status, 500);
+        assert.equal(await server.tests.count(), 0);
+    });
+
+    it("keeps the good rows and drops only the bad ones", async () => {
+        await seedTests(server.tests, []);
+
+        const {status} = await importTests([row(), row({time: "thirty"}), row({created: daysAgo(2)})]);
+
+        assert.equal(status, 200);
+        assert.equal(await server.tests.count(), 2);
+    });
+
+    // A failed test stores -1 placeholders and providers without jitter store
+    // null, so neither may be treated as invalid.
+    it("still accepts failed rows and absent jitter", async () => {
+        await seedTests(server.tests, []);
+
+        const {status} = await importTests([
+            row({ping: -1, download: -1, upload: -1, time: null, error: "Too many requests"}),
+            row({jitter: null})
+        ]);
+
+        assert.equal(status, 200);
+        assert.equal(await server.tests.count(), 2);
+    });
+});
