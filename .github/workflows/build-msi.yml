@@ -31,6 +31,12 @@ jobs:
         run: |
           Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/v3.0.0-alpha.11/WinSW-x64.exe" -OutFile "installer\MySpeedService.exe"
 
+      # The working directory is what decides where MySpeed keeps its database:
+      # the server resolves data/ against the current directory, so pointing it at
+      # ProgramData is what gets the database out of Program Files. %BASE% (the
+      # install directory) stays the source of the executable itself - WinSW
+      # resolves a bare executable name against the working directory, so that one
+      # has to be spelled out now that the two directories differ.
       - name: Create service configuration
         shell: powershell
         run: |
@@ -39,10 +45,10 @@ jobs:
             <id>MySpeed</id>
             <name>MySpeed Speedtest Tracker</name>
             <description>MySpeed Speedtest Tracker Service</description>
-            <executable>MySpeed.exe</executable>
-            <workingdirectory>%BASE%</workingdirectory>
+            <executable>%BASE%\MySpeed.exe</executable>
+            <workingdirectory>%ProgramData%\MySpeed</workingdirectory>
             <logmode>rotate</logmode>
-            <logpath>%BASE%\logs</logpath>
+            <logpath>%ProgramData%\MySpeed\logs</logpath>
             <stoptimeout>30 sec</stoptimeout>
             <startmode>Automatic</startmode>
             <onfailure action="restart" delay="10 sec"/>
@@ -76,20 +82,36 @@ jobs:
               </Feature>
           
               <Directory Id="TARGETDIR" Name="SourceDir">
-                <Directory Id="ProgramFilesFolder">
+                <Directory Id="ProgramFiles64Folder">
                   <Directory Id="INSTALLFOLDER" Name="MySpeed">
                     <Directory Id="BUILDFOLDER" Name="build" />
+                  </Directory>
+                </Directory>
+
+                <!-- The database and the logs are written at runtime, so they do not
+                     belong under Program Files - that only works today because the
+                     service happens to run as LocalSystem. -->
+                <Directory Id="CommonAppDataFolder">
+                  <Directory Id="DATAROOTFOLDER" Name="MySpeed">
                     <Directory Id="DATAFOLDER" Name="data" />
                     <Directory Id="LOGSFOLDER" Name="logs" />
                   </Directory>
                 </Directory>
+
+                <!-- Nothing installs here. Declared so CostFinalize resolves the paths
+                     the migration below reads: ProgramFilesFolder is the 32-bit
+                     directory, which is where every release up to 1.1.0 landed. -->
+                <Directory Id="System64Folder" />
+                <Directory Id="ProgramFilesFolder">
+                  <Directory Id="LEGACYINSTALLFOLDER" Name="MySpeed" />
+                </Directory>
               </Directory>
-          
+
               <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
                 <Component Id="MySpeedExecutable" Guid="*">
                   <File Id="MySpeedExe" Source="MySpeed.exe" KeyPath="yes" />
                 </Component>
-                <Component Id="ServiceWrapper" Guid="B2C3D4E5-6F7A-8901-BCDE-F23456789012">
+                <Component Id="ServiceWrapper" Guid="DD2D201B-6AA1-4604-9CF7-4EC6B9C65432">
                   <File Id="ServiceWrapperExe" Source="MySpeedService.exe" KeyPath="yes" />
                   <File Id="ServiceConfig" Source="MySpeedService.xml" />
                   <ServiceInstall Id="MySpeedService" Name="MySpeed" DisplayName="MySpeed Speedtest Tracker" 
@@ -100,13 +122,28 @@ jobs:
                 </Component>
               </ComponentGroup>
           
-              <Component Id="LogsFolderComponent" Directory="LOGSFOLDER" Guid="C3D4E5F6-7A8B-9012-CDEF-345678901234">
+              <!-- New GUIDs: all three components changed directory, and a component
+                   GUID identifies a payload at a path, not just a payload. -->
+              <Component Id="LogsFolderComponent" Directory="LOGSFOLDER" Guid="B96A8157-F8EC-4475-BB2C-202CC2AFEBE0">
                 <CreateFolder />
               </Component>
-          
-              <Component Id="DataFolder" Directory="DATAFOLDER" Guid="D4E5F6A7-8B9C-0123-DEF0-456789012345">
+
+              <Component Id="DataFolder" Directory="DATAFOLDER" Guid="6A568446-09EC-49A8-873F-220743161D47">
                 <CreateFolder />
               </Component>
+
+              <!-- Releases up to 1.1.0 kept the database inside the install directory,
+                   which a major upgrade uninstalls out from under it. Copy - never move -
+                   the old data across on the first install of the new layout, and never
+                   over a database that is already there. Immediate rather than deferred
+                   so the directory properties resolve; failures are ignored because a
+                   missed copy is recoverable by hand and a blocked upgrade is not. -->
+              <CustomAction Id="MigrateLegacyData" Directory="DATAROOTFOLDER" Execute="immediate" Return="ignore"
+                            ExeCommand="&quot;[System64Folder]cmd.exe&quot; /c if exist &quot;[LEGACYINSTALLFOLDER]data\storage.db&quot; if not exist &quot;[DATAROOTFOLDER]data\storage.db&quot; xcopy &quot;[LEGACYINSTALLFOLDER]data&quot; &quot;[DATAROOTFOLDER]data&quot; /E /I /Y /Q" />
+
+              <InstallExecuteSequence>
+                <Custom Action="MigrateLegacyData" Before="StartServices">NOT Installed</Custom>
+              </InstallExecuteSequence>
             </Product>
           </Wix>
           "@
@@ -116,7 +153,7 @@ jobs:
         working-directory: installer
         run: |
           heat dir build -cg BuildFilesGroup -gg -scom -sreg -sfrag -srd -dr BUILDFOLDER -var var.BuildSourceDir -out build-files.wxs
-          candle myspeed.wxs build-files.wxs -dBuildSourceDir=build
+          candle -arch x64 myspeed.wxs build-files.wxs -dBuildSourceDir=build
           light myspeed.wixobj build-files.wixobj -o MySpeed-installer.msi
 
       - name: Upload to Release
