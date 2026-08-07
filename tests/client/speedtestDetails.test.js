@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { changeFrom, percentOfTarget } from "../../client/src/pages/Home/components/Speedtest/utils/details.js";
+import {
+    changeFrom, differenceFromTarget, percentOfTarget
+} from "../../client/src/pages/Home/components/Speedtest/utils/details.js";
 
 describe("percentOfTarget", () => {
     it("reports how much of the optimum was reached", () => {
@@ -40,6 +42,71 @@ describe("percentOfTarget", () => {
         it("returns null for a missing or non-numeric measurement", () => {
             for (const current of [null, undefined, "50", NaN, Infinity])
                 assert.equal(percentOfTarget(current, 100), null, `current ${String(current)}`);
+        });
+    });
+
+    /**
+     * Latency is the one metric where exceeding the target is bad news, so the
+     * ratio is inverted to keep "more percent" meaning "better" everywhere. A
+     * ping 20% over its budget used to read as "120% of your target" beside a
+     * full green bar.
+     */
+    describe("latency, where lower is better", () => {
+        const latency = (current, target) => percentOfTarget(current, target, {higherIsBetter: false});
+
+        it("falls below 100 when the ping is over target", () => {
+            assert.equal(latency(24, 20), 83);
+        });
+
+        it("rises above 100 when the ping beats the target", () => {
+            assert.equal(latency(16, 20), 125);
+        });
+
+        it("is exactly 100 on target", () => {
+            assert.equal(latency(20, 20), 100);
+        });
+
+        // Dividing by it is worse than useless, and it is not a measurement.
+        it("returns null for a ping of zero", () => {
+            assert.equal(latency(0, 20), null);
+        });
+
+        it("still refuses a failed measurement and an unset target", () => {
+            assert.equal(latency(-1, 20), null);
+            assert.equal(latency(24, null), null);
+        });
+    });
+});
+
+describe("differenceFromTarget", () => {
+    it("reports how far over the target a measurement is", () => {
+        assert.deepEqual(differenceFromTarget(24, 20), {difference: 4, direction: "over"});
+    });
+
+    // The difference is always reported unsigned; `direction` carries the sign,
+    // so the sentence around it does not have to cope with a minus.
+    it("reports how far under the target a measurement is", () => {
+        assert.deepEqual(differenceFromTarget(16, 20), {difference: 4, direction: "under"});
+    });
+
+    it("reports landing exactly on the target", () => {
+        assert.deepEqual(differenceFromTarget(20, 20), {difference: 0, direction: "same"});
+    });
+
+    it("rounds to two decimals", () => {
+        assert.deepEqual(differenceFromTarget(20.125, 20), {difference: 0.13, direction: "over"});
+    });
+
+    describe("nothing to compare against", () => {
+        it("returns null without a target", () => {
+            for (const target of [null, undefined, "", 0, "abc"])
+                assert.equal(differenceFromTarget(24, target), null, `target ${JSON.stringify(target)}`);
+        });
+
+        it("returns null for a failed or non-numeric measurement", () => {
+            assert.equal(differenceFromTarget(-1, 20), null);
+            assert.equal(differenceFromTarget("24", 20), null);
+            assert.equal(differenceFromTarget(null, 20), null);
         });
     });
 });

@@ -72,7 +72,12 @@ describe("i18n keys", () => {
             "info.recommendations_info",
             "info.recommendations_error",
             "test.result.server",
-            "statistics.downsampled"
+            "statistics.downsampled",
+            // Built as `test.details.${direction}_target`, so the literal-key
+            // scanner above cannot see them.
+            "test.details.over_target",
+            "test.details.under_target",
+            "test.details.on_target"
         ];
 
         for (const key of required) {

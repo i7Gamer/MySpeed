@@ -9,7 +9,7 @@ import {SpeedtestContext} from "@/common/contexts/Speedtests";
 import {assertOk, deleteRequest} from "@/common/utils/RequestUtil";
 import "./styles.sass";
 import {errors} from "@/pages/Home/components/Speedtest/utils/errors";
-import {changeFrom, percentOfTarget} from "@/pages/Home/components/Speedtest/utils/details";
+import {changeFrom, differenceFromTarget, percentOfTarget} from "@/pages/Home/components/Speedtest/utils/details";
 import {t} from "i18next";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
@@ -28,7 +28,7 @@ const DIRECTION_ICONS = {up: faArrowUp, down: faArrowDown, same: faArrowRight};
  * One measurement, with how it compares to the configured optimum and to the
  * test before it.
  */
-const DetailMetric = ({icon, label, value, unit, level, percent, change, changeUnit, higherIsBetter}) => {
+const DetailMetric = ({icon, label, value, unit, level, percent, targetLabel, change, changeUnit, higherIsBetter}) => {
     const improved = change !== null && change.direction !== "same"
         && (change.direction === "up") === higherIsBetter;
 
@@ -48,7 +48,7 @@ const DetailMetric = ({icon, label, value, unit, level, percent, change, changeU
                         <div className={"detail-target-fill icon-" + level}
                              style={{width: `${Math.min(percent, MAX_BAR_PERCENT)}%`}}/>
                     </div>
-                    <span className="detail-target-label">{t("test.details.of_target", {percent})}</span>
+                    <span className="detail-target-label">{targetLabel}</span>
                 </div>
             )}
 
@@ -125,6 +125,18 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
     // comparison against it reads as "since last time".
     const previous = props.previous ?? {};
 
+    // A percentage says everything worth saying about throughput. For latency it
+    // does not: the plain distance from the target is what the reader wants, and
+    // it cannot be read backwards.
+    const latencyTargetLabel = () => {
+        const distance = differenceFromTarget(props.ping, config.ping);
+        if (distance === null) return null;
+        if (distance.direction === "same") return t("test.details.on_target");
+
+        return t(`test.details.${distance.direction}_target`,
+            {amount: distance.difference, unit: t("latest.ping_unit")});
+    };
+
     const metrics = [
         {
             key: "ping",
@@ -134,7 +146,8 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
             unit: t("latest.ping_unit"),
             changeUnit: t("latest.ping_unit"),
             level: props.pingLevel,
-            percent: percentOfTarget(props.ping, config.ping),
+            percent: percentOfTarget(props.ping, config.ping, {higherIsBetter: false}),
+            targetLabel: latencyTargetLabel(),
             change: changeFrom(props.ping, previous.ping),
             higherIsBetter: false
         },
@@ -147,6 +160,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
             changeUnit: speedUnit,
             level: props.downLevel,
             percent: percentOfTarget(props.down, config.download),
+            targetLabel: t("test.details.of_target", {percent: percentOfTarget(props.down, config.download)}),
             change: changeFrom(convertSpeed(props.down, preferences), convertSpeed(previous.download, preferences)),
             higherIsBetter: true
         },
@@ -159,6 +173,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
             changeUnit: speedUnit,
             level: props.upLevel,
             percent: percentOfTarget(props.up, config.upload),
+            targetLabel: t("test.details.of_target", {percent: percentOfTarget(props.up, config.upload)}),
             change: changeFrom(convertSpeed(props.up, preferences), convertSpeed(previous.upload, preferences)),
             higherIsBetter: true
         }
