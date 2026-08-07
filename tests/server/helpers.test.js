@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mapFixed, mapRounded } from "../../server/util/helpers.js";
+import { mapFixed, mapRounded, toErrorMessage } from "../../server/util/helpers.js";
 
 const entries = [
     {download: 100.123, ping: 10},
@@ -38,5 +38,43 @@ describe("mapRounded", () => {
 
     it("returns nulls for an empty set instead of Infinity/NaN", () => {
         assert.deepEqual(mapRounded([], "ping"), {min: null, max: null, avg: null});
+    });
+});
+
+describe("toErrorMessage", () => {
+    it("passes a plain string through", () => {
+        assert.equal(toErrorMessage("Too many requests"), "Too many requests");
+    });
+
+    it("unwraps the message of an Error", () => {
+        assert.equal(toErrorMessage(new Error("spawn ENOENT")), "spawn ENOENT");
+    });
+
+    it("unwraps the message of a thrown plain object", () => {
+        assert.equal(toErrorMessage({message: "No provider selected"}), "No provider selected");
+    });
+
+    /**
+     * Regression: the speedtest CLI's 'error' event was rejected as
+     * {message: errorInstance}, so the wrapper had a `message` key and the
+     * `?? String(e)` fallback never ran. The Error object then reached
+     * tests.create(), where Sequelize's _.isObject() check on the TEXT column
+     * threw - the failed test was never recorded at all.
+     */
+    it("stringifies an Error nested inside a message wrapper", () => {
+        const message = toErrorMessage({message: new Error("spawn ./bin/speedtest ENOENT")});
+
+        assert.equal(typeof message, "string");
+        assert.match(message, /spawn \.\/bin\/speedtest ENOENT/);
+    });
+
+    it("never returns a non-string, whatever it is handed", () => {
+        for (const thrown of [null, undefined, 0, "", {}, [], new Error(), {message: null}, Symbol("x")])
+            assert.equal(typeof toErrorMessage(thrown), "string", `failed for ${String(thrown)}`);
+    });
+
+    it("names the failure rather than storing an empty string", () => {
+        assert.equal(toErrorMessage(undefined), "Unknown error");
+        assert.equal(toErrorMessage(new Error()), "Unknown error");
     });
 });

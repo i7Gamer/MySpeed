@@ -73,7 +73,10 @@ export default async (mode, serverId, serverUrl) => {
     });
 
     await new Promise((resolve, reject) => {
-        testProcess.on('error', e => reject({message: e}));
+        // Rejected as-is: wrapping it in {message: e} gave the wrapper a
+        // `message` key holding an Error, which the caller then stored verbatim
+        // in a string column.
+        testProcess.on('error', reject);
         testProcess.on('exit', () => {
             if (stdout.trim()) {
                 const lines = stdout.trim().split('\n');

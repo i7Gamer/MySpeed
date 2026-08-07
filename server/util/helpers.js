@@ -19,6 +19,26 @@ export const replaceVariables = (message, variables) => {
     return message;
 };
 
+const UNKNOWN_ERROR = "Unknown error";
+
+/**
+ * Reduces anything that can be thrown to a string.
+ *
+ * A rejection reaches us as an Error, a plain {message} object or a bare
+ * string, and the failed-test row stores the message in a TEXT column.
+ * Sequelize validates that column with _.isObject(), so handing it an Error
+ * throws a validation error on the very path meant to record the failure -
+ * losing the test and the reason for it.
+ */
+export const toErrorMessage = (error) => {
+    const message = error?.message ?? error;
+
+    if (typeof message === "string") return message || UNKNOWN_ERROR;
+    if (message === null || message === undefined) return UNKNOWN_ERROR;
+
+    return String(message);
+};
+
 const AVG_DECIMALS = 2;
 
 const EMPTY_RANGE = {min: null, max: null, avg: null};

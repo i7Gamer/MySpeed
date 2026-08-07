@@ -5,6 +5,7 @@ import * as controller from "../controller/recommendations.js";
 import * as parseData from '../util/providers/parseData.js';
 import { setState, sendRunning, sendError, sendFinished } from "./integrations.js";
 import * as serverController from "../controller/servers.js";
+import { toErrorMessage } from '../util/helpers.js';
 
 let _isRunning = false;
 
@@ -127,7 +128,7 @@ export const create = async (type = "auto", retried = false) => {
         // A thrown string or a plain object has no `message`, and storing
         // undefined writes NULL - which marks the row as *successful* and lets
         // its -1 placeholder values poison every average.
-        const message = e?.message ?? String(e);
+        const message = toErrorMessage(e);
 
         let testResult = await tests.create(-1, -1, -1, null, 0, type, null, message);
         await sendError(message);
