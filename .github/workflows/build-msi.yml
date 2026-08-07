@@ -121,13 +121,17 @@ jobs:
 
       - name: Upload to Release
         uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ inputs.release_id }}
+          ASSET_NAME: MySpeed-installer.msi
+          ASSET_PATH: installer/MySpeed-installer.msi
         with:
           script: |
             const fs = require('fs');
             await github.rest.repos.uploadReleaseAsset({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              release_id: ${{ inputs.release_id }},
-              name: 'MySpeed-installer.msi',
-              data: fs.readFileSync('installer/MySpeed-installer.msi')
+              release_id: parseInt(process.env.RELEASE_ID, 10),
+              name: process.env.ASSET_NAME,
+              data: fs.readFileSync(process.env.ASSET_PATH)
             });

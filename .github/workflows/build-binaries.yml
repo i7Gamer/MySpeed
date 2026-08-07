@@ -51,15 +51,19 @@ jobs:
 
       - name: Upload to Release
         uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ inputs.release_id }}
+          ASSET_NAME: MySpeed-windows-x64.exe
+          ASSET_PATH: MySpeed.exe
         with:
           script: |
             const fs = require('fs');
             await github.rest.repos.uploadReleaseAsset({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              release_id: ${{ inputs.release_id }},
-              name: 'MySpeed-windows-x64.exe',
-              data: fs.readFileSync('MySpeed.exe')
+              release_id: parseInt(process.env.RELEASE_ID, 10),
+              name: process.env.ASSET_NAME,
+              data: fs.readFileSync(process.env.ASSET_PATH)
             });
 
       - name: Upload artifact for MSI
@@ -130,15 +134,18 @@ jobs:
 
       - name: Upload to Release
         uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ inputs.release_id }}
+          ASSET_NAME: ${{ matrix.artifact_name }}
         with:
           script: |
             const fs = require('fs');
             await github.rest.repos.uploadReleaseAsset({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              release_id: ${{ inputs.release_id }},
-              name: '${{ matrix.artifact_name }}',
-              data: fs.readFileSync('${{ matrix.artifact_name }}')
+              release_id: parseInt(process.env.RELEASE_ID, 10),
+              name: process.env.ASSET_NAME,
+              data: fs.readFileSync(process.env.ASSET_NAME)
             });
 
   build-macos:
@@ -195,15 +202,18 @@ jobs:
 
       - name: Upload to Release
         uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ inputs.release_id }}
+          ASSET_NAME: ${{ matrix.artifact_name }}
         with:
           script: |
             const fs = require('fs');
             await github.rest.repos.uploadReleaseAsset({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              release_id: ${{ inputs.release_id }},
-              name: '${{ matrix.artifact_name }}',
-              data: fs.readFileSync('${{ matrix.artifact_name }}')
+              release_id: parseInt(process.env.RELEASE_ID, 10),
+              name: process.env.ASSET_NAME,
+              data: fs.readFileSync(process.env.ASSET_NAME)
             });
 
   build-zip:
@@ -243,13 +253,16 @@ jobs:
 
       - name: Upload to Release
         uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ inputs.release_id }}
+          ASSET_NAME: MySpeed.zip
         with:
           script: |
             const fs = require('fs');
             await github.rest.repos.uploadReleaseAsset({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              release_id: ${{ inputs.release_id }},
-              name: 'MySpeed.zip',
-              data: fs.readFileSync('MySpeed.zip')
+              release_id: parseInt(process.env.RELEASE_ID, 10),
+              name: process.env.ASSET_NAME,
+              data: fs.readFileSync(process.env.ASSET_NAME)
             });

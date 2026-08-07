@@ -98,11 +98,22 @@ jobs:
       release_id: ${{ needs.create-release.outputs.release_id }}
     secrets: inherit
 
+  # Tearing the release down is only right when nothing usable came out of it.
+  # create-release failing leaves a bare tag and an empty draft; build-binaries
+  # failing leaves a draft with a platform missing. Neither is salvageable, so
+  # the tag is freed up and the same version can be dispatched again.
+  #
+  # A build-docker or build-msi failure deliberately does not reach here. Every
+  # platform binary is already attached by then and the release is still a draft,
+  # so deleting it would destroy good artifacts over a side channel that can be
+  # retried by hand. report-partial-release says what was left behind instead.
   cleanup-on-failure:
     name: "Cleanup on Failure"
     runs-on: ubuntu-latest
-    needs: [create-release, build-binaries, build-docker, build-msi]
-    if: failure()
+    needs: [create-release, build-binaries]
+    if: |
+      failure()
+      && (needs.create-release.result == 'failure' || needs.build-binaries.result == 'failure')
     steps:
       # Both ids are read through env rather than interpolated into the script
       # body: when create-release fails they are empty, and an empty expression
@@ -142,3 +153,43 @@ jobs:
             } catch (e) {
               console.log('Failed to delete tag:', e.message);
             }
+
+  # The counterpart to cleanup-on-failure: the release survived, so say what is
+  # sitting there and how to get rid of it, rather than leaving an unexplained
+  # draft and a version number that can no longer be dispatched.
+  report-partial-release:
+    name: "Report Partial Release"
+    runs-on: ubuntu-latest
+    needs: [create-release, build-binaries, build-docker, build-msi, finalize-release]
+    if: |
+      failure()
+      && needs.create-release.result == 'success'
+      && needs.build-binaries.result == 'success'
+    steps:
+      - name: Summarise what survived
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+          DOCKER_RESULT: ${{ needs.build-docker.result }}
+          MSI_RESULT: ${{ needs.build-msi.result }}
+          FINALIZE_RESULT: ${{ needs.finalize-release.result }}
+        run: |
+          {
+            echo "### Release v$VERSION kept as a draft"
+            echo
+            echo "Every platform binary built and uploaded, so the release was not deleted."
+            echo
+            echo "| Job | Result |"
+            echo "| :-- | :-- |"
+            echo "| Build Docker | $DOCKER_RESULT |"
+            echo "| Build MSI | $MSI_RESULT |"
+            echo "| Finalize Release | $FINALIZE_RESULT |"
+            echo
+            echo "Fix the failing job and publish the draft by hand, or free the version"
+            echo "number up for another run with:"
+            echo
+            echo '```'
+            echo "gh release delete v$VERSION --cleanup-tag --yes"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::warning::Release v$VERSION was left as a draft with its binaries intact. Tag v$VERSION is now taken - delete it before re-running this version."
