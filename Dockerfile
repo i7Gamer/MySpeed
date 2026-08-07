@@ -1,4 +1,4 @@
-FROM oven/bun:1 AS client-build
+FROM oven/bun:1-alpine AS client-build
 
 WORKDIR /client
 COPY ./client/package.json ./
@@ -6,7 +6,7 @@ RUN bun install
 COPY ./client ./
 RUN bun run build
 
-FROM oven/bun:1 AS server-build
+FROM oven/bun:1-alpine AS server-build
 
 WORKDIR /myspeed
 
@@ -14,15 +14,16 @@ COPY ./server /myspeed/server
 COPY ./scripts /myspeed/scripts
 COPY ./package.json /myspeed/package.json
 
-RUN bun install
+RUN bun install --production
 RUN bun run generate-migrations
 RUN bun run generate-integrations
 
-FROM oven/bun:1
+FROM oven/bun:1-alpine
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    tzdata ca-certificates openssl \
-    && rm -rf /var/lib/apt/lists/*
+# ca-certificates for TLS to the speedtest providers, tzdata so the configured
+# TZ resolves - both are needed at runtime. apk --no-cache leaves no index behind,
+# so there is nothing to purge afterwards.
+RUN apk add --no-cache tzdata ca-certificates
 
 ENV TZ=Etc/UTC
 
