@@ -1,22 +1,52 @@
-name: Dependabot auto-approve
+name: Dependabot auto-merge
+
 on: pull_request
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
-  dependabot:
-    runs-on: ubuntu-latest
+  # The suite has to pass before anything merges.
+  #
+  # This is a job dependency rather than a required status check because the two
+  # cannot coexist here: a required check on `development` also rejects direct
+  # pushes, which is how create_release.yml lands its version bump, and the
+  # GitHub Actions bypass actor that would exempt it is only available to
+  # organisation-owned repositories.
+  test:
     if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'i7Gamer/MySpeed'
+    uses: ./.github/workflows/test.yml
+
+  merge:
+    name: "Auto-merge"
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: write
+      pull-requests: write
+
     steps:
       - name: Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@v3
+        uses: dependabot/fetch-metadata@v2
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
-      - name: Approve a PR
+
+      # Majors carry breaking changes that the suite cannot see - the action
+      # bumps in this repository have needed their changelogs read by hand - so
+      # they wait for a person.
+      - name: Enable auto-merge
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
         run: gh pr merge --auto --merge "$PR_URL"
         env:
-          PR_URL: ${{github.event.pull_request.html_url}}
-          GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Flag the major update for review
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        run: |
+          gh pr comment "$PR_URL" --body \
+            "Tests pass, but this is a **major** version update, so it has not been auto-merged. Read the changelog for breaking changes before merging."
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
