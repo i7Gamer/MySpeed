@@ -21,7 +21,7 @@ jobs:
       # fetch-depth: 0 so the tag list below is complete. The version bump moved
       # to create-release, where it lands before the tag is cut; this job only
       # writes the notes and flips the draft.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: v${{ inputs.version }}
