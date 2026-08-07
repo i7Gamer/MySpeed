@@ -88,6 +88,11 @@ export const api = async (baseUrl, pathname, options = {}) => {
  * bcrypt hash belongs and every comparison then fails.
  */
 export const setConfig = async (config, key, value) => {
+    // "none" is the stored sentinel for "no password configured", not a
+    // password a user may choose, so validateInput refuses it. Writing it
+    // directly is what clearPassword() does.
+    if (key === "password" && value === "none") return await config.clearPassword();
+
     const validated = await config.validateInput(key, value);
     if (typeof validated === "string") throw new Error(`Rejected ${key}: ${validated}`);
 

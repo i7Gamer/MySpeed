@@ -14,7 +14,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
 import React, {useContext, useState} from "react";
-import {baseRequest, patchRequest} from "@/common/utils/RequestUtil";
+import {baseRequest, deleteRequest, patchRequest} from "@/common/utils/RequestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {NodeContext} from "@/common/contexts/Node";
@@ -68,7 +68,12 @@ export const PasswordDialog = ({open, onClose}) => {
 
     const removePassword = async (close) => {
         try {
-            await patchRequest("/config/password", {value: "none"});
+            // Its own endpoint rather than a PATCH carrying "none": that
+            // sentinel is indistinguishable from someone choosing "none" as
+            // their password.
+            const response = await deleteRequest("/config/password");
+            if (!response.ok) throw new Error(`Removing the password failed with status ${response.status}`);
+
             if (currentNode !== 0) {
                 await baseRequest("/nodes/" + currentNode + "/password", "PATCH", {password: "none"});
                 updateNodes();

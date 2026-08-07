@@ -30,6 +30,19 @@ const configDefaults = {
 
 const MAX_RETENTION_DAYS = 10000;
 
+// The value stored when no password is configured. It is a sentinel, not a
+// password: password.js waves every request through when it sees this.
+const NO_PASSWORD = "none";
+
+const PASSWORD_HASH_ROUNDS = 10;
+
+// Tables importConfig replaces wholesale, mapped to the payload key carrying them.
+const IMPORTED_TABLES = [
+    {key: "nodes", model: node},
+    {key: "integrations", model: integration},
+    {key: "recommendations", model: recommendations}
+];
+
 export const insertDefaults = async () => {
     let insert = [];
     for (let key in configDefaults) {
@@ -111,8 +124,16 @@ export const validateInput = async (key, value) => {
     if (key === "ping")
         value = value.toString().split(".")[0];
 
-    if (key === "password" && value !== "none")
-        value = await bcrypt.hash(value, 10);
+    // "none" is the stored sentinel for "no password configured". Letting it
+    // through as a chosen password stored the literal string, which
+    // password.js reads as "unprotected" - the instance was left open while
+    // the API answered "successfully updated".
+    if (key === "password") {
+        if (value === NO_PASSWORD)
+            return "This password cannot be used. Use the remove button to clear the password instead";
+
+        value = await bcrypt.hash(value, PASSWORD_HASH_ROUNDS);
+    }
 
     if (key === "cron" && !cron.isValidCron(value.toString()))
         return "Not a valid cron expression";
@@ -124,12 +145,12 @@ export const validateInput = async (key, value) => {
         return "The provided interface does not exist";
 
     if (key === "retentionDays") {
-        if (/[^0-9-]/.test(value.toString()))
+        // Anchored: a bare [^0-9-] character check also passed "5-3", which
+        // parseInt then quietly read as 5.
+        if (!/^-?[0-9]+$/.test(value.toString()))
             return "You need to provide a number in order to change this";
 
         const num = parseInt(value);
-        if (isNaN(num))
-            return "You need to provide a valid number";
 
         if (num <= 0) {
             value = "0";
@@ -149,6 +170,9 @@ export const validateInput = async (key, value) => {
     return {value: value};
 }
 
+/** Clears the password. The only way back to the unprotected sentinel. */
+export const clearPassword = async () => await updateValue("password", NO_PASSWORD);
+
 export const exportConfig = async () => {
     let obj = {};
     obj.config = {};
@@ -167,41 +191,79 @@ export const exportConfig = async () => {
     return obj;
 }
 
+/**
+ * Every export carries all three tables, so an absent key means a truncated or
+ * hand-edited file rather than "this table is empty" - and reading it as the
+ * latter would delete the very rows the import was meant to restore.
+ */
+const asRows = (value) => Array.isArray(value) ? value : null;
+
+/**
+ * Replaces the stored configuration with an exported one.
+ *
+ * The whole payload is checked before a single row is touched, and the
+ * replacement runs in one transaction. Previously the three tables were
+ * emptied first and validated afterwards, so a payload missing so much as the
+ * `nodes` key destroyed every node, integration and recommendation with no way
+ * back - there is no soft delete and nothing else holds a copy.
+ */
 export const importConfig = async (obj) => {
-    let configValues = obj.config;
-    for (let key in configValues) {
-        if (configDefaults[key] === undefined) continue
-        if (key === "password") continue;
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
 
-        const validate = await validateInput(key, configValues[key]);
-        if (Object.keys(validate).length !== 1) return false;
-
-        if (key === "cron") {
-            timer.stopTimer();
-            timer.startTimer(configValues[key].toString());
-        }
-
-        await config.update({value: validate.value}, {where: {key: key}});
+    const rows = {};
+    for (const {key} of IMPORTED_TABLES) {
+        const value = asRows(obj[key]);
+        if (value === null) return false;
+        rows[key] = value;
     }
 
-    if (recommendations.length > 1) return false;
+    try {
+        rows.integrations = rows.integrations.map((entry) => ({
+            ...entry,
+            // A current export carries `data` as an object already; only older
+            // exports store it as a JSON string.
+            data: typeof entry?.data === "string" ? JSON.parse(entry.data) : entry?.data
+        }));
+    } catch {
+        return false;
+    }
 
-    await node.destroy({where: {}});
-    await recommendations.destroy({where: {}});
-    await integration.destroy({where: {}});
+    const updates = [];
+    for (const key in obj.config ?? {}) {
+        if (configDefaults[key] === undefined || key === "password") continue;
+
+        // A value already at its default needs no write, which also keeps a
+        // round-tripped export importable: several defaults are sentinels that
+        // validateInput deliberately refuses as user input.
+        if (obj.config[key] === configDefaults[key]) continue;
+
+        const validated = await validateInput(key, obj.config[key]);
+        if (typeof validated === "string") return false;
+
+        updates.push({key, value: validated.value});
+    }
 
     try {
-        await node.bulkCreate(obj.nodes);
+        await db.transaction(async (transaction) => {
+            for (const {key, value} of updates)
+                await config.update({value}, {where: {key}, transaction});
 
-        for (let i = 0; i < obj.integrations.length; i++) {
-            obj.integrations[i].data = JSON.parse(obj.integrations[i].data);
-        }
+            for (const {model} of IMPORTED_TABLES)
+                await model.destroy({where: {}, transaction});
 
-        await integration.bulkCreate(obj.integrations);
-
-        await recommendations.bulkCreate(obj.recommendations);
+            for (const {key, model} of IMPORTED_TABLES)
+                await model.bulkCreate(rows[key], {transaction});
+        });
     } catch (e) {
         return false;
+    }
+
+    // Restarting the scheduler is not something a transaction can roll back, so
+    // it only happens once the import has actually committed.
+    const cron = updates.find((update) => update.key === "cron");
+    if (cron) {
+        timer.stopTimer();
+        timer.startTimer(cron.value.toString());
     }
 
     return true;

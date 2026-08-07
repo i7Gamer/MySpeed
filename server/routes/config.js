@@ -21,6 +21,17 @@ app.get("/", password(true), async (req, res) => {
     res.json(configValues);
 });
 
+// Clearing the password is its own operation. It used to be a PATCH carrying
+// the sentinel "none", which meant a user who chose that as their password
+// silently unprotected the instance instead.
+app.delete("/password", password(false), async (req, res) => {
+    if (process.env.PREVIEW_MODE === "true")
+        return res.status(400).json({message: "You can't change the password in preview mode"});
+
+    await config.clearPassword();
+    res.json({message: "The password has been successfully removed"});
+});
+
 app.patch("/:key", password(false), async (req, res) => {
     const value = await config.validateInput(req.params.key, req.body?.value);
     if (Object.keys(value).length !== 1) return res.status(400).json({message: value});
