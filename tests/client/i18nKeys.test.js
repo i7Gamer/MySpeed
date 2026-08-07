@@ -97,15 +97,53 @@ describe("i18n keys", () => {
             });
         }
 
-        it("never leaves a translated string with a broken placeholder", () => {
+        /**
+         * Checking only that "{{" and "}}" both appear somewhere in the string
+         * passed a real defect: da.json carried "<Bold>{{down} Mbps</Bold>"
+         * alongside a correct "{{up}}", so the string was balanced overall
+         * while i18next rendered that sentence with the placeholder intact.
+         */
+        const eachString = function* () {
             for (const file of locales) {
                 const translated = readLocale(path.basename(file, ".json"));
                 for (const key of flatten(translated)) {
                     const value = key.split(".").reduce((node, part) => node?.[part], translated);
-                    if (typeof value !== "string") continue;
-                    assert.equal(value.includes("{{"), value.includes("}}"),
-                        `${file}: ${key} has an unbalanced interpolation`);
+                    if (typeof value === "string") yield {file, key, value};
                 }
+            }
+        };
+
+        it("never leaves a translated string with a broken placeholder", () => {
+            for (const {file, key, value} of eachString())
+                assert.equal(value.includes("{{"), value.includes("}}"),
+                    `${file}: ${key} has an unbalanced interpolation`);
+        });
+
+        it("closes every individual placeholder", () => {
+            for (const {file, key, value} of eachString()) {
+                // Every "{{" has to be followed by a name and "}}" before the
+                // next "{{" begins.
+                const opened = (value.match(/\{\{/g) ?? []).length;
+                const wellFormed = (value.match(/\{\{[^{}]*}}/g) ?? []).length;
+
+                assert.equal(wellFormed, opened, `${file}: ${key} has a malformed placeholder in "${value}"`);
+            }
+        });
+
+        it("uses only placeholder names that the english source also uses", () => {
+            const english = readLocale("en");
+            const names = (value) => new Set((value.match(/\{\{([^{}]*)}}/g) ?? []).map((match) => match.slice(2, -2).trim()));
+
+            for (const {file, key, value} of eachString()) {
+                if (file === "en.json") continue;
+
+                const source = key.split(".").reduce((node, part) => node?.[part], english);
+                if (typeof source !== "string") continue;
+
+                const expected = names(source);
+                for (const name of names(value))
+                    assert.ok(expected.has(name),
+                        `${file}: ${key} interpolates "${name}", which en.json does not provide`);
             }
         });
     });

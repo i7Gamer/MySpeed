@@ -275,7 +275,7 @@
     "deleted": "Testen er blevet slettet",
     "average": {
       "title": "Gennemsnitlig hastighed",
-      "description": "<Bold>{{amount}}</Bold> tests har vist, at der den <Bold>{{date}}</Bold> blev opnået en gennemsnitlig download-hastighed på <Bold>{{down} Mbps</Bold> og en upload-hastighed på <Bold>{{up}} Mbps</Bold>. Testene tog i gennemsnit <Bold>{{duration}} sekunder</Bold>."
+      "description": "<Bold>{{amount}}</Bold> tests har vist, at der den <Bold>{{date}}</Bold> blev opnået en gennemsnitlig download-hastighed på <Bold>{{down}} Mbps</Bold> og en upload-hastighed på <Bold>{{up}} Mbps</Bold>. Testene tog i gennemsnit <Bold>{{duration}} sekunder</Bold>."
     },
     "result": {
       "title": "Testresultat",
