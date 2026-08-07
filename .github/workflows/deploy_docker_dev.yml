@@ -1,7 +1,11 @@
-name: Deploy Development Release to DockerHub
+name: Publish latest to DockerHub
 
-# Manual only: this publishes i7gamer/myspeed:development to Docker Hub, which
-# should be a deliberate act rather than a side effect of every push.
+# Manual only: this publishes i7gamer/myspeed:latest to Docker Hub, which should
+# be a deliberate act rather than a side effect of every push.
+#
+# Note that the release chain (build-docker.yml) also tags :latest, and does so
+# as a multi-arch manifest covering amd64 and arm64. Running this workflow after
+# a release replaces that manifest with the amd64-only image built here.
 on:
   workflow_dispatch:
 
@@ -47,6 +51,6 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64
-          tags: i7gamer/myspeed:development
+          tags: i7gamer/myspeed:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
