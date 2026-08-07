@@ -28,6 +28,12 @@ const hasSSLCerts = () => fs.existsSync(certPath) && fs.existsSync(keyPath);
 
 process.on('uncaughtException', err => errorHandler(err));
 
+// Node terminates the process on an unhandled rejection. Several background
+// tasks deliberately do not await their promise, so without this a single
+// failing integration or scheduled test takes the whole server down.
+process.on('unhandledRejection', reason =>
+    errorHandler(reason instanceof Error ? reason : new Error(String(reason))));
+
 const run = async () => {
     await runMigrations();
 
@@ -41,11 +47,13 @@ const run = async () => {
     await config.insertDefaults();
 
     timerTask.startTimer(await config.getValue("cron"));
-    setInterval(async () => removeOld(), RETENTION_SWEEP_INTERVAL);
+    setInterval(() => removeOld().catch(err =>
+        console.error(`Could not apply the retention policy: ${err?.message ?? err}`)), RETENTION_SWEEP_INTERVAL);
 
     integrationTask.startTimer();
     if (process.env.RUN_TEST_ON_STARTUP === "true") {
-        timerTask.runTask().then(undefined);
+        timerTask.runTask().catch(err =>
+            console.error(`The startup speedtest failed: ${err?.message ?? err}`));
     }
 
     app.listen(port, () => console.log(`Server listening on port ${port}`));
@@ -68,7 +76,13 @@ const run = async () => {
 
 db.authenticate().then(() => {
     console.log("Successfully connected to the database " + (process.env.DB_TYPE === "mysql" ? "server" : "file"));
-    run().then(undefined);
+    // Startup is not optional: a failure here leaves a listening server with no
+    // migrations, no defaults and no scheduler, which is worse than not
+    // starting at all.
+    run().catch(err => {
+        console.error("The server could not finish starting up: " + (err?.message ?? err));
+        process.exit(112);
+    });
 }).catch(err => {
     console.error("Could not open the database file. Maybe it is damaged?: " + err.message);
     process.exit(111);
