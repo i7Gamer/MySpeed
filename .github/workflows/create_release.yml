@@ -79,9 +79,18 @@ jobs:
         id: sha
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
-      # Creates the tag at the bumped commit, since no tag was pushed. Everything
-      # downstream builds from this tag rather than from the dispatched ref, so
-      # the artifacts and the version they report come from the same commit.
+      # The tag has to be pushed here, with git. A draft release carries a tag_name
+      # but does not create the ref: GitHub only creates it when the release is
+      # published, which is finalize-release - long after every build job has tried
+      # to check the tag out and failed. Releases only ever succeeded when a tag
+      # left over from an earlier attempt happened to still be there.
+      - name: Push release tag
+        run: |
+          git tag "${{ steps.get_version.outputs.tag }}" "${{ steps.sha.outputs.sha }}"
+          git push origin "${{ steps.get_version.outputs.tag }}"
+
+      # Everything downstream builds from this tag rather than from the dispatched
+      # ref, so the artifacts and the version they report come from the same commit.
       - name: Create GitHub Release
         id: create_release
         uses: softprops/action-gh-release@v2
