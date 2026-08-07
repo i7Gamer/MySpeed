@@ -4,14 +4,12 @@ import React, { useEffect, useState } from "react";
 import { t } from "i18next";
 import {
   faGlobe,
-  faHeart,
   faLanguage,
-  faDollarSign,
 } from "@fortawesome/free-solid-svg-icons";
 import { faGithub } from "@fortawesome/free-brands-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { jsonRequest } from "@/common/utils/RequestUtil";
-import { PROJECT_URL, WEB_URL, DONATION_URL } from "@/index";
+import { PROJECT_URL, WEB_URL } from "@/index";
 
 export const AboutDialog = ({ open, onClose }) => {
   const [version, setVersion] = useState("");
@@ -29,7 +27,6 @@ export const AboutDialog = ({ open, onClose }) => {
       label: t("about.translate"),
       url: "https://crowdin.com/project/myspeed",
     },
-    { icon: faDollarSign, label: t("about.donate"), url: DONATION_URL },
   ];
 
   return (
@@ -62,18 +59,6 @@ export const AboutDialog = ({ open, onClose }) => {
                 ))}
               </div>
 
-              <div className="about-footer">
-                <span>{t("about.made_by")}</span>
-                <FontAwesomeIcon icon={faHeart} />
-                <span>by</span>
-                <a
-                  href="https://github.com/gnmyt"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  GNMYT
-                </a>
-              </div>
             </div>
           </DialogBody>
         </>

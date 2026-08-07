@@ -15,7 +15,7 @@ export const shared = defineConfig({
     ],
 
     sitemap: {
-        hostname: 'https://myspeed.gnmyt.dev',
+        hostname: 'https://docs.myspeed.dev',
         transformItems(items) {
             return items.filter((item) => !item.url.includes('migration'))
         }
@@ -29,20 +29,19 @@ export const shared = defineConfig({
         ['meta', { property: 'og:locale', content: 'en' }],
         ['meta', { property: 'og:title', content: 'MySpeed | Self-hosted speedtest analysis software' }],
         ['meta', { property: 'og:site_name', content: 'MySpeed' }],
-        ['meta', { property: 'og:image', content: 'https://myspeed.gnmyt.dev/assets/images/thumbnail.png' }],
-        ['meta', { property: 'og:url', content: 'https://myspeed.gnmyt.dev/' }]
+        ['meta', { property: 'og:image', content: 'https://docs.myspeed.dev/assets/images/thumbnail.png' }],
+        ['meta', { property: 'og:url', content: 'https://docs.myspeed.dev/' }]
     ],
     themeConfig: {
         logo: '/logo.png',
         footer: {
-            copyright: '© 2026 Mathias Wagner',
+            copyright: '© 2022 Mathias Wagner · © 2026 Timo',
         },
         search: {
             provider: 'local'
         },
         socialLinks: [
-            {icon: 'github', link: 'https://github.com/i7Gamer/MySpeed'},
-            {icon: 'discord', link: 'https://discord.com/users/386242172632170496'}
+            {icon: 'github', link: 'https://github.com/i7Gamer/MySpeed'}
         ],
     }
 })
