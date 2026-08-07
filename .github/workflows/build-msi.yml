@@ -21,12 +21,6 @@ jobs:
           name: MySpeed-windows-x64.exe
           path: ./installer
 
-      - name: Download build folder
-        uses: actions/download-artifact@v4
-        with:
-          name: build-folder
-          path: ./installer/build
-
       - name: Download WinSW service wrapper
         run: |
           Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/v3.0.0-alpha.11/WinSW-x64.exe" -OutFile "installer\MySpeedService.exe"
@@ -76,16 +70,16 @@ jobs:
           
               <Feature Id="ProductFeature" Title="MySpeed" Level="1">
                 <ComponentGroupRef Id="ProductComponents" />
-                <ComponentGroupRef Id="BuildFilesGroup" />
                 <ComponentRef Id="DataFolder" />
                 <ComponentRef Id="LogsFolderComponent" />
               </Feature>
           
               <Directory Id="TARGETDIR" Name="SourceDir">
+                <!-- No client build folder: MySpeed.exe embeds the client, and the
+                     server only prefers an on-disk build/ when one sits in its working
+                     directory - which is now ProgramData, not the install directory. -->
                 <Directory Id="ProgramFiles64Folder">
-                  <Directory Id="INSTALLFOLDER" Name="MySpeed">
-                    <Directory Id="BUILDFOLDER" Name="build" />
-                  </Directory>
+                  <Directory Id="INSTALLFOLDER" Name="MySpeed" />
                 </Directory>
 
                 <!-- The database and the logs are written at runtime, so they do not
@@ -152,9 +146,8 @@ jobs:
       - name: Build MSI
         working-directory: installer
         run: |
-          heat dir build -cg BuildFilesGroup -gg -scom -sreg -sfrag -srd -dr BUILDFOLDER -var var.BuildSourceDir -out build-files.wxs
-          candle -arch x64 myspeed.wxs build-files.wxs -dBuildSourceDir=build
-          light myspeed.wixobj build-files.wixobj -o MySpeed-installer.msi
+          candle -arch x64 myspeed.wxs
+          light myspeed.wixobj -o MySpeed-installer.msi
 
       - name: Upload to Release
         uses: actions/github-script@v7
