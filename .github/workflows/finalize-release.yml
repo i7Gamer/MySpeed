@@ -18,26 +18,13 @@ jobs:
     name: "Update Versions & Publish"
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 so the tag list below is complete. The version bump moved
+      # to create-release, where it lands before the tag is cut; this job only
+      # writes the notes and flips the draft.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update version files
-        run: |
-          V="${{ inputs.version }}"
-          jq ".version = \"$V\"" package.json > tmp && mv tmp package.json
-          jq ".version = \"$V\"" client/package.json > tmp && mv tmp client/package.json
-
-      - name: Commit and push version bump
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json client/package.json
-          if ! git diff --staged --quiet; then
-            git commit -m "chore: bump version to ${{ inputs.version }}"
-            git push origin HEAD:${{ github.event.repository.default_branch }}
-          fi
+          ref: v${{ inputs.version }}
 
       - name: Get previous tag
         id: prev

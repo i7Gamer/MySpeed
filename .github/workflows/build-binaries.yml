@@ -1,5 +1,9 @@
 name: Build Binaries
 
+# Every job checks out v<version> rather than the dispatched ref. create-release
+# pushes the version bump and then cuts the tag at that commit, so the tag is the
+# only ref where package.json already carries the version being released - and
+# that value is compiled into the binaries by server/routes/system.js.
 on:
   workflow_call:
     inputs:
@@ -17,6 +21,8 @@ jobs:
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -97,6 +103,8 @@ jobs:
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -165,6 +173,8 @@ jobs:
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -222,6 +232,8 @@ jobs:
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
