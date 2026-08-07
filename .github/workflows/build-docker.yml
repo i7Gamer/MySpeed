@@ -1,9 +1,18 @@
 name: Build Docker
 
+# Both the release chain and the manual deploy go through here, so every image
+# that reaches Docker Hub is a multi-arch manifest built on native runners. An
+# amd64-only push would replace that manifest and leave arm64 hosts pulling an
+# image they can only run under emulation.
 on:
   workflow_call:
     inputs:
-      version:
+      ref:
+        description: "Git ref to build from"
+        required: true
+        type: string
+      tags:
+        description: "Newline-separated tags to publish, without the image name"
         required: true
         type: string
 
@@ -24,12 +33,10 @@ jobs:
             runner: ubuntu-24.04-arm
 
     steps:
-      # The release tag, not the dispatched ref: it is the commit whose
-      # package.json already carries the version being released.
       - name: Checkout project
         uses: actions/checkout@v4
         with:
-          ref: v${{ inputs.version }}
+          ref: ${{ inputs.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -112,10 +119,29 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # One manifest list carrying both per-arch digests, published under every
+      # requested tag at once. Each tag therefore points at the same multi-arch
+      # manifest rather than at whichever architecture was pushed last.
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests
+        env:
+          TAGS: ${{ inputs.tags }}
         run: |
-          docker buildx imagetools create \
-            -t ${{ env.REGISTRY_IMAGE }}:latest \
-            -t ${{ env.REGISTRY_IMAGE }}:${{ inputs.version }} \
-            $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
+          tag_args=()
+          while IFS= read -r tag; do
+            tag="${tag//[[:space:]]/}"
+            [ -n "$tag" ] || continue
+            tag_args+=(-t "${REGISTRY_IMAGE}:${tag}")
+          done <<< "$TAGS"
+
+          if [ ${#tag_args[@]} -eq 0 ]; then
+            echo "::error::No tags to publish."
+            exit 1
+          fi
+
+          digest_args=()
+          for digest in *; do
+            digest_args+=("${REGISTRY_IMAGE}@sha256:${digest}")
+          done
+
+          docker buildx imagetools create "${tag_args[@]}" "${digest_args[@]}"

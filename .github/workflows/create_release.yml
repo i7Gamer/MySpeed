@@ -106,7 +106,10 @@ jobs:
     needs: create-release
     uses: ./.github/workflows/build-docker.yml
     with:
-      version: ${{ needs.create-release.outputs.version }}
+      ref: v${{ needs.create-release.outputs.version }}
+      tags: |
+        latest
+        ${{ needs.create-release.outputs.version }}
     secrets: inherit
 
   build-msi:
