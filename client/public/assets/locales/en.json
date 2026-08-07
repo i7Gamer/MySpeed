@@ -316,6 +316,12 @@
   "statistics": {
     "average": "Average",
     "downsampled": "Averaged · showing {{shown}} of {{total}} tests",
+    "detail": {
+      "title": "Full resolution",
+      "description": "Show up to {{max}} data points instead of averaging them",
+      "complete": "Every test in this range is already shown",
+      "loading": "Loading the full series…"
+    },
     "export": {
       "button": "Export"
     },

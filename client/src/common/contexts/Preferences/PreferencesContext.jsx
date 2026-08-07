@@ -11,7 +11,10 @@ const STORAGE_KEY = "preferences";
 const DEFAULTS = {
     timeFormat: TIME_FORMAT_24H,
     speedUnit: SPEED_UNIT_MBPS,
-    defaultTimeframe: DEFAULT_TIMEFRAME
+    defaultTimeframe: DEFAULT_TIMEFRAME,
+    // Off by default: the extra resolution costs a second request and is only
+    // worth it when the reader is chasing something specific.
+    fullChartDetail: false
 };
 
 const loadPreferences = () => {

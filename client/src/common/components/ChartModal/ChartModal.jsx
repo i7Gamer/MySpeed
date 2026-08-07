@@ -3,7 +3,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faXmark } from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
 
-export const ChartModal = ({ isOpen, onClose, isChart = false, children }) => {
+export const ChartModal = ({ isOpen, onClose, isChart = false, toolbar, children }) => {
     const handleEscape = useCallback((e) => {
         if (e.key === "Escape") {
             onClose();
@@ -38,6 +38,10 @@ export const ChartModal = ({ isOpen, onClose, isChart = false, children }) => {
                 <div className={`chart-modal-body${isChart ? ' modal-body-chart' : ''}`}>
                     {children}
                 </div>
+                {/* Below the chart rather than beside the close button: the
+                    header strip is only as wide as the title leaves it, and a
+                    control there collides with it on a narrow viewport. */}
+                {toolbar && <div className="chart-modal-toolbar">{toolbar}</div>}
             </div>
         </div>
     );

@@ -5,6 +5,7 @@ import { ThemeContext } from "@/common/contexts/Theme";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { TIME_FORMAT_12H } from "@/common/utils/FormatUtil";
 import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
+import { lineTensionFor, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
 import "./SpeedChart/styles.sass";
 
 const PingChart = memo(({ compact = false, ...props }) => {
@@ -59,6 +60,14 @@ const PingChart = memo(({ compact = false, ...props }) => {
     }, [filteredData]);
 
     const hasFailedTests = useMemo(() => failedMarkerData.some(v => v !== null), [failedMarkerData]);
+
+    // The detail view can request far more points than the card ever shows, so
+    // the marker size follows the series length rather than the layout.
+    const pointStyle = useMemo(() => pointStyleFor(filteredData.labels.length, {compact}),
+        [filteredData.labels.length, compact]);
+
+    const lineTension = useMemo(() => lineTensionFor(filteredData.labels.length),
+        [filteredData.labels.length]);
 
     const themeColors = useMemo(() => ({
         gridColor: isDarkMode ? 'rgba(42, 52, 65, 0.6)' : 'rgba(203, 213, 225, 0.8)',
@@ -191,16 +200,16 @@ const PingChart = memo(({ compact = false, ...props }) => {
         },
         elements: {
             line: {
-                tension: 0.35,
+                tension: lineTension,
                 borderWidth: 2.5
             },
             point: {
-                radius: compact ? 0 : 3,
-                hoverRadius: compact ? 0 : 6,
+                radius: pointStyle.radius,
+                hoverRadius: pointStyle.hoverRadius,
                 hoverBorderWidth: 2
             }
         }
-    }), [themeColors, filteredData.labels, filteredData.errors, filteredData.failed, filteredData.isSingleDay, compact, use12h]);
+    }), [themeColors, filteredData.labels, filteredData.errors, filteredData.failed, filteredData.isSingleDay, pointStyle, lineTension, use12h]);
 
     const chartData = useMemo(() => ({
         labels: filteredData.labels,
@@ -219,8 +228,8 @@ const PingChart = memo(({ compact = false, ...props }) => {
                 fill: true,
                 pointBackgroundColor: 'hsl(38, 92%, 50%)',
                 pointBorderColor: 'hsl(38, 92%, 50%)',
-                pointRadius: compact ? 0 : 3,
-                pointHoverRadius: compact ? 0 : 5,
+                pointRadius: pointStyle.radius,
+                pointHoverRadius: pointStyle.hoverRadius,
                 spanGaps: true,
                 order: 1
             },
@@ -238,8 +247,8 @@ const PingChart = memo(({ compact = false, ...props }) => {
                 fill: true,
                 pointBackgroundColor: 'hsl(280, 70%, 55%)',
                 pointBorderColor: 'hsl(280, 70%, 55%)',
-                pointRadius: compact ? 0 : 3,
-                pointHoverRadius: compact ? 0 : 5,
+                pointRadius: pointStyle.radius,
+                pointHoverRadius: pointStyle.hoverRadius,
                 spanGaps: true,
                 order: 2
             }] : []),
@@ -271,7 +280,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
                 order: 0
             }] : [])
         ],
-    }), [filteredData, compact, hasJitterData, hasFailedTests, failedMarkerData]);
+    }), [filteredData, compact, pointStyle, hasJitterData, hasFailedTests, failedMarkerData]);
 
     return (
         <div className="chart-container ping-chart" onClick={props.onClick}>

@@ -5,6 +5,7 @@ import { ThemeContext } from "@/common/contexts/Theme";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { convertSpeed, getSpeedUnit, TIME_FORMAT_12H } from "@/common/utils/FormatUtil";
 import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
+import { lineTensionFor, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
 import "./styles.sass";
 
 export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClick, failed, errors, compact = false, downsampled, dataPoints, rawDataPoints }) => {
@@ -48,6 +49,14 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClic
             filteredData.failed[index] ? 0 : null
         );
     }, [filteredData]);
+
+    // The detail view can request far more points than the card ever shows, so
+    // the marker size follows the series length rather than the layout.
+    const pointStyle = useMemo(() => pointStyleFor(filteredData.labels.length, {compact}),
+        [filteredData.labels.length, compact]);
+
+    const lineTension = useMemo(() => lineTensionFor(filteredData.labels.length),
+        [filteredData.labels.length]);
 
     const themeColors = useMemo(() => ({
         gridColor: isDarkMode ? 'rgba(42, 52, 65, 0.6)' : 'rgba(203, 213, 225, 0.8)',
@@ -181,16 +190,16 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClic
         },
         elements: {
             line: {
-                tension: 0.35,
+                tension: lineTension,
                 borderWidth: 2.5
             },
             point: {
-                radius: compact ? 0 : 3,
-                hoverRadius: compact ? 0 : 6,
+                radius: pointStyle.radius,
+                hoverRadius: pointStyle.hoverRadius,
                 hoverBorderWidth: 2
             }
         }
-    }), [themeColors, filteredData.labels, filteredData.errors, filteredData.failed, filteredData.isSingleDay, compact, speedUnit, use12h]);
+    }), [themeColors, filteredData.labels, filteredData.errors, filteredData.failed, filteredData.isSingleDay, pointStyle, lineTension, speedUnit, use12h]);
 
     const hasFailedTests = useMemo(() => failedMarkerData.some(v => v !== null), [failedMarkerData]);
 
@@ -211,8 +220,8 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClic
                 fill: true,
                 pointBackgroundColor: color,
                 pointBorderColor: color,
-                pointRadius: compact ? 0 : 3,
-                pointHoverRadius: compact ? 0 : 5,
+                pointRadius: pointStyle.radius,
+                pointHoverRadius: pointStyle.hoverRadius,
                 spanGaps: true,
                 order: 1
             },
@@ -244,7 +253,7 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClic
                 order: 0
             }] : [])
         ],
-    }), [filteredData, color, titleKey, compact, hasFailedTests, failedMarkerData]);
+    }), [filteredData, color, titleKey, compact, pointStyle, hasFailedTests, failedMarkerData]);
 
     return (
         <div className="chart-container" onClick={onClick}>

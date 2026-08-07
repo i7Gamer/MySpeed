@@ -21,13 +21,19 @@ app.get("/", password(true), async (req, res) => {
 });
 
 app.get("/statistics", password(true), async (req, res) => {
-    const { from, to, tzOffset } = req.query;
+    const { from, to, tzOffset, points } = req.query;
     const range = parseDateRange(from, to, { offsetMinutes: tzOffset });
     if (!range.valid) {
         return res.status(400).json({ message: range.message });
     }
 
-    res.json(await tests.listStatistics(range, { offsetMinutes: tzOffset }));
+    // Same digits-only guard as `limit` above. Out-of-range values are clamped
+    // rather than refused - asking for more detail than exists is a reasonable
+    // request, and the answer is simply every point there is.
+    if (points !== undefined && /[^0-9]/.test(points))
+        return res.status(400).json({message: "You need to provide a correct number in the points parameter"});
+
+    res.json(await tests.listStatistics(range, { offsetMinutes: tzOffset, maxPoints: points }));
 });
 
 app.get("/export", password(true), async (req, res) => {

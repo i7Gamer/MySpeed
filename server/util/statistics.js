@@ -2,6 +2,28 @@ import { mapFixed, mapRounded } from './helpers.js';
 
 export const TARGET_CHART_POINTS = 300;
 
+/**
+ * How far the client may push the resolution of a chart.
+ *
+ * 300 points keeps the default payload small and the line readable. A reader
+ * chasing a specific dip wants every test instead, so the ceiling is high
+ * enough to cover a month of five-minute testing while still bounding both the
+ * response size and the bucket array allocated below.
+ */
+export const MIN_CHART_POINTS = 50;
+export const MAX_CHART_POINTS = 1000;
+
+const clampPoints = (value) => {
+    // Number(null) and Number("") are both 0, which would read as a deliberate
+    // request for the lowest resolution rather than as no request at all.
+    if (value === null || value === undefined || value === "") return TARGET_CHART_POINTS;
+
+    const points = Number(value);
+    if (!Number.isFinite(points)) return TARGET_CHART_POINTS;
+
+    return Math.min(Math.max(Math.trunc(points), MIN_CHART_POINTS), MAX_CHART_POINTS);
+};
+
 const HOURS_PER_DAY = 24;
 const MS_PER_MINUTE = 60 * 1000;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -83,14 +105,14 @@ const fullSeries = (sorted) => ({
     }
 });
 
-const downsampledSeries = (sorted, from, to) => {
-    const bucketSize = (to.getTime() - from.getTime()) / TARGET_CHART_POINTS;
-    const buckets = Array.from({length: TARGET_CHART_POINTS}, () => ({entries: [], errors: []}));
+const downsampledSeries = (sorted, from, to, targetPoints) => {
+    const bucketSize = (to.getTime() - from.getTime()) / targetPoints;
+    const buckets = Array.from({length: targetPoints}, () => ({entries: [], errors: []}));
 
     sorted.forEach(entry => {
         const offset = new Date(entry.created).getTime() - from.getTime();
-        const index = Math.min(Math.floor(offset / bucketSize), TARGET_CHART_POINTS - 1);
-        if (index < 0 || index >= TARGET_CHART_POINTS) return;
+        const index = Math.min(Math.floor(offset / bucketSize), targetPoints - 1);
+        if (index < 0 || index >= targetPoints) return;
 
         buckets[index].entries.push(entry);
         if (entry.error !== null) buckets[index].errors.push(entry.error);
@@ -135,16 +157,19 @@ const downsampledSeries = (sorted, from, to) => {
  *
  * @param entries rows already restricted to the requested range, any order
  * @param range   {from, to} Date boundaries, used for bucketing and the echo
- * @param options {offsetMinutes} client UTC offset for hour-of-day bucketing
+ * @param options {offsetMinutes} client UTC offset for hour-of-day bucketing,
+ *                {maxPoints} requested chart resolution, clamped to the range
+ *                the constants above allow
  */
-export const buildStatistics = (entries, {from, to}, {offsetMinutes} = {}) => {
+export const buildStatistics = (entries, {from, to}, {offsetMinutes, maxPoints} = {}) => {
     const offset = Number(offsetMinutes);
+    const targetPoints = clampPoints(maxPoints);
     const succeeded = entries.filter(entry => entry.error === null);
     const sorted = [...entries].sort((a, b) => new Date(a.created) - new Date(b.created));
 
-    const series = sorted.length <= TARGET_CHART_POINTS
+    const series = sorted.length <= targetPoints
         ? fullSeries(sorted)
-        : downsampledSeries(sorted, from, to);
+        : downsampledSeries(sorted, from, to, targetPoints);
 
     const withJitter = succeeded.filter(entry => entry.jitter !== null && entry.jitter !== undefined);
 
@@ -173,7 +198,10 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes} = {}) => {
         },
         dataPoints: series.labels.length,
         rawDataPoints: entries.length,
-        downsampled: entries.length > TARGET_CHART_POINTS,
+        downsampled: entries.length > targetPoints,
+        // Echoed so the client can tell "you are already seeing every test"
+        // apart from "there is more detail available if you ask for it".
+        maxDataPoints: targetPoints,
         dateRange: {
             days: Math.ceil((to - from) / MS_PER_DAY)
         }

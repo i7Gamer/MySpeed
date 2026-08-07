@@ -58,6 +58,49 @@ describe("GET /api/speedtests/statistics", () => {
         it("accepts a valid range", async () => {
             assert.equal((await statistics("from=2026-08-01&to=2026-08-07")).status, 200);
         });
+
+        it("rejects a non-numeric point count", async () => {
+            const {status, body} = await statistics("from=2026-08-01&to=2026-08-07&points=abc");
+            assert.equal(status, 400);
+            assert.match(body.message, /points parameter/);
+        });
+
+        it("treats an empty point count as no request at all", async () => {
+            const {status, body} = await statistics("from=2026-08-01&to=2026-08-07&points=");
+            assert.equal(status, 200);
+            assert.equal(body.maxDataPoints, 300);
+        });
+    });
+
+    describe("chart resolution", () => {
+        // One test a minute for six hours: comfortably past the default of 300,
+        // comfortably inside the ceiling of 1000.
+        const seedMany = () => seedTests(server.tests, Array.from({length: 360}, (unused, index) =>
+            at(new Date(Date.UTC(2026, 7, 5, 0, index)).toISOString())));
+
+        it("buckets the series by default", async () => {
+            await seedMany();
+
+            const {body} = await statistics("from=2026-08-05&to=2026-08-05&tzOffset=0");
+            assert.equal(body.downsampled, true);
+            assert.equal(body.rawDataPoints, 360);
+            assert.ok(body.labels.length <= 300);
+        });
+
+        it("returns one point per test when asked for enough", async () => {
+            await seedMany();
+
+            const {body} = await statistics("from=2026-08-05&to=2026-08-05&tzOffset=0&points=1000");
+            assert.equal(body.downsampled, false);
+            assert.equal(body.labels.length, 360);
+            assert.equal(body.data.download.length, 360);
+        });
+
+        it("clamps a request beyond the ceiling instead of refusing it", async () => {
+            const {status, body} = await statistics("from=2026-08-01&to=2026-08-07&points=99999999");
+            assert.equal(status, 200);
+            assert.equal(body.maxDataPoints, 1000);
+        });
     });
 
     describe("aggregation", () => {

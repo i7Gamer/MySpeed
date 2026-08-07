@@ -316,6 +316,12 @@
   "statistics": {
     "average": "Durchschnitt",
     "downsampled": "Gemittelt · {{shown}} von {{total}} Tests",
+    "detail": {
+      "title": "Volle Auflösung",
+      "description": "Bis zu {{max}} Datenpunkte anzeigen, statt sie zu mitteln",
+      "complete": "In diesem Zeitraum werden bereits alle Tests angezeigt",
+      "loading": "Vollständige Datenreihe wird geladen…"
+    },
     "export": {
       "button": "Exportieren"
     },

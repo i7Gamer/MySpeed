@@ -191,6 +191,33 @@ $modal-breakpoint-tall: 900px
         p
           font-size: 1.1rem
 
+.chart-modal-toolbar
+  display: flex
+  align-items: center
+  gap: 0.85rem
+  padding: 0.9rem 1.25rem
+  border-top: 1px solid $light-gray
+  background-color: $darker-gray
+
+.chart-detail-toggle
+  display: flex
+  align-items: center
+  gap: 0.85rem
+
+  .chart-detail-text
+    display: flex
+    flex-direction: column
+    line-height: 1.35
+
+  .chart-detail-label
+    font-size: 0.9rem
+    font-weight: 500
+    color: $white
+
+  .chart-detail-hint
+    font-size: 0.8rem
+    color: $subtext
+
 @keyframes modalFadeIn
   from
     opacity: 0

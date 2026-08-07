@@ -33,8 +33,19 @@ import AverageChart from "@/pages/Statistics/charts/AverageChart";
 import HourlyChart from "@/pages/Statistics/charts/HourlyChart.jsx";
 import ConsistencyChart from "@/pages/Statistics/charts/ConsistencyChart";
 import ExportButton from "@/common/components/ExportButton";
+import ToggleSwitch from "@/common/components/ToggleSwitch";
 import i18n, {t} from "i18next";
 import "./styles.sass";
+
+// The charts a resolution control makes sense for. The hourly chart is 24 fixed
+// buckets and the rest are not time series at all.
+const LINE_CHARTS = ['download', 'upload', 'ping'];
+
+const FULL_HEIGHT_CHARTS = [...LINE_CHARTS, 'hourly'];
+
+// A request, not a guarantee: the server clamps this to its own ceiling and
+// echoes what it actually used as `maxDataPoints`.
+const FULL_DETAIL_POINTS = 1000;
 
 ChartJS.register(ArcElement, Tooltip, CategoryScale, LinearScale, PointElement, LineElement, Title, Legend, BarElement, RadialLinearScale, Filler);
 
@@ -88,6 +99,8 @@ export const Statistics = () => {
     const [loadError, setLoadError] = useState(null);
     const [expandedChart, setExpandedChart] = useState(null);
     const [mountPhase, setMountPhase] = useState(0);
+    const [detailStatistics, setDetailStatistics] = useState(null);
+    const [detailLoading, setDetailLoading] = useState(false);
 
     const [searchParams, setSearchParams] = useSearchParams();
     const [preferences, updatePreferences] = useContext(PreferencesContext);
@@ -172,6 +185,42 @@ export const Statistics = () => {
         return () => i18n.off("languageChanged", callback);
     }, [updateStats]);
 
+    const isDownsampled = deferredStatistics?.downsampled === true;
+    const wantsDetail = LINE_CHARTS.includes(expandedChart) && preferences.fullChartDetail === true;
+
+    /**
+     * Fetches the high-resolution series, on demand and only for the chart the
+     * reader has actually opened.
+     *
+     * Deliberately a second payload rather than raising the resolution of the
+     * page request: the eight cards on the overview gain nothing from a thousand
+     * points each, and re-rendering all of them to serve one open chart is the
+     * expensive part.
+     */
+    useEffect(() => {
+        if (!wantsDetail || !isDownsampled) {
+            setDetailStatistics(null);
+            return;
+        }
+
+        const query = new URLSearchParams({
+            from: formatDateParam(dateRange.from),
+            to: formatDateParam(dateRange.to),
+            tzOffset: String(new Date().getTimezoneOffset()),
+            points: String(FULL_DETAIL_POINTS)
+        });
+
+        let cancelled = false;
+        setDetailLoading(true);
+
+        jsonRequest(`/speedtests/statistics/?${query}`)
+            .then(stats => { if (!cancelled) setDetailStatistics(stats); })
+            .catch(error => console.error("Failed to load the detailed statistics:", error))
+            .finally(() => { if (!cancelled) setDetailLoading(false); });
+
+        return () => { cancelled = true; };
+    }, [wantsDetail, isDownsampled, dateRange]);
+
     if (mountPhase === 0) return null;
 
     if (loading && !deferredStatistics) {
@@ -219,7 +268,9 @@ export const Statistics = () => {
         </div>
     );
 
-    const renderChart = (chartType) => {
+    // `source` is the high-resolution payload when one has been fetched for this
+    // chart, and the page payload otherwise.
+    const renderChart = (chartType, source) => {
         switch (chartType) {
             case 'overview':
                 return <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} dateRange={dateRange}/>;
@@ -228,11 +279,11 @@ export const Statistics = () => {
             case 'consistency':
                 return <ConsistencyChart consistency={deferredStatistics.consistency}/>;
             case 'download':
-                return <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="download" titleKey="latest.down" color="hsl(187, 94%, 43%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} />;
+                return <SpeedChart labels={source.labels} data={source.data} dataKey="download" titleKey="latest.down" color="hsl(187, 94%, 43%)" failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
             case 'upload':
-                return <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="upload" titleKey="latest.up" color="hsl(258, 90%, 66%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} />;
+                return <SpeedChart labels={source.labels} data={source.data} dataKey="upload" titleKey="latest.up" color="hsl(258, 90%, 66%)" failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
             case 'ping':
-                return <PingChart labels={deferredStatistics.labels} data={deferredStatistics.data} failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints}/>;
+                return <PingChart labels={source.labels} data={source.data} failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints}/>;
             case 'hourly':
                 return <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages}/>;
             case 'avgDownload':
@@ -243,6 +294,26 @@ export const Statistics = () => {
                 return null;
         }
     };
+
+    const detailHint = () => {
+        if (!isDownsampled) return t("statistics.detail.complete");
+        if (detailLoading) return t("statistics.detail.loading");
+        return t("statistics.detail.description", {max: FULL_DETAIL_POINTS});
+    };
+
+    // Only the time series can trade payload size for resolution; the others
+    // have a fixed number of points by construction.
+    const detailToolbar = LINE_CHARTS.includes(expandedChart) ? (
+        <div className="chart-detail-toggle">
+            <ToggleSwitch checked={preferences.fullChartDetail === true}
+                          onChange={(value) => updatePreferences({fullChartDetail: value})}
+                          disabled={!isDownsampled}/>
+            <div className="chart-detail-text">
+                <span className="chart-detail-label">{t("statistics.detail.title")}</span>
+                <span className="chart-detail-hint">{detailHint()}</span>
+            </div>
+        </div>
+    ) : null;
 
     return (
         <div className={`statistic-area${isStale ? ' statistic-stale' : ''}`}>
@@ -270,12 +341,13 @@ export const Statistics = () => {
             <AverageChart title={t("statistics.values.down")} data={deferredStatistics.download} onClick={() => setExpandedChart('avgDownload')}/>
             <AverageChart title={t("statistics.values.up")} data={deferredStatistics.upload} onClick={() => setExpandedChart('avgUpload')}/>
 
-            <ChartModal 
-                isOpen={!!expandedChart} 
+            <ChartModal
+                isOpen={!!expandedChart}
                 onClose={() => setExpandedChart(null)}
-                isChart={['download', 'upload', 'ping', 'hourly'].includes(expandedChart)}
+                isChart={FULL_HEIGHT_CHARTS.includes(expandedChart)}
+                toolbar={detailToolbar}
             >
-                {expandedChart && renderChart(expandedChart)}
+                {expandedChart && renderChart(expandedChart, detailStatistics ?? deferredStatistics)}
             </ChartModal>
         </div>
     );

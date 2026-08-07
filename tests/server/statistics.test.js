@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildStatistics, TARGET_CHART_POINTS } from "../../server/util/statistics.js";
+import {
+    buildStatistics, MAX_CHART_POINTS, MIN_CHART_POINTS, TARGET_CHART_POINTS
+} from "../../server/util/statistics.js";
 
 const at = (iso, overrides = {}) => ({
     ping: 10, jitter: 2, download: 100, upload: 50, time: 30,
@@ -189,6 +191,68 @@ describe("buildStatistics", () => {
             assert.ok(stats.labels.length <= TARGET_CHART_POINTS);
             assert.equal(stats.data.download.length, stats.labels.length);
             assert.equal(stats.rawDataPoints, TARGET_CHART_POINTS * 2);
+        });
+    });
+
+    /**
+     * The detail view lets the reader trade payload size for resolution, so the
+     * threshold between "every test" and "bucket averages" has to move with the
+     * request rather than sitting on a constant.
+     */
+    describe("requested resolution", () => {
+        const spread = (count) => Array.from({length: count}, (unused, index) =>
+            at(new Date(Date.UTC(2026, 7, 7, 0, 0, 0) + index * 60_000).toISOString()));
+
+        it("defaults to the standard target", () => {
+            assert.equal(buildStatistics([], DAY).maxDataPoints, TARGET_CHART_POINTS);
+        });
+
+        it("returns every entry when the request covers them all", () => {
+            const stats = buildStatistics(spread(400), DAY, {maxPoints: 500});
+
+            assert.equal(stats.downsampled, false);
+            assert.equal(stats.labels.length, 400);
+        });
+
+        // The same data at the default resolution is bucketed, which is what
+        // makes the control worth having.
+        it("still downsamples the same data at the default", () => {
+            assert.equal(buildStatistics(spread(400), DAY).downsampled, true);
+        });
+
+        it("downsamples to the requested count when the data exceeds it", () => {
+            const stats = buildStatistics(spread(400), DAY, {maxPoints: 100});
+
+            assert.equal(stats.downsampled, true);
+            assert.ok(stats.labels.length <= 100, `got ${stats.labels.length} labels`);
+            assert.equal(stats.data.download.length, stats.labels.length);
+        });
+
+        describe("clamping", () => {
+            it("refuses to go below the floor", () => {
+                assert.equal(buildStatistics([], DAY, {maxPoints: 1}).maxDataPoints, MIN_CHART_POINTS);
+            });
+
+            // Allocating one bucket per requested point is why this cannot be
+            // taken on trust from a query parameter.
+            it("refuses to go above the ceiling", () => {
+                assert.equal(buildStatistics([], DAY, {maxPoints: 5_000_000}).maxDataPoints, MAX_CHART_POINTS);
+            });
+
+            it("ignores a value that is not a number", () => {
+                for (const value of ["abc", null, undefined, NaN, Infinity, {}])
+                    assert.equal(buildStatistics([], DAY, {maxPoints: value}).maxDataPoints, TARGET_CHART_POINTS,
+                        `maxPoints ${String(value)} should fall back to the default`);
+            });
+
+            // The query string hands everything over as a string.
+            it("reads a numeric string", () => {
+                assert.equal(buildStatistics([], DAY, {maxPoints: "750"}).maxDataPoints, 750);
+            });
+
+            it("truncates a fractional request rather than allocating a fraction of a bucket", () => {
+                assert.equal(buildStatistics([], DAY, {maxPoints: 500.9}).maxDataPoints, 500);
+            });
         });
     });
 
