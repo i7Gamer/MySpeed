@@ -8,7 +8,7 @@ on:
         type: string
 
 env:
-  REGISTRY_IMAGE: germannewsmaker/myspeed
+  REGISTRY_IMAGE: i7gamer/myspeed
 
 jobs:
   build:
@@ -42,7 +42,26 @@ jobs:
         with:
           images: ${{ env.REGISTRY_IMAGE }}
 
-      - name: Build and push by digest
+      # Built into the local daemon first so the image can be exercised before
+      # anything reaches the registry. Each matrix job runs on a runner native to
+      # its platform, so arm64 is genuinely executed rather than only compiled.
+      - name: Build for verification
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          load: true
+          tags: myspeed:verify
+          cache-from: type=gha,scope=build-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=build-${{ matrix.platform }}
+
+      - name: Verify the image before publishing
+        run: bash scripts/verify-image.sh myspeed:verify
+
+      # A cache hit on the verified build, so this republishes the same content
+      # rather than compiling anything again.
+      - name: Push verified image by digest
         id: build
         uses: docker/build-push-action@v6
         with:

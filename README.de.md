@@ -7,7 +7,7 @@
 
 <br />
 <div align="center">
-  <a href="https://github.com/gnmyt/myspeed">
+  <a href="https://github.com/i7Gamer/MySpeed">
     <img src="https://i.imgur.com/aCmA6rH.png" alt="Logo" width="80" height="80">
   </a>
   <h3>MySpeed <a href="README.de.md">🇩🇪</a> <a href="README.md">🇺🇸</a></h3>
@@ -63,26 +63,26 @@ Cool, dann lass uns loslegen! Die Installationsanleitung für Linux (und Windows
 
 Verbreitet unter der MIT-Lizenz. Siehe `LICENSE` für weitere Informationen.
 
-[contributors-shield]: https://img.shields.io/github/contributors/gnmyt/myspeed.svg?style=for-the-badge
+[contributors-shield]: https://img.shields.io/github/contributors/i7Gamer/MySpeed.svg?style=for-the-badge
 
-[contributors-url]: https://github.com/gnmyt/myspeed/graphs/contributors
+[contributors-url]: https://github.com/i7Gamer/MySpeed/graphs/contributors
 
-[forks-shield]: https://img.shields.io/github/forks/gnmyt/myspeed.svg?style=for-the-badge
+[forks-shield]: https://img.shields.io/github/forks/i7Gamer/MySpeed.svg?style=for-the-badge
 
-[forks-url]: https://github.com/gnmyt/myspeed/network/members
+[forks-url]: https://github.com/i7Gamer/MySpeed/network/members
 
-[stars-shield]: https://img.shields.io/github/stars/gnmyt/myspeed.svg?style=for-the-badge
+[stars-shield]: https://img.shields.io/github/stars/i7Gamer/MySpeed.svg?style=for-the-badge
 
-[stars-url]: https://github.com/gnmyt/myspeed/stargazers
+[stars-url]: https://github.com/i7Gamer/MySpeed/stargazers
 
-[issues-shield]: https://img.shields.io/github/issues/gnmyt/myspeed.svg?style=for-the-badge
+[issues-shield]: https://img.shields.io/github/issues/i7Gamer/MySpeed.svg?style=for-the-badge
 
-[issues-url]: https://github.com/gnmyt/myspeed/issues
+[issues-url]: https://github.com/i7Gamer/MySpeed/issues
 
-[license-shield]: https://img.shields.io/github/license/gnmyt/myspeed.svg?style=for-the-badge
+[license-shield]: https://img.shields.io/github/license/i7Gamer/MySpeed.svg?style=for-the-badge
 
-[license-url]: https://github.com/gnmyt/myspeed/blob/master/LICENSE
+[license-url]: https://github.com/i7Gamer/MySpeed/blob/master/LICENSE
 
-[release-shield]: https://img.shields.io/github/v/release/gnmyt/myspeed.svg?style=for-the-badge
+[release-shield]: https://img.shields.io/github/v/release/i7Gamer/MySpeed.svg?style=for-the-badge
 
-[release-url]: https://github.com/gnmyt/myspeed/releases/latest
+[release-url]: https://github.com/i7Gamer/MySpeed/releases/latest

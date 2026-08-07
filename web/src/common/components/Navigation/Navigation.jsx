@@ -11,7 +11,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { useState, useEffect } from "react";
 import { DOCUMENTATION_BASE } from "@/common/utils/constants";
 
-export const GITHUB_LINK = "https://github.com/gnmyt/myspeed";
+export const GITHUB_LINK = "https://github.com/i7Gamer/MySpeed";
 
 const NAV_ITEMS = [
   { path: "/", label: "Home", isExternal: false },

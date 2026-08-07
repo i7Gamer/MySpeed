@@ -11,12 +11,12 @@ You don't know how to install Docker? Then check out [this guide](https://docs.d
 ::: code-group
 
 ```sh [Stable Version]
-docker run -d -p 5216:5216 -v myspeed:/myspeed/data --restart=unless-stopped --name MySpeed germannewsmaker/myspeed
+docker run -d -p 5216:5216 -v myspeed:/myspeed/data --restart=unless-stopped --name MySpeed i7gamer/myspeed
 ```
 
 
 ```sh [Development Version]
-docker run -d -p 5216:5216 -v myspeed:/myspeed/data --restart=unless-stopped --name MySpeed germannewsmaker/myspeed:development
+docker run -d -p 5216:5216 -v myspeed:/myspeed/data --restart=unless-stopped --name MySpeed i7gamer/myspeed:development
 ```
 
 :::
@@ -30,7 +30,7 @@ bash <(curl -sSL https://install.myspeed.dev)
 ```
 
 ```sh [Development Version]
-curl -sSL https://raw.githubusercontent.com/gnmyt/myspeed/development/scripts/install.sh | bash -s -- --beta
+curl -sSL https://raw.githubusercontent.com/i7Gamer/MySpeed/development/scripts/install.sh | bash -s -- --beta
 ```
 
 :::
@@ -45,11 +45,11 @@ Executing the commands will result in deletion / uninstallation of MySpeed. Plea
 ::: code-group
 
 ```sh [Keep data]
-curl -sSL https://raw.githubusercontent.com/gnmyt/myspeed/development/scripts/uninstall.sh | bash -s -- --keep-data
+curl -sSL https://raw.githubusercontent.com/i7Gamer/MySpeed/development/scripts/uninstall.sh | bash -s -- --keep-data
 ```
 
 ```sh [Delete data]
-curl -sSL https://raw.githubusercontent.com/gnmyt/myspeed/development/scripts/uninstall.sh | bash
+curl -sSL https://raw.githubusercontent.com/i7Gamer/MySpeed/development/scripts/uninstall.sh | bash
 ```
 
 :::
@@ -68,7 +68,7 @@ elif [ "$ARCH" = "aarch64" ]; then
   ARCH="arm64"
 fi
 
-wget $(curl -s https://api.github.com/repos/gnmyt/myspeed/releases/latest \
+wget $(curl -s https://api.github.com/repos/i7Gamer/MySpeed/releases/latest \
   | grep "browser_download_url.*linux-${ARCH}" | cut -d '"' -f 4) \
   -O myspeed #(3)
 
@@ -100,7 +100,7 @@ export PATH="$BUN_INSTALL/bin:$PATH" #(2)
 
 mkdir /opt/myspeed && cd /opt/myspeed #(3)
 
-git clone https://github.com/gnmyt/myspeed.git . #(4)
+git clone https://github.com/i7Gamer/MySpeed.git . #(4)
 
 bun install #(5)
 

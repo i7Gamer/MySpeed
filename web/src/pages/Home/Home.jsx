@@ -9,7 +9,7 @@ import Footer from "@/pages/Home/components/Footer";
 import Button from "@/common/components/Button";
 import {useNavigate} from "react-router-dom";
 
-const GITHUB_LINK = "https://github.com/gnmyt/myspeed";
+const GITHUB_LINK = "https://github.com/i7Gamer/MySpeed";
 
 export const Home = () => {
     const navigate = useNavigate();

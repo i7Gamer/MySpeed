@@ -1,28 +1,31 @@
-FROM oven/bun:1 AS client-build
+FROM oven/bun:1-alpine AS client-build
 
 WORKDIR /client
-COPY ./client/package.json ./
-RUN bun install
+# The lockfile is copied with the manifest so the install is reproducible and
+# stays cached until one of the two actually changes.
+COPY ./client/package.json ./client/bun.lock ./
+RUN bun install --frozen-lockfile
 COPY ./client ./
 RUN bun run build
 
-FROM oven/bun:1 AS server-build
+FROM oven/bun:1-alpine AS server-build
 
 WORKDIR /myspeed
 
+COPY ./package.json ./bun.lock /myspeed/
+RUN bun install --production --frozen-lockfile
+
 COPY ./server /myspeed/server
 COPY ./scripts /myspeed/scripts
-COPY ./package.json /myspeed/package.json
-
-RUN bun install
 RUN bun run generate-migrations
 RUN bun run generate-integrations
 
-FROM oven/bun:1
+FROM oven/bun:1-alpine
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    tzdata ca-certificates openssl \
-    && rm -rf /var/lib/apt/lists/*
+# ca-certificates for TLS to the speedtest providers, tzdata so the configured
+# TZ resolves - both are needed at runtime. apk --no-cache leaves no index behind,
+# so there is nothing to purge afterwards.
+RUN apk add --no-cache tzdata ca-certificates
 
 ENV TZ=Etc/UTC
 
@@ -36,5 +39,10 @@ COPY --from=client-build /client/build /myspeed/build
 VOLUME ["/myspeed/data"]
 
 EXPOSE 5216
+
+# The start period is generous because the first boot downloads the three
+# provider CLIs before the server begins listening.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
+    CMD wget -qO- http://127.0.0.1:5216/api/health || exit 1
 
 CMD ["bun", "run", "server/index.js"]

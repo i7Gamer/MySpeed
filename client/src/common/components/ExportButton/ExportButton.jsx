@@ -2,9 +2,13 @@ import { useState, useRef, useEffect } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDownload, faChevronDown, faFileLines, faCode } from "@fortawesome/free-solid-svg-icons";
 import { t } from "i18next";
+import { downloadRequest } from "@/common/utils/RequestUtil";
+import { formatDateParam } from "@/common/utils/TimeframeUtil";
+import { useAlert } from "@/common/contexts/Alert";
 import "./styles.sass";
 
 export const ExportButton = ({ dateRange }) => {
+    const alert = useAlert();
     const [isOpen, setIsOpen] = useState(false);
     const [exporting, setExporting] = useState(false);
     const dropdownRef = useRef(null);
@@ -22,36 +26,28 @@ export const ExportButton = ({ dateRange }) => {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const formatDateParam = (date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-    };
-
     const handleExport = async (format) => {
         setExporting(true);
         setIsOpen(false);
 
+        const fromParam = formatDateParam(dateRange.from);
+        const toParam = formatDateParam(dateRange.to);
+
         try {
-            const fromParam = formatDateParam(dateRange.from);
-            const toParam = formatDateParam(dateRange.to);
-            const url = `/api/speedtests/export?from=${fromParam}&to=${toParam}&format=${format}`;
-            
-            const response = await fetch(url);
-            if (!response.ok) throw new Error('Export failed');
-            
-            const blob = await response.blob();
-            const downloadUrl = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = downloadUrl;
-            a.download = `myspeed-export-${fromParam}-to-${toParam}.${format}`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(downloadUrl);
-            document.body.removeChild(a);
+            const query = new URLSearchParams({
+                from: fromParam, to: toParam, format,
+                tzOffset: String(new Date().getTimezoneOffset())
+            });
+
+            // Goes through RequestUtil rather than a bare fetch so the export
+            // carries the password header and honours the selected node - a raw
+            // fetch silently 401'd under a password and always hit the local
+            // instance even while a remote node was being viewed.
+            await downloadRequest(`/speedtests/export?${query}`, {}, {},
+                `myspeed-export-${fromParam}-to-${toParam}.${format}`);
         } catch (error) {
             console.error('Export failed:', error);
+            alert.openAlert(t("failed"), error.message, { buttonText: t("dialog.okay") });
         } finally {
             setExporting(false);
         }

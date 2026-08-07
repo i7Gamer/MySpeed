@@ -14,7 +14,7 @@ export const StorageDialog = ({open, onClose}) => {
 
     useEffect(() => {
         if (!open) return;
-        jsonRequest("/storage").then(setStorageSize);
+        jsonRequest("/storage").then(setStorageSize).catch(() => setStorageSize(null));
     }, [open]);
 
     return (

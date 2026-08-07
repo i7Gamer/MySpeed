@@ -4,21 +4,11 @@ import * as pauseController from '../controller/pause.js';
 import * as config from '../controller/config.js';
 import * as testTask from '../tasks/speedtest.js';
 import password from '../middlewares/password.js';
+import { parseDateRange } from '../util/dateRange.js';
+import { toCsv } from '../util/csv.js';
 
 const app = express.Router();
 
-const validateDateRange = (from, to) => {
-    if (!from || !to) {
-        return { valid: false, message: "Both 'from' and 'to' date parameters are required" };
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) {
-        return { valid: false, message: "Invalid 'from' date format. Use YYYY-MM-DD" };
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(to)) {
-        return { valid: false, message: "Invalid 'to' date format. Use YYYY-MM-DD" };
-    }
-    return { valid: true };
-};
 
 app.get("/", password(true), async (req, res) => {
     if (req.query.limit && /[^0-9]/.test(req.query.limit))
@@ -31,33 +21,28 @@ app.get("/", password(true), async (req, res) => {
 });
 
 app.get("/statistics", password(true), async (req, res) => {
-    const { from, to } = req.query;
-    const validation = validateDateRange(from, to);
-    if (!validation.valid) {
-        return res.status(400).json({ message: validation.message });
+    const { from, to, tzOffset } = req.query;
+    const range = parseDateRange(from, to, { offsetMinutes: tzOffset });
+    if (!range.valid) {
+        return res.status(400).json({ message: range.message });
     }
-    
-    res.json(await tests.listStatistics(from, to));
+
+    res.json(await tests.listStatistics(range, { offsetMinutes: tzOffset }));
 });
 
 app.get("/export", password(true), async (req, res) => {
-    const { from, to, format } = req.query;
-    const validation = validateDateRange(from, to);
-    if (!validation.valid) {
-        return res.status(400).json({ message: validation.message });
+    const { from, to, format, tzOffset } = req.query;
+    const range = parseDateRange(from, to, { offsetMinutes: tzOffset });
+    if (!range.valid) {
+        return res.status(400).json({ message: range.message });
     }
 
-    const exportData = await tests.exportTests(from, to);
+    const exportData = await tests.exportTests(range);
 
     if (format === 'csv') {
-        const csvHeader = 'id,ping,jitter,download,upload,time,type,created,error\n';
-        const csvRows = exportData.map(test => 
-            `${test.id},${test.ping ?? ''},${test.jitter ?? ''},${test.download ?? ''},${test.upload ?? ''},${test.time ?? ''},${test.type ?? ''},${test.created ?? ''},${(test.error ?? '').replace(/,/g, ';').replace(/\n/g, ' ')}`
-        ).join('\n');
-        
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename="myspeed-export-${from}-to-${to}.csv"`);
-        res.send(csvHeader + csvRows);
+        res.send(toCsv(exportData));
     } else {
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-Disposition', `attachment; filename="myspeed-export-${from}-to-${to}.json"`);
@@ -68,8 +53,14 @@ app.get("/export", password(true), async (req, res) => {
 app.post("/run", password(false), async (req, res) => {
     if (pauseController.currentState) return res.status(410).json({message: "The speedtests are currently paused"});
     if (await config.getValue("provider") === "none") return res.status(410).json({message: "No provider selected"});
-    let speedtest = await testTask.create("custom");
-    if (speedtest !== undefined) return res.status(409).json({message: "An speedtest is already running"});
+    if (testTask.isRunning()) return res.status(409).json({message: "An speedtest is already running"});
+
+    // Deliberately not awaited: a speedtest runs for 30-60s and holding the
+    // connection open that long trips the default read timeout of every common
+    // reverse proxy. The client follows progress via GET /speedtests/status.
+    testTask.create("custom").catch(error =>
+        console.error(`The manually started speedtest failed: ${error?.message ?? error}`));
+
     res.json({message: "Speedtest successfully created"});
 });
 

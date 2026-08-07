@@ -17,25 +17,31 @@ export const TutorialSubmission = () => {
     const [message, setMessage] = useState("");
     const [success, setSuccess] = useState(false);
     const [agreed, setAgreed] = useState(false);
+    const [failed, setFailed] = useState(false);
 
     const postTutorial = async (ev) => {
         ev.preventDefault();
+        setFailed(false);
 
-        const response = await fetch("https://api.staticforms.xyz/submit", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                email: email, message: message, $type: type, $contentUrl: contentUrl,
-                accessKey: "b2823f24-eaf7-467f-ae28-0eb350385cdd"
-            })
-        });
+        try {
+            const response = await fetch("https://api.staticforms.xyz/submit", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    email: email, message: message, $type: type, $contentUrl: contentUrl,
+                    accessKey: "b2823f24-eaf7-467f-ae28-0eb350385cdd"
+                })
+            });
 
-        if (response.ok) {
-            setSuccess(true);
-        } else {
-            window.open("mailto:content@gnmyt.dev?subject=Tutorial Submission&body=Type: " + type + "%0D%0AEmail: " + email + "%0D%0AContent URL: " + contentUrl + "%0D%0AMessage: " + message, "_blank");
+            // Previously fell back to a mailto: pointing at the upstream author's
+            // personal inbox. Surface the failure instead of handing the
+            // submission to a third party.
+            setFailed(!response.ok);
+            setSuccess(response.ok);
+        } catch {
+            setFailed(true);
         }
     }
 
@@ -70,7 +76,14 @@ export const TutorialSubmission = () => {
                 <div className="submission-content">
                     <form className="submission-form" onSubmit={postTutorial}>
                         <input type="hidden" name="honeypot" style={{display: "none"}}/>
-                        
+
+                        {failed && (
+                            <div className="submission-error">
+                                <FontAwesomeIcon icon={faInfoCircle}/>
+                                <span>We couldn't send your submission. Please try again in a moment.</span>
+                            </div>
+                        )}
+
                         <div className="form-group">
                             <label htmlFor="type">Content Type</label>
                             <select 

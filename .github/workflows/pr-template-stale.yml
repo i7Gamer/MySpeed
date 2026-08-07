@@ -17,7 +17,7 @@ env:
 jobs:
   close:
     runs-on: ubuntu-latest
-    if: github.repository == 'gnmyt/MySpeed'
+    if: github.repository == 'i7Gamer/MySpeed'
     steps:
       - name: Close pull requests with an unfinished template
         env:

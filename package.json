@@ -1,12 +1,13 @@
 {
   "name": "myspeed",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "trustedDependencies": [
     "@resvg/resvg-js"
   ],
   "scripts": {
+    "test": "node --test \"tests/**/*.test.js\"",
     "client": "cd client && bun run dev",
     "server": "bun run --watch server/index.js",
     "build": "bun run generate-migrations && bun run generate-integrations && cd client && bun run build",

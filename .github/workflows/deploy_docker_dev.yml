@@ -25,12 +25,27 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push
+      # Loaded locally first so the image is exercised before it is published.
+      - name: Build for verification
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          platforms: linux/amd64
+          tags: myspeed:verify
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify the image before publishing
+        run: bash scripts/verify-image.sh myspeed:verify
+
+      # Cache hit on the verified build, so the published content is identical.
+      - name: Push verified image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64
-          tags: germannewsmaker/myspeed:development
+          tags: i7gamer/myspeed:development
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -3,10 +3,12 @@ import password from '../middlewares/password.js';
 import * as serverController from '../controller/servers.js';
 import * as interfaces from '../util/loadInterfaces.js';
 import { getJson } from '../util/http.js';
-import packageJson from '../../package.json';
+// The import attribute is required by the ESM spec for JSON modules; bun is
+// lenient about it, node is not.
+import packageJson from '../../package.json' with { type: 'json' };
 
 const version = packageJson.version;
-const remote_url = "https://api.github.com/repos/gnmyt/myspeed/releases/latest";
+const remote_url = "https://api.github.com/repos/i7Gamer/MySpeed/releases/latest";
 const app = express.Router();
 
 app.get("/version", password(false), async (req, res) => {

@@ -11,8 +11,18 @@ import {
     Tooltip,
     Filler
 } from "chart.js";
-import {useEffect, useState, useCallback, startTransition, useDeferredValue} from "react";
+import {useEffect, useState, useCallback, useContext, useMemo, startTransition, useDeferredValue} from "react";
+import {useSearchParams} from "react-router-dom";
 import {jsonRequest} from "@/common/utils/RequestUtil";
+import {PreferencesContext} from "@/common/contexts/Preferences";
+import {
+    DEFAULT_TIMEFRAME,
+    TIMEFRAME_CUSTOM,
+    formatDateParam,
+    parseRangeParams,
+    resolveTimeframe,
+    serializeRange
+} from "@/common/utils/TimeframeUtil";
 import DateRangePicker from "@/common/components/DateRangePicker";
 import ChartModal from "@/common/components/ChartModal";
 import SpeedChart from "@/pages/Statistics/charts/SpeedChart";
@@ -78,12 +88,20 @@ export const Statistics = () => {
     const [expandedChart, setExpandedChart] = useState(null);
     const [mountPhase, setMountPhase] = useState(0);
 
-    const [dateRange, setDateRange] = useState(() => {
-        const to = new Date();
-        const from = new Date();
-        from.setDate(from.getDate() - 7);
-        return { from, to };
-    });
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [preferences, updatePreferences] = useContext(PreferencesContext);
+
+    // The URL is the source of truth so a view stays bookmarkable and shareable;
+    // the stored preference only supplies the default when the URL says nothing.
+    const selection = useMemo(() => {
+        const fromUrl = parseRangeParams(searchParams);
+        if (fromUrl) return fromUrl;
+
+        const timeframe = preferences.defaultTimeframe ?? DEFAULT_TIMEFRAME;
+        return { timeframe, ...resolveTimeframe(timeframe) };
+    }, [searchParams, preferences.defaultTimeframe]);
+
+    const dateRange = useMemo(() => ({ from: selection.from, to: selection.to }), [selection]);
 
     const deferredStatistics = useDeferredValue(statistics);
     const isStale = deferredStatistics !== statistics;
@@ -100,19 +118,18 @@ export const Statistics = () => {
         }
     }, [mountPhase]);
 
-    const formatDateParam = (date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-    };
-
     const updateStats = useCallback(() => {
-        const fromParam = formatDateParam(dateRange.from);
-        const toParam = formatDateParam(dateRange.to);
+        const query = new URLSearchParams({
+            from: formatDateParam(dateRange.from),
+            to: formatDateParam(dateRange.to),
+            // The server would otherwise cut days on its own clock, which is UTC
+            // in the Docker image and rarely matches the viewer's.
+            tzOffset: String(new Date().getTimezoneOffset())
+        });
+
         startTransition(() => setLoading(true));
         Promise.all([
-            jsonRequest(`/speedtests/statistics/?from=${fromParam}&to=${toParam}`),
+            jsonRequest(`/speedtests/statistics/?${query}`),
             jsonRequest("/speedtests?limit=1")
         ]).then(([stats, tests]) => {
             startTransition(() => {
@@ -126,17 +143,27 @@ export const Statistics = () => {
         });
     }, [dateRange]);
 
-    const handleDateRangeChange = (from, to) => setDateRange({ from, to });
+    const handleTimeframeChange = useCallback((timeframe) => {
+        setSearchParams(serializeRange(timeframe), { replace: true });
+        updatePreferences({ defaultTimeframe: timeframe });
+    }, [setSearchParams, updatePreferences]);
+
+    const handleDateRangeChange = useCallback((from, to) => {
+        setSearchParams(serializeRange(TIMEFRAME_CUSTOM, from, to), { replace: true });
+    }, [setSearchParams]);
 
     useEffect(() => {
         if (mountPhase >= 2) updateStats();
     }, [mountPhase, updateStats]);
 
+    // `updateStats` has to be a dependency: with an empty array this kept the
+    // very first closure alive and a language switch silently reloaded the
+    // statistics for the *initial* date range instead of the selected one.
     useEffect(() => {
         const callback = () => updateStats();
         i18n.on("languageChanged", callback);
         return () => i18n.off("languageChanged", callback);
-    }, []);
+    }, [updateStats]);
 
     if (mountPhase === 0) return null;
 
@@ -157,10 +184,12 @@ export const Statistics = () => {
     if (!deferredStatistics.tests || deferredStatistics.tests.total === 0) return (
         <div className="statistic-area">
             <div className="statistics-header">
-                <DateRangePicker 
-                    from={dateRange.from} 
-                    to={dateRange.to} 
+                <DateRangePicker
+                    from={dateRange.from}
+                    to={dateRange.to}
                     onChange={handleDateRangeChange}
+                    timeframe={selection.timeframe}
+                    onTimeframeChange={handleTimeframeChange}
                 />
             </div>
             <div className="statistics-empty">
@@ -178,11 +207,11 @@ export const Statistics = () => {
             case 'consistency':
                 return <ConsistencyChart consistency={deferredStatistics.consistency}/>;
             case 'download':
-                return <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="download" titleKey="latest.down" color="hsl(187, 94%, 43%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} />;
+                return <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="download" titleKey="latest.down" color="hsl(187, 94%, 43%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} />;
             case 'upload':
-                return <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="upload" titleKey="latest.up" color="hsl(258, 90%, 66%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} />;
+                return <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="upload" titleKey="latest.up" color="hsl(258, 90%, 66%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} />;
             case 'ping':
-                return <PingChart labels={deferredStatistics.labels} data={deferredStatistics.data} failed={deferredStatistics.failed} errors={deferredStatistics.errors}/>;
+                return <PingChart labels={deferredStatistics.labels} data={deferredStatistics.data} failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints}/>;
             case 'hourly':
                 return <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages}/>;
             case 'avgDownload':
@@ -197,10 +226,12 @@ export const Statistics = () => {
     return (
         <div className={`statistic-area${isStale ? ' statistic-stale' : ''}`}>
             <div className="statistics-header">
-                <DateRangePicker 
-                    from={dateRange.from} 
-                    to={dateRange.to} 
+                <DateRangePicker
+                    from={dateRange.from}
+                    to={dateRange.to}
                     onChange={handleDateRangeChange}
+                    timeframe={selection.timeframe}
+                    onTimeframeChange={handleTimeframeChange}
                 />
                 <ExportButton dateRange={dateRange} />
             </div>
@@ -209,9 +240,9 @@ export const Statistics = () => {
             <LatestTestChart test={latestTest} onClick={() => setExpandedChart('latest')}/>
             <ConsistencyChart consistency={deferredStatistics.consistency} onClick={() => setExpandedChart('consistency')}/>
 
-            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="download" titleKey="latest.down" color="hsl(187, 94%, 43%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} onClick={() => setExpandedChart('download')} compact/>
-            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="upload" titleKey="latest.up" color="hsl(258, 90%, 66%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} onClick={() => setExpandedChart('upload')} compact/>
-            <PingChart labels={deferredStatistics.labels} data={deferredStatistics.data} failed={deferredStatistics.failed} errors={deferredStatistics.errors} onClick={() => setExpandedChart('ping')} compact/>
+            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="download" titleKey="latest.down" color="hsl(187, 94%, 43%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('download')} compact/>
+            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="upload" titleKey="latest.up" color="hsl(258, 90%, 66%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('upload')} compact/>
+            <PingChart labels={deferredStatistics.labels} data={deferredStatistics.data} failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('ping')} compact/>
 
             <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages} onClick={() => setExpandedChart('hourly')}/>
 

@@ -281,6 +281,7 @@
       "title": "Test result",
       "description": "<Link>This test</Link> achieved a maximum download speed of <Bold>{{down}} Mbps</Bold> and a maximum upload speed of <Bold>{{up}} Mbps</Bold>. It was created <Bold>{{type}}</Bold> and took <Bold>{{duration}} Seconds</Bold>.",
       "jitter": " The connection jitter was <Bold>{{jitter}} ms</Bold>.",
+      "server": " The test ran against <Bold>{{server}}</Bold>.",
       "from_you": "by you",
       "automatic": "automatically"
     },
@@ -301,6 +302,7 @@
   },
   "statistics": {
     "average": "Average",
+    "downsampled": "Averaged · showing {{shown}} of {{total}} tests",
     "export": {
       "button": "Export"
     },

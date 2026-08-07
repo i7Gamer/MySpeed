@@ -4,7 +4,7 @@ Hier beschreiben wir die Einrichtung für Windows.
 ## Installation von MySpeed
 
 1. MySpeed herunterladen  
-   Lade die neueste Version von MySpeed von der [Releases-Seite](https://github.com/gnmyt/myspeed/releases/latest) herunter. Lade die Datei `myspeed-windows-x64.exe` herunter.
+   Lade die neueste Version von MySpeed von der [Releases-Seite](https://github.com/i7Gamer/MySpeed/releases/latest) herunter. Lade die Datei `myspeed-windows-x64.exe` herunter.
 
 2. Datei platzieren  
    Verschiebe die heruntergeladene Datei in einen Ordner deiner Wahl (z.B. `C:\MySpeed`). Benenne sie der Einfachheit halber in `myspeed.exe` um.
@@ -41,7 +41,7 @@ Dieser Prozess installiert die neueste Entwicklungsversion von MySpeed. Fehler k
    ```
 
 2. MySpeed-Quellcode herunterladen  
-   Klone das Repository oder lade den Quellcode von [GitHub](https://github.com/gnmyt/myspeed) herunter.
+   Klone das Repository oder lade den Quellcode von [GitHub](https://github.com/i7Gamer/MySpeed) herunter.
 
 3. Abhängigkeiten installieren und bauen
    ```powershell

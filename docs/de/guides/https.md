@@ -101,7 +101,7 @@ Bei Verwendung von Docker mountest du das Zertifikatsverzeichnis:
 version: "3"
 services:
   myspeed:
-    image: germannewsmaker/myspeed
+    image: i7gamer/myspeed
     ports:
       - "5216:5216"
       - "5217:5217"  # HTTPS-Port

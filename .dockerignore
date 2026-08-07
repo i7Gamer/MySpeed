@@ -7,6 +7,13 @@ data
 .idea
 docs
 web
+tests
 *.md
 *.lock
 *.lockb
+
+# The lockfiles are the whole point of a reproducible build: without them
+# `bun install` re-resolves every dependency on every build, so two builds of
+# the same commit can ship different versions.
+!bun.lock
+!client/bun.lock

@@ -29,7 +29,7 @@ cat << EOF > "$INSTALLATION_PATH/docker-compose.yml"
 version: '3'
 services:
   myspeed:
-    image: germannewsmaker/myspeed
+    image: i7gamer/myspeed
     ports:
       - "5216:5216"
     volumes:

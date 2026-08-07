@@ -4,7 +4,7 @@ import {faArrowRight} from "@fortawesome/free-solid-svg-icons";
 import {faGithub} from "@fortawesome/free-brands-svg-icons";
 import {useNavigate} from "react-router-dom";
 
-const GITHUB_LINK = "https://github.com/gnmyt/myspeed";
+const GITHUB_LINK = "https://github.com/i7Gamer/MySpeed";
 
 export const GetStarted = () => {
     const navigate = useNavigate();

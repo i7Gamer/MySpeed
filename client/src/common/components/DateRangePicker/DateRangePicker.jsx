@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCalendar, faChevronLeft, faChevronRight } from "@fortawesome/free-solid-svg-icons";
 import { t } from "i18next";
+import { TIMEFRAMES } from "@/common/utils/TimeframeUtil";
 import "./styles.sass";
 
-export const DateRangePicker = ({ from, to, onChange, minDate, maxDate }) => {
+export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timeframe, onTimeframeChange }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [selecting, setSelecting] = useState("from");
     const [tempFrom, setTempFrom] = useState(from);
@@ -19,17 +20,36 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate }) => {
     const effectiveMaxDate = maxDate || today;
     const todayDateString = new Date().toDateString();
 
+    // Closing halfway through a selection used to leave `selecting` on "to" and
+    // a dangling tempFrom, so the next open started mid-range and the first
+    // click was read as the end date.
+    const closePicker = useCallback(() => {
+        setIsOpen(false);
+        setSelecting("from");
+        setHoverDate(null);
+        setTempFrom(from);
+        setTempTo(to);
+    }, [from, to]);
+
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (popoverRef.current && !popoverRef.current.contains(event.target) &&
                 triggerRef.current && !triggerRef.current.contains(event.target)) {
-                setIsOpen(false);
+                closePicker();
             }
         };
 
+        const handleEscape = (event) => {
+            if (event.key === "Escape") closePicker();
+        };
+
         document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
+        document.addEventListener("keydown", handleEscape);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+            document.removeEventListener("keydown", handleEscape);
+        };
+    }, [closePicker]);
 
     useEffect(() => {
         setTempFrom(from);
@@ -191,7 +211,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate }) => {
             <div 
                 className="date-range-trigger" 
                 ref={triggerRef}
-                onClick={() => setIsOpen(!isOpen)}
+                onClick={() => isOpen ? closePicker() : setIsOpen(true)}
             >
                 <FontAwesomeIcon icon={faCalendar} className="calendar-icon" />
                 <span className="date-range-text">
@@ -205,6 +225,29 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate }) => {
 
             {isOpen && (
                 <div className="date-range-popover" ref={popoverRef}>
+                    {onTimeframeChange && (
+                        <div className="timeframe-presets">
+                            {TIMEFRAMES.map((preset) => (
+                                <button
+                                    key={preset.id}
+                                    type="button"
+                                    className={`timeframe-preset${timeframe === preset.id ? " preset-active" : ""}`}
+                                    onClick={() => {
+                                        onTimeframeChange(preset.id);
+                                        setSelecting("from");
+                                        setIsOpen(false);
+                                    }}
+                                >
+                                    {t(preset.labelKey)}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    <div className="calendar-selecting">
+                        {t(selecting === "from" ? "calendar.select_start" : "calendar.select_end")}
+                    </div>
+
                     <div className="calendar-nav">
                         <button className="nav-btn" onClick={prevMonth}>
                             <FontAwesomeIcon icon={faChevronLeft} />
