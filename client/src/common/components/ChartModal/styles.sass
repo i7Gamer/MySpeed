@@ -1,5 +1,24 @@
 @use "@/common/styles/colors" as *
 
+// The dialog was capped at 1400px on every display, so opening a chart on a
+// 1440p or 4K screen used barely half the room available - the detail view was
+// no more detailed than the card it came from. It still keeps a margin rather
+// than filling the viewport: a line chart stretched edge to edge on an
+// ultrawide reads as a flat ribbon.
+$modal-gutter: 3rem
+$modal-gutter-wide: 5rem
+
+$modal-max-width: 1400px
+$modal-max-width-wide: 1800px
+$modal-max-width-ultrawide: 2240px
+
+$modal-breakpoint-wide: 1600px
+$modal-breakpoint-ultrawide: 2100px
+
+// Height follows the viewport separately from width: a tall 16:10 display has
+// room for a much deeper plot than the 500px the single tier allowed.
+$modal-breakpoint-tall: 900px
+
 .chart-modal-backdrop
   position: fixed
   top: 0
@@ -19,7 +38,7 @@
   position: relative
   width: fit-content
   min-width: 400px
-  max-width: min(1400px, calc(100vw - 3rem))
+  max-width: min(#{$modal-max-width}, calc(100vw - #{$modal-gutter}))
   max-height: 90vh
   background-color: $dark-gray
   backdrop-filter: blur(4px)
@@ -31,7 +50,16 @@
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3)
 
   &.modal-chart
-    width: min(100%, calc(100vw - 3rem))
+    width: min(100%, calc(100vw - #{$modal-gutter}))
+
+  @media screen and (min-width: $modal-breakpoint-wide)
+    max-width: min(#{$modal-max-width-wide}, calc(100vw - #{$modal-gutter-wide}))
+
+    &.modal-chart
+      width: min(100%, calc(100vw - #{$modal-gutter-wide}))
+
+  @media screen and (min-width: $modal-breakpoint-ultrawide)
+    max-width: min(#{$modal-max-width-ultrawide}, calc(100vw - #{$modal-gutter-wide}))
 
 .chart-modal-close
   position: absolute
@@ -76,10 +104,22 @@
     .chart-container
       min-height: min(70vh, 500px)
       max-height: 75vh
-            
+
     .chart-body
       min-height: min(60vh, 400px)
       max-height: 65vh
+
+    // .chart-body is flex: 1 1 auto inside .chart-container, so the plot only
+    // grows once the container is allowed to. Both ceilings have to move
+    // together or the taller container just adds empty space under the canvas.
+    @media screen and (min-height: $modal-breakpoint-tall)
+      .chart-container
+        min-height: min(72vh, 720px)
+        max-height: 80vh
+
+      .chart-body
+        min-height: min(64vh, 620px)
+        max-height: 72vh
 
   .stats-header
     padding: 0.5rem 3rem 0.75rem 0.25rem
