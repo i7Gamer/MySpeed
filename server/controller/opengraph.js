@@ -53,7 +53,7 @@ const readAsset = async (path) => {
   return embeddedClient?.readEmbeddedFile?.(path) ?? null;
 };
 
-async function generateOpenGraphImage() {
+async function renderOpenGraphImage() {
   const test = await readStatistics();
 
   if (!hasValues(test)) return null;
@@ -212,6 +212,37 @@ async function generateOpenGraphImage() {
   const svg = new Resvg(image);
 
   return svg.render().asPng();
+}
+
+/**
+ * Renders at most once a minute, however many callers ask.
+ *
+ * The endpoint answers without a password and every request used to run satori
+ * plus a full resvg rasterisation of a 1200x600 image - enough CPU that a
+ * trivial request loop starved everything else on the single thread. The image
+ * only shows statistics and a wall-clock minute, so a short cache costs nothing
+ * in freshness. The in-flight promise is shared so a burst arriving on a cold
+ * cache still renders once rather than once per request.
+ */
+const CACHE_TTL = 60000;
+
+let cached = null;
+let inFlight = null;
+
+async function generateOpenGraphImage() {
+  if (cached && Date.now() < cached.expiresAt) return cached.png;
+  if (inFlight) return inFlight;
+
+  inFlight = renderOpenGraphImage()
+    .then((png) => {
+      if (png) cached = {png, expiresAt: Date.now() + CACHE_TTL};
+      return png;
+    })
+    .finally(() => {
+      inFlight = null;
+    });
+
+  return inFlight;
 }
 
 export default generateOpenGraphImage;
