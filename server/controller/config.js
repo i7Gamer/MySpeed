@@ -32,7 +32,7 @@ const MAX_RETENTION_DAYS = 10000;
 
 // The value stored when no password is configured. It is a sentinel, not a
 // password: password.js waves every request through when it sees this.
-const NO_PASSWORD = "none";
+export const NO_PASSWORD = "none";
 
 const PASSWORD_HASH_ROUNDS = 10;
 
