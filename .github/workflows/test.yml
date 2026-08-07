@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # bun.lock is the only lockfile in the repository, so bun installs the
       # dependencies even though the suite itself runs under node.
@@ -31,7 +31,7 @@ jobs:
       # script, and which ships node:sqlite - the branch of the database shim
       # that the compiled binary does not take but the tests do.
       - name: Set up node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
