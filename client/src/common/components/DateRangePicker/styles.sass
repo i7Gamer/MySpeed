@@ -57,6 +57,37 @@
     opacity: 1
     transform: translateY(0)
 
+.timeframe-presets
+  display: flex
+  flex-wrap: wrap
+  gap: 0.375rem
+  padding-bottom: 0.75rem
+  margin-bottom: 0.75rem
+  border-bottom: 1px solid $light-gray
+
+.timeframe-preset
+  flex: 1 1 auto
+  padding: 0.4rem 0.7rem
+  background: transparent
+  border: 1px solid $light-gray
+  border-radius: 0.375rem
+  color: $subtext
+  font-size: 0.8rem
+  font-weight: 600
+  white-space: nowrap
+  cursor: pointer
+  transition: all 0.15s ease
+
+  &:hover
+    border-color: $accent-primary
+    color: $white
+    background-color: $darker-gray
+
+  &.preset-active
+    background-color: $accent-primary
+    border-color: $accent-primary
+    color: #fff
+
 .calendar-nav
   display: flex
   align-items: center

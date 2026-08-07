@@ -1,4 +1,5 @@
 import React, {createContext, useCallback, useState} from "react";
+import {DEFAULT_TIMEFRAME} from "@/common/utils/TimeframeUtil";
 
 export const TIME_FORMAT_24H = "24h";
 export const TIME_FORMAT_12H = "12h";
@@ -9,7 +10,8 @@ const STORAGE_KEY = "preferences";
 
 const DEFAULTS = {
     timeFormat: TIME_FORMAT_24H,
-    speedUnit: SPEED_UNIT_MBPS
+    speedUnit: SPEED_UNIT_MBPS,
+    defaultTimeframe: DEFAULT_TIMEFRAME
 };
 
 const loadPreferences = () => {

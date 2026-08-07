@@ -24,6 +24,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Pagination from "./components/Pagination";
 import AboutDialog from "@/common/components/AboutDialog";
 import Tooltip from "@/common/components/Tooltip";
+import TimeframeSelector from "@/common/components/TimeframeSelector";
 
 const HeaderComponent = () => {
     const findNode = useContext(NodeContext)[4];
@@ -81,7 +82,26 @@ const HeaderComponent = () => {
         if (status.running) return;
 
         setRunning(true);
-        postRequest("/speedtests/run").then(updateTests).then(updateStatus);
+        try {
+            // fetch only rejects on network errors, so a 409/410 has to be read
+            // off the response - otherwise a refused start looked like a success
+            // and left the gauge spinning until the next status poll.
+            const response = await postRequest("/speedtests/run");
+
+            if (!response.ok) {
+                setRunning(false);
+                const body = await response.json().catch(() => null);
+                alert.openAlert(t("failed"), body?.message ?? t("header.running"), { buttonText: t("dialog.okay") });
+                return;
+            }
+
+            await updateTests();
+        } catch (error) {
+            setRunning(false);
+            alert.openAlert(t("failed"), t("header.running"), { buttonText: t("dialog.okay") });
+        } finally {
+            await updateStatus();
+        }
     }
 
     const openDownloadPage = () => window.open(WEB_URL + "/install", "_blank");
@@ -89,7 +109,8 @@ const HeaderComponent = () => {
     useEffect(() => {
         if (Object.keys(config).length === 0) return;
         async function updateVersion() {
-            const version = await jsonRequest("/info/version");
+            const version = await jsonRequest("/info/version").catch(() => null);
+            if (!version?.remote || !version?.local) return;
 
             if (version.remote.localeCompare(version.local, undefined, { numeric: true, sensitivity: 'base' }) === 1)
                 setUpdateAvailable(version.remote);
@@ -117,6 +138,8 @@ const HeaderComponent = () => {
                 <Pagination />
 
                 <div className="header-right">
+                    <TimeframeSelector />
+
                     {updateAvailable ?
                         <div><FontAwesomeIcon icon={faCircleArrowUp} className="header-icon icon-orange update-icon"
                                               onClick={() => alert.openAlert(
