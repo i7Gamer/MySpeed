@@ -8,6 +8,15 @@ on:
         required: true
         type: string
 
+# The repository default for GITHUB_TOKEN is read-only, which made every release
+# API call 403. Reusable workflows can only narrow the caller's permissions, so
+# this has to be granted here for build-binaries/build-msi/finalize to inherit it.
+# contents: write covers creating the tag and release, uploading the assets and
+# pushing the version bump; pull-requests: read is for the generated changelog.
+permissions:
+  contents: write
+  pull-requests: read
+
 jobs:
   create-release:
     name: "Create Release"
@@ -95,15 +104,21 @@ jobs:
     needs: [create-release, build-binaries, build-docker, build-msi]
     if: failure()
     steps:
+      # Both ids are read through env rather than interpolated into the script
+      # body: when create-release fails they are empty, and an empty expression
+      # spliced into the source produced a SyntaxError that masked the real error.
       - name: Delete release
+        if: needs.create-release.outputs.release_id != ''
         uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
         with:
           script: |
             try {
               await github.rest.repos.deleteRelease({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                release_id: ${{ needs.create-release.outputs.release_id }}
+                release_id: parseInt(process.env.RELEASE_ID, 10)
               });
               console.log('Release deleted');
             } catch (e) {
@@ -111,14 +126,17 @@ jobs:
             }
 
       - name: Delete tag
+        if: needs.create-release.outputs.version != ''
         uses: actions/github-script@v7
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
         with:
           script: |
             try {
               await github.rest.git.deleteRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                ref: 'tags/v${{ needs.create-release.outputs.version }}'
+                ref: `tags/v${process.env.VERSION}`
               });
               console.log('Tag deleted');
             } catch (e) {
