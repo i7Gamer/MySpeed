@@ -1,9 +1,10 @@
 import tests from '../models/Speedtests.js';
-import { Op, Sequelize } from 'sequelize';
+import { Op } from 'sequelize';
 import { buildStatistics } from '../util/statistics.js';
 import { getValue } from './config.js';
 
 const DEFAULT_RETENTION_DAYS = 365;
+const MS_PER_DAY = 86400000;
 const DEFAULT_TEST_LIMIT = 10;
 
 export const create = async (ping, download, upload, time, serverId, type = "auto", resultId = null, error = null, jitter = null, serverName = null, serverHost = null) => {
@@ -56,21 +57,30 @@ export const deleteTests = async () => {
 export const importTests = async (data) => {
     if (!Array.isArray(data)) return false;
 
+    let imported = 0;
+    let skipped = 0;
+
     for (let entry of data) {
         if (entry.error === null) delete entry.error;
         if (entry.resultId === null) delete entry.resultId;
 
-        if (!["custom", "auto"].includes(entry.type)) continue;
-        if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(entry.created)) continue;
+        if (!["custom", "auto"].includes(entry.type)) { skipped++; continue; }
+        if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(entry.created)) { skipped++; continue; }
 
         try {
             await tests.create(entry);
+            imported++;
         } catch (e) {
+            skipped++;
             console.error(`Could not import the speedtest from ${entry.created}: ${e.message}`);
         }
     }
 
-    return true;
+    if (skipped > 0) console.warn(`Skipped ${skipped} unusable row(s) while importing ${data.length}`);
+
+    // Reporting success for a file where nothing was usable told the operator
+    // their history had been restored when the table was still empty.
+    return data.length === 0 || imported > 0;
 }
 
 // `created` always holds an ISO-8601 UTC string - both write paths guarantee it
@@ -103,11 +113,18 @@ export const removeOld = async () => {
 
     if (!Number.isFinite(days) || days <= 0) return true;
 
+    const cutoff = new Date(Date.now() - days * MS_PER_DAY);
+
+    // Both dialects compare against the same ISO-8601 string the rows are
+    // written with. sqlite's datetime() returns "YYYY-MM-DD HH:MM:SS" - a
+    // space where the stored value has a 'T', and no fractional seconds - and
+    // since 'T' sorts above ' ', every row from the cutoff day compared as
+    // newer than the cutoff and was never deleted.
     await tests.destroy({
         where: {
             created: process.env.DB_TYPE === "mysql"
-                ? {[Op.lte]: new Date(new Date().getTime() - days * 24 * 3600000)}
-                : {[Op.lte]: Sequelize.literal(`datetime('now', '-${days} days')`)}
+                ? {[Op.lte]: cutoff}
+                : {[Op.lte]: cutoff.toISOString()}
         }
     });
     return true;
