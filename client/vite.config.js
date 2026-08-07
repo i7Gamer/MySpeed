@@ -13,7 +13,14 @@ logger.error = (msg, options) => {
 export default defineConfig({
     customLogger: logger,
     plugins: [
-        VitePWA({injectRegister: "auto", manifest: false}),
+        // A new service worker otherwise waits for every tab to close before it
+        // takes over, so an upgraded instance kept serving the previous build's
+        // assets - users saw the old UI until they quit the browser.
+        VitePWA({
+            injectRegister: "auto",
+            manifest: false,
+            workbox: {skipWaiting: true, clientsClaim: true}
+        }),
         react()
     ],
     build: {
