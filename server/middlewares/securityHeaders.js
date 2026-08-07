@@ -14,18 +14,19 @@ const HSTS_VALUE = `max-age=${HSTS_MAX_AGE_SECONDS}; includeSubDomains`;
 const DEFAULT_FRAME_ANCESTORS = "'none'";
 
 /**
- * `script-src` and `style-src` carry 'unsafe-inline' because the app genuinely
- * needs it today: vite-plugin-pwa runs with `injectRegister: "auto"`, which
- * injects the service-worker registration as an inline script, and
+ * `style-src` carries 'unsafe-inline' because the app genuinely needs it: React
+ * sets `style` attributes for the target bars in the test detail view, and
  * @fortawesome/fontawesome-svg-core writes its CSS into a <style> element at
- * runtime. Tightening either one means changing the client build first.
+ * runtime. `script-src` does not - the Vite build emits only external modules,
+ * and vite-plugin-pwa registers the service worker from /registerSW.js rather
+ * than inline - so scripts stay restricted to same-origin files.
  *
  * The remaining directives cost nothing and are the ones that actually stop
  * clickjacking, plugin abuse, base-tag injection and off-site form posts.
  */
 const buildPolicy = (frameAncestors) => [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'",
+    "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",

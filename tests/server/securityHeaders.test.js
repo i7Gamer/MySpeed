@@ -19,6 +19,14 @@ const headersFor = (req = {}) => {
     return res.headers;
 };
 
+/** The policy split into {directive: [values]}, so a value cannot be matched
+ *  against the wrong directive. */
+const directives = (req = {}) => Object.fromEntries(
+    headersFor(req)["content-security-policy"].split("; ").map((directive) => {
+        const [name, ...values] = directive.split(" ");
+        return [name, values];
+    }));
+
 const originalFrameAncestors = process.env.FRAME_ANCESTORS;
 
 beforeEach(() => { delete process.env.FRAME_ANCESTORS; });
@@ -45,6 +53,18 @@ describe("securityHeaders", () => {
 
         it("keeps network access same-origin", () => {
             assert.match(headersFor()["content-security-policy"], /connect-src 'self'/);
+        });
+
+        // The Vite build emits only external modules and vite-plugin-pwa
+        // registers the worker from /registerSW.js, so nothing needs inline
+        // script execution. Style is a different matter: React writes `style`
+        // attributes and FontAwesome injects a <style> element at runtime.
+        it("allows no inline script", () => {
+            assert.deepEqual(directives()["script-src"], ["'self'"]);
+        });
+
+        it("allows inline style, which the app does need", () => {
+            assert.deepEqual(directives()["style-src"], ["'self'", "'unsafe-inline'"]);
         });
 
         // The client renders chart canvases and webp assets, and Vite emits the
