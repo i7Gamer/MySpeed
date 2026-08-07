@@ -6,6 +6,22 @@ const defaults = {
     failed: "❌ *A speedtest has failed*\n`Reason`: %error%"
 };
 
+/**
+ * Strips the characters Telegram's legacy markdown treats as formatting.
+ *
+ * That parser has no escape syntax, and it rejects the whole message with a 400
+ * when the formatting does not balance. Speedtest errors are raw CLI output and
+ * routinely contain a stray backtick or asterisk, so the failure notification
+ * was dropped exactly when it mattered most. Only the interpolated values are
+ * cleaned - the operator's own template keeps its formatting.
+ */
+const MARKDOWN_CHARS = /[*_`[\]]/g;
+
+export const stripMarkdown = (variables) => Object.fromEntries(
+    Object.entries(variables ?? {}).map(([key, value]) =>
+        [key, typeof value === "string" ? value.replace(MARKDOWN_CHARS, "") : value])
+);
+
 const send = (token, chat_id, text, activity) =>
     postJson(`https://api.telegram.org/bot${token}/sendMessage`,
         {text, chat_id, parse_mode: "markdown"}, {activity});
@@ -13,12 +29,12 @@ const send = (token, chat_id, text, activity) =>
 export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {
         if (c.send_finished) await send(c.token, c.chat_id,
-            replaceVariables(c.finished_message || defaults.finished, data), activity);
+            replaceVariables(c.finished_message || defaults.finished, stripMarkdown(data)), activity);
     });
 
     registerEvent('testFailed', async ({data: c}, error, activity) => {
         if (c.send_failed) await send(c.token, c.chat_id,
-            replaceVariables(c.error_message || defaults.failed, {error}), activity);
+            replaceVariables(c.error_message || defaults.failed, stripMarkdown({error})), activity);
     });
 
     return {
