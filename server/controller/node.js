@@ -36,6 +36,11 @@ export const checkStatus = async (url, password) => {
 }
 
 const SKIP_HEADERS = new Set(["host", "content-length", "connection"]);
+
+// Enough for the caller to interpret the body it is handed. Everything else the
+// child sends is the child's business and is dropped.
+const FORWARDED_HEADERS = ["content-type", "content-disposition"];
+
 const serverError = (res) => res.status(500).json({message: "Internal server error"});
 
 export const proxyRequest = async (url, req, res) => {
@@ -53,10 +58,14 @@ export const proxyRequest = async (url, req, res) => {
 
         if (response.status >= 500) return serverError(res);
 
-        const disposition = response.headers.get("content-disposition");
-        if (disposition) res.setHeader("content-disposition", disposition);
+        for (const name of FORWARDED_HEADERS) {
+            const value = response.headers.get(name);
+            if (value) res.setHeader(name, value);
+        }
 
-        res.status(response.status).json(await response.json().catch(() => null));
+        // Handed on verbatim. Forcing the body through JSON.parse turned every
+        // non-JSON response - both CSV export endpoints - into a literal null.
+        res.status(response.status).send(Buffer.from(await response.arrayBuffer()));
     } catch {
         serverError(res);
     }
