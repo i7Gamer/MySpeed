@@ -1,13 +1,13 @@
 import {Dialog, DialogHeader, DialogBody, DialogFooter} from "@/common/contexts/Dialog";
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
-import {faCheck, faServer, faNetworkWired, faLink, faHashtag} from "@fortawesome/free-solid-svg-icons";
+import {faCheck, faServer, faNetworkWired, faLink, faHashtag, faExclamationTriangle} from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
 import React, {useContext, useEffect, useState} from "react";
 import OoklaImage from "./assets/img/ookla.webp";
 import LibreImage from "./assets/img/libre.webp";
 import CloudflareImage from "./assets/img/cloudflare.webp";
-import {jsonRequest, patchRequest} from "@/common/utils/RequestUtil";
+import {assertOk, jsonRequest, patchRequest} from "@/common/utils/RequestUtil";
 import {Trans} from "react-i18next";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
@@ -61,18 +61,30 @@ export const ProviderDialog = ({open, onClose}) => {
         if (provider === "libre" && value && value !== "none") setLibreUrl("none");
     };
 
+    // Every write is checked: patchRequest hands back the raw response, so a
+    // rejected value used to leave the dialog reporting "provider changed" and
+    // closing over settings the server had refused.
     const update = async (close) => {
-        await patchRequest("/config/provider", {value: provider});
-        if (serverId !== config[provider + "Id"] && provider !== "cloudflare") {
-            await patchRequest("/config/" + provider + "Id", {value: serverId});
+        const patch = async (path, value) => assertOk(await patchRequest(path, {value}), path);
+
+        try {
+            await patch("/config/provider", provider);
+
+            if (serverId !== config[provider + "Id"] && provider !== "cloudflare")
+                await patch("/config/" + provider + "Id", serverId);
+
+            if (provider === "libre" && libreUrl !== config.libreUrl)
+                await patch("/config/libreUrl", libreUrl);
+
+            if (currentInterface !== config.interface)
+                await patch("/config/interface", currentInterface);
+        } catch (e) {
+            updateToast(e.message || t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
+            return;
+        } finally {
+            reloadConfig();
         }
-        if (provider === "libre" && libreUrl !== config.libreUrl) {
-            await patchRequest("/config/libreUrl", {value: libreUrl});
-        }
-        if (currentInterface !== config.interface) {
-            await patchRequest("/config/interface", {value: currentInterface});
-        }
-        reloadConfig();
+
         updateToast(t('dropdown.provider_changed'), "green", faCheck);
         close();
     };

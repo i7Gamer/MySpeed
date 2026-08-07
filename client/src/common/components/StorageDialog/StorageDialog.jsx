@@ -8,13 +8,19 @@ import Speedtests from "./tabs/Speedtests";
 import Configuration from "./tabs/Configuration";
 import {jsonRequest} from "@/common/utils/RequestUtil";
 
+const EMPTY_STORAGE = {size: 0, testCount: 0};
+
 export const StorageDialog = ({open, onClose}) => {
-    const [storageSize, setStorageSize] = useState({size: 0, testCount: 0});
+    const [storageSize, setStorageSize] = useState(EMPTY_STORAGE);
     const [currentTab, setCurrentTab] = useState(1);
 
+    // Falls back to the zeroed shape rather than null: the render below reads
+    // .size and .testCount unconditionally, so storing null turned a failed
+    // /storage request into a TypeError during render, which unmounts the whole
+    // React tree - the entire app went blank, not just this dialog.
     useEffect(() => {
         if (!open) return;
-        jsonRequest("/storage").then(setStorageSize).catch(() => setStorageSize(null));
+        jsonRequest("/storage").then(setStorageSize).catch(() => setStorageSize(EMPTY_STORAGE));
     }, [open]);
 
     return (
@@ -38,12 +44,12 @@ export const StorageDialog = ({open, onClose}) => {
                                 <div className="storage-bottom">
                                     <div className="storage-tab reset-cursor">
                                         <FontAwesomeIcon icon={faDatabase}/>
-                                        <p>{Math.round(storageSize.size / 1024)} KB</p>
+                                        <p>{Math.round((storageSize?.size ?? 0) / 1024)} KB</p>
                                     </div>
                                 </div>
                             </div>
                             <div className="storage-manager">
-                                {currentTab === 1 && <Speedtests tests={storageSize.testCount} close={close}/>}
+                                {currentTab === 1 && <Speedtests tests={storageSize?.testCount ?? 0} close={close}/>}
                                 {currentTab === 2 && <Configuration close={close}/>}
                             </div>
                         </div>

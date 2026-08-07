@@ -1,12 +1,12 @@
 import React, {forwardRef, useContext, useRef, useImperativeHandle} from "react";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
-    faArrowDown, faArrowUp, faClockRotateLeft, faClose,
+    faArrowDown, faArrowUp, faClockRotateLeft, faClose, faExclamationTriangle,
     faInfo, faPingPongPaddleBall, faTrashCan, faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
 import {useAlert} from "@/common/contexts/Alert";
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
-import {deleteRequest} from "@/common/utils/RequestUtil";
+import {assertOk, deleteRequest} from "@/common/utils/RequestUtil";
 import "./styles.sass";
 import {averageResultDialog, resultDialog} from "@/pages/Home/components/Speedtest/utils/infos";
 import {errors} from "@/pages/Home/components/Speedtest/utils/errors";
@@ -49,6 +49,20 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
         setTimeout(() => deleteTest(props.id), 300);
     }
 
+    // The row only disappears once the server has actually deleted it.
+    // deleteRequest hands back the raw response, so a refused delete used to
+    // fade the test out and report success - it came back on the next refresh.
+    const removeTest = async () => {
+        try {
+            await assertOk(await deleteRequest(`/speedtests/${props.id}`), "delete speedtest");
+        } catch (e) {
+            updateToast(e.message || t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
+            return;
+        }
+
+        fadeOut();
+    }
+
     const showErrorDialog = async () => {
         await alert.openAlert(
             t("test.failed"),
@@ -56,7 +70,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
             {
                 buttonText: t("dialog.okay"),
                 clearButton: t("test.delete"),
-                onClear: () => deleteRequest(`/speedtests/${props.id}`).then(fadeOut)
+                onClear: () => removeTest()
             }
         );
     };
@@ -75,7 +89,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                 {
                     buttonText: t("dialog.okay"),
                     clearButton: !config.viewMode ? t("test.delete") : undefined,
-                    onClear: () => deleteRequest(`/speedtests/${props.id}`).then(fadeOut)
+                    onClear: () => removeTest()
                 }
             );
         }

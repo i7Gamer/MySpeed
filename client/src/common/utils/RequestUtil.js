@@ -47,9 +47,17 @@ export const request = async (path, method = "GET", body = {}, headers = {}) => 
     });
 }
 
-// Turn a non-2xx response into a RequestError carrying the server's own message
-const assertOk = async (response, path) => {
-    if (response.ok) return;
+/**
+ * Turns a non-2xx response into a RequestError carrying the server's own
+ * message.
+ *
+ * Exported because the mutating helpers below deliberately hand back the raw
+ * Response - several callers branch on res.ok themselves - which leaves the
+ * ones that do not treating a refusal as a success. Those wrap their call in
+ * this instead.
+ */
+export const assertOk = async (response, path) => {
+    if (response.ok) return response;
 
     const body = await response.json().catch(() => null);
     throw new RequestError(response.status, body?.message ?? `Request to ${path} failed with status ${response.status}`);

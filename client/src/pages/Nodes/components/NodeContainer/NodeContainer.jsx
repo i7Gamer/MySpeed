@@ -16,7 +16,7 @@ import React, {useContext, useEffect, useState} from "react";
 import {NodeContext} from "@/common/contexts/Node";
 import {useAlert} from "@/common/contexts/Alert";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
-import {baseRequest, patchRequest} from "@/common/utils/RequestUtil";
+import {assertOk, baseRequest, patchRequest} from "@/common/utils/RequestUtil";
 import {t} from "i18next";
 import {Trans} from "react-i18next";
 import {getIconBySpeed} from "@/common/utils/TestUtil";
@@ -129,7 +129,16 @@ export const NodeContainer = (node) => {
         });
 
         if (newName && newName !== node.name) {
-            await patchRequest(`/nodes/${node.id}/name`, {name: newName});
+            // Checked before reporting success: the mutating helpers return the
+            // raw response, so a refused rename used to show the success toast
+            // and leave the old name on screen.
+            try {
+                await assertOk(await patchRequest(`/nodes/${node.id}/name`, {name: newName}), "rename node");
+            } catch (e) {
+                updateToast(e.message || t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
+                return;
+            }
+
             updateToast(t("nodes.rename.success"), "green", faPen);
             updateNodes();
         }
@@ -147,7 +156,13 @@ export const NodeContainer = (node) => {
         );
 
         if (confirmed) {
-            await baseRequest("/nodes/" + node.id, "DELETE");
+            try {
+                await assertOk(await baseRequest("/nodes/" + node.id, "DELETE"), "delete node");
+            } catch (e) {
+                updateToast(e.message || t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
+                return;
+            }
+
             updateToast(t("nodes.delete.success"), "green", faServer);
             updateNodes();
         }
