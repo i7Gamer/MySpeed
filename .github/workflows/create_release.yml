@@ -27,7 +27,7 @@ jobs:
 
     steps:
       - name: Checkout project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -93,7 +93,7 @@ jobs:
       # ref, so the artifacts and the version they report come from the same commit.
       - name: Create GitHub Release
         id: create_release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.get_version.outputs.tag }}
           target_commitish: ${{ steps.sha.outputs.sha }}
@@ -166,7 +166,7 @@ jobs:
       # spliced into the source produced a SyntaxError that masked the real error.
       - name: Delete release
         if: needs.create-release.outputs.release_id != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
         with:
@@ -184,7 +184,7 @@ jobs:
 
       - name: Delete tag
         if: needs.create-release.outputs.version != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
         with:
