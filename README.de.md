@@ -52,6 +52,26 @@ volumes:
   myspeed:
 ```
 
+##### ⚡ Die volle Leitungsgeschwindigkeit messen
+
+Auf einem Linux-Host `--network host` ergänzen (Compose: `network_mode: host`) und
+das Port-Mapping weglassen:
+
+```bash
+docker run -d --network host -v myspeed:/myspeed/data --restart=unless-stopped --name MySpeed i7gamer/myspeed
+```
+
+MySpeed bindet den Speedtest an ein bestimmtes Netzwerk-Interface. Im Standard-
+Bridge-Netzwerk sieht ein Container nur sein eigenes `eth0`, sodass jeder Test durch
+das NAT von Docker läuft und diesen Weg misst statt deiner Leitung - je schneller die
+Verbindung, desto mehr kostet das. Mit Host-Networking bindet MySpeed an die echte
+Netzwerkkarte, und die Interface-Auswahl in den Einstellungen zeigt die tatsächlich
+vorhandenen Interfaces.
+
+MySpeed lauscht weiterhin auf Port 5216, jetzt direkt auf dem Host. Unter Docker
+Desktop für Windows und macOS bringt das nichts, dort läuft der Verkehr ohnehin durch
+eine VM.
+
 #### 🪟 Windows
 
 Lade `MySpeed-windows-x64.exe` (oder den MSI-Installer, der MySpeed als

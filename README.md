@@ -52,6 +52,24 @@ volumes:
   myspeed:
 ```
 
+##### ⚡ Getting the full line speed
+
+On a Linux host, add `--network host` (Compose: `network_mode: host`) and drop the
+port mapping:
+
+```bash
+docker run -d --network host -v myspeed:/myspeed/data --restart=unless-stopped --name MySpeed i7gamer/myspeed
+```
+
+MySpeed binds the speed test to a specific network interface. On the default bridge
+network the only interface a container can see is its own `eth0`, so every test is
+forced through Docker's NAT and measures that path rather than your line - the faster
+your connection, the more it costs you. Host networking lets MySpeed bind to the real
+NIC, and the interface picker in the settings starts listing your actual interfaces.
+
+MySpeed still listens on port 5216, now directly on the host. This has no effect on
+Docker Desktop for Windows and macOS, where the traffic goes through a VM either way.
+
 #### 🪟 Windows
 
 Download `MySpeed-windows-x64.exe` (or the MSI installer, which registers MySpeed as a
