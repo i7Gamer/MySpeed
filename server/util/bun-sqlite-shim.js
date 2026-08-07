@@ -14,10 +14,10 @@ const OPEN_CREATE = 0x00000004;
 
 const isBun = typeof globalThis.Bun !== "undefined";
 
-// Resolved through a variable so bundlers and the node loader never attempt to
-// statically resolve the module that does not exist on the current runtime.
-const driverModule = isBun ? "bun:sqlite" : "node:sqlite";
-const driver = await import(/* @vite-ignore */ driverModule);
+// Both specifiers are string literals on purpose. `bun build --compile` bundles
+// statically, and a variable specifier would leave bun:sqlite unresolved in the
+// compiled binary. Only the branch for the current runtime is ever evaluated.
+const driver = isBun ? await import("bun:sqlite") : await import("node:sqlite");
 
 const openDatabase = (filename, readonly) => {
     if (isBun) return new driver.Database(filename, {readonly, create: !readonly});
