@@ -1,0 +1,49 @@
+name: Tests
+
+# Runs on every push and pull request, and is called by the release workflow so
+# nothing gets published without the suite having passed first.
+on:
+  push:
+    branches: [development, main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: "Unit & integration tests"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      # bun.lock is the only lockfile in the repository, so bun installs the
+      # dependencies even though the suite itself runs under node.
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Pinned to a version whose test runner expands the glob in the test
+      # script, and which ships node:sqlite - the branch of the database shim
+      # that the compiled binary does not take but the tests do.
+      - name: Set up node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # server/migrations/index.js and server/integrations/index.js are
+      # generated and gitignored; the server does not import without them.
+      - name: Generate sources
+        run: |
+          bun run generate-migrations
+          bun run generate-integrations
+
+      - name: Run tests
+        run: npm test

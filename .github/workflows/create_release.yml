@@ -18,8 +18,15 @@ permissions:
   pull-requests: read
 
 jobs:
+  # Gates everything below it: no tag, no release and no artefact gets cut
+  # unless the suite passes first.
+  test:
+    name: "Tests"
+    uses: ./.github/workflows/test.yml
+
   create-release:
     name: "Create Release"
+    needs: test
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
