@@ -244,6 +244,10 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                         </div>
                     )}
 
+                    <div className="calendar-selecting">
+                        {t(selecting === "from" ? "calendar.select_start" : "calendar.select_end")}
+                    </div>
+
                     <div className="calendar-nav">
                         <button className="nav-btn" onClick={prevMonth}>
                             <FontAwesomeIcon icon={faChevronLeft} />

@@ -105,6 +105,7 @@ export const ProviderDialog = ({open, onClose}) => {
                                     <SelectableOption key={current.id}
                                                       image={{src: current.image, alt: current.name}}
                                                       title={current.name}
+                                                      description={t(`dialog.provider.${current.id}_desc`)}
                                                       active={current.id === provider}
                                                       onClick={() => setProvider(current.id)}/>
                                 ))}
