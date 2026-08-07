@@ -1,10 +1,47 @@
 version: 2
+
+# This project uses bun, so the ecosystem must be "bun" rather than "npm".
+# Under "npm" dependabot edits package.json but never touches bun.lock, which is
+# how client/bun.lock drifted out of sync with client/package.json (see commit
+# ee8bb9ec, which bumped i18next-http-backend to ^4.0.0 and left the lockfile
+# pinned at 3.0.6). The docker build now installs with --frozen-lockfile, so that
+# drift fails the build instead of silently shipping different dependencies.
+#
+# Requires bun >= 1.1.39 and the text-format bun.lock, both of which this repo
+# satisfies. Note that the bun ecosystem supports version updates only - security
+# updates are not yet available for it.
 updates:
-  - package-ecosystem: 'npm'
-    directory: '/client'
+  # The server. Previously not watched at all, so express, sequelize, bcryptjs
+  # and the rest never received updates.
+  - package-ecosystem: "bun"
+    directory: "/"
     schedule:
-      interval: 'daily'
-  - package-ecosystem: 'npm'
-    directory: '/web'
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      server-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "bun"
+    directory: "/client"
     schedule:
-      interval: 'daily'
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      client-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "chore(ci)"

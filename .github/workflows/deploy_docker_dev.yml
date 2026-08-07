@@ -1,8 +1,9 @@
 name: Deploy Development Release to DockerHub
 
+# Manual only: this publishes i7gamer/myspeed:development to Docker Hub, which
+# should be a deliberate act rather than a side effect of every push.
 on:
-  push:
-    branches: [ "development" ]
+  workflow_dispatch:
 
 jobs:
   docker:

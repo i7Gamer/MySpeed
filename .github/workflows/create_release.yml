@@ -1,8 +1,12 @@
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, without the leading v (e.g. 1.1.0)"
+        required: true
+        type: string
 
 jobs:
   create-release:
@@ -18,17 +22,34 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get version from tag
+      # The version now comes from the dispatch input rather than a pushed tag.
+      # Normalised so that both "1.1.0" and "v1.1.0" are accepted.
+      - name: Get version from input
         id: get_version
         run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION#v}"
 
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$'; then
+            echo "::error::'$VERSION' is not a valid semver version."
+            exit 1
+          fi
+
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::Tag v$VERSION already exists."
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      # Creates the tag at the checked-out commit, since no tag was pushed.
       - name: Create GitHub Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref }}
+          tag_name: ${{ steps.get_version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           name: Release ${{ steps.get_version.outputs.version }}
           draft: true
           prerelease: false
@@ -97,7 +118,7 @@ jobs:
               await github.rest.git.deleteRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                ref: 'tags/${{ github.ref_name }}'
+                ref: 'tags/v${{ needs.create-release.outputs.version }}'
               });
               console.log('Tag deleted');
             } catch (e) {
