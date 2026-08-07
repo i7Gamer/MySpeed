@@ -78,12 +78,6 @@ jobs:
           name: MySpeed-windows-x64.exe
           path: MySpeed.exe
 
-      - name: Upload build folder for MSI
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-folder
-          path: build
-
   build-linux:
     name: "Linux (${{ matrix.arch }})"
     runs-on: ${{ matrix.runner }}
