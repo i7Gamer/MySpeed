@@ -20,7 +20,7 @@ export default (registerEvent) => {
 
     registerEvent('testFailed', async ({data: c}, error, activity) => {
         if (c.send_failed) await send(c.url, c.display_name || "MySpeed", 12993861,
-            replaceVariables(c.failed_message || defaults.failed, {error}), activity);
+            replaceVariables(c.error_message || defaults.failed, {error}), activity);
     });
 
     return {

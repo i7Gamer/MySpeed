@@ -98,7 +98,18 @@ export const patch = async (id, data) => {
     const displayName = data.integration_name;
     delete data.integration_name;
 
-    IntegrationData.update({data: {...JSON.parse(item.data), ...data}, displayName}, {where: {id: id}});
+    // validateInput returns an entry for every declared field, so a field the
+    // caller left out arrives as undefined. Spreading those straight over the
+    // stored object dropped them on serialisation, which turned "change one
+    // setting" into "clear everything else".
+    const changes = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
+
+    const update = {data: {...JSON.parse(item.data), ...changes}};
+    if (displayName !== undefined) update.displayName = displayName;
+
+    // Awaited: the route answered "Integration updated" before the write had
+    // landed, so a failing write was reported as a success.
+    await IntegrationData.update(update, {where: {id: id}});
     clearPingState(id);
     return true;
 }

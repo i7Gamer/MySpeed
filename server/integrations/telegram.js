@@ -18,7 +18,7 @@ export default (registerEvent) => {
 
     registerEvent('testFailed', async ({data: c}, error, activity) => {
         if (c.send_failed) await send(c.token, c.chat_id,
-            replaceVariables(c.failed_message || defaults.failed, {error}), activity);
+            replaceVariables(c.error_message || defaults.failed, {error}), activity);
     });
 
     return {
