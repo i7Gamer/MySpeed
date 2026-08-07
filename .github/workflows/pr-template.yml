@@ -13,7 +13,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     if: >
-      github.repository == 'gnmyt/MySpeed' &&
+      github.repository == 'i7Gamer/MySpeed' &&
       !endsWith(github.event.pull_request.user.login, '[bot]')
     steps:
       - name: Check pull request body

@@ -4,7 +4,7 @@ import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faGithub} from "@fortawesome/free-brands-svg-icons";
 import {DOCUMENTATION_BASE} from "@/common/utils/constants";
 
-const GITHUB_LINK = "https://github.com/gnmyt/myspeed";
+const GITHUB_LINK = "https://github.com/i7Gamer/MySpeed";
 
 export const Footer = () => {
     return (

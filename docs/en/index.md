@@ -11,7 +11,7 @@ hero:
       link: /setup/linux
     - theme: alt
       text: GitHub
-      link: https://github.com/gnmyt/myspeed
+      link: https://github.com/i7Gamer/MySpeed
   image:
     src: /logo.png
     alt: MySpeed

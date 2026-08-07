@@ -106,7 +106,7 @@ clear
 
 echo -e "$BLUE🔎 STATUS MESSAGE"
 echo -e "$NORMAL Fetching latest release information..."
-RELEASE_URL=$(curl -s https://api.github.com/repos/gnmyt/myspeed/releases/latest | grep "browser_download_url.*$BINARY_NAME" | cut -d '"' -f 4)
+RELEASE_URL=$(curl -s https://api.github.com/repos/i7Gamer/MySpeed/releases/latest | grep "browser_download_url.*$BINARY_NAME" | cut -d '"' -f 4)
 
 if [ -z "$RELEASE_URL" ]; then
     echo -e "$RED✗ Could not find release for $BINARY_NAME"

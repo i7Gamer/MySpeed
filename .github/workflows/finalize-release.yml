@@ -11,7 +11,7 @@ on:
         type: string
 
 env:
-  REGISTRY_IMAGE: germannewsmaker/myspeed
+  REGISTRY_IMAGE: i7gamer/myspeed
 
 jobs:
   finalize:

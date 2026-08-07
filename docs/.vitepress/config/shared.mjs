@@ -41,7 +41,7 @@ export const shared = defineConfig({
             provider: 'local'
         },
         socialLinks: [
-            {icon: 'github', link: 'https://github.com/gnmyt/myspeed'},
+            {icon: 'github', link: 'https://github.com/i7Gamer/MySpeed'},
             {icon: 'discord', link: 'https://discord.com/users/386242172632170496'}
         ],
     }
