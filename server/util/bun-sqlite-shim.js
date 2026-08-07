@@ -24,9 +24,33 @@ const openDatabase = (filename, readonly) => {
     return new driver.DatabaseSync(filename, {readOnly: readonly});
 };
 
+/**
+ * sqlite stores no boolean, date or undefined type, and node:sqlite refuses to
+ * bind them outright ("Provided value cannot be bound to SQLite parameter N").
+ * Sequelize hands a raw boolean through for every BOOLEAN column, so without
+ * this every write touching one - creating an integration, for one - fails.
+ */
+const toBindable = (value) => {
+    if (typeof value === "boolean") return value ? 1 : 0;
+    if (value === undefined) return null;
+    if (value instanceof Date) return value.toISOString();
+    return value;
+};
+
+const bindable = (params) => {
+    if (Array.isArray(params)) return params.map(toBindable);
+
+    if (params !== null && typeof params === "object")
+        return Object.fromEntries(Object.entries(params).map(([key, value]) => [key, toBindable(value)]));
+
+    return toBindable(params);
+};
+
 // bun:sqlite takes bound parameters as a single array or object; node:sqlite
 // takes them spread, with an optional leading object for named parameters.
-const bind = (statement, method, params) => {
+const bind = (statement, method, rawParams) => {
+    const params = bindable(rawParams);
+
     if (isBun) return statement[method](params);
     if (Array.isArray(params)) return statement[method](...params);
     return statement[method](params);
