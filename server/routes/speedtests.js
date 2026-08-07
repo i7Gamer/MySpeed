@@ -68,13 +68,21 @@ app.get("/status", password(true), (req, res) => {
     res.json({paused: pauseController.currentState, running: testTask.isRunning()});
 });
 
-app.post("/pause", password(false), (req, res) => {
-    if (!req.body.resumeIn) return res.status(400).json({message: "You need to provide when to resume"});
+// Both 0 and -1 mean "until manually resumed": the pause dialog sends 0, older
+// clients send -1. Only an absent field is a bad request - guarding on
+// falsiness rejected the dialog's own default and left the scheduler running.
+const PAUSE_INDEFINITELY = [0, -1];
 
-    if (req.body.resumeIn === -1) {
+app.post("/pause", password(false), (req, res) => {
+    const resumeIn = req.body?.resumeIn;
+    const badRequest = () => res.status(400).json({message: "You need to provide when to resume"});
+
+    if (resumeIn === undefined || resumeIn === null) return badRequest();
+
+    if (PAUSE_INDEFINITELY.includes(resumeIn)) {
         pauseController.updateState(true);
-    } else if (!pauseController.resumeIn(req.body.resumeIn)) {
-        return res.status(400).json({message: "You need to provide when to resume"});
+    } else if (!pauseController.resumeIn(resumeIn)) {
+        return badRequest();
     }
 
     res.json({message: "Successfully paused the speedtests"});
