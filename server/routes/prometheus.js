@@ -56,10 +56,16 @@ app.get('/metrics', async (req, res) => {
         }
 
         const base64Credentials =  req.headers.authorization.split(' ')[1];
-        const credentials = Buffer.from(base64Credentials, 'base64').toString('utf8');
-        const [username, password] = credentials.split(':');
+        const credentials = Buffer.from(base64Credentials ?? "", 'base64').toString('utf8');
 
-        if (username !== "prometheus" || !bcrypt.compareSync(password, passwordHash)) {
+        // A value with no colon yields an undefined password, which bcrypt
+        // throws on - answering a malformed header with a 500 and a stack
+        // trace instead of the 401 it deserves.
+        const separator = credentials.indexOf(':');
+        const username = separator === -1 ? null : credentials.slice(0, separator);
+        const password = separator === -1 ? null : credentials.slice(separator + 1);
+
+        if (username !== "prometheus" || password === null || !await bcrypt.compare(password, passwordHash)) {
             res.setHeader('WWW-Authenticate', 'Basic realm="User Visible Realm"');
             return res.status(401).end('Unauthorized');
         }
