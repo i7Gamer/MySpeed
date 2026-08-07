@@ -18,15 +18,18 @@ app.put("/", password(false), async (req, res) => {
 
     const url = stripTrailingSlashes(req.body.url);
 
-    nodes.checkStatus(url, req.body.password).then(async (result) => {
-        if (result === "INVALID_URL")
-            return res.status(400).json({message: "Invalid URL", type: "INVALID_URL"});
+    // Awaited rather than left as a floating .then(): a rejection in there -
+    // from the database write, not the guarded fetch - was an unhandled
+    // rejection that left the caller waiting until its own timeout.
+    const result = await nodes.checkStatus(url, req.body.password);
 
-        if (result === "PASSWORD_REQUIRED")
-            return res.status(400).json({message: "Invalid password", type: "PASSWORD_REQUIRED"});
+    if (result === "INVALID_URL")
+        return res.status(400).json({message: "Invalid URL", type: "INVALID_URL"});
 
-        res.json({id: (await nodes.create(req.body.name, url, req.body.password)).id, type: "NODE_CREATED"});
-    });
+    if (result === "PASSWORD_REQUIRED")
+        return res.status(400).json({message: "Invalid password", type: "PASSWORD_REQUIRED"});
+
+    res.json({id: (await nodes.create(req.body.name, url, req.body.password)).id, type: "NODE_CREATED"});
 });
 
 app.delete("/:nodeId", password(false), async (req, res) => {
@@ -62,16 +65,16 @@ app.patch("/:nodeId/password", password(false), async (req, res) => {
     const node = await nodes.getOne(req.params.nodeId);
     if (node === null) return res.status(404).json({message: "Node not found"});
 
-    nodes.checkStatus(node.url, req.body.password).then(async (result) => {
-        if (result === "INVALID_URL")
-            return res.status(400).json({message: "Invalid URL", type: "INVALID_URL"});
+    const result = await nodes.checkStatus(node.url, req.body.password);
 
-        if (result === "PASSWORD_REQUIRED")
-            return res.status(400).json({message: "Invalid password", type: "PASSWORD_REQUIRED"});
+    if (result === "INVALID_URL")
+        return res.status(400).json({message: "Invalid URL", type: "INVALID_URL"});
 
-        await nodes.updatePassword(req.params.nodeId, req.body.password === "none" ? null : req.body.password);
-        res.json({message: "Node password successfully updated", type: "PASSWORD_UPDATED"});
-    });
+    if (result === "PASSWORD_REQUIRED")
+        return res.status(400).json({message: "Invalid password", type: "PASSWORD_REQUIRED"});
+
+    await nodes.updatePassword(req.params.nodeId, req.body.password === "none" ? null : req.body.password);
+    res.json({message: "Node password successfully updated", type: "PASSWORD_UPDATED"});
 });
 
 app.all("/:nodeId/*route", password(false), async (req, res) => {
