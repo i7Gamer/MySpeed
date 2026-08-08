@@ -157,7 +157,7 @@ Die Bindung des Ports an `127.0.0.1` sorgt dafür, dass der Container ausschlie�
 
 | Variable | Standard | Bedeutung |
 | --- | --- | --- |
-| `TRUST_PROXY` | nicht gesetzt | Anzahl vorgelagerter Proxys (`1`), `true` oder ein Preset wie `loopback`. Hinter einem Reverse Proxy nötig, damit die Ratenbegrenzung echte Client-Adressen sieht. |
+| `TRUST_PROXY` | nicht gesetzt | Anzahl vorgelagerter Proxys (`1`) oder ein Preset wie `loopback`. Hinter einem Reverse Proxy nötig, damit die Ratenbegrenzung echte Client-Adressen sieht. `true` wird als `1` gelesen: Express würde die Adresse sonst einem Header entnehmen, den der Aufrufer selbst schreibt. |
 | `ALLOW_NO_PASSWORD` | `false` | Eine Instanz ohne Passwort für alle erreichbar machen. Nur im lokalen Netz. |
 | `FRAME_ANCESTORS` | `'none'` | CSP-Ursprünge, die MySpeed in einem iframe einbetten dürfen – etwa Dashboards wie Homepage oder Heimdall. |
 | `HTTPS_REDIRECT` | `true` | Netzwerk-Anfragen auf den HTTPS-Listener umleiten, wenn in `data/certs` ein Zertifikat liegt. Auf `false` setzen, wenn ein Proxy TLS übernimmt und `TRUST_PROXY` nicht gesetzt ist. |

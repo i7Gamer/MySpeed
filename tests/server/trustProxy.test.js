@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseTrustProxy } from "../../server/util/trustProxy.js";
+import { parseTrustProxy, trustsProxy } from "../../server/util/trustProxy.js";
 
 describe("parseTrustProxy", () => {
     // undefined means "do not call app.set at all", which leaves Express on its
@@ -14,9 +14,24 @@ describe("parseTrustProxy", () => {
     });
 
     describe("booleans", () => {
-        it("reads true", () => assert.equal(parseTrustProxy("true"), true));
+        /**
+         * "true" is Express's trust-all mode, where req.ip becomes the leftmost
+         * X-Forwarded-For entry - a value the caller writes. Every per-IP
+         * control here keys on req.ip, so honouring it would hand anyone a way
+         * past the throttles. It is read as the intent instead: one proxy.
+         */
+        it("reads true as a single proxy rather than trust-all", () => {
+            assert.equal(parseTrustProxy("true"), 1);
+        });
+
         it("reads false", () => assert.equal(parseTrustProxy("false"), false));
-        it("tolerates surrounding whitespace", () => assert.equal(parseTrustProxy("  true  "), true));
+
+        it("tolerates surrounding whitespace", () => assert.equal(parseTrustProxy("  true  "), 1));
+
+        it("never returns Express's trust-all setting", () => {
+            for (const value of ["true", " true ", "1", "3", "loopback", "10.0.0.1"])
+                assert.notEqual(parseTrustProxy(value), true, `${value} resolved to trust-all`);
+        });
     });
 
     describe("hop counts", () => {
@@ -42,5 +57,23 @@ describe("parseTrustProxy", () => {
         it("does not treat a decimal as a hop count", () => {
             assert.equal(parseTrustProxy("1.5"), "1.5");
         });
+    });
+});
+
+describe("trustsProxy", () => {
+    /**
+     * Regression: the loopback gate tested whether TRUST_PROXY was *defined*,
+     * not what it meant. Both of these values say "do not resolve through a
+     * proxy", so treating them as "a proxy is present" turned the guard off
+     * while turning nothing on.
+     */
+    it("is false for the values that disable proxy resolution", () => {
+        for (const value of [undefined, "", "  ", "false", "0"])
+            assert.equal(trustsProxy(value), false, `${JSON.stringify(value)} was read as a declared proxy`);
+    });
+
+    it("is true once a proxy is actually declared", () => {
+        for (const value of ["true", "1", "3", "loopback", "10.0.0.1", "uniquelocal"])
+            assert.equal(trustsProxy(value), true, `${value} was not read as a declared proxy`);
     });
 });
