@@ -1,14 +1,14 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
 
+// No width or inset of its own: the shared `main > *` container in default.sass
+// sizes this, which is what keeps it the same width as the overview.
 .statistic-area
   width: 100%
-  max-width: calc(100% - 2rem)
-  padding-left: 20rem
-  padding-right: 20rem
   padding-top: 1.5rem
   margin-bottom: 2rem
   display: flex
-  gap: 2rem
+  gap: $card-gap
   justify-content: space-between
   flex-wrap: wrap
   box-sizing: border-box
@@ -87,21 +87,6 @@
     color: $subtext
     text-align: center
 
-@media screen and (max-width: 1472px)
-  .statistic-area
-    padding-left: 10rem
-    padding-right: 10rem
-
 @media screen and (max-width: 600px)
   .statistics-header
     gap: 0.5rem
-
-@media screen and (max-width: 425px)
-  .statistic-area
-    padding-left: 3rem
-    padding-right: 3rem
-
-@media screen and (max-width: 375px)
-  .statistic-area
-    padding-left: 1rem
-    padding-right: 1rem

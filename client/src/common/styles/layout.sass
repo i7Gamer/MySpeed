@@ -1,0 +1,11 @@
+// Layout constants shared between the pages.
+//
+// They live here rather than in each stylesheet because the pages are meant to
+// agree: the overview and the statistics show the same history, and a width or
+// a gap that is only written down once cannot drift apart between them.
+
+// The content box every page is sized to, via `main > *` in default.sass.
+$page-max-width: 1400px
+
+// Between the rows on the overview and between the cards in the statistics.
+$card-gap: 0.75rem

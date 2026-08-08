@@ -1,4 +1,5 @@
 @use "colors" as *
+@use "layout" as *
 
 body, html
   margin: 0
@@ -76,12 +77,21 @@ body::before
 .icon-blue
   color: $blue
 
+// One content box for every page. The overview used to be an unstyled
+// shrink-to-fit container and the statistics were full width with a large inset
+// of their own, so the two never lined up; sizing them here rather than in each
+// page is what keeps them the same width.
 main
   display: flex
   flex-direction: column
   align-items: center
   margin-left: 1rem
   margin-right: 1rem
+
+  > *
+    width: 100%
+    max-width: $page-max-width
+    box-sizing: border-box
 
 @keyframes opacity
   0%

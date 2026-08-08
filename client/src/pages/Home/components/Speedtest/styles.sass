@@ -1,9 +1,10 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
 
 // The card chrome lives on the wrapper so the detail panel opens inside the
 // same card rather than under a detached one.
 .speedtest-entry
-  margin-bottom: 0.75rem
+  margin-bottom: $card-gap
   border: 1px solid $light-gray
   background-color: var(--glass-bg)
   backdrop-filter: blur(16px)
