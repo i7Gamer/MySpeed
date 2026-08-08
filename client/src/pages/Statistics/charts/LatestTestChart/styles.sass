@@ -39,6 +39,24 @@ $purple: #8b5cf6
   display: flex
   align-items: center
 
+// Packet loss sits beside the loaded latency exactly as jitter sits beside the
+// ping, and needs the same separator - the paragraph is a flex row, so without
+// one the two values abut with no space at all.
+.test-container .test-info p .quality-loss
+  font-size: 0.9rem
+  font-weight: 500
+  color: $subtext
+  padding-left: 0.35rem
+  margin-left: 0.35rem
+  border-left: 2px solid $light-gray
+  opacity: 0.7
+
+  // Nothing to separate it from when the latency was not measured.
+  &:only-child
+    padding-left: 0
+    margin-left: 0
+    border-left: none
+
 .test-container .test-info p .jitter-value
   font-size: 0.9rem
   font-weight: 500

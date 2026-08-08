@@ -627,6 +627,7 @@
       "ping": "Measuring latency",
       "download": "Measuring download",
       "upload": "Measuring upload"
-    }
+    },
+    "last_test_now": "Last test just now"
   }
 }

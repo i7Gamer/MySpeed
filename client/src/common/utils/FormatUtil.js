@@ -127,6 +127,23 @@ export function generateRelativeTime(created) {
     return days === 1 ? t("time.day") : t("time.days", {replace: {days: days}});
 }
 
+/**
+ * How long ago the last test ran, as a whole sentence.
+ *
+ * The surrounding phrase is chosen here rather than at the call site because
+ * most of what generateRelativeTime returns is a bare duration that reads
+ * correctly inside "Last test … ago", while "Just now" is already a complete
+ * phrase - wrapping that produced "Last test Just now ago".
+ */
+export function formatLastTest(created) {
+    const seconds = (new Date().getTime() - new Date(Date.parse(created)).getTime()) / 1000;
+
+    if (isNaN(seconds)) return t("status.never_run");
+    if (seconds < JUST_NOW_SECONDS) return t("status.last_test_now");
+
+    return t("status.last_test", {time: generateRelativeTime(created)});
+}
+
 export const formatDuration = (seconds) =>
     typeof seconds === "number" && Number.isFinite(seconds) ? `${seconds}s` : NOT_MEASURED;
 

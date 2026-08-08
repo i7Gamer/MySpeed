@@ -9,7 +9,8 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
 import {useAlert} from "@/common/contexts/Alert";
-import {convertSpeed, formatTime, generateRelativeTime, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {convertSpeed, formatLastTest, formatTime, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {isFailedTest} from "@/common/utils/TestUtil";
 import {startBlockedReason, START_BLOCKED_RUNNING, START_BLOCKED_VIEW_MODE} from "@/common/utils/StatusUtil";
 import {startSpeedtest} from "@/common/utils/RunUtil";
 import "./styles.sass";
@@ -25,15 +26,24 @@ const StatusBarComponent = () => {
     const [status, updateStatus, setRunning] = useContext(StatusContext);
     const [config] = useContext(ConfigContext);
     const [preferences] = useContext(PreferencesContext);
-    const {updateTests} = useContext(SpeedtestContext);
+    const {speedtests, updateTests} = useContext(SpeedtestContext);
     const alert = useAlert();
 
-    const [relativeTime, setRelativeTime] = useState(null);
+    const [lastTestText, setLastTestText] = useState(null);
 
-    const lastTest = status.lastTest ?? null;
+    /**
+     * The status carries the last test, but a node running an older version
+     * answers with only {paused, running} - so the loaded list is the fallback.
+     * It is fetched per node from /speedtests and works against every version,
+     * which is what the panel this replaced relied on.
+     */
+    const lastTest = status.lastTest
+        ?? (speedtests.length > 0
+            ? {created: speedtests[0].created, failed: isFailedTest(speedtests[0])}
+            : null);
 
     useEffect(() => {
-        const refresh = () => setRelativeTime(lastTest ? generateRelativeTime(lastTest.created) : null);
+        const refresh = () => setLastTestText(formatLastTest(lastTest?.created));
 
         refresh();
         const timer = setInterval(refresh, RELATIVE_TIME_REFRESH_MS);
@@ -57,9 +67,8 @@ const StatusBarComponent = () => {
     const stateText = () => {
         if (status.paused) return t("status.paused");
         if (status.running) return phaseLabel();
-        if (relativeTime === null) return t("status.never_run");
 
-        return t("status.last_test", {time: relativeTime});
+        return lastTestText;
     };
 
     const nextText = () => {

@@ -627,6 +627,7 @@
       "ping": "Latenz wird gemessen",
       "download": "Download wird gemessen",
       "upload": "Upload wird gemessen"
-    }
+    },
+    "last_test_now": "Letzter Test gerade eben"
   }
 }

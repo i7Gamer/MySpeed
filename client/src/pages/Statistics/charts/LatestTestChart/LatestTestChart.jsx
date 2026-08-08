@@ -68,7 +68,10 @@ export const LatestTestChart = (props) => {
                         <div className="test-info">
                             <h2>{t("latest.quality")}</h2>
                             <p>
-                                {isMeasured(props.test.downloadLatency) &&
+                                {/* Both directions are required: they are
+                                    measured independently, and interpolating an
+                                    absent one renders "12 /  ms latency". */}
+                                {isMeasured(props.test.downloadLatency) && isMeasured(props.test.uploadLatency) &&
                                     t("latest.loaded_latency", {
                                         down: props.test.downloadLatency, up: props.test.uploadLatency
                                     })}

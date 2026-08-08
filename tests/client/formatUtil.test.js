@@ -2,7 +2,8 @@ import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import i18n from "i18next";
 import {
-    convertSpeed, formatDateTime, formatDuration, formatShortTime, formatTime, generateRelativeTime, getSpeedUnit,
+    convertSpeed, formatDateTime, formatDuration, formatLastTest, formatShortTime, formatTime,
+    generateRelativeTime, getSpeedUnit,
     SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H
 } from "@/common/utils/FormatUtil.js";
 
@@ -31,6 +32,33 @@ describe("generateRelativeTime", () => {
     it("says nothing rather than NaN when there is no date", () => {
         for (const absent of [null, undefined, ""])
             assert.equal(generateRelativeTime(absent), "N/A", `failed for ${JSON.stringify(absent)}`);
+    });
+});
+
+/**
+ * The status bar wraps the relative time in "Last test … ago". Most of what
+ * generateRelativeTime returns is a bare duration and reads correctly that way,
+ * but "Just now" is already a complete phrase - composing it produced "Last test
+ * Just now ago".
+ */
+describe("formatLastTest", () => {
+    const secondsAgo = (seconds) => new Date(Date.now() - seconds * 1000).toISOString();
+
+    it("wraps a duration in the surrounding phrase", () => {
+        assert.equal(formatLastTest(secondsAgo(20 * 60)), "Last test 20 minutes ago");
+    });
+
+    it("does not put 'ago' after a phrase that already reads as one", () => {
+        assert.equal(formatLastTest(secondsAgo(2)), "Last test just now");
+    });
+
+    it("says no test has run when there is no date at all", () => {
+        for (const absent of [null, undefined, ""])
+            assert.equal(formatLastTest(absent), "No test has run yet", `failed for ${JSON.stringify(absent)}`);
+    });
+
+    it("keeps wrapping on the far side of the boundary", () => {
+        assert.match(formatLastTest(secondsAgo(30)), /ago$/);
     });
 });
 
@@ -81,6 +109,11 @@ before(async () => {
                 minute: "1 minute", minutes: "{{minutes}} minutes",
                 hour: "1 hour", hours: "{{hours}} hours",
                 day: "1 day", days: "{{days}} days"
+            },
+            status: {
+                last_test: "Last test {{time}} ago",
+                last_test_now: "Last test just now",
+                never_run: "No test has run yet"
             }
         }}}
     });
