@@ -19,6 +19,7 @@ import crypto from 'node:crypto';
 const TOKEN_BYTES = 24;
 
 let token = null;
+let announced = false;
 
 export const getSetupToken = () => {
     if (token === null) token = crypto.randomBytes(TOKEN_BYTES).toString("hex");
@@ -28,6 +29,33 @@ export const getSetupToken = () => {
 /** Drops the current token so the next call issues a fresh one. For tests. */
 export const resetSetupToken = () => {
     token = null;
+    announced = false;
+};
+
+/**
+ * Prints the token, once.
+ *
+ * It used to be printed only by the startup banner, and only when the instance
+ * booted with no password. An operator who removed the password on a running
+ * instance therefore locked out every remote client: they were told to use a
+ * setup token that had never been issued, and only a restart would print one.
+ * Announcing on demand means the token exists whenever something is actually
+ * being refused for want of it.
+ */
+export const announceSetupToken = () => {
+    if (announced || process.env.PREVIEW_MODE === "true") return;
+    announced = true;
+
+    console.log("");
+    console.log("  No password is configured. Requests from other machines need this");
+    console.log("  one-time setup token - enter it when the interface asks for a password,");
+    console.log("  then set a real password from the settings menu.");
+    console.log("");
+    console.log(`      Setup token: ${getSetupToken()}`);
+    console.log("");
+    console.log("  A new token is issued every restart. Set ALLOW_NO_PASSWORD=true to run");
+    console.log("  without one, only on a network you trust.");
+    console.log("");
 };
 
 /**

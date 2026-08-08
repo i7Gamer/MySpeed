@@ -1,8 +1,9 @@
 import * as config from '../controller/config.js';
 import bcrypt from 'bcryptjs';
 import { readPasswords } from '../util/passwordHeader.js';
-import { matchesSetupToken } from '../util/setupToken.js';
+import { announceSetupToken, matchesSetupToken } from '../util/setupToken.js';
 import { isLoopbackRequest } from '../util/clientAddress.js';
+import { clientKey } from '../util/clientKey.js';
 
 /**
  * Every wrong password costs a full bcrypt comparison, so an unauthenticated
@@ -16,8 +17,6 @@ const MAX_FAILED_ATTEMPTS = 20;
 const MAX_TRACKED_CLIENTS = 10000;
 
 const failedAttempts = new Map();
-
-const clientKey = (req) => req.ip ?? req.socket?.remoteAddress ?? "unknown";
 
 const isLockedOut = (key) => {
     const entry = failedAttempts.get(key);
@@ -94,6 +93,11 @@ const handleUnconfigured = (req, res, next) => {
     }
 
     if (candidates.length > 0) recordFailure(key);
+
+    // Printed here, not only at boot: an instance whose password is removed
+    // while it runs never saw the startup banner, so the token this message
+    // points at had never been issued and only a restart would produce one.
+    announceSetupToken();
 
     return res.status(401).json({
         message: "This instance has no password set. Use the setup token from the server log, then set a password"

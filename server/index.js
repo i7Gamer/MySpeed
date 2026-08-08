@@ -2,7 +2,7 @@ import https from 'node:https';
 import fs from 'node:fs';
 import app from './app.js';
 import { certPath, keyPath, httpsPort, hasSSLCerts, setHttpsListening } from './config/tls.js';
-import { getSetupToken } from './util/setupToken.js';
+import { announceSetupToken } from './util/setupToken.js';
 import * as timerTask from './tasks/timer.js';
 import * as integrationTask from './tasks/integrations.js';
 import './util/loadServers.js';
@@ -37,16 +37,7 @@ const announceAccess = async () => {
         return;
     }
 
-    console.log("");
-    console.log("  No password is configured yet. Requests from other machines need this");
-    console.log("  one-time setup token - enter it when the interface asks for a password,");
-    console.log("  then set a real password from the settings menu.");
-    console.log("");
-    console.log(`      Setup token: ${getSetupToken()}`);
-    console.log("");
-    console.log("  A new token is issued every restart. Set ALLOW_NO_PASSWORD=true to run");
-    console.log("  without one, only on a network you trust.");
-    console.log("");
+    announceSetupToken();
 };
 
 process.on('uncaughtException', err => errorHandler(err));
