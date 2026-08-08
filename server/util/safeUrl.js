@@ -1,4 +1,5 @@
 import dns from 'node:dns/promises';
+import dnsCallback from 'node:dns';
 
 /**
  * Guards the one place the server fetches a URL the user typed: adding a remote
@@ -80,19 +81,49 @@ export const isBlockedAddress = (address) => {
     return address.includes(":") ? isBlockedIpv6(address) : isBlockedIpv4(address);
 };
 
+export class BlockedAddressError extends Error {
+    constructor(hostname) {
+        super(`${hostname} resolves to a loopback or link-local address`);
+        this.name = "BlockedAddressError";
+        this.code = "EBLOCKEDADDRESS";
+    }
+}
+
+/**
+ * A `lookup` for http.request that refuses to hand back a blocked address.
+ *
+ * This is what actually closes DNS rebinding. Checking a name and then handing
+ * the *name* to the HTTP client means the client resolves it a second time, and
+ * a record that changes in between is checked as one address and connected to
+ * as another. Node calls this function from inside the connect path, so the
+ * address it returns is the address the socket uses - there is no second
+ * resolution to disagree with.
+ *
+ * The hostname still travels for SNI and certificate validation, so pinning the
+ * address does not weaken TLS.
+ */
+export const safeLookup = (hostname, options, callback) => {
+    if (process.env.ALLOW_LOCAL_NODES === "true") return dnsCallback.lookup(hostname, options, callback);
+
+    dnsCallback.lookup(hostname, {...options, all: true}, (error, addresses) => {
+        if (error) return callback(error);
+
+        const allowed = addresses.filter((entry) => !isBlockedAddress(entry.address));
+        if (allowed.length === 0) return callback(new BlockedAddressError(hostname));
+
+        if (options.all) return callback(null, allowed);
+        return callback(null, allowed[0].address, allowed[0].family);
+    });
+};
+
 /**
  * Decides whether a node URL may be fetched.
  *
  * The hostname is resolved before the verdict, so a name that points at a
- * blocked address is refused too rather than only a literal one.
- *
- * Known residual: this resolves, approves, and then hands the *name* to fetch,
- * which resolves it again. A name whose record changes in between - DNS
- * rebinding - is checked as one address and connected to as another. Closing
- * that needs the connection pinned to the address that was cleared, which Node's
- * fetch gives no hook for; it would take a custom dispatcher and a dependency
- * this project does not have. Callers narrow the window instead by checking
- * immediately before each fetch rather than once when the node was added.
+ * blocked address is refused too rather than only a literal one. This is the
+ * check that produces a useful message for the operator adding a node; the
+ * connection itself is pinned separately by safeLookup, which is what makes the
+ * verdict impossible to outrun.
  *
  * @returns {Promise<{safe: true}|{safe: false, reason: string}>}
  */

@@ -1,6 +1,7 @@
 import nodes from '../models/Node.js';
 import { writePasswordHeaders } from '../util/passwordHeader.js';
 import { checkNodeTarget } from '../util/safeUrl.js';
+import { safeRequest } from '../util/safeRequest.js';
 
 const STATUS_TIMEOUT = 8000;
 
@@ -8,10 +9,8 @@ const STATUS_TIMEOUT = 8000;
  * A MySpeed node answers its own API; it has no reason to redirect. Following
  * one meant a node whose URL passed the address check could still hand the
  * server an internal destination of the remote host's choosing - and, through
- * the proxy, hand the body back to the caller.
+ * the proxy, hand the body back to the caller. safeRequest never follows one.
  */
-const NO_REDIRECTS = "manual";
-
 const isRedirect = (response) => response.status >= 300 && response.status < 400;
 
 export const listAll = async () => await nodes.findAll()
@@ -30,21 +29,20 @@ export const updatePassword = async (nodeId, password) => await nodes.update({pa
 export const checkStatus = async (url, password) => {
     // Re-checked here rather than trusted from creation time: a stored row may
     // predate the guard, and a name that resolved somewhere harmless then can
-    // resolve to loopback now.
+    // resolve to loopback now. The connection itself is pinned by safeRequest.
     if (!(await checkNodeTarget(url)).safe) return "INVALID_URL";
 
     try {
-        const res = await fetch(url + "/api/config", {
+        const res = await safeRequest(url + "/api/config", {
             headers: writePasswordHeaders(password),
-            redirect: NO_REDIRECTS,
-            signal: AbortSignal.timeout(STATUS_TIMEOUT)
+            timeout: STATUS_TIMEOUT
         });
 
         if (isRedirect(res)) return "INVALID_URL";
         if (res.status === 401) return "PASSWORD_REQUIRED";
-        if (!res.ok) return "INVALID_URL";
+        if (res.status < 200 || res.status >= 300) return "INVALID_URL";
 
-        const data = await res.json();
+        const data = JSON.parse(res.body.toString("utf8"));
         if (!data.ping) return "INVALID_URL";
         if (data.viewMode) return "PASSWORD_REQUIRED";
         return "NODE_VALID";
@@ -73,14 +71,11 @@ export const proxyRequest = async (url, req, res) => {
         Object.entries(req.headers).filter(([k]) => !SKIP_HEADERS.has(k.toLowerCase()))
     );
 
+    const body = req.method === "GET" || req.method === "HEAD" ? undefined : JSON.stringify(req.body ?? {});
+    if (body !== undefined) headers["content-length"] = String(Buffer.byteLength(body));
+
     try {
-        const response = await fetch(url, {
-            method: req.method,
-            headers,
-            body: req.method === "GET" ? undefined : JSON.stringify(req.body),
-            redirect: NO_REDIRECTS,
-            signal: req.signal
-        });
+        const response = await safeRequest(url, {method: req.method, headers, body, signal: req.signal});
 
         if (isRedirect(response))
             return res.status(502).json({message: "The node redirected the request", type: "INVALID_URL"});
@@ -88,13 +83,13 @@ export const proxyRequest = async (url, req, res) => {
         if (response.status >= 500) return serverError(res);
 
         for (const name of FORWARDED_HEADERS) {
-            const value = response.headers.get(name);
+            const value = response.headers[name];
             if (value) res.setHeader(name, value);
         }
 
         // Handed on verbatim. Forcing the body through JSON.parse turned every
         // non-JSON response - both CSV export endpoints - into a literal null.
-        res.status(response.status).send(Buffer.from(await response.arrayBuffer()));
+        res.status(response.status).send(response.body);
     } catch {
         serverError(res);
     }
