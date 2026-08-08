@@ -38,6 +38,13 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # The client keeps its own dependency tree, and tests/client reaches into
+      # it - FormatUtil pulls in i18next. Without this the client tests fail
+      # with ERR_MODULE_NOT_FOUND on a machine where nobody has run the client.
+      - name: Install client dependencies
+        working-directory: client
+        run: bun install --frozen-lockfile
+
       # server/migrations/index.js and server/integrations/index.js are
       # generated and gitignored; the server does not import without them.
       - name: Generate sources
