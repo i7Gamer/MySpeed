@@ -14,7 +14,7 @@ import { parseTrustProxy } from './util/trustProxy.js';
 import configRoutes from './routes/config.js';
 import speedtestsRoutes from './routes/speedtests.js';
 import systemRoutes from './routes/system.js';
-import storageRoutes, { LARGE_BODY_PATHS } from './routes/storage.js';
+import storageRoutes, { isLargeBodyPath } from './routes/storage.js';
 import recommendationsRoutes from './routes/recommendations.js';
 import nodesRoutes from './routes/nodes.js';
 import integrationsRoutes from './routes/integrations.js';
@@ -34,7 +34,6 @@ import healthRoutes from './routes/health.js';
 // for everything, applied before any password check ran, so an anonymous caller
 // could make the server buffer and parse 50mb of JSON at will.
 const JSON_BODY_LIMIT = '100kb';
-const IMPORT_BODY_LIMIT = '50mb';
 
 const RATE_LIMIT_WINDOW_MS = 60000;
 
@@ -76,13 +75,9 @@ app.use(securityHeaders());
 // body-parser marks the request as read, so whichever parser runs first wins.
 // The import routes are skipped here and parse their own body after their
 // password check, which is what keeps the large limit behind authentication.
-const largeBodyPaths = new Set(LARGE_BODY_PATHS);
 const smallJsonBody = express.json({ limit: JSON_BODY_LIMIT });
 
-app.use((req, res, next) => {
-    const normalised = req.path.length > 1 && req.path.endsWith("/") ? req.path.slice(0, -1) : req.path;
-    return largeBodyPaths.has(normalised) ? next() : smallJsonBody(req, res, next);
-});
+app.use((req, res, next) => isLargeBodyPath(req.path) ? next() : smallJsonBody(req, res, next));
 
 // Mounted before the authenticated routes and before the rate limiter: the
 // probe must answer regardless of how the instance is locked down, and a

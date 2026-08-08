@@ -14,7 +14,19 @@ const IMPORT_BODY_LIMIT = '50mb';
 
 export const LARGE_BODY_PATHS = ["/api/storage/tests/history", "/api/storage/config"];
 
-const importBody = express.json({limit: IMPORT_BODY_LIMIT});
+export const importBody = express.json({limit: IMPORT_BODY_LIMIT});
+
+// While a node is selected the client sends these same imports through the
+// proxy prefix, so the parent sees /api/nodes/<id>/storage/... An exact-string
+// list missed that entirely: the 100kb parser ran instead and every import of a
+// real history - the case the large limit exists for - failed with 413.
+const NODE_PREFIX = /^\/api\/nodes\/[^/]+/;
+
+export const isLargeBodyPath = (path) => {
+    const trimmed = path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+
+    return LARGE_BODY_PATHS.includes(trimmed.replace(NODE_PREFIX, "/api"));
+};
 
 app.get("/", password(false), async (req, res) => {
     res.json(await config.getUsedStorage());

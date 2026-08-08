@@ -4,6 +4,7 @@ import password from '../middlewares/password.js';
 import { passwordHeaderNames, writePasswordHeaders } from '../util/passwordHeader.js';
 import { stripTrailingSlashes } from '../util/helpers.js';
 import { checkNodeTarget } from '../util/safeUrl.js';
+import { importBody } from './storage.js';
 
 const app = express.Router();
 
@@ -86,7 +87,11 @@ app.patch("/:nodeId/password", password(false), async (req, res) => {
     res.json({message: "Node password successfully updated", type: "PASSWORD_UPDATED"});
 });
 
-app.all("/:nodeId/*route", password(false), async (req, res) => {
+// importBody only does anything on the proxied import paths, where app.js
+// deliberately skipped its 100kb parser; everywhere else the body has already
+// been read and this is a no-op. Mounted after password(false), so the large
+// limit stays behind authentication.
+app.all("/:nodeId/*route", password(false), importBody, async (req, res) => {
     const node = await nodes.getOne(req.params.nodeId);
     if (node === null) return res.status(404).json({message: "Node not found"});
 
