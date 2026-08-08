@@ -162,6 +162,7 @@ Die Bindung des Ports an `127.0.0.1` sorgt dafür, dass der Container ausschlie�
 | `FRAME_ANCESTORS` | `'none'` | CSP-Ursprünge, die MySpeed in einem iframe einbetten dürfen – etwa Dashboards wie Homepage oder Heimdall. |
 | `HTTPS_REDIRECT` | `true` | Netzwerk-Anfragen auf den HTTPS-Listener umleiten, wenn in `data/certs` ein Zertifikat liegt. Auf `false` setzen, wenn ein Proxy TLS übernimmt und `TRUST_PROXY` nicht gesetzt ist. |
 | `ALLOW_LOCAL_NODES` | `false` | Erlaubt Nodes auf Loopback- und Link-Local-Adressen. Standardmäßig aus, damit eine Node-URL den Host nicht abtasten kann. |
+| `ALLOWED_NODE_HOSTS` | nicht gesetzt | Beschränkt Nodes auf diese Hosts, kommagetrennt, jeweils mit optionalem Port — `192.168.1.50,myspeed.example.net:5216,[fd00::1]`. Nicht gesetzt erlaubt jeden Host außerhalb der gesperrten Bereiche. Bei einer aus dem Internet erreichbaren Instanz sinnvoll. |
 
 #### Was geschützt ist – und was nicht
 

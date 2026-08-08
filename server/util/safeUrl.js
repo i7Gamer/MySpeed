@@ -14,6 +14,71 @@ import dnsCallback from 'node:dns';
  */
 const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
 
+/**
+ * An optional allowlist of hosts a node URL may point at.
+ *
+ * Unset - the default - leaves the guard as it was: anything except loopback
+ * and link-local. Set, it turns "any URL an admin types" into "one of these",
+ * which is what an instance reachable from outside the house wants. It narrows
+ * the guard and never widens it: an allowlisted loopback address is still
+ * refused unless ALLOW_LOCAL_NODES says otherwise.
+ *
+ * Entries are exact hosts, comma-separated, with an optional port:
+ *
+ *     ALLOWED_NODE_HOSTS=192.168.1.50,myspeed.example.net:5216,[fd00::1]
+ *
+ * A port pins the entry to that port; without one, any port on that host
+ * matches. There are no wildcards - a pattern that quietly matches more than
+ * the operator meant is exactly what this is here to prevent.
+ */
+let cachedRaw = null;
+let cachedHosts = null;
+
+const parseAllowedHosts = (raw) => {
+    const entries = [];
+
+    for (const part of raw.split(",")) {
+        const entry = part.trim();
+        if (entry === "") continue;
+
+        try {
+            // Parsed as a URL so brackets, ports and case are handled the same
+            // way they are on the value being checked.
+            const parsed = new URL(`http://${entry}`);
+            if (parsed.hostname === "") throw new Error("no host");
+
+            entries.push({hostname: parsed.hostname, port: parsed.port});
+        } catch {
+            console.warn(`ALLOWED_NODE_HOSTS: ignoring "${entry}", which is not a host[:port]`);
+        }
+    }
+
+    return entries;
+};
+
+const allowedHosts = () => {
+    const raw = process.env.ALLOWED_NODE_HOSTS ?? "";
+
+    if (raw !== cachedRaw) {
+        cachedRaw = raw;
+        cachedHosts = raw.trim() === "" ? null : parseAllowedHosts(raw);
+    }
+
+    return cachedHosts;
+};
+
+const isAllowedHost = (url) => {
+    const allowed = allowedHosts();
+    if (allowed === null) return true;
+
+    // Every entry was unusable. Refusing everything is the safe reading of
+    // "the operator meant to restrict this".
+    if (allowed.length === 0) return false;
+
+    return allowed.some((entry) =>
+        entry.hostname === url.hostname && (entry.port === "" || entry.port === url.port));
+};
+
 const IPV4_MAPPED_PREFIX = "::ffff:";
 
 const octets = (address) => address.split(".").map(Number);
@@ -137,6 +202,11 @@ export const checkNodeTarget = async (value) => {
 
     if (!ALLOWED_PROTOCOLS.has(url.protocol))
         return {safe: false, reason: "A node URL has to use http or https"};
+
+    // Checked before the local opt-out, so ALLOW_LOCAL_NODES cannot be used to
+    // step around a list the operator set deliberately.
+    if (!isAllowedHost(url))
+        return {safe: false, reason: "This host is not in ALLOWED_NODE_HOSTS"};
 
     if (process.env.ALLOW_LOCAL_NODES === "true") return {safe: true};
 

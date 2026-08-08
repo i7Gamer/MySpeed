@@ -172,3 +172,95 @@ describe("IPv4 embedded in an IPv6 address", () => {
         assert.equal(isBlockedAddress("fd00::1"), false);
     });
 });
+
+/**
+ * An optional narrowing, for an instance reachable from outside the house: it
+ * turns "any URL an admin types" into "one of these". It never widens the
+ * guard, and it is checked before the local opt-out so ALLOW_LOCAL_NODES cannot
+ * be used to step around a list the operator set on purpose.
+ */
+describe("ALLOWED_NODE_HOSTS", () => {
+    const originalList = process.env.ALLOWED_NODE_HOSTS;
+
+    const withList = async (value, run) => {
+        if (value === undefined) delete process.env.ALLOWED_NODE_HOSTS;
+        else process.env.ALLOWED_NODE_HOSTS = value;
+
+        try {
+            return await run();
+        } finally {
+            if (originalList === undefined) delete process.env.ALLOWED_NODE_HOSTS;
+            else process.env.ALLOWED_NODE_HOSTS = originalList;
+        }
+    };
+
+    // IP literals throughout, so nothing here depends on DNS.
+    const allows = async (list, url) => (await withList(list, () => checkNodeTarget(url))).safe;
+
+    it("changes nothing while it is unset", async () => {
+        assert.equal(await allows(undefined, "http://192.168.1.50:5216"), true);
+        assert.equal(await allows("", "http://192.168.1.50:5216"), true);
+        assert.equal(await allows("   ", "http://192.168.1.50:5216"), true);
+    });
+
+    it("allows a listed host on any port", async () => {
+        assert.equal(await allows("192.168.1.50", "http://192.168.1.50:5216"), true);
+        assert.equal(await allows("192.168.1.50", "http://192.168.1.50:9999"), true);
+    });
+
+    it("refuses a host that is not listed", async () => {
+        assert.equal(await allows("192.168.1.50", "http://192.168.1.51:5216"), false);
+        assert.equal(await allows("192.168.1.50", "http://10.0.0.5:5216"), false);
+    });
+
+    it("pins the port when the entry names one", async () => {
+        assert.equal(await allows("192.168.1.50:5216", "http://192.168.1.50:5216"), true);
+        assert.equal(await allows("192.168.1.50:5216", "http://192.168.1.50:9999"), false);
+    });
+
+    it("accepts several entries, and tolerates spacing", async () => {
+        const list = " 192.168.1.50 , 10.0.0.5:5216 ";
+
+        assert.equal(await allows(list, "http://192.168.1.50:1234"), true);
+        assert.equal(await allows(list, "http://10.0.0.5:5216"), true);
+        assert.equal(await allows(list, "http://10.0.0.5:1234"), false);
+    });
+
+    it("handles a bracketed IPv6 entry", async () => {
+        assert.equal(await allows("[fd00::1]", "http://[fd00::1]:5216"), true);
+        assert.equal(await allows("[fd00::1]", "http://[fd00::2]:5216"), false);
+    });
+
+    it("matches a hostname regardless of case", async () => {
+        // Compared through the URL parser, which lowercases both sides.
+        const reason = await withList("MySpeed.Example.NET",
+            () => checkNodeTarget("http://myspeed.example.net:5216"));
+
+        assert.notEqual(reason.reason, "This host is not in ALLOWED_NODE_HOSTS");
+    });
+
+    // An entry the operator got wrong must not silently become "allow anything".
+    it("refuses everything when no entry could be read", async () => {
+        assert.equal(await allows("not a host!!", "http://192.168.1.50:5216"), false);
+    });
+
+    it("still refuses a listed loopback address without the local opt-out", async () => {
+        assert.equal(await allows("127.0.0.1", "http://127.0.0.1:5216"), false);
+    });
+
+    it("is not something ALLOW_LOCAL_NODES can step around", async () => {
+        process.env.ALLOW_LOCAL_NODES = "true";
+
+        try {
+            assert.equal(await allows("192.168.1.50", "http://192.168.1.51:5216"), false);
+            assert.equal(await allows("127.0.0.1", "http://127.0.0.1:5216"), true);
+        } finally {
+            delete process.env.ALLOW_LOCAL_NODES;
+        }
+    });
+
+    it("says which control refused the URL", async () => {
+        const result = await withList("192.168.1.50", () => checkNodeTarget("http://10.0.0.5:5216"));
+        assert.match(result.reason, /ALLOWED_NODE_HOSTS/);
+    });
+});
