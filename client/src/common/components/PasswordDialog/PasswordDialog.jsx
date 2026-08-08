@@ -14,7 +14,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
 import React, {useContext, useState} from "react";
-import {baseRequest, deleteRequest, patchRequest} from "@/common/utils/RequestUtil";
+import {baseRequest, deleteRequest, login, logout, patchRequest} from "@/common/utils/RequestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {NodeContext} from "@/common/contexts/Node";
@@ -50,7 +50,10 @@ export const PasswordDialog = ({open, onClose}) => {
                     await baseRequest("/nodes/" + currentNode + "/password", "PATCH", {password});
                     updateNodes();
                 } else {
-                    localStorage.setItem("password", password);
+                    // Changing the password revokes every session, this one
+                    // included, so the new one is exchanged for a fresh cookie
+                    // straight away rather than written to storage.
+                    await login(password);
                 }
             }
 
@@ -78,7 +81,7 @@ export const PasswordDialog = ({open, onClose}) => {
                 await baseRequest("/nodes/" + currentNode + "/password", "PATCH", {password: "none"});
                 updateNodes();
             } else {
-                localStorage.removeItem("password");
+                await logout();
             }
 
             reloadConfig();
@@ -89,9 +92,12 @@ export const PasswordDialog = ({open, onClose}) => {
         }
     };
 
-    const isPasswordSet = currentNode !== 0 
-        ? findNode(currentNode)?.password 
-        : localStorage.getItem("password") != null;
+    // Answered by the server, not by this browser's own storage: the old check
+    // meant an instance with a password looked unprotected on every other
+    // device, and protected on this one long after the password was gone.
+    const isPasswordSet = currentNode !== 0
+        ? findNode(currentNode)?.password
+        : config.passwordSet === true;
 
     return (
         <Dialog open={open} onClose={onClose} className="password-dialog">

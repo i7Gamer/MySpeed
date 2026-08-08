@@ -89,16 +89,24 @@ describe("password attempt throttling", () => {
         assert.equal((await guarded()).status, 200);
     });
 
+    /**
+     * This asserted a wall-clock bound as well, to show the async bcrypt no
+     * longer blocks the event loop. It could not do that reliably: the throttle
+     * caps the run at twenty comparisons, which even synchronously is about a
+     * second - inside any bound loose enough to survive the parallel test
+     * runner, and outside any bound tight enough to discriminate. It failed on
+     * a loaded machine and passed alone, which is worse than not testing it.
+     *
+     * What is left is real: the probe answers while failed logins are in
+     * flight, so it is neither throttled nor rate-limited alongside them.
+     */
     it("keeps the health probe answering while password checks are in flight", async () => {
         const inFlight = Array.from({length: MAX_FAILED_ATTEMPTS}, () => wrongPassword());
 
-        const startedAt = process.hrtime.bigint();
-        const {status} = await api(server.baseUrl, "/health");
-        const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
-
+        const {status, body} = await api(server.baseUrl, "/health");
         await Promise.all(inFlight);
 
         assert.equal(status, 200);
-        assert.ok(elapsedMs < 2000, `health took ${Math.round(elapsedMs)}ms behind the password checks`);
+        assert.equal(body.status, "ok");
     });
 });

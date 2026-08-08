@@ -4,6 +4,8 @@ import { readPasswords } from '../util/passwordHeader.js';
 import { announceSetupToken, matchesSetupToken } from '../util/setupToken.js';
 import { isLoopbackRequest } from '../util/clientAddress.js';
 import { clientKey } from '../util/clientKey.js';
+import { isValidSession, SESSION_COOKIE } from '../util/session.js';
+import { readCookie } from '../util/cookies.js';
 
 /**
  * Every wrong password costs a full bcrypt comparison, so an unauthenticated
@@ -106,6 +108,14 @@ const handleUnconfigured = (req, res, next) => {
 
 export default (allowViewAccess) => async (req, res, next) => {
     if (process.env.PREVIEW_MODE === "true") return next();
+
+    // A session costs no bcrypt comparison and cannot be read by script on the
+    // page, which is the whole reason the client no longer keeps the password.
+    // Checked before anything else so the common request does no work at all.
+    if (isValidSession(readCookie(req, SESSION_COOKIE))) {
+        req.viewMode = false;
+        return next();
+    }
 
     const passwordHash = await config.getValue("password");
     const passwordLevel = await config.getValue("passwordLevel");

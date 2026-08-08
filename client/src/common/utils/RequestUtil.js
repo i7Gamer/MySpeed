@@ -14,14 +14,49 @@ const getApiRoot = () => {
     } else return "/api";
 }
 
-// Get the default headers of the request
-const getHeaders = () => {
-    const password = localStorage.getItem("password");
-    let headers = password ? {"x-password": encodeURIComponent(password)} : {};
-    headers['content-type'] = 'application/json';
+/**
+ * Signs in, so the browser holds a session cookie instead of the password.
+ *
+ * The password used to live in localStorage and be replayed on every request:
+ * readable by any script on the page, kept indefinitely, and impossible to
+ * revoke. The cookie the server sets in exchange is HttpOnly, so nothing here
+ * can read it either - which is the point.
+ */
+export const login = async (password) => {
+    const response = await fetch("/api/session", {
+        method: "POST",
+        headers: {"content-type": "application/json"},
+        body: JSON.stringify({password})
+    });
 
-    return headers;
+    return response.ok;
 }
+
+export const logout = () => fetch("/api/session", {method: "DELETE"});
+
+const STORED_PASSWORD_KEY = "password";
+
+/**
+ * Trades a password left over from the old scheme for a session, once.
+ *
+ * Without this every existing user would be signed out by the upgrade. The
+ * stored password is removed either way: if it no longer works there is nothing
+ * to keep, and leaving it behind would defeat the point of the change.
+ */
+export const migrateStoredPassword = async () => {
+    const stored = localStorage.getItem(STORED_PASSWORD_KEY);
+    if (stored === null) return;
+
+    try {
+        await login(stored);
+    } finally {
+        localStorage.removeItem(STORED_PASSWORD_KEY);
+    }
+}
+
+// The session cookie travels on its own; nothing here needs to attach a
+// credential. Node passwords are held server-side and injected by the proxy.
+const getHeaders = () => ({"content-type": "application/json"});
 
 // Run a plain request with all default values using the base path
 export const baseRequest = async (path, method = "GET", body = {}, headers = {}) => {

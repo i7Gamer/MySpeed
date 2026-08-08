@@ -11,6 +11,7 @@ import db from '../config/database.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import * as interfaces from '../util/loadInterfaces.js';
+import { destroyAllSessions } from '../util/session.js';
 
 const configDefaults = {
     ping: "25",
@@ -83,6 +84,11 @@ export const getValue = async (key) => {
 
 export const updateValue = async (key, newValue) => {
     if ((await getValue(key)) === undefined) return undefined;
+
+    // Changing or clearing the password takes access back, and a session left
+    // alive would quietly undo that: the browser holding it would keep working
+    // against a password that no longer exists.
+    if (key === "password") destroyAllSessions();
 
     triggerEvent("configUpdated", {key: key, value: key === "password" ? "protected" : newValue})
         .then(undefined);

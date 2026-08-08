@@ -12,6 +12,7 @@ import httpsRedirect from './middlewares/httpsRedirect.js';
 import { createRateLimit } from './middlewares/rateLimit.js';
 import { parseTrustProxy } from './util/trustProxy.js';
 import configRoutes from './routes/config.js';
+import sessionRoutes from './routes/session.js';
 import speedtestsRoutes from './routes/speedtests.js';
 import systemRoutes from './routes/system.js';
 import storageRoutes, { isLargeBodyPath } from './routes/storage.js';
@@ -99,6 +100,7 @@ app.use("/api/prometheus", createRateLimit({
     windowMs: RATE_LIMIT_WINDOW_MS
 }));
 
+app.use("/api/session", sessionRoutes);
 app.use("/api/config", configRoutes);
 app.use("/api/speedtests", speedtestsRoutes);
 app.use("/api/info", systemRoutes);

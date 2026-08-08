@@ -14,6 +14,11 @@ app.get("/", password(true), async (req, res) => {
     configValues['viewMode'] = req.viewMode;
     configValues['previewMode'] = process.env.PREVIEW_MODE === "true";
 
+    // Whether a password exists, never the value. The client used to work this
+    // out from its own localStorage, which meant the answer was per-browser:
+    // an instance with a password showed as unprotected on every other device.
+    configValues['passwordSet'] = (await config.getValue("password")) !== config.NO_PASSWORD;
+
     if (process.env.PREVIEW_MODE === "true")
         configValues['previewMessage'] = String(process.env.PREVIEW_MESSAGE || "The owner of this instance has not provided a message");
 

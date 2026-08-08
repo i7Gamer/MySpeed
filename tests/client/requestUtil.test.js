@@ -67,11 +67,20 @@ describe("jsonRequest", () => {
         });
     });
 
-    it("sends the password header when one is stored", async () => {
+    /**
+     * The password used to be kept in localStorage and attached to every
+     * request. It is exchanged for an HttpOnly session cookie now, which the
+     * browser sends on its own and no script here can read - so nothing may
+     * attach a credential, and nothing may read one back out of storage.
+     */
+    it("never attaches a password header", async () => {
         store.set("password", "hunter2");
         respondWith({body: {}});
+
         await jsonRequest("/speedtests");
-        assert.equal(lastRequest.options.headers["x-password"], "hunter2");
+
+        assert.equal(lastRequest.options.headers["x-password"], undefined);
+        assert.doesNotMatch(JSON.stringify(lastRequest.options.headers), /hunter2/);
     });
 
     it("targets the selected node when one is active", async () => {

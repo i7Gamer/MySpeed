@@ -13,7 +13,7 @@ import DropdownComponent from "../Dropdown/DropdownComponent";
 import { useAlert } from "@/common/contexts/Alert";
 import { StatusContext } from "@/common/contexts/Status";
 import { SpeedtestContext } from "@/common/contexts/Speedtests";
-import { jsonRequest, postRequest } from "@/common/utils/RequestUtil";
+import { jsonRequest, login, postRequest } from "@/common/utils/RequestUtil";
 import { updateInfo } from "@/common/components/Header/utils/infos";
 import { t } from "i18next";
 import { ConfigContext } from "@/common/contexts/Config";
@@ -52,24 +52,23 @@ const HeaderComponent = () => {
         { buttonText: t("dialog.okay") }
     );
 
-    const showPasswordDialog = async () => {
+    const showPasswordDialog = async (failed = false) => {
         const result = await alert.openInput(t("header.admin_login"), {
             placeholder: t("dialog.password.placeholder"),
-            description: localStorage.getItem("password") ? <span className="icon-red">{t("dialog.password.wrong")}</span> : "",
+            description: failed ? <span className="icon-red">{t("dialog.password.wrong")}</span> : "",
             inputType: "password",
             buttonText: t("dialog.login")
         });
-        
-        if (result) {
-            localStorage.setItem("password", result);
-            reloadConfig();
-            const newConfig = await checkConfig().catch(() => null);
-            if (newConfig?.viewMode) {
-                showPasswordDialog();
-            }
-        } else {
-            localStorage.removeItem("password");
-        }
+
+        if (!result) return;
+
+        // Exchanged for a session cookie rather than kept: the password itself
+        // never reaches storage this script can read back.
+        if (!await login(result)) return showPasswordDialog(true);
+
+        reloadConfig();
+        const newConfig = await checkConfig().catch(() => null);
+        if (newConfig?.viewMode) showPasswordDialog(true);
     };
 
     const startSpeedtest = async () => {
