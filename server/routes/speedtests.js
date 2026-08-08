@@ -88,6 +88,7 @@ app.post("/run", password(false), async (req, res) => {
 app.get("/status", password(true), async (req, res) => {
     const latest = await tests.getLatest();
     const progress = testTask.getProgress();
+    const nextTest = timer.nextRun(await config.getValue("cron"));
 
     res.json({
         paused: pauseController.currentState,
@@ -100,7 +101,11 @@ app.get("/status", password(true), async (req, res) => {
         recentFailures: await tests.countFailuresSince(new Date(Date.now() - RECENT_FAILURE_WINDOW_MS)),
         // From the stored schedule rather than the running job, so it is right
         // even before the timer has been started for the first time.
-        nextTest: timer.nextRun(await config.getValue("cron"))
+        nextTest,
+        // The offset delays each run by up to a few minutes so that every
+        // instance does not test on the same tick, which makes the cron time the
+        // earliest it could start rather than when it will.
+        nextTestApproximate: nextTest !== null && await config.getValue("scheduleOffset") === "true"
     });
 });
 

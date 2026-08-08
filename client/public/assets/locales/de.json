@@ -308,7 +308,10 @@
       "trigger": "Gestartet",
       "server": "Server",
       "result": "Vollständiges Ergebnis",
-      "open_result": "Auf speedtest.net ansehen"
+      "open_result": "Auf speedtest.net ansehen",
+      "loaded_latency": "Latenz unter Last",
+      "loaded_latency_value": "{{down}} ms runter / {{up}} ms hoch",
+      "packet_loss": "Paketverlust"
     }
   },
   "errors": {
@@ -320,7 +323,9 @@
     "connection_refused": "Der Test konnte nicht durchgeführt werden, da die Verbindung abgelehnt wurde",
     "timed_out": "Die Internetverbindung war in der Zeit des Tests instabil",
     "config": "Die Konfigurationsdatei konnte nicht geladen werden",
-    "invalid_view": "Ungültige Ansicht"
+    "invalid_view": "Ungültige Ansicht",
+    "cannot_open_socket": "Es konnte keine Verbindung zum Testserver aufgebaut werden. Möglicherweise ist er über die gewählte Netzwerkschnittstelle nicht erreichbar.",
+    "latency_failed": "Der Latenztest ist fehlgeschlagen, daher konnte keine Geschwindigkeit gemessen werden."
   },
   "statistics": {
     "average": "Durchschnitt",
@@ -630,6 +635,7 @@
       "measuring": "Wird gemessen…"
     },
     "last_test_now": "Letzter Test gerade eben",
-    "elapsed": "{{seconds}}s vergangen"
+    "elapsed": "{{seconds}}s vergangen",
+    "next_test_approx": "Nächster gegen {{time}}"
   }
 }

@@ -9,4 +9,28 @@ export const errors = () => ({
     "Connection refused": t("errors.connection_refused"),
     "timed out": t("errors.timed_out"),
     "Could not retrieve or read configuration": t("errors.config"),
+    // What the Ookla CLI reports when it cannot reach the chosen server from the
+    // address it was bound to - most often a server that answers over IPv6 while
+    // the test is pinned to an IPv4 interface.
+    "Cannot open socket": t("errors.cannot_open_socket"),
+    "Latency test failed": t("errors.latency_failed"),
 });
+
+/**
+ * The reason a test failed, in words, or null if it cannot be explained.
+ *
+ * Matched against the whole stored output rather than compared to it: what the
+ * CLI printed is often several log records around the phrase that matters.
+ *
+ * Null rather than the raw text for anything unrecognised, because the caller
+ * decides where it is going - the row has space for a sentence, and the detail
+ * panel below it is where the unabridged output belongs.
+ */
+export const describeError = (error) => {
+    if (!error) return null;
+
+    for (const phrase in errors())
+        if (error.includes(phrase)) return errors()[phrase];
+
+    return null;
+};

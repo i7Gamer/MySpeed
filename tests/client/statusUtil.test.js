@@ -2,8 +2,21 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
     IDLE_POLL_MS, RUNNING_POLL_MS, START_BLOCKED_PAUSED, START_BLOCKED_RUNNING, START_BLOCKED_VIEW_MODE,
-    pollIntervalFor, progressPercent, startBlockedReason
+    pollIntervalFor, progressPercent, showsStatusBar, startBlockedReason
 } from "@/common/utils/StatusUtil.js";
+
+// The header hides its own start button where the bar already carries one, so
+// the two must agree on exactly which route that is.
+describe("showsStatusBar", () => {
+    it("is the overview", () => {
+        assert.equal(showsStatusBar("/"), true);
+    });
+
+    it("is not any other page", () => {
+        for (const path of ["/statistics", "/nodes", "/statistics?from=2026-08-01"])
+            assert.equal(showsStatusBar(path), false, `claimed the bar shows on ${path}`);
+    });
+});
 
 /**
  * Only the Ookla CLI reports progress: librespeed's --json suppresses its

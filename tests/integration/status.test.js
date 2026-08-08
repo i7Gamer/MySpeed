@@ -113,6 +113,35 @@ describe("GET /api/speedtests/status", () => {
             assert.ok(nextTest, "no next test was reported");
             assert.ok(new Date(nextTest) > new Date(), "the next test is in the past");
         });
+
+        /**
+         * The schedule offset deliberately delays each run by up to a few
+         * minutes so that every instance does not test on the same tick. The
+         * cron time is then the earliest it could start rather than when it
+         * will, and presenting it as exact is simply wrong.
+         */
+        it("says the time is approximate when the schedule is offset", async () => {
+            await setConfig(server.config, "scheduleOffset", "false");
+            assert.equal((await status()).nextTestApproximate, false);
+
+            await setConfig(server.config, "scheduleOffset", "true");
+            assert.equal((await status()).nextTestApproximate, true);
+        });
+
+        // Written past validateInput deliberately: an unusable schedule cannot
+        // be set through the API, but one can survive in a database restored
+        // from an older export, and the status still has to answer.
+        it("is not approximate when there is nothing scheduled", async () => {
+            await setConfig(server.config, "scheduleOffset", "true");
+            await server.config.updateValue("cron", "not a cron expression");
+
+            const body = await status();
+
+            assert.equal(body.nextTest, null);
+            assert.equal(body.nextTestApproximate, false);
+
+            await setConfig(server.config, "cron", "0,30 * * * *");
+        });
     });
 });
 

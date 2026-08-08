@@ -308,7 +308,10 @@
       "trigger": "Started",
       "server": "Server",
       "result": "Full result",
-      "open_result": "View on speedtest.net"
+      "open_result": "View on speedtest.net",
+      "loaded_latency": "Latency under load",
+      "loaded_latency_value": "{{down}} ms down / {{up}} ms up",
+      "packet_loss": "Packet loss"
     }
   },
   "errors": {
@@ -320,7 +323,9 @@
     "connection_refused": "The test could not be performed because the connection was rejected",
     "timed_out": "Internet connection was unstable during the time of the test",
     "config": "The configuration file could not be loaded",
-    "invalid_view": "Invalid view"
+    "invalid_view": "Invalid view",
+    "cannot_open_socket": "Could not open a connection to the test server. It may be unreachable from the selected network interface.",
+    "latency_failed": "The latency test failed, so no speed could be measured."
   },
   "statistics": {
     "average": "Average",
@@ -630,6 +635,7 @@
       "measuring": "Measuring…"
     },
     "last_test_now": "Last test just now",
-    "elapsed": "{{seconds}}s elapsed"
+    "elapsed": "{{seconds}}s elapsed",
+    "next_test_approx": "Next at ~{{time}}"
   }
 }

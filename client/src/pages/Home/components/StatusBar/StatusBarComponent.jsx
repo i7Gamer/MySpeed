@@ -92,7 +92,12 @@ const StatusBarComponent = () => {
 
     const nextText = () => {
         if (status.running || status.paused || !status.nextTest) return null;
-        return t("status.next_test", {time: formatTime(status.nextTest, preferences)});
+
+        // The schedule offset delays each run by up to a few minutes, so the
+        // cron time is the earliest it could start rather than when it will.
+        const key = status.nextTestApproximate ? "status.next_test_approx" : "status.next_test";
+
+        return t(key, {time: formatTime(status.nextTest, preferences)});
     };
 
     const stateIcon = () => {

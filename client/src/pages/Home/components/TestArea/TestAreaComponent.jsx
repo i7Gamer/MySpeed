@@ -164,6 +164,9 @@ const TestArea = () => {
                             resultId={test.resultId}
                             serverName={test.serverName}
                             serverHost={test.serverHost}
+                            packetLoss={test.packetLoss}
+                            downloadLatency={test.downloadLatency}
+                            uploadLatency={test.uploadLatency}
                             created={test.created}
                             // Newest first, so the next entry is the
                             // chronologically earlier test - what the detail

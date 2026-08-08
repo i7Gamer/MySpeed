@@ -8,7 +8,7 @@ import {
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
 import {assertOk, deleteRequest} from "@/common/utils/RequestUtil";
 import "./styles.sass";
-import {errors} from "@/pages/Home/components/Speedtest/utils/errors";
+import {describeError} from "@/pages/Home/components/Speedtest/utils/errors";
 import {changeFrom, differenceFromTarget, percentOfTarget} from "@/pages/Home/components/Speedtest/utils/details";
 import {t} from "i18next";
 import {ConfigContext} from "@/common/contexts/Config";
@@ -100,7 +100,12 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
         alert.openAlert(title, description, {buttonText});
     };
 
-    let errorMessage = t("test.unknown_error") + " " + props.error;
+    // The friendly reason, or null when the output is not one we can explain.
+    const reason = describeError(props.error);
+
+    // The panel keeps the raw output appended when there is no translation for
+    // it; the row does not, because that output is a wall of JSON.
+    let errorMessage = reason ?? (t("test.unknown_error") + " " + props.error);
 
     let isAverage = props.type === "average";
     let timeString = isAverage
@@ -110,11 +115,6 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
     const downValue = props.error ? "" : convertSpeed(props.down, preferences);
     const upValue = props.error ? "" : convertSpeed(props.up, preferences);
     const speedUnit = getSpeedUnit(preferences);
-
-    if (props.error) {
-        for (let errorsKey in errors())
-            if (props.error.includes(errorsKey)) errorMessage = errors()[errorsKey];
-    }
 
     const fadeOut = () => {
         if (ref.current == null) return;
@@ -197,6 +197,10 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
 
     const serverLabel = props.serverName || props.serverHost;
 
+    // A packet loss of zero is a measurement; only null and undefined mean the
+    // provider never reported one.
+    const isMeasured = (value) => value !== null && value !== undefined;
+
     const details = (
         <div className="speedtest-details">
             {props.error ? (
@@ -232,6 +236,23 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                         {props.jitter !== null && props.jitter !== undefined && (
                             <DetailFact label={t("latest.jitter")}>
                                 {props.jitter} {t("latest.jitter_unit")}
+                            </DetailFact>
+                        )}
+
+                        {/* Only for a test that carried them. A row recorded
+                            before these were captured, or from a provider that
+                            cannot measure them, has no value rather than zero -
+                            and a packet loss of zero is a result worth showing. */}
+                        {isMeasured(props.downloadLatency) && isMeasured(props.uploadLatency) && (
+                            <DetailFact label={t("test.details.loaded_latency")}>
+                                {t("test.details.loaded_latency_value",
+                                    {down: props.downloadLatency, up: props.uploadLatency})}
+                            </DetailFact>
+                        )}
+
+                        {isMeasured(props.packetLoss) && (
+                            <DetailFact label={t("test.details.packet_loss")}>
+                                {props.packetLoss}%
                             </DetailFact>
                         )}
 
@@ -285,37 +306,46 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                      className={"container-icon icon-" + (props.error ? "error" : "blue")}/>
                     <h2 className="date-text">{(t("time." + (isAverage ? "on" : "at"))) + " " + timeString}</h2>
                 </div>
-                {/* The icons explain their measurement on click, except on a
-                    failed row where they are the failure marker rather than a
-                    metric. */}
-                <div className="speedtest-row">
-                    <FontAwesomeIcon icon={props.error ? faClose : faPingPongPaddleBall}
-                                     className={"speedtest-icon icon-" + props.pingLevel
-                                         + (props.error ? "" : " help-icon")}
-                                     onClick={props.error ? undefined : (event) => openInfo(event, pingInfo)}/>
-                    <h2 className="speedtest-text">
-                        {props.error ? "" : props.ping}
-                        {!props.error && props.jitter !== null && props.jitter !== undefined && (
-                            <span className="jitter-suffix" onClick={(event) => openInfo(event, jitterInfo)}>
-                                <FontAwesomeIcon icon={faWaveSquare} className="jitter-icon help-icon" />{props.jitter}
-                            </span>
-                        )}
-                    </h2>
-                </div>
-                <div className="speedtest-row">
-                    <FontAwesomeIcon icon={props.error ? faClose : faArrowDown}
-                                     className={"speedtest-icon icon-" + props.downLevel
-                                         + (props.error ? "" : " help-icon")}
-                                     onClick={props.error ? undefined : (event) => openInfo(event, downloadInfo)}/>
-                    <h2 className="speedtest-text">{downValue}</h2>
-                </div>
-                <div className="speedtest-row">
-                    <FontAwesomeIcon icon={props.error ? faClose : faArrowUp}
-                                     className={"speedtest-icon icon-" + props.upLevel
-                                         + (props.error ? "" : " help-icon")}
-                                     onClick={props.error ? undefined : (event) => openInfo(event, uploadInfo)}/>
-                    <h2 className="speedtest-text">{upValue}</h2>
-                </div>
+                {/* A failed test says why here rather than showing three empty
+                    columns that have to be expanded to mean anything. The
+                    reason is one line; the unabridged output is in the panel. */}
+                {props.error ? (
+                    <div className="speedtest-failure">
+                        <FontAwesomeIcon icon={faClose} className="speedtest-icon icon-error"/>
+                        <h2 className="speedtest-failure-text" title={reason ?? props.error}>
+                            {reason ?? t("test.unknown_error")}
+                        </h2>
+                    </div>
+                ) : (
+                    <>
+                        {/* The icons explain their measurement on click. */}
+                        <div className="speedtest-row">
+                            <FontAwesomeIcon icon={faPingPongPaddleBall}
+                                             className={"speedtest-icon help-icon icon-" + props.pingLevel}
+                                             onClick={(event) => openInfo(event, pingInfo)}/>
+                            <h2 className="speedtest-text">
+                                {props.ping}
+                                {props.jitter !== null && props.jitter !== undefined && (
+                                    <span className="jitter-suffix" onClick={(event) => openInfo(event, jitterInfo)}>
+                                        <FontAwesomeIcon icon={faWaveSquare} className="jitter-icon help-icon" />{props.jitter}
+                                    </span>
+                                )}
+                            </h2>
+                        </div>
+                        <div className="speedtest-row">
+                            <FontAwesomeIcon icon={faArrowDown}
+                                             className={"speedtest-icon help-icon icon-" + props.downLevel}
+                                             onClick={(event) => openInfo(event, downloadInfo)}/>
+                            <h2 className="speedtest-text">{downValue}</h2>
+                        </div>
+                        <div className="speedtest-row">
+                            <FontAwesomeIcon icon={faArrowUp}
+                                             className={"speedtest-icon help-icon icon-" + props.upLevel}
+                                             onClick={(event) => openInfo(event, uploadInfo)}/>
+                            <h2 className="speedtest-text">{upValue}</h2>
+                        </div>
+                    </>
+                )}
                 <FontAwesomeIcon icon={faChevronDown} className="speedtest-chevron"
                                  title={t(expanded ? "test.details.hide" : "test.details.show")}/>
             </div>

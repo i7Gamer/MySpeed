@@ -15,6 +15,7 @@ import { StatusContext } from "@/common/contexts/Status";
 import { SpeedtestContext } from "@/common/contexts/Speedtests";
 import { jsonRequest, login } from "@/common/utils/RequestUtil";
 import { startSpeedtest as runSpeedtest } from "@/common/utils/RunUtil";
+import { showsStatusBar } from "@/common/utils/StatusUtil";
 import { updateInfo } from "@/common/components/Header/utils/infos";
 import { t } from "i18next";
 import { ConfigContext } from "@/common/contexts/Config";
@@ -122,7 +123,11 @@ const HeaderComponent = () => {
                                                   { buttonText: t("dialog.okay") }
                                               )} /></div> : <></>}
 
-                    {!(status.paused || config.viewMode) ? 
+                    {/* Hidden on the overview, where the status bar carries the
+                        same control with a label on it. Two buttons for one
+                        action on one screen only raises the question of whether
+                        they do the same thing. */}
+                    {!(status.paused || config.viewMode || showsStatusBar(location.pathname)) ?
                         <Tooltip content={t("header." + (status.running ? "running_tooltip" : "start_tooltip"))} position="bottom">
                             <FontAwesomeIcon icon={faGaugeHigh}
                                              className={"header-icon " + (status.running ? "test-running" : "")}

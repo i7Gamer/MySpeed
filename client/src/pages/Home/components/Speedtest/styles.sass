@@ -1,6 +1,13 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/layout" as *
 
+// The measurements are what give a row its height. A failed row shows a sentence
+// instead of them, so it has to reserve the same line box or the list jogs as it
+// scrolls past. Both are stated here rather than left to the browser's default,
+// so the two cannot drift.
+$metric-font-size: 28pt
+$metric-line-height: 1.2
+
 // The card chrome lives on the wrapper so the detail panel opens inside the
 // same card rather than under a detached one.
 .speedtest-entry
@@ -54,6 +61,28 @@
   display: flex
   align-items: center
 
+// Takes the space the three metric columns would have used, so a failed row is
+// the same height as every other one and the list does not jump.
+.speedtest-failure
+  display: flex
+  align-items: center
+  gap: 0.5rem
+  flex: 1 1 auto
+  min-width: 0
+  // The line box the measurements would have occupied.
+  min-height: $metric-font-size * $metric-line-height
+
+.speedtest-failure-text
+  margin: 0
+  font-size: 1rem
+  font-weight: 500
+  color: $subtext
+  // A reason can be long and the row is one line: it truncates rather than
+  // wrapping the card open, with the full text on hover.
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
+
 .speedtest-chevron
   width: 1rem
   height: 1rem
@@ -74,7 +103,8 @@
 
 .speedtest-text
   margin: 0
-  font-size: 28pt
+  font-size: $metric-font-size
+  line-height: $metric-line-height
   font-weight: 500
   color: $subtext
   display: flex
