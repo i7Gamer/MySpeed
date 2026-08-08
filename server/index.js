@@ -1,7 +1,7 @@
 import https from 'node:https';
 import fs from 'node:fs';
 import app from './app.js';
-import { certPath, keyPath, httpsPort, hasSSLCerts } from './config/tls.js';
+import { certPath, keyPath, httpsPort, hasSSLCerts, setHttpsListening } from './config/tls.js';
 import { getSetupToken } from './util/setupToken.js';
 import * as timerTask from './tasks/timer.js';
 import * as integrationTask from './tasks/integrations.js';
@@ -92,9 +92,20 @@ const run = async () => {
                 key: fs.readFileSync(keyPath)
             };
 
-            https.createServer(sslOptions, app).listen(httpsPort, () =>
-                console.log(`HTTPS server listening on port ${httpsPort}`)
-            );
+            const httpsServer = https.createServer(sslOptions, app);
+
+            // The redirect follows the listener, not the certificate files: a
+            // port clash or an unreadable key would otherwise send every caller
+            // to a port with nothing behind it.
+            httpsServer.on("error", (err) => {
+                setHttpsListening(false);
+                console.error(`HTTPS server error: ${err.message}`);
+            });
+
+            httpsServer.listen(httpsPort, () => {
+                setHttpsListening(true);
+                console.log(`HTTPS server listening on port ${httpsPort}`);
+            });
         } catch (err) {
             console.error(`Failed to start HTTPS server: ${err.message}`);
         }

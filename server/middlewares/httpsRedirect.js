@@ -1,4 +1,4 @@
-import { hasSSLCerts, httpsPort } from '../config/tls.js';
+import { isHttpsListening, httpsPort } from '../config/tls.js';
 import { isLoopbackRequest } from '../util/clientAddress.js';
 
 /**
@@ -15,16 +15,26 @@ import { isLoopbackRequest } from '../util/clientAddress.js';
  * is already true - provided TRUST_PROXY is set. If it is not, and the instance
  * also happens to hold its own certificates, set HTTPS_REDIRECT=false.
  */
-const PERMANENT_REDIRECT = 308;
 
-export default () => {
-    // Evaluated once at startup, the same moment index.js decides whether to
-    // open the HTTPS listener at all.
-    const enabled = process.env.HTTPS_REDIRECT !== "false" && hasSSLCerts();
+/**
+ * Temporary, not permanent.
+ *
+ * A 308 is cacheable indefinitely, and the target is built from an internal
+ * port number. Get that combination wrong once - a port clash, a certificate
+ * the operator later removes, a host reached through a different port - and
+ * every browser that saw it keeps redirecting to somewhere unreachable, with
+ * no request to the server that could correct it. A 307 expires with the
+ * response, so a misconfiguration stays fixable.
+ */
+const TEMPORARY_REDIRECT = 307;
 
-    return (req, res, next) => {
-        if (!enabled || req.secure || isLoopbackRequest(req)) return next();
+const isEnabled = () => process.env.HTTPS_REDIRECT !== "false" && isHttpsListening();
 
-        return res.redirect(PERMANENT_REDIRECT, `https://${req.hostname}:${httpsPort}${req.originalUrl}`);
-    };
+export default ({enabled = isEnabled, port = () => httpsPort} = {}) => (req, res, next) => {
+    // Evaluated per request, not once at startup: the listener may not have
+    // come up yet when the middleware stack is built, and it can fail later.
+    if (!enabled() || req.secure || isLoopbackRequest(req)) return next();
+
+    res.setHeader("Cache-Control", "no-store");
+    return res.redirect(TEMPORARY_REDIRECT, `https://${req.hostname}:${port()}${req.originalUrl}`);
 };
