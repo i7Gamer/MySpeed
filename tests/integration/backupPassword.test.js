@@ -129,4 +129,13 @@ describe("the admin password in a config backup", () => {
         const {body} = await exportConfig("?includeSecrets=true");
         assert.equal(body.config.interface, undefined);
     });
+
+    // The response body is the credential, so nothing between the server and
+    // the browser may keep a copy of it.
+    it("is never cached", async () => {
+        for (const query of ["", "?includeSecrets=true"]) {
+            const {headers} = await exportConfig(query);
+            assert.match(headers.get("cache-control") ?? "", /no-store/, `missing on ${query || "the redacted export"}`);
+        }
+    });
 });

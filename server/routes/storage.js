@@ -58,7 +58,13 @@ app.put("/tests/history", password(false), importBody, async (req, res) => {
 // Credentials are redacted unless explicitly requested, so the common "download
 // my config" path cannot leak them by accident.
 app.get("/config", password(false), async (req, res) => {
-    res.set({"Content-Disposition": "attachment; filename=\"config.json\""});
+    res.set({
+        "Content-Disposition": "attachment; filename=\"config.json\"",
+        // A full export carries node passwords, integration tokens and the
+        // admin password hash. Without this a shared proxy or the browser's own
+        // disk cache is free to keep a copy of it.
+        "Cache-Control": "no-store"
+    });
     const includeSecrets = req.query.includeSecrets === "true";
     config.exportConfig({includeSecrets}).then(obj => res.json(obj));
 });
