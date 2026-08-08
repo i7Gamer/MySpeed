@@ -1,0 +1,10 @@
+# Shell scripts must keep LF endings whatever the contributor's platform does
+# with the rest of the tree. A CRLF docker-entrypoint.sh does not fail visibly:
+# the kernel reads "/bin/sh\r" as the interpreter and the container dies with
+# "no such file or directory", naming a file that is plainly there.
+*.sh text eol=lf
+
+# Same reasoning: these are read by Linux tooling, not by an editor on Windows.
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
