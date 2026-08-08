@@ -1,3 +1,5 @@
+import { clientKey } from '../util/clientKey.js';
+
 /**
  * A fixed-window per-client request limiter.
  *
@@ -22,7 +24,7 @@ export const createRateLimit = ({limit, windowMs = DEFAULT_WINDOW_MS, message = 
     const hits = new Map();
 
     const middleware = (req, res, next) => {
-        const key = req.ip ?? req.socket?.remoteAddress ?? "unknown";
+        const key = clientKey(req);
         const now = Date.now();
         const entry = hits.get(key);
 
