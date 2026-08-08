@@ -169,6 +169,10 @@ export const getLatest = async () => {
     return latest;
 }
 
+// Named field by field rather than spread, so an export is a deliberate choice
+// about what leaves the database. The cost is that a new column is exported as
+// empty until it is named here - which is how the server name and host stayed
+// out of every export from the moment they were added.
 export const exportTests = async (range) => (await findInRange(range)).map(entry => ({
     id: entry.id,
     ping: entry.ping,
@@ -178,5 +182,10 @@ export const exportTests = async (range) => (await findInRange(range)).map(entry
     time: entry.time,
     type: entry.type,
     created: entry.created,
+    serverName: entry.serverName,
+    serverHost: entry.serverHost,
+    packetLoss: entry.packetLoss,
+    downloadLatency: entry.downloadLatency,
+    uploadLatency: entry.uploadLatency,
     error: entry.error
 }));

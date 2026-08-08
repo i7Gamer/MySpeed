@@ -2,6 +2,8 @@ import StatisticContainer from "@/pages/Statistics/components/StatisticContainer
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faCircleExclamation, faGaugeHigh, faStopwatch} from "@fortawesome/free-solid-svg-icons";
+import {formatDuration} from "@/common/utils/FormatUtil";
+import {failureRate} from "@/common/utils/TestUtil";
 import "./styles.sass";
 
 export const OverviewChart = (props) => {
@@ -14,6 +16,8 @@ export const OverviewChart = (props) => {
         to: formatDateForTitle(props.dateRange.to) 
     });
 
+    const rate = failureRate(props.tests.total, props.tests.failed);
+
     const items = [
         {
             icon: faGaugeHigh,
@@ -25,13 +29,17 @@ export const OverviewChart = (props) => {
             icon: faCircleExclamation,
             title: "statistics.overview.failed_title",
             description: "statistics.overview.failed_description",
-            value: props.tests.failed
+            // A count alone says nothing without the total beside it: 23 is a
+            // rounding error across a year and an outage across an afternoon.
+            value: rate === null ? props.tests.failed : `${props.tests.failed} (${rate}%)`
         },
         {
             icon: faStopwatch,
             title: "statistics.overview.average_title",
             description: "statistics.overview.average_description",
-            value: props.time.avg + "s"
+            // The server returns an explicit null average when nothing in the
+            // range succeeded, which used to render as the literal "nulls".
+            value: formatDuration(props.time.avg)
         }
     ];
 

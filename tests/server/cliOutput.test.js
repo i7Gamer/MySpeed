@@ -107,10 +107,28 @@ describe("parseCliOutput", () => {
             assert.equal(parsed.ping, 12);
         });
 
-        it("leaves a cloudflare array as it found it", () => {
-            const parsed = parseCliOutput("cloudflare", '[{"test_type":"Download"}]', "");
+        // The real CLI reports one object - {metadata, latency_measurement,
+        // speed_measurements} - which is what parseCloudflare destructures.
+        it("takes the cloudflare object as the result", () => {
+            const parsed = parseCliOutput("cloudflare",
+                '{"latency_measurement":{"avg_latency_ms":31.9},"speed_measurements":[{"test_type":"Download"}]}', "");
 
-            assert.ok(Array.isArray(parsed));
+            assert.equal(parsed.latency_measurement.avg_latency_ms, 31.9);
+        });
+
+        /**
+         * A top-level array is not something the cloudflare CLI produces, and
+         * accepting one was actively harmful: speedtest.js returns
+         * `{...result, elapsed}`, and spreading an array yields an object keyed
+         * by index. parseCloudflare matches neither of its branches on that and
+         * falls through to its zeroed result - so the run would have been stored
+         * as a genuine measurement of 0/0/0 rather than reported as a failure.
+         */
+        it("refuses a top-level array as a cloudflare result", () => {
+            const parsed = parseCliOutput("cloudflare", '[{"test_type":"Download"}]', "no usable output");
+
+            assert.ok(!Array.isArray(parsed), "an array was accepted as a result");
+            assert.equal(parsed.error, "no usable output");
         });
 
         it("still reports a librespeed failure from stderr", () => {

@@ -1,6 +1,22 @@
 const RATE_LIMIT_MESSAGE = "Too many requests. Please try again later";
 
 /**
+ * Whether a parsed line is the measurement itself rather than progress chatter.
+ *
+ * Ookla labels its result; librespeed prints only the one object. Cloudflare
+ * reports a single object too - {metadata, latency_measurement,
+ * speed_measurements} - so a top-level array is not a result it produces, and
+ * accepting one would be worse than rejecting it: the caller returns
+ * `{...result, elapsed}`, and spreading an array gives an object keyed by index
+ * that parseCloudflare quietly reads as a measurement of zero.
+ */
+const isResult = (mode, data) => {
+    if (mode === "ookla") return data.type === "result";
+    if (mode === "cloudflare") return !Array.isArray(data);
+    return true;
+};
+
+/**
  * Turns what a provider CLI printed into either a result or an error.
  *
  * stdout is the authority. The CLIs also write to stderr while they are still
@@ -29,7 +45,7 @@ export const parseCliOutput = (mode, stdout, stderr) => {
 
             if (data.error) result.error = data.error;
 
-            if ((mode === "ookla" && data.type === "result") || mode === "libre" || mode === "cloudflare") {
+            if (isResult(mode, data)) {
                 result = data;
                 hasResult = true;
             }

@@ -11,6 +11,24 @@ const FAILED_TEST = -1;
 // measurement of zero rather than as an absent one.
 const isMissing = (value) => value === null || value === undefined || value === "";
 
+// One decimal: enough to tell 0.4% from 4% without implying the precision of a
+// figure built on a few dozen tests.
+const RATE_DECIMALS = 1;
+const PERCENT = 100;
+
+/**
+ * The share of tests in a range that failed, as a percentage.
+ *
+ * Null when nothing was measured - 0/0 is NaN, and "no tests" must not be
+ * presented as "nothing failed".
+ */
+export function failureRate(total, failed) {
+    if (!Number.isFinite(total) || !Number.isFinite(failed)) return null;
+    if (total <= 0 || failed < 0) return null;
+
+    return parseFloat(((failed / total) * PERCENT).toFixed(RATE_DECIMALS));
+}
+
 /**
  * Whether a stored test is the record of a failure rather than a measurement.
  *

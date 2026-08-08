@@ -1,14 +1,19 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { CSV_HEADER, toCsv } from "../../server/util/csv.js";
+import { CSV_COLUMNS, CSV_HEADER, toCsv } from "../../server/util/csv.js";
 
 const row = (overrides = {}) => ({
     id: 1, ping: 10, jitter: 2.5, download: 100, upload: 50,
     time: 30, type: "auto", created: "2026-08-07T10:00:00.000Z",
+    serverName: "Arcade Solutions AG", serverHost: "speedtest.arcade.ch",
     packetLoss: 0, downloadLatency: 12.5, uploadLatency: 44.75, error: null, ...overrides
 });
 
-const FIELDS_PER_ROW = 12;
+const FIELDS_PER_ROW = CSV_COLUMNS.length;
+
+// Located by name: a fixed index silently starts asserting about the wrong
+// column the moment one is inserted rather than appended.
+const field = (line, column) => line.split('","')[CSV_COLUMNS.indexOf(column)].replaceAll('"', "");
 
 const lines = (entries) => toCsv(entries).split("\n");
 
@@ -19,7 +24,14 @@ describe("toCsv", () => {
 
     it("starts with the header row", () => {
         assert.equal(lines([row()])[0],
-            "id,ping,jitter,download,upload,time,type,created,packetLoss,downloadLatency,uploadLatency,error");
+            "id,ping,jitter,download,upload,time,type,created,serverName,serverHost," +
+            "packetLoss,downloadLatency,uploadLatency,error");
+    });
+
+    // Free text last, so a reader scanning the numeric columns never steps over
+    // it, and the escaping assertions below can anchor on the end of the line.
+    it("keeps the one free-text column last", () => {
+        assert.equal(CSV_COLUMNS.at(-1), "error");
     });
 
     it("emits one line per entry", () => {
@@ -28,23 +40,32 @@ describe("toCsv", () => {
 
     it("quotes every field", () => {
         assert.equal(lines([row()])[1],
-            '"1","10","2.5","100","50","30","auto","2026-08-07T10:00:00.000Z","0","12.5","44.75",""');
+            '"1","10","2.5","100","50","30","auto","2026-08-07T10:00:00.000Z",' +
+            '"Arcade Solutions AG","speedtest.arcade.ch","0","12.5","44.75",""');
     });
 
     // The figures are only worth recording if they leave again, and a zero must
     // survive as a zero rather than being emptied out as falsy.
     it("exports the quality figures, including a packet loss of zero", () => {
-        const fields = lines([row()])[1].split('","');
+        const line = lines([row()])[1];
 
-        assert.equal(fields[8], "0");
-        assert.equal(fields[9], "12.5");
-        assert.equal(fields[10], "44.75");
+        assert.equal(field(line, "packetLoss"), "0");
+        assert.equal(field(line, "downloadLatency"), "12.5");
+        assert.equal(field(line, "uploadLatency"), "44.75");
+    });
+
+    it("exports the server that was measured", () => {
+        const line = lines([row()])[1];
+
+        assert.equal(field(line, "serverName"), "Arcade Solutions AG");
+        assert.equal(field(line, "serverHost"), "speedtest.arcade.ch");
     });
 
     it("empties a quality figure the provider never measured", () => {
-        const fields = lines([row({packetLoss: null, downloadLatency: null, uploadLatency: null})])[1].split('","');
+        const line = lines([row({packetLoss: null, downloadLatency: null, uploadLatency: null})])[1];
 
-        for (const index of [8, 9, 10]) assert.equal(fields[index], "");
+        for (const column of ["packetLoss", "downloadLatency", "uploadLatency"])
+            assert.equal(field(line, column), "");
     });
 
     it("renders null as an empty quoted field", () => {

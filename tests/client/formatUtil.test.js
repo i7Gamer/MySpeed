@@ -2,9 +2,31 @@ import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import i18n from "i18next";
 import {
-    convertSpeed, formatDateTime, formatShortTime, formatTime, getSpeedUnit,
+    convertSpeed, formatDateTime, formatDuration, formatShortTime, formatTime, getSpeedUnit,
     SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H
 } from "@/common/utils/FormatUtil.js";
+
+/**
+ * Regression: the statistics overview rendered its average duration as
+ * `props.time.avg + "s"`. The server returns an explicit null average when no
+ * test in the range succeeded - which is exactly what a day of failures looks
+ * like - so the tile displayed the literal string "nulls".
+ */
+describe("formatDuration", () => {
+    it("appends the unit to a real duration", () => {
+        assert.equal(formatDuration(30), "30s");
+        assert.equal(formatDuration(0), "0s");
+    });
+
+    it("says nothing was measured rather than concatenating null", () => {
+        for (const absent of [null, undefined])
+            assert.equal(formatDuration(absent), "N/A", `failed for ${JSON.stringify(absent)}`);
+    });
+
+    it("does not render NaN as a duration", () => {
+        assert.equal(formatDuration(NaN), "N/A");
+    });
+});
 
 const MBPS = {speedUnit: SPEED_UNIT_MBPS};
 const MBYTES = {speedUnit: SPEED_UNIT_MBYTES};

@@ -42,7 +42,48 @@ describe("GET /api/speedtests/export", () => {
         assert.equal(status, 200);
         assert.match(headers.get("content-type"), /text\/csv/);
         assert.equal(text.split("\n")[0],
-            "id,ping,jitter,download,upload,time,type,created,packetLoss,downloadLatency,uploadLatency,error");
+            "id,ping,jitter,download,upload,time,type,created,serverName,serverHost," +
+            "packetLoss,downloadLatency,uploadLatency,error");
+    });
+
+    /**
+     * Regression: the exporter hand-picks the fields it copies out of each row,
+     * so a column added to the table is exported as empty until it is named
+     * here too. Asserting on the header alone cannot see this - the column is
+     * present and every value under it is blank - which is how the server name
+     * and host went unexported since migration 0003.
+     */
+    it("exports every stored column, not just the ones the header names", async () => {
+        await seedTests(server.tests, [{
+            created: "2026-08-05T10:00:00.000Z",
+            serverName: "Arcade Solutions AG", serverHost: "speedtest.arcade.ch",
+            packetLoss: 0, downloadLatency: 7.5, uploadLatency: 43.77
+        }]);
+
+        const {body} = await exportUrl("from=2026-08-01&to=2026-08-07&tzOffset=0&format=json");
+
+        assert.equal(body[0].serverName, "Arcade Solutions AG");
+        assert.equal(body[0].serverHost, "speedtest.arcade.ch");
+        assert.equal(body[0].packetLoss, 0);
+        assert.equal(body[0].downloadLatency, 7.5);
+        assert.equal(body[0].uploadLatency, 43.77);
+    });
+
+    it("carries those columns through the CSV as values, not empty cells", async () => {
+        await seedTests(server.tests, [{
+            created: "2026-08-05T10:00:00.000Z",
+            serverName: "Arcade Solutions AG", serverHost: "speedtest.arcade.ch",
+            packetLoss: 0, downloadLatency: 7.5, uploadLatency: 43.77
+        }]);
+
+        const {text} = await exportUrl("from=2026-08-01&to=2026-08-07&tzOffset=0&format=csv");
+        const [header, row] = text.split("\n");
+        const valueOf = (column) => row.split('","')[header.split(",").indexOf(column)].replaceAll('"', "");
+
+        assert.equal(valueOf("serverName"), "Arcade Solutions AG");
+        assert.equal(valueOf("packetLoss"), "0");
+        assert.equal(valueOf("downloadLatency"), "7.5");
+        assert.equal(valueOf("uploadLatency"), "43.77");
     });
 
     // Regression: the old exporter only swapped commas out of `error`, so a

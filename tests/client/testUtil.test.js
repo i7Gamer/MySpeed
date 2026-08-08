@@ -1,6 +1,40 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { getIconBySpeed, isFailedTest } from "../../client/src/common/utils/TestUtil.js";
+import { failureRate, getIconBySpeed, isFailedTest } from "../../client/src/common/utils/TestUtil.js";
+
+/**
+ * The failed count has always been on the statistics page, but a bare number
+ * says nothing without the total beside it: 23 failures is a rounding error
+ * across a year and an outage across an afternoon.
+ */
+describe("failureRate", () => {
+    it("is the share of tests that failed", () => {
+        assert.equal(failureRate(1000, 23), 2.3);
+        assert.equal(failureRate(4, 1), 25);
+    });
+
+    it("is zero when everything succeeded", () => {
+        assert.equal(failureRate(1000, 0), 0);
+    });
+
+    it("is a hundred when everything failed", () => {
+        assert.equal(failureRate(48, 48), 100);
+    });
+
+    it("rounds to a single decimal", () => {
+        assert.equal(failureRate(3, 1), 33.3);
+    });
+
+    // Nothing measured is not the same as nothing failed, and 0/0 is NaN.
+    it("is absent when there were no tests at all", () => {
+        assert.equal(failureRate(0, 0), null);
+    });
+
+    it("is absent rather than wrong for nonsense input", () => {
+        for (const [total, failed] of [[undefined, 1], [10, undefined], [-1, 1], [10, null]])
+            assert.equal(failureRate(total, failed), null, `failed for ${total}/${failed}`);
+    });
+});
 
 const speed = (current, optimal) => getIconBySpeed(current, optimal, true);
 const latency = (current, optimal) => getIconBySpeed(current, optimal, false);
