@@ -36,6 +36,18 @@ export const NO_PASSWORD = "none";
 
 const PASSWORD_HASH_ROUNDS = 10;
 
+/**
+ * A stored password is either the no-password sentinel or a bcrypt hash.
+ *
+ * An import writes the value straight into the column password.js compares
+ * against, and bcrypt never matches a malformed hash - so a hand-edited backup
+ * carrying a plaintext password would lock the owner out of their own instance
+ * with no way back short of editing the database.
+ */
+const BCRYPT_HASH = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
+
+const isStoredPassword = (value) => value === NO_PASSWORD || BCRYPT_HASH.test(String(value ?? ""));
+
 // Tables importConfig replaces wholesale, mapped to the payload key carrying them.
 const IMPORTED_TABLES = [
     {key: "nodes", model: node},
@@ -189,7 +201,17 @@ export const exportConfig = async ({includeSecrets = false} = {}) => {
 
     let configValues = await config.findAll();
     for (let i = 0; i < configValues.length; i++) {
-        if (configValues[i].key === "password" || configValues[i].key === "interface") continue;
+        // `interface` is this host's own network adapter. It does not transfer
+        // to another machine, and validateInput would reject the unknown name
+        // and fail the whole import.
+        if (configValues[i].key === "interface") continue;
+
+        // The admin password hash is a credential like any other: left out of a
+        // redacted export, carried by a full one. Without it a restore brought
+        // the instance back unprotected, which is the one difference from the
+        // original state nobody would think to check.
+        if (configValues[i].key === "password" && !includeSecrets) continue;
+
         obj.config[configValues[i].key] = configValues[i].value;
     }
 
@@ -247,7 +269,17 @@ export const importConfig = async (obj) => {
 
     const updates = [];
     for (const key in obj.config ?? {}) {
-        if (configDefaults[key] === undefined || key === "password") continue;
+        if (configDefaults[key] === undefined) continue;
+
+        // Restored verbatim. The exported value is already a bcrypt hash, and
+        // validateInput would hash it a second time - the restored instance
+        // would accept no password at all. A redacted export carries no
+        // password key, so this simply leaves the current one alone.
+        if (key === "password") {
+            if (!isStoredPassword(obj.config[key])) return false;
+            updates.push({key, value: obj.config[key]});
+            continue;
+        }
 
         // A value already at its default needs no write, which also keeps a
         // round-tripped export importable: several defaults are sentinels that
