@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import i18n from "i18next";
 import {
     convertSpeed, formatDateTime, formatDuration, formatLastTest, formatShortTime, formatTime,
-    generateRelativeTime, getSpeedUnit,
+    formatWithUnit, generateRelativeTime, getSpeedUnit,
     SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H
 } from "@/common/utils/FormatUtil.js";
 
@@ -81,6 +81,31 @@ describe("formatDuration", () => {
 
     it("does not render NaN as a duration", () => {
         assert.equal(formatDuration(NaN), "N/A");
+    });
+});
+
+/**
+ * Regression: the statistics rendered `{value} {unit}` directly. The server
+ * returns an explicit null for a figure it could not compute - every aggregate
+ * over a range in which nothing succeeded - so the tiles showed a bare "Mbps"
+ * with no number in front of it.
+ */
+describe("formatWithUnit", () => {
+    it("puts the unit after the value", () => {
+        assert.equal(formatWithUnit(2366.32, "Mbps"), "2366.32 Mbps");
+    });
+
+    it("keeps a genuine zero", () => {
+        assert.equal(formatWithUnit(0, "Mbps"), "0 Mbps");
+    });
+
+    it("says nothing was measured rather than showing a lone unit", () => {
+        for (const absent of [null, undefined, NaN])
+            assert.equal(formatWithUnit(absent, "Mbps"), "N/A", `failed for ${JSON.stringify(absent)}`);
+    });
+
+    it("drops the unit entirely when there is no value", () => {
+        assert.doesNotMatch(formatWithUnit(null, "Mbps"), /Mbps/);
     });
 });
 

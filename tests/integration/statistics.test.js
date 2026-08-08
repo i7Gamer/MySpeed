@@ -163,6 +163,38 @@ describe("GET /api/speedtests/statistics", () => {
             assert.deepEqual(body.jitter, {min: null, max: null, avg: null});
         });
 
+        /**
+         * Regression: the score fell through to 100% whenever the mean was not
+         * above zero, which includes having no successful tests to take a mean
+         * of. A day on which every test failed reported a perfectly stable
+         * connection at 100% with a deviation of ±0 - the strongest possible
+         * claim about a line, made from no measurements at all.
+         */
+        it("scores nothing when no test in the range succeeded", async () => {
+            await seedTests(server.tests, [
+                at("2026-08-05T10:00:00.000Z", {ping: -1, download: -1, upload: -1, error: "Cannot open socket"}),
+                at("2026-08-05T11:00:00.000Z", {ping: -1, download: -1, upload: -1, error: "Cannot open socket"})
+            ]);
+
+            const {body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
+
+            assert.equal(body.consistency.download.consistency, null);
+            assert.equal(body.consistency.download.stdDev, null);
+            assert.equal(body.consistency.upload.consistency, null);
+            assert.equal(body.consistency.ping.stdDev, null);
+        });
+
+        // A single test is a measurement, but not a spread: there is nothing to
+        // be consistent with yet.
+        it("scores no deviation from a single test", async () => {
+            await seedTests(server.tests, [at("2026-08-05T10:00:00.000Z", {download: 100})]);
+
+            const {body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
+
+            assert.equal(body.consistency.download.stdDev, 0);
+            assert.equal(body.consistency.download.consistency, 100);
+        });
+
         it("derives ping consistency jitter from the jitter column", async () => {
             await seedTests(server.tests, [
                 at("2026-08-05T10:00:00.000Z", {ping: 10, jitter: 1}),

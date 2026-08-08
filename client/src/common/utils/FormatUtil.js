@@ -82,7 +82,7 @@ export const convertSpeed = (mbps, preferences) => {
 // What a value the server could not compute is shown as. The statistics return
 // an explicit null - for an average over a range in which nothing succeeded, for
 // instance - and concatenating a unit onto that renders the word "null".
-const NOT_MEASURED = "N/A";
+export const NOT_MEASURED = "N/A";
 
 const SECONDS_PER_MINUTE = 60;
 const SECONDS_PER_HOUR = 3600;
@@ -146,5 +146,15 @@ export function formatLastTest(created) {
 
 export const formatDuration = (seconds) =>
     typeof seconds === "number" && Number.isFinite(seconds) ? `${seconds}s` : NOT_MEASURED;
+
+/**
+ * A measurement with its unit, or a statement that there is none.
+ *
+ * The statistics return an explicit null for anything they could not compute -
+ * every aggregate over a range in which no test succeeded - and rendering
+ * `{value} {unit}` around that leaves a bare unit standing on its own.
+ */
+export const formatWithUnit = (value, unit) =>
+    typeof value === "number" && Number.isFinite(value) ? `${value} ${unit}` : NOT_MEASURED;
 
 export {SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H};

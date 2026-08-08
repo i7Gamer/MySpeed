@@ -108,10 +108,35 @@ describe("buildStatistics", () => {
             assert.equal(stats.consistency.ping.jitter, null);
         });
 
-        it("does not divide by zero on an empty set", () => {
+        /**
+         * The guard against dividing by zero stands; what it answered with did
+         * not. An empty set used to score 100% with a deviation of ±0, which
+         * reads as a flawlessly stable connection - the strongest claim the tile
+         * can make, made from no measurements at all.
+         */
+        it("scores nothing on an empty set rather than scoring it perfect", () => {
             const stats = buildStatistics([], DAY);
-            assert.equal(stats.consistency.download.consistency, 100);
+
+            assert.equal(stats.consistency.download.consistency, null);
+            assert.equal(stats.consistency.download.stdDev, null);
+            assert.equal(stats.consistency.upload.consistency, null);
+            assert.equal(stats.consistency.ping.stdDev, null);
+        });
+
+        it("still never reports NaN from an empty set", () => {
+            const {download, upload, ping} = buildStatistics([], DAY).consistency;
+
+            for (const value of [download.consistency, download.stdDev, upload.consistency, upload.stdDev, ping.stdDev])
+                assert.ok(value === null || Number.isFinite(value), `got ${value}`);
+        });
+
+        // One test is a measurement but not a spread - it deviates from itself
+        // by nothing, which is a real answer rather than an absent one.
+        it("scores a single entry as having no deviation", () => {
+            const stats = buildStatistics([at("2026-08-07T01:00:00.000Z", {download: 100})], DAY);
+
             assert.equal(stats.consistency.download.stdDev, 0);
+            assert.equal(stats.consistency.download.consistency, 100);
         });
     });
 

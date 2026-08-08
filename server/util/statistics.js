@@ -37,8 +37,17 @@ const average = (values) => values.reduce((total, value) => total + value, 0) / 
 const averageOrNull = (values, transform = round) =>
     values.length > 0 ? transform(average(values)) : null;
 
+// round() reads .toFixed off its argument, so an absent value has to be carried
+// through rather than handed to it.
+const roundOrNull = (value, decimals) => value === null ? null : round(value, decimals);
+
+// Null when there is nothing to measure a spread of, 0 for a single value: one
+// test genuinely deviates from itself by nothing, but no tests do not deviate by
+// nothing - they say nothing at all.
 const standardDeviation = (values) => {
+    if (values.length === 0) return null;
     if (values.length < 2) return 0;
+
     const mean = average(values);
     return Math.sqrt(average(values.map(value => Math.pow(value - mean, 2))));
 };
@@ -48,7 +57,13 @@ const standardDeviation = (values) => {
 // outlier among a few slow tests is enough. "-240% consistent" is not a reading
 // anyone can act on, so it is clamped to the range it claims to be in.
 const consistencyScore = (values) => {
-    const mean = values.length > 0 ? average(values) : 0;
+    // Nothing measured is not the same as measured and perfect. This used to
+    // fall through to 100% whenever the mean was not above zero - which includes
+    // having no successful tests to take a mean of - so a day on which every
+    // test failed reported a flawlessly stable line at 100% and ±0.
+    if (values.length === 0) return {stdDev: null, consistency: null};
+
+    const mean = average(values);
     const score = mean > 0 ? PERCENT - (standardDeviation(values) / mean * PERCENT) : PERCENT;
 
     return {
@@ -192,7 +207,7 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, maxPoints} 
             download: consistencyScore(succeeded.map(entry => entry.download)),
             upload: consistencyScore(succeeded.map(entry => entry.upload)),
             ping: {
-                stdDev: round(standardDeviation(succeeded.map(entry => entry.ping))),
+                stdDev: roundOrNull(standardDeviation(succeeded.map(entry => entry.ping))),
                 jitter: averageOrNull(withJitter.map(entry => entry.jitter))
             }
         },
