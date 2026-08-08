@@ -6,6 +6,7 @@ import * as parseData from '../util/providers/parseData.js';
 import { setState, sendRunning, sendError, sendFinished } from "./integrations.js";
 import * as serverController from "../controller/servers.js";
 import { toErrorMessage } from '../util/helpers.js';
+import { PHASE_START, overallProgress } from '../util/providers/progress.js';
 
 // The placeholder a failed test stores in every numeric column. The client
 // tells a failure apart by it, so it is not a value anyone should read as one.
@@ -13,13 +14,35 @@ const FAILED = -1;
 
 let _isRunning = false;
 
+// What the run currently in flight is doing. Only ever read through
+// getProgress(), and reset the moment a run ends so a finished test cannot
+// leave a stale bar sitting at 80% until the next one starts.
+const NO_PROGRESS = {phase: null, progress: 0, speed: null, startedAt: null};
+
+let _progress = {...NO_PROGRESS};
+
+export const getProgress = () => ({..._progress});
+
+const updateProgress = ({phase, progress, speed}) => {
+    _progress = {
+        phase,
+        progress: overallProgress(phase, progress),
+        // The latency phase measures no throughput, so it reports none rather
+        // than leaving the previous phase's figure on screen.
+        speed: speed ?? null,
+        startedAt: _progress.startedAt
+    };
+};
+
 const setRunning = (running, sendRequest = true) => {
     _isRunning = running;
 
     if (running) {
+        _progress = {...NO_PROGRESS, phase: PHASE_START, startedAt: new Date().toISOString()};
         setState("running");
         if (sendRequest) sendRunning().then(undefined);
     } else {
+        _progress = {...NO_PROGRESS};
         setState("ping");
     }
 }
@@ -61,7 +84,12 @@ export const run = async (retryAuto = false) => {
     if (mode === "libre" && serverUrl)
         serverId = undefined;
 
-    let speedtest = await (retryAuto ? speedTest(mode) : speedTest(mode, serverId, serverUrl));
+    // Both branches carry the callback: the retry is the same logical run, and a
+    // bar that stopped moving the moment a test fell back to automatic server
+    // selection would read as the run having hung.
+    let speedtest = await (retryAuto
+        ? speedTest(mode, undefined, undefined, updateProgress)
+        : speedTest(mode, serverId, serverUrl, updateProgress));
 
     if (mode === "ookla" && speedtest.server) {
         if (serverId === undefined) await config.updateValue("ooklaId", speedtest.server?.id);

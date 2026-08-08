@@ -75,6 +75,16 @@ export const listTests = async (afterId, limit) => {
     return dbEntries;
 }
 
+/**
+ * How many tests failed since the given moment.
+ *
+ * A count rather than the rows: this is polled while a test runs, and the only
+ * thing asked of it is a number.
+ */
+export const countFailuresSince = async (since) => tests.count({
+    where: {created: {[Op.gte]: since.toISOString()}, error: {[Op.ne]: null}}
+});
+
 export const deleteTests = async () => {
     await tests.destroy({where: {}});
     return true;

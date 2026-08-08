@@ -6,8 +6,15 @@ import * as testTask from '../tasks/speedtest.js';
 import password from '../middlewares/password.js';
 import { parseDateRange } from '../util/dateRange.js';
 import { toCsv } from '../util/csv.js';
+import * as timer from '../tasks/timer.js';
 
 const app = express.Router();
+
+// How far back the status counts failures. A day is long enough that a run of
+// failures is visible on the overview without opening the statistics, and short
+// enough that last week's outage is not still being reported as news.
+const RECENT_FAILURE_WINDOW_HOURS = 24;
+const RECENT_FAILURE_WINDOW_MS = RECENT_FAILURE_WINDOW_HOURS * 60 * 60 * 1000;
 
 
 app.get("/", password(true), async (req, res) => {
@@ -70,8 +77,31 @@ app.post("/run", password(false), async (req, res) => {
     res.json({message: "Speedtest successfully created"});
 });
 
-app.get("/status", password(true), (req, res) => {
-    res.json({paused: pauseController.currentState, running: testTask.isRunning()});
+/**
+ * What the instance is doing right now, and what it last did.
+ *
+ * `paused` and `running` come first and keep their names: the client has always
+ * read them, a node running an older version answers with only those two, and
+ * the image smoke test greps this body for "running". Everything else is
+ * additive and may be absent.
+ */
+app.get("/status", password(true), async (req, res) => {
+    const latest = await tests.getLatest();
+    const progress = testTask.getProgress();
+
+    res.json({
+        paused: pauseController.currentState,
+        running: testTask.isRunning(),
+        ...progress,
+        // getLatest strips a null error rather than reporting it, and answers
+        // with undefined on an install that has never run a test - so absence is
+        // normalised here and a failure is told apart by the key being present.
+        lastTest: latest ? {...latest, failed: latest.error !== null && latest.error !== undefined} : null,
+        recentFailures: await tests.countFailuresSince(new Date(Date.now() - RECENT_FAILURE_WINDOW_MS)),
+        // From the stored schedule rather than the running job, so it is right
+        // even before the timer has been started for the first time.
+        nextTest: timer.nextRun(await config.getValue("cron"))
+    });
 });
 
 // Both 0 and -1 mean "until manually resumed": the pause dialog sends 0, older

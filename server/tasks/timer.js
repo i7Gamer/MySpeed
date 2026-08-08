@@ -42,6 +42,22 @@ export const startTimer = (cron) => {
     job = schedule.scheduleJob(cron, () => runTask());
 };
 
+/**
+ * When the schedule will next fire, or null if none is running.
+ *
+ * Approximate when the schedule offset is enabled: that deliberately delays each
+ * run by up to a few minutes to avoid every instance testing on the same tick.
+ */
+export const nextRun = (cron = currentCron) => {
+    if (!cron || !isValidCron(cron)) return null;
+
+    try {
+        return CronExpressionParser.parse(cron).next().toISOString();
+    } catch (e) {
+        return null;
+    }
+};
+
 export const runTask = async () => {
     if (pauseController.currentState) {
         console.warn("Speedtests currently paused. Trying again later...");

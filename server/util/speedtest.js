@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { parseCliOutput } from './providers/cliOutput.js';
+import { parseProgressLine } from './providers/progress.js';
 import * as interfacesModule from '../util/loadInterfaces.js';
 import * as config from '../controller/config.js';
 import fs from 'node:fs';
@@ -7,7 +8,7 @@ import path from 'node:path';
 
 const CLI_TIMEOUT = 180000;
 
-export default async (mode, serverId, serverUrl) => {
+export default async (mode, serverId, serverUrl, onProgress) => {
     const binaryPath = mode === "ookla" ? './bin/speedtest' + (process.platform === "win32" ? ".exe" : "")
         : mode === "libre" ? './bin/librespeed-cli' + (process.platform === "win32" ? ".exe" : "")
             : './bin/cfspeedtest' + (process.platform === "win32" ? ".exe" : "");
@@ -21,7 +22,10 @@ export default async (mode, serverId, serverUrl) => {
     let args;
 
     if (mode === "ookla") {
-        args = ['--accept-license', '--accept-gdpr', '--format=json'];
+        // jsonl rather than json: the CLI reports each phase as it goes instead
+        // of only the finished result, which is what the interface follows a run
+        // with. The final record is the same result either way.
+        args = ['--accept-license', '--accept-gdpr', '--format=jsonl'];
 
         if (process.platform === "win32") {
             args.push('--ip=' + interfaceIp);
@@ -75,8 +79,23 @@ export default async (mode, serverId, serverUrl) => {
         stderr += buffer.toString();
     });
 
+    // Holds the tail of a chunk that ended mid-line: the CLI writes one record
+    // per line, but a read can split one anywhere.
+    let incomplete = '';
+
     testProcess.stdout.on('data', (buffer) => {
-        stdout += buffer.toString();
+        const text = buffer.toString();
+        stdout += text;
+
+        if (!onProgress) return;
+
+        const lines = (incomplete + text).split('\n');
+        incomplete = lines.pop();
+
+        for (const line of lines) {
+            const update = parseProgressLine(mode, line.trim());
+            if (update) onProgress(update);
+        }
     });
 
     await new Promise((resolve, reject) => {

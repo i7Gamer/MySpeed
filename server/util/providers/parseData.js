@@ -1,4 +1,6 @@
-const roundSpeed = (bandwidth) => {
+// Exported so the live progress readout reports a transfer in the same unit,
+// rounded the same way, as the figure eventually stored for it.
+export const roundSpeed = (bandwidth) => {
     return Math.round(bandwidth / 1250) / 100;
 };
 
