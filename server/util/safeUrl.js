@@ -86,6 +86,14 @@ export const isBlockedAddress = (address) => {
  * The hostname is resolved before the verdict, so a name that points at a
  * blocked address is refused too rather than only a literal one.
  *
+ * Known residual: this resolves, approves, and then hands the *name* to fetch,
+ * which resolves it again. A name whose record changes in between - DNS
+ * rebinding - is checked as one address and connected to as another. Closing
+ * that needs the connection pinned to the address that was cleared, which Node's
+ * fetch gives no hook for; it would take a custom dispatcher and a dependency
+ * this project does not have. Callers narrow the window instead by checking
+ * immediately before each fetch rather than once when the node was added.
+ *
  * @returns {Promise<{safe: true}|{safe: false, reason: string}>}
  */
 export const checkNodeTarget = async (value) => {

@@ -200,6 +200,10 @@ export const Statistics = () => {
     useEffect(() => {
         if (!wantsDetail || !isDownsampled) {
             setDetailStatistics(null);
+            // Cleared here too: closing the chart while its request was in
+            // flight left the flag latched, and the toolbar said "Loading…"
+            // for the rest of the session.
+            setDetailLoading(false);
             return;
         }
 

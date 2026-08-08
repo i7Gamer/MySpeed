@@ -71,13 +71,19 @@ describe("i18n keys", () => {
             "calendar.last_year",
             "info.recommendations_info",
             "info.recommendations_error",
-            "test.result.server",
+            "test.details.server",
             "statistics.downsampled",
             // Built as `test.details.${direction}_target`, so the literal-key
             // scanner above cannot see them.
             "test.details.over_target",
             "test.details.under_target",
-            "test.details.on_target"
+            "test.details.on_target",
+            // Chosen by a ternary inside t(), which the scanner cannot read
+            // either.
+            "test.details.hide",
+            "test.details.show",
+            "storage.export_redacted_desc",
+            "storage.export_with_secrets_desc"
         ];
 
         for (const key of required) {
@@ -87,10 +93,18 @@ describe("i18n keys", () => {
         }
 
         it("keeps the interpolation placeholders of the new strings intact", () => {
-            assert.match(english.test.result.server, /\{\{server\}\}/);
             assert.match(english.statistics.downsampled, /\{\{shown\}\}/);
             assert.match(english.statistics.downsampled, /\{\{total\}\}/);
         });
+
+        /*
+         * The test.result.* family - description, jitter, server - and
+         * test.average.description were the speedtest result dialog, which the
+         * inline detail view replaced. Nothing renders them any more, so they
+         * are deliberately not pinned here: asserting on a dead string's
+         * placeholders reads like a live contract. The keys themselves still
+         * sit in every locale file, which is Crowdin's to clean up.
+         */
     });
 
     describe("locale files", () => {
@@ -146,9 +160,18 @@ describe("i18n keys", () => {
                 if (typeof source !== "string") continue;
 
                 const expected = names(source);
-                for (const name of names(value))
+                const actual = names(value);
+
+                for (const name of actual)
                     assert.ok(expected.has(name),
                         `${file}: ${key} interpolates "${name}", which en.json does not provide`);
+
+                // The other direction matters just as much: a translation that
+                // silently drops a placeholder renders a sentence with the
+                // number missing, and the one-way check above passed it.
+                for (const name of expected)
+                    assert.ok(actual.has(name),
+                        `${file}: ${key} drops the "${name}" placeholder that en.json provides`);
             }
         });
     });
