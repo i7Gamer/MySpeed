@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { parseCliOutput } from './providers/cliOutput.js';
 import * as interfacesModule from '../util/loadInterfaces.js';
 import * as config from '../controller/config.js';
 import fs from 'node:fs';
@@ -58,7 +59,7 @@ export default async (mode, serverId, serverUrl) => {
         }
     }
 
-    let result = {};
+    let result;
     let stdout = '';
     let stderr = '';
 
@@ -84,37 +85,10 @@ export default async (mode, serverId, serverUrl) => {
         // in a string column.
         testProcess.on('error', reject);
         testProcess.on('exit', () => {
-            if (stdout.trim()) {
-                const lines = stdout.trim().split('\n');
-                for (const line of lines) {
-                    if (!(line.startsWith("{") || line.startsWith("["))) continue;
-
-                    let data = {};
-                    try {
-                        data = JSON.parse(line);
-                        if (line.startsWith("[") && mode !== "cloudflare") data = data[0];
-                    } catch (e) {
-                        data.error = e.message;
-                        console.error("JSON parse error:", e.message, "Line:", line);
-                        continue;
-                    }
-
-                    if (data.error) result.error = data.error;
-
-                    if ((mode === "ookla" && data.type === "result") || mode === "libre" || mode === "cloudflare") {
-                        result = data;
-                    }
-                }
-            }
+            result = parseCliOutput(mode, stdout, stderr);
             resolve();
         });
     });
-
-    if (!result.error && stderr.trim()) {
-        result.error = stderr.includes("Too many requests")
-            ? "Too many requests. Please try again later"
-            : stderr.trim();
-    }
 
     if (result.error) throw new Error(result.error);
     return {...result, elapsed: new Date().getTime() - startTime};
