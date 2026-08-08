@@ -123,3 +123,52 @@ describe("checkNodeTarget", () => {
         });
     });
 });
+
+/**
+ * Regression: the guard recognised only the readable `::ffff:127.0.0.1`, which
+ * is the one spelling a URL never produces. WHATWG serialises a mapped address
+ * to hex - `new URL('http://[::ffff:127.0.0.1]').hostname` is `[::ffff:7f00:1]`
+ * - so the text-prefix strip left `7f00:1`, still colon-bearing, which the v6
+ * checks passed as safe. Both loopback and the cloud metadata endpoint were
+ * reachable this way, and dns.lookup returns the same string so the
+ * post-resolve check missed it too.
+ *
+ * These go through checkNodeTarget, the real entry point, because testing
+ * isBlockedAddress with hand-written spellings is exactly what hid the gap.
+ */
+describe("IPv4 embedded in an IPv6 address", () => {
+    const mapped = [
+        "http://[::ffff:127.0.0.1]:5216",
+        "http://[::ffff:169.254.169.254]/latest/meta-data",
+        "http://[::ffff:0.0.0.0]:5216",
+        // NAT64, which embeds IPv4 the same way, and the deprecated
+        // IPv4-compatible form. Measured: the mapped form really does reach an
+        // IPv4-only loopback listener, while the compat form times out on a
+        // current stack - it is refused as free defence, not because it routes.
+        "http://[64:ff9b::127.0.0.1]/",
+        "http://[::127.0.0.1]:5216"
+    ];
+
+    for (const url of mapped)
+        it(`refuses ${url}`, async () => {
+            const result = await checkNodeTarget(url);
+            assert.equal(result.safe, false, `${url} was accepted`);
+        });
+
+    it("refuses the hex spellings a URL actually emits", () => {
+        assert.equal(isBlockedAddress("::ffff:7f00:1"), true, "mapped loopback");
+        assert.equal(isBlockedAddress("::ffff:a9fe:a9fe"), true, "mapped metadata endpoint");
+    });
+
+    // A mapped address that is not itself blocked has to stay usable: LAN nodes
+    // are the normal case for the feature.
+    it("still allows a mapped private address", async () => {
+        assert.equal(isBlockedAddress("::ffff:c0a8:132"), false, "mapped 192.168.1.50");
+        assert.equal((await checkNodeTarget("http://[::ffff:192.168.1.50]:5216")).safe, true);
+    });
+
+    it("does not mistake an ordinary IPv6 address for a mapped one", async () => {
+        assert.equal(isBlockedAddress("2606:4700:4700::1111"), false);
+        assert.equal(isBlockedAddress("fd00::1"), false);
+    });
+});

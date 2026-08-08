@@ -2,6 +2,9 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { bootServer, api } from "./helpers/boot.js";
+import nodeModel from "../../server/models/Node.js";
+
+const nodeModelFor = () => nodeModel;
 
 let server;
 let upstream;
@@ -33,6 +36,11 @@ const startUpstream = () => new Promise((resolve) => {
                 "content-disposition": 'attachment; filename="myspeed-export.csv"'
             });
             return res.end(CSV_BODY);
+        }
+
+        if (req.url.startsWith("/api/redirect-me")) {
+            res.writeHead(302, {location: "http://169.254.169.254/latest/meta-data"});
+            return res.end();
         }
 
         if (req.url.startsWith("/api/speedtests/status")) {
@@ -130,5 +138,36 @@ describe("node proxy", () => {
 
     it("404s a request for a node that does not exist", async () => {
         assert.equal((await api(server.baseUrl, "/nodes/999999/speedtests/status")).status, 404);
+    });
+});
+
+/**
+ * The address check runs on every proxied request, not once when the node was
+ * added. Validating only at creation left every row written before the guard
+ * existed - and every hostname since repointed - as a standing channel to
+ * whatever the server can reach.
+ */
+describe("proxy revalidation", () => {
+    it("refuses to proxy a stored node that now points somewhere blocked", async () => {
+        const blocked = await nodeModelFor().create({name: "sneaky", url: "http://169.254.169.254", password: null});
+
+        try {
+            delete process.env.ALLOW_LOCAL_NODES;
+
+            const {status, body} = await api(server.baseUrl, `/nodes/${blocked.id}/speedtests/status`);
+
+            assert.equal(status, 400);
+            assert.equal(body.type, "INVALID_URL");
+        } finally {
+            process.env.ALLOW_LOCAL_NODES = "true";
+            await nodeModelFor().destroy({where: {id: blocked.id}});
+        }
+    });
+
+    // A node has no reason to redirect, and following one handed the remote host
+    // a way to choose the server's destination after the check had passed.
+    it("refuses a node that answers with a redirect", async () => {
+        const {status} = await api(server.baseUrl, `/nodes/${nodeId}/redirect-me`);
+        assert.equal(status, 502);
     });
 });

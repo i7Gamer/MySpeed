@@ -38,12 +38,46 @@ const isBlockedIpv6 = (address) => {
     return /^fe[89ab]/.test(normalised);
 };
 
+/**
+ * Pulls the IPv4 address out of a v6 form that embeds one, in any spelling.
+ *
+ * This is the whole reason the guard could be walked past. A URL never carries
+ * the readable `::ffff:127.0.0.1`: WHATWG serialises it to the hex form
+ * `::ffff:7f00:1`, so a strip of the literal text prefix left `7f00:1` - still
+ * colon-bearing, routed to the v6 checks, matched nothing, declared safe. Both
+ * `http://[::ffff:127.0.0.1]` and `http://[::ffff:169.254.169.254]` sailed
+ * through, and dns.lookup hands the same string back so the post-resolve check
+ * missed it too.
+ *
+ * @returns the dotted IPv4 address, or null when none is embedded
+ */
+const embeddedIpv4 = (address) => {
+    const normalised = address.toLowerCase().split("%")[0];
+
+    // ::ffff:a.b.c.d and the deprecated ::a.b.c.d compat form.
+    const dotted = /^::(?:ffff:)?((?:\d{1,3}\.){3}\d{1,3})$/.exec(normalised);
+    if (dotted) return dotted[1];
+
+    // The hex spellings a URL actually produces. 64:ff9b::/96 is NAT64, which
+    // embeds IPv4 the same way, and the bare `::` form is the deprecated
+    // IPv4-compatible address - no current stack routes that one to the
+    // embedded address, but recognising it costs nothing.
+    const hex = /^(?:::ffff:|64:ff9b::|::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(normalised);
+    if (!hex) return null;
+
+    const high = parseInt(hex[1], 16);
+    const low = parseInt(hex[2], 16);
+
+    return [high >> 8, high & 0xff, low >> 8, low & 0xff].join(".");
+};
+
 export const isBlockedAddress = (address) => {
     if (typeof address !== "string" || address === "") return false;
 
-    const bare = address.startsWith(IPV4_MAPPED_PREFIX) ? address.slice(IPV4_MAPPED_PREFIX.length) : address;
+    const embedded = embeddedIpv4(address);
+    if (embedded !== null) return isBlockedIpv4(embedded);
 
-    return bare.includes(":") ? isBlockedIpv6(bare) : isBlockedIpv4(bare);
+    return address.includes(":") ? isBlockedIpv6(address) : isBlockedIpv4(address);
 };
 
 /**
