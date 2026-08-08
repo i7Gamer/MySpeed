@@ -11,7 +11,9 @@ import {SpeedtestContext} from "@/common/contexts/Speedtests";
 import {useAlert} from "@/common/contexts/Alert";
 import {convertSpeed, formatLastTest, formatTime, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {isFailedTest} from "@/common/utils/TestUtil";
-import {startBlockedReason, START_BLOCKED_RUNNING, START_BLOCKED_VIEW_MODE} from "@/common/utils/StatusUtil";
+import {
+    progressPercent, startBlockedReason, START_BLOCKED_RUNNING, START_BLOCKED_VIEW_MODE
+} from "@/common/utils/StatusUtil";
 import {startSpeedtest} from "@/common/utils/RunUtil";
 import "./styles.sass";
 
@@ -30,6 +32,7 @@ const StatusBarComponent = () => {
     const alert = useAlert();
 
     const [lastTestText, setLastTestText] = useState(null);
+    const [elapsed, setElapsed] = useState(null);
 
     /**
      * The status carries the last test, but a node running an older version
@@ -50,6 +53,18 @@ const StatusBarComponent = () => {
         return () => clearInterval(timer);
     }, [lastTest?.created]);
 
+    // Ticks locally rather than waiting on the poll, so the seconds advance
+    // smoothly instead of in one-second jumps that stall whenever a poll is slow.
+    useEffect(() => {
+        if (!status.startedAt) return setElapsed(null);
+
+        const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - Date.parse(status.startedAt)) / 1000)));
+
+        tick();
+        const timer = setInterval(tick, RELATIVE_TIME_REFRESH_MS);
+        return () => clearInterval(timer);
+    }, [status.startedAt]);
+
     if (Object.entries(config).length === 0) return <></>;
 
     const blocked = startBlockedReason(status, config);
@@ -57,12 +72,16 @@ const StatusBarComponent = () => {
 
     const start = () => startSpeedtest({status, config, updateStatus, setRunning, updateTests, alert});
 
+    const percent = progressPercent(status);
+
     const phaseLabel = () => {
+        // A provider that reports no progress reports no phase either, so there
+        // is nothing more specific to say than that it is measuring.
+        if (percent === null) return t("status.phase.measuring");
         if (!status.phase || status.phase === "start") return t("status.phase.starting");
+
         return t(`status.phase.${status.phase}`);
     };
-
-    const progressPercent = Math.round((status.progress ?? 0) * PERCENT);
 
     const stateText = () => {
         if (status.paused) return t("status.paused");
@@ -109,6 +128,12 @@ const StatusBarComponent = () => {
                             </span>
                         )}
 
+                        {/* With no progress to show, elapsed time is the only
+                            evidence the run is still moving. */}
+                        {status.running && percent === null && elapsed !== null && (
+                            <span>{t("status.elapsed", {seconds: elapsed})}</span>
+                        )}
+
                         {/* Surfaced here rather than only in the statistics: a
                             run of failures is the one thing worth noticing
                             without opening another page. */}
@@ -132,10 +157,16 @@ const StatusBarComponent = () => {
                 )}
             </div>
 
+            {/* An indeterminate track for a provider that reports no progress:
+                a bar held at zero for the length of a run reads as a test that
+                has hung rather than one that cannot say how far along it is. */}
             {status.running && (
-                <div className="status-progress" role="progressbar" aria-valuenow={progressPercent}
+                <div className="status-progress" role="progressbar"
+                     aria-valuenow={percent === null ? undefined : percent}
                      aria-valuemin={0} aria-valuemax={PERCENT}>
-                    <div className="status-progress-fill" style={{width: `${progressPercent}%`}}/>
+                    {percent === null
+                        ? <div className="status-progress-fill status-progress-indeterminate"/>
+                        : <div className="status-progress-fill" style={{width: `${percent}%`}}/>}
                 </div>
             )}
         </div>

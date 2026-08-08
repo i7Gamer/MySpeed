@@ -6,6 +6,24 @@ export const RUNNING_POLL_MS = 1000;
 
 export const pollIntervalFor = (status) => status?.running ? RUNNING_POLL_MS : IDLE_POLL_MS;
 
+const PERCENT = 100;
+
+/**
+ * How far through the run is, as a whole percentage, or null if the provider
+ * does not say.
+ *
+ * Only the Ookla CLI reports progress: librespeed's --json suppresses its
+ * verbose output and cfspeedtest's silences everything but the result. Those
+ * runs must not be drawn as a bar sitting at zero for a minute, which reads as
+ * a hung test rather than as an unknown one - so an absent progress is
+ * deliberately not treated as zero.
+ */
+export const progressPercent = (status) => {
+    if (typeof status?.progress !== "number") return null;
+
+    return Math.round(Math.min(Math.max(status.progress, 0), 1) * PERCENT);
+};
+
 export const START_BLOCKED_PAUSED = "paused";
 export const START_BLOCKED_RUNNING = "running";
 export const START_BLOCKED_VIEW_MODE = "view_mode";

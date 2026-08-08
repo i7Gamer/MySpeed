@@ -626,8 +626,10 @@
       "starting": "Wird gestartet…",
       "ping": "Latenz wird gemessen",
       "download": "Download wird gemessen",
-      "upload": "Upload wird gemessen"
+      "upload": "Upload wird gemessen",
+      "measuring": "Wird gemessen…"
     },
-    "last_test_now": "Letzter Test gerade eben"
+    "last_test_now": "Letzter Test gerade eben",
+    "elapsed": "{{seconds}}s vergangen"
   }
 }

@@ -34,11 +34,17 @@ describe("GET /api/speedtests/status", () => {
         assert.equal(body.running, false);
     });
 
+    /**
+     * Progress is absent rather than zero. Only the Ookla CLI reports any, so
+     * "nothing has been reported" has to be distinguishable from "reported as
+     * nought" - otherwise a librespeed or cloudflare run is drawn as a bar
+     * pinned at 0% for its whole duration, which reads as a hung test.
+     */
     it("reports no phase or progress while nothing is running", async () => {
         const body = await status();
 
         assert.equal(body.phase, null);
-        assert.equal(body.progress, 0);
+        assert.equal(body.progress, null);
         assert.equal(body.startedAt, null);
     });
 

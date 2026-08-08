@@ -17,7 +17,11 @@ let _isRunning = false;
 // What the run currently in flight is doing. Only ever read through
 // getProgress(), and reset the moment a run ends so a finished test cannot
 // leave a stale bar sitting at 80% until the next one starts.
-const NO_PROGRESS = {phase: null, progress: 0, speed: null, startedAt: null};
+// Progress is null rather than 0 until a provider actually reports some. Only
+// the Ookla CLI does: librespeed's --json suppresses its verbose output and
+// cfspeedtest's silences everything but the result, so those runs never report
+// a fraction at all and must not be drawn as one sitting at zero.
+const NO_PROGRESS = {phase: null, progress: null, speed: null, startedAt: null};
 
 let _progress = {...NO_PROGRESS};
 

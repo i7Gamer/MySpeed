@@ -2,8 +2,38 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
     IDLE_POLL_MS, RUNNING_POLL_MS, START_BLOCKED_PAUSED, START_BLOCKED_RUNNING, START_BLOCKED_VIEW_MODE,
-    pollIntervalFor, startBlockedReason
+    pollIntervalFor, progressPercent, startBlockedReason
 } from "@/common/utils/StatusUtil.js";
+
+/**
+ * Only the Ookla CLI reports progress: librespeed's --json suppresses its
+ * verbose output and cfspeedtest's silences everything but the result. A bar
+ * pinned at 0% for the length of one of those runs reads as a hung test, so
+ * "unknown" has to be distinguishable from "nothing yet".
+ */
+describe("progressPercent", () => {
+    it("is the reported fraction as a percentage", () => {
+        assert.equal(progressPercent({running: true, progress: 0.42}), 42);
+    });
+
+    it("is zero, not unknown, when a run has just started reporting", () => {
+        assert.equal(progressPercent({running: true, progress: 0}), 0);
+    });
+
+    it("is unknown for a provider that reports no progress at all", () => {
+        assert.equal(progressPercent({running: true, progress: null}), null);
+        assert.equal(progressPercent({running: true}), null);
+    });
+
+    it("rounds to whole percent", () => {
+        assert.equal(progressPercent({running: true, progress: 0.4267}), 43);
+    });
+
+    it("never exceeds its bounds", () => {
+        assert.equal(progressPercent({running: true, progress: 1.4}), 100);
+        assert.equal(progressPercent({running: true, progress: -0.2}), 0);
+    });
+});
 
 /**
  * The status was polled on one fixed five-second interval. That is far too

@@ -96,6 +96,19 @@
   // Matches the one-second poll: without it the fill jumps between readings.
   transition: width 1s linear
 
+// For a provider that reports no progress. A sliver travelling the track says
+// "still working, cannot say how far" - which a bar held at zero does not.
+.status-progress-indeterminate
+  width: 30%
+  transition: none
+  animation: status-progress-slide 1.4s ease-in-out infinite
+
+@keyframes status-progress-slide
+  0%
+    transform: translateX(-100%)
+  100%
+    transform: translateX(333%)
+
 @media screen and (max-width: 600px)
   .status-main
     padding: 1rem 1.25rem

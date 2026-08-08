@@ -626,8 +626,10 @@
       "starting": "Starting…",
       "ping": "Measuring latency",
       "download": "Measuring download",
-      "upload": "Measuring upload"
+      "upload": "Measuring upload",
+      "measuring": "Measuring…"
     },
-    "last_test_now": "Last test just now"
+    "last_test_now": "Last test just now",
+    "elapsed": "{{seconds}}s elapsed"
   }
 }
