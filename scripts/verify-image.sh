@@ -55,8 +55,22 @@ done
 
 # Health only proves the process is up and the database opened; make sure the
 # things users actually consume are served as well.
+#
+# The image ships with no password, and a fresh instance deliberately refuses
+# requests that did not arrive on loopback. These come through the published
+# port, so from inside the container they arrive from the bridge gateway - which
+# means the api check needs the setup token the server prints at boot. That the
+# refusal happens at all is worth pinning here too: it is the whole reason a
+# fresh install is not an open admin API.
+echo "Checking that an unauthenticated caller is refused ..."
+[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${BASE}/api/speedtests/status")" = "401" ] \
+    || fail "A password-less instance served the api to an unauthenticated caller."
+
 echo "Checking the api ..."
-curl -fsS --max-time 10 "${BASE}/api/speedtests/status" | grep -q '"running"' \
+TOKEN="$(docker logs "$CONTAINER" 2>&1 | sed -n 's/.*Setup token: \([0-9a-f]\{16,\}\).*/\1/p' | tail -1)"
+[ -n "$TOKEN" ] || fail "The server never printed a setup token, so a first run could not be completed."
+
+curl -fsS --max-time 10 -H "x-password: ${TOKEN}" "${BASE}/api/speedtests/status" | grep -q '"running"' \
     || fail "The api did not answer as expected."
 
 echo "Checking the bundled client ..."
