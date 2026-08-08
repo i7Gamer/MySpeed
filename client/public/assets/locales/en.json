@@ -212,7 +212,10 @@
       "year": "1 year (default)",
       "forever": "Keep forever",
       "custom": "Custom..."
-    }
+    },
+    "include_secrets": "Include credentials",
+    "export_redacted_desc": "Node passwords, integration tokens and the admin password are left out.",
+    "export_with_secrets_desc": "Contains node passwords, integration tokens and the admin password. Store it somewhere safe."
   },
   "latest": {
     "ping": "Ping",

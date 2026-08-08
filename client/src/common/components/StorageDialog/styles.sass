@@ -79,6 +79,9 @@
     display: flex
     align-items: center
     gap: 0.6rem
+    // The export row carries a hint under its title, so the icon and heading
+    // wrap onto one line and the hint takes the next.
+    flex-wrap: wrap
 
     svg
       color: $subtext
@@ -91,6 +94,14 @@
       font-weight: 500
       color: $subtext
 
+    .storage-row-hint
+      flex-basis: 100%
+      margin: 0
+      padding-left: 1.6rem
+      font-size: 0.8rem
+      color: $subtext
+      opacity: 0.8
+
   .storage-row-value
     font-size: 1rem
     font-weight: 600
@@ -100,6 +111,16 @@
   .storage-row-actions
     display: flex
     gap: 0.5rem
+    align-items: center
+
+    .storage-row-toggle
+      display: flex
+      align-items: center
+      gap: 0.5rem
+      cursor: pointer
+      font-size: 0.85rem
+      color: $subtext
+      white-space: nowrap
 
   .dialog-btn
     padding: 0.5rem 1rem

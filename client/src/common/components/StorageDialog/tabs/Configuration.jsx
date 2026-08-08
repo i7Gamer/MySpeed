@@ -4,6 +4,7 @@ import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {ConfigContext} from "@/common/contexts/Config";
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
+import ToggleSwitch from "@/common/components/ToggleSwitch";
 import {faClockRotateLeft, faFileExport, faFileImport} from "@fortawesome/free-solid-svg-icons";
 
 export default ({close}) => {
@@ -11,8 +12,13 @@ export default ({close}) => {
     const updateConfig = useContext(ConfigContext)[1];
     const updateToast = useContext(ToastNotificationContext);
 
+    // Off by default, and stated rather than assumed: a plain export is safe to
+    // attach to a bug report, while the one that restores an instance verbatim
+    // carries node passwords, integration tokens and the admin password hash.
+    const [includeSecrets, setIncludeSecrets] = useState(false);
+
     const exportConfig = () => {
-        downloadRequest("/storage/config").then(() => {
+        downloadRequest(`/storage/config${includeSecrets ? "?includeSecrets=true" : ""}`).then(() => {
             updateToast(t("storage.settings_exported"), "green", faFileExport);
             close();
         });
@@ -67,8 +73,15 @@ export default ({close}) => {
                 <div className="storage-row-label">
                     <FontAwesomeIcon icon={faFileExport}/>
                     <h3>{t("storage.export_settings")}</h3>
+                    <p className="storage-row-hint">
+                        {t(includeSecrets ? "storage.export_with_secrets_desc" : "storage.export_redacted_desc")}
+                    </p>
                 </div>
                 <div className="storage-row-actions">
+                    <label className="storage-row-toggle">
+                        <span>{t("storage.include_secrets")}</span>
+                        <ToggleSwitch checked={includeSecrets} onChange={setIncludeSecrets}/>
+                    </label>
                     <button className="dialog-btn" onClick={exportConfig}>{t("storage.export")}</button>
                 </div>
             </div>

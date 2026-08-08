@@ -212,7 +212,10 @@
       "year": "1 Jahr (Standard)",
       "forever": "Für immer behalten",
       "custom": "Benutzerdefiniert..."
-    }
+    },
+    "include_secrets": "Zugangsdaten einschließen",
+    "export_redacted_desc": "Node-Passwörter, Integrations-Tokens und das Admin-Passwort bleiben außen vor.",
+    "export_with_secrets_desc": "Enthält Node-Passwörter, Integrations-Tokens und das Admin-Passwort. Sicher aufbewahren."
   },
   "latest": {
     "ping": "Ping",
