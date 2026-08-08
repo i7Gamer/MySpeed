@@ -113,15 +113,23 @@ describe("POST /api/speedtests/run", () => {
         assert.match(body.message, /provider/i);
     });
 
-    // Regression: the route used to await the whole 30-60s test before
-    // answering, which trips the default read timeout of common reverse proxies.
-    it("answers promptly rather than holding the connection", async () => {
-        const startedAt = process.hrtime.bigint();
-        await api(server.baseUrl, "/speedtests/run", {method: "POST"});
-        const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
-
-        assert.ok(elapsedMs < 2000, `request took ${Math.round(elapsedMs)}ms`);
-    });
+    /*
+     * There was a test here asserting the route "answers promptly rather than
+     * holding the connection", guarding the change that stopped it awaiting the
+     * whole 30-60s speedtest.
+     *
+     * It could not fail. provider defaults to "none", so the route answered 410
+     * before reaching the speedtest at all, and the sub-2000ms bound was met
+     * whether or not the call was awaited. Configuring a provider does not
+     * rescue it either: no CLI is installed here, so the run fails in about
+     * twenty milliseconds - faster than a second request can observe it, and far
+     * inside any timing bound that would catch a real await.
+     *
+     * What is actually observable lives in speedtestRun.test.js: the route
+     * answers 200 and the resulting row appears afterwards, which is the
+     * behaviour that matters. Rather than leave a green assertion standing
+     * guard over nothing, it is recorded here.
+     */
 });
 
 describe("GET /api/speedtests/status", () => {
