@@ -11,12 +11,6 @@
   user-select: none
   margin: 1rem 0
 
-.optimal-values-note
-  margin: 1.25rem 0 0
-  color: $subtext
-  font-size: 0.85rem
-  line-height: 1.5
-
   .optimal-values-speeds
     display: flex
     justify-content: center
@@ -54,6 +48,16 @@
           margin: 0
           color: $subtext
           font-size: 0.95rem
+
+// Kept below the block it is a sibling of in the markup, and not above it: this
+// rule used to be written directly before .optimal-values-speeds, which in the
+// indented syntax made that block its child. The two are siblings, so every rule
+// for the speed inputs stopped matching and the dialog lost its layout.
+.optimal-values-note
+  margin: 1.25rem 0 0
+  color: $subtext
+  font-size: 0.85rem
+  line-height: 1.5
 
 @media screen and (max-width: 600px)
   .optimal-values-content .optimal-values-speeds
