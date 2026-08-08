@@ -20,7 +20,18 @@ const NUMERIC_COLUMNS = ["ping", "download", "upload", "time"];
 const isImportableNumber = (value) =>
     value === null || value === undefined || (typeof value === "number" && Number.isFinite(value));
 
-export const create = async (ping, download, upload, time, serverId, type = "auto", resultId = null, error = null, jitter = null, serverName = null, serverHost = null) => {
+/**
+ * Records a completed - or failed - speedtest and returns its id.
+ *
+ * Named rather than positional: this took eleven parameters, and its caller
+ * already had to pass a filler `null` for `error` just to reach `jitter` behind
+ * it. Argument order was the only thing keeping each measurement in its own
+ * column, and every new column made that worse.
+ */
+export const create = async ({
+    ping, download, upload, time, serverId, type = "auto",
+    resultId = null, error = null, jitter = null, serverName = null, serverHost = null
+}) => {
     return (await tests.create({ping, jitter, download, upload, error, serverId, serverName, serverHost, type, resultId, time, created: new Date().toISOString()})).id;
 }
 

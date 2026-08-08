@@ -7,6 +7,10 @@ import { setState, sendRunning, sendError, sendFinished } from "./integrations.j
 import * as serverController from "../controller/servers.js";
 import { toErrorMessage } from '../util/helpers.js';
 
+// The placeholder a failed test stores in every numeric column. The client
+// tells a failure apart by it, so it is not a value anyone should read as one.
+const FAILED = -1;
+
 let _isRunning = false;
 
 const setRunning = (running, sendRequest = true) => {
@@ -120,7 +124,8 @@ const execute = async (type, retried) => {
         let {ping, jitter, download, upload, time, resultId, serverName, serverHost} = await parseData.parseData(process.env.PREVIEW_MODE === "true" ?
             "ookla" : mode, test);
 
-        let testResult = await tests.create(ping, download, upload, time, test.serverId, type, resultId, null, jitter, serverName, serverHost);
+        let testResult = await tests.create({ping, download, upload, time, serverId: test.serverId, type,
+            resultId, jitter, serverName, serverHost});
         console.log(`Test #${testResult} was executed successfully in ${time}s. 🏓 ${ping} (±${jitter || 'N/A'}) ⬇ ${download}️ ⬆ ${upload}️`);
         createRecommendations().catch(err =>
             console.error(`Could not update the recommendations: ${toErrorMessage(err)}`));
@@ -136,7 +141,8 @@ const execute = async (type, retried) => {
         // its -1 placeholder values poison every average.
         const message = toErrorMessage(e);
 
-        let testResult = await tests.create(-1, -1, -1, null, 0, type, null, message);
+        let testResult = await tests.create({ping: FAILED, download: FAILED, upload: FAILED, time: null,
+            serverId: 0, type, error: message});
         await sendError(message);
         setRunning(false, false);
         console.log(`Test #${testResult} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
