@@ -1,10 +1,11 @@
 import React, {createContext, useCallback, useState} from "react";
 import {DEFAULT_TIMEFRAME} from "@/common/utils/TimeframeUtil";
+import {TIME_FORMAT_24H, SPEED_UNIT_MBPS} from "./constants";
 
-export const TIME_FORMAT_24H = "24h";
-export const TIME_FORMAT_12H = "12h";
-export const SPEED_UNIT_MBPS = "mbps";
-export const SPEED_UNIT_MBYTES = "mbytes";
+// Re-exported so every existing import of this module keeps working. The values
+// themselves live in a plain module, which lets a utility read them without
+// pulling React in behind them.
+export {TIME_FORMAT_24H, TIME_FORMAT_12H, SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES} from "./constants";
 
 const STORAGE_KEY = "preferences";
 

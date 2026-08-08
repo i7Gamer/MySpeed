@@ -7,7 +7,7 @@
     "@resvg/resvg-js"
   ],
   "scripts": {
-    "test": "node --test \"tests/**/*.test.js\"",
+    "test": "node --import ./tests/helpers/register.mjs --test \"tests/**/*.test.js\"",
     "client": "cd client && bun run dev",
     "server": "bun run --watch server/index.js",
     "build": "bun run generate-migrations && bun run generate-integrations && cd client && bun run build",

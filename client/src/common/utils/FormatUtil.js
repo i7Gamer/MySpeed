@@ -1,5 +1,8 @@
 import i18n, {t} from "i18next";
-import {SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H} from "@/common/contexts/Preferences";
+// The constants module rather than the context barrel: that barrel re-exports a
+// React component, which would drag the whole component tree into anything that
+// only wanted to know what "mbps" is called.
+import {SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H} from "@/common/contexts/Preferences/constants";
 
 // Passing undefined means "whatever locale the browser is set to", which
 // ignores the language the user picked in the app - a German UI rendered
@@ -8,6 +11,12 @@ const locale = () => i18n.language || undefined;
 
 const toDate = (value) => {
     if (value instanceof Date) return value;
+
+    // new Date(null) is the epoch rather than an invalid date, and the same
+    // goes for "" and 0 - so an absent timestamp rendered as 01/01/1970
+    // instead of the blank the isNaN guards below were meant to produce.
+    if (value === null || value === undefined || value === "") return new Date(NaN);
+
     return new Date(value);
 };
 
