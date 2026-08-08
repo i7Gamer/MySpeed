@@ -11,8 +11,12 @@ neededFolder.forEach(folder => {
         try {
             fs.mkdirSync(fullPath, {recursive: true});
         } catch (e) {
-            console.error(`Could not create the ${folder} folder. Please check the permission`);
-            process.exit(0);
+            // Exits non-zero: reporting success while the server has nowhere to
+            // write meant a container that could not start looked, to Docker
+            // and to the operator, as though it had stopped cleanly.
+            console.error(`Could not create the ${folder} folder: ${e.message}`);
+            console.error("Check that the data directory is writable by the user the server runs as.");
+            process.exit(1);
         }
     }
 });

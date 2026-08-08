@@ -25,7 +25,9 @@ FROM oven/bun:1-alpine
 # ca-certificates for TLS to the speedtest providers, tzdata so the configured
 # TZ resolves - both are needed at runtime. apk --no-cache leaves no index behind,
 # so there is nothing to purge afterwards.
-RUN apk add --no-cache tzdata ca-certificates
+# su-exec drops privileges in the entrypoint, which is what lets the container
+# start as root just long enough to take ownership of an upgraded volume.
+RUN apk add --no-cache tzdata ca-certificates su-exec
 
 ENV TZ=Etc/UTC
 
@@ -49,7 +51,14 @@ COPY --from=client-build /client/build /myspeed/build
 # refetches binaries matching the new image.
 RUN mkdir -p /myspeed/data /myspeed/bin && chown -R bun:bun /myspeed
 
-USER bun
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# No USER here on purpose: the entrypoint starts as root, takes ownership of a
+# volume an older image left behind, and then drops to `bun` itself. Setting
+# USER instead would leave every existing install unable to write to its own
+# data directory after an upgrade.
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 VOLUME ["/myspeed/data"]
 

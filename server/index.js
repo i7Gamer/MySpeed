@@ -113,6 +113,13 @@ db.authenticate().then(() => {
         process.exit(112);
     });
 }).catch(err => {
-    console.error("Could not open the database file. Maybe it is damaged?: " + err.message);
+    console.error("Could not open the database: " + err.message);
+
+    // "Maybe it is damaged" was the only hint this used to give, and it points
+    // at the wrong thing far more often than the right one: the usual cause is
+    // a data directory the server cannot write to.
+    if (process.env.DB_TYPE !== "mysql")
+        console.error("Check that the data directory is writable by the user the server runs as.");
+
     process.exit(111);
 });

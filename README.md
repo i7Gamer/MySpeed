@@ -174,6 +174,26 @@ single shared password rather than per-user accounts. Secrets are stored
 unencrypted in `data/storage.db` — back that file up as carefully as you would a
 password manager export.
 
+### ⬆️ Upgrading to 1.1.1
+
+Docker upgrades are still `docker pull` and recreate — the container takes
+ownership of an existing data volume on first start, because the server now runs
+as an unprivileged user rather than as root.
+
+Two changes need a decision rather than just an upgrade:
+
+- **An instance with no password no longer answers the network.** Requests from
+  other machines are refused until a password is set or the one-time setup token
+  printed in the server log is presented. Local requests are unaffected, so a
+  LAN-only install can carry on as before — set `ALLOW_NO_PASSWORD=true` to keep
+  the old behaviour deliberately.
+- **You are signed out.** The browser no longer stores your password; it holds a
+  session cookie instead. Your existing login is carried over once, and after
+  that a server restart means signing in again.
+
+Everything else — the database, exported configs, integrations, nodes — carries
+over untouched. No migration step is needed.
+
 ### 📸 Example Screenshots
 
 #### Homepage (List View)

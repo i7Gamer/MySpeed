@@ -178,6 +178,26 @@ gibt ein gemeinsames Passwort statt einzelner Benutzerkonten. Zugangsdaten liege
 unverschlüsselt in `data/storage.db`; sichere diese Datei so sorgfältig wie einen
 Passwort-Manager-Export.
 
+### ⬆️ Update auf 1.1.1
+
+Bei Docker genügt weiterhin `docker pull` und den Container neu erstellen – das
+vorhandene Daten-Volume wird beim ersten Start übernommen, da der Server jetzt
+als unprivilegierter Benutzer statt als root läuft.
+
+Zwei Änderungen erfordern eine Entscheidung:
+
+- **Eine Instanz ohne Passwort antwortet dem Netzwerk nicht mehr.** Anfragen von
+  anderen Rechnern werden abgelehnt, bis ein Passwort gesetzt oder das einmalige
+  Setup-Token aus dem Server-Log eingegeben wurde. Lokale Anfragen bleiben
+  unberührt, eine reine LAN-Installation läuft also weiter – mit
+  `ALLOW_NO_PASSWORD=true` lässt sich das alte Verhalten bewusst beibehalten.
+- **Du wirst abgemeldet.** Der Browser speichert das Passwort nicht mehr, sondern
+  hält ein Session-Cookie. Die bestehende Anmeldung wird einmalig übernommen,
+  danach bedeutet ein Server-Neustart eine erneute Anmeldung.
+
+Alles andere – Datenbank, exportierte Konfigurationen, Integrationen, Nodes –
+bleibt unverändert. Ein Migrationsschritt ist nicht nötig.
+
 ### 📸 Beispiel-Screenshots
 
 #### Startseite (Listen-Ansicht)
