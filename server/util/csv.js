@@ -1,4 +1,8 @@
-export const CSV_COLUMNS = ["id", "ping", "jitter", "download", "upload", "time", "type", "created", "error"];
+// `error` stays last: it is the only free-text column, so keeping it at the end
+// means a reader scanning the numeric columns never has to step over it. New
+// columns are inserted before it rather than appended.
+export const CSV_COLUMNS = ["id", "ping", "jitter", "download", "upload", "time", "type", "created",
+    "packetLoss", "downloadLatency", "uploadLatency", "error"];
 
 export const CSV_HEADER = `${CSV_COLUMNS.join(",")}\n`;
 

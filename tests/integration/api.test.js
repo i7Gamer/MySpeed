@@ -41,7 +41,8 @@ describe("GET /api/speedtests/export", () => {
         const {status, text, headers} = await exportUrl("from=2026-08-01&to=2026-08-07&tzOffset=0&format=csv");
         assert.equal(status, 200);
         assert.match(headers.get("content-type"), /text\/csv/);
-        assert.equal(text.split("\n")[0], "id,ping,jitter,download,upload,time,type,created,error");
+        assert.equal(text.split("\n")[0],
+            "id,ping,jitter,download,upload,time,type,created,packetLoss,downloadLatency,uploadLatency,error");
     });
 
     // Regression: the old exporter only swapped commas out of `error`, so a

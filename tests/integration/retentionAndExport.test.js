@@ -1,6 +1,7 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, api, seedTests, setConfig } from "./helpers/boot.js";
+import { CSV_COLUMNS } from "../../server/util/csv.js";
 
 let server;
 let controller;
@@ -102,7 +103,11 @@ describe("GET /api/storage/tests/history/csv", () => {
         await seedTests(server.tests, []);
 
         const {text} = await api(server.baseUrl, "/storage/tests/history/csv");
-        assert.match(text.split("\n")[0], /^id,ping,jitter,download,upload,time,type,created,error/);
+
+        // Asserted against the exported column list rather than a copy of it:
+        // the point here is that a header is emitted at all for an empty export,
+        // and a second hand-written copy of the columns only breaks twice.
+        assert.equal(text.split("\n")[0], CSV_COLUMNS.join(","));
     });
 });
 

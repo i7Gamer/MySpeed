@@ -21,13 +21,15 @@ describe("migrations", () => {
 
         assert.ok(names.includes("0001-initial-setup.js"));
         assert.ok(names.includes("0004-index-speedtests-created.js"));
+        assert.ok(names.includes("0005-add-quality-columns.js"));
     });
 
     it("creates the columns the model expects", async () => {
         const columns = await queryInterface.describeTable("speedtests");
 
         for (const column of ["ping", "jitter", "download", "upload", "time", "type", "created", "error",
-            "serverId", "serverName", "serverHost", "resultId"])
+            "serverId", "serverName", "serverHost", "resultId",
+            "packetLoss", "downloadLatency", "uploadLatency"])
             assert.ok(columns[column], `speedtests.${column} is missing`);
     });
 

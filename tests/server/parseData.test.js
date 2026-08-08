@@ -53,6 +53,50 @@ describe("parseOokla", () => {
         const parsed = parseOokla({...ooklaResult, ping: {latency: 12.6}});
         assert.equal(parsed.jitter, null);
     });
+
+    /**
+     * The CLI has always reported packet loss and the latency measured while the
+     * line was saturated, and all of it was dropped on the floor. Latency under
+     * load is the figure that explains a call breaking up during an upload -
+     * this connection idles at 4ms and reaches 44ms loaded - and it cannot be
+     * recovered after the fact, so it is captured as the test is recorded.
+     */
+    describe("the quality figures the result already carried", () => {
+        const withQuality = {
+            ...ooklaResult,
+            packetLoss: 0,
+            download: {...ooklaResult.download, latency: {iqm: 7.503, low: 4.872, high: 11.999, jitter: 0.564}},
+            upload: {...ooklaResult.upload, latency: {iqm: 43.769, low: 4.46, high: 55.8, jitter: 5.486}}
+        };
+
+        it("keeps packet loss, including a clean zero", () => {
+            assert.equal(parseOokla(withQuality).packetLoss, 0);
+        });
+
+        it("takes the interquartile mean as the latency under load", () => {
+            const parsed = parseOokla(withQuality);
+
+            assert.equal(parsed.downloadLatency, 7.5);
+            assert.equal(parsed.uploadLatency, 43.77);
+        });
+
+        // Absent is not zero: a provider that does not measure these must not
+        // report a perfect line. Ookla itself omits packetLoss on a restricted
+        // connection.
+        it("nulls them when the result does not carry them", () => {
+            const parsed = parseOokla(ooklaResult);
+
+            assert.equal(parsed.packetLoss, null);
+            assert.equal(parsed.downloadLatency, null);
+            assert.equal(parsed.uploadLatency, null);
+        });
+
+        it("nulls the loaded latency when the phase reports no iqm", () => {
+            const parsed = parseOokla({...withQuality, upload: {...ooklaResult.upload, latency: {high: 55.8}}});
+
+            assert.equal(parsed.uploadLatency, null);
+        });
+    });
 });
 
 describe("parseLibre", () => {
@@ -69,6 +113,17 @@ describe("parseLibre", () => {
         const {ping, jitter} = parseLibre(libreResult);
         assert.equal(ping, 13);
         assert.equal(jitter, 3.46);
+    });
+
+    // Neither of the other providers measures packet loss or latency under
+    // load. They have to say so rather than leave the columns undefined, which
+    // would read as an unmeasured perfect result.
+    it("reports the quality figures it cannot measure as absent", () => {
+        const parsed = parseLibre(libreResult);
+
+        assert.equal(parsed.packetLoss, null);
+        assert.equal(parsed.downloadLatency, null);
+        assert.equal(parsed.uploadLatency, null);
     });
 
     it("converts the elapsed milliseconds to seconds and has no result id", () => {
@@ -115,6 +170,14 @@ describe("parseCloudflare", () => {
         assert.equal(upload, 48.5);
     });
 
+    it("reports the quality figures it cannot measure as absent", () => {
+        for (const parsed of [parseCloudflare(cloudflareResult), parseCloudflare({})]) {
+            assert.equal(parsed.packetLoss, null);
+            assert.equal(parsed.downloadLatency, null);
+            assert.equal(parsed.uploadLatency, null);
+        }
+    });
+
     it("falls back to the median when a run reports no maximum", () => {
         const parsed = parseCloudflare({
             ...cloudflareResult,
@@ -150,7 +213,8 @@ describe("parseCloudflare", () => {
     it("returns a zeroed result rather than throwing on an unusable payload", () => {
         assert.deepEqual(parseCloudflare({}), {
             ping: 0, jitter: null, download: 0, upload: 0, time: 0,
-            resultId: null, serverName: null, serverHost: null
+            resultId: null, serverName: null, serverHost: null,
+            packetLoss: null, downloadLatency: null, uploadLatency: null
         });
     });
 

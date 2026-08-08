@@ -121,11 +121,12 @@ const execute = async (type, retried) => {
             test = await run(retried);
         }
 
-        let {ping, jitter, download, upload, time, resultId, serverName, serverHost} = await parseData.parseData(process.env.PREVIEW_MODE === "true" ?
+        let {ping, jitter, download, upload, time, resultId, serverName, serverHost,
+            packetLoss, downloadLatency, uploadLatency} = await parseData.parseData(process.env.PREVIEW_MODE === "true" ?
             "ookla" : mode, test);
 
         let testResult = await tests.create({ping, download, upload, time, serverId: test.serverId, type,
-            resultId, jitter, serverName, serverHost});
+            resultId, jitter, serverName, serverHost, packetLoss, downloadLatency, uploadLatency});
         console.log(`Test #${testResult} was executed successfully in ${time}s. 🏓 ${ping} (±${jitter || 'N/A'}) ⬇ ${download}️ ⬆ ${upload}️`);
         createRecommendations().catch(err =>
             console.error(`Could not update the recommendations: ${toErrorMessage(err)}`));

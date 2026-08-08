@@ -109,8 +109,11 @@ export const setConfig = async (config, key, value) => {
 /** Replaces the stored speedtests with the supplied rows. */
 export const seedTests = async (model, rows) => {
     await model.destroy({where: {}});
+    // The quality columns are seeded too, so an assertion that a fixture
+    // survives a round trip cannot pass vacuously by comparing null to null.
     await model.bulkCreate(rows.map((row) => ({
         ping: 10, jitter: 2, download: 100, upload: 50, time: 30,
-        serverId: 0, type: "auto", error: null, ...row
+        serverId: 0, type: "auto", error: null,
+        packetLoss: 0, downloadLatency: 12, uploadLatency: 20, ...row
     })));
 };

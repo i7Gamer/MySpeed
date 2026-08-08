@@ -2,6 +2,23 @@ const roundSpeed = (bandwidth) => {
     return Math.round(bandwidth / 1250) / 100;
 };
 
+// Neither librespeed nor cloudflare reports these, and a provider that did not
+// measure something must say so: left undefined they would store as NULL and
+// read as a flawless line rather than as an unmeasured one.
+const NO_QUALITY_FIGURES = {packetLoss: null, downloadLatency: null, uploadLatency: null};
+
+const round = (value) => value === null || value === undefined || !Number.isFinite(Number(value))
+    ? null
+    : parseFloat(Number(value).toFixed(2));
+
+/**
+ * The interquartile mean of the latency measured while that direction was
+ * saturated - what the line does under load, as opposed to the idle ping. The
+ * mean is taken rather than the peak because a single outlier should not
+ * describe the connection.
+ */
+const loadedLatency = (direction) => round(direction?.latency?.iqm);
+
 const calculateJitter = (latencyMeasurements) => {
     if (!latencyMeasurements || latencyMeasurements.length < 2) return null;
     let totalDiff = 0;
@@ -20,10 +37,13 @@ export const parseOokla = (test) => {
     let serverName = test.server?.name ?? null;
     let serverHost = test.server?.host ?? null;
 
-    return {ping, jitter, download, upload, time, resultId: test.result?.id, serverName, serverHost};
+    return {ping, jitter, download, upload, time, resultId: test.result?.id, serverName, serverHost,
+        packetLoss: round(test.packetLoss),
+        downloadLatency: loadedLatency(test.download),
+        uploadLatency: loadedLatency(test.upload)};
 };
 
-export const parseLibre = (test) => ({...test, ping: Math.round(test.ping),
+export const parseLibre = (test) => ({...test, ...NO_QUALITY_FIGURES, ping: Math.round(test.ping),
     jitter: test.jitter ? parseFloat(parseFloat(test.jitter).toFixed(2)) : null,
     time: Math.round(test.elapsed / 1000), resultId: null,
     serverName: test.server?.name ?? null, serverHost: test.server?.url ?? null});
@@ -46,11 +66,11 @@ export const parseCloudflare = (test) => {
         
         return {ping, jitter, download: parseFloat(download.toFixed(2)),
             upload: parseFloat(upload.toFixed(2)), time, resultId: null,
-            serverName: null, serverHost: null};
+            serverName: null, serverHost: null, ...NO_QUALITY_FIGURES};
     }
 
     return {ping: 0, jitter: null, download: 0, upload: 0, time: 0, resultId: null,
-        serverName: null, serverHost: null};
+        serverName: null, serverHost: null, ...NO_QUALITY_FIGURES};
 };
 
 export const parseData = (provider, data) => {

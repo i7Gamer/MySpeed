@@ -69,6 +69,42 @@ describe("recording a speedtest", () => {
         assert.equal(row.serverHost, "speedtest.arcade.ch");
     });
 
+    it("stores the packet loss and the latency measured under load", async () => {
+        const id = await controller.create({
+            ping: 4, download: 2366.32, upload: 2202.56, time: 20, serverId: 1,
+            packetLoss: 0, downloadLatency: 7.5, uploadLatency: 43.77
+        });
+
+        const row = await stored(id);
+
+        // A packet loss of zero is a measurement, not a missing value.
+        assert.equal(row.packetLoss, 0);
+        assert.equal(row.downloadLatency, 7.5);
+        assert.equal(row.uploadLatency, 43.77);
+    });
+
+    it("leaves the quality figures absent for a provider that cannot measure them", async () => {
+        const id = await controller.create({ping: 4, download: 100, upload: 50, time: 20, serverId: 0});
+
+        const row = await stored(id);
+
+        assert.equal(row.packetLoss, null);
+        assert.equal(row.downloadLatency, null);
+        assert.equal(row.uploadLatency, null);
+    });
+
+    it("does not confuse the two directions' loaded latency", async () => {
+        const id = await controller.create({
+            ping: 4, download: 100, upload: 50, time: 20, serverId: 0,
+            downloadLatency: 7.5, uploadLatency: 43.77
+        });
+
+        const row = await stored(id);
+
+        assert.equal(row.downloadLatency, 7.5);
+        assert.equal(row.uploadLatency, 43.77);
+    });
+
     it("defaults everything the caller left out", async () => {
         const id = await controller.create({ping: 4, download: 100, upload: 50, time: 20, serverId: 0});
 

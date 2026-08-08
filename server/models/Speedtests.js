@@ -38,6 +38,25 @@ export default db.define("speedtests", {
         type: Sequelize.DOUBLE,
         allowNull: false
     },
+    // Null rather than zero when absent: rows recorded before these existed, and
+    // providers that do not measure them, have no value - not a perfect one.
+    packetLoss: {
+        type: Sequelize.DOUBLE,
+        allowNull: true,
+        defaultValue: null
+    },
+    // The interquartile mean of the latency measured while that direction was
+    // saturated, i.e. what the line does under load rather than idle.
+    downloadLatency: {
+        type: Sequelize.DOUBLE,
+        allowNull: true,
+        defaultValue: null
+    },
+    uploadLatency: {
+        type: Sequelize.DOUBLE,
+        allowNull: true,
+        defaultValue: null
+    },
     error: {
         type: Sequelize.STRING,
         allowNull: true
