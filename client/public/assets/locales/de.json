@@ -227,7 +227,10 @@
     "byte_speed_unit": "MB/s",
     "up": "Upload",
     "latest": "Letzter Test",
-    "before": "vor"
+    "before": "vor",
+    "quality": "Unter Last",
+    "loaded_latency": "{{down}} / {{up}} ms Latenz",
+    "packet_loss": "{{percent}}% Verlust"
   },
   "info": {
     "recommendations_error": "Du musst mindestens 10 Tests machen, damit ein Durchschnitt ermittelt werden kann. Ob die Tests manuell oder automatisch durchgeführt wurden ist egal.",
@@ -609,6 +612,21 @@
       "mbps_desc": "Standard ISP / Speedtest Einheit",
       "mbytes": "MB/s (Megabytes pro Sekunde)",
       "mbytes_desc": "Häufig in Browsern und Download-Managern"
+    }
+  },
+  "status": {
+    "start": "Test starten",
+    "running_button": "Läuft",
+    "paused": "Speedtests sind pausiert",
+    "never_run": "Noch kein Test gelaufen",
+    "last_test": "Letzter Test vor {{time}}",
+    "next_test": "Nächster um {{time}}",
+    "recent_failures": "{{failures}} in den letzten 24 Stunden fehlgeschlagen",
+    "phase": {
+      "starting": "Wird gestartet…",
+      "ping": "Latenz wird gemessen",
+      "download": "Download wird gemessen",
+      "upload": "Upload wird gemessen"
     }
   }
 }

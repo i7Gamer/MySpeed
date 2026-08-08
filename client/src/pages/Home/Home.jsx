@@ -1,11 +1,9 @@
-import LatestTestComponent from "./components/LatestTest";
+import StatusBarComponent from "./components/StatusBar";
 import TestAreaComponent from "./components/TestArea";
 
 const Home = () => (
     <div>
-        <LatestTestComponent/>
-
-        <br />
+        <StatusBarComponent/>
 
         <TestAreaComponent/>
     </div>

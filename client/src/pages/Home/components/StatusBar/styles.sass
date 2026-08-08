@@ -1,0 +1,110 @@
+@use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
+
+.status-bar
+  margin-top: 2rem
+  margin-bottom: $card-gap
+  border: 1px solid $light-gray
+  background-color: var(--glass-bg)
+  backdrop-filter: blur(16px)
+  -webkit-backdrop-filter: blur(16px)
+  border-radius: 1rem
+  width: 100%
+  box-sizing: border-box
+  overflow: hidden
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1)
+  transition: border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1)
+
+.status-bar-running
+  border-color: var(--accent-primary)
+
+.status-main
+  display: flex
+  align-items: center
+  gap: 1rem
+  padding: 1.25rem 2rem
+
+.status-icon
+  font-size: 1.6rem
+  flex-shrink: 0
+
+.status-text
+  display: flex
+  flex-direction: column
+  gap: 0.15rem
+  min-width: 0
+  flex: 1
+
+  h2
+    margin: 0
+    font-size: 1.1rem
+    font-weight: 600
+    color: $white
+
+.status-detail
+  display: flex
+  align-items: center
+  gap: 1rem
+  flex-wrap: wrap
+  font-size: 0.9rem
+  color: $subtext
+
+.status-speed
+  font-variant-numeric: tabular-nums
+  color: var(--accent-primary)
+  font-weight: 600
+
+.status-failures
+  display: flex
+  align-items: center
+  gap: 0.4rem
+
+.status-start
+  display: flex
+  align-items: center
+  gap: 0.5rem
+  flex-shrink: 0
+  padding: 0.6rem 1.1rem
+  border: 1px solid $light-gray
+  border-radius: 0.6rem
+  background: transparent
+  color: $white
+  font-family: inherit
+  font-size: 0.9rem
+  font-weight: 600
+  cursor: pointer
+  transition: all 0.2s ease
+
+  &:hover:not(:disabled)
+    border-color: var(--accent-primary)
+    transform: translateY(-1px)
+
+  &:disabled
+    opacity: 0.5
+    cursor: default
+
+// A track that is always the full width, so the bar growing into it reads as
+// progress through a run rather than as something appearing.
+.status-progress
+  height: 4px
+  width: 100%
+  background: $light-gray
+
+.status-progress-fill
+  height: 100%
+  background: var(--accent-primary)
+  // Matches the one-second poll: without it the fill jumps between readings.
+  transition: width 1s linear
+
+@media screen and (max-width: 600px)
+  .status-main
+    padding: 1rem 1.25rem
+    flex-wrap: wrap
+
+  .status-text
+    // Ahead of the button, which wraps onto its own full-width row below.
+    flex: 1 1 60%
+
+  .status-start
+    flex: 1 1 100%
+    justify-content: center

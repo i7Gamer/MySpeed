@@ -13,7 +13,8 @@ import DropdownComponent from "../Dropdown/DropdownComponent";
 import { useAlert } from "@/common/contexts/Alert";
 import { StatusContext } from "@/common/contexts/Status";
 import { SpeedtestContext } from "@/common/contexts/Speedtests";
-import { jsonRequest, login, postRequest } from "@/common/utils/RequestUtil";
+import { jsonRequest, login } from "@/common/utils/RequestUtil";
+import { startSpeedtest as runSpeedtest } from "@/common/utils/RunUtil";
 import { updateInfo } from "@/common/components/Header/utils/infos";
 import { t } from "i18next";
 import { ConfigContext } from "@/common/contexts/Config";
@@ -71,37 +72,11 @@ const HeaderComponent = () => {
         if (newConfig?.viewMode) showPasswordDialog(true);
     };
 
-    const startSpeedtest = async () => {
-        await updateStatus();
-        if (status.paused) {
-            alert.openAlert(t("failed"), t("header.paused"), { buttonText: t("dialog.okay") });
-            return;
-        }
-
-        if (status.running) return;
-
-        setRunning(true);
-        try {
-            // fetch only rejects on network errors, so a 409/410 has to be read
-            // off the response - otherwise a refused start looked like a success
-            // and left the gauge spinning until the next status poll.
-            const response = await postRequest("/speedtests/run");
-
-            if (!response.ok) {
-                setRunning(false);
-                const body = await response.json().catch(() => null);
-                alert.openAlert(t("failed"), body?.message ?? t("header.running"), { buttonText: t("dialog.okay") });
-                return;
-            }
-
-            await updateTests();
-        } catch (error) {
-            setRunning(false);
-            alert.openAlert(t("failed"), t("header.running"), { buttonText: t("dialog.okay") });
-        } finally {
-            await updateStatus();
-        }
-    }
+    // Shared with the status bar on the overview: two controls for the same
+    // action decided separately when it was allowed, which is how they end up
+    // disagreeing.
+    const startSpeedtest = () =>
+        runSpeedtest({status, config, updateStatus, setRunning, updateTests, alert});
 
     const openDownloadPage = () => window.open(RELEASES_URL, "_blank");
 

@@ -8,7 +8,7 @@ import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {deleteRequest, jsonRequest, patchRequest, putRequest} from "@/common/utils/RequestUtil";
 import {v4 as uuid} from 'uuid';
 import {ConfigContext} from "@/common/contexts/Config";
-import {generateRelativeTime} from "@/pages/Home/components/LatestTest/utils";
+import {generateRelativeTime} from "@/common/utils/FormatUtil";
 import FormField from "@/common/components/FormField";
 import ExpandableCard from "@/common/components/ExpandableCard";
 import DropdownSelect from "@/common/components/DropdownSelect";

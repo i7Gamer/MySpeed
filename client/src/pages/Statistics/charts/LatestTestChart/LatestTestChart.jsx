@@ -1,6 +1,6 @@
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
-import {faArrowDown, faArrowUp, faPingPongPaddleBall, faWaveSquare} from "@fortawesome/free-solid-svg-icons";
+import {faArrowDown, faArrowUp, faGaugeHigh, faPingPongPaddleBall, faWaveSquare} from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
 import {getIconBySpeed} from "@/common/utils/TestUtil";
 import {useContext} from "react";
@@ -21,6 +21,11 @@ export const LatestTestChart = (props) => {
     if (config === null) return <></>;
 
     const hasJitter = props.test.jitter !== null && props.test.jitter !== undefined;
+
+    // A packet loss of zero is a measurement; an absent one is not. Only null
+    // and undefined mean the provider never reported it.
+    const isMeasured = (value) => value !== null && value !== undefined;
+    const hasQuality = isMeasured(props.test.packetLoss) || isMeasured(props.test.downloadLatency);
 
     return (
         <StatisticContainer title={t("latest.latest")} onClick={props.onClick} running={status.running} expanded={props.expanded}>
@@ -54,6 +59,29 @@ export const LatestTestChart = (props) => {
                     <FontAwesomeIcon icon={faArrowDown}
                                      className={"icon-" + getIconBySpeed(props.test.download, config.download, true)}/>
                 </div>
+
+                {/* Only for a test that carried them: rows recorded before these
+                    were captured, and the providers that cannot measure them,
+                    have no value rather than a value of zero. */}
+                {hasQuality && (
+                    <div className="test-container">
+                        <div className="test-info">
+                            <h2>{t("latest.quality")}</h2>
+                            <p>
+                                {isMeasured(props.test.downloadLatency) &&
+                                    t("latest.loaded_latency", {
+                                        down: props.test.downloadLatency, up: props.test.uploadLatency
+                                    })}
+                                {isMeasured(props.test.packetLoss) && (
+                                    <span className="quality-loss">
+                                        {t("latest.packet_loss", {percent: props.test.packetLoss})}
+                                    </span>
+                                )}
+                            </p>
+                        </div>
+                        <FontAwesomeIcon icon={faGaugeHigh} className="icon-blue"/>
+                    </div>
+                )}
             </div>
         </StatisticContainer>
     );

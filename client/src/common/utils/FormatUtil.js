@@ -84,6 +84,49 @@ export const convertSpeed = (mbps, preferences) => {
 // instance - and concatenating a unit onto that renders the word "null".
 const NOT_MEASURED = "N/A";
 
+const SECONDS_PER_MINUTE = 60;
+const SECONDS_PER_HOUR = 3600;
+const SECONDS_PER_DAY = 86400;
+
+// Below this, "now" reads better than a number of seconds that is stale by the
+// time it is read.
+const JUST_NOW_SECONDS = 5;
+
+/**
+ * How long ago something happened, in words.
+ *
+ * Moved here from the latest-test panel when the status bar replaced it - the
+ * integration dialog reads it too, so it outlived the component it was written
+ * for.
+ */
+export function generateRelativeTime(created) {
+    let currentDate = new Date().getTime();
+    let date = new Date(Date.parse(created)).getTime();
+
+    const diff = (currentDate - date) / 1000;
+
+    if (isNaN(diff)) {
+        return NOT_MEASURED;
+    }
+
+    if (diff < JUST_NOW_SECONDS) {
+        return t("time.now");
+    } else if (diff < SECONDS_PER_MINUTE) {
+        return t("time.seconds", {replace: {seconds: Math.floor(diff)}});
+    } else if (diff < SECONDS_PER_HOUR) {
+        return Math.floor(diff / SECONDS_PER_MINUTE) === 1
+            ? t("time.minute")
+            : t("time.minutes", {replace: {minutes: Math.floor(diff / SECONDS_PER_MINUTE)}});
+    } else if (diff < SECONDS_PER_DAY) {
+        return Math.floor(diff / SECONDS_PER_HOUR) === 1
+            ? t("time.hour")
+            : t("time.hours", {replace: {hours: Math.floor(diff / SECONDS_PER_HOUR)}});
+    }
+
+    const days = Math.floor(diff / SECONDS_PER_DAY);
+    return days === 1 ? t("time.day") : t("time.days", {replace: {days: days}});
+}
+
 export const formatDuration = (seconds) =>
     typeof seconds === "number" && Number.isFinite(seconds) ? `${seconds}s` : NOT_MEASURED;
 

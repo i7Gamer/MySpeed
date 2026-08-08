@@ -2,9 +2,37 @@ import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import i18n from "i18next";
 import {
-    convertSpeed, formatDateTime, formatDuration, formatShortTime, formatTime, getSpeedUnit,
+    convertSpeed, formatDateTime, formatDuration, formatShortTime, formatTime, generateRelativeTime, getSpeedUnit,
     SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H
 } from "@/common/utils/FormatUtil.js";
+
+// Moved here from the latest-test panel when the status bar replaced it, and
+// covered on the way: the status bar and the integration dialog both read it.
+describe("generateRelativeTime", () => {
+    const secondsAgo = (seconds) => new Date(Date.now() - seconds * 1000).toISOString();
+
+    it("says a moment just passed rather than counting single seconds", () => {
+        assert.equal(generateRelativeTime(secondsAgo(2)), "Just now");
+    });
+
+    it("counts in seconds, then minutes, then hours, then days", () => {
+        assert.match(generateRelativeTime(secondsAgo(30)), /30/);
+        assert.match(generateRelativeTime(secondsAgo(20 * 60)), /20/);
+        assert.match(generateRelativeTime(secondsAgo(5 * 3600)), /5/);
+        assert.match(generateRelativeTime(secondsAgo(3 * 86400)), /3/);
+    });
+
+    it("uses the singular on the boundary", () => {
+        assert.equal(generateRelativeTime(secondsAgo(60)), "1 minute");
+        assert.equal(generateRelativeTime(secondsAgo(3600)), "1 hour");
+        assert.equal(generateRelativeTime(secondsAgo(86400)), "1 day");
+    });
+
+    it("says nothing rather than NaN when there is no date", () => {
+        for (const absent of [null, undefined, ""])
+            assert.equal(generateRelativeTime(absent), "N/A", `failed for ${JSON.stringify(absent)}`);
+    });
+});
 
 /**
  * Regression: the statistics overview rendered its average duration as
@@ -44,7 +72,17 @@ before(async () => {
     // the key rather than the label.
     await i18n.init({
         lng: "en",
-        resources: {en: {translation: {latest: {speed_unit: "Mbps", byte_speed_unit: "MB/s"}}}}
+        resources: {en: {translation: {
+            latest: {speed_unit: "Mbps", byte_speed_unit: "MB/s"},
+            // Copied from the english locale, so the assertions read as what a
+            // user actually sees rather than as key names.
+            time: {
+                now: "Just now", seconds: "{{seconds}} seconds",
+                minute: "1 minute", minutes: "{{minutes}} minutes",
+                hour: "1 hour", hours: "{{hours}} hours",
+                day: "1 day", days: "{{days}} days"
+            }
+        }}}
     });
 });
 

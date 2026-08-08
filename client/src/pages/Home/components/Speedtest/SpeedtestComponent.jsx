@@ -15,6 +15,8 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {convertSpeed, formatDateTime, formatShortTime, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {useAlert} from "@/common/contexts/Alert";
+import {downloadInfo, jitterInfo, pingInfo, uploadInfo} from "@/pages/Home/components/Speedtest/utils/dialogs";
 
 const RESULT_URL = "https://www.speedtest.net/result/c/";
 
@@ -81,8 +83,22 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
     const [expanded, setExpanded] = useState(false);
 
     const ref = useRef();
+    const alert = useAlert();
 
     useImperativeHandle(forwardedRef, () => ref.current);
+
+    /**
+     * Opens the explanation of a measurement.
+     *
+     * These used to hang off the latest-test panel, so only the newest test
+     * explained itself. The click is stopped here because the whole row is the
+     * control that expands the detail panel.
+     */
+    const openInfo = (event, info) => {
+        event.stopPropagation();
+        const {title, description, buttonText} = info();
+        alert.openAlert(title, description, {buttonText});
+    };
 
     let errorMessage = t("test.unknown_error") + " " + props.error;
 
@@ -269,24 +285,35 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                      className={"container-icon icon-" + (props.error ? "error" : "blue")}/>
                     <h2 className="date-text">{(t("time." + (isAverage ? "on" : "at"))) + " " + timeString}</h2>
                 </div>
+                {/* The icons explain their measurement on click, except on a
+                    failed row where they are the failure marker rather than a
+                    metric. */}
                 <div className="speedtest-row">
                     <FontAwesomeIcon icon={props.error ? faClose : faPingPongPaddleBall}
-                                     className={"speedtest-icon icon-" + props.pingLevel}/>
+                                     className={"speedtest-icon icon-" + props.pingLevel
+                                         + (props.error ? "" : " help-icon")}
+                                     onClick={props.error ? undefined : (event) => openInfo(event, pingInfo)}/>
                     <h2 className="speedtest-text">
                         {props.error ? "" : props.ping}
                         {!props.error && props.jitter !== null && props.jitter !== undefined && (
-                            <span className="jitter-suffix"><FontAwesomeIcon icon={faWaveSquare} className="jitter-icon" />{props.jitter}</span>
+                            <span className="jitter-suffix" onClick={(event) => openInfo(event, jitterInfo)}>
+                                <FontAwesomeIcon icon={faWaveSquare} className="jitter-icon help-icon" />{props.jitter}
+                            </span>
                         )}
                     </h2>
                 </div>
                 <div className="speedtest-row">
                     <FontAwesomeIcon icon={props.error ? faClose : faArrowDown}
-                                     className={"speedtest-icon icon-" + props.downLevel}/>
+                                     className={"speedtest-icon icon-" + props.downLevel
+                                         + (props.error ? "" : " help-icon")}
+                                     onClick={props.error ? undefined : (event) => openInfo(event, downloadInfo)}/>
                     <h2 className="speedtest-text">{downValue}</h2>
                 </div>
                 <div className="speedtest-row">
                     <FontAwesomeIcon icon={props.error ? faClose : faArrowUp}
-                                     className={"speedtest-icon icon-" + props.upLevel}/>
+                                     className={"speedtest-icon icon-" + props.upLevel
+                                         + (props.error ? "" : " help-icon")}
+                                     onClick={props.error ? undefined : (event) => openInfo(event, uploadInfo)}/>
                     <h2 className="speedtest-text">{upValue}</h2>
                 </div>
                 <FontAwesomeIcon icon={faChevronDown} className="speedtest-chevron"
