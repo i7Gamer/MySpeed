@@ -11,6 +11,20 @@ const FAILED_TEST = -1;
 // measurement of zero rather than as an absent one.
 const isMissing = (value) => value === null || value === undefined || value === "";
 
+/**
+ * Whether a stored test is the record of a failure rather than a measurement.
+ *
+ * The error message is the primary signal, but the -1 placeholders are checked
+ * too: a failure that could not be described still must not be presented as a
+ * reading of minus one.
+ */
+export function isFailedTest(test) {
+    if (!test) return false;
+    if (test.error) return true;
+
+    return test.ping === FAILED_TEST && test.download === FAILED_TEST && test.upload === FAILED_TEST;
+}
+
 export function getIconBySpeed(current, optional, higherIsBetter) {
     if (current === FAILED_TEST) return "error";
     if (isMissing(current) || isMissing(optional)) return "blue";

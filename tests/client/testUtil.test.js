@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { getIconBySpeed } from "../../client/src/common/utils/TestUtil.js";
+import { getIconBySpeed, isFailedTest } from "../../client/src/common/utils/TestUtil.js";
 
 const speed = (current, optimal) => getIconBySpeed(current, optimal, true);
 const latency = (current, optimal) => getIconBySpeed(current, optimal, false);
@@ -71,5 +71,37 @@ describe("getIconBySpeed", () => {
             for (const value of [1, 50, 100, 1000])
                 assert.notEqual(speed(value, 100), "blue");
         });
+    });
+});
+
+/**
+ * A failed test is stored with an error string and -1 in every numeric column.
+ * The node list printed those placeholders straight out, so a node whose last
+ * test failed advertised "-1 ms" and "-1 Mbps" as though they were readings.
+ */
+describe("isFailedTest", () => {
+    it("recognises the row a failed test leaves behind", () => {
+        assert.equal(isFailedTest({error: "Cannot open socket", ping: -1, download: -1, upload: -1}), true);
+    });
+
+    it("trusts the placeholders even when no message was recorded", () => {
+        assert.equal(isFailedTest({error: null, ping: -1, download: -1, upload: -1}), true);
+    });
+
+    it("leaves a successful test alone", () => {
+        assert.equal(isFailedTest({error: null, ping: 5, download: 2366.32, upload: 2202.56}), false);
+    });
+
+    it("does not call an empty error string a failure", () => {
+        assert.equal(isFailedTest({error: "", ping: 12, download: 100, upload: 50}), false);
+    });
+
+    it("treats a genuine zero as a measurement rather than a failure", () => {
+        assert.equal(isFailedTest({error: null, ping: 0, download: 0, upload: 0}), false);
+    });
+
+    it("is false when there is no test at all", () => {
+        assert.equal(isFailedTest(undefined), false);
+        assert.equal(isFailedTest(null), false);
     });
 });

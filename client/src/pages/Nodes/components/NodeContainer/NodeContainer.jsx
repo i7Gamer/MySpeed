@@ -5,6 +5,7 @@ import {
     faArrowUp,
     faCircleNotch,
     faClock,
+    faClose,
     faExclamationTriangle,
     faKey,
     faPen,
@@ -19,7 +20,7 @@ import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {assertOk, baseRequest, patchRequest} from "@/common/utils/RequestUtil";
 import {t} from "i18next";
 import {Trans} from "react-i18next";
-import {getIconBySpeed} from "@/common/utils/TestUtil";
+import {getIconBySpeed, isFailedTest} from "@/common/utils/TestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {convertSpeed, getSpeedUnit} from "@/common/utils/FormatUtil";
@@ -63,6 +64,10 @@ export const NodeContainer = (node) => {
 
         setNodeError(undefined);
         setNodeData({
+            // A failed test carries -1 in every column. Printing those as
+            // "-1 ms" and "-1 Mbps" presented the placeholders as readings, so
+            // the card marks the failure the way the overview does instead.
+            failed: isFailedTest(tests[0]),
             ping: tests[0]?.ping,
             download: Math.round(tests[0]?.download),
             upload: Math.round(tests[0]?.upload),
@@ -222,7 +227,16 @@ export const NodeContainer = (node) => {
                             <FontAwesomeIcon icon={faClock} className="speed-icon icon-blue"/>
                         </div>)}
 
-                    {nodeData && !nodeData.pending && !nodeError && (
+                    {/* The node is answering - it is its last test that failed,
+                        so this reads as a result rather than as the node being
+                        down, and carries the same X the overview marks a failed
+                        test with. */}
+                    {nodeData && nodeData.failed && !nodeData.pending && !nodeError && (<div className="icon-text">
+                        <h2>{t("test.failed")}</h2>
+                        <FontAwesomeIcon icon={faClose} className="speed-icon icon-error"/>
+                    </div>)}
+
+                    {nodeData && !nodeData.failed && !nodeData.pending && !nodeError && (
                         <>
                             <div className="speed-item">
                                 <FontAwesomeIcon icon={faTableTennisPaddleBall}
