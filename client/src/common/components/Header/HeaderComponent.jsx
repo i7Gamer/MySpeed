@@ -137,7 +137,12 @@ const HeaderComponent = () => {
 
                     {config.viewMode ? 
                         <Tooltip content={t("header.admin_login")} position="bottom">
-                            <FontAwesomeIcon icon={faLock} className={"header-icon"} onClick={showPasswordDialog} />
+                            {/* Wrapped, not passed bare: React calls a handler
+                                with the event, which arrives as `failed` and is
+                                truthy, so the dialog opened already saying the
+                                password was wrong. */}
+                            <FontAwesomeIcon icon={faLock} className={"header-icon"}
+                                             onClick={() => showPasswordDialog()} />
                         </Tooltip>
                     : <></>}
 
