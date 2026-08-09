@@ -1,6 +1,7 @@
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faArrowDown, faArrowUp, faPingPongPaddleBall, faWaveSquare} from "@fortawesome/free-solid-svg-icons";
+import {bufferbloat, bufferbloatColour} from "@/common/utils/TestUtil";
 import "./styles.sass";
 import {getIconBySpeed} from "@/common/utils/TestUtil";
 import {useContext} from "react";
@@ -21,6 +22,10 @@ export const LatestTestChart = (props) => {
     if (config === null) return <></>;
 
     const hasJitter = props.test.jitter !== null && props.test.jitter !== undefined;
+
+    // Absent for tests recorded before the quality columns existed and for the
+    // providers that cannot measure them; the row simply does not render then.
+    const bloat = bufferbloat(props.test);
 
     return (
         <StatisticContainer title={t("latest.latest")} onClick={props.onClick} running={status.running} expanded={props.expanded}>
@@ -55,6 +60,25 @@ export const LatestTestChart = (props) => {
                                      className={"icon-" + getIconBySpeed(props.test.download, config.download, true)}/>
                 </div>
 
+                {/* The value carries the grade's colour, exactly as the rows
+                    above colour theirs by their level, and the grade badge sits
+                    where their icons sit. */}
+                {bloat && (
+                    <div className="test-container">
+                        <div className="test-info">
+                            <h2>{t("latest.quality")}</h2>
+                            <p className={"icon-" + bufferbloatColour(bloat.grade)}>
+                                {t("latest.loaded_latency", {
+                                    down: props.test.downloadLatency, up: props.test.uploadLatency
+                                })}
+                            </p>
+                        </div>
+                        <span className={"bufferbloat-grade icon-" + bufferbloatColour(bloat.grade)}
+                              title={t("latest.bufferbloat", {increase: bloat.increase})}>
+                            {bloat.grade}
+                        </span>
+                    </div>
+                )}
             </div>
         </StatisticContainer>
     );

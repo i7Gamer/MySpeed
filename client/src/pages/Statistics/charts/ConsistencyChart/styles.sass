@@ -45,3 +45,17 @@
   overflow: hidden
   text-overflow: ellipsis
   white-space: nowrap
+
+// Oldest to newest, the way time reads - the detail line under the grade.
+.consistency-detail.bufferbloat-trend
+  display: flex
+  align-items: baseline
+  gap: 0.45rem
+
+.bufferbloat-trend-grade
+  font-weight: 700
+  cursor: help
+
+  // The newest grade is the one that matters most, so it is the loudest.
+  &:last-child
+    font-size: 1.05em

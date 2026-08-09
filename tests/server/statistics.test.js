@@ -100,6 +100,45 @@ describe("buildStatistics", () => {
             assert.equal(stats.consistency.ping.jitter, 1);
         });
 
+        /**
+         * The range average of packet loss, over the tests that measured it.
+         * Only Ookla reports one, so the unmeasured rows must not drag the
+         * average - and a clean line's zeroes are measurements, not gaps.
+         */
+        describe("packet loss", () => {
+            it("averages the tests that measured it", () => {
+                const stats = buildStatistics([
+                    at("2026-08-07T01:00:00.000Z", {packetLoss: 0}),
+                    at("2026-08-07T02:00:00.000Z", {packetLoss: 1.5}),
+                    at("2026-08-07T03:00:00.000Z", {packetLoss: null})
+                ], DAY);
+
+                assert.equal(stats.packetLoss, 0.75);
+            });
+
+            it("keeps a clean line's zero as a zero", () => {
+                const stats = buildStatistics([at("2026-08-07T01:00:00.000Z", {packetLoss: 0})], DAY);
+
+                assert.equal(stats.packetLoss, 0);
+            });
+
+            it("is absent when nothing in the range measured it", () => {
+                const stats = buildStatistics([at("2026-08-07T01:00:00.000Z", {packetLoss: null})], DAY);
+
+                assert.equal(stats.packetLoss, null);
+            });
+
+            it("ignores failed tests rather than averaging their placeholders", () => {
+                const stats = buildStatistics([
+                    at("2026-08-07T01:00:00.000Z", {packetLoss: 2}),
+                    at("2026-08-07T02:00:00.000Z", {ping: -1, download: -1, upload: -1,
+                        packetLoss: null, error: "Cannot open socket"})
+                ], DAY);
+
+                assert.equal(stats.packetLoss, 2);
+            });
+        });
+
         it("reports a null ping jitter when no entry has jitter data", () => {
             const stats = buildStatistics([
                 at("2026-08-07T01:00:00.000Z", {jitter: null}),

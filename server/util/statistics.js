@@ -193,6 +193,12 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, maxPoints} 
             total: entries.length,
             failed: entries.length - succeeded.length
         },
+        // Averaged over the tests that measured it: only Ookla reports packet
+        // loss, and the unmeasured rows must not drag the average. Null when no
+        // test in the range measured any - absence is not a clean line.
+        packetLoss: averageOrNull(succeeded
+            .map(entry => entry.packetLoss)
+            .filter(value => value !== null && value !== undefined)),
         ping: mapRounded(succeeded, "ping"),
         jitter: mapFixed(withJitter, "jitter"),
         download: mapFixed(succeeded, "download"),

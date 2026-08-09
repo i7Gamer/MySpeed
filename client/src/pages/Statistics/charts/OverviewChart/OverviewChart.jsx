@@ -1,8 +1,8 @@
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
-import {faCircleExclamation, faGaugeHigh, faStopwatch} from "@fortawesome/free-solid-svg-icons";
-import {formatDuration} from "@/common/utils/FormatUtil";
+import {faCircleExclamation, faGaugeHigh, faStopwatch, faWaveSquare} from "@fortawesome/free-solid-svg-icons";
+import {formatDuration, NOT_MEASURED} from "@/common/utils/FormatUtil";
 import {failureRate} from "@/common/utils/TestUtil";
 import "./styles.sass";
 
@@ -40,6 +40,15 @@ export const OverviewChart = (props) => {
             // The server returns an explicit null average when nothing in the
             // range succeeded, which used to render as the literal "nulls".
             value: formatDuration(props.time.avg)
+        },
+        {
+            icon: faWaveSquare,
+            title: "statistics.overview.packet_loss_title",
+            description: "statistics.overview.packet_loss_description",
+            // Absent when nothing in the range measured it - only Ookla reports
+            // packet loss, and no measurement is not a clean line. "%" binds to
+            // its number without a space, unlike the spaced units.
+            value: typeof props.packetLoss === "number" ? `${props.packetLoss}%` : NOT_MEASURED
         }
     ];
 

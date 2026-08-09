@@ -229,7 +229,9 @@
     "latest": "Letzter Test",
     "before": "vor",
     "bufferbloat": "Bufferbloat: steigt um {{increase}} ms unter Last",
-    "bufferbloat_trend": "Bufferbloat über die letzten Tests"
+    "bufferbloat_trend": "Bufferbloat über die letzten Tests",
+    "quality": "Unter Last",
+    "loaded_latency": "{{down}} / {{up}} ms Latenz"
   },
   "info": {
     "recommendations_error": "Du musst mindestens 10 Tests machen, damit ein Durchschnitt ermittelt werden kann. Ob die Tests manuell oder automatisch durchgeführt wurden ist egal.",
@@ -346,7 +348,9 @@
       "failed_title": "Fehlgeschlagene Tests",
       "failed_description": "Die Anzahl der fehlgeschlagenen Tests",
       "average_title": "Durchschnittsdauer",
-      "average_description": "Die durchschnittliche Dauer der Tests"
+      "average_description": "Die durchschnittliche Dauer der Tests",
+      "packet_loss_title": "Paketverlust",
+      "packet_loss_description": "Durchschnitt über die Tests, die ihn gemessen haben"
     },
     "failed": {
       "title": "Fehlgeschlagene Tests",
@@ -385,9 +389,6 @@
       "fair": "Faire",
       "poor": "Arm",
       "ping_variance": "Ping-Varianz"
-    },
-    "bufferbloat": {
-      "title": "Bufferbloat"
     }
   },
   "calendar": {

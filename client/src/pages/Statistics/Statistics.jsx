@@ -32,7 +32,6 @@ import OverviewChart from "@/pages/Statistics/charts/OverviewChart";
 import AverageChart from "@/pages/Statistics/charts/AverageChart";
 import HourlyChart from "@/pages/Statistics/charts/HourlyChart.jsx";
 import ConsistencyChart from "@/pages/Statistics/charts/ConsistencyChart";
-import BufferbloatChart from "@/pages/Statistics/charts/BufferbloatChart";
 import ExportButton from "@/common/components/ExportButton";
 import ToggleSwitch from "@/common/components/ToggleSwitch";
 import {TREND_LENGTH} from "@/common/utils/TestUtil";
@@ -285,13 +284,11 @@ export const Statistics = () => {
     const renderChart = (chartType, source) => {
         switch (chartType) {
             case 'overview':
-                return <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} dateRange={dateRange}/>;
+                return <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} dateRange={dateRange}/>;
             case 'latest':
                 return <LatestTestChart test={latestTest} expanded/>;
             case 'consistency':
-                return <ConsistencyChart consistency={deferredStatistics.consistency}/>;
-            case 'bufferbloat':
-                return <BufferbloatChart recentTests={recentTests}/>;
+                return <ConsistencyChart consistency={deferredStatistics.consistency} recentTests={recentTests}/>;
             case 'download':
                 return <SpeedChart labels={source.labels} data={source.data} dataKey="download" titleKey="latest.down" color="hsl(187, 94%, 43%)" failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
             case 'upload':
@@ -342,10 +339,9 @@ export const Statistics = () => {
                 <ExportButton dateRange={dateRange} />
             </div>
 
-            <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} dateRange={dateRange} onClick={() => setExpandedChart('overview')}/>
+            <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} dateRange={dateRange} onClick={() => setExpandedChart('overview')}/>
             <LatestTestChart test={latestTest} onClick={() => setExpandedChart('latest')}/>
-            <ConsistencyChart consistency={deferredStatistics.consistency} onClick={() => setExpandedChart('consistency')}/>
-            <BufferbloatChart recentTests={recentTests} onClick={() => setExpandedChart('bufferbloat')}/>
+            <ConsistencyChart consistency={deferredStatistics.consistency} recentTests={recentTests} onClick={() => setExpandedChart('consistency')}/>
 
             <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="download" titleKey="latest.down" color="hsl(187, 94%, 43%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('download')} compact/>
             <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="upload" titleKey="latest.up" color="hsl(258, 90%, 66%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('upload')} compact/>

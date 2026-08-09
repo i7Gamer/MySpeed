@@ -43,10 +43,13 @@
   display: flex
   padding-bottom: 1.25rem
   padding-left: 1.5rem
-  height: 14rem
-  max-height: 16rem
+  // A floor, not a fixed box: tiles on the same row already stretch to their
+  // tallest line-mate, so this only sets the resting height. The old fixed
+  // height with overflow: hidden silently clipped any tile that grew a row -
+  // which is exactly what happened when a fourth stat was added.
+  min-height: 16rem
+  flex: 1
   padding-right: 1.5rem
-  overflow: hidden
 
 .container-center
   justify-content: center
@@ -65,8 +68,6 @@
   .stats-container
     min-width: 100%
     flex: 1 1 100%
-  
+
   .stats-content
-    height: auto
     min-height: 10rem
-    max-height: none

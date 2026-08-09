@@ -229,7 +229,9 @@
     "latest": "Last test",
     "before": "before",
     "bufferbloat": "Bufferbloat: adds {{increase}} ms under load",
-    "bufferbloat_trend": "Bufferbloat over the last tests"
+    "bufferbloat_trend": "Bufferbloat over the last tests",
+    "quality": "Under load",
+    "loaded_latency": "{{down}} / {{up}} ms latency"
   },
   "info": {
     "recommendations_error": "You have to do at least 10 tests to get an average. It doesn't matter if the tests were done manually or automatically.",
@@ -346,7 +348,9 @@
       "failed_title": "Failed tests",
       "failed_description": "The number of failed tests",
       "average_title": "Average duration",
-      "average_description": "The average duration of the tests"
+      "average_description": "The average duration of the tests",
+      "packet_loss_title": "Packet loss",
+      "packet_loss_description": "Average across the tests that measured it"
     },
     "failed": {
       "title": "Failed tests",
@@ -385,9 +389,6 @@
       "fair": "Fair",
       "poor": "Poor",
       "ping_variance": "Ping variance"
-    },
-    "bufferbloat": {
-      "title": "Bufferbloat"
     }
   },
   "calendar": {

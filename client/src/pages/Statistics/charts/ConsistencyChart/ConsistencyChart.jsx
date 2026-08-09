@@ -1,7 +1,9 @@
 import { useContext, useMemo } from "react";
 import { t } from "i18next";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faArrowDown, faArrowUp, faPingPongPaddleBall } from "@fortawesome/free-solid-svg-icons";
+import { faArrowDown, faArrowUp, faGaugeHigh, faPingPongPaddleBall } from "@fortawesome/free-solid-svg-icons";
+import { bufferbloatColour, bufferbloatTrend } from "@/common/utils/TestUtil";
+import { formatDateTime } from "@/common/utils/FormatUtil";
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { convertSpeed, getSpeedUnit, NOT_MEASURED } from "@/common/utils/FormatUtil";
@@ -15,6 +17,8 @@ export const ConsistencyChart = (props) => {
         if (!props.consistency) return null;
         return props.consistency;
     }, [props.consistency]);
+
+    const trend = bufferbloatTrend(props.recentTests);
 
     if (!data) return null;
 
@@ -76,6 +80,34 @@ export const ConsistencyChart = (props) => {
                     </div>
                     <FontAwesomeIcon icon={faPingPongPaddleBall} className="icon-orange" />
                 </div>
+
+                {/* Bufferbloat is stability under load, so its grade sits with
+                    the other steadiness figures, and the recent grades are its
+                    detail line - the trend is where a regression shows. */}
+                {trend.length > 0 && (
+                    <div className="consistency-item">
+                        <div className="consistency-info">
+                            <h2>{t("latest.quality")}</h2>
+                            <p className={"icon-" + bufferbloatColour(trend.at(-1).grade)}
+                               title={t("latest.bufferbloat", {increase: trend.at(-1).increase})}>
+                                {trend.at(-1).grade}
+                            </p>
+                            <span className="consistency-detail bufferbloat-trend"
+                                  title={t("latest.bufferbloat_trend")}>
+                                {trend.map((entry) => (
+                                    <span key={entry.created}
+                                          className={"bufferbloat-trend-grade icon-" + bufferbloatColour(entry.grade)}
+                                          title={formatDateTime(entry.created, preferences) + " · " +
+                                              t("latest.bufferbloat", {increase: entry.increase})}>
+                                        {entry.grade}
+                                    </span>
+                                ))}
+                            </span>
+                        </div>
+                        <FontAwesomeIcon icon={faGaugeHigh}
+                                         className={"icon-" + bufferbloatColour(trend.at(-1).grade)} />
+                    </div>
+                )}
             </div>
         </StatisticContainer>
     );
