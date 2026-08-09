@@ -54,6 +54,31 @@ export function bufferbloatColour(grade) {
     return "red";
 }
 
+// How many grades the trend shows. Ten is enough to see a change without the
+// row becoming a chart.
+export const TREND_LENGTH = 10;
+
+/**
+ * The bufferbloat grades of the most recent measured tests, oldest first.
+ *
+ * A single grade says what the line did on the last test; the trend is where a
+ * regression shows. Takes the list the API returns - newest first - keeps the
+ * newest TREND_LENGTH tests that measured anything, and reverses them so time
+ * reads left to right.
+ */
+export function bufferbloatTrend(tests) {
+    if (!Array.isArray(tests)) return [];
+
+    return tests
+        .map((test) => {
+            const graded = bufferbloat(test);
+            return graded ? {...graded, created: test.created} : null;
+        })
+        .filter(Boolean)
+        .slice(0, TREND_LENGTH)
+        .reverse();
+}
+
 export function bufferbloat(test) {
     if (!test || isFailedTest(test)) return null;
 

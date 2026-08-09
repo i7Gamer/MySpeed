@@ -1,6 +1,63 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bufferbloat, failureRate, getIconBySpeed, isFailedTest } from "../../client/src/common/utils/TestUtil.js";
+import {
+    bufferbloat, bufferbloatTrend, failureRate, getIconBySpeed, isFailedTest, TREND_LENGTH
+} from "../../client/src/common/utils/TestUtil.js";
+
+/**
+ * A single grade says what the line did on the last test; the trend is where a
+ * regression shows. Built from the list the API already returns - newest first -
+ * and displayed oldest to newest, the way time reads.
+ */
+describe("bufferbloatTrend", () => {
+    const measured = (created, up) => ({created, ping: 4, downloadLatency: 6, uploadLatency: up});
+
+    it("grades each measured test, oldest first", () => {
+        const trend = bufferbloatTrend([measured("10:00", 300), measured("09:00", 40), measured("08:00", 6)]);
+
+        assert.deepEqual(trend.map((entry) => entry.grade), ["A+", "B", "D"]);
+        assert.deepEqual(trend.map((entry) => entry.created), ["08:00", "09:00", "10:00"]);
+    });
+
+    it("carries the increase for each entry", () => {
+        const [entry] = bufferbloatTrend([measured("10:00", 44)]);
+
+        assert.equal(entry.increase, 40);
+    });
+
+    it("skips tests that measured nothing rather than grading them", () => {
+        const trend = bufferbloatTrend([
+            measured("10:00", 20),
+            {created: "09:00", ping: 5, downloadLatency: null, uploadLatency: null},
+            {created: "08:00", ping: -1, downloadLatency: -1, uploadLatency: -1, error: "failed"},
+            measured("07:00", 6)
+        ]);
+
+        assert.deepEqual(trend.map((entry) => entry.created), ["07:00", "10:00"]);
+    });
+
+    it("caps the trend at its display length", () => {
+        const many = Array.from({length: TREND_LENGTH + 5}, (_, i) => measured(`t${i}`, 20));
+
+        assert.equal(bufferbloatTrend(many).length, TREND_LENGTH);
+    });
+
+    // The list is newest first, so the cap must keep the newest entries - a
+    // trend that dropped the most recent tests would show the past instead.
+    it("keeps the newest tests when it truncates", () => {
+        const many = Array.from({length: TREND_LENGTH + 5}, (_, i) => measured(`t${i}`, 20));
+
+        const trend = bufferbloatTrend(many);
+
+        assert.equal(trend.at(-1).created, "t0");
+    });
+
+    it("is empty for no tests and for none with data", () => {
+        assert.deepEqual(bufferbloatTrend([]), []);
+        assert.deepEqual(bufferbloatTrend(undefined), []);
+        assert.deepEqual(bufferbloatTrend([{created: "x", ping: 4}]), []);
+    });
+});
 
 /**
  * Bufferbloat is how much latency the line gains once it is saturated. It is the

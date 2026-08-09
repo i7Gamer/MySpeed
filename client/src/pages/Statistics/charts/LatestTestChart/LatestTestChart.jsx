@@ -2,12 +2,12 @@ import StatisticContainer from "@/pages/Statistics/components/StatisticContainer
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faArrowDown, faArrowUp, faGaugeHigh, faPingPongPaddleBall, faWaveSquare} from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
-import {bufferbloat, bufferbloatColour, getIconBySpeed} from "@/common/utils/TestUtil";
+import {bufferbloat, bufferbloatColour, bufferbloatTrend, getIconBySpeed} from "@/common/utils/TestUtil";
 import {useContext} from "react";
 import {ConfigContext} from "@/common/contexts/Config";
 import {StatusContext} from "@/common/contexts/Status";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {convertSpeed, formatDateTime, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {t} from "i18next";
 
 export const LatestTestChart = (props) => {
@@ -27,6 +27,7 @@ export const LatestTestChart = (props) => {
     const isMeasured = (value) => value !== null && value !== undefined;
     const hasQuality = isMeasured(props.test.packetLoss) || isMeasured(props.test.downloadLatency);
     const bloat = bufferbloat(props.test);
+    const trend = bufferbloatTrend(props.recentTests);
 
     return (
         <StatisticContainer title={t("latest.latest")} onClick={props.onClick} running={status.running} expanded={props.expanded}>
@@ -91,6 +92,22 @@ export const LatestTestChart = (props) => {
                                 {bloat.grade}
                               </span>
                             : <FontAwesomeIcon icon={faGaugeHigh} className="icon-blue"/>}
+                    </div>
+                )}
+
+                {/* One grade says what the last test did; the trend is where a
+                    regression shows. Only once there is something to compare -
+                    a "trend" of one entry is just the grade again. */}
+                {trend.length > 1 && (
+                    <div className="bufferbloat-trend" title={t("latest.bufferbloat_trend")}>
+                        {trend.map((entry) => (
+                            <span key={entry.created}
+                                  className={"bufferbloat-trend-grade icon-" + bufferbloatColour(entry.grade)}
+                                  title={formatDateTime(entry.created, preferences) + " · " +
+                                      t("latest.bufferbloat", {increase: entry.increase})}>
+                                {entry.grade}
+                            </span>
+                        ))}
                     </div>
                 )}
             </div>

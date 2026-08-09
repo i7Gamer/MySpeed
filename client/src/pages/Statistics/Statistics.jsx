@@ -34,6 +34,7 @@ import HourlyChart from "@/pages/Statistics/charts/HourlyChart.jsx";
 import ConsistencyChart from "@/pages/Statistics/charts/ConsistencyChart";
 import ExportButton from "@/common/components/ExportButton";
 import ToggleSwitch from "@/common/components/ToggleSwitch";
+import {TREND_LENGTH} from "@/common/utils/TestUtil";
 import i18n, {t} from "i18next";
 import "./styles.sass";
 
@@ -46,6 +47,10 @@ const FULL_HEIGHT_CHARTS = [...LINE_CHARTS, 'hourly'];
 // A request, not a guarantee: the server clamps this to its own ceiling and
 // echoes what it actually used as `maxDataPoints`.
 const FULL_DETAIL_POINTS = 1000;
+
+// Twice the trend length, because failed tests carry no grade: a run of
+// failures would otherwise shrink the trend exactly when it is interesting.
+const RECENT_TESTS = TREND_LENGTH * 2;
 
 ChartJS.register(ArcElement, Tooltip, CategoryScale, LinearScale, PointElement, LineElement, Title, Legend, BarElement, RadialLinearScale, Filler);
 
@@ -95,6 +100,7 @@ ChartJS.defaults.plugins.legend.labels.boxHeight = 8;
 export const Statistics = () => {
     const [statistics, setStatistics] = useState(null);
     const [latestTest, setLatestTest] = useState(null);
+    const [recentTests, setRecentTests] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(null);
     const [expandedChart, setExpandedChart] = useState(null);
@@ -147,11 +153,12 @@ export const Statistics = () => {
         });
         Promise.all([
             jsonRequest(`/speedtests/statistics/?${query}`),
-            jsonRequest("/speedtests?limit=1")
+            jsonRequest(`/speedtests?limit=${RECENT_TESTS}`)
         ]).then(([stats, tests]) => {
             startTransition(() => {
                 setStatistics(stats);
                 setLatestTest(tests.length > 0 ? tests[0] : null);
+                setRecentTests(tests);
                 setLoading(false);
             });
         }).catch(error => {
@@ -279,7 +286,7 @@ export const Statistics = () => {
             case 'overview':
                 return <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} dateRange={dateRange}/>;
             case 'latest':
-                return <LatestTestChart test={latestTest} expanded/>;
+                return <LatestTestChart test={latestTest} recentTests={recentTests} expanded/>;
             case 'consistency':
                 return <ConsistencyChart consistency={deferredStatistics.consistency}/>;
             case 'download':
@@ -333,7 +340,7 @@ export const Statistics = () => {
             </div>
 
             <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} dateRange={dateRange} onClick={() => setExpandedChart('overview')}/>
-            <LatestTestChart test={latestTest} onClick={() => setExpandedChart('latest')}/>
+            <LatestTestChart test={latestTest} recentTests={recentTests} onClick={() => setExpandedChart('latest')}/>
             <ConsistencyChart consistency={deferredStatistics.consistency} onClick={() => setExpandedChart('consistency')}/>
 
             <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="download" titleKey="latest.down" color="hsl(187, 94%, 43%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('download')} compact/>

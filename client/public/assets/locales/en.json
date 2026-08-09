@@ -231,7 +231,8 @@
     "quality": "Under load",
     "loaded_latency": "{{down}} / {{up}} ms latency",
     "packet_loss": "{{percent}}% loss",
-    "bufferbloat": "Bufferbloat: adds {{increase}} ms under load"
+    "bufferbloat": "Bufferbloat: adds {{increase}} ms under load",
+    "bufferbloat_trend": "Bufferbloat over the last tests"
   },
   "info": {
     "recommendations_error": "You have to do at least 10 tests to get an average. It doesn't matter if the tests were done manually or automatically.",

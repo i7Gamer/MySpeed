@@ -231,7 +231,8 @@
     "quality": "Unter Last",
     "loaded_latency": "{{down}} / {{up}} ms Latenz",
     "packet_loss": "{{percent}}% Verlust",
-    "bufferbloat": "Bufferbloat: steigt um {{increase}} ms unter Last"
+    "bufferbloat": "Bufferbloat: steigt um {{increase}} ms unter Last",
+    "bufferbloat_trend": "Bufferbloat über die letzten Tests"
   },
   "info": {
     "recommendations_error": "Du musst mindestens 10 Tests machen, damit ein Durchschnitt ermittelt werden kann. Ob die Tests manuell oder automatisch durchgeführt wurden ist egal.",
