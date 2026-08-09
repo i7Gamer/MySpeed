@@ -199,5 +199,7 @@ export const exportTests = async (range) => (await findInRange(range)).map(entry
     packetLoss: entry.packetLoss,
     downloadLatency: entry.downloadLatency,
     uploadLatency: entry.uploadLatency,
+    isp: entry.isp,
+    externalIp: entry.externalIp,
     error: entry.error
 }));

@@ -392,10 +392,20 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                 {props.ping}
                                 <span className="speedtest-unit">{t("latest.ping_unit")}</span>
                                 {props.jitter !== null && props.jitter !== undefined && (
-                                    <HelpButton label={t("info.jitter.title")} className="jitter-suffix"
-                                                onOpen={(event) => openInfo(event, jitterInfo)}>
-                                        <FontAwesomeIcon icon={faWaveSquare} className="jitter-icon" />{props.jitter}
-                                    </HelpButton>
+                                    <span className="jitter-suffix">
+                                        {/* Only the icon is the button: the help
+                                            cursor is the affordance, and it must
+                                            not promise that the number is
+                                            clickable. Outside the button the
+                                            value also stays ordinary text - as
+                                            button content, the aria-label
+                                            swallowed it. */}
+                                        <HelpButton label={t("info.jitter.title")}
+                                                    onOpen={(event) => openInfo(event, jitterInfo)}>
+                                            <FontAwesomeIcon icon={faWaveSquare} className="jitter-icon" />
+                                        </HelpButton>
+                                        {props.jitter}
+                                    </span>
                                 )}
                             </h2>
                         </div>

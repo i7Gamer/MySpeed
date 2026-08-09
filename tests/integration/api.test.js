@@ -57,7 +57,8 @@ describe("GET /api/speedtests/export", () => {
         await seedTests(server.tests, [{
             created: "2026-08-05T10:00:00.000Z",
             serverName: "Arcade Solutions AG", serverHost: "speedtest.arcade.ch",
-            packetLoss: 0, downloadLatency: 7.5, uploadLatency: 43.77
+            packetLoss: 0, downloadLatency: 7.5, uploadLatency: 43.77,
+            isp: "Salt Mobile", externalIp: "203.0.113.7"
         }]);
 
         const {body} = await exportUrl("from=2026-08-01&to=2026-08-07&tzOffset=0&format=json");
@@ -67,13 +68,16 @@ describe("GET /api/speedtests/export", () => {
         assert.equal(body[0].packetLoss, 0);
         assert.equal(body[0].downloadLatency, 7.5);
         assert.equal(body[0].uploadLatency, 43.77);
+        assert.equal(body[0].isp, "Salt Mobile");
+        assert.equal(body[0].externalIp, "203.0.113.7");
     });
 
     it("carries those columns through the CSV as values, not empty cells", async () => {
         await seedTests(server.tests, [{
             created: "2026-08-05T10:00:00.000Z",
             serverName: "Arcade Solutions AG", serverHost: "speedtest.arcade.ch",
-            packetLoss: 0, downloadLatency: 7.5, uploadLatency: 43.77
+            packetLoss: 0, downloadLatency: 7.5, uploadLatency: 43.77,
+            isp: "Salt Mobile", externalIp: "203.0.113.7"
         }]);
 
         const {text} = await exportUrl("from=2026-08-01&to=2026-08-07&tzOffset=0&format=csv");
@@ -84,6 +88,8 @@ describe("GET /api/speedtests/export", () => {
         assert.equal(valueOf("packetLoss"), "0");
         assert.equal(valueOf("downloadLatency"), "7.5");
         assert.equal(valueOf("uploadLatency"), "43.77");
+        assert.equal(valueOf("isp"), "Salt Mobile");
+        assert.equal(valueOf("externalIp"), "203.0.113.7");
     });
 
     // Regression: the old exporter only swapped commas out of `error`, so a
@@ -180,6 +186,80 @@ describe("GET /api/speedtests/status", () => {
         assert.equal(status, 200);
         assert.equal(typeof body.paused, "boolean");
         assert.equal(typeof body.running, "boolean");
+    });
+});
+
+/**
+ * passwordLevel "read" turns the password into a share switch: without it the
+ * instance is readable, with it writable. What a read-only viewer must never
+ * see is who the connection is - `isp` and `externalIp` say where the operator
+ * lives on the network, and a public dashboard would hand them to every
+ * visitor. Masked to null rather than omitted, so a masked answer is identical
+ * to one from a provider that never measured them.
+ */
+describe("connection identity in view mode", () => {
+    const AS_OPERATOR = {headers: {"x-password": "hunter2"}};
+    const EXPORT_RANGE = "from=2026-08-01&to=2026-08-07&tzOffset=0";
+
+    const shareReadOnly = async () => {
+        await seedTests(server.tests, [{
+            created: "2026-08-05T10:00:00.000Z", isp: "Salt Mobile", externalIp: "203.0.113.7"
+        }]);
+        await setConfig(server.config, "password", "hunter2");
+        await setConfig(server.config, "passwordLevel", "read");
+    };
+
+    it("withholds the provider and the address from the list", async () => {
+        await shareReadOnly();
+
+        const {status, body} = await api(server.baseUrl, "/speedtests?limit=1");
+        assert.equal(status, 200);
+        assert.equal(body[0].isp, null);
+        assert.equal(body[0].externalIp, null);
+    });
+
+    it("keeps them for the operator who authenticated", async () => {
+        await shareReadOnly();
+
+        const {body} = await api(server.baseUrl, "/speedtests?limit=1", AS_OPERATOR);
+        assert.equal(body[0].isp, "Salt Mobile");
+        assert.equal(body[0].externalIp, "203.0.113.7");
+    });
+
+    it("masks the single-test view", async () => {
+        await shareReadOnly();
+
+        const {body: [{id}]} = await api(server.baseUrl, "/speedtests?limit=1", AS_OPERATOR);
+        const {body} = await api(server.baseUrl, `/speedtests/${id}`);
+        assert.equal(body.isp, null);
+        assert.equal(body.externalIp, null);
+    });
+
+    it("masks the last test the status reports", async () => {
+        await shareReadOnly();
+
+        const {body} = await api(server.baseUrl, "/speedtests/status");
+        assert.equal(body.lastTest.isp, null);
+        assert.equal(body.lastTest.externalIp, null);
+    });
+
+    it("masks the JSON export", async () => {
+        await shareReadOnly();
+
+        const {body} = await api(server.baseUrl, `/speedtests/export?${EXPORT_RANGE}&format=json`);
+        assert.equal(body[0].isp, null);
+        assert.equal(body[0].externalIp, null);
+    });
+
+    it("masks the CSV export down to empty cells", async () => {
+        await shareReadOnly();
+
+        const {text} = await api(server.baseUrl, `/speedtests/export?${EXPORT_RANGE}&format=csv`);
+        const [header, row] = text.split("\n");
+        const valueOf = (column) => row.split('","')[header.split(",").indexOf(column)].replaceAll('"', "");
+
+        assert.equal(valueOf("isp"), "");
+        assert.equal(valueOf("externalIp"), "");
     });
 });
 

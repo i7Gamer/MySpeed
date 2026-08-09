@@ -5,6 +5,7 @@ import * as config from '../controller/config.js';
 import * as testTask from '../tasks/speedtest.js';
 import password from '../middlewares/password.js';
 import { parseDateRange } from '../util/dateRange.js';
+import { stripConnectionIdentity } from '../util/connectionIdentity.js';
 import { toCsv } from '../util/csv.js';
 import * as timer from '../tasks/timer.js';
 
@@ -24,7 +25,13 @@ app.get("/", password(true), async (req, res) => {
     if (req.query.afterId && /[^0-9]/.test(req.query.afterId))
         return res.status(400).json({message: "You need to provide a correct number in the afterId parameter"});
 
-    res.json(await tests.listTests(req.query.afterId, req.query.limit));
+    const entries = await tests.listTests(req.query.afterId, req.query.limit);
+
+    // A read-only viewer sees the measurements, not who the connection is:
+    // the operator's provider and address are the operator's to see.
+    if (req.viewMode) entries.forEach(stripConnectionIdentity);
+
+    res.json(entries);
 });
 
 app.get("/statistics", password(true), async (req, res) => {
@@ -51,6 +58,8 @@ app.get("/export", password(true), async (req, res) => {
     }
 
     const exportData = await tests.exportTests(range);
+
+    if (req.viewMode) exportData.forEach(stripConnectionIdentity);
 
     if (format === 'csv') {
         res.setHeader('Content-Type', 'text/csv');
@@ -90,14 +99,18 @@ app.get("/status", password(true), async (req, res) => {
     const progress = testTask.getProgress();
     const nextTest = timer.nextRun(await config.getValue("cron"));
 
+    // getLatest strips a null error rather than reporting it, and answers
+    // with undefined on an install that has never run a test - so absence is
+    // normalised here and a failure is told apart by the key being present.
+    const lastTest = latest ? {...latest, failed: latest.error !== null && latest.error !== undefined} : null;
+
+    if (req.viewMode) stripConnectionIdentity(lastTest);
+
     res.json({
         paused: pauseController.currentState,
         running: testTask.isRunning(),
         ...progress,
-        // getLatest strips a null error rather than reporting it, and answers
-        // with undefined on an install that has never run a test - so absence is
-        // normalised here and a failure is told apart by the key being present.
-        lastTest: latest ? {...latest, failed: latest.error !== null && latest.error !== undefined} : null,
+        lastTest,
         recentFailures: await tests.countFailuresSince(new Date(Date.now() - RECENT_FAILURE_WINDOW_MS)),
         // From the stored schedule rather than the running job, so it is right
         // even before the timer has been started for the first time.
@@ -137,6 +150,9 @@ app.post("/continue", password(false), (req, res) => {
 app.get("/:id", password(true), async (req, res) => {
     let test = await tests.getOne(req.params.id);
     if (test === null) return res.status(404).json({message: "Speedtest not found"});
+
+    if (req.viewMode) stripConnectionIdentity(test);
+
     res.json(test);
 });
 

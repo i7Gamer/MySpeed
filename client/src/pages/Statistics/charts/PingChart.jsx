@@ -251,14 +251,16 @@ const PingChart = memo(({ compact = false, ...props }) => {
             // Idle and under-load latency on one axis is the picture that
             // explains "the internet feels slow while something uploads". No
             // fill: the reading is the distance to the idle line below it.
+            // Blue, not red - red is the failure markers' colour on this chart,
+            // and a line must not read as a row of failures.
             ...(hasLoadedData ? [{
                 label: t("statistics.loaded_latency"),
                 data: filteredData.loaded,
-                borderColor: 'hsl(0, 72%, 51%)',
+                borderColor: 'hsl(217, 91%, 60%)',
                 backgroundColor: 'transparent',
                 fill: false,
-                pointBackgroundColor: 'hsl(0, 72%, 51%)',
-                pointBorderColor: 'hsl(0, 72%, 51%)',
+                pointBackgroundColor: 'hsl(217, 91%, 60%)',
+                pointBorderColor: 'hsl(217, 91%, 60%)',
                 pointRadius: pointStyle.radius,
                 pointHoverRadius: pointStyle.hoverRadius,
                 spanGaps: true,
