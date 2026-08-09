@@ -16,10 +16,23 @@ const PingChart = memo(({ compact = false, ...props }) => {
     const filteredData = useMemo(() => {
         if (!props.data?.ping || !props.labels) return { labels: [], data: [], jitter: [], average: 0, jitterAverage: 0, failed: [], errors: [], isSingleDay: false };
 
+        // The worse of the two directions per point, exactly as the grade takes
+        // the worse direction - a line clean downstream and buffered upstream is
+        // a buffered line. Null when neither was measured, which draws a gap.
+        const loadedAt = (index) => {
+            const down = props.data.downloadLatency?.[index];
+            const up = props.data.uploadLatency?.[index];
+            if (down === null || down === undefined) return up ?? null;
+            if (up === null || up === undefined) return down;
+
+            return Math.max(down, up);
+        };
+
         const filtered = props.labels.map((label, index) => ({
             label,
             value: props.data.ping[index],
             jitter: props.data.jitter?.[index],
+            loaded: loadedAt(index),
             isFailed: props.failed?.[index] || false,
             error: props.errors?.[index] || null,
             date: new Date(label)
@@ -43,6 +56,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
             labels: filtered.map(item => item.label),
             data: filtered.map(item => item.value),
             jitter: filtered.map(item => item.jitter),
+            loaded: filtered.map(item => item.loaded),
             failed: filtered.map(item => item.isFailed),
             errors: filtered.map(item => item.error),
             average,
@@ -52,6 +66,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
     }, [props.labels, props.data, props.failed, props.errors]);
 
     const hasJitterData = useMemo(() => filteredData.jitter.some(j => j !== null && j !== undefined), [filteredData.jitter]);
+    const hasLoadedData = useMemo(() => filteredData.loaded.some(v => v !== null && v !== undefined), [filteredData.loaded]);
 
     const failedMarkerData = useMemo(() => {
         return filteredData.labels.map((_, index) => 
@@ -233,6 +248,22 @@ const PingChart = memo(({ compact = false, ...props }) => {
                 spanGaps: true,
                 order: 1
             },
+            // Idle and under-load latency on one axis is the picture that
+            // explains "the internet feels slow while something uploads". No
+            // fill: the reading is the distance to the idle line below it.
+            ...(hasLoadedData ? [{
+                label: t("statistics.loaded_latency"),
+                data: filteredData.loaded,
+                borderColor: 'hsl(0, 72%, 51%)',
+                backgroundColor: 'transparent',
+                fill: false,
+                pointBackgroundColor: 'hsl(0, 72%, 51%)',
+                pointBorderColor: 'hsl(0, 72%, 51%)',
+                pointRadius: pointStyle.radius,
+                pointHoverRadius: pointStyle.hoverRadius,
+                spanGaps: true,
+                order: 3
+            }] : []),
             ...(hasJitterData ? [{
                 label: t("latest.jitter"),
                 data: filteredData.jitter,
@@ -280,7 +311,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
                 order: 0
             }] : [])
         ],
-    }), [filteredData, compact, pointStyle, hasJitterData, hasFailedTests, failedMarkerData]);
+    }), [filteredData, compact, pointStyle, hasJitterData, hasLoadedData, hasFailedTests, failedMarkerData]);
 
     return (
         <div className="chart-container ping-chart" onClick={props.onClick}>

@@ -104,7 +104,8 @@ const buildHourlyAverages = (entries, offsetMinutes) => {
 
 const emptySeries = () => ({
     labels: [], failed: [], errors: [],
-    data: {ping: [], jitter: [], download: [], upload: [], time: []}
+    data: {ping: [], jitter: [], download: [], upload: [], time: [],
+        downloadLatency: [], uploadLatency: []}
 });
 
 const fullSeries = (sorted) => ({
@@ -116,7 +117,11 @@ const fullSeries = (sorted) => ({
         jitter: sorted.map(entry => entry.error === null ? entry.jitter : null),
         download: sorted.map(entry => entry.error === null ? entry.download : null),
         upload: sorted.map(entry => entry.error === null ? entry.upload : null),
-        time: sorted.map(entry => entry.error === null ? entry.time : null)
+        time: sorted.map(entry => entry.error === null ? entry.time : null),
+        // Null where unmeasured - a gap in the line, like jitter. The ?? guards
+        // rows from before the columns existed, which have no key at all.
+        downloadLatency: sorted.map(entry => entry.error === null ? entry.downloadLatency ?? null : null),
+        uploadLatency: sorted.map(entry => entry.error === null ? entry.uploadLatency ?? null : null)
     }
 });
 
@@ -149,17 +154,22 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
             return;
         }
 
-        const jitters = valid.filter(entry => entry.jitter !== null && entry.jitter !== undefined)
-            .map(entry => entry.jitter);
+        // Measured-only per metric: jitter and the loaded latencies are absent
+        // on some providers, and a null must not drag a bucket's average.
+        const measuredOnly = (key) => valid
+            .map(entry => entry[key])
+            .filter(value => value !== null && value !== undefined);
 
         series.labels.push(new Date(midTime).toISOString());
         series.failed.push(bucket.errors.length > 0);
         series.errors.push(bucket.errors.length > 0 ? `${bucket.errors.length} failed in period` : null);
         series.data.ping.push(Math.round(average(valid.map(entry => entry.ping))));
-        series.data.jitter.push(averageOrNull(jitters));
+        series.data.jitter.push(averageOrNull(measuredOnly("jitter")));
         series.data.download.push(round(average(valid.map(entry => entry.download))));
         series.data.upload.push(round(average(valid.map(entry => entry.upload))));
         series.data.time.push(Math.round(average(valid.map(entry => entry.time))));
+        series.data.downloadLatency.push(averageOrNull(measuredOnly("downloadLatency")));
+        series.data.uploadLatency.push(averageOrNull(measuredOnly("uploadLatency")));
     });
 
     return series;

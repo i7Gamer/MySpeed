@@ -4,6 +4,8 @@ import {
     faCircleExclamation, faClockRotateLeft, faGaugeHigh, faPause, faTriangleExclamation
 } from "@fortawesome/free-solid-svg-icons";
 import {t} from "i18next";
+import {useNavigate} from "react-router-dom";
+import {serializeRange, TIMEFRAME_CUSTOM} from "@/common/utils/TimeframeUtil";
 import {StatusContext} from "@/common/contexts/Status";
 import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
@@ -24,12 +26,18 @@ const PERCENT = 100;
 // nothing is running.
 const RELATIVE_TIME_REFRESH_MS = 1000;
 
+// Mirrors the window the server counts recentFailures over, so the badge opens
+// the statistics on the same day it summarised.
+const HOURS_PER_DAY = 24;
+const RECENT_FAILURE_WINDOW_MS = HOURS_PER_DAY * 60 * 60 * 1000;
+
 const StatusBarComponent = () => {
     const [status, updateStatus, setRunning] = useContext(StatusContext);
     const [config] = useContext(ConfigContext);
     const [preferences] = useContext(PreferencesContext);
     const {speedtests, updateTests} = useContext(SpeedtestContext);
     const alert = useAlert();
+    const navigate = useNavigate();
 
     const [lastTestText, setLastTestText] = useState(null);
     const [elapsed, setElapsed] = useState(null);
@@ -71,6 +79,17 @@ const StatusBarComponent = () => {
     const speedUnit = getSpeedUnit(preferences);
 
     const start = () => startSpeedtest({status, config, updateStatus, setRunning, updateTests, alert});
+
+    // The statistics for the same window the badge counted: the last day, as a
+    // custom range spanning yesterday and today. The failure markers on the
+    // charts there line up with whatever went wrong.
+    const openRecentFailures = () => {
+        const now = new Date();
+        const yesterday = new Date(now.getTime() - RECENT_FAILURE_WINDOW_MS);
+        const params = new URLSearchParams(serializeRange(TIMEFRAME_CUSTOM, yesterday, now));
+
+        navigate(`/statistics?${params}`);
+    };
 
     const percent = progressPercent(status);
 
@@ -141,15 +160,17 @@ const StatusBarComponent = () => {
 
                         {/* Surfaced here rather than only in the statistics: a
                             run of failures is the one thing worth noticing
-                            without opening another page. */}
+                            without opening another page. A button, not a badge -
+                            it opens the statistics on the window it counted, so
+                            noticing leads somewhere. */}
                         {!status.running && status.recentFailures > 0 && (
-                            <span className="status-failures">
+                            <button className="status-failures" onClick={openRecentFailures}>
                                 <FontAwesomeIcon icon={faCircleExclamation} className="icon-error"/>
                                 {/* Not `count`: that makes i18next resolve
                                     plural forms, which would need a key per
                                     form in all fifteen locales. */}
                                 {t("status.recent_failures", {failures: status.recentFailures})}
-                            </span>
+                            </button>
                         )}
                     </div>
                 </div>

@@ -54,10 +54,21 @@
   color: var(--accent-primary)
   font-weight: 600
 
+// A button in badge's clothing: it opens the statistics on the day it counted,
+// so it needs the reset a real <button> brings with it.
 .status-failures
   display: flex
   align-items: center
   gap: 0.4rem
+  background: none
+  border: none
+  padding: 0
+  font: inherit
+  color: inherit
+  cursor: pointer
+
+  &:hover
+    text-decoration: underline
 
 .status-start
   display: flex

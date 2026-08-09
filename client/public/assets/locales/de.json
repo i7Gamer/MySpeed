@@ -389,7 +389,8 @@
       "fair": "Faire",
       "poor": "Arm",
       "ping_variance": "Ping-Varianz"
-    }
+    },
+    "loaded_latency": "Unter Last"
   },
   "calendar": {
     "select_range": "Datumsbereich auswählen",

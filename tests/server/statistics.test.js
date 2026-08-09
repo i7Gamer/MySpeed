@@ -101,6 +101,50 @@ describe("buildStatistics", () => {
         });
 
         /**
+         * The loaded-latency series feed the ping chart, where idle and
+         * under-load latency share an axis. Unmeasured tests stay null - a gap
+         * in the line - and a downsampled bucket averages only what was
+         * measured, exactly as jitter already does.
+         */
+        describe("loaded latency series", () => {
+            it("carries both directions per point, null where unmeasured", () => {
+                const stats = buildStatistics([
+                    at("2026-08-07T01:00:00.000Z", {downloadLatency: 7.5, uploadLatency: 44}),
+                    at("2026-08-07T02:00:00.000Z", {downloadLatency: null, uploadLatency: null})
+                ], DAY);
+
+                assert.deepEqual(stats.data.downloadLatency, [7.5, null]);
+                assert.deepEqual(stats.data.uploadLatency, [44, null]);
+            });
+
+            it("nulls the series for a failed test like every other metric", () => {
+                const stats = buildStatistics([
+                    at("2026-08-07T01:00:00.000Z", {ping: -1, download: -1, upload: -1,
+                        downloadLatency: null, uploadLatency: null, error: "Cannot open socket"})
+                ], DAY);
+
+                assert.deepEqual(stats.data.downloadLatency, [null]);
+            });
+
+            it("averages only the measured tests within a downsampled bucket", () => {
+                // More entries than the minimum chart resolution, so the series
+                // genuinely goes through the bucketing path. Every measured test
+                // says 40; every other test measured nothing. A bucket that let
+                // the nulls drag its average would report 20.
+                const entries = Array.from({length: MIN_CHART_POINTS + 10}, (_, i) =>
+                    at(new Date(Date.UTC(2026, 7, 7, 0, i * 20)).toISOString(),
+                        {uploadLatency: i % 2 === 0 ? 40 : null}));
+
+                const stats = buildStatistics(entries, DAY, {maxPoints: MIN_CHART_POINTS});
+
+                assert.ok(stats.downsampled, "the series never went through the bucketing path");
+                const measured = stats.data.uploadLatency.filter(value => value !== null);
+                assert.ok(measured.length > 0, "no bucket carried a measured value");
+                for (const value of measured) assert.equal(value, 40);
+            });
+        });
+
+        /**
          * The range average of packet loss, over the tests that measured it.
          * Only Ookla reports one, so the unmeasured rows must not drag the
          * average - and a clean line's zeroes are measurements, not gaps.
