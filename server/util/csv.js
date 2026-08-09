@@ -2,7 +2,8 @@
 // means a reader scanning the numeric columns never has to step over it. New
 // columns are inserted before it rather than appended.
 export const CSV_COLUMNS = ["id", "ping", "jitter", "download", "upload", "time", "type", "created",
-    "serverName", "serverHost", "packetLoss", "downloadLatency", "uploadLatency", "isp", "externalIp", "error"];
+    "serverName", "serverHost", "packetLoss", "downloadLatency", "uploadLatency", "isp", "externalIp",
+    "resultId", "error"];
 
 export const CSV_HEADER = `${CSV_COLUMNS.join(",")}\n`;
 

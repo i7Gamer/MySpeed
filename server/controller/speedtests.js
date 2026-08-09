@@ -201,5 +201,9 @@ export const exportTests = async (range) => (await findInRange(range)).map(entry
     uploadLatency: entry.uploadLatency,
     isp: entry.isp,
     externalIp: entry.externalIp,
+    // The provider's own result page. Shown in the interface as a link since
+    // long before it was exported, and left out of every export until the
+    // column guard in retentionAndExport asked why.
+    resultId: entry.resultId,
     error: entry.error
 }));

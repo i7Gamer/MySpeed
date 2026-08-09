@@ -205,3 +205,69 @@ describe("import validation", () => {
         assert.equal(await server.tests.count(), 2);
     });
 });
+
+/**
+ * The exporter names the fields it copies out of each row one by one, so a
+ * column added to the table is exported as an empty cell until it is named
+ * there too. Asserting on the header cannot see this - the column is present
+ * and every value under it is blank - which is how serverName and serverHost
+ * went unexported from migration 0003 onwards, and how isp and externalIp
+ * shipped empty in 1.1.3.
+ *
+ * So every attribute the model defines has to be either exported or listed
+ * here as a deliberate omission. Adding a column then forces the choice
+ * instead of silently skipping it.
+ */
+const NOT_EXPORTED = {
+    serverId: "which configured server was measured - an internal reference, not a measurement"
+};
+
+describe("what the exporter carries", () => {
+    const exportedFields = async () => {
+        await seedTests(server.tests, [{created: new Date().toISOString()}]);
+        const [row] = await controller.exportTests({from: new Date(0), to: new Date()});
+
+        return Object.keys(row);
+    };
+
+    it("names every column the model defines, or excludes it on purpose", async () => {
+        const exported = await exportedFields();
+        const missing = Object.keys(server.tests.getAttributes())
+            .filter((attribute) => !exported.includes(attribute))
+            .filter((attribute) => !(attribute in NOT_EXPORTED));
+
+        assert.deepEqual(missing, [],
+            `exportTests() does not name ${missing.join(", ")}, so ${missing.length === 1 ? "it exports" : "they export"} ` +
+            `as empty cells. Add ${missing.length === 1 ? "it" : "them"} to exportTests() and to CSV_COLUMNS, or record ` +
+            `in NOT_EXPORTED why ${missing.length === 1 ? "it is" : "they are"} deliberately left out.`);
+    });
+
+    // The CSV writer takes its columns from its own list, so the two can drift
+    // apart in the other direction: a field the exporter produces that the
+    // header never names is silently dropped from every CSV.
+    it("writes every exported field into the CSV", async () => {
+        const exported = await exportedFields();
+
+        assert.deepEqual(exported.filter((field) => !CSV_COLUMNS.includes(field)), [],
+            "a field leaves exportTests() that CSV_COLUMNS does not name, so the CSV drops it");
+    });
+
+    it("names no CSV column the exporter never produces", async () => {
+        const exported = await exportedFields();
+
+        assert.deepEqual(CSV_COLUMNS.filter((column) => !exported.includes(column)), [],
+            "CSV_COLUMNS names a column exportTests() does not produce, so it is written empty for every row");
+    });
+
+    // The guard is worthless if it cannot see the thing it exists to catch, so
+    // it is checked against an exporter that forgot a column.
+    it("still catches a column the exporter forgot", async () => {
+        const forgetful = ["id", "ping"];
+        const attributes = ["id", "ping", "externalIp"];
+
+        assert.deepEqual(
+            attributes.filter((a) => !forgetful.includes(a)).filter((a) => !(a in NOT_EXPORTED)),
+            ["externalIp"]
+        );
+    });
+});

@@ -7,7 +7,7 @@ const row = (overrides = {}) => ({
     time: 30, type: "auto", created: "2026-08-07T10:00:00.000Z",
     serverName: "Arcade Solutions AG", serverHost: "speedtest.arcade.ch",
     packetLoss: 0, downloadLatency: 12.5, uploadLatency: 44.75,
-    isp: "Salt Mobile", externalIp: "2a04:ee41::1", error: null, ...overrides
+    isp: "Salt Mobile", externalIp: "2a04:ee41::1", resultId: "abc123", error: null, ...overrides
 });
 
 const FIELDS_PER_ROW = CSV_COLUMNS.length;
@@ -26,7 +26,7 @@ describe("toCsv", () => {
     it("starts with the header row", () => {
         assert.equal(lines([row()])[0],
             "id,ping,jitter,download,upload,time,type,created,serverName,serverHost," +
-            "packetLoss,downloadLatency,uploadLatency,isp,externalIp,error");
+            "packetLoss,downloadLatency,uploadLatency,isp,externalIp,resultId,error");
     });
 
     // Free text last, so a reader scanning the numeric columns never steps over
@@ -42,7 +42,7 @@ describe("toCsv", () => {
     it("quotes every field", () => {
         assert.equal(lines([row()])[1],
             '"1","10","2.5","100","50","30","auto","2026-08-07T10:00:00.000Z",' +
-            '"Arcade Solutions AG","speedtest.arcade.ch","0","12.5","44.75","Salt Mobile","2a04:ee41::1",""');
+            '"Arcade Solutions AG","speedtest.arcade.ch","0","12.5","44.75","Salt Mobile","2a04:ee41::1","abc123",""');
     });
 
     // The figures are only worth recording if they leave again, and a zero must

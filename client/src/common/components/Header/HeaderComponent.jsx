@@ -14,6 +14,7 @@ import { useAlert } from "@/common/contexts/Alert";
 import { StatusContext } from "@/common/contexts/Status";
 import { SpeedtestContext } from "@/common/contexts/Speedtests";
 import { jsonRequest, login } from "@/common/utils/RequestUtil";
+import { promptUntilAccepted } from "@/common/utils/PasswordPrompt";
 import { startSpeedtest as runSpeedtest } from "@/common/utils/RunUtil";
 import { showsStatusBar } from "@/common/utils/StatusUtil";
 import { updateInfo } from "@/common/components/Header/utils/infos";
@@ -54,24 +55,28 @@ const HeaderComponent = () => {
         { buttonText: t("dialog.okay") }
     );
 
-    const showPasswordDialog = async (failed = false) => {
-        const result = await alert.openInput(t("header.admin_login"), {
+    // The same loop the unauthenticated page uses, so the two prompts cannot
+    // disagree about what a rejected password means. Read-level access counts
+    // as a rejection here: it authenticates, but not for the admin controls
+    // this dialog was opened to reach.
+    const showPasswordDialog = () => promptUntilAccepted(
+        (failed) => alert.openInput(t("header.admin_login"), {
             placeholder: t("dialog.password.placeholder"),
             description: failed ? <span className="icon-red">{t("dialog.password.wrong")}</span> : "",
             inputType: "password",
             buttonText: t("dialog.login")
-        });
-
-        if (!result) return;
-
+        }),
         // Exchanged for a session cookie rather than kept: the password itself
         // never reaches storage this script can read back.
-        if (!await login(result)) return showPasswordDialog(true);
+        async (value) => {
+            if (!await login(value)) return false;
 
-        reloadConfig();
-        const newConfig = await checkConfig().catch(() => null);
-        if (newConfig?.viewMode) showPasswordDialog(true);
-    };
+            reloadConfig();
+            const newConfig = await checkConfig().catch(() => null);
+
+            return !newConfig?.viewMode;
+        }
+    );
 
     // Shared with the status bar on the overview: two controls for the same
     // action decided separately when it was allowed, which is how they end up

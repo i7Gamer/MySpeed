@@ -1,18 +1,16 @@
 import {t} from "i18next";
-import {login} from "@/common/utils/RequestUtil";
 
+// Presentation only. Signing in belongs to the caller, which is what lets both
+// prompts share one retry loop - see PasswordPrompt. Holding login() here meant
+// the caller had no way to learn a password had been rejected, so it did
+// nothing about it.
 export const passwordRequiredDialog = (failed = false) => ({
     title: t("dialog.password.title"),
     placeholder: t("dialog.password.placeholder"),
     description: failed ? <span className="icon-red">{t("dialog.password.wrong")}</span> : "",
     type: "password",
     buttonText: t("dialog.login"),
-    disableCloseButton: true,
-    // The password is exchanged for a session cookie and then dropped; it is
-    // never written anywhere this script can read it back.
-    onSuccess: async (value) => {
-        if (await login(value)) window.location.reload();
-    }
+    disableCloseButton: true
 });
 
 export const apiErrorDialog = () => ({

@@ -1,6 +1,7 @@
 import React, {createContext, useEffect, useState} from "react";
 import {useAlert} from "../Alert";
-import {request} from "@/common/utils/RequestUtil";
+import {login, request} from "@/common/utils/RequestUtil";
+import {promptUntilAccepted} from "@/common/utils/PasswordPrompt";
 import {apiErrorDialog, passwordRequiredDialog} from "@/common/contexts/Config/dialog";
 import WelcomeDialog from "@/common/components/WelcomeDialog";
 import {useNavigate} from "react-router-dom";
@@ -34,25 +35,45 @@ export const ConfigProvider = (props) => {
         });
     }
 
+    /**
+     * Asks until the password is accepted, rather than once.
+     *
+     * A rejected password used to end here silently: login() answered false,
+     * nothing read it, and the prompt had already closed - so a typo left the
+     * dashboard blank with nothing said and no way back but a manual reload.
+     * This is the prompt an unauthenticated visitor meets first.
+     */
+    const askForPassword = async () => {
+        const accepted = await promptUntilAccepted(
+            (failed) => {
+                const dialogConfig = passwordRequiredDialog(failed);
+
+                return alert.openInput(dialogConfig.title, {
+                    placeholder: dialogConfig.placeholder,
+                    description: dialogConfig.description,
+                    inputType: dialogConfig.type,
+                    buttonText: dialogConfig.buttonText,
+                    disableClose: dialogConfig.disableCloseButton
+                });
+            },
+            // Exchanged for a session cookie and then dropped; the password is
+            // never written anywhere this script can read it back.
+            login
+        );
+
+        if (accepted) window.location.reload();
+    };
+
     const showErrorDialog = async (code) => {
-        const dialogConfig = code === 1 ? passwordRequiredDialog() : apiErrorDialog();
-        
-        if (code === 1) {
-            const result = await alert.openInput(dialogConfig.title, {
-                placeholder: dialogConfig.placeholder,
-                description: dialogConfig.description,
-                inputType: dialogConfig.type,
-                buttonText: dialogConfig.buttonText,
-                disableClose: dialogConfig.disableCloseButton
-            });
-            if (result) dialogConfig.onSuccess(result);
-        } else {
-            await alert.openAlert(dialogConfig.title, dialogConfig.description, {
-                buttonText: dialogConfig.buttonText,
-                disableClose: dialogConfig.disableCloseButton
-            });
-            dialogConfig.onSuccess();
-        }
+        if (code === 1) return askForPassword();
+
+        const dialogConfig = apiErrorDialog();
+
+        await alert.openAlert(dialogConfig.title, dialogConfig.description, {
+            buttonText: dialogConfig.buttonText,
+            disableClose: dialogConfig.disableCloseButton
+        });
+        dialogConfig.onSuccess();
     };
 
     const checkConfig = async () => (await request("/config")).json();
