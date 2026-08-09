@@ -23,7 +23,7 @@ import {Trans} from "react-i18next";
 import {getIconBySpeed, isFailedTest} from "@/common/utils/TestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {convertSpeed, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {useNavigate} from "react-router-dom";
 import ContextMenu from "@/common/components/ContextMenu";
 
@@ -241,19 +241,19 @@ export const NodeContainer = (node) => {
                             <div className="speed-item">
                                 <FontAwesomeIcon icon={faTableTennisPaddleBall}
                                                  className={"icon-" + nodeData.pingIcon}/>
-                                <h1>{nodeData.ping} {t("latest.ping_unit")}</h1>
+                                <h1>{formatWithUnit(nodeData.ping, t("latest.ping_unit"))}</h1>
                             </div>
 
                             <div className="speed-item">
                                 <FontAwesomeIcon icon={faArrowDown}
                                                  className={"icon-" + nodeData.downloadIcon}/>
-                                <h1>{convertSpeed(nodeData.download, preferences)} {speedUnit}</h1>
+                                <h1>{formatWithUnit(convertSpeed(nodeData.download, preferences), speedUnit)}</h1>
                             </div>
 
                             <div className="speed-item">
                                 <FontAwesomeIcon icon={faArrowUp}
                                                  className={"icon-" + nodeData.uploadIcon}/>
-                                <h1>{convertSpeed(nodeData.upload, preferences)} {speedUnit}</h1>
+                                <h1>{formatWithUnit(convertSpeed(nodeData.upload, preferences), speedUnit)}</h1>
                             </div>
                         </>
                     )}

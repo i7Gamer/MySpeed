@@ -11,7 +11,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
 import {useAlert} from "@/common/contexts/Alert";
-import {convertSpeed, formatLastTest, formatTime, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {convertSpeed, formatLastTest, formatTime, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {isFailedTest} from "@/common/utils/TestUtil";
 import {
     progressPercent, startBlockedReason, START_BLOCKED_RUNNING, START_BLOCKED_VIEW_MODE
@@ -148,7 +148,7 @@ const StatusBarComponent = () => {
 
                         {status.running && status.speed !== null && status.speed !== undefined && (
                             <span className="status-speed">
-                                {convertSpeed(status.speed, preferences)} {speedUnit}
+                                {formatWithUnit(convertSpeed(status.speed, preferences), speedUnit)}
                             </span>
                         )}
 

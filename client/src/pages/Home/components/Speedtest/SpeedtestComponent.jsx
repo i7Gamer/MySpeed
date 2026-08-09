@@ -14,12 +14,28 @@ import {t} from "i18next";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatDateTime, formatShortTime, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {convertSpeed, formatDateTime, formatShortTime, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {useAlert} from "@/common/contexts/Alert";
 import {bufferbloat, bufferbloatColour} from "@/common/utils/TestUtil";
 import {downloadInfo, jitterInfo, pingInfo, uploadInfo} from "@/pages/Home/components/Speedtest/utils/dialogs";
 
 const RESULT_URL = "https://www.speedtest.net/result/c/";
+
+/**
+ * A metric icon that opens its explanation.
+ *
+ * A button rather than a click handler on the svg, so it can be tabbed to and
+ * activated with the keyboard - Enter and Space come free with the element.
+ * `type="button"` because it sits inside no form but browsers default to
+ * submit, and the label is what a screen reader announces in place of an icon
+ * that means nothing to it.
+ */
+const HelpButton = ({label, onOpen, className = "", children}) => (
+    <button type="button" className={`help-button help-icon ${className}`.trim()}
+            aria-label={label} title={label} onClick={onOpen}>
+        {children}
+    </button>
+);
 
 // The bar would otherwise run off its track on a line that beats its target,
 // which is the one case where the number is unambiguously good news.
@@ -240,7 +256,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
 
                         {props.jitter !== null && props.jitter !== undefined && (
                             <DetailFact label={t("latest.jitter")}>
-                                {props.jitter} {t("latest.jitter_unit")}
+                                {formatWithUnit(props.jitter, t("latest.jitter_unit"))}
                             </DetailFact>
                         )}
 
@@ -339,33 +355,41 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                     </div>
                 ) : (
                     <>
-                        {/* The icons explain their measurement on click. */}
+                        {/* Each icon explains its measurement. Real buttons, not
+                            svgs carrying a click handler: the row itself is
+                            keyboard-operable, and these sit inside it, so as
+                            bare svgs they were the one thing on the card a
+                            keyboard could not reach at all. */}
                         <div className="speedtest-row">
-                            <FontAwesomeIcon icon={faPingPongPaddleBall}
-                                             className={"speedtest-icon help-icon icon-" + props.pingLevel}
-                                             onClick={(event) => openInfo(event, pingInfo)}/>
+                            <HelpButton label={t("info.ping.title")} onOpen={(event) => openInfo(event, pingInfo)}>
+                                <FontAwesomeIcon icon={faPingPongPaddleBall}
+                                                 className={"speedtest-icon icon-" + props.pingLevel}/>
+                            </HelpButton>
                             <h2 className="speedtest-text">
                                 {props.ping}
                                 <span className="speedtest-unit">{t("latest.ping_unit")}</span>
                                 {props.jitter !== null && props.jitter !== undefined && (
-                                    <span className="jitter-suffix" onClick={(event) => openInfo(event, jitterInfo)}>
-                                        <FontAwesomeIcon icon={faWaveSquare} className="jitter-icon help-icon" />{props.jitter}
-                                    </span>
+                                    <HelpButton label={t("info.jitter.title")} className="jitter-suffix"
+                                                onOpen={(event) => openInfo(event, jitterInfo)}>
+                                        <FontAwesomeIcon icon={faWaveSquare} className="jitter-icon" />{props.jitter}
+                                    </HelpButton>
                                 )}
                             </h2>
                         </div>
                         <div className="speedtest-row">
-                            <FontAwesomeIcon icon={faArrowDown}
-                                             className={"speedtest-icon help-icon icon-" + props.downLevel}
-                                             onClick={(event) => openInfo(event, downloadInfo)}/>
+                            <HelpButton label={t("info.down.title")} onOpen={(event) => openInfo(event, downloadInfo)}>
+                                <FontAwesomeIcon icon={faArrowDown}
+                                                 className={"speedtest-icon icon-" + props.downLevel}/>
+                            </HelpButton>
                             <h2 className="speedtest-text">{downValue}
                                 <span className="speedtest-unit">{speedUnit}</span>
                             </h2>
                         </div>
                         <div className="speedtest-row">
-                            <FontAwesomeIcon icon={faArrowUp}
-                                             className={"speedtest-icon help-icon icon-" + props.upLevel}
-                                             onClick={(event) => openInfo(event, uploadInfo)}/>
+                            <HelpButton label={t("info.up.title")} onOpen={(event) => openInfo(event, uploadInfo)}>
+                                <FontAwesomeIcon icon={faArrowUp}
+                                                 className={"speedtest-icon icon-" + props.upLevel}/>
+                            </HelpButton>
                             <h2 className="speedtest-text">{upValue}
                                 <span className="speedtest-unit">{speedUnit}</span>
                             </h2>
