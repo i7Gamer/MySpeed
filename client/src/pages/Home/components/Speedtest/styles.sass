@@ -267,26 +267,36 @@ $metric-line-height: 1.2
 .detail-facts
   display: grid
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr))
-  gap: 0.75rem 2rem
+  gap: 1rem 2rem
 
+// Label above the value rather than beside it.
+//
+// Sharing one line left the value whatever the label did not take - about 8rem
+// of a 15rem column - so everything longer than a number wrapped, and wrapped
+// right-aligned, putting a ragged edge under half the panel. Stacked, the value
+// has the whole column. It is also what the rest of the panel already does: the
+// metric cards directly above stack their label over their figure, and these
+// facts were the only place in the app arguing with a label for the space.
+//
+// No bottom border either. Each fact carried its own, which in a grid can never
+// line up into rows - and an item that wrapped dropped its border below its
+// neighbours', which is what made them look scattered. The pairing is its own
+// grouping now, and the grid gap does the separating.
 .detail-fact
   display: flex
-  justify-content: space-between
-  align-items: baseline
-  gap: 1rem
-  padding-bottom: 0.5rem
-  border-bottom: 1px solid $light-gray
+  flex-direction: column
+  gap: 0.15rem
+  min-width: 0
 
 .detail-fact-label
-  font-size: 0.85rem
+  font-size: 0.8rem
   color: $subtext
-  flex-shrink: 0
 
 .detail-fact-value
-  font-size: 0.9rem
+  font-size: 0.95rem
   color: $white
-  text-align: right
-  word-break: break-word
+  // Only where it has to: an external IPv6 address has no space to break at.
+  overflow-wrap: anywhere
 
   a
     color: $accent-secondary
@@ -301,6 +311,28 @@ $metric-line-height: 1.2
 .detail-link-icon
   width: 0.7rem
   height: 0.7rem
+
+// The two loaded latencies read as one value, with the arrows doing the work
+// the words "down" and "up" used to - the same two arrows the speed rows above
+// use, so the direction is read the same way in both places.
+.detail-latency
+  display: inline-flex
+  align-items: center
+  gap: 0.55rem
+
+.detail-latency-part
+  display: inline-flex
+  align-items: center
+  gap: 0.25rem
+
+.detail-latency-icon
+  width: 0.65rem
+  height: 0.65rem
+  color: $subtext
+  flex-shrink: 0
+
+.detail-latency-unit
+  color: $subtext
 
 .detail-error
   h3

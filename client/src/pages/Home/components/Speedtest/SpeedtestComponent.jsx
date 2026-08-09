@@ -244,8 +244,10 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
 
                     <div className="detail-facts">
                         <DetailFact label={t("test.details.measured_at")}>
+                            {/* No weekday: it was the least informative token in
+                                the longest value on the panel. */}
                             {formatDateTime(props.created ?? props.time, preferences,
-                                {weekday: "short", day: "numeric", month: "short", year: "numeric"})}
+                                {day: "numeric", month: "short", year: "numeric"})}
                         </DetailFact>
 
                         {props.duration !== undefined && props.duration !== null && (
@@ -270,8 +272,25 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                             and a packet loss of zero is a result worth showing. */}
                         {isMeasured(props.downloadLatency) && isMeasured(props.uploadLatency) && (
                             <DetailFact label={t("test.details.loaded_latency")}>
-                                {t("test.details.loaded_latency_value",
-                                    {down: props.downloadLatency, up: props.uploadLatency})}
+                                {/* The same two arrows the speed rows use,
+                                    rather than the words "down" and "up". The
+                                    sentence stays as the accessible name: an
+                                    arrow points somewhere only to someone who
+                                    can see it. */}
+                                <span className="detail-latency"
+                                      role="img"
+                                      aria-label={t("test.details.loaded_latency_value",
+                                          {down: props.downloadLatency, up: props.uploadLatency})}>
+                                    <span className="detail-latency-part">
+                                        <FontAwesomeIcon icon={faArrowDown} className="detail-latency-icon"/>
+                                        {props.downloadLatency}
+                                    </span>
+                                    <span className="detail-latency-part">
+                                        <FontAwesomeIcon icon={faArrowUp} className="detail-latency-icon"/>
+                                        {props.uploadLatency}
+                                    </span>
+                                    <span className="detail-latency-unit">{t("latest.ping_unit")}</span>
+                                </span>
                             </DetailFact>
                         )}
 
