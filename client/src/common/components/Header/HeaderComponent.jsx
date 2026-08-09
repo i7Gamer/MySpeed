@@ -15,6 +15,7 @@ import { StatusContext } from "@/common/contexts/Status";
 import { SpeedtestContext } from "@/common/contexts/Speedtests";
 import { jsonRequest, login } from "@/common/utils/RequestUtil";
 import { promptUntilAccepted } from "@/common/utils/PasswordPrompt";
+import { refusalDescriptionKey } from "@/common/utils/AuthOutcome";
 import { startSpeedtest as runSpeedtest } from "@/common/utils/RunUtil";
 import { showsStatusBar } from "@/common/utils/StatusUtil";
 import { updateInfo } from "@/common/components/Header/utils/infos";
@@ -62,7 +63,9 @@ const HeaderComponent = () => {
     const showPasswordDialog = () => promptUntilAccepted(
         (previous) => alert.openInput(t("header.admin_login"), {
             placeholder: t("dialog.password.placeholder"),
-            description: previous ? <span className="icon-red">{t("dialog.password.wrong")}</span> : "",
+            // What the refusal was, not simply that there was one: a lockout
+            // asks for a minute, not another attempt - see refusalDescriptionKey.
+            description: previous ? <span className="icon-red">{t(refusalDescriptionKey(previous.type))}</span> : "",
             inputType: "password",
             buttonText: t("dialog.login")
         }),

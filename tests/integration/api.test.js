@@ -203,19 +203,24 @@ describe("connection identity in view mode", () => {
 
     const shareReadOnly = async () => {
         await seedTests(server.tests, [{
-            created: "2026-08-05T10:00:00.000Z", isp: "Salt Mobile", externalIp: "203.0.113.7"
+            created: "2026-08-05T10:00:00.000Z", isp: "Salt Mobile", externalIp: "203.0.113.7",
+            resultId: "f2cfac79-3157-4258-9029-e4929a168374"
         }]);
         await setConfig(server.config, "password", "hunter2");
         await setConfig(server.config, "passwordLevel", "read");
     };
 
-    it("withholds the provider and the address from the list", async () => {
+    // resultId counts as identity too: it links to the provider's public
+    // result page, which names the ISP and the rough location - handing a
+    // viewer the very things the masking withholds.
+    it("withholds the provider, the address and the result link from the list", async () => {
         await shareReadOnly();
 
         const {status, body} = await api(server.baseUrl, "/speedtests?limit=1");
         assert.equal(status, 200);
         assert.equal(body[0].isp, null);
         assert.equal(body[0].externalIp, null);
+        assert.equal("resultId" in body[0], false);
     });
 
     it("keeps them for the operator who authenticated", async () => {
@@ -224,6 +229,7 @@ describe("connection identity in view mode", () => {
         const {body} = await api(server.baseUrl, "/speedtests?limit=1", AS_OPERATOR);
         assert.equal(body[0].isp, "Salt Mobile");
         assert.equal(body[0].externalIp, "203.0.113.7");
+        assert.equal(body[0].resultId, "f2cfac79-3157-4258-9029-e4929a168374");
     });
 
     it("masks the single-test view", async () => {
@@ -233,6 +239,7 @@ describe("connection identity in view mode", () => {
         const {body} = await api(server.baseUrl, `/speedtests/${id}`);
         assert.equal(body.isp, null);
         assert.equal(body.externalIp, null);
+        assert.equal("resultId" in body, false);
     });
 
     it("masks the last test the status reports", async () => {
@@ -241,6 +248,7 @@ describe("connection identity in view mode", () => {
         const {body} = await api(server.baseUrl, "/speedtests/status");
         assert.equal(body.lastTest.isp, null);
         assert.equal(body.lastTest.externalIp, null);
+        assert.equal("resultId" in body.lastTest, false);
     });
 
     it("masks the JSON export", async () => {
@@ -249,6 +257,7 @@ describe("connection identity in view mode", () => {
         const {body} = await api(server.baseUrl, `/speedtests/export?${EXPORT_RANGE}&format=json`);
         assert.equal(body[0].isp, null);
         assert.equal(body[0].externalIp, null);
+        assert.equal("resultId" in body[0], false);
     });
 
     it("masks the CSV export down to empty cells", async () => {
@@ -260,6 +269,7 @@ describe("connection identity in view mode", () => {
 
         assert.equal(valueOf("isp"), "");
         assert.equal(valueOf("externalIp"), "");
+        assert.equal(valueOf("resultId"), "");
     });
 });
 

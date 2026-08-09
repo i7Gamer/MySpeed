@@ -33,3 +33,26 @@ export const promptFor = (type) => {
             return PROMPT_PASSWORD;
     }
 };
+
+/**
+ * The line a refusal earns in a prompt that re-asks in place.
+ *
+ * The admin login keeps one dialog open rather than switching between three,
+ * so the refusal has to speak through its description - and "the password you
+ * entered is incorrect" was that line for every refusal, including a lockout,
+ * where it invited retyping into a throttle that answers nothing, and an
+ * instance whose password was removed mid-session, where no password would
+ * ever work again. The setup-token case gets the full situation rather than
+ * "that is not the token": the operator typed a password, and what changed is
+ * that the instance no longer has one.
+ */
+export const refusalDescriptionKey = (type) => {
+    switch (promptFor(type)) {
+        case PROMPT_THROTTLED:
+            return "dialog.throttled.description";
+        case PROMPT_SETUP_TOKEN:
+            return "dialog.setup_token.description";
+        default:
+            return "dialog.password.wrong";
+    }
+};

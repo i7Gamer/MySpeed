@@ -9,13 +9,30 @@ import { stripConnectionIdentity } from "../../server/util/connectionIdentity.js
  * lives on the network.
  */
 describe("stripConnectionIdentity", () => {
-    const row = () => ({id: 1, ping: 10, isp: "Salt Mobile", externalIp: "203.0.113.7", error: null});
+    const row = () => ({id: 1, ping: 10, isp: "Salt Mobile", externalIp: "203.0.113.7",
+        resultId: "f2cfac79", error: null});
 
     it("nulls the provider and the address", () => {
         const stripped = stripConnectionIdentity(row());
 
         assert.equal(stripped.isp, null);
         assert.equal(stripped.externalIp, null);
+    });
+
+    /**
+     * The result id is identity through a side door: it links to the
+     * provider's public result page, which names the ISP and the rough
+     * location - the very things the masking withholds.
+     *
+     * Deleted rather than nulled, unlike the other two, because absence is
+     * what a row without a result already looks like: every list path strips
+     * a null resultId key, so a null here would say "there is a result you
+     * cannot see" where deletion says nothing at all.
+     */
+    it("removes the link to the provider's public result page", () => {
+        const stripped = stripConnectionIdentity(row());
+
+        assert.equal("resultId" in stripped, false);
     });
 
     it("touches nothing else", () => {
@@ -41,6 +58,7 @@ describe("stripConnectionIdentity", () => {
 
         assert.equal(stripped.isp, null);
         assert.equal(stripped.externalIp, null);
+        assert.equal("resultId" in stripped, false);
     });
 
     // The status route builds `lastTest: null` on an install that has never run

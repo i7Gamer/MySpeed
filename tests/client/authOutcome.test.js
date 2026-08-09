@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
     PASSWORD_REQUIRED, PROMPT_PASSWORD, PROMPT_SETUP_TOKEN, PROMPT_THROTTLED,
-    SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS, promptFor
+    SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS, promptFor, refusalDescriptionKey
 } from "../../client/src/common/utils/AuthOutcome.js";
 
 /**
@@ -52,5 +52,33 @@ describe("promptFor", () => {
         const prompts = [SETUP_TOKEN_REQUIRED, PASSWORD_REQUIRED, TOO_MANY_ATTEMPTS].map(promptFor);
 
         assert.equal(new Set(prompts).size, 3);
+    });
+});
+
+/**
+ * The admin login re-asks in place rather than switching dialogs, so what it
+ * can vary is the line it shows about the refusal. "The password you entered
+ * is incorrect" was that line for every refusal - including a lockout, where
+ * it invited retyping into a throttle that answers nothing, and an instance
+ * whose password was removed mid-session, where no password would ever work.
+ */
+describe("refusalDescriptionKey", () => {
+    it("says the password was wrong when it was", () => {
+        assert.equal(refusalDescriptionKey(PASSWORD_REQUIRED), "dialog.password.wrong");
+    });
+
+    it("says to wait when the caller is locked out", () => {
+        assert.equal(refusalDescriptionKey(TOO_MANY_ATTEMPTS), "dialog.throttled.description");
+    });
+
+    // The full situation, not "that is not the token": the operator typed a
+    // password, and what changed is that the instance no longer has one.
+    it("explains the setup token when the instance wants one", () => {
+        assert.equal(refusalDescriptionKey(SETUP_TOKEN_REQUIRED), "dialog.setup_token.description");
+    });
+
+    it("falls back to the wrong-password line for anything unrecognised", () => {
+        assert.equal(refusalDescriptionKey(undefined), "dialog.password.wrong");
+        assert.equal(refusalDescriptionKey("SOMETHING_ADDED_LATER"), "dialog.password.wrong");
     });
 });
