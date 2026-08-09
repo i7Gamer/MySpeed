@@ -314,7 +314,10 @@
       "loaded_latency_value": "{{down}} ms down / {{up}} ms up",
       "packet_loss": "Packet loss",
       "bufferbloat": "Bufferbloat",
-      "bufferbloat_value": "adds {{increase}} ms under load"
+      "bufferbloat_value": "adds {{increase}} ms under load",
+      "isp": "Provider",
+      "external_ip": "External address",
+      "changed": "changed"
     }
   },
   "errors": {

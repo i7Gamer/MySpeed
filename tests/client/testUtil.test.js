@@ -1,8 +1,93 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    bufferbloat, bufferbloatTrend, failureRate, getIconBySpeed, isFailedTest, TREND_LENGTH
+    bufferbloat, bufferbloatTrend, connectionChange, failureRate, getIconBySpeed, isFailedTest,
+    previousConnection, TREND_LENGTH
 } from "../../client/src/common/utils/TestUtil.js";
+
+/**
+ * A step in the numbers reads as the line degrading. Often it is not: the lease
+ * was reassigned, a failover moved the traffic, the router was swapped. The
+ * provider reports who the connection was on every test, so the change can be
+ * pointed at instead of guessed at.
+ */
+describe("connectionChange", () => {
+    const on = (isp, externalIp) => ({isp, externalIp});
+
+    it("says nothing when the connection is the one it was", () => {
+        assert.equal(connectionChange(on("Salt", "1.2.3.4"), on("Salt", "1.2.3.4")), null);
+    });
+
+    it("reports a changed address", () => {
+        assert.deepEqual(connectionChange(on("Salt", "5.6.7.8"), on("Salt", "1.2.3.4")),
+            {isp: false, externalIp: true});
+    });
+
+    it("reports a changed provider", () => {
+        assert.deepEqual(connectionChange(on("Init7", "1.2.3.4"), on("Salt", "1.2.3.4")),
+            {isp: true, externalIp: false});
+    });
+
+    it("reports both when both moved", () => {
+        assert.deepEqual(connectionChange(on("Init7", "5.6.7.8"), on("Salt", "1.2.3.4")),
+            {isp: true, externalIp: true});
+    });
+
+    // The first test of all has nothing to differ from, and neither does a test
+    // recorded before these columns existed - an absent value is not a change.
+    it("says nothing without something to compare against", () => {
+        assert.equal(connectionChange(on("Salt", "1.2.3.4"), undefined), null);
+        assert.equal(connectionChange(on("Salt", "1.2.3.4"), on(null, null)), null);
+        assert.equal(connectionChange(on(null, null), on("Salt", "1.2.3.4")), null);
+        assert.equal(connectionChange(undefined, on("Salt", "1.2.3.4")), null);
+    });
+
+    it("compares each field independently when only one is known", () => {
+        assert.deepEqual(connectionChange(on("Init7", null), on("Salt", "1.2.3.4")),
+            {isp: true, externalIp: false});
+    });
+});
+
+/**
+ * The row immediately before is the wrong thing to compare against: it may
+ * carry no identity at all - every test recorded before the columns existed,
+ * and every test from a provider that does not report them. Comparing to it
+ * would report "no change" across exactly the gap a change hides in.
+ */
+describe("previousConnection", () => {
+    const withIdentity = (created, isp) => ({created, isp, externalIp: "1.2.3.4"});
+    const withoutIdentity = (created) => ({created, isp: null, externalIp: null});
+
+    it("is the test immediately before when that one has an identity", () => {
+        const tests = [withIdentity("3", "Init7"), withIdentity("2", "Salt"), withIdentity("1", "Salt")];
+
+        assert.equal(previousConnection(tests, 0).created, "2");
+    });
+
+    // Newest first, so it searches forwards through the array to go backwards
+    // through time.
+    it("skips over tests that carry no identity", () => {
+        const tests = [withIdentity("4", "Init7"), withoutIdentity("3"), withoutIdentity("2"),
+            withIdentity("1", "Salt")];
+
+        assert.equal(previousConnection(tests, 0).created, "1");
+    });
+
+    it("is null when nothing earlier carries one", () => {
+        const tests = [withIdentity("2", "Salt"), withoutIdentity("1")];
+
+        assert.equal(previousConnection(tests, 0), null);
+    });
+
+    it("is null for the oldest test in the list", () => {
+        assert.equal(previousConnection([withIdentity("1", "Salt")], 0), null);
+    });
+
+    it("does not reach past the end or throw on a missing list", () => {
+        assert.equal(previousConnection([], 0), null);
+        assert.equal(previousConnection(undefined, 0), null);
+    });
+});
 
 /**
  * A single grade says what the line did on the last test; the trend is where a

@@ -380,3 +380,22 @@ $metric-line-height: 1.2
   font-size: 1.05rem
   letter-spacing: 0.02em
   margin-right: 0.4rem
+
+// An address is a string of digits nobody reads as prose - tabular figures stop
+// it jittering between rows, and the smaller size keeps it from dominating.
+.detail-address
+  font-variant-numeric: tabular-nums
+  font-size: 0.85em
+
+// Marks the test where the connection itself moved, which is usually why a run
+// of results steps.
+.detail-changed
+  margin-left: 0.5rem
+  padding: 0.1rem 0.4rem
+  border-radius: 0.35rem
+  background-color: rgba(139, 92, 246, 0.15)
+  color: $accent-secondary
+  font-size: 0.75rem
+  font-weight: 600
+  text-transform: uppercase
+  letter-spacing: 0.03em

@@ -44,6 +44,50 @@ const WORST_GRADE = "F";
 const INCREASE_DECIMALS = 2;
 
 /**
+ * What changed about the connection itself between two tests, or null if
+ * nothing did.
+ *
+ * A step in the numbers reads as the line degrading, and often it is not: a
+ * reassigned lease, a failover, a swapped router. Both values are absent on
+ * providers that do not report them and on rows recorded before they were
+ * captured - and an absent value is not a change, it is a silence.
+ */
+/**
+ * The nearest earlier test that says which connection it ran on.
+ *
+ * Not simply the row before: that one may carry no identity at all - every test
+ * recorded before these columns existed, and every test from a provider that
+ * does not report them - and comparing against it would report "no change"
+ * across exactly the gap a change hides in.
+ *
+ * The list is newest first, so earlier in time is later in the array.
+ */
+export function previousConnection(tests, index) {
+    if (!Array.isArray(tests)) return null;
+
+    for (let i = index + 1; i < tests.length; i++)
+        if (tests[i]?.isp || tests[i]?.externalIp) return tests[i];
+
+    return null;
+}
+
+export function connectionChange(test, previous) {
+    if (!test || !previous) return null;
+
+    const differs = (key) => {
+        const now = test[key];
+        const before = previous[key];
+        if (!now || !before) return false;
+
+        return now !== before;
+    };
+
+    const change = {isp: differs("isp"), externalIp: differs("externalIp")};
+
+    return change.isp || change.externalIp ? change : null;
+}
+
+/**
  * The colour a grade is shown in. Kept beside the thresholds so the two cannot
  * drift into disagreeing about what counts as a good line.
  */

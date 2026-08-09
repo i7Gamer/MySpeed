@@ -22,6 +22,7 @@ describe("migrations", () => {
         assert.ok(names.includes("0001-initial-setup.js"));
         assert.ok(names.includes("0004-index-speedtests-created.js"));
         assert.ok(names.includes("0005-add-quality-columns.js"));
+        assert.ok(names.includes("0006-add-connection-identity-columns.js"));
     });
 
     it("creates the columns the model expects", async () => {
@@ -29,7 +30,7 @@ describe("migrations", () => {
 
         for (const column of ["ping", "jitter", "download", "upload", "time", "type", "created", "error",
             "serverId", "serverName", "serverHost", "resultId",
-            "packetLoss", "downloadLatency", "uploadLatency"])
+            "packetLoss", "downloadLatency", "uploadLatency", "isp", "externalIp"])
             assert.ok(columns[column], `speedtests.${column} is missing`);
     });
 

@@ -3,7 +3,7 @@ import {createPortal} from "react-dom";
 import {ConfigContext} from "@/common/contexts/Config";
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
 import Speedtest from "../Speedtest";
-import {getIconBySpeed} from "@/common/utils/TestUtil";
+import {getIconBySpeed, previousConnection} from "@/common/utils/TestUtil";
 import "./styles.sass";
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
@@ -167,11 +167,17 @@ const TestArea = () => {
                             packetLoss={test.packetLoss}
                             downloadLatency={test.downloadLatency}
                             uploadLatency={test.uploadLatency}
+                            isp={test.isp}
+                            externalIp={test.externalIp}
                             created={test.created}
                             // Newest first, so the next entry is the
                             // chronologically earlier test - what the detail
                             // view compares against.
                             previous={speedtests[index + 1]}
+                            // Not the row before: that one may carry no
+                            // identity, and comparing against it would report
+                            // no change across the very gap one hides in.
+                            previousConnection={previousConnection(speedtests, index)}
                             id={test.id}
                         />
                     );

@@ -43,7 +43,7 @@ describe("GET /api/speedtests/export", () => {
         assert.match(headers.get("content-type"), /text\/csv/);
         assert.equal(text.split("\n")[0],
             "id,ping,jitter,download,upload,time,type,created,serverName,serverHost," +
-            "packetLoss,downloadLatency,uploadLatency,error");
+            "packetLoss,downloadLatency,uploadLatency,isp,externalIp,error");
     });
 
     /**

@@ -31,10 +31,12 @@ const isImportableNumber = (value) =>
 export const create = async ({
     ping, download, upload, time, serverId, type = "auto",
     resultId = null, error = null, jitter = null, serverName = null, serverHost = null,
-    packetLoss = null, downloadLatency = null, uploadLatency = null
+    packetLoss = null, downloadLatency = null, uploadLatency = null,
+    isp = null, externalIp = null
 }) => {
     return (await tests.create({ping, jitter, download, upload, error, serverId, serverName, serverHost, type,
-        resultId, time, packetLoss, downloadLatency, uploadLatency, created: new Date().toISOString()})).id;
+        resultId, time, packetLoss, downloadLatency, uploadLatency, isp, externalIp,
+        created: new Date().toISOString()})).id;
 }
 
 export const getOne = async (id) => {

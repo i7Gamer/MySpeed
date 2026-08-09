@@ -16,7 +16,7 @@ import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {convertSpeed, formatDateTime, formatShortTime, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {useAlert} from "@/common/contexts/Alert";
-import {bufferbloat, bufferbloatColour} from "@/common/utils/TestUtil";
+import {bufferbloat, bufferbloatColour, connectionChange} from "@/common/utils/TestUtil";
 import {downloadInfo, jitterInfo, pingInfo, uploadInfo} from "@/pages/Home/components/Speedtest/utils/dialogs";
 
 const RESULT_URL = "https://www.speedtest.net/result/c/";
@@ -222,6 +222,10 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
         ping: props.ping, downloadLatency: props.downloadLatency, uploadLatency: props.uploadLatency
     });
 
+    // Against the nearest earlier test that carries an identity, not simply the
+    // row before - see previousConnection.
+    const change = connectionChange(props, props.previousConnection);
+
     const details = (
         <div className="speedtest-details">
             {props.error ? (
@@ -290,6 +294,25 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                         {isMeasured(props.packetLoss) && (
                             <DetailFact label={t("test.details.packet_loss")}>
                                 {props.packetLoss}%
+                            </DetailFact>
+                        )}
+
+                        {props.isp && (
+                            <DetailFact label={t("test.details.isp")}>
+                                {props.isp}
+                                {/* A real space: inline spans create no word
+                                    break, so this read "Salt MobileCHANGED". */}
+                                {change?.isp && <> <span className="detail-changed">{t("test.details.changed")}</span></>}
+                            </DetailFact>
+                        )}
+
+                        {/* The address the test went out from. A change here is
+                            usually why a run of results steps: a reassigned
+                            lease, a failover, a swapped router. */}
+                        {props.externalIp && (
+                            <DetailFact label={t("test.details.external_ip")}>
+                                <span className="detail-address">{props.externalIp}</span>
+                                {change?.externalIp && <> <span className="detail-changed">{t("test.details.changed")}</span></>}
                             </DetailFact>
                         )}
 

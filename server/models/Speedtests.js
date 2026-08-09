@@ -57,6 +57,17 @@ export default db.define("speedtests", {
         allowNull: true,
         defaultValue: null
     },
+    // Who the connection was, as the provider saw it. Only Ookla reports these.
+    isp: {
+        type: Sequelize.STRING,
+        allowNull: true,
+        defaultValue: null
+    },
+    externalIp: {
+        type: Sequelize.STRING,
+        allowNull: true,
+        defaultValue: null
+    },
     error: {
         type: Sequelize.STRING,
         allowNull: true

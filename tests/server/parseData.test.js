@@ -97,6 +97,40 @@ describe("parseOokla", () => {
             assert.equal(parsed.uploadLatency, null);
         });
     });
+
+    /**
+     * Who the connection was, as the provider saw it. A changed address or a
+     * changed ISP explains a step in the numbers that otherwise reads as the
+     * line degrading - a reassigned lease, a failover, a swapped router.
+     */
+    describe("the connection's identity", () => {
+        const withIdentity = {
+            ...ooklaResult,
+            isp: "Salt Mobile",
+            interface: {internalIp: "192.168.1.24", externalIp: "2a04:ee41:2:4256::1", isVpn: false}
+        };
+
+        it("records the provider and the address the test went out from", () => {
+            const parsed = parseOokla(withIdentity);
+
+            assert.equal(parsed.isp, "Salt Mobile");
+            assert.equal(parsed.externalIp, "2a04:ee41:2:4256::1");
+        });
+
+        it("nulls them when the result does not carry them", () => {
+            const parsed = parseOokla(ooklaResult);
+
+            assert.equal(parsed.isp, null);
+            assert.equal(parsed.externalIp, null);
+        });
+
+        it("nulls the address when the interface is reported without one", () => {
+            const parsed = parseOokla({...withIdentity, interface: {internalIp: "192.168.1.24"}});
+
+            assert.equal(parsed.externalIp, null);
+            assert.equal(parsed.isp, "Salt Mobile");
+        });
+    });
 });
 
 describe("parseLibre", () => {
@@ -124,6 +158,8 @@ describe("parseLibre", () => {
         assert.equal(parsed.packetLoss, null);
         assert.equal(parsed.downloadLatency, null);
         assert.equal(parsed.uploadLatency, null);
+        assert.equal(parsed.isp, null);
+        assert.equal(parsed.externalIp, null);
     });
 
     it("converts the elapsed milliseconds to seconds and has no result id", () => {
@@ -214,7 +250,8 @@ describe("parseCloudflare", () => {
         assert.deepEqual(parseCloudflare({}), {
             ping: 0, jitter: null, download: 0, upload: 0, time: 0,
             resultId: null, serverName: null, serverHost: null,
-            packetLoss: null, downloadLatency: null, uploadLatency: null
+            packetLoss: null, downloadLatency: null, uploadLatency: null,
+            isp: null, externalIp: null
         });
     });
 

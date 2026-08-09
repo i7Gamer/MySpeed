@@ -7,7 +7,8 @@ export const roundSpeed = (bandwidth) => {
 // Neither librespeed nor cloudflare reports these, and a provider that did not
 // measure something must say so: left undefined they would store as NULL and
 // read as a flawless line rather than as an unmeasured one.
-const NO_QUALITY_FIGURES = {packetLoss: null, downloadLatency: null, uploadLatency: null};
+const NO_QUALITY_FIGURES = {packetLoss: null, downloadLatency: null, uploadLatency: null,
+    isp: null, externalIp: null};
 
 const round = (value) => value === null || value === undefined || !Number.isFinite(Number(value))
     ? null
@@ -42,7 +43,12 @@ export const parseOokla = (test) => {
     return {ping, jitter, download, upload, time, resultId: test.result?.id, serverName, serverHost,
         packetLoss: round(test.packetLoss),
         downloadLatency: loadedLatency(test.download),
-        uploadLatency: loadedLatency(test.upload)};
+        uploadLatency: loadedLatency(test.upload),
+        // Who the connection was, as the provider saw it: a changed address or
+        // provider explains a step in the numbers that otherwise reads as the
+        // line itself degrading.
+        isp: test.isp ?? null,
+        externalIp: test.interface?.externalIp ?? null};
 };
 
 export const parseLibre = (test) => ({...test, ...NO_QUALITY_FIGURES, ping: Math.round(test.ping),
