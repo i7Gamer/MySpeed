@@ -1,6 +1,59 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { failureRate, getIconBySpeed, isFailedTest } from "../../client/src/common/utils/TestUtil.js";
+import { bufferbloat, failureRate, getIconBySpeed, isFailedTest } from "../../client/src/common/utils/TestUtil.js";
+
+/**
+ * Bufferbloat is how much latency the line gains once it is saturated. It is the
+ * figure that explains a call breaking up while something uploads, and it is
+ * invisible in the three numbers MySpeed has always shown: a connection can be
+ * fast in both directions and still unusable during a transfer.
+ *
+ * Graded on the worse of the two directions, because that is the one the reader
+ * will notice.
+ */
+describe("bufferbloat", () => {
+    const test = (ping, down, up) => bufferbloat({ping, downloadLatency: down, uploadLatency: up});
+
+    it("is the latency the line gains under load", () => {
+        assert.equal(test(4, 7.5, 20).increase, 16);
+    });
+
+    it("grades on the worse direction, not the average", () => {
+        // Clean downstream, badly buffered upstream - the usual asymmetry, and
+        // an average would hide it.
+        assert.equal(test(4, 5, 44).increase, 40);
+        assert.equal(test(4, 5, 44).grade, "B");
+    });
+
+    it("grades an unbuffered line at the top", () => {
+        assert.equal(test(4, 5, 6).grade, "A+");
+    });
+
+    it("walks down the scale as the line gets worse", () => {
+        assert.equal(test(4, 4, 20).grade, "A");
+        assert.equal(test(4, 4, 50).grade, "B");
+        assert.equal(test(4, 4, 150).grade, "C");
+        assert.equal(test(4, 4, 300).grade, "D");
+        assert.equal(test(4, 4, 900).grade, "F");
+    });
+
+    it("never reports a negative increase", () => {
+        // Latency under load below the idle ping is noise, not an improvement.
+        assert.equal(test(20, 5, 6).increase, 0);
+        assert.equal(test(20, 5, 6).grade, "A+");
+    });
+
+    it("says nothing when the test did not measure it", () => {
+        assert.equal(test(4, null, null), null);
+        assert.equal(test(4, 7.5, null), null);
+        assert.equal(test(null, 7.5, 20), null);
+        assert.equal(bufferbloat(undefined), null);
+    });
+
+    it("says nothing for a failed test rather than grading its placeholders", () => {
+        assert.equal(bufferbloat({ping: -1, downloadLatency: -1, uploadLatency: -1}), null);
+    });
+});
 
 /**
  * The failed count has always been on the statistics page, but a bare number

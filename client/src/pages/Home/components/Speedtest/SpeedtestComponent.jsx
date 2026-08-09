@@ -16,6 +16,7 @@ import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {convertSpeed, formatDateTime, formatShortTime, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {useAlert} from "@/common/contexts/Alert";
+import {bufferbloat, bufferbloatColour} from "@/common/utils/TestUtil";
 import {downloadInfo, jitterInfo, pingInfo, uploadInfo} from "@/pages/Home/components/Speedtest/utils/dialogs";
 
 const RESULT_URL = "https://www.speedtest.net/result/c/";
@@ -201,6 +202,10 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
     // provider never reported one.
     const isMeasured = (value) => value !== null && value !== undefined;
 
+    const bloat = bufferbloat({
+        ping: props.ping, downloadLatency: props.downloadLatency, uploadLatency: props.uploadLatency
+    });
+
     const details = (
         <div className="speedtest-details">
             {props.error ? (
@@ -247,6 +252,19 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                             <DetailFact label={t("test.details.loaded_latency")}>
                                 {t("test.details.loaded_latency_value",
                                     {down: props.downloadLatency, up: props.uploadLatency})}
+                            </DetailFact>
+                        )}
+
+                        {/* The grade is the readable form of the two figures
+                            above: how much latency the line gains once it is
+                            saturated, which is what a call breaking up during
+                            an upload actually is. */}
+                        {bloat && (
+                            <DetailFact label={t("test.details.bufferbloat")}>
+                                <span className={"bufferbloat-grade icon-" + bufferbloatColour(bloat.grade)}>
+                                    {bloat.grade}
+                                </span>
+                                {t("test.details.bufferbloat_value", {increase: bloat.increase})}
                             </DetailFact>
                         )}
 

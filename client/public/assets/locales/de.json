@@ -230,7 +230,8 @@
     "before": "vor",
     "quality": "Unter Last",
     "loaded_latency": "{{down}} / {{up}} ms Latenz",
-    "packet_loss": "{{percent}}% Verlust"
+    "packet_loss": "{{percent}}% Verlust",
+    "bufferbloat": "Bufferbloat: +{{increase}} ms unter Last"
   },
   "info": {
     "recommendations_error": "Du musst mindestens 10 Tests machen, damit ein Durchschnitt ermittelt werden kann. Ob die Tests manuell oder automatisch durchgeführt wurden ist egal.",
@@ -311,7 +312,9 @@
       "open_result": "Auf speedtest.net ansehen",
       "loaded_latency": "Latenz unter Last",
       "loaded_latency_value": "{{down}} ms runter / {{up}} ms hoch",
-      "packet_loss": "Paketverlust"
+      "packet_loss": "Paketverlust",
+      "bufferbloat": "Bufferbloat",
+      "bufferbloat_value": "+{{increase}} ms unter Last"
     }
   },
   "errors": {

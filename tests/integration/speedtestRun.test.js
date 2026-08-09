@@ -86,6 +86,28 @@ describe("a speedtest that cannot start", () => {
         assert.equal(body.running, false);
     });
 
+    /**
+     * Regression: the CLI's watchdog was spawn's own `timeout` option, and when
+     * a spawn fails outright node emits 'error' within milliseconds but never
+     * clears that timer. Every failed run therefore left a three-minute timer
+     * holding the event loop open - which is invisible in production, where the
+     * server runs forever anyway, but held every test process alive for the
+     * full 180 seconds after its last assertion. This file took 181 seconds to
+     * run 884ms of tests, and the whole suite ran no faster than its timeout.
+     */
+    it("leaves no timer running once the failure is recorded", async () => {
+        const timeouts = () => process.getActiveResourcesInfo().filter((r) => r === "Timeout").length;
+
+        await api(server.baseUrl, "/speedtests/run", {method: "POST"});
+        await waitForTest();
+
+        // Settle the tail of the request itself before counting.
+        await new Promise((resolve) => setTimeout(resolve, 250));
+
+        assert.ok(timeouts() <= 1,
+            `${timeouts()} timers still pending - a failed run is holding its watchdog open`);
+    });
+
     // The lock is cleared in a finally rather than on the paths that were
     // thought of, so a second failure is still able to start and be recorded.
     it("still accepts a run after an earlier one failed", async () => {

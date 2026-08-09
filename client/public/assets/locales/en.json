@@ -230,7 +230,8 @@
     "before": "before",
     "quality": "Under load",
     "loaded_latency": "{{down}} / {{up}} ms latency",
-    "packet_loss": "{{percent}}% loss"
+    "packet_loss": "{{percent}}% loss",
+    "bufferbloat": "Bufferbloat: +{{increase}} ms under load"
   },
   "info": {
     "recommendations_error": "You have to do at least 10 tests to get an average. It doesn't matter if the tests were done manually or automatically.",
@@ -311,7 +312,9 @@
       "open_result": "View on speedtest.net",
       "loaded_latency": "Latency under load",
       "loaded_latency_value": "{{down}} ms down / {{up}} ms up",
-      "packet_loss": "Packet loss"
+      "packet_loss": "Packet loss",
+      "bufferbloat": "Bufferbloat",
+      "bufferbloat_value": "+{{increase}} ms under load"
     }
   },
   "errors": {

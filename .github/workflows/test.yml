@@ -52,5 +52,8 @@ jobs:
           bun run generate-migrations
           bun run generate-integrations
 
+      # test:all rather than test: `npm test` is the fast tier for the edit-run
+      # loop, and running only that here would publish without the integration
+      # suite ever having executed.
       - name: Run tests
-        run: npm test
+        run: npm run test:all

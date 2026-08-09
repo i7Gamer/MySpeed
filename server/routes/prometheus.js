@@ -77,10 +77,31 @@ const authorizeMetrics = async (req, res) => {
 
 const speedLabels = ['server_id', 'server_name', 'server_host'];
 
+// A packet loss of zero is a measurement; only null and undefined mean the
+// provider never reported one.
+const isMeasured = (value) => value !== null && value !== undefined;
+
 const pingGauge = new promClient.Gauge({name: 'myspeed_ping', help: 'Current ping in ms', labelNames: speedLabels});
 const jitterGauge = new promClient.Gauge({name: 'myspeed_jitter', help: 'Current jitter in ms', labelNames: speedLabels});
 const downloadGauge = new promClient.Gauge({name: 'myspeed_download', help: 'Current download speed in Mbps', labelNames: speedLabels});
 const uploadGauge = new promClient.Gauge({name: 'myspeed_upload', help: 'Current upload speed in Mbps', labelNames: speedLabels});
+const packetLossGauge = new promClient.Gauge({
+    name: 'myspeed_packet_loss',
+    help: 'Packet loss of the latest test in percent',
+    labelNames: speedLabels
+});
+// Exported separately per direction because they differ: a line can be clean
+// downstream and badly buffered upstream, which is the usual asymmetry.
+const downloadLatencyGauge = new promClient.Gauge({
+    name: 'myspeed_download_latency',
+    help: 'Latency measured while the download was saturated, in ms',
+    labelNames: speedLabels
+});
+const uploadLatencyGauge = new promClient.Gauge({
+    name: 'myspeed_upload_latency',
+    help: 'Latency measured while the upload was saturated, in ms',
+    labelNames: speedLabels
+});
 const currentServerGauge = new promClient.Gauge({name: 'myspeed_server', help: 'Current server ID'});
 const timeGauge = new promClient.Gauge({name: 'myspeed_time', help: 'Time of the test', labelNames: speedLabels});
 const serverInfoGauge = new promClient.Gauge({
@@ -131,6 +152,9 @@ app.get('/metrics', async (req, res) => {
     uploadGauge.reset();
     timeGauge.reset();
     serverInfoGauge.reset();
+    packetLossGauge.reset();
+    downloadLatencyGauge.reset();
+    uploadLatencyGauge.reset();
 
     pingGauge.set(labels, latest.ping);
     if (latest.jitter !== null && latest.jitter !== undefined)
@@ -139,6 +163,13 @@ app.get('/metrics', async (req, res) => {
     uploadGauge.set(labels, latest.upload);
     currentServerGauge.set(latest.serverId);
     serverInfoGauge.set(labels, 1);
+
+    // Left unset rather than zeroed when the provider did not measure them: an
+    // absent series is a gap in a graph, while a zero is a claim that the line
+    // was flawless. Only Ookla reports any of these.
+    if (isMeasured(latest.packetLoss)) packetLossGauge.set(labels, latest.packetLoss);
+    if (isMeasured(latest.downloadLatency)) downloadLatencyGauge.set(labels, latest.downloadLatency);
+    if (isMeasured(latest.uploadLatency)) uploadLatencyGauge.set(labels, latest.uploadLatency);
 
     if (latest.time)
         timeGauge.set(labels, latest.time);

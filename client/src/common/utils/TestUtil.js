@@ -17,6 +17,61 @@ const RATE_DECIMALS = 1;
 const PERCENT = 100;
 
 /**
+ * How much latency the line gains once it is saturated, and what that is worth
+ * as a grade.
+ *
+ * This is the figure that explains a call breaking up while something uploads,
+ * and it is invisible in the three numbers MySpeed has always shown - a
+ * connection can be fast both ways and still unusable during a transfer.
+ *
+ * Graded on the worse of the two directions rather than an average: a line that
+ * is clean downstream and badly buffered upstream is a badly buffered line, and
+ * averaging the two hides exactly the asymmetry that is most common.
+ *
+ * The thresholds are the ones the established bufferbloat tests use, in
+ * milliseconds of added latency.
+ */
+const BUFFERBLOAT_GRADES = [
+    {upTo: 5, grade: "A+"},
+    {upTo: 30, grade: "A"},
+    {upTo: 60, grade: "B"},
+    {upTo: 200, grade: "C"},
+    {upTo: 400, grade: "D"}
+];
+
+const WORST_GRADE = "F";
+
+const INCREASE_DECIMALS = 2;
+
+/**
+ * The colour a grade is shown in. Kept beside the thresholds so the two cannot
+ * drift into disagreeing about what counts as a good line.
+ */
+export function bufferbloatColour(grade) {
+    if (grade === "A+" || grade === "A") return "green";
+    if (grade === "B" || grade === "C") return "orange";
+
+    return "red";
+}
+
+export function bufferbloat(test) {
+    if (!test || isFailedTest(test)) return null;
+
+    const {ping, downloadLatency, uploadLatency} = test;
+
+    // Negative rejected as well as absent: a failed test stores -1 in its
+    // columns, and a latency of minus one millisecond is not a reading to grade.
+    for (const value of [ping, downloadLatency, uploadLatency])
+        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+
+    // Under the idle ping is measurement noise, not an improvement.
+    const increase = Math.max(0, parseFloat((Math.max(downloadLatency, uploadLatency) - ping).toFixed(INCREASE_DECIMALS)));
+    const grade = BUFFERBLOAT_GRADES.find((entry) => increase < entry.upTo)?.grade ?? WORST_GRADE;
+
+    return {increase, grade};
+}
+
+/**
  * The share of tests in a range that failed, as a percentage.
  *
  * Null when nothing was measured - 0/0 is NaN, and "no tests" must not be

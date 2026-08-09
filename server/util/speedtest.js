@@ -6,7 +6,8 @@ import * as config from '../controller/config.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const CLI_TIMEOUT = 180000;
+const MS_PER_SECOND = 1000;
+const CLI_TIMEOUT = 180 * MS_PER_SECOND;
 
 export default async (mode, serverId, serverUrl, onProgress) => {
     const binaryPath = mode === "ookla" ? './bin/speedtest' + (process.platform === "win32" ? ".exe" : "")
@@ -69,8 +70,21 @@ export default async (mode, serverId, serverUrl, onProgress) => {
 
     // A CLI that accepts the connection and then stalls would hold the run lock
     // for the lifetime of the process, and no scheduled test would ever run
-    // again. spawn's own timeout sends SIGTERM and surfaces as an 'error'.
-    const testProcess = spawn(binaryPath, args, {windowsHide: true, timeout: CLI_TIMEOUT});
+    // again.
+    //
+    // The timer is kept here rather than passed to spawn as its `timeout`
+    // option: when a spawn fails outright - a missing binary, which is exactly
+    // what a fresh install before the download has finished looks like - node
+    // emits 'error' and 'close' within milliseconds but never clears that timer,
+    // and the whole process then stays alive until it fires. Owning it means it
+    // is cleared however the run ends.
+    const testProcess = spawn(binaryPath, args, {windowsHide: true});
+
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+        timedOut = true;
+        testProcess.kill();
+    }, CLI_TIMEOUT);
 
     testProcess.stderr.on('data', (buffer) => {
         // Accumulated, not overwritten: stderr arrives in arbitrary chunks, so
@@ -102,12 +116,24 @@ export default async (mode, serverId, serverUrl, onProgress) => {
         // Rejected as-is: wrapping it in {message: e} gave the wrapper a
         // `message` key holding an Error, which the caller then stored verbatim
         // in a string column.
-        testProcess.on('error', reject);
-        testProcess.on('exit', () => {
+        testProcess.on('error', (error) => {
+            clearTimeout(timeout);
+            reject(error);
+        });
+
+        // 'close' rather than 'exit': the process can exit while its pipes still
+        // hold output, and parsing then would read a truncated result.
+        testProcess.on('close', () => {
+            clearTimeout(timeout);
             result = parseCliOutput(mode, stdout, stderr);
             resolve();
         });
     });
+
+    // A killed run has whatever output it managed before the signal, which is
+    // not a measurement - it has to say it timed out rather than report half a
+    // test as a result.
+    if (timedOut) throw new Error(`The speedtest did not finish within ${CLI_TIMEOUT / MS_PER_SECOND} seconds`);
 
     if (result.error) throw new Error(result.error);
     return {...result, elapsed: new Date().getTime() - startTime};

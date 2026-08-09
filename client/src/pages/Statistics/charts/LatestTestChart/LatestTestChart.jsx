@@ -2,7 +2,7 @@ import StatisticContainer from "@/pages/Statistics/components/StatisticContainer
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faArrowDown, faArrowUp, faGaugeHigh, faPingPongPaddleBall, faWaveSquare} from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
-import {getIconBySpeed} from "@/common/utils/TestUtil";
+import {bufferbloat, bufferbloatColour, getIconBySpeed} from "@/common/utils/TestUtil";
 import {useContext} from "react";
 import {ConfigContext} from "@/common/contexts/Config";
 import {StatusContext} from "@/common/contexts/Status";
@@ -26,6 +26,7 @@ export const LatestTestChart = (props) => {
     // and undefined mean the provider never reported it.
     const isMeasured = (value) => value !== null && value !== undefined;
     const hasQuality = isMeasured(props.test.packetLoss) || isMeasured(props.test.downloadLatency);
+    const bloat = bufferbloat(props.test);
 
     return (
         <StatisticContainer title={t("latest.latest")} onClick={props.onClick} running={status.running} expanded={props.expanded}>
@@ -82,7 +83,14 @@ export const LatestTestChart = (props) => {
                                 )}
                             </p>
                         </div>
-                        <FontAwesomeIcon icon={faGaugeHigh} className="icon-blue"/>
+                        {/* The grade takes the icon's place when there is one:
+                            it is the readable form of the same measurement. */}
+                        {bloat
+                            ? <span className={"bufferbloat-grade icon-" + bufferbloatColour(bloat.grade)}
+                                    title={t("latest.bufferbloat", {increase: bloat.increase})}>
+                                {bloat.grade}
+                              </span>
+                            : <FontAwesomeIcon icon={faGaugeHigh} className="icon-blue"/>}
                     </div>
                 )}
             </div>

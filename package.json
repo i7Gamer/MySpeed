@@ -7,14 +7,16 @@
     "@resvg/resvg-js"
   ],
   "scripts": {
-    "test": "node --import ./tests/helpers/register.mjs --test \"tests/**/*.test.js\"",
+    "test": "node --import ./tests/helpers/register.mjs --test \"tests/server/**/*.test.js\" \"tests/client/**/*.test.js\"",
+    "test:integration": "node --import ./tests/helpers/register.mjs --test \"tests/integration/**/*.test.js\"",
+    "test:all": "node --import ./tests/helpers/register.mjs --test \"tests/**/*.test.js\"",
     "client": "cd client && bun run dev",
     "server": "bun run --watch server/index.js",
     "build": "bun run generate-migrations && bun run generate-integrations && cd client && bun run build",
     "build:binary": "bun run build && rm -rf build && mv client/build . && bun run generate-client-embed && bun build --compile --compile-autoload-package-json --external pg-hstore --external pg server/index.js --outfile MySpeed",
-    "generate-client-embed": "bun run scripts/generate-client-embed.js",
-    "generate-migrations": "bun run scripts/generate-migrations.js",
-    "generate-integrations": "bun run scripts/generate-integrations.js",
+    "generate-client-embed": "node scripts/generate-client-embed.js",
+    "generate-migrations": "node scripts/generate-migrations.js",
+    "generate-integrations": "node scripts/generate-integrations.js",
     "dev": "bun run generate-migrations && bun run generate-integrations && bun run server & bun run client"
   },
   "dependencies": {
