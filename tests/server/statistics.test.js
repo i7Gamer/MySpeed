@@ -371,3 +371,118 @@ describe("buildStatistics", () => {
         });
     });
 });
+
+/**
+ * The consistency panel reports every other figure over the whole selected
+ * range, and reported bufferbloat as the grade of the single newest test -
+ * from a request that carried no date range at all. Beside three range-wide
+ * aggregates that reads as a claim it was not making, and changing the range
+ * left it untouched.
+ *
+ * Averaged over the tests that measured it, exactly as packet loss is. Only
+ * Ookla reports loaded latency, so the rows that could not measure it must not
+ * drag the mean, and a range where nothing measured any has no figure at all -
+ * absence is not a flawless line.
+ */
+describe("loaded latency over the range", () => {
+    const loaded = (iso, ping, down, up) =>
+        at(iso, {ping, downloadLatency: down, uploadLatency: up});
+
+    it("averages the added latency across the range", () => {
+        const stats = buildStatistics([
+            // worse direction 50, idle 10 -> 40 added
+            loaded("2026-08-07T01:00:00.000Z", 10, 50, 20),
+            // worse direction 30, idle 10 -> 20 added
+            loaded("2026-08-07T02:00:00.000Z", 10, 12, 30)
+        ], DAY);
+
+        assert.equal(stats.consistency.loadedLatency.increase, 30);
+        assert.equal(stats.consistency.loadedLatency.tests, 2);
+    });
+
+    // The grade takes the worse direction, so the average has to as well - a
+    // line clean downstream and buffered upstream is a buffered line.
+    it("takes the worse direction of each test, not the two averaged together", () => {
+        const stats = buildStatistics([
+            loaded("2026-08-07T01:00:00.000Z", 10, 110, 20),
+            loaded("2026-08-07T02:00:00.000Z", 10, 20, 110)
+        ], DAY);
+
+        assert.equal(stats.consistency.loadedLatency.increase, 100);
+    });
+
+    it("ignores tests that measured no loaded latency", () => {
+        const stats = buildStatistics([
+            loaded("2026-08-07T01:00:00.000Z", 10, 50, 20),
+            at("2026-08-07T02:00:00.000Z"),
+            at("2026-08-07T03:00:00.000Z", {downloadLatency: 40, uploadLatency: null})
+        ], DAY);
+
+        assert.equal(stats.consistency.loadedLatency.increase, 40);
+        assert.equal(stats.consistency.loadedLatency.tests, 1);
+    });
+
+    it("ignores failed tests and their placeholders", () => {
+        const stats = buildStatistics([
+            loaded("2026-08-07T01:00:00.000Z", 10, 50, 20),
+            at("2026-08-07T02:00:00.000Z", {ping: -1, downloadLatency: -1, uploadLatency: -1,
+                error: "Timeout"})
+        ], DAY);
+
+        assert.equal(stats.consistency.loadedLatency.increase, 40);
+        assert.equal(stats.consistency.loadedLatency.tests, 1);
+    });
+
+    it("has no figure when nothing in the range measured it", () => {
+        const stats = buildStatistics([at("2026-08-07T01:00:00.000Z")], DAY);
+
+        assert.equal(stats.consistency.loadedLatency.increase, null);
+        assert.equal(stats.consistency.loadedLatency.tests, 0);
+    });
+
+    it("has no figure for an empty range", () => {
+        const stats = buildStatistics([], DAY);
+
+        assert.equal(stats.consistency.loadedLatency.increase, null);
+    });
+
+    // Under the idle ping is measurement noise, not an improvement, so it
+    // floors at zero rather than pulling the average down.
+    it("does not let a negative reading pull the average below zero", () => {
+        const stats = buildStatistics([
+            loaded("2026-08-07T01:00:00.000Z", 50, 10, 10),
+            loaded("2026-08-07T02:00:00.000Z", 10, 30, 10)
+        ], DAY);
+
+        assert.equal(stats.consistency.loadedLatency.increase, 10);
+    });
+
+    describe("the recent gradings beneath it", () => {
+        const many = Array.from({length: 14}, (_, index) =>
+            loaded(`2026-08-07T${String(index + 1).padStart(2, "0")}:00:00.000Z`, 10, 20 + index, 15));
+
+        it("reports the newest few, oldest first", () => {
+            const {trend} = buildStatistics(many, DAY).consistency.loadedLatency;
+
+            assert.equal(trend.length, 10);
+            assert.ok(trend[0].created < trend.at(-1).created, "time has to read left to right");
+            // The last of the fourteen: 20 + 13 worse direction, idle 10.
+            assert.equal(trend.at(-1).increase, 23);
+        });
+
+        it("carries only the tests that measured it", () => {
+            const {trend} = buildStatistics([
+                loaded("2026-08-07T01:00:00.000Z", 10, 50, 20),
+                at("2026-08-07T02:00:00.000Z")
+            ], DAY).consistency.loadedLatency;
+
+            assert.equal(trend.length, 1);
+            assert.equal(trend[0].increase, 40);
+        });
+
+        it("is empty when nothing measured it", () => {
+            assert.deepEqual(buildStatistics([at("2026-08-07T01:00:00.000Z")], DAY)
+                .consistency.loadedLatency.trend, []);
+        });
+    });
+});

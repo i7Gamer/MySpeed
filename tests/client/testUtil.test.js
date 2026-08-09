@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    bufferbloat, bufferbloatTrend, connectionChange, failureRate, getIconBySpeed, isFailedTest,
+    bufferbloat, bufferbloatTrend, connectionChange, failureRate, getIconBySpeed, gradeForIncrease, isFailedTest,
     previousConnection, TREND_LENGTH
 } from "../../client/src/common/utils/TestUtil.js";
 
@@ -332,5 +332,42 @@ describe("isFailedTest", () => {
     it("is false when there is no test at all", () => {
         assert.equal(isFailedTest(undefined), false);
         assert.equal(isFailedTest(null), false);
+    });
+});
+
+/**
+ * The grade for an increase that did not come from a single test.
+ *
+ * The consistency panel reports the average added latency across a whole range,
+ * and grading it means applying the same thresholds a per-test grade uses -
+ * from one table, so an averaged B and a per-test B mean the same thing.
+ */
+describe("gradeForIncrease", () => {
+    it("grades each band at its own threshold", () => {
+        assert.equal(gradeForIncrease(0), "A+");
+        assert.equal(gradeForIncrease(4.9), "A+");
+        assert.equal(gradeForIncrease(5), "A");
+        assert.equal(gradeForIncrease(29.9), "A");
+        assert.equal(gradeForIncrease(30), "B");
+        assert.equal(gradeForIncrease(60), "C");
+        assert.equal(gradeForIncrease(200), "D");
+        assert.equal(gradeForIncrease(400), "F");
+        assert.equal(gradeForIncrease(10000), "F");
+    });
+
+    // Absent is not zero: a range in which nothing measured loaded latency has
+    // no grade to give, and "A+" would be the most flattering possible lie.
+    it("has no grade for anything that is not a measurement", () => {
+        for (const value of [null, undefined, NaN, Infinity, -1, "30", {}])
+            assert.equal(gradeForIncrease(value), null, `${String(value)} must not grade`);
+    });
+
+    // The per-test grade has to come from the same table, or the headline and
+    // the dots beneath it could disagree about what a B is.
+    it("agrees with the grade a single test is given", () => {
+        const test = {ping: 10, downloadLatency: 50, uploadLatency: 22, error: null};
+        const {increase, grade} = bufferbloat(test);
+
+        assert.equal(gradeForIncrease(increase), grade);
     });
 });

@@ -102,6 +102,56 @@ const buildHourlyAverages = (entries, offsetMinutes) => {
     }));
 };
 
+// How many recent gradings travel with the average, for the trend beneath it.
+const TREND_POINTS = 10;
+
+// Two decimals, matching the per-test figure the client computes.
+const INCREASE_DECIMALS = 2;
+
+/**
+ * The latency one test gained once the line was saturated.
+ *
+ * Deliberately the same arithmetic as bufferbloat() in the client's TestUtil:
+ * the worse of the two directions, as the grade takes it, minus the idle ping,
+ * floored at zero because under the idle ping is measurement noise rather than
+ * an improvement. Neither side can import the other, so
+ * tests/server/loadedLatencyAgreement.test.js pins the two to the same
+ * fixtures.
+ *
+ * Null when the test could not measure it - only Ookla reports loaded latency,
+ * and a failed test stores -1 placeholders that are not readings.
+ */
+const loadedIncrease = (entry) => {
+    const {ping, downloadLatency, uploadLatency} = entry;
+
+    for (const value of [ping, downloadLatency, uploadLatency])
+        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+
+    return Math.max(0, round(Math.max(downloadLatency, uploadLatency) - ping, INCREASE_DECIMALS));
+};
+
+/**
+ * What the line does under load across the whole range.
+ *
+ * Averaged over the tests that measured it, exactly as packet loss is. This
+ * used to be the grade of the single newest test, taken from a request that
+ * carried no date range at all - which put a figure about one moment beside
+ * three aggregates about the range, and left it unchanged when the range moved.
+ */
+const loadedLatencyOver = (succeeded) => {
+    const measured = succeeded
+        .map(entry => ({created: entry.created, increase: loadedIncrease(entry)}))
+        .filter(point => point.increase !== null);
+
+    return {
+        increase: averageOrNull(measured.map(point => point.increase),
+            (value) => round(value, INCREASE_DECIMALS)),
+        tests: measured.length,
+        // Oldest first, so time reads left to right the way the dots are drawn.
+        trend: measured.slice(-TREND_POINTS)
+    };
+};
+
 const emptySeries = () => ({
     labels: [], failed: [], errors: [],
     data: {ping: [], jitter: [], download: [], upload: [], time: [],
@@ -225,7 +275,8 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, maxPoints} 
             ping: {
                 stdDev: roundOrNull(standardDeviation(succeeded.map(entry => entry.ping))),
                 jitter: averageOrNull(withJitter.map(entry => entry.jitter))
-            }
+            },
+            loadedLatency: loadedLatencyOver(succeeded)
         },
         dataPoints: series.labels.length,
         rawDataPoints: entries.length,

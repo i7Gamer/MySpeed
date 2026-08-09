@@ -34,7 +34,6 @@ import HourlyChart from "@/pages/Statistics/charts/HourlyChart.jsx";
 import ConsistencyChart from "@/pages/Statistics/charts/ConsistencyChart";
 import ExportButton from "@/common/components/ExportButton";
 import ToggleSwitch from "@/common/components/ToggleSwitch";
-import {TREND_LENGTH} from "@/common/utils/TestUtil";
 import i18n, {t} from "i18next";
 import "./styles.sass";
 
@@ -48,9 +47,11 @@ const FULL_HEIGHT_CHARTS = [...LINE_CHARTS, 'hourly'];
 // echoes what it actually used as `maxDataPoints`.
 const FULL_DETAIL_POINTS = 1000;
 
-// Twice the trend length, because failed tests carry no grade: a run of
-// failures would otherwise shrink the trend exactly when it is interesting.
-const RECENT_TESTS = TREND_LENGTH * 2;
+// Only the newest test is needed here now. The bufferbloat trend used to be
+// built from a batch fetched alongside the statistics, ignoring the selected
+// range entirely; it travels with the range statistics since it became an
+// average over that range.
+const LATEST_TEST_ONLY = 1;
 
 ChartJS.register(ArcElement, Tooltip, CategoryScale, LinearScale, PointElement, LineElement, Title, Legend, BarElement, RadialLinearScale, Filler);
 
@@ -100,7 +101,6 @@ ChartJS.defaults.plugins.legend.labels.boxHeight = 8;
 export const Statistics = () => {
     const [statistics, setStatistics] = useState(null);
     const [latestTest, setLatestTest] = useState(null);
-    const [recentTests, setRecentTests] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(null);
     const [expandedChart, setExpandedChart] = useState(null);
@@ -153,7 +153,7 @@ export const Statistics = () => {
         });
         Promise.all([
             jsonRequest(`/speedtests/statistics/?${query}`),
-            jsonRequest(`/speedtests?limit=${RECENT_TESTS}`)
+            jsonRequest(`/speedtests?limit=${LATEST_TEST_ONLY}`)
         ]).then(([stats, tests]) => {
             startTransition(() => {
                 setStatistics(stats);
@@ -288,7 +288,7 @@ export const Statistics = () => {
             case 'latest':
                 return <LatestTestChart test={latestTest} expanded/>;
             case 'consistency':
-                return <ConsistencyChart consistency={deferredStatistics.consistency} recentTests={recentTests}/>;
+                return <ConsistencyChart consistency={deferredStatistics.consistency}/>;
             case 'download':
                 return <SpeedChart labels={source.labels} data={source.data} dataKey="download" titleKey="latest.down" color="hsl(187, 94%, 43%)" failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
             case 'upload':
@@ -341,7 +341,7 @@ export const Statistics = () => {
 
             <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} dateRange={dateRange} onClick={() => setExpandedChart('overview')}/>
             <LatestTestChart test={latestTest} onClick={() => setExpandedChart('latest')}/>
-            <ConsistencyChart consistency={deferredStatistics.consistency} recentTests={recentTests} onClick={() => setExpandedChart('consistency')}/>
+            <ConsistencyChart consistency={deferredStatistics.consistency} onClick={() => setExpandedChart('consistency')}/>
 
             <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="download" titleKey="latest.down" color="hsl(187, 94%, 43%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('download')} compact/>
             <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="upload" titleKey="latest.up" color="hsl(258, 90%, 66%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('upload')} compact/>

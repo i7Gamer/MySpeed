@@ -123,6 +123,23 @@ export function bufferbloatTrend(tests) {
         .reverse();
 }
 
+/**
+ * The grade a quantity of added latency earns, from the one table.
+ *
+ * Separate from bufferbloat() because the figure does not always come from a
+ * single test: the consistency panel grades the average across a whole range,
+ * and it has to mean the same thing there as it does on one result.
+ *
+ * Null for anything that is not a measurement. A range in which nothing
+ * measured loaded latency has no grade to give, and "A+" would be the most
+ * flattering possible lie about it.
+ */
+export function gradeForIncrease(increase) {
+    if (typeof increase !== "number" || !Number.isFinite(increase) || increase < 0) return null;
+
+    return BUFFERBLOAT_GRADES.find((entry) => increase < entry.upTo)?.grade ?? WORST_GRADE;
+}
+
 export function bufferbloat(test) {
     if (!test || isFailedTest(test)) return null;
 
@@ -135,9 +152,8 @@ export function bufferbloat(test) {
 
     // Under the idle ping is measurement noise, not an improvement.
     const increase = Math.max(0, parseFloat((Math.max(downloadLatency, uploadLatency) - ping).toFixed(INCREASE_DECIMALS)));
-    const grade = BUFFERBLOAT_GRADES.find((entry) => increase < entry.upTo)?.grade ?? WORST_GRADE;
 
-    return {increase, grade};
+    return {increase, grade: gradeForIncrease(increase)};
 }
 
 /**

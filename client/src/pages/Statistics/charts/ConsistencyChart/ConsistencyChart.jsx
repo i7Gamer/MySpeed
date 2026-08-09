@@ -2,7 +2,7 @@ import { useContext, useMemo } from "react";
 import { t } from "i18next";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faArrowDown, faArrowUp, faGaugeHigh, faPingPongPaddleBall } from "@fortawesome/free-solid-svg-icons";
-import { bufferbloatColour, bufferbloatTrend } from "@/common/utils/TestUtil";
+import { bufferbloatColour, gradeForIncrease } from "@/common/utils/TestUtil";
 import { formatDateTime } from "@/common/utils/FormatUtil";
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import { PreferencesContext } from "@/common/contexts/Preferences";
@@ -18,9 +18,14 @@ export const ConsistencyChart = (props) => {
         return props.consistency;
     }, [props.consistency]);
 
-    const trend = bufferbloatTrend(props.recentTests);
-
     if (!data) return null;
+
+    // Every figure in this panel is taken over the selected range, this one
+    // included: it used to be the grade of the single newest test, from a
+    // request that carried no range at all.
+    const loaded = data.loadedLatency;
+    const loadedGrade = gradeForIncrease(loaded?.increase);
+    const trend = loaded?.trend ?? [];
 
     /**
      * Neutral when there is no score, rather than red.
@@ -81,16 +86,18 @@ export const ConsistencyChart = (props) => {
                     <FontAwesomeIcon icon={faPingPongPaddleBall} className="icon-orange" />
                 </div>
 
-                {/* Bufferbloat is stability under load, so its grade sits with
-                    the other steadiness figures, and the recent grades are its
-                    detail line - the trend is where a regression shows. */}
-                {trend.length > 0 && (
+                {/* Bufferbloat is stability under load, so it sits with the
+                    other steadiness figures - and like them it is the average
+                    over the range, not the last reading. The dots are the
+                    recent gradings within that same range. */}
+                {loadedGrade !== null && (
                     <div className="consistency-item">
                         <div className="consistency-info">
                             <h2>{t("latest.quality")}</h2>
-                            <p className={"icon-" + bufferbloatColour(trend.at(-1).grade)}
-                               title={t("latest.bufferbloat", {increase: trend.at(-1).increase})}>
-                                {trend.at(-1).grade}
+                            <p className={"icon-" + bufferbloatColour(loadedGrade)}
+                               title={t("statistics.consistency.loaded_latency_average",
+                                   {increase: loaded.increase, tests: loaded.tests})}>
+                                {loadedGrade}
                             </p>
                             {/* One dot per recent test rather than the letters.
                                 Grades run together as text - "A+A" splits two
@@ -102,20 +109,21 @@ export const ConsistencyChart = (props) => {
                                   role="img"
                                   title={t("latest.bufferbloat_trend")}
                                   aria-label={t("latest.bufferbloat_trend") + ": " +
-                                      trend.map((entry) => entry.grade).join(", ")}>
+                                      trend.map((entry) => gradeForIncrease(entry.increase)).join(", ")}>
                                 {trend.map((entry) => (
                                     <span key={entry.created}
-                                          className={"bufferbloat-trend-dot icon-" + bufferbloatColour(entry.grade)}
+                                          className={"bufferbloat-trend-dot icon-"
+                                              + bufferbloatColour(gradeForIncrease(entry.increase))}
                                           // The grade leads: it is no longer
                                           // written anywhere the pointer is.
-                                          title={entry.grade + " · " +
+                                          title={gradeForIncrease(entry.increase) + " · " +
                                               formatDateTime(entry.created, preferences) + " · " +
                                               t("latest.bufferbloat", {increase: entry.increase})}/>
                                 ))}
                             </span>
                         </div>
                         <FontAwesomeIcon icon={faGaugeHigh}
-                                         className={"icon-" + bufferbloatColour(trend.at(-1).grade)} />
+                                         className={"icon-" + bufferbloatColour(loadedGrade)} />
                     </div>
                 )}
             </div>

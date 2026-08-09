@@ -401,7 +401,8 @@
       "good": "Gut",
       "fair": "Faire",
       "poor": "Arm",
-      "ping_variance": "Ping-Varianz"
+      "ping_variance": "Ping-Varianz",
+      "loaded_latency_average": "Steigt im Schnitt um {{increase}} ms unter Last, über {{tests}} Tests"
     },
     "loaded_latency": "Unter Last"
   },
