@@ -11,14 +11,19 @@ header
   align-items: center
   color: $white
   padding: 0 10%
+  // On the container, never on `.header-main *`: the wildcard matched every
+  // descendant directly, so a component's own size never reached its children
+  // by inheritance - the timeframe menu's label sat at 24pt inside a 0.9rem
+  // button - and a single-class rule tied on specificity, leaving the header
+  // tooltips readable only by bundling order. Inherited, the title gets its
+  // size and anything that sets its own wins, always. Guarded by the scan in
+  // wildcardFontSize.test.js.
+  font-size: 24pt
 
 .header-right
   display: flex
   justify-content: flex-end
   gap: 15px
-
-.header-main *
-  font-size: 24pt
 
 .header-left
   display: flex
@@ -28,7 +33,11 @@ header
   overflow: hidden
   text-overflow: ellipsis
 
-.demo-info
+// The element name is load-bearing: this is an h2, and `.header-main h2` now
+// carries the title's 24pt at class-and-type specificity. As a bare class this
+// used to win a same-specificity tie against the wildcard by source order;
+// against the stronger selector it has to actually outrank it.
+h2.demo-info
   display: flex
   cursor: pointer
   align-items: center
@@ -45,6 +54,10 @@ header
   padding: 0.5rem 1rem
   border-radius: 0.75rem
   margin: 0
+  // Stated, not inherited: a heading's browser default is 1.5em, which beats
+  // inheritance - under the old wildcard the title sat at 24pt only because
+  // the wildcard flattened that default too.
+  font-size: 24pt
 
 .header-logo
   width: 30px
@@ -119,6 +132,6 @@ header
     height: 20px
 
 @media screen and (max-width: 365px)
-  .demo-info
+  h2.demo-info
     font-size: 12pt
     padding: 0

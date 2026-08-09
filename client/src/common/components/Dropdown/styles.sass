@@ -51,11 +51,6 @@
   cursor: pointer
   color: $white
 
-.dropdown-item *
-  margin: 0
-  font-size: 16pt
-  font-weight: 500
-
 .dropdown-item:hover
   color: $accent-primary
 
@@ -63,8 +58,13 @@
   width: 25px
   height: 25px
 
+// Styled by name, not through `.dropdown-item *`: the wildcard existed to undo
+// this element's browser defaults - heading margins, bold, heading size - and
+// hit the icon alongside it for nothing. See wildcardFontSize.test.js.
 .dropdown-item h3
-  margin-left: 15px
+  margin: 0 0 0 15px
+  font-size: 16pt
+  font-weight: 500
 
 .center
   display: flex
