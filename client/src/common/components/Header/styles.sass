@@ -33,11 +33,11 @@ header
   overflow: hidden
   text-overflow: ellipsis
 
-// The element name is load-bearing: this is an h2, and `.header-main h2` now
-// carries the title's 24pt at class-and-type specificity. As a bare class this
-// used to win a same-specificity tie against the wildcard by source order;
-// against the stronger selector it has to actually outrank it.
-h2.demo-info
+// Outranks `.header-main h2`, which carries the title's 24pt: as a bare class
+// this tied with the old wildcard and won on source order, and as `h2.demo-info`
+// it would tie with that rule and lose on source order instead. Two classes and
+// a type settle it wherever either rule happens to sit in the file.
+.header-main h2.demo-info
   display: flex
   cursor: pointer
   align-items: center
@@ -132,6 +132,6 @@ h2.demo-info
     height: 20px
 
 @media screen and (max-width: 365px)
-  h2.demo-info
+  .header-main h2.demo-info
     font-size: 12pt
     padding: 0
