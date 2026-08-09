@@ -47,10 +47,17 @@
   white-space: nowrap
 
 // Oldest to newest, the way time reads - the detail line under the grade.
-.consistency-detail.bufferbloat-trend
+//
+// Selector matched to the `.consistency-detail` rule above rather than written
+// short: that one sets `display: block` from three classes, so a two-class rule
+// here lost, the row never became a flex container, and the gap it asks for did
+// nothing - the grades ran together into what read as one word.
+.consistency-item .consistency-info .consistency-detail.bufferbloat-trend
   display: flex
   align-items: baseline
   gap: 0.45rem
+  // Grades are the content here, not a sentence to be cut short.
+  overflow: visible
 
 .bufferbloat-trend-grade
   font-weight: 700

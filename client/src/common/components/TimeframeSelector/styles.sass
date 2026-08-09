@@ -54,6 +54,14 @@
   &.item-active
     color: $accent-primary
 
+// The label is a <span> inside the button, and `.header-main *` matches it
+// directly at 24pt - a size set on the button never reaches a child that a rule
+// targets by itself, so the item's own 0.9rem applied to everything except the
+// text. Inherited rather than restated so the narrow-screen override below
+// carries to the label too.
+.timeframe-menu .timeframe-menu-item span
+  font-size: inherit
+
 .timeframe-menu .item-check
   font-size: 0.8rem
   flex-shrink: 0
