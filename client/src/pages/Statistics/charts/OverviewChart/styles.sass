@@ -10,6 +10,11 @@
 .overview-item
   display: flex
   justify-content: space-between
+  // space-between spreads label and value when there is room; this is the
+  // floor for when there is not, so the value never touches the label.
+  // column-gap only - these rows wrap at narrow widths, and the wrapped
+  // stack keeps its spacing as it is.
+  column-gap: 0.75rem
 
 .overview-item .info-area
   display: flex
