@@ -60,21 +60,24 @@ const HeaderComponent = () => {
     // as a rejection here: it authenticates, but not for the admin controls
     // this dialog was opened to reach.
     const showPasswordDialog = () => promptUntilAccepted(
-        (failed) => alert.openInput(t("header.admin_login"), {
+        (previous) => alert.openInput(t("header.admin_login"), {
             placeholder: t("dialog.password.placeholder"),
-            description: failed ? <span className="icon-red">{t("dialog.password.wrong")}</span> : "",
+            description: previous ? <span className="icon-red">{t("dialog.password.wrong")}</span> : "",
             inputType: "password",
             buttonText: t("dialog.login")
         }),
         // Exchanged for a session cookie rather than kept: the password itself
         // never reaches storage this script can read back.
         async (value) => {
-            if (!await login(value)) return false;
+            const outcome = await login(value);
+            if (!outcome.ok) return outcome;
 
             reloadConfig();
             const newConfig = await checkConfig().catch(() => null);
 
-            return !newConfig?.viewMode;
+            // Read-level access authenticates, but not for the admin controls
+            // this dialog was opened to reach, so it counts as a refusal.
+            return {ok: !newConfig?.viewMode};
         }
     );
 

@@ -14,6 +14,7 @@ import {
     faUserGear
 } from "@fortawesome/free-solid-svg-icons";
 import {ConfigContext} from "@/common/contexts/Config";
+import {takePasswordUnsetMark} from "@/common/utils/PasswordSetup";
 import {StatusContext} from "@/common/contexts/Status";
 import {useAlert} from "@/common/contexts/Alert";
 import {postRequest} from "@/common/utils/RequestUtil";
@@ -45,6 +46,19 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
     const [showPauseDialog, setShowPauseDialog] = useState(false);
     const [showPreferencesDialog, setShowPreferencesDialog] = useState(false);
     const ref = useRef();
+
+    /**
+     * Finishes what a setup-token sign-in started.
+     *
+     * The token opens the instance without giving it a password, and the next
+     * restart issues a different one - so being let in is only half of it. The
+     * sign-in leaves a note across its reload and this opens the dialog that
+     * ends the cycle. Guarded on passwordSet as well as the note, so it stays
+     * shut if a password arrived some other way in between.
+     */
+    useEffect(() => {
+        if (config.passwordSet === false && takePasswordUnsetMark()) setShowPasswordDialog(true);
+    }, [config.passwordSet]);
 
     useEffect(() => {
         const onPress = event => {

@@ -7,21 +7,28 @@
  * the false it answered with and stopped, leaving a blank dashboard with
  * nothing said. Sharing the loop is what keeps them from drifting apart again.
  *
- * `prompt` is told whether the previous attempt was rejected, so it can say so,
- * and returns the value entered or something falsy when dismissed. Dismissing
- * is a decision rather than a failure: an empty box never reaches
- * `authenticate`, which would otherwise spend a bcrypt comparison and count
- * against the password throttle for a value nobody typed.
+ * `prompt` is handed the refusal that ended the previous attempt - null on the
+ * first ask - so it can say what went wrong and, when the reason calls for it,
+ * ask something else entirely. It returns the value entered, or something falsy
+ * when dismissed. Dismissing is a decision rather than a failure: an empty box
+ * never reaches `authenticate`, which would otherwise spend a bcrypt comparison
+ * and count against the password throttle for a value nobody typed.
  *
- * @param {(failed: boolean) => Promise<string|undefined>} prompt
- * @param {(value: string) => Promise<boolean>} authenticate
+ * @param {(previous: {type?: string}|null) => Promise<string|undefined>} prompt
+ * @param {(value: string) => Promise<{ok: boolean, type?: string}>} authenticate
  * @returns {Promise<boolean>} whether the caller is now authenticated
  */
 export const promptUntilAccepted = async (prompt, authenticate) => {
-    for (let failed = false; ; failed = true) {
-        const value = await prompt(failed);
+    let previous = null;
+
+    for (;;) {
+        const value = await prompt(previous);
 
         if (!value) return false;
-        if (await authenticate(value)) return true;
+
+        const outcome = await authenticate(value);
+        if (outcome.ok) return true;
+
+        previous = outcome;
     }
 };

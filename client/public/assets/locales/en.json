@@ -31,6 +31,16 @@
       "wrong": "The password you entered is incorrect",
       "unlock": "Unlock"
     },
+    "setup_token": {
+      "title": "Setup token required",
+      "description": "No password is set on this instance, so it cannot be opened from another machine. Enter the setup token from the server log, then choose a password.",
+      "placeholder": "Setup token from the server log",
+      "wrong": "That is not the setup token in the server log"
+    },
+    "throttled": {
+      "title": "Too many attempts",
+      "description": "Too many attempts were rejected. Wait a minute, then try again."
+    },
     "api": {
       "title": "API not reachable",
       "description": "MySpeed could not reach the API of this instance. Please try again later."

@@ -31,6 +31,16 @@
       "wrong": "Das von dir eingegebene Passwort ist falsch",
       "unlock": "Sperre aufheben"
     },
+    "setup_token": {
+      "title": "Setup-Token erforderlich",
+      "description": "Für diese Instanz ist kein Passwort gesetzt, deshalb kann sie nicht von einem anderen Gerät geöffnet werden. Gib den Setup-Token aus dem Server-Log ein und lege danach ein Passwort fest.",
+      "placeholder": "Setup-Token aus dem Server-Log",
+      "wrong": "Das ist nicht der Setup-Token aus dem Server-Log"
+    },
+    "throttled": {
+      "title": "Zu viele Versuche",
+      "description": "Zu viele Versuche wurden abgelehnt. Warte eine Minute und versuche es erneut."
+    },
     "api": {
       "title": "API nicht erreichbar",
       "description": "MySpeed konnte die API dieser Instanz nicht erreichen. Bitte versuche es später erneut."

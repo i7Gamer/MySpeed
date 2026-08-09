@@ -29,7 +29,15 @@ export const login = async (password) => {
         body: JSON.stringify({password})
     });
 
-    return response.ok;
+    if (response.ok) return {ok: true};
+
+    // Why it was refused, not merely that it was: a mistyped setup token, a
+    // wrong password and a lockout each want a different sentence, and the
+    // first two want a different question. An unparseable body leaves `type`
+    // absent, which asks for the password - what it did before any of this.
+    const body = await response.json().catch(() => ({}));
+
+    return {ok: false, type: body?.type};
 }
 
 export const logout = () => fetch("/api/session", {method: "DELETE"});

@@ -6,6 +6,7 @@ import { isLoopbackRequest } from '../util/clientAddress.js';
 import { clientKey } from '../util/clientKey.js';
 import { isValidSession, SESSION_COOKIE } from '../util/session.js';
 import { readCookie } from '../util/cookies.js';
+import { PASSWORD_REQUIRED, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS } from '../util/authOutcome.js';
 
 /**
  * Every wrong password costs a full bcrypt comparison, so an unauthenticated
@@ -67,7 +68,10 @@ export const allowsPasswordlessAccess = (req) =>
     process.env.ALLOW_NO_PASSWORD === "true" || isLoopbackRequest(req);
 
 const tooManyAttempts = (res) =>
-    res.status(429).json({message: "Too many failed password attempts. Please try again later"});
+    res.status(429).json({
+        message: "Too many failed password attempts. Please try again later",
+        type: TOO_MANY_ATTEMPTS
+    });
 
 /**
  * Handles a request against an instance that has no password configured.
@@ -102,7 +106,8 @@ const handleUnconfigured = (req, res, next) => {
     announceSetupToken();
 
     return res.status(401).json({
-        message: "This instance has no password set. Use the setup token from the server log, then set a password"
+        message: "This instance has no password set. Use the setup token from the server log, then set a password",
+        type: SETUP_TOKEN_REQUIRED
     });
 };
 
@@ -150,5 +155,8 @@ export default (allowViewAccess) => async (req, res, next) => {
 
     if (throttled) return tooManyAttempts(res);
 
-    return res.status(401).json({message: "Please provide the correct password in the header"});
+    return res.status(401).json({
+        message: "Please provide the correct password in the header",
+        type: PASSWORD_REQUIRED
+    });
 };

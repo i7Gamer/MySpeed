@@ -5,6 +5,7 @@ import { matchesSetupToken } from '../util/setupToken.js';
 import { createSession, destroySession, isValidSession, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from '../util/session.js';
 import { readCookie, serialiseCookie } from '../util/cookies.js';
 import { clearFailedAttempts, isThrottled, recordFailedAttempt } from '../middlewares/password.js';
+import { PASSWORD_REQUIRED, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS } from '../util/authOutcome.js';
 
 const app = express.Router();
 
@@ -19,21 +20,33 @@ const app = express.Router();
  */
 app.post("/", async (req, res) => {
     if (isThrottled(req))
-        return res.status(429).json({message: "Too many failed password attempts. Please try again later"});
+        return res.status(429).json({
+            message: "Too many failed password attempts. Please try again later",
+            type: TOO_MANY_ATTEMPTS
+        });
 
     const supplied = req.body?.password;
     if (typeof supplied !== "string" || supplied === "")
         return res.status(400).json({message: "You need to provide a password"});
 
     const passwordHash = await config.getValue("password");
+    const unconfigured = passwordHash === config.NO_PASSWORD;
 
-    const valid = passwordHash === config.NO_PASSWORD
+    const valid = unconfigured
         ? matchesSetupToken(supplied)
         : await bcrypt.compare(supplied, passwordHash);
 
     if (!valid) {
         recordFailedAttempt(req);
-        return res.status(401).json({message: "Incorrect password"});
+
+        // Which credential was wrong, not merely that one was: an instance with
+        // no password rejects a mistyped setup token, and telling its operator
+        // the password was incorrect would send them looking for one that does
+        // not exist.
+        return res.status(401).json({
+            message: unconfigured ? "Incorrect setup token" : "Incorrect password",
+            type: unconfigured ? SETUP_TOKEN_REQUIRED : PASSWORD_REQUIRED
+        });
     }
 
     clearFailedAttempts(req);

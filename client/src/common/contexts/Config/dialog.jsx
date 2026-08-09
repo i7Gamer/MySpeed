@@ -13,6 +13,37 @@ export const passwordRequiredDialog = (failed = false) => ({
     disableCloseButton: true
 });
 
+/**
+ * What to ask on an instance that has no password at all.
+ *
+ * It refuses every caller that is not on its own loopback until they present
+ * the token it prints to its log, so "your password" was the one question the
+ * operator could not answer - there was no password, and nothing on the page
+ * said a token existed. The description carries that, since a log line is not
+ * somewhere anyone looks unless told to.
+ */
+export const setupTokenDialog = (failed = false) => ({
+    title: t("dialog.setup_token.title"),
+    placeholder: t("dialog.setup_token.placeholder"),
+    description: failed
+        ? <span className="icon-red">{t("dialog.setup_token.wrong")}</span>
+        : t("dialog.setup_token.description"),
+    type: "password",
+    buttonText: t("dialog.password.unlock"),
+    disableCloseButton: true
+});
+
+// Not an input: nothing typed here can be accepted until the window expires,
+// and offering the box invites the operator to keep feeding a throttle that is
+// answering nothing.
+export const throttledDialog = () => ({
+    title: t("dialog.throttled.title"),
+    description: <span className="icon-red">{t("dialog.throttled.description")}</span>,
+    buttonText: t("dialog.retry"),
+    disableCloseButton: true,
+    onSuccess: () => window.location.reload()
+});
+
 export const apiErrorDialog = () => ({
     title: t("dialog.api.title"),
     description: <span className="icon-red">{t("dialog.api.description")}</span>,
