@@ -319,9 +319,12 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                         {props.isp && (
                             <DetailFact label={t("test.details.isp")}>
                                 {props.isp}
-                                {/* A real space: inline spans create no word
-                                    break, so this read "Salt MobileCHANGED". */}
-                                {change?.isp && <> <span className="detail-changed">{t("test.details.changed")}</span></>}
+                                {/* Below the value, not trailing it - see
+                                    .detail-changed. A block element breaks the
+                                    reading too, so the space that used to keep
+                                    this from being read as "Salt MobileCHANGED"
+                                    is no longer carrying anything. */}
+                                {change?.isp && <span className="detail-changed">{t("test.details.changed")}</span>}
                             </DetailFact>
                         )}
 
@@ -331,7 +334,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                         {props.externalIp && (
                             <DetailFact label={t("test.details.external_ip")}>
                                 <span className="detail-address">{props.externalIp}</span>
-                                {change?.externalIp && <> <span className="detail-changed">{t("test.details.changed")}</span></>}
+                                {change?.externalIp && <span className="detail-changed">{t("test.details.changed")}</span>}
                             </DetailFact>
                         )}
 

@@ -264,19 +264,21 @@ $metric-line-height: 1.2
 .detail-change-same
   color: $subtext
 
-// Three columns on a desktop rather than five.
+// Four columns on a desktop rather than the five 241px ones 15rem packed into
+// the 1334px this panel caps at - too narrow for the widest thing that goes in
+// one, so a value wrapped at every width.
 //
-// 15rem let auto-fit pack five 241px columns into the 1267px the panel caps at,
-// which is narrower than the widest thing that goes in one: an external IPv6
-// with the "changed" badge beside it needs about 354px. 22rem is the smallest
-// step that clears it, and since the container stops growing at 1267px it holds
-// at three columns on every desktop width rather than drifting wider.
+// The track has to clear the widest value (an external IPv6, ~270px) and stay
+// under 309px, which is what four columns plus their gaps leave. 18rem sits
+// between the two. Widening the page was the alternative and it costs more than
+// it sounds: $page-max-width is shared by every page, and 1570px was the
+// threshold there - for tracks with 7px to spare.
 //
-// min() because a bare 22rem track does not shrink below 22rem: on a phone that
-// is a 352px column inside a 281px grid, overflowing its own container.
+// min() because a bare 18rem track does not shrink below 18rem: on a phone that
+// is a 288px column inside a 281px grid, overflowing its own container.
 .detail-facts
   display: grid
-  grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr))
+  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr))
   gap: 1rem 2rem
 
 // Label above the value rather than beside it.
@@ -431,8 +433,15 @@ $metric-line-height: 1.2
 
 // Marks the test where the connection itself moved, which is usually why a run
 // of results steps.
+//
+// Below the value rather than trailing it. Inline, it added its own width to
+// whatever it sat after, and on an external IPv6 that made the widest cell in
+// the panel - 345px against the address's own 270px - which is what forced
+// every column in the grid to be wide enough for it.
 .detail-changed
-  margin-left: 0.5rem
+  display: block
+  width: fit-content
+  margin-top: 0.25rem
   padding: 0.1rem 0.4rem
   border-radius: 0.35rem
   background-color: rgba(139, 92, 246, 0.15)
