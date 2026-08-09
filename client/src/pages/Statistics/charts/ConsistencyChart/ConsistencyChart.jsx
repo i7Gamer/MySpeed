@@ -92,15 +92,25 @@ export const ConsistencyChart = (props) => {
                                title={t("latest.bufferbloat", {increase: trend.at(-1).increase})}>
                                 {trend.at(-1).grade}
                             </p>
+                            {/* One dot per recent test rather than the letters.
+                                Grades run together as text - "A+A" splits two
+                                ways - where dots read as a history at a glance.
+                                role="img" with the grades spelled out in the
+                                label, because colour alone is not a reading a
+                                screen reader can take. */}
                             <span className="consistency-detail bufferbloat-trend"
-                                  title={t("latest.bufferbloat_trend")}>
+                                  role="img"
+                                  title={t("latest.bufferbloat_trend")}
+                                  aria-label={t("latest.bufferbloat_trend") + ": " +
+                                      trend.map((entry) => entry.grade).join(", ")}>
                                 {trend.map((entry) => (
                                     <span key={entry.created}
-                                          className={"bufferbloat-trend-grade icon-" + bufferbloatColour(entry.grade)}
-                                          title={formatDateTime(entry.created, preferences) + " · " +
-                                              t("latest.bufferbloat", {increase: entry.increase})}>
-                                        {entry.grade}
-                                    </span>
+                                          className={"bufferbloat-trend-dot icon-" + bufferbloatColour(entry.grade)}
+                                          // The grade leads: it is no longer
+                                          // written anywhere the pointer is.
+                                          title={entry.grade + " · " +
+                                              formatDateTime(entry.created, preferences) + " · " +
+                                              t("latest.bufferbloat", {increase: entry.increase})}/>
                                 ))}
                             </span>
                         </div>

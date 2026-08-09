@@ -54,15 +54,25 @@
 // nothing - the grades ran together into what read as one word.
 .consistency-item .consistency-info .consistency-detail.bufferbloat-trend
   display: flex
-  align-items: baseline
-  gap: 0.45rem
-  // Grades are the content here, not a sentence to be cut short.
+  align-items: center
+  gap: 0.4rem
+  // The dots are the content here, not a sentence to be cut short.
   overflow: visible
+  // They carry no text, so the row has no line box to stand on - without this
+  // the panel shrinks by a line the moment a trend appears.
+  min-height: 1.15rem
 
-.bufferbloat-trend-grade
-  font-weight: 700
+.bufferbloat-trend-dot
+  width: 0.5rem
+  height: 0.5rem
+  border-radius: 50%
+  // Takes whatever colour the icon-* utility set, so which grade is green and
+  // which is red stays defined in exactly one place - bufferbloatColour.
+  background-color: currentColor
+  flex-shrink: 0
   cursor: help
 
-  // The newest grade is the one that matters most, so it is the loudest.
+  // The newest reading is the one that matters most, so it is the loudest.
   &:last-child
-    font-size: 1.05em
+    width: 0.7rem
+    height: 0.7rem
