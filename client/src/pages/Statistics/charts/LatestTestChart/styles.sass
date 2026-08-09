@@ -39,24 +39,6 @@ $purple: #8b5cf6
   display: flex
   align-items: center
 
-// Packet loss sits beside the loaded latency exactly as jitter sits beside the
-// ping, and needs the same separator - the paragraph is a flex row, so without
-// one the two values abut with no space at all.
-.test-container .test-info p .quality-loss
-  font-size: 0.9rem
-  font-weight: 500
-  color: $subtext
-  padding-left: 0.35rem
-  margin-left: 0.35rem
-  border-left: 2px solid $light-gray
-  opacity: 0.7
-
-  // Nothing to separate it from when the latency was not measured.
-  &:only-child
-    padding-left: 0
-    margin-left: 0
-    border-left: none
-
 .test-container .test-info p .jitter-value
   font-size: 0.9rem
   font-weight: 500
@@ -72,27 +54,3 @@ $purple: #8b5cf6
   .jitter-icon
     width: 0.8rem
     height: 0.8rem
-// Takes the place of the icon in the quality row, so it is sized to match one.
-.test-container .bufferbloat-grade
-  font-weight: 700
-  font-size: 1.6rem
-  line-height: 1
-
-// Oldest to newest, the way time reads. Small letters rather than a chart:
-// ten grades are a glance, not a graph.
-.bufferbloat-trend
-  display: flex
-  align-items: baseline
-  gap: 0.55rem
-  width: 100%
-  padding-top: 0.75rem
-  border-top: 1px solid $light-gray
-
-.bufferbloat-trend-grade
-  font-weight: 700
-  font-size: 0.95rem
-  cursor: help
-
-  // The newest grade is the one that matters most, so it is the loudest.
-  &:last-child
-    font-size: 1.2rem

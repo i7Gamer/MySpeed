@@ -228,9 +228,6 @@
     "up": "Upload",
     "latest": "Letzter Test",
     "before": "vor",
-    "quality": "Unter Last",
-    "loaded_latency": "{{down}} / {{up}} ms Latenz",
-    "packet_loss": "{{percent}}% Verlust",
     "bufferbloat": "Bufferbloat: steigt um {{increase}} ms unter Last",
     "bufferbloat_trend": "Bufferbloat über die letzten Tests"
   },
@@ -388,6 +385,9 @@
       "fair": "Faire",
       "poor": "Arm",
       "ping_variance": "Ping-Varianz"
+    },
+    "bufferbloat": {
+      "title": "Bufferbloat"
     }
   },
   "calendar": {

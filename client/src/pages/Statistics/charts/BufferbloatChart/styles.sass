@@ -1,0 +1,42 @@
+@use "@/common/styles/colors" as *
+
+.bufferbloat-container
+  display: flex
+  flex-direction: column
+  align-items: center
+  justify-content: center
+  gap: 0.4rem
+  width: 100%
+  flex: 1
+  min-height: 0
+
+// Sized like the percentages on the stability tile: the grade is the reading,
+// everything else on the tile explains it.
+.bufferbloat-headline
+  font-size: 3rem
+  font-weight: 700
+  line-height: 1
+
+.bufferbloat-caption
+  margin: 0
+  font-size: 0.9rem
+  color: $subtext
+
+// Oldest to newest, the way time reads. Small letters rather than a chart:
+// ten grades are a glance, not a graph.
+.bufferbloat-trend
+  display: flex
+  align-items: baseline
+  gap: 0.55rem
+  margin-top: 0.5rem
+  padding-top: 0.75rem
+  border-top: 1px solid $light-gray
+
+.bufferbloat-trend-grade
+  font-weight: 700
+  font-size: 0.95rem
+  cursor: help
+
+  // The newest grade is the one that matters most, so it is the loudest.
+  &:last-child
+    font-size: 1.2rem
