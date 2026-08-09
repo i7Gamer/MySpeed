@@ -264,7 +264,10 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                 <span className={"bufferbloat-grade icon-" + bufferbloatColour(bloat.grade)}>
                                     {bloat.grade}
                                 </span>
-                                {t("test.details.bufferbloat_value", {increase: bloat.increase})}
+                                {/* A real space, not only margin: inline spans
+                                    create no word break, so the accessible text
+                                    read "Aadds 19 ms". */}
+                                {" " + t("test.details.bufferbloat_value", {increase: bloat.increase})}
                             </DetailFact>
                         )}
 
@@ -343,6 +346,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                              onClick={(event) => openInfo(event, pingInfo)}/>
                             <h2 className="speedtest-text">
                                 {props.ping}
+                                <span className="speedtest-unit">{t("latest.ping_unit")}</span>
                                 {props.jitter !== null && props.jitter !== undefined && (
                                     <span className="jitter-suffix" onClick={(event) => openInfo(event, jitterInfo)}>
                                         <FontAwesomeIcon icon={faWaveSquare} className="jitter-icon help-icon" />{props.jitter}
@@ -354,13 +358,17 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                             <FontAwesomeIcon icon={faArrowDown}
                                              className={"speedtest-icon help-icon icon-" + props.downLevel}
                                              onClick={(event) => openInfo(event, downloadInfo)}/>
-                            <h2 className="speedtest-text">{downValue}</h2>
+                            <h2 className="speedtest-text">{downValue}
+                                <span className="speedtest-unit">{speedUnit}</span>
+                            </h2>
                         </div>
                         <div className="speedtest-row">
                             <FontAwesomeIcon icon={faArrowUp}
                                              className={"speedtest-icon help-icon icon-" + props.upLevel}
                                              onClick={(event) => openInfo(event, uploadInfo)}/>
-                            <h2 className="speedtest-text">{upValue}</h2>
+                            <h2 className="speedtest-text">{upValue}
+                                <span className="speedtest-unit">{speedUnit}</span>
+                            </h2>
                         </div>
                     </>
                 )}

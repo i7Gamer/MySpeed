@@ -40,13 +40,15 @@ $metric-line-height: 1.2
   .speedtest-chevron
     transform: rotate(180deg)
 
+// A grid rather than space-between: each row used to position its columns by
+// its own content width, so the numbers wandered up to 15px between rows and
+// could not be compared down a column - which is the whole point of a list.
 .speedtest
-  display: flex
+  display: grid
+  grid-template-columns: minmax(11rem, 1.2fr) 1fr 1fr 1fr auto
   padding: 1.5rem 2rem
-  justify-content: space-between
   align-items: center
   width: 100%
-  flex-wrap: wrap
   cursor: pointer
   user-select: none
   box-sizing: border-box
@@ -67,7 +69,7 @@ $metric-line-height: 1.2
   display: flex
   align-items: center
   gap: 0.5rem
-  flex: 1 1 auto
+  grid-column: 2 / 5
   min-width: 0
   // The line box the measurements would have occupied.
   min-height: $metric-font-size * $metric-line-height
@@ -109,6 +111,18 @@ $metric-line-height: 1.2
   color: $subtext
   display: flex
   align-items: center
+
+// The old latest-test panel carried the units as column headers; with it gone
+// the list was bare numbers, readable only by icon colour. Small and muted so
+// the number stays what the eye lands on.
+.speedtest-unit
+  font-size: 12pt
+  font-weight: 400
+  color: $subtext
+  opacity: 0.6
+  margin-left: 0.35rem
+  align-self: flex-end
+  padding-bottom: 0.45rem
 
 .jitter-suffix
   font-size: 14pt
@@ -319,7 +333,10 @@ $metric-line-height: 1.2
     height: 0.85rem
 
 @media (max-width: 605px)
+  // Back to a stack: the desktop rule is a grid now, and flex-direction on a
+  // grid silently does nothing.
   .speedtest
+    display: flex
     flex-direction: column
     align-items: flex-start
   .date-text
