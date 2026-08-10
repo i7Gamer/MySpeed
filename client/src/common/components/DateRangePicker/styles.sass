@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
 
 // The popover's text follows the settings dialog's scale - SelectableOption's
 // 1rem option titles and 0.85rem descriptions - so the two dialogs read as one
@@ -16,7 +17,9 @@ $dialog-secondary-text: 0.85rem
   display: flex
   align-items: center
   gap: 0.5rem
-  padding: 0.6rem 1rem
+  // The vertical half is shared with every control in the toolbar, so they
+  // still measure the same once the row wraps and stretch no longer spans them.
+  padding: $toolbar-control-padding-y 1rem
   background-color: $dark-gray
   border: 1px solid $light-gray
   border-radius: 0.6rem
@@ -223,13 +226,13 @@ $dialog-secondary-text: 0.85rem
     opacity: 0.25
     cursor: not-allowed
 
-// The trigger's text keeps the toolbar's size at every width - it stands
+// The trigger's text and height keep the toolbar's at every width - it stands
 // beside a start button that never shrinks, and a row consistent only on a
-// desktop is not consistent. Only the padding tightens; the text ellipsises
-// if the range outgrows the space, which it already knew how to do.
+// desktop is not consistent. Only the horizontal room tightens; the text
+// ellipsises if the range outgrows it, which it already knew how to do.
 @media screen and (max-width: 600px)
   .date-range-trigger
-    padding: 0.55rem 0.75rem
+    padding: $toolbar-control-padding-y 0.75rem
     gap: 0.4rem
 
   .date-range-popover
@@ -253,4 +256,4 @@ $dialog-secondary-text: 0.85rem
 
 @media screen and (max-width: 360px)
   .date-range-trigger
-    padding: 0.5rem 0.6rem
+    padding: $toolbar-control-padding-y 0.6rem

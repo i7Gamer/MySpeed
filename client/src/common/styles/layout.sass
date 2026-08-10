@@ -16,3 +16,13 @@ $card-gap: 0.75rem
 // components set it and they drifted once already: 0.95rem either side of a
 // 1.1rem button made one set of controls announce itself as three.
 $toolbar-text-size: 1.1rem
+
+// And the space above and below that text. The toolbar wraps on a narrow
+// viewport, and a flex line is only as tall as its own tallest item - so once
+// the controls sit on different lines, stretch stops equalising them and each
+// falls back to its natural height. One text size and one vertical padding is
+// what makes the three measure the same by construction, wrapped or not; the
+// picker's used to shrink here and rendered 39px against a 45px button.
+// Horizontal padding stays each control's own business - room, not height, is
+// what is scarce on a phone.
+$toolbar-control-padding-y: 0.7rem

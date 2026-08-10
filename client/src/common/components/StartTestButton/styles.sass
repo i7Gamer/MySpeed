@@ -11,7 +11,7 @@
   justify-content: center
   gap: 0.6rem
   flex-shrink: 0
-  padding: 0.7rem 1.75rem
+  padding: $toolbar-control-padding-y 1.75rem
   border: 1px solid $light-gray
   border-radius: 0.6rem
   background-color: var(--glass-bg)
@@ -34,6 +34,8 @@
     opacity: 0.5
     cursor: default
 
+// Only the horizontal room tightens; the height is shared with every other
+// control in the toolbar.
 @media screen and (max-width: 600px)
   .start-test
-    padding: 0.7rem 1.25rem
+    padding: $toolbar-control-padding-y 1.25rem
