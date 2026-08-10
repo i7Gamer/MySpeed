@@ -1,5 +1,11 @@
 @use "@/common/styles/colors" as *
 
+// The popover's text follows the settings dialog's scale - SelectableOption's
+// 1rem option titles and 0.85rem descriptions - so the two dialogs read as one
+// application. tests/client/dateRangeTextScale.test.js holds them together.
+$dialog-primary-text: 1rem
+$dialog-secondary-text: 0.85rem
+
 .date-range-picker
   position: relative
   display: inline-flex
@@ -72,7 +78,7 @@
   border: 1px solid $light-gray
   border-radius: 0.375rem
   color: $subtext
-  font-size: 0.8rem
+  font-size: $dialog-primary-text
   font-weight: 600
   white-space: nowrap
   cursor: pointer
@@ -90,7 +96,7 @@
 
 .calendar-selecting
   color: $subtext
-  font-size: 0.78rem
+  font-size: $dialog-secondary-text
   font-weight: 600
   text-transform: uppercase
   letter-spacing: 0.03em
@@ -127,7 +133,7 @@
 
 .current-month
   color: $white
-  font-size: 0.95rem
+  font-size: $dialog-primary-text
   font-weight: 600
 
 .calendar-grid
@@ -141,7 +147,7 @@
 .weekday
   text-align: center
   color: $subtext
-  font-size: 0.75rem
+  font-size: $dialog-secondary-text
   font-weight: 600
   text-transform: uppercase
   padding: 0.375rem 0
@@ -159,7 +165,7 @@
   background: transparent
   border: none
   color: $white
-  font-size: 0.875rem
+  font-size: $dialog-primary-text
   font-weight: 600
   cursor: pointer
   transition: background-color 0.1s ease, color 0.1s ease
@@ -232,9 +238,10 @@
     min-width: unset
     width: 100%
 
+  // The settings dialog keeps its text sizes on a phone, so the popover does
+  // too - only the cells tighten.
   .day-btn
     height: 28px
-    font-size: 0.8rem
 
 @media screen and (max-width: 360px)
   .date-range-trigger
