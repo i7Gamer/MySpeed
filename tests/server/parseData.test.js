@@ -54,6 +54,14 @@ describe("parseOokla", () => {
         assert.equal(parsed.jitter, null);
     });
 
+    // Regression: the truthiness check treated a measured jitter of exactly
+    // zero as "not measured" and stored null - a perfectly steady line was
+    // recorded as one that never said.
+    it("keeps a measured jitter of exactly zero", () => {
+        const parsed = parseOokla({...ooklaResult, ping: {latency: 12.6, jitter: 0}});
+        assert.equal(parsed.jitter, 0);
+    });
+
     /**
      * The CLI has always reported packet loss and the latency measured while the
      * line was saturated, and all of it was dropped on the floor. Latency under
@@ -147,6 +155,16 @@ describe("parseLibre", () => {
         const {ping, jitter} = parseLibre(libreResult);
         assert.equal(ping, 13);
         assert.equal(jitter, 3.46);
+    });
+
+    it("keeps a measured jitter of exactly zero, numeric or string", () => {
+        assert.equal(parseLibre({...libreResult, jitter: 0}).jitter, 0);
+        assert.equal(parseLibre({...libreResult, jitter: "0"}).jitter, 0);
+    });
+
+    it("nulls a missing jitter", () => {
+        const {jitter: absent, ...withoutJitter} = libreResult;
+        assert.equal(parseLibre(withoutJitter).jitter, null);
     });
 
     // Neither of the other providers measures packet loss or latency under

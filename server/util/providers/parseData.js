@@ -33,7 +33,9 @@ const calculateJitter = (latencyMeasurements) => {
 
 export const parseOokla = (test) => {
     let ping = Math.round(test.ping.latency);
-    let jitter = test.ping.jitter ? parseFloat(test.ping.jitter.toFixed(2)) : null;
+    // round(), not a truthiness check: a jitter of exactly zero is a
+    // measurement - a perfectly steady line - and must not store as null.
+    let jitter = round(test.ping.jitter);
     let download = roundSpeed(test.download.bandwidth);
     let upload = roundSpeed(test.upload.bandwidth);
     let time = Math.round((test.download.elapsed + test.upload.elapsed) / 1000);
@@ -52,7 +54,9 @@ export const parseOokla = (test) => {
 };
 
 export const parseLibre = (test) => ({...test, ...NO_QUALITY_FIGURES, ping: Math.round(test.ping),
-    jitter: test.jitter ? parseFloat(parseFloat(test.jitter).toFixed(2)) : null,
+    // round() also normalises the string jitter this CLI reports, and keeps a
+    // measured zero rather than nulling it as falsy.
+    jitter: round(test.jitter),
     time: Math.round(test.elapsed / 1000), resultId: null,
     serverName: test.server?.name ?? null, serverHost: test.server?.url ?? null});
 
