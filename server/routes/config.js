@@ -5,10 +5,21 @@ import password from '../middlewares/password.js';
 
 const app = express.Router();
 
+/**
+ * What a read-only visitor is not told about the instance.
+ *
+ * `interface` is the operator's own network adapter - a name that can say what
+ * the host is, "vEthernet (External)" for a Hyper-V machine among them. Only
+ * the provider dialog reads it and view mode never opens that, so it was
+ * disclosed to every visitor of a public dashboard for nothing.
+ */
+const WITHHELD_IN_VIEW_MODE = ["interface", "ooklaId", "libreId", "libreUrl",
+    "cron", "scheduleOffset", "passwordLevel"];
+
 app.get("/", password(true), async (req, res) => {
     let configValues = {};
     (await config.listAll()).forEach(row => {
-        if (row.key !== "password" && !(req.viewMode && ["ooklaId", "libreId", "libreUrl", "cron", "scheduleOffset", "passwordLevel"].includes(row.key)))
+        if (row.key !== "password" && !(req.viewMode && WITHHELD_IN_VIEW_MODE.includes(row.key)))
             configValues[row.key] = row.value;
     });
     configValues['viewMode'] = req.viewMode;
