@@ -78,7 +78,9 @@ app.get("/config", password(false), async (req, res) => {
         "Cache-Control": "no-store"
     });
     const includeSecrets = req.query.includeSecrets === "true";
-    config.exportConfig({includeSecrets}).then(obj => res.json(obj));
+    // Awaited: as a floating .then() a rejection was an unhandled rejection
+    // and the request never answered. Awaited, it reaches the error handler.
+    res.json(await config.exportConfig({includeSecrets}));
 });
 
 app.put("/config", password(false), importBody, async (req, res) => {
