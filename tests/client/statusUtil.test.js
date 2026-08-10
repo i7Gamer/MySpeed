@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
     IDLE_POLL_MS, RUNNING_POLL_MS, START_BLOCKED_PAUSED, START_BLOCKED_RUNNING, START_BLOCKED_VIEW_MODE,
-    pollIntervalFor, progressPercent, showsStatusBar, startBlockedReason
+    pollIntervalFor, progressPercent, runJustFinished, showsStatusBar, startBlockedReason
 } from "@/common/utils/StatusUtil.js";
 
 // The header hides its own start button where the bar already carries one, so
@@ -69,6 +69,42 @@ describe("pollIntervalFor", () => {
 
     it("is the faster of the two while running", () => {
         assert.ok(RUNNING_POLL_MS < IDLE_POLL_MS);
+    });
+});
+
+/**
+ * The tests list stopped being polled on a flat five-second interval; it now
+ * refreshes when this says a run has just ended. A cron or remote run is
+ * invisible to the page except through the polled `running` flag, so the
+ * falling edge of that flag is the one moment a new row can have appeared.
+ */
+describe("runJustFinished", () => {
+    it("fires on the falling edge of a run", () => {
+        assert.equal(runJustFinished(true, false), true);
+    });
+
+    it("stays quiet while a run is still going", () => {
+        assert.equal(runJustFinished(true, true), false);
+    });
+
+    it("stays quiet while nothing runs at all", () => {
+        assert.equal(runJustFinished(false, false), false);
+    });
+
+    it("does not fire when a run starts", () => {
+        assert.equal(runJustFinished(false, true), false);
+    });
+
+    // The first poll compares against no previous status at all; the page has
+    // just loaded its list and owes no refresh.
+    it("does not fire before any status was seen", () => {
+        assert.equal(runJustFinished(undefined, false), false);
+    });
+
+    // A degraded status payload should read as "run over", not as "still on":
+    // missing the refresh means showing a stale list until the next run ends.
+    it("treats a run that stops being reported as finished", () => {
+        assert.equal(runJustFinished(true, undefined), true);
     });
 });
 

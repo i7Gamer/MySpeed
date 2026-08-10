@@ -24,8 +24,20 @@ export const StatusProvider = (props) => {
 
     useEffect(() => {
         updateStatus();
-        const timer = setInterval(() => updateStatus(), interval);
-        return () => clearInterval(timer);
+        // A hidden tab skips the tick rather than tearing the timer down: a
+        // wall dashboard in a background tab has nobody looking at it, and the
+        // visibility listener catches it up the moment somebody does.
+        const timer = setInterval(() => {
+            if (!document.hidden) updateStatus();
+        }, interval);
+        const onVisibilityChange = () => {
+            if (!document.hidden) updateStatus();
+        };
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        return () => {
+            clearInterval(timer);
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+        };
     }, [interval]);
 
     return (

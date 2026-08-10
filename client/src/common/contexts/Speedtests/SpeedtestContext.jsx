@@ -1,5 +1,8 @@
-import React, {useState, createContext, useEffect, useCallback, useRef} from "react";
+import React, {useState, createContext, useContext, useEffect, useCallback, useRef} from "react";
 import {jsonRequest} from "@/common/utils/RequestUtil";
+import {runJustFinished} from "@/common/utils/StatusUtil";
+import {StatusContext} from "@/common/contexts/Status";
+import {NodeContext} from "@/common/contexts/Node";
 import {mergeNewTests} from "./merge";
 
 export const SpeedtestContext = createContext({});
@@ -11,6 +14,9 @@ export const SpeedtestProvider = (props) => {
     const [lastId, setLastId] = useState(null);
     const loadingRef = useRef(false);
     const lastLoadTimeRef = useRef(0);
+    const [status] = useContext(StatusContext);
+    const [, , currentNode] = useContext(NodeContext);
+    const wasRunningRef = useRef(status.running);
 
     const loadInitialTests = useCallback(async () => {
         if (loadingRef.current) return;
@@ -118,16 +124,31 @@ export const SpeedtestProvider = (props) => {
         refreshTests();
     }, [refreshTests]);
 
+    // Keyed on the node: switching one swaps what every request answers with,
+    // and the list has to be replaced, not merged - the previous node's tests
+    // used to linger under the new node's until the next full reload.
     useEffect(() => {
         loadInitialTests();
-    }, [loadInitialTests]);
+    }, [currentNode, loadInitialTests]);
 
+    // The list used to be refetched every five seconds around the clock. A new
+    // row can only appear when a run ends, and the polled status already says
+    // when that is - so the refresh rides its falling edge instead. Manual runs
+    // stay covered twice over: RunUtil refreshes explicitly when the run call
+    // returns, and the flag falls either way.
     useEffect(() => {
-        const interval = setInterval(() => {
-            refreshTests();
-        }, 5000);
+        if (runJustFinished(wasRunningRef.current, status.running)) refreshTests();
+        wasRunningRef.current = status.running;
+    }, [status.running, refreshTests]);
 
-        return () => clearInterval(interval);
+    // A hidden tab gets no status polls, so a run can end entirely unseen;
+    // coming back to the tab is the moment to catch up.
+    useEffect(() => {
+        const onVisibilityChange = () => {
+            if (!document.hidden) refreshTests();
+        };
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        return () => document.removeEventListener("visibilitychange", onVisibilityChange);
     }, [refreshTests]);
 
     return (

@@ -6,6 +6,19 @@ export const RUNNING_POLL_MS = 1000;
 
 export const pollIntervalFor = (status) => status?.running ? RUNNING_POLL_MS : IDLE_POLL_MS;
 
+/**
+ * Whether a run ended between two polled statuses.
+ *
+ * The tests list used to be refetched on a flat five-second interval, mostly
+ * to notice finished cron runs - tens of thousands of requests a day on a
+ * dashboard left open. A new row can only appear when a run ends, and the only
+ * way the page learns about a cron or remote run is the polled `running` flag,
+ * so its falling edge is the moment to refresh. A run that merely stops being
+ * reported counts as ended: staying quiet there would show a stale list until
+ * the next run finished.
+ */
+export const runJustFinished = (wasRunning, running) => wasRunning === true && running !== true;
+
 const PERCENT = 100;
 
 // The one route that renders the status bar, and so the one route whose header

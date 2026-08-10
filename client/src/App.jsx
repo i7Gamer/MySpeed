@@ -38,11 +38,14 @@ const Providers = ({children}) => (
                 <ToastNotificationProvider>
                     <ConfigProvider>
                         <NodeProvider>
-                            <SpeedtestProvider>
-                                <StatusProvider>
+                            {/* Status wraps Speedtests: the tests list refreshes
+                                on the falling edge of the polled running flag,
+                                so it consumes the status context. */}
+                            <StatusProvider>
+                                <SpeedtestProvider>
                                     {children}
-                                </StatusProvider>
-                            </SpeedtestProvider>
+                                </SpeedtestProvider>
+                            </StatusProvider>
                         </NodeProvider>
                     </ConfigProvider>
                 </ToastNotificationProvider>
