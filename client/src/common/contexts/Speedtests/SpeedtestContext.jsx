@@ -8,6 +8,7 @@ import {
     formatDateParam, rangeToParams, selectionFromParams, timeframeFromRange
 } from "@/common/utils/TimeframeUtil";
 import {mergeNewTests} from "./merge";
+import {applyPage, cursorOf, removeTest} from "./paging";
 
 export const SpeedtestContext = createContext({});
 
@@ -66,14 +67,6 @@ export const SpeedtestProvider = (props) => {
         return params.toString();
     }, [range]);
 
-    // `afterId` travels beside `after` rather than being replaced by it: a
-    // parent proxies this request to its nodes, and a node still running an
-    // older version understands only the id.
-    const cursorOf = (list) => {
-        const last = list[list.length - 1];
-        return last ? {created: last.created, id: last.id} : null;
-    };
-
     // Replaced rather than pushed: narrowing a range is refining one view, not
     // arriving at a new one, and stacking every adjustment would make Back walk
     // through each of them.
@@ -111,6 +104,16 @@ export const SpeedtestProvider = (props) => {
         }
     }, [listQuery]);
 
+    // The paging judgements live in paging.js. They used to run inside the
+    // setSpeedtests updater - which React runs twice under StrictMode, firing
+    // the setCursor it carried twice - and the cursor only advanced when a
+    // page brought something new, so a page of already-known rows (the overlap
+    // a refresh can leave) was refetched forever.
+    //
+    // The list itself still changes through an updater: a refresh can prepend
+    // rows while this fetch is in flight, and replacing the state with a fold
+    // over a snapshot would throw those away. The cursor and hasMore need no
+    // snapshot at all - both are read off the fetched page alone.
     const loadMoreTests = useCallback(async () => {
         const now = Date.now();
         if (loadingRef.current || !hasMore || !cursor || (now - lastLoadTimeRef.current) < 500) return;
@@ -119,20 +122,12 @@ export const SpeedtestProvider = (props) => {
         loadingRef.current = true;
         setLoading(true);
         try {
-            const newTests = await jsonRequest(
+            const fetched = await jsonRequest(
                 `/speedtests?${listQuery({after: cursor.created, afterId: cursor.id})}`);
-            if (newTests.length > 0) {
-                setSpeedtests(prev => {
-                    const existingIds = new Set(prev.map(test => test.id));
-                    const uniqueNewTests = newTests.filter(test => !existingIds.has(test.id));
-
-                    if (uniqueNewTests.length > 0) {
-                        setCursor(cursorOf(newTests));
-                        return [...prev, ...uniqueNewTests];
-                    }
-                    return prev;
-                });
-                setHasMore(newTests.length === PAGE_SIZE);
+            if (fetched.length > 0) {
+                setSpeedtests(prev => applyPage(prev, fetched, PAGE_SIZE).tests);
+                setCursor(cursorOf(fetched));
+                setHasMore(fetched.length === PAGE_SIZE);
             } else {
                 setHasMore(false);
             }
@@ -170,23 +165,18 @@ export const SpeedtestProvider = (props) => {
         }
     }, [speedtests, listQuery]);
 
-    // Derives the new cursor from `prev` inside the updater rather than from the
-    // captured `speedtests`, so it stays correct regardless of render timing and
-    // cannot index into an empty list.
+    // The list changes through an updater so a concurrent refresh cannot be
+    // clobbered; the cursor comes from a fold over the snapshot, which is safe
+    // here because a refresh only prepends - the last row, which is all the
+    // cursor reads, is the same either way. The old version derived the cursor
+    // inside the updater, whose side effects fired twice under StrictMode.
     const deleteTest = useCallback((id) => {
-        setSpeedtests(prev => {
-            const remaining = prev.filter(test => test.id !== id);
+        const removal = removeTest(speedtests, id);
 
-            if (remaining.length === 0) {
-                setCursor(null);
-                setHasMore(false);
-            } else if (remaining.length < prev.length) {
-                setCursor(cursorOf(remaining));
-            }
-
-            return remaining;
-        });
-    }, []);
+        setSpeedtests(prev => removeTest(prev, id).tests);
+        setCursor(removal.cursor);
+        if (removal.exhausted) setHasMore(false);
+    }, [speedtests]);
 
     const updateTests = useCallback(() => {
         refreshTests();
