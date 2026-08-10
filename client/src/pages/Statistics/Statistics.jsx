@@ -158,7 +158,6 @@ export const Statistics = () => {
             startTransition(() => {
                 setStatistics(stats);
                 setLatestTest(tests.length > 0 ? tests[0] : null);
-                setRecentTests(tests);
                 setLoading(false);
             });
         }).catch(error => {
