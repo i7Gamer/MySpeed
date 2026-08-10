@@ -31,6 +31,7 @@ import PageToolbar from "@/common/components/PageToolbar";
 import ChartModal from "@/common/components/ChartModal";
 import {formatDay} from "@/common/utils/FormatUtil";
 import {hasPreviousData} from "@/common/components/Delta/deltas";
+import {previousConnection} from "@/common/utils/TestUtil";
 import SpeedChart from "@/pages/Statistics/charts/SpeedChart";
 import LatestTestChart from "@/pages/Statistics/charts/LatestTestChart";
 import PingChart from "@/pages/Statistics/charts/PingChart";
@@ -52,11 +53,16 @@ const FULL_HEIGHT_CHARTS = [...LINE_CHARTS, 'hourly'];
 // echoes what it actually used as `maxDataPoints`.
 const FULL_DETAIL_POINTS = 1000;
 
-// Only the newest test is needed here now. The bufferbloat trend used to be
-// built from a batch fetched alongside the statistics, ignoring the selected
-// range entirely; it travels with the range statistics since it became an
-// average over that range.
-const LATEST_TEST_ONLY = 1;
+// The newest test and enough of its neighbours for the detail pane to say what
+// changed with it: the one before supplies every "since last time" figure, and
+// previousConnection walks further back for the nearest test that names a
+// connection at all - the row immediately before may carry none.
+//
+// Deliberately small. This is not the bufferbloat trend, which used to be built
+// from a batch fetched here while ignoring the selected range entirely; that
+// figure travels with the range statistics since it became an average over the
+// range.
+const RECENT_TESTS = 10;
 
 ChartJS.register(ArcElement, Tooltip, CategoryScale, LinearScale, PointElement, LineElement, Title, Legend, BarElement, RadialLinearScale, Filler);
 
@@ -131,7 +137,7 @@ ChartJS.defaults.plugins.legend.labels.boxHeight = 8;
 
 export const Statistics = () => {
     const [statistics, setStatistics] = useState(null);
-    const [latestTest, setLatestTest] = useState(null);
+    const [recentTests, setRecentTests] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(null);
     const [expandedChart, setExpandedChart] = useState(null);
@@ -185,11 +191,11 @@ export const Statistics = () => {
         });
         Promise.all([
             jsonRequest(`/speedtests/statistics/?${query}`),
-            jsonRequest(`/speedtests?limit=${LATEST_TEST_ONLY}`)
+            jsonRequest(`/speedtests?limit=${RECENT_TESTS}`)
         ]).then(([stats, tests]) => {
             startTransition(() => {
                 setStatistics(stats);
-                setLatestTest(tests.length > 0 ? tests[0] : null);
+                setRecentTests(Array.isArray(tests) ? tests : []);
                 setLoading(false);
             });
         }).catch(error => {
@@ -222,6 +228,12 @@ export const Statistics = () => {
         i18n.on("languageChanged", callback);
         return () => i18n.off("languageChanged", callback);
     }, [updateStats]);
+
+    // The list is newest first, so the entry after the latest test is the
+    // chronologically earlier one.
+    const latestTest = recentTests[0] ?? null;
+    const previousTest = recentTests[1] ?? null;
+    const latestConnection = previousConnection(recentTests, 0);
 
     const isDownsampled = deferredStatistics?.downsampled === true;
     const wantsDetail = LINE_CHARTS.includes(expandedChart) && preferences.fullChartDetail === true;
@@ -343,7 +355,8 @@ export const Statistics = () => {
             case 'overview':
                 return <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} dateRange={chartRange} previous={previous}/>;
             case 'latest':
-                return <LatestTestChart test={latestTest} expanded/>;
+                return <LatestTestChart test={latestTest} previous={previousTest}
+                                        previousConnection={latestConnection} expanded/>;
             case 'consistency':
                 return <ConsistencyChart consistency={deferredStatistics.consistency}/>;
             case 'download':

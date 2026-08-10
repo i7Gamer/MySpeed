@@ -180,17 +180,11 @@ const TestArea = () => {
                             upLevel={getIconBySpeed(test.upload, config.upload, true)}
                             error={test.error}
                             type={test.type}
-                            duration={test.time}
-                            amount={test.amount}
-                            resultId={test.resultId}
-                            serverName={test.serverName}
-                            serverHost={test.serverHost}
-                            packetLoss={test.packetLoss}
-                            downloadLatency={test.downloadLatency}
-                            uploadLatency={test.uploadLatency}
-                            isp={test.isp}
-                            externalIp={test.externalIp}
-                            created={test.created}
+                            // The columns above are what the collapsed row draws.
+                            // The detail panel reads the stored row itself, so
+                            // the fields only it shows are no longer unpacked
+                            // one by one on the way in.
+                            test={test}
                             // Newest first, so the next entry is the
                             // chronologically earlier test - what the detail
                             // view compares against.

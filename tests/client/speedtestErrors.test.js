@@ -1,7 +1,7 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import i18n from "i18next";
-import { describeError } from "@/pages/Home/components/Speedtest/utils/errors.js";
+import { describeError } from "@/common/components/TestDetails/utils/errors.js";
 
 before(async () => {
     await i18n.init({

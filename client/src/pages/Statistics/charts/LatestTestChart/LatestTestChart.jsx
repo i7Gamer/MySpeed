@@ -9,6 +9,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {StatusContext} from "@/common/contexts/Status";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {convertSpeed, getSpeedUnit} from "@/common/utils/FormatUtil";
+import TestDetails from "@/common/components/TestDetails";
 import {t} from "i18next";
 
 export const LatestTestChart = (props) => {
@@ -21,6 +22,17 @@ export const LatestTestChart = (props) => {
     if (!props.test) return <></>;
     if (config === null) return <></>;
 
+    // Opened, the card becomes the whole record: the three summary rows below
+    // are all that fits on a card, and the modal used to render exactly the same
+    // three, so there was nothing to open it for. This is the pane the overview
+    // shows for any test in its list, over the newest one.
+    if (props.expanded) return (
+        <StatisticContainer title={t("latest.latest")} expanded>
+            <TestDetails test={props.test} previous={props.previous}
+                         previousConnection={props.previousConnection}/>
+        </StatisticContainer>
+    );
+
     const hasJitter = props.test.jitter !== null && props.test.jitter !== undefined;
 
     // Absent for tests recorded before the quality columns existed and for the
@@ -28,7 +40,7 @@ export const LatestTestChart = (props) => {
     const bloat = bufferbloat(props.test);
 
     return (
-        <StatisticContainer title={t("latest.latest")} onClick={props.onClick} running={status.running} expanded={props.expanded}>
+        <StatisticContainer title={t("latest.latest")} onClick={props.onClick} running={status.running}>
             <div className="info-container">
                 <div className="test-container">
                     <div className="test-info">

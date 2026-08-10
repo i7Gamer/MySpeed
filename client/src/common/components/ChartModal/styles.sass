@@ -36,6 +36,12 @@ $modal-breakpoint-tall: 900px
 
 .chart-modal-content
   position: relative
+  // A column so the body can take whatever the toolbar leaves and scroll inside
+  // it. The panels the modal opens are no longer all one screenful - the latest
+  // test now shows its whole record - and with the dialog clipping at 90vh and
+  // nothing scrolling, everything past that height was simply unreachable.
+  display: flex
+  flex-direction: column
   width: fit-content
   min-width: 400px
   max-width: min(#{$modal-max-width}, calc(100vw - #{$modal-gutter}))
@@ -84,6 +90,12 @@ $modal-breakpoint-tall: 900px
 
 .chart-modal-body
   padding: 1.25rem
+  // min-height overrides the auto minimum a flex item gets, which is what stops
+  // an overflowing child from ever letting its parent shrink - without it the
+  // body simply grows past the dialog instead of scrolling.
+  flex: 1 1 auto
+  min-height: 0
+  overflow-y: auto
 
   .chart-container,
   .stats-container
@@ -194,6 +206,9 @@ $modal-breakpoint-tall: 900px
 .chart-modal-toolbar
   display: flex
   align-items: center
+  // Never squeezed by a scrolling body: it is the control strip, and a body
+  // taller than the dialog would otherwise push it out of the flex layout.
+  flex-shrink: 0
   gap: 0.85rem
   padding: 0.9rem 1.25rem
   border-top: 1px solid $light-gray

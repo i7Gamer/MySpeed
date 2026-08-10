@@ -1,5 +1,5 @@
 /**
- * The numbers the expanded test row shows beyond the raw measurement.
+ * The numbers a test's detail pane shows beyond the raw measurement.
  *
  * Both are derived from data the list endpoint already returns, so the detail
  * view costs no extra request and works on every historic row.

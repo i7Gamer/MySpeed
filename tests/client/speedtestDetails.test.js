@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
     changeFrom, differenceFromTarget, percentOfTarget
-} from "../../client/src/pages/Home/components/Speedtest/utils/details.js";
+} from "../../client/src/common/components/TestDetails/utils/details.js";
 
 describe("percentOfTarget", () => {
     it("reports how much of the optimum was reached", () => {
