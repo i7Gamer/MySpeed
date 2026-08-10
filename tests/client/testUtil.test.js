@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
     bufferbloat, bufferbloatTrend, connectionChange, failureRate, getIconBySpeed, gradeForIncrease, isFailedTest,
-    previousConnection, TREND_LENGTH
+    jitterColour, packetLossColour, previousConnection, TREND_LENGTH
 } from "../../client/src/common/utils/TestUtil.js";
 
 /**
@@ -369,5 +369,52 @@ describe("gradeForIncrease", () => {
         const {increase, grade} = bufferbloat(test);
 
         assert.equal(gradeForIncrease(increase), grade);
+    });
+});
+
+/**
+ * Packet loss and jitter are the two figures on the statistics with no
+ * configured optimum to be measured against - there is no setting for either
+ * anywhere - so their thresholds are read against what a voice or video call
+ * needs, which is the first thing either one breaks.
+ */
+describe("packetLossColour", () => {
+    it("calls a clean line green", () => {
+        assert.equal(packetLossColour(0), "green");
+        assert.equal(packetLossColour(0.9), "green");
+    });
+
+    it("warns from a percent, and condemns from two and a half", () => {
+        assert.equal(packetLossColour(1), "orange");
+        assert.equal(packetLossColour(2.4), "orange");
+        assert.equal(packetLossColour(2.5), "red");
+        assert.equal(packetLossColour(40), "red");
+    });
+
+    // Absent is not perfect: only Ookla reports a loss rate, and green would
+    // claim a clean line for every provider that measures none.
+    it("has no colour for anything that is not a measurement", () => {
+        for (const value of [null, undefined, NaN, Infinity, -1, "0", {}])
+            assert.equal(packetLossColour(value), "blue", `${String(value)} must not grade`);
+    });
+});
+
+describe("jitterColour", () => {
+    it("calls a steady line green", () => {
+        assert.equal(jitterColour(0), "green");
+        assert.equal(jitterColour(4.9), "green");
+    });
+
+    it("warns from five milliseconds, and condemns from twenty", () => {
+        assert.equal(jitterColour(5), "orange");
+        assert.equal(jitterColour(19.9), "orange");
+        assert.equal(jitterColour(20), "red");
+    });
+
+    // The server returns an explicit null for a range in which no test measured
+    // jitter, which is not a jitter of zero.
+    it("has no colour for anything that is not a measurement", () => {
+        for (const value of [null, undefined, NaN, -1, "5"])
+            assert.equal(jitterColour(value), "blue", `${String(value)} must not grade`);
     });
 });

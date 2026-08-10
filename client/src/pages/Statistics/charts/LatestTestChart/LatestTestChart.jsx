@@ -1,7 +1,9 @@
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
-import {faArrowDown, faArrowUp, faPingPongPaddleBall, faWaveSquare} from "@fortawesome/free-solid-svg-icons";
-import {bufferbloat, bufferbloatColour} from "@/common/utils/TestUtil";
+import {
+    faArrowDown, faArrowUp, faPingPongPaddleBall, faSatelliteDish, faWaveSquare
+} from "@fortawesome/free-solid-svg-icons";
+import {bufferbloat, bufferbloatColour, packetLossColour} from "@/common/utils/TestUtil";
 import "./styles.sass";
 import {getIconBySpeed} from "@/common/utils/TestUtil";
 import {useContext} from "react";
@@ -39,6 +41,12 @@ export const LatestTestChart = (props) => {
     // providers that cannot measure them; the row simply does not render then.
     const bloat = bufferbloat(props.test);
 
+    // The same rule, for the same reason: only Ookla reports a loss rate, and a
+    // provider that reports none has not measured a clean line. Zero is a
+    // measurement, so the check cannot be on truthiness.
+    const hasPacketLoss = typeof props.test.packetLoss === "number"
+        && Number.isFinite(props.test.packetLoss);
+
     return (
         <StatisticContainer title={t("latest.latest")} onClick={props.onClick} running={status.running}>
             <div className="info-container">
@@ -71,6 +79,25 @@ export const LatestTestChart = (props) => {
                     <FontAwesomeIcon icon={faArrowDown}
                                      className={"icon-" + getIconBySpeed(props.test.download, config.download, true)}/>
                 </div>
+
+                {/* The share of packets that never arrived, which none of the
+                    three figures above can show: a line can be fast in both
+                    directions and drop one packet in fifty, and that is what a
+                    call breaking into fragments actually is. Graded against
+                    what a call needs rather than against a configured optimum -
+                    there is no setting for it anywhere. */}
+                {hasPacketLoss && (
+                    <div className="test-container">
+                        <div className="test-info">
+                            <h2>{t("latest.packet_loss")}</h2>
+                            <p className={"icon-" + packetLossColour(props.test.packetLoss)}>
+                                {props.test.packetLoss}%
+                            </p>
+                        </div>
+                        <FontAwesomeIcon icon={faSatelliteDish}
+                                         className={"icon-" + packetLossColour(props.test.packetLoss)}/>
+                    </div>
+                )}
 
                 {/* The value carries the grade's colour, exactly as the rows
                     above colour theirs by their level, and the grade badge sits

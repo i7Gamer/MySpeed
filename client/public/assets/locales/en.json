@@ -241,7 +241,8 @@
     "bufferbloat": "Bufferbloat: adds {{increase}} ms under load",
     "bufferbloat_trend": "Bufferbloat over the last tests",
     "quality": "Under load",
-    "loaded_latency": "{{down}} / {{up}} ms latency"
+    "loaded_latency": "{{down}} / {{up}} ms latency",
+    "packet_loss": "Packet loss"
   },
   "info": {
     "recommendations_error": "You have to do at least 10 tests to get an average. It doesn't matter if the tests were done manually or automatically.",
@@ -368,7 +369,14 @@
       "average_title": "Average duration",
       "average_description": "The average duration of the tests",
       "packet_loss_title": "Packet loss",
-      "packet_loss_description": "Average across the tests that measured it"
+      "packet_loss_description": "Average across the tests that measured it",
+      "peak_title": "Peak-hour slowdown",
+      "peak_description": "Slowest around {{slowest}}, fastest around {{fastest}}",
+      "ping_description": "Average latency, between {{min}} and {{max}}",
+      "span_title": "Duration spread",
+      "span_description": "The shortest and longest test in this range",
+      "density_title": "Tests per day",
+      "density_description": "Across {{days}} days"
     },
     "failed": {
       "title": "Failed tests",
@@ -407,7 +415,10 @@
       "fair": "Fair",
       "poor": "Poor",
       "ping_variance": "Ping variance",
-      "loaded_latency_average": "Adds {{increase}} ms under load on average, across {{tests}} tests"
+      "loaded_latency_average": "Adds {{increase}} ms under load on average, across {{tests}} tests",
+      "jitter_detail": "Variation within a test",
+      "range": "Between {{min}} and {{max}}",
+      "sample_count": "Across {{tests}} tests"
     },
     "loaded_latency": "Under load"
   },

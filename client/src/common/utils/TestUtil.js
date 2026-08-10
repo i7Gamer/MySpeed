@@ -88,6 +88,36 @@ export function connectionChange(test, previous) {
 }
 
 /**
+ * Where a loss rate and a jitter figure stop being good, then acceptable.
+ *
+ * Both are read against what a voice or video call needs, which is the first
+ * thing either one breaks: a percent of loss is audible, and jitter past a
+ * couple of dozen milliseconds is what a jitter buffer runs out of room for.
+ * Throughput has the configured optimum to be measured against; these two have
+ * no setting anywhere, so the thresholds live here.
+ */
+const PACKET_LOSS_GOOD = 1;
+const PACKET_LOSS_FAIR = 2.5;
+
+const JITTER_GOOD = 5;
+const JITTER_FAIR = 20;
+
+// Blue for anything that is not a measurement: a range in which nothing
+// reported the figure has no colour to earn, and red would say the line is bad
+// when nothing was measured at all.
+const gradeBelow = (value, good, fair) => {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "blue";
+    if (value < good) return "green";
+    if (value < fair) return "orange";
+
+    return "red";
+};
+
+export const packetLossColour = (value) => gradeBelow(value, PACKET_LOSS_GOOD, PACKET_LOSS_FAIR);
+
+export const jitterColour = (value) => gradeBelow(value, JITTER_GOOD, JITTER_FAIR);
+
+/**
  * The colour a grade is shown in. Kept beside the thresholds so the two cannot
  * drift into disagreeing about what counts as a good line.
  */

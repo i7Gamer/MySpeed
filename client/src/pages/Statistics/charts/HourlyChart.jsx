@@ -3,7 +3,7 @@ import { useMemo, useContext, memo } from "react";
 import { t } from "i18next";
 import { ThemeContext } from "@/common/contexts/Theme";
 import { PreferencesContext } from "@/common/contexts/Preferences";
-import { convertSpeed, getSpeedUnit, TIME_FORMAT_12H } from "@/common/utils/FormatUtil";
+import { convertSpeed, formatHour, getSpeedUnit } from "@/common/utils/FormatUtil";
 import { chartMotion, chartThemeColors, tooltipTheme } from "@/pages/Statistics/charts/lineChartConfig";
 import "./SpeedChart/styles.sass";
 
@@ -11,17 +11,8 @@ const HourlyChart = memo((props) => {
     const [isDarkMode] = useContext(ThemeContext);
     const [preferences] = useContext(PreferencesContext);
     const speedUnit = getSpeedUnit(preferences);
-    const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
 
-    const formatHourLabel = (hour) => {
-        if (use12h) {
-            const suffix = hour >= 12 ? "PM" : "AM";
-            let h = hour % 12;
-            if (h === 0) h = 12;
-            return `${h}:00 ${suffix}`;
-        }
-        return `${hour.toString().padStart(2, '0')}:00`;
-    };
+    const formatHourLabel = (hour) => formatHour(hour, preferences);
 
     const chartData = useMemo(() => {
         if (!props.hourlyAverages) return { labels: [], datasets: [] };
@@ -49,7 +40,7 @@ const HourlyChart = memo((props) => {
                 }
             ]
         };
-    }, [props.hourlyAverages, preferences, use12h]);
+    }, [props.hourlyAverages, preferences]);
 
     const themeColors = useMemo(() => chartThemeColors(isDarkMode), [isDarkMode]);
 

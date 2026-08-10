@@ -74,6 +74,22 @@ export const formatShortTime = (date, preferences) => {
     return `${hours}:${minutes}`;
 };
 
+/**
+ * A whole hour of the day, on the clock the reader has chosen.
+ *
+ * Lived inside the hourly chart until the overview card started naming the
+ * fastest and slowest hours of the day: two components writing "20:00" from the
+ * same preference is one of them eventually forgetting the 12-hour case.
+ */
+export const formatHour = (hour, preferences) => {
+    if (preferences?.timeFormat !== TIME_FORMAT_12H) return `${String(hour).padStart(2, "0")}:00`;
+
+    const suffix = hour >= 12 ? "PM" : "AM";
+    const twelve = hour % 12;
+
+    return `${twelve === 0 ? 12 : twelve}:00 ${suffix}`;
+};
+
 export const getSpeedUnit = (preferences) => {
     if (preferences?.speedUnit === SPEED_UNIT_MBYTES) {
         return t("latest.byte_speed_unit", {defaultValue: "MB/s"});

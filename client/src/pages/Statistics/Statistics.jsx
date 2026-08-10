@@ -353,12 +353,17 @@ export const Statistics = () => {
     const renderChart = (chartType, source) => {
         switch (chartType) {
             case 'overview':
-                return <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} dateRange={chartRange} previous={previous}/>;
+                return <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} hourlyAverages={deferredStatistics.hourlyAverages} ping={deferredStatistics.ping} dateRange={chartRange} previous={previous} expanded/>;
             case 'latest':
                 return <LatestTestChart test={latestTest} previous={previousTest}
                                         previousConnection={latestConnection} expanded/>;
             case 'consistency':
-                return <ConsistencyChart consistency={deferredStatistics.consistency}/>;
+                // The spread each deviation summarises, which the page already
+                // holds: a standard deviation is the honest figure and an
+                // unreadable one.
+                return <ConsistencyChart consistency={deferredStatistics.consistency} expanded
+                                         ranges={{download: deferredStatistics.download, upload: deferredStatistics.upload,
+                                             ping: deferredStatistics.ping, jitter: deferredStatistics.jitter}}/>;
             case 'download':
                 return <SpeedChart labels={source.labels} data={source.data} dataKey="download" titleKey="latest.down" color="hsl(187, 94%, 43%)" failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
             case 'upload':
@@ -411,7 +416,7 @@ export const Statistics = () => {
                 </p>
             )}
 
-            <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} dateRange={chartRange} previous={previous} onClick={() => setExpandedChart('overview')}/>
+            <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} hourlyAverages={deferredStatistics.hourlyAverages} dateRange={chartRange} previous={previous} onClick={() => setExpandedChart('overview')}/>
             <LatestTestChart test={latestTest} onClick={() => setExpandedChart('latest')}/>
             <ConsistencyChart consistency={deferredStatistics.consistency} onClick={() => setExpandedChart('consistency')}/>
 

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import i18n from "i18next";
 import {
     convertSpeed, formatDateTime, formatDuration, formatLastTest, formatShortTime, formatTime,
-    formatWithUnit, generateRelativeTime, getSpeedUnit,
+    formatHour, formatWithUnit, generateRelativeTime, getSpeedUnit,
     SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H
 } from "@/common/utils/FormatUtil.js";
 
@@ -285,5 +285,35 @@ describe("locale handling", () => {
         } finally {
             i18n.changeLanguage(previous);
         }
+    });
+});
+
+/**
+ * Lived inside the hourly chart until the overview card started naming the
+ * fastest and slowest hours of the day.
+ */
+describe("formatHour", () => {
+    it("pads the hour on a 24-hour clock", () => {
+        assert.equal(formatHour(0, CLOCK_24H), "00:00");
+        assert.equal(formatHour(9, CLOCK_24H), "09:00");
+        assert.equal(formatHour(20, CLOCK_24H), "20:00");
+    });
+
+    it("is the 24-hour clock by default", () => {
+        assert.equal(formatHour(20, undefined), "20:00");
+        assert.equal(formatHour(20, {}), "20:00");
+    });
+
+    // Midnight and noon are the two the modulo gets wrong: 0 % 12 and 12 % 12
+    // are both zero, and "0:00 AM" is not a time anyone writes.
+    it("writes noon and midnight as twelve on a 12-hour clock", () => {
+        assert.equal(formatHour(0, CLOCK_12H), "12:00 AM");
+        assert.equal(formatHour(12, CLOCK_12H), "12:00 PM");
+    });
+
+    it("halves the afternoon hours on a 12-hour clock", () => {
+        assert.equal(formatHour(9, CLOCK_12H), "9:00 AM");
+        assert.equal(formatHour(13, CLOCK_12H), "1:00 PM");
+        assert.equal(formatHour(23, CLOCK_12H), "11:00 PM");
     });
 });

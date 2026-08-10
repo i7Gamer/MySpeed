@@ -1,12 +1,14 @@
 import { useContext, useMemo } from "react";
 import { t } from "i18next";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faArrowDown, faArrowUp, faGaugeHigh, faPingPongPaddleBall } from "@fortawesome/free-solid-svg-icons";
-import { bufferbloatColour, gradeForIncrease } from "@/common/utils/TestUtil";
+import {
+    faArrowDown, faArrowUp, faGaugeHigh, faPingPongPaddleBall, faWaveSquare
+} from "@fortawesome/free-solid-svg-icons";
+import { bufferbloatColour, gradeForIncrease, jitterColour } from "@/common/utils/TestUtil";
 import { formatDateTime } from "@/common/utils/FormatUtil";
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import { PreferencesContext } from "@/common/contexts/Preferences";
-import { convertSpeed, getSpeedUnit, NOT_MEASURED } from "@/common/utils/FormatUtil";
+import { convertSpeed, formatWithUnit, getSpeedUnit, NOT_MEASURED } from "@/common/utils/FormatUtil";
 import "./styles.sass";
 
 export const ConsistencyChart = (props) => {
@@ -46,6 +48,32 @@ export const ConsistencyChart = (props) => {
     const deviation = (value, unit) =>
         value === null || value === undefined ? NOT_MEASURED : `±${value} ${unit}`;
 
+    /**
+     * The two ends the deviation above is a summary of, for the enlarged view.
+     *
+     * A standard deviation is the honest figure and an unreadable one: nobody
+     * has an intuition for ±34 Mbps, and everybody has one for "between 180 and
+     * 260". Null for anything not measured, which renders as no line at all
+     * rather than as a range ending in "N/A".
+     */
+    const spread = (range, format = (value) => value) => {
+        if (!props.expanded || !range) return null;
+        if (range.min === null || range.min === undefined) return null;
+
+        return t("statistics.consistency.range", {min: format(range.min), max: format(range.max)});
+    };
+
+    const ranges = props.ranges ?? {};
+    const speed = (value) => formatWithUnit(convertSpeed(value, preferences), speedUnit);
+    const latency = (value) => formatWithUnit(value, t("latest.ping_unit"));
+
+    const spreads = {
+        download: spread(ranges.download, speed),
+        upload: spread(ranges.upload, speed),
+        ping: spread(ranges.ping, latency),
+        jitter: spread(ranges.jitter, latency)
+    };
+
     return (
         <StatisticContainer title={t("statistics.consistency.title")} onClick={props.onClick}>
             <div className="consistency-container">
@@ -58,6 +86,7 @@ export const ConsistencyChart = (props) => {
                         <span className="consistency-detail">
                             {deviation(convertSpeed(data.download.stdDev, preferences), speedUnit)}
                         </span>
+                        {spreads.download && <span className="consistency-detail">{spreads.download}</span>}
                     </div>
                     <FontAwesomeIcon icon={faArrowDown} className={getConsistencyColor(data.download.consistency)} />
                 </div>
@@ -71,6 +100,7 @@ export const ConsistencyChart = (props) => {
                         <span className="consistency-detail">
                             {deviation(convertSpeed(data.upload.stdDev, preferences), speedUnit)}
                         </span>
+                        {spreads.upload && <span className="consistency-detail">{spreads.upload}</span>}
                     </div>
                     <FontAwesomeIcon icon={faArrowUp} className={getConsistencyColor(data.upload.consistency)} />
                 </div>
@@ -82,8 +112,27 @@ export const ConsistencyChart = (props) => {
                             {deviation(data.ping.stdDev, t("latest.ping_unit"))}
                         </p>
                         <span className="consistency-detail">{t("statistics.consistency.ping_variance")}</span>
+                        {spreads.ping && <span className="consistency-detail">{spreads.ping}</span>}
                     </div>
                     <FontAwesomeIcon icon={faPingPongPaddleBall} className="icon-orange" />
+                </div>
+
+                {/* The ping row above says how far apart two tests' latencies
+                    were; this one says how far apart the packets of a single
+                    test were, which is the figure a call actually stutters on.
+                    The server has averaged it over the range since the
+                    consistency block existed and nothing has ever shown it. */}
+                <div className="consistency-item">
+                    <div className="consistency-info">
+                        <h2>{t("latest.jitter")}</h2>
+                        <p className={"icon-" + jitterColour(data.ping.jitter)}>
+                            {formatWithUnit(data.ping.jitter, t("latest.jitter_unit"))}
+                        </p>
+                        <span className="consistency-detail">{t("statistics.consistency.jitter_detail")}</span>
+                        {spreads.jitter && <span className="consistency-detail">{spreads.jitter}</span>}
+                    </div>
+                    <FontAwesomeIcon icon={faWaveSquare}
+                                     className={"icon-" + jitterColour(data.ping.jitter)} />
                 </div>
 
                 {/* Bufferbloat is stability under load, so it sits with the
@@ -121,6 +170,15 @@ export const ConsistencyChart = (props) => {
                                               t("latest.bufferbloat", {increase: entry.increase})}/>
                                 ))}
                             </span>
+                            {/* How many tests the average is over. It has only
+                                ever been in the title above, where a grade of
+                                "A" from three tests and one from three hundred
+                                look exactly alike. */}
+                            {props.expanded && (
+                                <span className="consistency-detail">
+                                    {t("statistics.consistency.sample_count", {tests: loaded.tests})}
+                                </span>
+                            )}
                         </div>
                         <FontAwesomeIcon icon={faGaugeHigh}
                                          className={"icon-" + bufferbloatColour(loadedGrade)} />

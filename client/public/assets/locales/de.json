@@ -241,7 +241,8 @@
     "bufferbloat": "Bufferbloat: steigt um {{increase}} ms unter Last",
     "bufferbloat_trend": "Bufferbloat über die letzten Tests",
     "quality": "Unter Last",
-    "loaded_latency": "{{down}} / {{up}} ms Latenz"
+    "loaded_latency": "{{down}} / {{up}} ms Latenz",
+    "packet_loss": "Paketverlust"
   },
   "info": {
     "recommendations_error": "Du musst mindestens 10 Tests machen, damit ein Durchschnitt ermittelt werden kann. Ob die Tests manuell oder automatisch durchgeführt wurden ist egal.",
@@ -368,7 +369,14 @@
       "average_title": "Durchschnittsdauer",
       "average_description": "Die durchschnittliche Dauer der Tests",
       "packet_loss_title": "Paketverlust",
-      "packet_loss_description": "Durchschnitt über die Tests, die ihn gemessen haben"
+      "packet_loss_description": "Durchschnitt über die Tests, die ihn gemessen haben",
+      "peak_title": "Verlangsamung zur Stoßzeit",
+      "peak_description": "Am langsamsten gegen {{slowest}}, am schnellsten gegen {{fastest}}",
+      "ping_description": "Durchschnittliche Latenz, zwischen {{min}} und {{max}}",
+      "span_title": "Dauer-Spanne",
+      "span_description": "Der kürzeste und der längste Test in diesem Zeitraum",
+      "density_title": "Tests pro Tag",
+      "density_description": "Über {{days}} Tage"
     },
     "failed": {
       "title": "Fehlgeschlagene Tests",
@@ -407,7 +415,10 @@
       "fair": "Faire",
       "poor": "Arm",
       "ping_variance": "Ping-Varianz",
-      "loaded_latency_average": "Steigt im Schnitt um {{increase}} ms unter Last, über {{tests}} Tests"
+      "loaded_latency_average": "Steigt im Schnitt um {{increase}} ms unter Last, über {{tests}} Tests",
+      "jitter_detail": "Schwankung innerhalb eines Tests",
+      "range": "Zwischen {{min}} und {{max}}",
+      "sample_count": "Über {{tests}} Tests"
     },
     "loaded_latency": "Unter Last"
   },
