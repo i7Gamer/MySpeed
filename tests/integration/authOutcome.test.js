@@ -74,7 +74,7 @@ describe("what a refusal says it is", () => {
 
     describe("an instance with a password", () => {
         beforeEach(async () => {
-            await setConfig(server.config, "password", "hunter2");
+            await setConfig(server.config, "password", "Hunter2!");
         });
 
         it("asks for the password when none is supplied", async () => {
@@ -114,7 +114,7 @@ describe("what a refusal says it is", () => {
      */
     describe("a caller who has been locked out", () => {
         beforeEach(async () => {
-            await setConfig(server.config, "password", "hunter2");
+            await setConfig(server.config, "password", "Hunter2!");
 
             for (let attempt = 0; attempt < MAX_FAILED_ATTEMPTS; attempt++)
                 await asRemote("/speedtests?limit=1", {"x-password": "wrong"});

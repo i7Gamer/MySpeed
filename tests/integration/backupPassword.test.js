@@ -4,7 +4,7 @@ import { bootServer, api, setConfig } from "./helpers/boot.js";
 
 let server;
 
-const OWNER_PASSWORD = "hunter2";
+const OWNER_PASSWORD = "Hunter2!";
 const withPassword = (value) => ({headers: {"x-password": value}});
 
 before(async () => {
@@ -113,7 +113,7 @@ describe("the admin password in a config backup", () => {
         const {body: backup} = await exportConfig("?includeSecrets=true");
         const before = await server.config.getValue("password");
 
-        for (const planted of ["hunter2", "", "$2a$notahash", null, 12345]) {
+        for (const planted of ["Hunter2!", "", "$2a$notahash", null, 12345]) {
             const {status} = await importConfig({...backup, config: {...backup.config, password: planted}});
 
             assert.equal(status, 500, `accepted ${JSON.stringify(planted)}`);

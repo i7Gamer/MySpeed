@@ -18,7 +18,7 @@ after(async () => {
 
 beforeEach(async () => {
     resetFailedAttempts();
-    await setConfig(server.config, "password", "hunter2");
+    await setConfig(server.config, "password", "Hunter2!");
     await setConfig(server.config, "passwordLevel", "none");
 });
 
@@ -39,7 +39,7 @@ const failRepeatedly = async (times) => {
  */
 describe("password attempt throttling", () => {
     it("still accepts the correct password", async () => {
-        assert.equal((await guarded({"x-password": "hunter2"})).status, 200);
+        assert.equal((await guarded({"x-password": "Hunter2!"})).status, 200);
     });
 
     it("rejects a wrong password with 401 while under the limit", async () => {
@@ -59,12 +59,12 @@ describe("password attempt throttling", () => {
     // out and then supplies the right password is still refused for the window.
     it("refuses even a correct password while locked out", async () => {
         await failRepeatedly(MAX_FAILED_ATTEMPTS);
-        assert.equal((await guarded({"x-password": "hunter2"})).status, 429);
+        assert.equal((await guarded({"x-password": "Hunter2!"})).status, 429);
     });
 
     it("clears the counter after a successful authentication", async () => {
         await failRepeatedly(MAX_FAILED_ATTEMPTS - 1);
-        assert.equal((await guarded({"x-password": "hunter2"})).status, 200);
+        assert.equal((await guarded({"x-password": "Hunter2!"})).status, 200);
 
         // The counter reset, so the next wrong password is an ordinary 401.
         assert.equal((await wrongPassword()).status, 401);

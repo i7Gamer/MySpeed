@@ -5,7 +5,7 @@ import { bootServer, api, setConfig } from "./helpers/boot.js";
 let server;
 let resetFailedAttempts;
 
-const PASSWORD = "hunter2";
+const PASSWORD = "Hunter2!";
 const GUARDED = "/speedtests?limit=1";
 
 before(async () => {
@@ -140,7 +140,7 @@ describe("revocation", () => {
         const cookie = cookieFrom(await signIn(PASSWORD));
         assert.equal((await api(server.baseUrl, GUARDED, withCookie(cookie))).status, 200);
 
-        await setConfig(server.config, "password", "a-different-one");
+        await setConfig(server.config, "password", "A-different-1");
 
         assert.equal((await api(server.baseUrl, GUARDED, withCookie(cookie))).status, 401,
             "an old session survived the password change");

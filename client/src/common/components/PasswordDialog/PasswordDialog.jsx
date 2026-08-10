@@ -14,7 +14,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
 import React, {useContext, useState} from "react";
-import {baseRequest, deleteRequest, login, logout, patchRequest} from "@/common/utils/RequestUtil";
+import {assertOk, baseRequest, deleteRequest, login, logout, patchRequest, RequestError} from "@/common/utils/RequestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {NodeContext} from "@/common/contexts/Node";
@@ -46,9 +46,14 @@ export const PasswordDialog = ({open, onClose}) => {
     const save = async (close) => {
         try {
             if (password) {
-                await patchRequest("/config/password", {value: password});
+                // Checked, not assumed: patchRequest hands back the raw
+                // Response, and awaiting it alone toasted "changes applied"
+                // over a 400 - a password the server refused, under the
+                // policy, looked exactly like one it stored.
+                await assertOk(await patchRequest("/config/password", {value: password}), "password");
                 if (currentNode !== 0) {
-                    await baseRequest("/nodes/" + currentNode + "/password", "PATCH", {password});
+                    await assertOk(await baseRequest("/nodes/" + currentNode + "/password", "PATCH", {password}),
+                        "node password");
                     updateNodes();
                 } else {
                     // Changing the password revokes every session, this one
@@ -59,14 +64,17 @@ export const PasswordDialog = ({open, onClose}) => {
             }
 
             if (accessLevel !== config.passwordLevel) {
-                await patchRequest("/config/passwordLevel", {value: accessLevel});
+                await assertOk(await patchRequest("/config/passwordLevel", {value: accessLevel}), "passwordLevel");
             }
 
             reloadConfig();
             updateToast(t("dropdown.changes_applied"), "green", faCheck);
             close();
         } catch (e) {
-            updateToast(t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
+            // The server's refusal names the broken rule; only a network
+            // failure falls back to the generic line.
+            updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
+                "red", faExclamationTriangle);
         }
     };
 

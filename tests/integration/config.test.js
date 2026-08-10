@@ -136,9 +136,9 @@ describe("validateInput", () => {
 
     describe("password", () => {
         it("stores a bcrypt hash rather than the password", async () => {
-            const stored = await accepts("password", "hunter2");
+            const stored = await accepts("password", "Hunter2!");
 
-            assert.notEqual(stored, "hunter2");
+            assert.notEqual(stored, "Hunter2!");
             assert.match(stored, /^\$2[aby]\$/);
         });
 
@@ -151,6 +151,39 @@ describe("validateInput", () => {
          */
         it("refuses the no-password sentinel as a chosen password", async () => {
             await rejects("password", "none");
+        });
+
+        /**
+         * The admin credential of an instance that may face the open internet.
+         * A single character used to be accepted; now a chosen password needs
+         * 8+ characters, both cases, and a number or special character. Only a
+         * *chosen* password: a backup restores its hash verbatim, so existing
+         * installs keep working.
+         */
+        describe("the password policy", () => {
+            // The refusal itself, so the tests can assert it names the rule.
+            const refusal = async (value) => {
+                const result = await validate("password", value);
+                assert.equal(typeof result, "string", `${JSON.stringify(value)} was accepted`);
+                return result;
+            };
+
+            it("refuses fewer than 8 characters", async () => {
+                assert.match(await refusal("Sh0rt!"), /at least 8 characters/);
+            });
+
+            it("refuses a single case", async () => {
+                assert.match(await refusal("alllower1!"), /lower and upper case/);
+                assert.match(await refusal("ALLUPPER1!"), /lower and upper case/);
+            });
+
+            it("refuses letters alone", async () => {
+                assert.match(await refusal("OnlyLetters"), /number or a special character/);
+            });
+
+            it("accepts a special character in place of a number", async () => {
+                assert.match(await accepts("password", "Pa ss Wörd"), /^\$2[aby]\$/);
+            });
         });
     });
 });
@@ -165,7 +198,7 @@ describe("config routes", () => {
     const isProtected = async () => (await api(server.baseUrl, "/speedtests?limit=1")).status === 401;
 
     it("PATCH sets a password", async () => {
-        assert.equal((await patchPassword("hunter2")).status, 200);
+        assert.equal((await patchPassword("Hunter2!")).status, 200);
         assert.equal(await isProtected(), true);
     });
 
@@ -176,11 +209,19 @@ describe("config routes", () => {
         assert.equal(await isProtected(), false, "the instance was left unprotected");
     });
 
+    it("PATCH refuses a password below the policy, and says which rule", async () => {
+        const {status, body} = await patchPassword("weak");
+
+        assert.equal(status, 400);
+        assert.match(body.message, /at least 8 characters/);
+        assert.equal(await isProtected(), false);
+    });
+
     it("DELETE clears the password", async () => {
-        await patchPassword("hunter2");
+        await patchPassword("Hunter2!");
 
         const {status} = await api(server.baseUrl, "/config/password", {
-            method: "DELETE", headers: {"x-password": "hunter2"}
+            method: "DELETE", headers: {"x-password": "Hunter2!"}
         });
 
         assert.equal(status, 200);
@@ -188,17 +229,17 @@ describe("config routes", () => {
     });
 
     it("DELETE is itself password protected", async () => {
-        await patchPassword("hunter2");
+        await patchPassword("Hunter2!");
 
         assert.equal((await api(server.baseUrl, "/config/password", {method: "DELETE"})).status, 401);
         assert.equal(await isProtected(), true);
     });
 
     it("never exposes the password through GET /api/config", async () => {
-        await patchPassword("hunter2");
+        await patchPassword("Hunter2!");
 
-        const {body} = await api(server.baseUrl, "/config", {headers: {"x-password": "hunter2"}});
+        const {body} = await api(server.baseUrl, "/config", {headers: {"x-password": "Hunter2!"}});
         assert.equal(body.password, undefined);
-        assert.doesNotMatch(JSON.stringify(body), /hunter2|\$2[aby]\$/);
+        assert.doesNotMatch(JSON.stringify(body), /Hunter2!|\$2[aby]\$/);
     });
 });

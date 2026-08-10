@@ -198,7 +198,7 @@ describe("GET /api/speedtests/status", () => {
  * to one from a provider that never measured them.
  */
 describe("connection identity in view mode", () => {
-    const AS_OPERATOR = {headers: {"x-password": "hunter2"}};
+    const AS_OPERATOR = {headers: {"x-password": "Hunter2!"}};
     const EXPORT_RANGE = "from=2026-08-01&to=2026-08-07&tzOffset=0";
 
     const shareReadOnly = async () => {
@@ -206,7 +206,7 @@ describe("connection identity in view mode", () => {
             created: "2026-08-05T10:00:00.000Z", isp: "Salt Mobile", externalIp: "203.0.113.7",
             resultId: "f2cfac79-3157-4258-9029-e4929a168374"
         }]);
-        await setConfig(server.config, "password", "hunter2");
+        await setConfig(server.config, "password", "Hunter2!");
         await setConfig(server.config, "passwordLevel", "read");
     };
 
@@ -281,7 +281,7 @@ describe("password middleware", () => {
     });
 
     it("rejects a read without the password once one is set", async () => {
-        await setConfig(server.config, "password", "hunter2");
+        await setConfig(server.config, "password", "Hunter2!");
 
         const {status, body} = await api(server.baseUrl, "/speedtests?limit=1");
         assert.equal(status, 401);
@@ -289,37 +289,37 @@ describe("password middleware", () => {
     });
 
     it("accepts the correct password", async () => {
-        await setConfig(server.config, "password", "hunter2");
-        assert.equal((await api(server.baseUrl, "/speedtests?limit=1", withPassword("hunter2"))).status, 200);
+        await setConfig(server.config, "password", "Hunter2!");
+        assert.equal((await api(server.baseUrl, "/speedtests?limit=1", withPassword("Hunter2!"))).status, 200);
     });
 
     it("rejects a wrong password", async () => {
-        await setConfig(server.config, "password", "hunter2");
+        await setConfig(server.config, "password", "Hunter2!");
         assert.equal((await api(server.baseUrl, "/speedtests?limit=1", withPassword("wrong"))).status, 401);
     });
 
     it("accepts a url-encoded password header", async () => {
-        await setConfig(server.config, "password", "pa ss wörd");
-        const encoded = encodeURIComponent("pa ss wörd");
+        await setConfig(server.config, "password", "Pa ss Wörd");
+        const encoded = encodeURIComponent("Pa ss Wörd");
         assert.equal((await api(server.baseUrl, "/speedtests?limit=1", withPassword(encoded))).status, 200);
     });
 
     it("allows read-only access at passwordLevel read", async () => {
-        await setConfig(server.config, "password", "hunter2");
+        await setConfig(server.config, "password", "Hunter2!");
         await setConfig(server.config, "passwordLevel", "read");
 
         assert.equal((await api(server.baseUrl, "/speedtests?limit=1")).status, 200);
     });
 
     it("still guards writes at passwordLevel read", async () => {
-        await setConfig(server.config, "password", "hunter2");
+        await setConfig(server.config, "password", "Hunter2!");
         await setConfig(server.config, "passwordLevel", "read");
 
         assert.equal((await api(server.baseUrl, "/speedtests/1", {method: "DELETE"})).status, 401);
     });
 
     it("guards the export route", async () => {
-        await setConfig(server.config, "password", "hunter2");
+        await setConfig(server.config, "password", "Hunter2!");
 
         const {status} = await api(server.baseUrl, "/speedtests/export?from=2026-08-01&to=2026-08-07&format=json");
         assert.equal(status, 401);
@@ -343,7 +343,7 @@ describe("GET /api/health", () => {
     // A container healthcheck cannot authenticate, so this endpoint has to stay
     // reachable no matter how the instance is locked down.
     it("stays reachable when a password is configured", async () => {
-        await setConfig(server.config, "password", "hunter2");
+        await setConfig(server.config, "password", "Hunter2!");
 
         const {status, body} = await api(server.baseUrl, "/health");
         assert.equal(status, 200);
@@ -351,7 +351,7 @@ describe("GET /api/health", () => {
     });
 
     it("stays reachable at passwordLevel read", async () => {
-        await setConfig(server.config, "password", "hunter2");
+        await setConfig(server.config, "password", "Hunter2!");
         await setConfig(server.config, "passwordLevel", "read");
 
         assert.equal((await api(server.baseUrl, "/health")).status, 200);

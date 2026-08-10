@@ -26,7 +26,7 @@ describe("GET /api/prometheus/metrics", () => {
     });
 
     it("challenges once a password is configured", async () => {
-        await setConfig(server.config, "password", "hunter2");
+        await setConfig(server.config, "password", "Hunter2!");
 
         const {status, headers} = await metrics();
         assert.equal(status, 401);
@@ -34,18 +34,18 @@ describe("GET /api/prometheus/metrics", () => {
     });
 
     it("accepts the prometheus user with the configured password", async () => {
-        await setConfig(server.config, "password", "hunter2");
-        assert.equal((await metrics(basic("prometheus:hunter2"))).status, 200);
+        await setConfig(server.config, "password", "Hunter2!");
+        assert.equal((await metrics(basic("prometheus:Hunter2!"))).status, 200);
     });
 
     it("rejects a wrong password", async () => {
-        await setConfig(server.config, "password", "hunter2");
+        await setConfig(server.config, "password", "Hunter2!");
         assert.equal((await metrics(basic("prometheus:nope"))).status, 401);
     });
 
     it("rejects a different username", async () => {
-        await setConfig(server.config, "password", "hunter2");
-        assert.equal((await metrics(basic("grafana:hunter2"))).status, 401);
+        await setConfig(server.config, "password", "Hunter2!");
+        assert.equal((await metrics(basic("grafana:Hunter2!"))).status, 401);
     });
 
     /**
@@ -54,7 +54,7 @@ describe("GET /api/prometheus/metrics", () => {
      * back as a 500 carrying a stack trace instead of a 401.
      */
     it("answers a colonless Basic value with 401, not 500", async () => {
-        await setConfig(server.config, "password", "hunter2");
+        await setConfig(server.config, "password", "Hunter2!");
 
         const {status, text} = await metrics(basic("prometheus"));
         assert.equal(status, 401);
@@ -62,18 +62,18 @@ describe("GET /api/prometheus/metrics", () => {
     });
 
     it("answers an empty Basic value with 401", async () => {
-        await setConfig(server.config, "password", "hunter2");
+        await setConfig(server.config, "password", "Hunter2!");
         assert.equal((await metrics(basic(""))).status, 401);
     });
 
     it("answers a Basic header with no credentials at all with 401", async () => {
-        await setConfig(server.config, "password", "hunter2");
+        await setConfig(server.config, "password", "Hunter2!");
         assert.equal((await metrics({authorization: "Basic "})).status, 401);
     });
 
     it("keeps a password with colons in it working", async () => {
-        await setConfig(server.config, "password", "a:b:c");
-        assert.equal((await metrics(basic("prometheus:a:b:c"))).status, 200);
+        await setConfig(server.config, "password", "Aa1:b:c!");
+        assert.equal((await metrics(basic("prometheus:Aa1:b:c!"))).status, 200);
     });
 });
 

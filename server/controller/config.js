@@ -38,6 +38,38 @@ export const NO_PASSWORD = "none";
 const PASSWORD_HASH_ROUNDS = 10;
 
 /**
+ * The floor a chosen password has to clear before it is hashed and stored.
+ *
+ * This guards the admin credential of an instance that may face the open
+ * internet, where the failed-attempt throttle only slows a dictionary down.
+ * One rule per entry, so the refusal can say which rule was broken instead of
+ * reciting the whole policy at someone who missed one character class.
+ *
+ * Only a *newly chosen* password passes through here: a restored backup
+ * carries the bcrypt hash verbatim, so existing installs keep working.
+ */
+const PASSWORD_MIN_LENGTH = 8;
+
+const PASSWORD_RULES = [
+    {
+        broken: (value) => value.length < PASSWORD_MIN_LENGTH,
+        message: `The password must be at least ${PASSWORD_MIN_LENGTH} characters long`
+    },
+    {
+        broken: (value) => !/[a-z]/.test(value) || !/[A-Z]/.test(value),
+        message: "The password must contain both lower and upper case letters"
+    },
+    {
+        broken: (value) => !/[0-9]/.test(value) && !/[^A-Za-z0-9]/.test(value),
+        message: "The password must contain a number or a special character"
+    }
+];
+
+/** The first rule a candidate breaks, or null when it passes. Exported for tests. */
+export const passwordPolicyProblem = (value) =>
+    PASSWORD_RULES.find((rule) => rule.broken(value))?.message ?? null;
+
+/**
  * A stored password is either the no-password sentinel or a bcrypt hash.
  *
  * An import writes the value straight into the column password.js compares
@@ -149,6 +181,9 @@ export const validateInput = async (key, value) => {
     if (key === "password") {
         if (value === NO_PASSWORD)
             return "This password cannot be used. Use the remove button to clear the password instead";
+
+        const problem = passwordPolicyProblem(value.toString());
+        if (problem) return problem;
 
         value = await bcrypt.hash(value, PASSWORD_HASH_ROUNDS);
     }
