@@ -128,6 +128,33 @@ export const updateValue = async (key, newValue) => {
     return await config.update({value: newValue}, {where: {key: key}});
 }
 
+/**
+ * How much disk one sqlite database actually occupies.
+ *
+ * The driver runs in WAL mode, so everything written since the last checkpoint
+ * lives in the `-wal` sidecar rather than in the database file - an instance
+ * with 336 tests stat'd as 4 KB while holding 264 KB, which made the figure
+ * wrong essentially always. `-shm` is the index into that log and is counted
+ * for the same reason.
+ *
+ * A file that is not there yet contributes nothing: a fresh install has no
+ * database until the first write, and the dialog asking how much space is used
+ * must not be the thing that fails on it.
+ */
+const SQLITE_SIDECARS = ["-wal", "-shm"];
+
+const fileBytes = (file) => {
+    try {
+        return fs.statSync(file).size;
+    } catch {
+        return 0;
+    }
+};
+
+export const sqliteBytes = (databasePath) =>
+    [databasePath, ...SQLITE_SIDECARS.map((suffix) => databasePath + suffix)]
+        .reduce((total, file) => total + fileBytes(file), 0);
+
 export const getUsedStorage = async () => {
     let size = 0;
 
@@ -142,7 +169,7 @@ export const getUsedStorage = async () => {
     } else {
         const STORAGE_PATH = path.join(process.cwd(), 'data', `storage${process.env.PREVIEW_MODE === "true" ? "_preview" : ""}.db`);
 
-        size = fs.statSync(STORAGE_PATH).size;
+        size = sqliteBytes(STORAGE_PATH);
     }
 
     return {size, testCount: await test.count()};
