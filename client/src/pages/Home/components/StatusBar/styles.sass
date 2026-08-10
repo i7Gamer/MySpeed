@@ -1,6 +1,16 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/layout" as *
 
+// The bar sits directly above rows whose measurements are set in 28pt, and it
+// carries the page's primary action - at the old sizes it read as fine print
+// introducing them. Written down once here because the three move together:
+// the state line leads, the button matches the detail beside it or beats it,
+// and none of them may end up the smallest thing in the bar again.
+// Held to that by tests/client/statusBarLayout.test.js.
+$status-state-size: 1.35rem
+$status-detail-size: 1.05rem
+$status-start-size: 1.1rem
+
 .status-bar
   margin-top: 2rem
   margin-bottom: $card-gap
@@ -28,16 +38,25 @@
   font-size: 1.6rem
   flex-shrink: 0
 
+// The state line and its detail read as one sentence - "last test 3 minutes
+// ago, next at 08:00" - so they sit on one line rather than stacked. Wrapping
+// is what keeps that honest once the line grows: a running test replaces the
+// state with a phase and puts a live speed in the detail beside it.
 .status-text
   display: flex
-  flex-direction: column
-  gap: 0.15rem
+  flex-direction: row
+  flex-wrap: wrap
+  // A shared baseline, not centres: the smaller detail floats visibly high
+  // against the state line when the two are centred on each other.
+  align-items: baseline
+  // Tight when wrapped onto two lines, a clear step apart when on one.
+  gap: 0.15rem 1rem
   min-width: 0
   flex: 1
 
   h2
     margin: 0
-    font-size: 1.1rem
+    font-size: $status-state-size
     font-weight: 600
     color: $white
 
@@ -46,7 +65,7 @@
   align-items: center
   gap: 1rem
   flex-wrap: wrap
-  font-size: 0.9rem
+  font-size: $status-detail-size
   color: $subtext
 
 .status-speed
@@ -73,15 +92,16 @@
 .status-start
   display: flex
   align-items: center
-  gap: 0.5rem
+  gap: 0.6rem
   flex-shrink: 0
-  padding: 0.6rem 1.1rem
+  padding: 0.85rem 1.75rem
   border: 1px solid $light-gray
   border-radius: 0.6rem
   background: transparent
   color: $white
   font-family: inherit
-  font-size: 0.9rem
+  // The icon is sized in em by FontAwesome, so it grows with this.
+  font-size: $status-start-size
   font-weight: 600
   cursor: pointer
   transition: all 0.2s ease
