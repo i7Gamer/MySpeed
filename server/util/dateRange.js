@@ -13,6 +13,15 @@ const MAX_RANGE_DAYS = 10000;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+/**
+ * The value of `?range=` that asks for every test there is.
+ *
+ * Named rather than expressed as a window wide enough to hold anything the
+ * server keeps: the charts bucket over the range they are asked for, and a
+ * quarter of a century of buckets draws a year of tests as a handful of points.
+ */
+export const ALL_TIME_RANGE = "all";
+
 const LAST_HOUR = 23;
 const LAST_MINUTE = 59;
 const LAST_SECOND = 59;

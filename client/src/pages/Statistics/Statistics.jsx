@@ -17,11 +17,15 @@ import {jsonRequest} from "@/common/utils/RequestUtil";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {
     DEFAULT_TIMEFRAME,
+    TIMEFRAME_ALL,
     TIMEFRAME_CUSTOM,
     formatDateParam,
+    isAllTime,
     parseRangeParams,
-    resolveTimeframe,
-    serializeRange
+    resolveAllTime,
+    selectionOf,
+    serializeRange,
+    shownRange
 } from "@/common/utils/TimeframeUtil";
 import PageToolbar from "@/common/components/PageToolbar";
 import ChartModal from "@/common/components/ChartModal";
@@ -55,6 +59,32 @@ const FULL_DETAIL_POINTS = 1000;
 const LATEST_TEST_ONLY = 1;
 
 ChartJS.register(ArcElement, Tooltip, CategoryScale, LinearScale, PointElement, LineElement, Title, Legend, BarElement, RadialLinearScale, Filler);
+
+/**
+ * The query naming the window to summarise.
+ *
+ * All time travels as `range=all` rather than as dates, so the server leaves the
+ * rows unfiltered and buckets the charts over the extent of the tests
+ * themselves. It carries the stand-in window as well, because a parent proxies
+ * this request to its nodes and a node running an older version understands only
+ * from/to - that window provably contains every test it can still hold, so it
+ * answers with the same figures and merely coarser buckets.
+ */
+const rangeQuery = (dateRange) => {
+    const requested = dateRange ?? resolveAllTime();
+
+    const query = new URLSearchParams({
+        from: formatDateParam(requested.from),
+        to: formatDateParam(requested.to),
+        // The server would otherwise cut days on its own clock, which is UTC in
+        // the Docker image and rarely matches the viewer's.
+        tzOffset: String(new Date().getTimezoneOffset())
+    });
+
+    if (!dateRange) query.set("range", TIMEFRAME_ALL);
+
+    return query;
+};
 
 const crosshairPlugin = {
     id: 'crosshair',
@@ -118,11 +148,14 @@ export const Statistics = () => {
         const fromUrl = parseRangeParams(searchParams);
         if (fromUrl) return fromUrl;
 
-        const timeframe = preferences.defaultTimeframe ?? DEFAULT_TIMEFRAME;
-        return { timeframe, ...resolveTimeframe(timeframe) };
+        return selectionOf(preferences.defaultTimeframe ?? DEFAULT_TIMEFRAME);
     }, [searchParams, preferences.defaultTimeframe]);
 
-    const dateRange = useMemo(() => ({ from: selection.from, to: selection.to }), [selection]);
+    // Null for all time, which is the absence of a bound rather than a very wide
+    // one: every caller below that needs a window says so for itself.
+    const dateRange = useMemo(() => isAllTime(selection.timeframe)
+        ? null
+        : { from: selection.from, to: selection.to }, [selection]);
 
     const deferredStatistics = useDeferredValue(statistics);
     const isStale = deferredStatistics !== statistics;
@@ -140,15 +173,11 @@ export const Statistics = () => {
     }, [mountPhase]);
 
     const updateStats = useCallback(() => {
-        const query = new URLSearchParams({
-            from: formatDateParam(dateRange.from),
-            to: formatDateParam(dateRange.to),
-            // The server would otherwise cut days on its own clock, which is UTC
-            // in the Docker image and rarely matches the viewer's.
-            tzOffset: String(new Date().getTimezoneOffset()),
-            // The summary of the window immediately before, for the deltas.
-            compare: "previous"
-        });
+        const query = rangeQuery(dateRange);
+
+        // The summary of the window immediately before, for the deltas. Nothing
+        // precedes all time, so it is asked for only when the range is bounded.
+        if (dateRange) query.set("compare", "previous");
 
         startTransition(() => {
             setLoadError(null);
@@ -216,12 +245,8 @@ export const Statistics = () => {
             return;
         }
 
-        const query = new URLSearchParams({
-            from: formatDateParam(dateRange.from),
-            to: formatDateParam(dateRange.to),
-            tzOffset: String(new Date().getTimezoneOffset()),
-            points: String(FULL_DETAIL_POINTS)
-        });
+        const query = rangeQuery(dateRange);
+        query.set("points", String(FULL_DETAIL_POINTS));
 
         let cancelled = false;
         setDetailLoading(true);
@@ -241,12 +266,14 @@ export const Statistics = () => {
     // starting a test - are exactly what someone waiting might want to reach.
     const toolbar = (
         <PageToolbar
-            from={dateRange.from}
-            to={dateRange.to}
+            from={dateRange?.from ?? null}
+            to={dateRange?.to ?? null}
             timeframe={selection.timeframe}
             onRangeChange={handleDateRangeChange}
             onTimeframeChange={handleTimeframeChange}
-            exportRange={dateRange}
+            // All-time carries no range, but the export endpoint takes one -
+            // resolveAllTime is that window.
+            exportRange={dateRange ?? resolveAllTime()}
         />
     );
 
@@ -283,11 +310,19 @@ export const Statistics = () => {
         <div className="statistic-area">
             {toolbar}
             {/* Named rather than a bare "no tests available": the range is
-                almost always what emptied this, and the picker sits directly
-                above the message to widen it. */}
+                almost always what emptied this, and one click widens it back to
+                everything. All time has no range to name, and nothing to widen -
+                the instance simply has no tests. */}
             <div className="statistics-empty">
-                <p>{t("test.not_available_in_range",
-                    {from: formatDay(dateRange.from), to: formatDay(dateRange.to)})}</p>
+                {dateRange ? (
+                    <>
+                        <p>{t("test.not_available_in_range",
+                            {from: formatDay(dateRange.from), to: formatDay(dateRange.to)})}</p>
+                        <button className="dialog-btn" onClick={() => handleTimeframeChange(TIMEFRAME_ALL)}>
+                            {t("test.show_all_time")}
+                        </button>
+                    </>
+                ) : <p>{t("test.not_available")}</p>}
             </div>
         </div>
     );
@@ -298,10 +333,15 @@ export const Statistics = () => {
     // no figures to compare against, and its zeros must not colour the page.
     const previous = hasPreviousData(deferredStatistics.previous) ? deferredStatistics.previous : null;
 
+    // The window the page is actually showing, which the overview card is named
+    // after. All time has none of its own, so it is the extent of the tests
+    // themselves - the first to the last - as echoed by the server.
+    const chartRange = shownRange(dateRange, deferredStatistics);
+
     const renderChart = (chartType, source) => {
         switch (chartType) {
             case 'overview':
-                return <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} dateRange={dateRange} previous={previous}/>;
+                return <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} dateRange={chartRange} previous={previous}/>;
             case 'latest':
                 return <LatestTestChart test={latestTest} expanded/>;
             case 'consistency':
@@ -358,7 +398,7 @@ export const Statistics = () => {
                 </p>
             )}
 
-            <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} dateRange={dateRange} previous={previous} onClick={() => setExpandedChart('overview')}/>
+            <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} dateRange={chartRange} previous={previous} onClick={() => setExpandedChart('overview')}/>
             <LatestTestChart test={latestTest} onClick={() => setExpandedChart('latest')}/>
             <ConsistencyChart consistency={deferredStatistics.consistency} onClick={() => setExpandedChart('consistency')}/>
 

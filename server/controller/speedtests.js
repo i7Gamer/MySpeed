@@ -212,15 +212,54 @@ const previousSummary = async (range, options) => {
     };
 };
 
-export const listStatistics = async (range, options = {}) => ({
-    ...buildStatistics(await findInRange(range), range, options),
-    ...(options.comparePrevious ? {previous: await previousSummary(range, options)} : {}),
-    dateRange: {
-        from: range.from.toISOString(),
-        to: range.to.toISOString(),
-        days: Math.ceil((range.to - range.from) / (24 * 60 * 60 * 1000))
-    }
-});
+/**
+ * The extent of the tests themselves: the window all time is summarised over.
+ *
+ * The charts bucket over the window they are given, so summarising everything
+ * over a stand-in window wide enough to hold anything the server keeps would
+ * push a year of tests into the last few of its three hundred buckets and draw
+ * the whole history as a handful of points.
+ */
+const extentOf = (entries) => {
+    // An instance that has never run a test has no extent at all; this moment is
+    // the one window that is certainly empty and certainly valid.
+    if (entries.length === 0) return {from: new Date(), to: new Date()};
+
+    const {first, last} = entries.reduce((extent, entry) => {
+        const time = new Date(entry.created).getTime();
+        return {first: Math.min(extent.first, time), last: Math.max(extent.last, time)};
+    }, {first: Infinity, last: -Infinity});
+
+    // A single test - or several sharing one instant - is an extent of zero
+    // width, and the bucketing divides by it.
+    return {from: new Date(first), to: new Date(last === first ? last + 1 : last)};
+};
+
+/**
+ * The statistics for a range, or for every test there is when given none.
+ *
+ * All time is the absence of a bound rather than a very wide one: the rows are
+ * unfiltered, and the extent they cover is both what the charts bucket over and
+ * what the client names its headings after. Nothing precedes everything, so
+ * there is no previous window to compare it against.
+ */
+export const listStatistics = async (range, options = {}) => {
+    const entries = range
+        ? await findInRange(range)
+        : await tests.findAll({order: [["created", "ASC"]]});
+
+    const covered = range ?? extentOf(entries);
+
+    return {
+        ...buildStatistics(entries, covered, options),
+        ...(range && options.comparePrevious ? {previous: await previousSummary(range, options)} : {}),
+        dateRange: {
+            from: covered.from.toISOString(),
+            to: covered.to.toISOString(),
+            days: Math.ceil((covered.to - covered.from) / MS_PER_DAY)
+        }
+    };
+};
 
 export const deleteOne = async (id) => {
     if (await getOne(id) === null) return false;

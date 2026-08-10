@@ -4,7 +4,7 @@ import * as pauseController from '../controller/pause.js';
 import * as config from '../controller/config.js';
 import * as testTask from '../tasks/speedtest.js';
 import password from '../middlewares/password.js';
-import { parseDateRange } from '../util/dateRange.js';
+import { ALL_TIME_RANGE, parseDateRange } from '../util/dateRange.js';
 import { stripConnectionIdentity } from '../util/connectionIdentity.js';
 import { toCsv } from '../util/csv.js';
 import * as timer from '../tasks/timer.js';
@@ -65,8 +65,17 @@ app.get("/", password(true), async (req, res) => {
 
 app.get("/statistics", password(true), async (req, res) => {
     const { from, to, tzOffset, points } = req.query;
-    const range = parseDateRange(from, to, { offsetMinutes: tzOffset });
-    if (!range.valid) {
+
+    // Checked ahead of the dates, which the client sends beside it: a parent
+    // proxies this request to its nodes, and a node running a version that
+    // predates the named range understands only from/to. The window it sends is
+    // wide enough to contain everything, so that node still answers correctly -
+    // but here the name has to win, or the stand-in would decide what
+    // "everything" means and the charts would bucket over a quarter of a century.
+    const allTime = req.query.range === ALL_TIME_RANGE;
+    const range = allTime ? null : parseDateRange(from, to, { offsetMinutes: tzOffset });
+
+    if (range && !range.valid) {
         return res.status(400).json({ message: range.message });
     }
 
@@ -81,7 +90,8 @@ app.get("/statistics", password(true), async (req, res) => {
         maxPoints: points,
         // The summary of the window immediately before the range, for the
         // period-over-period deltas. Opt-in: it costs a second table scan.
-        comparePrevious: req.query.compare === "previous"
+        // Nothing precedes all time, so it is never compared.
+        comparePrevious: !allTime && req.query.compare === "previous"
     }));
 });
 

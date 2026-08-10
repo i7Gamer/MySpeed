@@ -16,7 +16,7 @@ import "./styles.sass";
  * theirs in the URL so a view stays bookmarkable and shareable. Unifying them
  * here would have to break one of those.
  */
-export const PageToolbar = ({from, to, timeframe, onRangeChange, onTimeframeChange, presets, exportRange}) => (
+export const PageToolbar = ({from, to, timeframe, onRangeChange, onTimeframeChange, exportRange}) => (
     <div className="page-toolbar">
         <DateRangePicker
             from={from}
@@ -24,7 +24,6 @@ export const PageToolbar = ({from, to, timeframe, onRangeChange, onTimeframeChan
             timeframe={timeframe}
             onChange={onRangeChange}
             onTimeframeChange={onTimeframeChange}
-            presets={presets}
         />
 
         <StatusBarComponent/>

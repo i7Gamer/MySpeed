@@ -85,12 +85,17 @@ describe("the page toolbar", () => {
         assert.doesNotMatch(statistics, /statistics-header|<ExportButton|skeleton-picker/);
     });
 
-    it("lets each page bring its own presets", () => {
-        assert.match(toolbar, /presets=\{presets\}/);
-        assert.match(home, /presets=\{OVERVIEW_TIMEFRAMES\}/);
-        // The statistics pass none and get the bounded TIMEFRAMES default:
-        // "All time" means "no range at all", which they cannot draw.
-        assert.doesNotMatch(statistics, /presets=/);
+    /**
+     * The picker used to be handed its presets by the page, so that the overview
+     * could lead with "All time" while the statistics - which could not draw an
+     * unbounded range - kept the bounded list. The statistics now resolve all
+     * time to the extent of the tests themselves, so both pages offer the same
+     * presets and the prop that told them apart is gone.
+     */
+    it("hands the picker no presets of its own", () => {
+        for (const [name, source] of [["the toolbar", toolbar], ["the overview", home],
+            ["the statistics", statistics]])
+            assert.doesNotMatch(source, /presets/, `${name} still carries a preset list`);
     });
 
     /**
@@ -168,19 +173,17 @@ describe("the header after the toolbar", () => {
 });
 
 /**
- * The picker offers whatever presets its page hands it, so the overview can add
- * "All time" without the statistics gaining an option that means "no range at
- * all".
+ * One list of presets, offered wherever the picker is, and "All time" leads it
+ * on both pages.
  */
 describe("the date range picker", () => {
-    it("takes its presets from the page rather than the shared list", () => {
-        assert.match(picker, /presets\s*=\s*TIMEFRAMES/);
-        assert.match(picker, /presets\.map/);
+    it("offers the shared list, all time included", () => {
+        assert.match(picker, /PICKER_TIMEFRAMES\.map/);
     });
 
     // With all-time selected there are no dates to show, and the trigger used
     // to fall through to "Select date range" - which reads as nothing chosen.
     it("names the selected preset when it has no dates to show", () => {
-        assert.match(picker, /presets\.find/);
+        assert.match(picker, /PICKER_TIMEFRAMES\.find/);
     });
 });

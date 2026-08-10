@@ -2,13 +2,17 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
     ALL_TIME_PRESET,
-    OVERVIEW_TIMEFRAMES,
+    PICKER_TIMEFRAMES,
     TIMEFRAMES,
     TIMEFRAME_ALL,
     formatDateParam,
     isAllTime,
+    parseRangeParams,
     resolveAllTime,
-    resolveTimeframe
+    resolveTimeframe,
+    selectionOf,
+    serializeRange,
+    shownRange
 } from "../../client/src/common/utils/TimeframeUtil.js";
 
 // A fixed "now" keeps every expectation deterministic. Local noon avoids any
@@ -16,23 +20,21 @@ import {
 const NOW = new Date(2026, 7, 7, 12, 0, 0);
 
 /**
- * The overview shows every test it has, and its new date picker must be able to
- * say so - otherwise picking "Last 7 days" once is a one-way door out of the
- * full list. "All time" is that way back, and it is the overview's default, so
- * adding the picker changes nothing until a range is actually chosen.
+ * Both pages of test data can show every test they have, and their picker must
+ * be able to say so - otherwise picking "Last 7 days" once is a one-way door out
+ * of the full history.
  *
- * It is deliberately not a member of TIMEFRAMES: that list is what the
- * statistics page and the header selector offer, and neither wants an option
- * that means "no range at all".
+ * It is deliberately not a member of TIMEFRAMES: that list is what the range
+ * arithmetic answers for, and "no range at all" has no span to resolve.
  */
 describe("the all-time timeframe", () => {
-    it("is not one of the statistics presets", () => {
+    it("is not one of the bounded presets", () => {
         assert.equal(TIMEFRAMES.some(frame => frame.id === TIMEFRAME_ALL), false);
     });
 
-    it("leads the overview's own presets", () => {
-        assert.equal(OVERVIEW_TIMEFRAMES[0].id, TIMEFRAME_ALL);
-        assert.deepEqual(OVERVIEW_TIMEFRAMES.slice(1), TIMEFRAMES);
+    it("leads the presets the picker offers", () => {
+        assert.equal(PICKER_TIMEFRAMES[0].id, TIMEFRAME_ALL);
+        assert.deepEqual(PICKER_TIMEFRAMES.slice(1), TIMEFRAMES);
     });
 
     it("reuses a translation key that already ships in the source locale", () => {
@@ -82,14 +84,101 @@ describe("the all-time timeframe", () => {
         });
     });
 
-    // resolveTimeframe answers for the statistics presets and falls back to the
+    // resolveTimeframe answers for the bounded presets and falls back to the
     // default for anything it does not know. "All time" is not one of them, and
-    // silently becoming "last 7 days" there would filter the overview to a week
-    // while the picker still read "All time".
-    it("is never silently resolved as a statistics preset", () => {
+    // silently becoming "last 7 days" there would filter a page to a week while
+    // the picker still read "All time".
+    it("is never silently resolved as a bounded preset", () => {
         const fallback = resolveTimeframe(TIMEFRAME_ALL, NOW);
         const allTime = resolveAllTime(NOW);
 
         assert.notEqual(formatDateParam(fallback.from), formatDateParam(allTime.from));
+    });
+});
+
+/**
+ * The statistics keep their selection in the URL so a view stays bookmarkable
+ * and shareable, and a bare URL there means the stored preference rather than
+ * all time - so all time has to be written down, unlike on the overview where
+ * clearing the parameters says it.
+ */
+describe("all time in the statistics URL", () => {
+    it("is written as a named range rather than as two dates", () => {
+        assert.deepEqual(serializeRange(TIMEFRAME_ALL), {range: TIMEFRAME_ALL});
+    });
+
+    it("is read back as a selection with no dates at all", () => {
+        const selection = parseRangeParams(new URLSearchParams("range=all"), NOW);
+
+        assert.equal(selection.timeframe, TIMEFRAME_ALL);
+        assert.equal(selection.from, null);
+        assert.equal(selection.to, null);
+    });
+
+    it("wins over dates that travel beside it", () => {
+        // The request carries a stand-in window for a node too old to know the
+        // parameter, and that window must never be read back as the selection.
+        const selection = parseRangeParams(
+            new URLSearchParams("range=all&from=2026-01-01&to=2026-02-01"), NOW);
+
+        assert.equal(selection.timeframe, TIMEFRAME_ALL);
+        assert.equal(selection.from, null);
+    });
+
+    it("round-trips", () => {
+        const written = new URLSearchParams(serializeRange(TIMEFRAME_ALL));
+
+        assert.equal(parseRangeParams(written, NOW).timeframe, TIMEFRAME_ALL);
+    });
+});
+
+/**
+ * What a stored default means as a selection. The preference is only a preset
+ * id, and all time carries no dates - resolving it like a bounded preset would
+ * quietly show a week under an "All time" label.
+ */
+describe("selectionOf", () => {
+    it("gives all time no dates", () => {
+        assert.deepEqual(selectionOf(TIMEFRAME_ALL, NOW), {timeframe: TIMEFRAME_ALL, from: null, to: null});
+    });
+
+    it("resolves a bounded preset to its window", () => {
+        const selection = selectionOf("30d", NOW);
+
+        assert.equal(selection.timeframe, "30d");
+        assert.equal(formatDateParam(selection.from), "2026-07-09");
+        assert.equal(formatDateParam(selection.to), "2026-08-07");
+    });
+});
+
+/**
+ * The window a page of statistics is actually showing, which is what its
+ * headings are named after. All time has no window of its own, so the server
+ * echoes the extent of the tests themselves - the first to the last.
+ */
+describe("shownRange", () => {
+    const payload = (from, to) => ({dateRange: {from, to}});
+
+    it("is the selection itself when one is bounded", () => {
+        const selected = {from: new Date(2026, 0, 1), to: new Date(2026, 0, 31)};
+
+        assert.equal(shownRange(selected, payload("2020-01-01T00:00:00.000Z", "2026-08-07T00:00:00.000Z"), NOW),
+            selected);
+    });
+
+    it("is the extent the server echoed when the selection is all time", () => {
+        const range = shownRange(null, payload("2025-03-04T10:00:00.000Z", "2026-08-07T09:00:00.000Z"), NOW);
+
+        assert.equal(range.from.toISOString(), "2025-03-04T10:00:00.000Z");
+        assert.equal(range.to.toISOString(), "2026-08-07T09:00:00.000Z");
+    });
+
+    // A parent proxies these requests to its nodes, and a node running an older
+    // version answers without the echo. Falling through to "Invalid Date" would
+    // render as the heading of the page.
+    it("falls back to the stand-in window when nothing was echoed", () => {
+        for (const statistics of [undefined, {}, {dateRange: {}}, {dateRange: {from: "2026-01-01T00:00:00.000Z"}}])
+            assert.equal(formatDateParam(shownRange(null, statistics, NOW).to),
+                formatDateParam(resolveAllTime(NOW).to));
     });
 });

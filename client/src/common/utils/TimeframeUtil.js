@@ -5,7 +5,7 @@ export const DEFAULT_TIMEFRAME = "7d";
 const DAYS_PER_YEAR = 365;
 
 /**
- * The selectable statistics timeframes.
+ * The bounded timeframes: every preset that resolves to a concrete window.
  *
  * `labelKey` deliberately points at translation keys that already ship in every
  * locale, so adding the picker needs no new Crowdin strings.
@@ -20,16 +20,17 @@ export const TIMEFRAMES = [
 export const TIMEFRAME_ALL = "all";
 
 /**
- * The overview's way back to the full list.
+ * The way back to the full history.
  *
- * It shows every test it has by default, so a picker that could only narrow it
- * would make choosing "Last 7 days" once a one-way door. Deliberately not a
- * member of TIMEFRAMES: that list is what the statistics page and the header
- * selector offer, and neither wants an option meaning "no range at all".
+ * Both pages of test data can show every test they have, so a picker that could
+ * only narrow them would make choosing "Last 7 days" once a one-way door.
+ * Deliberately not a member of TIMEFRAMES: that list is what the range
+ * arithmetic below answers for, and "no range at all" has no span to resolve.
  */
 export const ALL_TIME_PRESET = {id: TIMEFRAME_ALL, labelKey: "calendar.all_time"};
 
-export const OVERVIEW_TIMEFRAMES = [ALL_TIME_PRESET, ...TIMEFRAMES];
+/** What the date picker offers, on every page that carries one. */
+export const PICKER_TIMEFRAMES = [ALL_TIME_PRESET, ...TIMEFRAMES];
 
 export const isAllTime = (timeframe) => timeframe === TIMEFRAME_ALL;
 
@@ -40,14 +41,16 @@ const findTimeframe = (id) => TIMEFRAMES.find(frame => frame.id === id) ?? null;
 const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
 /**
- * All-time expressed as a concrete range, for the export.
+ * All-time expressed as a concrete range, for the callers that need one.
  *
- * The list omits the filter entirely rather than using this - "everything" is
- * the absence of a bound, not a very wide one. The export endpoint takes a
- * range though, so one has to exist: the server refuses any span wider than
- * its own MAX_RANGE_DAYS, which it sets to the largest retention period the
- * config accepts, so a window that wide provably contains every test that can
- * still exist while remaining a request it will answer.
+ * The list omits the filter entirely rather than using this, and the statistics
+ * ask for all time by name - "everything" is the absence of a bound, not a very
+ * wide one. Two callers still need a window: the export endpoint takes one, and
+ * a node running a version that predates the named range understands only
+ * from/to. The server refuses any span wider than its own MAX_RANGE_DAYS, which
+ * it sets to the largest retention period the config accepts, so a window that
+ * wide provably contains every test that can still exist while remaining a
+ * request it will answer.
  */
 const ALL_TIME_SPAN_DAYS = 10000;
 
@@ -110,12 +113,28 @@ export const timeframeFromRange = (from, to, now = new Date()) => {
 };
 
 /**
+ * A preset id as a selection.
+ *
+ * All time carries no dates at all: resolving it like a bounded preset would
+ * quietly show a week under an "All time" label.
+ */
+export const selectionOf = (timeframe, now = new Date()) =>
+    isAllTime(timeframe)
+        ? {timeframe, from: null, to: null}
+        : {timeframe, ...resolveTimeframe(timeframe, now)};
+
+/**
  * Reads a timeframe out of the URL.
  *
  * Accepts either `?range=<preset>` or `?from=&to=`. Returns null when nothing
  * usable is present, letting the caller fall back to the stored preference.
  */
 export const parseRangeParams = (searchParams, now = new Date()) => {
+    // Ahead of the dates, which may travel beside it: the statistics send a
+    // stand-in window for an older node, and reading that back would turn "all
+    // time" into a very specific quarter of a century.
+    if (isAllTime(searchParams.get("range"))) return selectionOf(TIMEFRAME_ALL, now);
+
     const frame = findTimeframe(searchParams.get("range"));
     if (frame) return {timeframe: frame.id, ...resolveTimeframe(frame.id, now)};
 
@@ -129,8 +148,29 @@ export const parseRangeParams = (searchParams, now = new Date()) => {
 
 /** Builds the query parameters describing the current selection. */
 export const serializeRange = (timeframe, from, to) => {
+    // Named rather than written as dates it does not have. The statistics need
+    // it in the URL because a bare URL there means the stored preference.
+    if (isAllTime(timeframe)) return {range: TIMEFRAME_ALL};
     if (findTimeframe(timeframe)) return {range: timeframe};
     return {from: formatDateParam(from), to: formatDateParam(to)};
+};
+
+/**
+ * The window a page of statistics is actually showing.
+ *
+ * A bounded selection is its own window. All time has none of its own, so the
+ * server echoes the extent of the tests themselves - the first to the last -
+ * and that is what the headings are named after. The stand-in window is the
+ * fallback for a node too old to echo anything, whose payload would otherwise
+ * render as "Invalid Date".
+ */
+export const shownRange = (dateRange, statistics, now = new Date()) => {
+    if (dateRange) return dateRange;
+
+    const echoed = statistics?.dateRange;
+    if (!echoed?.from || !echoed?.to) return resolveAllTime(now);
+
+    return {from: new Date(echoed.from), to: new Date(echoed.to)};
 };
 
 /**
@@ -142,14 +182,14 @@ export const serializeRange = (timeframe, from, to) => {
  * page would hide most of the history.
  */
 export const selectionFromParams = (searchParams, now = new Date()) =>
-    parseRangeParams(searchParams, now) ?? {timeframe: TIMEFRAME_ALL, from: null, to: null};
+    parseRangeParams(searchParams, now) ?? selectionOf(TIMEFRAME_ALL, now);
 
 /**
  * The other end of that round trip.
  *
- * All time carries no dates, so serializing it as a range would reach for a
- * `from` that does not exist. Clearing the parameters says the same thing,
- * leaves a clean URL, and reads back as all time.
+ * All time is the overview's default, so clearing the parameters says it while
+ * leaving a clean URL - and reads back as all time. The statistics have to name
+ * it instead, because a bare URL there means the stored preference.
  */
 export const rangeToParams = (timeframe, from, to) =>
     isAllTime(timeframe) ? {} : serializeRange(timeframe, from, to);

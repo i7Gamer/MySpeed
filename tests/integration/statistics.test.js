@@ -225,6 +225,109 @@ describe("GET /api/speedtests/statistics", () => {
         });
     });
 
+    /**
+     * All time is asked for by name rather than as a very wide window. The
+     * window a wide request would need - one wide enough to hold anything the
+     * server still keeps - is a quarter of a century, and bucketing a chart over
+     * that draws a year of tests as a handful of points at its right edge. Named,
+     * the rows are unfiltered and the charts bucket over the extent of the tests
+     * themselves.
+     */
+    describe("all time", () => {
+        const allTime = (query = "") => statistics(`range=all${query}`);
+
+        it("counts every test, however old", async () => {
+            await seedTests(server.tests, [
+                at("2019-01-01T10:00:00.000Z"),
+                at("2026-08-05T10:00:00.000Z")
+            ]);
+
+            const {status, body} = await allTime();
+            assert.equal(status, 200);
+            assert.equal(body.tests.total, 2);
+        });
+
+        // The client sends a stand-in window beside the name, because a parent
+        // proxies this request to its nodes and a node running an older version
+        // knows only from/to. The name has to win, or the stand-in would decide
+        // what "everything" means.
+        it("ignores the dates that travel beside it", async () => {
+            await seedTests(server.tests, [at("2019-01-01T10:00:00.000Z")]);
+
+            const {body} = await allTime("&from=2026-08-01&to=2026-08-07&tzOffset=0");
+            assert.equal(body.tests.total, 1);
+        });
+
+        it("echoes the extent of the tests as the range it answered for", async () => {
+            await seedTests(server.tests, [
+                at("2025-03-04T10:00:00.000Z"),
+                at("2026-08-05T11:00:00.000Z"),
+                at("2025-09-09T09:00:00.000Z")
+            ]);
+
+            const {body} = await allTime();
+            assert.equal(body.dateRange.from, "2025-03-04T10:00:00.000Z");
+            assert.equal(body.dateRange.to, "2026-08-05T11:00:00.000Z");
+        });
+
+        /**
+         * The regression this exists to prevent: bucketed over a stand-in window
+         * of ten thousand days, six hours of testing lands in a single bucket and
+         * the chart is one point wide.
+         */
+        it("buckets over the tests rather than over a window wide enough to hold them", async () => {
+            await seedTests(server.tests, Array.from({length: 360}, (unused, index) =>
+                at(new Date(Date.UTC(2026, 7, 5, 0, index)).toISOString())));
+
+            const {body} = await allTime();
+            assert.equal(body.downsampled, true);
+            assert.equal(body.rawDataPoints, 360);
+            assert.ok(body.labels.length > 250,
+                `only drew ${body.labels.length} of the 300 points it had room for`);
+        });
+
+        it("still answers with every point when asked for enough", async () => {
+            await seedTests(server.tests, Array.from({length: 360}, (unused, index) =>
+                at(new Date(Date.UTC(2026, 7, 5, 0, index)).toISOString())));
+
+            const {body} = await allTime("&points=1000");
+            assert.equal(body.downsampled, false);
+            assert.equal(body.labels.length, 360);
+        });
+
+        // Nothing precedes everything, so there is no window to compare against.
+        it("never compares against a previous window, even when asked", async () => {
+            await seedTests(server.tests, [at("2026-08-05T10:00:00.000Z")]);
+
+            const {body} = await allTime("&compare=previous");
+            assert.equal(body.previous, undefined);
+        });
+
+        it("answers an instance that has never run a test", async () => {
+            const {status, body} = await allTime();
+
+            assert.equal(status, 200);
+            assert.deepEqual(body.tests, {total: 0, failed: 0});
+            assert.deepEqual(body.labels, []);
+        });
+
+        // A single test is an extent of zero width, and the bucketing divides by
+        // it. The request that reaches it is `points=50` with 51 tests sharing
+        // one instant, which an import can produce.
+        it("survives an extent of zero width", async () => {
+            await seedTests(server.tests, Array.from({length: 51}, () => at("2026-08-05T10:00:00.000Z")));
+
+            const {status, body} = await allTime("&points=50");
+            assert.equal(status, 200);
+            assert.equal(body.tests.total, 51);
+        });
+
+        it("still refuses a request that names no range at all", async () => {
+            const {status} = await statistics("range=7d");
+            assert.equal(status, 400);
+        });
+    });
+
     describe("timezone handling", () => {
         // 2026-08-06T23:30Z is already 2026-08-07 for a client at UTC+2, so it
         // belongs to a range that starts on the 7th only when the offset is honoured.

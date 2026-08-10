@@ -4,14 +4,14 @@ import {
     faAnglesLeft, faAnglesRight, faCalendar, faChevronLeft, faChevronRight
 } from "@fortawesome/free-solid-svg-icons";
 import { t } from "i18next";
-import { TIMEFRAMES } from "@/common/utils/TimeframeUtil";
+import { PICKER_TIMEFRAMES } from "@/common/utils/TimeframeUtil";
 import { isCurrentMonth, monthBack, monthForward, yearBack, yearForward } from "./calendarNav";
 import "./styles.sass";
 
-// The presets a page offers are its own: the overview leads with "All time",
-// which the statistics page and the header selector must not gain.
-export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timeframe, onTimeframeChange,
-                                  presets = TIMEFRAMES }) => {
+// One list of presets, wherever the picker is: each page it sits on can show
+// every test it has, so each of them leads with "All time". The list used to be
+// handed in by the page, back when the statistics could not draw one.
+export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timeframe, onTimeframeChange }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [selecting, setSelecting] = useState("from");
     const [tempFrom, setTempFrom] = useState(from);
@@ -227,7 +227,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                     {from && to ? (
                         <>{formatDisplayDate(from)} - {formatDisplayDate(to)}</>
                     ) : (
-                        t(presets.find(preset => preset.id === timeframe)?.labelKey ?? "calendar.select_range")
+                        t(PICKER_TIMEFRAMES.find(preset => preset.id === timeframe)?.labelKey ?? "calendar.select_range")
                     )}
                 </span>
             </div>
@@ -236,7 +236,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                 <div className="date-range-popover" ref={popoverRef}>
                     {onTimeframeChange && (
                         <div className="timeframe-presets">
-                            {presets.map((preset) => (
+                            {PICKER_TIMEFRAMES.map((preset) => (
                                 <button
                                     key={preset.id}
                                     type="button"

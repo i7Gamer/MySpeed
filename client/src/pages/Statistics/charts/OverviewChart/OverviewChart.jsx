@@ -2,19 +2,19 @@ import StatisticContainer from "@/pages/Statistics/components/StatisticContainer
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faCircleExclamation, faGaugeHigh, faStopwatch, faWaveSquare} from "@fortawesome/free-solid-svg-icons";
-import {formatDuration, NOT_MEASURED} from "@/common/utils/FormatUtil";
+import {formatDay, formatDuration, NOT_MEASURED} from "@/common/utils/FormatUtil";
 import {failureRate} from "@/common/utils/TestUtil";
 import Delta from "@/common/components/Delta";
 import "./styles.sass";
 
 export const OverviewChart = (props) => {
-    const formatDateForTitle = (date) => {
-        return date.toLocaleDateString(undefined, { day: "2-digit", month: "short" });
-    };
-
-    const title = t("test.overview.title_range", { 
-        from: formatDateForTitle(props.dateRange.from), 
-        to: formatDateForTitle(props.dateRange.to) 
+    // The shared formatter rather than one of its own: that one named a day
+    // without its year, which reads as this year for a range that is not - all
+    // time spans whatever the instance has - and asked for the browser's
+    // language instead of the one the app is set to.
+    const title = t("test.overview.title_range", {
+        from: formatDay(props.dateRange.from),
+        to: formatDay(props.dateRange.to)
     });
 
     const rate = failureRate(props.tests.total, props.tests.failed);

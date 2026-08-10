@@ -41,13 +41,18 @@ describe("the empty state names the range that emptied it", () => {
     it("uses the range sentence on the statistics", () => {
         assert.match(statistics, /test\.not_available_in_range/);
     });
+
+    // All time has no dates to name, and the window it reaches the server with
+    // is a stand-in - "No tests between 26 Mar 1999 and today" reads as a
+    // strangely specific request rather than as an empty instance.
+    it("keeps the range-less sentence for all time on the statistics", () => {
+        assert.match(statistics, /test\.not_available"/);
+    });
 });
 
 /**
- * The overview is the page that can show everything, so it is the one that can
- * offer the way back. The statistics cannot draw an unbounded range, so they
- * name the range and leave the picker - which sits right above the message - to
- * do the rest.
+ * Both pages can show every test they have, so both can offer the way back from
+ * a range that emptied them - a dead end otherwise reached by a single click.
  */
 describe("the way back from an empty range", () => {
     it("offers all time on the overview", () => {
@@ -56,14 +61,21 @@ describe("the way back from an empty range", () => {
         assert.match(testArea, /TIMEFRAME_ALL/, "the button selects something other than all time");
     });
 
-    it("only offers it when a range is what emptied the list", () => {
-        // The button hangs off the same branch as the range sentence, so an
-        // instance with no tests at all is not told to widen a range it never
-        // narrowed.
-        const rangeBranch = testArea.slice(testArea.indexOf("not_available_in_range"));
-        const plainBranch = testArea.slice(0, testArea.indexOf("not_available_in_range"));
-
-        assert.match(rangeBranch, /show_all_time/);
-        assert.doesNotMatch(plainBranch, /show_all_time/);
+    it("offers it on the statistics too", () => {
+        assert.match(statistics, /test\.show_all_time/);
+        assert.match(statistics, /TIMEFRAME_ALL/, "the button selects something other than all time");
     });
+
+    for (const [page, source] of [["overview", testArea], ["statistics", statistics]]) {
+        it(`only offers it on the ${page} when a range is what emptied the page`, () => {
+            // The button hangs off the same branch as the range sentence, so an
+            // instance with no tests at all is not told to widen a range it
+            // never narrowed.
+            const rangeBranch = source.slice(source.indexOf("not_available_in_range"));
+            const plainBranch = source.slice(0, source.indexOf("not_available_in_range"));
+
+            assert.match(rangeBranch, /show_all_time/);
+            assert.doesNotMatch(plainBranch, /show_all_time/);
+        });
+    }
 });
