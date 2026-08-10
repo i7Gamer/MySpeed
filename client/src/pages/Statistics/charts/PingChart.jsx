@@ -6,7 +6,21 @@ import { PreferencesContext } from "@/common/contexts/Preferences";
 import { TIME_FORMAT_12H } from "@/common/utils/FormatUtil";
 import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
 import { lineTensionFor, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
+import {
+    averageLineDataset, chartThemeColors, failedMarkersDataset, failureMarkers,
+    isSingleDaySeries, lineChartOptions, seriesAverage, verticalGradientFill
+} from "@/pages/Statistics/charts/lineChartConfig";
 import "./SpeedChart/styles.sass";
+
+const PING_COLOR = 'hsl(38, 92%, 50%)';
+const LOADED_COLOR = 'hsl(217, 91%, 60%)';
+const JITTER_COLOR = 'hsl(280, 70%, 55%)';
+
+// The jitter fill is fainter than the main line's: it is context, not the reading.
+const JITTER_PEAK_ALPHA = 0.15;
+
+// Behind the loaded (3) and jitter (2) lines, which sit behind the ping (1).
+const AVERAGE_ORDER = 4;
 
 const PingChart = memo(({ compact = false, ...props }) => {
     const [isDarkMode] = useContext(ThemeContext);
@@ -14,7 +28,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
 
     const filteredData = useMemo(() => {
-        if (!props.data?.ping || !props.labels) return { labels: [], data: [], jitter: [], average: 0, jitterAverage: 0, failed: [], errors: [], isSingleDay: false };
+        if (!props.data?.ping || !props.labels) return { labels: [], data: [], jitter: [], loaded: [], average: 0, failed: [], errors: [], isSingleDay: false };
 
         // The worse of the two directions per point, exactly as the grade takes
         // the worse direction - a line clean downstream and buffered upstream is
@@ -28,51 +42,24 @@ const PingChart = memo(({ compact = false, ...props }) => {
             return Math.max(down, up);
         };
 
-        const filtered = props.labels.map((label, index) => ({
-            label,
-            value: props.data.ping[index],
-            jitter: props.data.jitter?.[index],
-            loaded: loadedAt(index),
-            isFailed: props.failed?.[index] || false,
-            error: props.errors?.[index] || null,
-            date: new Date(label)
-        }));
-
-        const validValues = filtered.filter(item => item.value !== null && item.value !== undefined && item.value > 0).map(item => item.value);
-        const average = validValues.length > 0
-            ? Math.round((validValues.reduce((a, b) => a + b, 0) / validValues.length) * 100) / 100
-            : 0;
-
-        const validJitter = filtered.filter(item => item.jitter !== null && item.jitter !== undefined).map(item => item.jitter);
-        const jitterAverage = validJitter.length > 0
-            ? Math.round((validJitter.reduce((a, b) => a + b, 0) / validJitter.length) * 100) / 100
-            : null;
-
-        const dates = filtered.map(item => new Date(item.label).toDateString());
-        const uniqueDates = [...new Set(dates)];
-        const isSingleDay = uniqueDates.length === 1;
+        const values = props.labels.map((_, index) => props.data.ping[index]);
 
         return {
-            labels: filtered.map(item => item.label),
-            data: filtered.map(item => item.value),
-            jitter: filtered.map(item => item.jitter),
-            loaded: filtered.map(item => item.loaded),
-            failed: filtered.map(item => item.isFailed),
-            errors: filtered.map(item => item.error),
-            average,
-            jitterAverage,
-            isSingleDay
+            labels: props.labels,
+            data: values,
+            jitter: props.labels.map((_, index) => props.data.jitter?.[index]),
+            loaded: props.labels.map((_, index) => loadedAt(index)),
+            failed: props.labels.map((_, index) => props.failed?.[index] || false),
+            errors: props.labels.map((_, index) => props.errors?.[index] || null),
+            average: seriesAverage(values),
+            isSingleDay: isSingleDaySeries(props.labels)
         };
     }, [props.labels, props.data, props.failed, props.errors]);
 
     const hasJitterData = useMemo(() => filteredData.jitter.some(j => j !== null && j !== undefined), [filteredData.jitter]);
     const hasLoadedData = useMemo(() => filteredData.loaded.some(v => v !== null && v !== undefined), [filteredData.loaded]);
 
-    const failedMarkerData = useMemo(() => {
-        return filteredData.labels.map((_, index) => 
-            filteredData.failed[index] ? 0 : null
-        );
-    }, [filteredData]);
+    const failedMarkerData = useMemo(() => failureMarkers(filteredData.failed), [filteredData]);
 
     const hasFailedTests = useMemo(() => failedMarkerData.some(v => v !== null), [failedMarkerData]);
 
@@ -84,147 +71,20 @@ const PingChart = memo(({ compact = false, ...props }) => {
     const lineTension = useMemo(() => lineTensionFor(filteredData.labels.length),
         [filteredData.labels.length]);
 
-    const themeColors = useMemo(() => ({
-        gridColor: isDarkMode ? 'rgba(42, 52, 65, 0.6)' : 'rgba(203, 213, 225, 0.8)',
-        tickColor: isDarkMode ? 'hsl(215, 20%, 50%)' : 'hsl(215, 25%, 40%)',
-        tooltipBg: isDarkMode ? 'hsl(215, 28%, 10%)' : 'hsl(0, 0%, 100%)',
-        tooltipTitle: isDarkMode ? 'hsl(210, 40%, 96%)' : 'hsl(215, 25%, 20%)',
-        tooltipBody: isDarkMode ? 'hsl(215, 20%, 65%)' : 'hsl(215, 15%, 40%)',
-        tooltipBorder: isDarkMode ? 'hsl(215, 25%, 22%)' : 'hsl(215, 20%, 85%)'
-    }), [isDarkMode]);
+    const themeColors = useMemo(() => chartThemeColors(isDarkMode), [isDarkMode]);
 
-    const chartOptions = useMemo(() => ({
-        responsive: true,
-        maintainAspectRatio: false,
-        resizeDelay: 100,
-        animation: {
-            duration: 250,
-            easing: 'easeOutQuart'
-        },
-        animations: {
-            colors: false,
-            x: false
-        },
-        transitions: {
-            active: {
-                animation: {
-                    duration: 100
-                }
-            },
-            resize: {
-                animation: {
-                    duration: 0
-                }
-            }
-        },
-        plugins: {
-            tooltip: {
-                backgroundColor: themeColors.tooltipBg,
-                titleColor: themeColors.tooltipTitle,
-                bodyColor: themeColors.tooltipBody,
-                borderColor: themeColors.tooltipBorder,
-                borderWidth: 1,
-                padding: 14,
-                cornerRadius: 10,
-                displayColors: true,
-                boxPadding: 8,
-                filter: (item) => item.dataset.label !== t("statistics.failed_test"),
-                callbacks: {
-                    title: (items) => {
-                        if (items.length > 0) {
-                            const date = new Date(filteredData.labels[items[0].dataIndex]);
-                            return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) +
-                                   ' ' + date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: use12h });
-                        }
-                        return '';
-                    },
-                    label: (item) => {
-                        if (item.dataset.label === t("statistics.failed_test")) {
-                            const error = filteredData.errors[item.dataIndex];
-                            return error ? `${t("statistics.failed_test")}: ${error}` : t("statistics.failed_test");
-                        }
-                        return `${item.dataset.label}: ${item.formattedValue} ${t("latest.ping_unit")}`;
-                    },
-                    afterBody: (items) => {
-                        if (items.length > 0) {
-                            const index = items[0].dataIndex;
-                            if (filteredData.failed[index]) {
-                                const error = filteredData.errors[index];
-                                return error ? `\n⚠ ${t("statistics.failed_test")}: ${error}` : `\n⚠ ${t("statistics.failed_test")}`;
-                            }
-                        }
-                        return '';
-                    }
-                }
-            },
-            legend: {
-                position: "bottom",
-                labels: {
-                    usePointStyle: true,
-                    pointStyle: 'circle',
-                    padding: 20,
-                    color: themeColors.tickColor,
-                    font: {
-                        size: 12,
-                        weight: 500
-                    },
-                    filter: (item) => item.text !== t("statistics.failed_test")
-                }
-            }
-        },
-        scales: {
-            x: {
-                reverse: false,
-                grid: {
-                    color: themeColors.gridColor,
-                    drawBorder: false
-                },
-                border: {
-                    display: false
-                },
-                ticks: {
-                    color: themeColors.tickColor,
-                    maxTicksLimit: filteredData.isSingleDay ? 12 : 5,
-                    callback: function(value, index) {
-                        const date = new Date(filteredData.labels[index]);
-                        if (filteredData.isSingleDay) {
-                            return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: use12h });
-                        }
-                        return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' +
-                               date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: use12h });
-                    }
-                }
-            },
-            y: {
-                beginAtZero: true,
-                grid: {
-                    color: themeColors.gridColor,
-                    drawBorder: false
-                },
-                border: {
-                    display: false
-                },
-                ticks: {
-                    color: themeColors.tickColor
-                }
-            }
-        },
-        interaction: {
-            intersect: false,
-            mode: 'index'
-        },
-        elements: {
-            line: {
-                tension: lineTension,
-                borderWidth: 2.5
-            },
-            point: {
-                radius: pointStyle.radius,
-                hoverRadius: pointStyle.hoverRadius,
-                hoverBorderWidth: 2
-            }
-        }
-    }), [themeColors, filteredData.labels, filteredData.errors, filteredData.failed, filteredData.isSingleDay, pointStyle, lineTension, use12h]);
+    const chartOptions = useMemo(() => lineChartOptions({
+        themeColors,
+        labels: filteredData.labels,
+        errors: filteredData.errors,
+        failed: filteredData.failed,
+        isSingleDay: filteredData.isSingleDay,
+        pointStyle,
+        lineTension,
+        use12h,
+        valueUnit: t("latest.ping_unit")
+    }), [themeColors, filteredData.labels, filteredData.errors, filteredData.failed,
+        filteredData.isSingleDay, pointStyle, lineTension, use12h]);
 
     const chartData = useMemo(() => ({
         labels: filteredData.labels,
@@ -232,17 +92,11 @@ const PingChart = memo(({ compact = false, ...props }) => {
             {
                 label: t("latest.ping"),
                 data: filteredData.data,
-                borderColor: 'hsl(38, 92%, 50%)',
-                backgroundColor: (context) => {
-                    const ctx = context.chart.ctx;
-                    const gradient = ctx.createLinearGradient(0, 0, 0, context.chart.height);
-                    gradient.addColorStop(0, 'hsla(38, 92%, 50%, 0.25)');
-                    gradient.addColorStop(1, 'hsla(38, 92%, 50%, 0.01)');
-                    return gradient;
-                },
+                borderColor: PING_COLOR,
+                backgroundColor: verticalGradientFill(PING_COLOR),
                 fill: true,
-                pointBackgroundColor: 'hsl(38, 92%, 50%)',
-                pointBorderColor: 'hsl(38, 92%, 50%)',
+                pointBackgroundColor: PING_COLOR,
+                pointBorderColor: PING_COLOR,
                 pointRadius: pointStyle.radius,
                 pointHoverRadius: pointStyle.hoverRadius,
                 spanGaps: true,
@@ -256,11 +110,11 @@ const PingChart = memo(({ compact = false, ...props }) => {
             ...(hasLoadedData ? [{
                 label: t("statistics.loaded_latency"),
                 data: filteredData.loaded,
-                borderColor: 'hsl(217, 91%, 60%)',
+                borderColor: LOADED_COLOR,
                 backgroundColor: 'transparent',
                 fill: false,
-                pointBackgroundColor: 'hsl(217, 91%, 60%)',
-                pointBorderColor: 'hsl(217, 91%, 60%)',
+                pointBackgroundColor: LOADED_COLOR,
+                pointBorderColor: LOADED_COLOR,
                 pointRadius: pointStyle.radius,
                 pointHoverRadius: pointStyle.hoverRadius,
                 spanGaps: true,
@@ -269,49 +123,18 @@ const PingChart = memo(({ compact = false, ...props }) => {
             ...(hasJitterData ? [{
                 label: t("latest.jitter"),
                 data: filteredData.jitter,
-                borderColor: 'hsl(280, 70%, 55%)',
-                backgroundColor: (context) => {
-                    const ctx = context.chart.ctx;
-                    const gradient = ctx.createLinearGradient(0, 0, 0, context.chart.height);
-                    gradient.addColorStop(0, 'hsla(280, 70%, 55%, 0.15)');
-                    gradient.addColorStop(1, 'hsla(280, 70%, 55%, 0.01)');
-                    return gradient;
-                },
+                borderColor: JITTER_COLOR,
+                backgroundColor: verticalGradientFill(JITTER_COLOR, JITTER_PEAK_ALPHA),
                 fill: true,
-                pointBackgroundColor: 'hsl(280, 70%, 55%)',
-                pointBorderColor: 'hsl(280, 70%, 55%)',
+                pointBackgroundColor: JITTER_COLOR,
+                pointBorderColor: JITTER_COLOR,
                 pointRadius: pointStyle.radius,
                 pointHoverRadius: pointStyle.hoverRadius,
                 spanGaps: true,
                 order: 2
             }] : []),
-            {
-                label: t("statistics.average"),
-                data: filteredData.labels.map(() => filteredData.average),
-                borderColor: 'hsl(330, 80%, 60%)',
-                backgroundColor: 'transparent',
-                borderWidth: 2,
-                borderDash: [6, 4],
-                pointRadius: 0,
-                pointHoverRadius: 0,
-                fill: false,
-                order: 4
-            },
-            ...(hasFailedTests ? [{
-                label: t("statistics.failed_test"),
-                data: failedMarkerData,
-                borderColor: 'transparent',
-                backgroundColor: 'hsl(0, 72%, 51%)',
-                pointBackgroundColor: 'hsl(0, 72%, 51%)',
-                pointBorderColor: 'hsl(0, 84%, 60%)',
-                pointBorderWidth: compact ? 1 : 2,
-                pointRadius: compact ? 3 : 6,
-                pointHoverRadius: compact ? 4 : 8,
-                pointStyle: 'crossRot',
-                showLine: false,
-                fill: false,
-                order: 0
-            }] : [])
+            averageLineDataset(filteredData.labels, filteredData.average, AVERAGE_ORDER),
+            ...(hasFailedTests ? [failedMarkersDataset(failedMarkerData, compact)] : [])
         ],
     }), [filteredData, compact, pointStyle, hasJitterData, hasLoadedData, hasFailedTests, failedMarkerData]);
 
