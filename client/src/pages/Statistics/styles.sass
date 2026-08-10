@@ -5,7 +5,6 @@
 // sizes this, which is what keeps it the same width as the overview.
 .statistic-area
   width: 100%
-  padding-top: 1.5rem
   margin-bottom: 2rem
   display: flex
   gap: $card-gap
@@ -13,23 +12,17 @@
   flex-wrap: wrap
   box-sizing: border-box
 
+  // The toolbar spaces itself from the header and the area's own gap spaces
+  // the charts from it - its standalone bottom margin would stack on that gap
+  // and open a wider seam here than the same toolbar leaves on the overview.
+  > .page-toolbar
+    margin-bottom: 0
+
 .statistic-stale
   opacity: 0.7
   transition: opacity 0.2s ease
 
 .statistic-loading
-  .skeleton-picker
-    width: 280px
-    height: 48px
-    background: linear-gradient(90deg, $darker-gray 25%, $dark-gray 50%, $darker-gray 75%)
-    background-size: 200% 100%
-    border-radius: 0.6rem
-    opacity: 0
-    transform: translateY(10px)
-    
-    &.skeleton-visible
-      animation: skeleton-shimmer 1.5s infinite, skeleton-fade-in 0.3s ease forwards
-    
   .skeleton-chart
     flex: 1 1 30%
     min-width: 16rem
@@ -58,22 +51,6 @@
     opacity: 1
     transform: translateY(0)
 
-.statistics-header
-  width: 100%
-  display: flex
-  align-items: center
-  justify-content: space-between
-  gap: 1rem
-  margin-bottom: 0.5rem
-  min-width: 0
-
-  > .date-range-picker
-    flex: 1 1 auto
-    min-width: 0
-
-  > .export-button-container
-    flex: 0 0 auto
-
 .statistics-empty
   width: 100%
   display: flex
@@ -87,6 +64,3 @@
     color: $subtext
     text-align: center
 
-@media screen and (max-width: 600px)
-  .statistics-header
-    gap: 0.5rem

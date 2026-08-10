@@ -2,7 +2,6 @@ import "./styles.sass";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
     faCircleArrowUp, faDownload,
-    faGaugeHigh,
     faGear,
     faLock,
     faClose,
@@ -11,13 +10,9 @@ import {
 import { useContext, useEffect, useState } from "react";
 import DropdownComponent from "../Dropdown/DropdownComponent";
 import { useAlert } from "@/common/contexts/Alert";
-import { StatusContext } from "@/common/contexts/Status";
-import { SpeedtestContext } from "@/common/contexts/Speedtests";
 import { jsonRequest, login } from "@/common/utils/RequestUtil";
 import { promptUntilAccepted } from "@/common/utils/PasswordPrompt";
 import { refusalDescriptionKey } from "@/common/utils/AuthOutcome";
-import { startSpeedtest as runSpeedtest } from "@/common/utils/RunUtil";
-import { showsStatusBar } from "@/common/utils/StatusUtil";
 import { updateInfo } from "@/common/components/Header/utils/infos";
 import { t } from "i18next";
 import { ConfigContext } from "@/common/contexts/Config";
@@ -28,7 +23,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Pagination from "./components/Pagination";
 import AboutDialog from "@/common/components/AboutDialog";
 import Tooltip from "@/common/components/Tooltip";
-import TimeframeSelector from "@/common/components/TimeframeSelector";
 
 const HeaderComponent = () => {
     const findNode = useContext(NodeContext)[4];
@@ -38,8 +32,6 @@ const HeaderComponent = () => {
 
     const alert = useAlert();
     const [icon, setIcon] = useState(faGear);
-    const [status, updateStatus, setRunning] = useContext(StatusContext);
-    const {updateTests} = useContext(SpeedtestContext);
     const [config, reloadConfig, checkConfig] = useContext(ConfigContext);
     const [updateAvailable, setUpdateAvailable] = useState("");
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -84,12 +76,6 @@ const HeaderComponent = () => {
         }
     );
 
-    // Shared with the status bar on the overview: two controls for the same
-    // action decided separately when it was allowed, which is how they end up
-    // disagreeing.
-    const startSpeedtest = () =>
-        runSpeedtest({status, config, updateStatus, setRunning, updateTests, alert});
-
     const openDownloadPage = () => window.open(RELEASES_URL, "_blank");
 
     useEffect(() => {
@@ -127,14 +113,12 @@ const HeaderComponent = () => {
 
                 <Pagination />
 
+                {/* No timeframe selector and no start control up here any
+                    more: the overview and the statistics both carry the page
+                    toolbar, which owns the range and the start button, and a
+                    second control for either only raises the question of
+                    which one the page obeys. */}
                 <div className="header-right">
-                    {/* Not on the overview: that page carries its own range
-                        picker now, and this one means something different -
-                        it always navigates to the statistics. Two range
-                        controls on one screen only raise the question of
-                        which one the list below obeys. */}
-                    {!showsStatusBar(location.pathname) && <TimeframeSelector />}
-
                     {updateAvailable ?
                         <div><FontAwesomeIcon icon={faCircleArrowUp} className="header-icon icon-orange update-icon"
                                               onClick={() => alert.openAlert(
@@ -143,19 +127,7 @@ const HeaderComponent = () => {
                                                   { buttonText: t("dialog.okay") }
                                               )} /></div> : <></>}
 
-                    {/* Hidden on the overview, where the status bar carries the
-                        same control with a label on it. Two buttons for one
-                        action on one screen only raises the question of whether
-                        they do the same thing. */}
-                    {!(status.paused || config.viewMode || showsStatusBar(location.pathname)) ?
-                        <Tooltip content={t("header." + (status.running ? "running_tooltip" : "start_tooltip"))} position="bottom">
-                            <FontAwesomeIcon icon={faGaugeHigh}
-                                             className={"header-icon " + (status.running ? "test-running" : "")}
-                                             onClick={startSpeedtest} />
-                        </Tooltip>
-                    : <></>}
-
-                    {config.viewMode ? 
+                    {config.viewMode ?
                         <Tooltip content={t("header.admin_login")} position="bottom">
                             {/* Wrapped, not passed bare: React calls a handler
                                 with the event, which arrives as `failed` and is

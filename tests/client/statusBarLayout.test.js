@@ -19,11 +19,11 @@ const aliasImporter = {
 const compile = (stylesheet) =>
     sass.compile(path.join(CLIENT_SRC, stylesheet), {importers: [aliasImporter]}).css;
 
-const bar = compile("pages/Home/components/StatusBar/styles.sass");
-const button = compile("pages/Home/components/StartTestButton/styles.sass");
+const bar = compile("common/components/StatusBar/styles.sass");
+const button = compile("common/components/StartTestButton/styles.sass");
 
 const source = fs.readFileSync(
-    path.join(CLIENT_SRC, "pages/Home/components/StatusBar/StatusBarComponent.jsx"), "utf8");
+    path.join(CLIENT_SRC, "common/components/StatusBar/StatusBarComponent.jsx"), "utf8");
 
 // Everything before the first @media, i.e. what a desktop actually gets.
 const base = (css) => css.split("@media")[0];

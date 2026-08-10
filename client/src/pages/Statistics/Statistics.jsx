@@ -23,7 +23,7 @@ import {
     resolveTimeframe,
     serializeRange
 } from "@/common/utils/TimeframeUtil";
-import DateRangePicker from "@/common/components/DateRangePicker";
+import PageToolbar from "@/common/components/PageToolbar";
 import ChartModal from "@/common/components/ChartModal";
 import SpeedChart from "@/pages/Statistics/charts/SpeedChart";
 import LatestTestChart from "@/pages/Statistics/charts/LatestTestChart";
@@ -32,7 +32,6 @@ import OverviewChart from "@/pages/Statistics/charts/OverviewChart";
 import AverageChart from "@/pages/Statistics/charts/AverageChart";
 import HourlyChart from "@/pages/Statistics/charts/HourlyChart.jsx";
 import ConsistencyChart from "@/pages/Statistics/charts/ConsistencyChart";
-import ExportButton from "@/common/components/ExportButton";
 import ToggleSwitch from "@/common/components/ToggleSwitch";
 import i18n, {t} from "i18next";
 import "./styles.sass";
@@ -233,12 +232,24 @@ export const Statistics = () => {
 
     if (mountPhase === 0) return null;
 
+    // The toolbar is real here rather than a shimmer: it needs nothing from the
+    // statistics being fetched, and its controls - the range being loaded, and
+    // starting a test - are exactly what someone waiting might want to reach.
+    const toolbar = (
+        <PageToolbar
+            from={dateRange.from}
+            to={dateRange.to}
+            timeframe={selection.timeframe}
+            onRangeChange={handleDateRangeChange}
+            onTimeframeChange={handleTimeframeChange}
+            exportRange={dateRange}
+        />
+    );
+
     if (loading && !deferredStatistics) {
         return (
             <div className="statistic-area statistic-loading">
-                <div className="statistics-header">
-                    <div className="skeleton-picker skeleton-visible"></div>
-                </div>
+                {toolbar}
                 <div className="skeleton-chart skeleton-visible"></div>
                 <div className="skeleton-chart skeleton-visible"></div>
                 <div className="skeleton-chart skeleton-visible"></div>
@@ -252,6 +263,9 @@ export const Statistics = () => {
     if (loadError && !deferredStatistics) {
         return (
             <div className="statistic-area">
+                {/* The toolbar works without the statistics, and a failed load
+                    is exactly when changing the range is the way out. */}
+                {toolbar}
                 <div className="statistics-empty">
                     <p className="icon-red">{loadError.message}</p>
                     <button className="dialog-btn" onClick={updateStats}>{t("dialog.retry")}</button>
@@ -263,15 +277,7 @@ export const Statistics = () => {
     if (!deferredStatistics) return <></>;
     if (!deferredStatistics.tests || deferredStatistics.tests.total === 0) return (
         <div className="statistic-area">
-            <div className="statistics-header">
-                <DateRangePicker
-                    from={dateRange.from}
-                    to={dateRange.to}
-                    onChange={handleDateRangeChange}
-                    timeframe={selection.timeframe}
-                    onTimeframeChange={handleTimeframeChange}
-                />
-            </div>
+            {toolbar}
             <div className="statistics-empty">
                 <p>{t("test.not_available")}</p>
             </div>
@@ -327,16 +333,7 @@ export const Statistics = () => {
 
     return (
         <div className={`statistic-area${isStale ? ' statistic-stale' : ''}`}>
-            <div className="statistics-header">
-                <DateRangePicker
-                    from={dateRange.from}
-                    to={dateRange.to}
-                    onChange={handleDateRangeChange}
-                    timeframe={selection.timeframe}
-                    onTimeframeChange={handleTimeframeChange}
-                />
-                <ExportButton dateRange={dateRange} />
-            </div>
+            {toolbar}
 
             <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} dateRange={dateRange} onClick={() => setExpandedChart('overview')}/>
             <LatestTestChart test={latestTest} onClick={() => setExpandedChart('latest')}/>

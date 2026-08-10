@@ -21,12 +21,6 @@ export const runJustFinished = (wasRunning, running) => wasRunning === true && r
 
 const PERCENT = 100;
 
-// The one route that renders the status bar, and so the one route whose header
-// does not need its own start button.
-const OVERVIEW_PATH = "/";
-
-export const showsStatusBar = (pathname) => pathname === OVERVIEW_PATH;
-
 /**
  * How far through the run is, as a whole percentage, or null if the provider
  * does not say.

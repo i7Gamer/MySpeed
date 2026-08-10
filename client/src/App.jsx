@@ -1,4 +1,5 @@
 import React, {useState, useEffect} from 'react';
+import {useTranslation} from 'react-i18next';
 import {createBrowserRouter, Outlet, RouterProvider} from 'react-router-dom';
 import '@fontsource/inter/300.css';
 import '@fontsource/inter/400.css';
@@ -31,28 +32,40 @@ import Home from "@/pages/Home";
 library.add(faBell, faBellConcierge, faDatabase, faGlobe, faHeartPulse, faDiscord, faTelegram);
 library.add(PushOverIcon);
 
-const Providers = ({children}) => (
-    <ThemeProvider>
-        <PreferencesProvider>
-            <AlertProvider>
-                <ToastNotificationProvider>
-                    <ConfigProvider>
-                        <NodeProvider>
-                            {/* Status wraps Speedtests: the tests list refreshes
-                                on the falling edge of the polled running flag,
-                                so it consumes the status context. */}
-                            <StatusProvider>
-                                <SpeedtestProvider>
-                                    {children}
-                                </SpeedtestProvider>
-                            </StatusProvider>
-                        </NodeProvider>
-                    </ConfigProvider>
-                </ToastNotificationProvider>
-            </AlertProvider>
-        </PreferencesProvider>
-    </ThemeProvider>
-);
+const Providers = ({children}) => {
+    // The one language subscription for the whole layout. Nearly every
+    // component renders its strings with the global `t`, which reads the
+    // current language but subscribes to nothing - so switching languages
+    // only translated whatever re-rendered for its own reasons, and the
+    // header kept its old words until a reload. This hook re-renders the
+    // shell on languageChanged, and the render sweeps every global-t call
+    // below it. (The memoised pagination subscribes for itself.)
+    useTranslation();
+
+    return (
+        <ThemeProvider>
+            <PreferencesProvider>
+                <AlertProvider>
+                    <ToastNotificationProvider>
+                        <ConfigProvider>
+                            <NodeProvider>
+                                {/* Status wraps Speedtests: the tests list
+                                    refreshes on the falling edge of the polled
+                                    running flag, so it consumes the status
+                                    context. */}
+                                <StatusProvider>
+                                    <SpeedtestProvider>
+                                        {children}
+                                    </SpeedtestProvider>
+                                </StatusProvider>
+                            </NodeProvider>
+                        </ConfigProvider>
+                    </ToastNotificationProvider>
+                </AlertProvider>
+            </PreferencesProvider>
+        </ThemeProvider>
+    );
+};
 
 const App = () => {
     const [translationsLoaded, setTranslationsLoaded] = useState(false);

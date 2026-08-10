@@ -3,9 +3,13 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChartArea, faListUl } from "@fortawesome/free-solid-svg-icons";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef, useCallback, memo } from "react";
-import {t} from "i18next";
+import { useTranslation } from "react-i18next";
 
 export const Pagination = memo(() => {
+    // Not the global `t`: memo with no props blocks the re-render every other
+    // component gets from the layout root on languageChanged, so this one has
+    // to hold its own subscription or its labels outlive the language.
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const location = useLocation();
     const [activeIndex, setActiveIndex] = useState(location.pathname === "/" ? 0 : 1);
