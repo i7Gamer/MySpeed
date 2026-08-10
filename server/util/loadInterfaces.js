@@ -63,6 +63,16 @@ export const requestInterfaces = async () => {
         } else {
             console.warn(`Interface ${currentInterface} not found. Falling back to default.`);
         }
-        await config.updateValue("interface", Object.keys(interfaces)[0]);
+
+        // Only when there is something to fall back to: with nothing detected
+        // this still claimed a fallback had happened and announced a
+        // configUpdated event carrying `undefined` to every integration.
+        const fallback = Object.keys(interfaces)[0];
+        if (fallback === undefined) {
+            console.warn("No usable network interface was found; keeping the configured one.");
+            return;
+        }
+
+        await config.updateValue("interface", fallback);
     }
 };

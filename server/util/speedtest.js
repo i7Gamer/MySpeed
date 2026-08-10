@@ -9,6 +9,26 @@ import path from 'node:path';
 const MS_PER_SECOND = 1000;
 const CLI_TIMEOUT = 180 * MS_PER_SECOND;
 
+/**
+ * Why the configured interface cannot carry this run, or null when it can.
+ *
+ * Detection needs the network, so a boot without one leaves the interface map
+ * empty and the configured name without an address. That used to flow straight
+ * into the CLI arguments: cloudflare threw a TypeError on
+ * `interfaceIp.includes(':')`, ookla on Windows and librespeed were handed the
+ * literal `--ip=undefined` - and the stored failure described none of it.
+ *
+ * Ookla anywhere but Windows binds by interface *name*, which can be usable
+ * even when the address probe came up empty, so that combination passes.
+ */
+export const missingInterfaceMessage = (mode, platform, currentInterface, interfaceIp) => {
+    if (interfaceIp) return null;
+    if (mode === "ookla" && platform !== "win32") return null;
+
+    return `The configured network interface "${currentInterface}" has no usable address. ` +
+        "Check the interface setting, and that the server can reach the network";
+};
+
 export default async (mode, serverId, serverUrl, onProgress) => {
     const binaryPath = mode === "ookla" ? './bin/speedtest' + (process.platform === "win32" ? ".exe" : "")
         : mode === "libre" ? './bin/librespeed-cli' + (process.platform === "win32" ? ".exe" : "")
@@ -18,6 +38,9 @@ export default async (mode, serverId, serverUrl, onProgress) => {
 
     const currentInterface = await config.getValue("interface");
     const interfaceIp = interfacesModule.interfaces[currentInterface];
+
+    const unusable = missingInterfaceMessage(mode, process.platform, currentInterface, interfaceIp);
+    if (unusable) throw new Error(unusable);
 
     const startTime = new Date().getTime();
     let args;
