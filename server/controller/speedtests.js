@@ -339,6 +339,10 @@ export const exportTests = async (range) => (await findInRange(range)).map(entry
     time: entry.time,
     type: entry.type,
     created: entry.created,
+    // The id the Ookla CLI is pointed at with --server-id, and the label the
+    // Prometheus exporter emits. Left out, an export/import round trip reset
+    // every row to the column's 0 default.
+    serverId: entry.serverId,
     serverName: entry.serverName,
     serverHost: entry.serverHost,
     packetLoss: entry.packetLoss,

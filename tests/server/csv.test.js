@@ -5,7 +5,7 @@ import { CSV_COLUMNS, CSV_HEADER, toCsv } from "../../server/util/csv.js";
 const row = (overrides = {}) => ({
     id: 1, ping: 10, jitter: 2.5, download: 100, upload: 50,
     time: 30, type: "auto", created: "2026-08-07T10:00:00.000Z",
-    serverName: "Arcade Solutions AG", serverHost: "speedtest.arcade.ch",
+    serverId: 49631, serverName: "Arcade Solutions AG", serverHost: "speedtest.arcade.ch",
     packetLoss: 0, downloadLatency: 12.5, uploadLatency: 44.75,
     isp: "Salt Mobile", externalIp: "2a04:ee41::1", resultId: "abc123", error: null, ...overrides
 });
@@ -25,7 +25,7 @@ describe("toCsv", () => {
 
     it("starts with the header row", () => {
         assert.equal(lines([row()])[0],
-            "id,ping,jitter,download,upload,time,type,created,serverName,serverHost," +
+            "id,ping,jitter,download,upload,time,type,created,serverId,serverName,serverHost," +
             "packetLoss,downloadLatency,uploadLatency,isp,externalIp,resultId,error");
     });
 
@@ -41,7 +41,7 @@ describe("toCsv", () => {
 
     it("quotes every field", () => {
         assert.equal(lines([row()])[1],
-            '"1","10","2.5","100","50","30","auto","2026-08-07T10:00:00.000Z",' +
+            '"1","10","2.5","100","50","30","auto","2026-08-07T10:00:00.000Z","49631",' +
             '"Arcade Solutions AG","speedtest.arcade.ch","0","12.5","44.75","Salt Mobile","2a04:ee41::1","abc123",""');
     });
 
@@ -53,6 +53,12 @@ describe("toCsv", () => {
         assert.equal(field(line, "packetLoss"), "0");
         assert.equal(field(line, "downloadLatency"), "12.5");
         assert.equal(field(line, "uploadLatency"), "44.75");
+    });
+
+    // Regression: serverId was left out of the export, so restoring a backup
+    // reset every row to the column's 0 default.
+    it("exports the id of the server that was measured", () => {
+        assert.equal(field(lines([row()])[1], "serverId"), "49631");
     });
 
     it("exports the server that was measured", () => {

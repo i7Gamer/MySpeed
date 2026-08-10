@@ -218,9 +218,11 @@ describe("import validation", () => {
  * here as a deliberate omission. Adding a column then forces the choice
  * instead of silently skipping it.
  */
-const NOT_EXPORTED = {
-    serverId: "which configured server was measured - an internal reference, not a measurement"
-};
+// Every attribute is exported today. serverId used to be excluded as "an
+// internal reference", but it is the id the Ookla CLI is pointed at with
+// --server-id and the label the Prometheus exporter emits - and leaving it out
+// meant an export/import round trip reset every row to the column's 0 default.
+const NOT_EXPORTED = {};
 
 describe("what the exporter carries", () => {
     const exportedFields = async () => {
@@ -257,6 +259,24 @@ describe("what the exporter carries", () => {
 
         assert.deepEqual(CSV_COLUMNS.filter((column) => !exported.includes(column)), [],
             "CSV_COLUMNS names a column exportTests() does not produce, so it is written empty for every row");
+    });
+
+    // Regression: serverId was not exported, so a restore reset every row to
+    // the column's 0 default - which server was measured did not survive.
+    it("carries the serverId through an export/import round trip", async () => {
+        await seedTests(server.tests, [{created: new Date().toISOString(), serverId: 49631}]);
+        const exported = await controller.exportTests({from: new Date(0), to: new Date()});
+
+        await seedTests(server.tests, []);
+        const {status} = await api(server.baseUrl, "/storage/tests/history", {
+            method: "PUT",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify(exported)
+        });
+
+        assert.equal(status, 200);
+        const [restored] = await server.tests.findAll();
+        assert.equal(restored.serverId, 49631);
     });
 
     // The guard is worthless if it cannot see the thing it exists to catch, so
