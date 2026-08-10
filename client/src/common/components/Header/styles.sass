@@ -33,11 +33,10 @@ header
   overflow: hidden
   text-overflow: ellipsis
 
-// Outranks `.header-main h2`, which carries the title's 24pt: as a bare class
-// this tied with the old wildcard and won on source order, and as `h2.demo-info`
-// it would tie with that rule and lose on source order instead. Two classes and
-// a type settle it wherever either rule happens to sit in the file.
-.header-main h2.demo-info
+// A button, not a heading, since it opens a dialog - so it has to be told the
+// font it would have inherited as one. Two classes still outrank the `h2`
+// rules below wherever either happens to sit in the file.
+.header-main .demo-info
   display: flex
   cursor: pointer
   align-items: center
@@ -46,13 +45,18 @@ header
   background-color: $dark-gray
   color: $accent-primary
   margin: 0
+  border: none
+  font-family: inherit
+  padding: 0.25rem 0.5rem
+  border-radius: 0.5rem
 
+// The heading is now only a wrapper: the instance name stays a heading while
+// the control that opens the About dialog is the button inside it, which is
+// what a keyboard can reach. The box - padding, gap, rounding - moved with the
+// control onto `.header-about`.
 .header-main h2
   display: flex
   align-items: center
-  gap: 1rem
-  padding: 0.5rem 1rem
-  border-radius: 0.75rem
   margin: 0
   // Stated, not inherited: a heading's browser default is 1.5em, which beats
   // inheritance - under the old wildcard the title sat at 24pt only because
@@ -75,11 +79,21 @@ header
   border-radius: 6px
   flex-shrink: 0
 
+// Carries the box the enclosing h2 used to draw, and the font it no longer
+// inherits as a button. The padding and gap are the ones that actually
+// applied: `.header-main h2` outranked this rule's own on specificity.
 .header-about
+  display: flex
+  align-items: center
   cursor: pointer
   user-select: none
-  padding: 0.45rem 0.75rem
-  gap: 0.75rem
+  gap: 1rem
+  padding: 0.5rem 1rem
+  min-width: 0
+  background: none
+  color: inherit
+  font: inherit
+  text-align: left
   border: 1px solid transparent
   border-radius: 0.75rem
   transition: background-color 0.15s ease, border-color 0.15s ease
@@ -88,17 +102,37 @@ header
     background-color: $dark-gray
     border-color: $light-gray
 
+// The icon buttons keep the geometry their bare svg had - the box is 30px and
+// the glyph fills it - so the responsive rules below still size them by
+// touching one number.
 .header-icon
   cursor: pointer
   display: flex
+  align-items: center
+  justify-content: center
   transition: all 0.15s ease-in-out
   width: 30px
   height: 30px
+  padding: 0
+  background: none
+  border: none
   color: $subtext
+
+  svg
+    width: 100%
+    height: 100%
 
 .header-icon:hover
   transform: scale(1.1)
   color: $accent-primary
+
+// The whole point of these being buttons: a keyboard has to be able to see
+// where it is. Only :focus-visible, so a pointer click does not draw a ring.
+.header-about:focus-visible,
+.header-icon:focus-visible,
+.demo-info:focus-visible
+  outline: 2px solid $accent-primary
+  outline-offset: 2px
 
 .test-running
   animation: pulse 2s infinite
@@ -153,6 +187,6 @@ header
     height: 20px
 
 @media screen and (max-width: 365px)
-  .header-main h2.demo-info
+  .header-main .demo-info
     font-size: 12pt
     padding: 0

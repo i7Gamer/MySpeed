@@ -112,9 +112,23 @@ const HeaderComponent = () => {
                         node in a flex h2 is an anonymous item that cannot be
                         styled, so it could never trade width for an ellipsis
                         and pushed into the pagination instead. */}
-                    <h2 className="header-about" onClick={() => setShowAboutDialog(true)}><img src="/assets/img/logo192.png" alt="MySpeed Logo" className="header-logo" /> <span className="header-title">{getNodeName()}</span></h2>
+                    {/* The button sits inside the heading rather than replacing
+                        it: the instance name is the page's heading and stays
+                        one, while the thing that opens the dialog is something
+                        a keyboard can reach. It used to be the h2's own
+                        onClick, which announced as a heading and tabbed to
+                        nothing. */}
+                    <h2 className="header-about-heading">
+                        <button type="button" className="header-about"
+                                aria-label={t("about.title")}
+                                onClick={() => setShowAboutDialog(true)}>
+                            <img src="/assets/img/logo192.png" alt="" className="header-logo"/>
+                            {" "}<span className="header-title">{getNodeName()}</span>
+                        </button>
+                    </h2>
 
-                    {config.previewMode && <h2 className="demo-info" onClick={showDemoDialog}>{t("preview.info")}</h2>}
+                    {config.previewMode &&
+                        <button type="button" className="demo-info" onClick={showDemoDialog}>{t("preview.info")}</button>}
                 </div>
 
                 <Pagination />
@@ -124,14 +138,25 @@ const HeaderComponent = () => {
                     toolbar, which owns the range and the start button, and a
                     second control for either only raises the question of
                     which one the page obeys. */}
+                {/* Every one of these is a real <button>. They were
+                    FontAwesomeIcons carrying an onClick - <svg role="img">,
+                    which is neither focusable nor announced as a control - so
+                    the header held no tabbable element at all and a keyboard
+                    user could not open the settings, reach the servers page or
+                    sign in as an administrator. The tooltip already names each
+                    one for a pointer; aria-label is the same sentence for
+                    everyone else. */}
                 <div className="header-right">
                     {updateAvailable ?
-                        <div><FontAwesomeIcon icon={faCircleArrowUp} className="header-icon icon-orange update-icon"
-                                              onClick={() => alert.openAlert(
-                                                  t("header.new_update"),
-                                                  updateInfo(updateAvailable),
-                                                  { buttonText: t("dialog.okay") }
-                                              )} /></div> : <></>}
+                        <button type="button" className="header-icon icon-orange update-icon"
+                                aria-label={t("header.new_update")}
+                                onClick={() => alert.openAlert(
+                                    t("header.new_update"),
+                                    updateInfo(updateAvailable),
+                                    { buttonText: t("dialog.okay") }
+                                )}>
+                            <FontAwesomeIcon icon={faCircleArrowUp}/>
+                        </button> : <></>}
 
                     {config.viewMode ?
                         <Tooltip content={t("header.admin_login")} position="bottom">
@@ -139,26 +164,42 @@ const HeaderComponent = () => {
                                 with the event, which arrives as `failed` and is
                                 truthy, so the dialog opened already saying the
                                 password was wrong. */}
-                            <FontAwesomeIcon icon={faLock} className={"header-icon"}
-                                             onClick={() => showPasswordDialog()} />
+                            <button type="button" className="header-icon"
+                                    aria-label={t("header.admin_login")}
+                                    onClick={() => showPasswordDialog()}>
+                                <FontAwesomeIcon icon={faLock}/>
+                            </button>
                         </Tooltip>
                     : <></>}
 
-                    {config.previewMode ? 
+                    {config.previewMode ?
                         <Tooltip content={t("header.download")} position="bottom">
-                            <FontAwesomeIcon icon={faDownload} className={"header-icon"} onClick={openDownloadPage} />
+                            <button type="button" className="header-icon"
+                                    aria-label={t("header.download")} onClick={openDownloadPage}>
+                                <FontAwesomeIcon icon={faDownload}/>
+                            </button>
                         </Tooltip>
                     : <></>}
 
-                    {!config.viewMode && 
+                    {!config.viewMode &&
                         <Tooltip content={t("header.servers")} position="bottom">
-                            <FontAwesomeIcon icon={faServer} className="header-icon" onClick={() => navigate("/nodes")} />
+                            <button type="button" className="header-icon"
+                                    aria-label={t("header.servers")} onClick={() => navigate("/nodes")}>
+                                <FontAwesomeIcon icon={faServer}/>
+                            </button>
                         </Tooltip>
                     }
 
                     <Tooltip content={t("dropdown.settings")} position="bottom">
+                        {/* The id stays on the wrapper: useClickOutside asks
+                            closest("#open-header") whether a mousedown was the
+                            opener rather than an outside click. */}
                         <div id="open-header">
-                            <FontAwesomeIcon icon={icon} className="header-icon" onClick={switchDropdown} />
+                            <button type="button" className="header-icon"
+                                    aria-label={t("dropdown.settings")}
+                                    aria-expanded={isDropdownOpen} onClick={switchDropdown}>
+                                <FontAwesomeIcon icon={icon}/>
+                            </button>
                         </div>
                     </Tooltip>
                 </div>
