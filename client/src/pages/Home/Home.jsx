@@ -1,5 +1,6 @@
 import {useContext} from "react";
 import StatusBarComponent from "./components/StatusBar";
+import StartTestButton from "./components/StartTestButton";
 import TestAreaComponent from "./components/TestArea";
 import DateRangePicker from "@/common/components/DateRangePicker";
 import ExportButton from "@/common/components/ExportButton";
@@ -12,10 +13,12 @@ const Home = () => {
 
     return (
         <div>
-            {/* The range picker and the export sit on the status bar's own row
-                rather than in a strip above it: all three are controls for the
-                list below, and a second full-width bar to hold two of them
-                pushed the tests themselves off the first screen. */}
+            {/* One toolbar for the list below: range, status, export, start.
+                The status bar is in the row rather than above it because a
+                second full-width bar to hold the controls pushed the tests
+                themselves off the first screen - and the start button is out
+                of that bar because it was the only reason the bar had to be as
+                tall as a card. */}
             <div className="overview-header">
                 <DateRangePicker
                     from={range?.from ?? null}
@@ -27,6 +30,11 @@ const Home = () => {
                 />
 
                 <StatusBarComponent/>
+
+                {/* Next to the status it acts on, and ahead of the export: the
+                    two of them are what the bar used to hold, and starting a
+                    test is the action this page is for. */}
+                <StartTestButton/>
 
                 {/* All-time carries no range, but the export endpoint takes
                     one - resolveAllTime is that window. */}

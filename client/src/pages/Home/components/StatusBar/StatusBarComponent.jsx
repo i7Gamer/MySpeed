@@ -10,13 +10,9 @@ import {StatusContext} from "@/common/contexts/Status";
 import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
-import {useAlert} from "@/common/contexts/Alert";
 import {convertSpeed, formatLastTest, formatTime, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {isFailedTest} from "@/common/utils/TestUtil";
-import {
-    progressPercent, startBlockedReason, START_BLOCKED_RUNNING, START_BLOCKED_VIEW_MODE
-} from "@/common/utils/StatusUtil";
-import {startSpeedtest} from "@/common/utils/RunUtil";
+import {progressPercent} from "@/common/utils/StatusUtil";
 import "./styles.sass";
 
 const PERCENT = 100;
@@ -32,11 +28,10 @@ const HOURS_PER_DAY = 24;
 const RECENT_FAILURE_WINDOW_MS = HOURS_PER_DAY * 60 * 60 * 1000;
 
 const StatusBarComponent = () => {
-    const [status, updateStatus, setRunning] = useContext(StatusContext);
+    const [status] = useContext(StatusContext);
     const [config] = useContext(ConfigContext);
     const [preferences] = useContext(PreferencesContext);
-    const {speedtests, updateTests} = useContext(SpeedtestContext);
-    const alert = useAlert();
+    const {speedtests} = useContext(SpeedtestContext);
     const navigate = useNavigate();
 
     const [lastTestText, setLastTestText] = useState(null);
@@ -75,10 +70,7 @@ const StatusBarComponent = () => {
 
     if (Object.entries(config).length === 0) return <></>;
 
-    const blocked = startBlockedReason(status, config);
     const speedUnit = getSpeedUnit(preferences);
-
-    const start = () => startSpeedtest({status, config, updateStatus, setRunning, updateTests, alert});
 
     // The statistics for the same window the badge counted: the last day, as a
     // custom range spanning yesterday and today. The failure markers on the
@@ -174,13 +166,6 @@ const StatusBarComponent = () => {
                         )}
                     </div>
                 </div>
-
-                {blocked !== START_BLOCKED_VIEW_MODE && (
-                    <button className="status-start" onClick={start} disabled={blocked !== null}>
-                        <FontAwesomeIcon icon={faGaugeHigh}/>
-                        <span>{t(blocked === START_BLOCKED_RUNNING ? "status.running_button" : "status.start")}</span>
-                    </button>
-                )}
             </div>
 
             {/* An indeterminate track for a provider that reports no progress:

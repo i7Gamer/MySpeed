@@ -1,15 +1,12 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/layout" as *
 
-// The bar sits directly above rows whose measurements are set in 28pt, and it
-// carries the page's primary action - at the old sizes it read as fine print
-// introducing them. Written down once here because the three move together:
-// the state line leads, the button matches the detail beside it or beats it,
-// and none of them may end up the smallest thing in the bar again.
+// The bar sits directly above rows whose measurements are set in 28pt, so at
+// the old sizes it read as fine print introducing them. The two move together:
+// the state line leads and the detail follows it.
 // Held to that by tests/client/statusBarLayout.test.js.
 $status-state-size: 1.35rem
 $status-detail-size: 1.05rem
-$status-start-size: 1.1rem
 
 .status-bar
   margin-top: 2rem
@@ -22,17 +19,25 @@ $status-start-size: 1.1rem
   width: 100%
   box-sizing: border-box
   overflow: hidden
+  // Anchors the progress track, which is taken out of the flow so that a run
+  // starting cannot change the bar's height - and with it the height of every
+  // control stretched to match it in the toolbar row.
+  position: relative
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1)
   transition: border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1)
 
 .status-bar-running
   border-color: var(--accent-primary)
 
+// A single line of text, now that the start button stands on its own: the bar
+// is sized to hold that line rather than to hold a button.
 .status-main
   display: flex
   align-items: center
   gap: 1rem
-  padding: 1.25rem 2rem
+  padding: 0.6rem 1.25rem
+  height: 100%
+  box-sizing: border-box
 
 .status-icon
   font-size: 1.6rem
@@ -89,36 +94,17 @@ $status-start-size: 1.1rem
   &:hover
     text-decoration: underline
 
-.status-start
-  display: flex
-  align-items: center
-  gap: 0.6rem
-  flex-shrink: 0
-  padding: 0.85rem 1.75rem
-  border: 1px solid $light-gray
-  border-radius: 0.6rem
-  background: transparent
-  color: $white
-  font-family: inherit
-  // The icon is sized in em by FontAwesome, so it grows with this.
-  font-size: $status-start-size
-  font-weight: 600
-  cursor: pointer
-  transition: all 0.2s ease
-
-  &:hover:not(:disabled)
-    border-color: var(--accent-primary)
-    transform: translateY(-1px)
-
-  &:disabled
-    opacity: 0.5
-    cursor: default
-
 // A track that is always the full width, so the bar growing into it reads as
-// progress through a run rather than as something appearing.
+// progress through a run rather than as something appearing. Overlaid on the
+// bar's bottom edge rather than stacked below the content: in the flow it added
+// its own height, and every control stretched to the bar in the toolbar row
+// grew and shrank with it as runs came and went.
 .status-progress
+  position: absolute
+  left: 0
+  right: 0
+  bottom: 0
   height: 4px
-  width: 100%
   background: $light-gray
 
 .status-progress-fill
@@ -142,13 +128,4 @@ $status-start-size: 1.1rem
 
 @media screen and (max-width: 600px)
   .status-main
-    padding: 1rem 1.25rem
-    flex-wrap: wrap
-
-  .status-text
-    // Ahead of the button, which wraps onto its own full-width row below.
-    flex: 1 1 60%
-
-  .status-start
-    flex: 1 1 100%
-    justify-content: center
+    padding: 0.6rem 1rem

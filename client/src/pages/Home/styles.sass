@@ -1,17 +1,22 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/layout" as *
 
-// Date range, status bar, export - one row. The two controls keep their own
-// width and the bar takes whatever is left, which is what narrows it; it used
-// to be the full width of the page on its own.
+// Range, status, export, start - one toolbar for the list below it.
+//
+// It used to be three boxes of three different heights, two corner radii and
+// two background treatments: 40px pills either side of a 92px glass card. At
+// that size the bar was within 3px of a row from the list, so it read as
+// content with the controls stuck to its sides rather than as the chrome above
+// it. Everything here now takes one surface, one corner and - through stretch -
+// one height, which the start button sets as the tallest of them.
 .overview-header
   display: flex
-  align-items: center
-  gap: 1rem
+  align-items: stretch
+  gap: 0.75rem
   width: 100%
   box-sizing: border-box
   // The margins the bar carried while it was a block of its own. They belong to
-  // the row now, or the two controls would sit out of line with it.
+  // the row now, or the controls would sit out of line with it.
   margin-top: 2rem
   margin-bottom: $card-gap
 
@@ -23,16 +28,38 @@
     min-width: 0
     margin-top: 0
     margin-bottom: 0
+    // The list's cards keep the 1rem corner; the toolbar is not one of them.
+    border-radius: 0.6rem
 
   > .export-button-container
     flex: 0 0 auto
 
-// Three controls do not fit one line here: the bar takes a row of its own
-// below the two that bound it.
+  // Stretch sizes the wrappers; height: 100% is what makes the control inside
+  // each one actually take that height, and border-box keeps the border they
+  // all carry from adding to it.
+  //
+  // Deliberately not applied to .start-test: that one is a direct child of the
+  // row, so stretch already sizes it - and a percentage height there resolves
+  // against a parent whose own height is content-derived, quietly falls back to
+  // auto, and leaves the button a couple of pixels short of everything beside
+  // it.
+  .date-range-trigger,
+  .export-button
+    height: 100%
+    box-sizing: border-box
+
+  .date-range-trigger,
+  .export-button,
+  .start-test
+    background-color: var(--glass-bg)
+    backdrop-filter: blur(16px)
+    -webkit-backdrop-filter: blur(16px)
+
+// Four controls do not fit one line here: the bar takes a row of its own below
+// the three that bound it.
 @media screen and (max-width: 900px)
   .overview-header
     flex-wrap: wrap
-    gap: 0.75rem
 
     > .date-range-picker
       flex: 1 1 auto

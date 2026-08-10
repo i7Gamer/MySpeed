@@ -29,11 +29,16 @@ const compiled = sass.compile(
 
 const base = compiled.split("@media")[0];
 
+// Matches a selector within a group as well as on its own, and joins every
+// rule that targets it: grouped selectors compile to one comma-separated block
+// so an exact string compare finds nothing, and a selector styled by two rules
+// would otherwise be judged on whichever came first.
 const blockOf = (selector, css = base) => {
-    for (const [, selectors, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-        if (selectors.trim() === selector) return body;
-    }
-    return null;
+    const bodies = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+        .filter(([, selectors]) => selectors.split(",").some(one => one.trim() === selector))
+        .map(([, , body]) => body);
+
+    return bodies.length > 0 ? bodies.join(";") : null;
 };
 
 /**
@@ -42,18 +47,21 @@ const blockOf = (selector, css = base) => {
  * on the left, the bar narrowed to what is left, export on the right.
  */
 describe("the overview header row", () => {
-    it("carries the range picker, the status bar and the export button", () => {
+    it("carries the range picker, the status bar, the start button and the export", () => {
         assert.match(home, /<DateRangePicker/);
         assert.match(home, /<StatusBarComponent/);
+        assert.match(home, /<StartTestButton/);
         assert.match(home, /<ExportButton/);
     });
 
-    it("orders them picker, bar, export", () => {
-        const order = ["DateRangePicker", "StatusBarComponent", "ExportButton"]
+    // Start sits next to the status it acts on - the two were one panel until
+    // the button moved out - and the export trails as the utility of the row.
+    it("orders them picker, bar, start, export", () => {
+        const order = ["DateRangePicker", "StatusBarComponent", "StartTestButton", "ExportButton"]
             .map(name => home.indexOf(`<${name}`));
 
-        assert.ok(order.every(index => index > 0), "one of the three is not rendered");
-        assert.deepEqual([...order].sort((a, b) => a - b), order, "the three are not in left-to-right order");
+        assert.ok(order.every(index => index > 0), "one of the four is not rendered");
+        assert.deepEqual([...order].sort((a, b) => a - b), order, "the four are not in left-to-right order");
     });
 
     it("lays the row out horizontally", () => {
@@ -61,7 +69,55 @@ describe("the overview header row", () => {
 
         assert.notEqual(row, null, "the row has no rule of its own");
         assert.match(row, /display:\s*flex/);
-        assert.match(row, /align-items:\s*center/);
+    });
+
+    /**
+     * Three different heights, two corner radii and two background treatments
+     * on one line was what made this row look unresolved - and at 92px with a
+     * 16px corner the bar was within 3px of being a card from the list below,
+     * so it read as content with two loose pills stuck to its sides.
+     *
+     * Stretch is what makes them one set: every control takes the height of the
+     * bar between them, so no rule has to guess a number that then drifts.
+     */
+    it("gives every control in the row the same height", () => {
+        assert.match(blockOf(".overview-header"), /align-items:\s*stretch/);
+
+        // These two sit inside a wrapper, and the wrapper is what stretch
+        // resizes - so the control itself has to be told to fill it.
+        for (const control of [".date-range-trigger", ".export-button"]) {
+            const body = blockOf(`.overview-header ${control}`);
+
+            assert.notEqual(body, null, `${control} is not sized to the row`);
+            assert.match(body, /height:\s*100%/);
+            // Both carry a border, so content-box would make them taller than
+            // the height they were just told to take.
+            assert.match(body, /box-sizing:\s*border-box/);
+        }
+    });
+
+    /**
+     * The start button is a direct child of the row, so stretch already sizes
+     * it. Giving it `height: 100%` as well resolves against a parent whose own
+     * height is content-derived, quietly falls back to auto, and leaves the
+     * button two pixels short of everything beside it - which is exactly the
+     * mismatch this row was rebuilt to remove.
+     */
+    it("lets stretch size the start button rather than a percentage", () => {
+        for (const [, selectors, body] of base.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+            const targetsButton = selectors.split(",")
+                .some(one => /\.overview-header\s*>?\s*\.start-test\s*$/.test(one.trim()));
+
+            if (targetsButton)
+                assert.doesNotMatch(body, /height:\s*100%/, `"${selectors.trim()}" defeats the button's stretch`);
+        }
+    });
+
+    it("gives them one surface and one corner rather than three", () => {
+        const controls = blockOf(".overview-header .date-range-trigger");
+
+        assert.match(controls, /background-color:\s*var\(--glass-bg\)/);
+        assert.match(blockOf(".overview-header > .status-bar"), /border-radius/);
     });
 
     // The bar takes what the two controls leave; they keep their own width.

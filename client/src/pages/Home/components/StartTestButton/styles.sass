@@ -1,0 +1,36 @@
+@use "@/common/styles/colors" as *
+
+// The tallest control in the toolbar row, so its text and padding are what the
+// row's height comes out as and what every other control stretches to. It kept
+// the enlarged text it was given while it still lived inside the status bar -
+// this is the page's primary action.
+.start-test
+  display: flex
+  align-items: center
+  justify-content: center
+  gap: 0.6rem
+  flex-shrink: 0
+  padding: 0.7rem 1.75rem
+  border: 1px solid $light-gray
+  border-radius: 0.6rem
+  background-color: var(--glass-bg)
+  color: $white
+  font-family: inherit
+  // The icon is sized in em by FontAwesome, so it grows with this.
+  font-size: 1.1rem
+  font-weight: 600
+  white-space: nowrap
+  cursor: pointer
+  transition: border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease
+
+  &:hover:not(:disabled)
+    border-color: var(--accent-primary)
+    color: var(--accent-primary)
+
+  &:disabled
+    opacity: 0.5
+    cursor: default
+
+@media screen and (max-width: 600px)
+  .start-test
+    padding: 0.7rem 1.25rem
