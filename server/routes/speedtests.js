@@ -17,6 +17,11 @@ const app = express.Router();
 const RECENT_FAILURE_WINDOW_HOURS = 24;
 const RECENT_FAILURE_WINDOW_MS = RECENT_FAILURE_WINDOW_HOURS * 60 * 60 * 1000;
 
+// The exact shape every write stores `created` in, and so the only shape the
+// scroll cursor can be compared against - the same pattern importTests holds
+// its input to.
+const CREATED_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
 
 app.get("/", password(true), async (req, res) => {
     if (req.query.limit && /[^0-9]/.test(req.query.limit))
@@ -39,7 +44,17 @@ app.get("/", password(true), async (req, res) => {
         range = parsed;
     }
 
-    const entries = await tests.listTests(req.query.afterId, req.query.limit, range);
+    // The scroll cursor is the last row's `created` plus its id, because that
+    // is what the list is ordered by. `afterId` alone still works for a caller
+    // that has not been updated - see listFilter.
+    if (req.query.after !== undefined && !CREATED_PATTERN.test(req.query.after))
+        return res.status(400).json({message: "You need to provide an ISO-8601 timestamp in the after parameter"});
+
+    const after = req.query.after && req.query.afterId
+        ? {created: req.query.after, id: req.query.afterId}
+        : null;
+
+    const entries = await tests.listTests(req.query.afterId, req.query.limit, range, after);
 
     // A read-only viewer sees the measurements, not who the connection is:
     // the operator's provider and address are the operator's to see.

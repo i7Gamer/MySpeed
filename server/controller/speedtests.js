@@ -57,32 +57,64 @@ export const listAll = async () => {
 }
 
 /**
+ * Newest first, ties settled by id.
+ *
+ * One design with the cursor below: paging by `created` only produces stable
+ * pages if the query sorts by exactly these two, in this order.
+ */
+export const LIST_ORDER = [["created", "DESC"], ["id", "DESC"]];
+
+/**
  * The where clause for one page of the tests list.
  *
- * Two independent halves - the scroll cursor and the range the overview's
- * picker selected - and Sequelize takes them as one object, so a second
- * condition written carelessly replaces the first instead of joining it. A
- * function of its own so both halves can be checked without a database.
+ * The page used to be taken with `id < afterId` while the list was ordered by
+ * `created`. Those agree only while ids ascend with time, which an import does
+ * not guarantee: the history export is ordered by `created` descending and the
+ * import inserts in that order, so a restored instance ends up with id 1 on its
+ * newest test. "Load more" then asked for `id < 3` of a list whose next rows
+ * were ids 40, 41, 42, serving pages of rows already on screen while the rest
+ * stayed unreachable - and since the client deduplicates by id, the reader saw
+ * "Loading more" produce nothing at all. The cursor now walks the column the
+ * list is actually sorted by, with the id breaking a tie between two tests
+ * written in the same millisecond.
+ *
+ * Both halves constrain `created`, so they are joined explicitly: written into
+ * one object the second would silently replace the first and a filtered list
+ * would page straight out of its own window.
  *
  * `created` is compared as ISO-8601 UTC strings, the way findInRange does it:
- * every write guarantees that format, so a lexicographic BETWEEN is
+ * every write guarantees that format, so a lexicographic comparison is
  * chronological on every backend the project supports.
  */
-export const listFilter = ({afterId, range} = {}) => {
-    const clause = {};
+export const listFilter = ({after, afterId, range} = {}) => {
+    const conditions = [];
 
-    if (afterId) clause.id = {[Op.lt]: afterId};
-    if (range) clause.created = {[Op.between]: [range.from.toISOString(), range.to.toISOString()]};
+    if (range) conditions.push({created: {[Op.between]: [range.from.toISOString(), range.to.toISOString()]}});
 
-    return Object.keys(clause).length > 0 ? clause : undefined;
+    if (after) conditions.push({
+        [Op.or]: [
+            {created: {[Op.lt]: after.created}},
+            {created: after.created, id: {[Op.lt]: after.id}}
+        ]
+    });
+    // A parent proxies these requests to its nodes, and a node may still be
+    // running a version that only understands the id cursor. The client sends
+    // both so that node keeps working; this answers a caller that sends only
+    // the id rather than dropping the cursor and restarting from the newest
+    // test on every page.
+    else if (afterId) conditions.push({id: {[Op.lt]: afterId}});
+
+    if (conditions.length === 0) return undefined;
+
+    return conditions.length === 1 ? conditions[0] : {[Op.and]: conditions};
 };
 
-export const listTests = async (afterId, limit, range = null) => {
+export const listTests = async (afterId, limit, range = null, after = null) => {
     limit = Math.min(parseInt(limit) || DEFAULT_TEST_LIMIT, MAX_TEST_LIMIT);
 
     let dbEntries = await tests.findAll({
-        where: listFilter({afterId, range}),
-        order: [["created", "DESC"]],
+        where: listFilter({after, afterId, range}),
+        order: LIST_ORDER,
         limit
     });
 

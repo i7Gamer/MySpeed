@@ -19,7 +19,11 @@ export const SpeedtestProvider = (props) => {
     const [speedtests, setSpeedtests] = useState([]);
     const [loading, setLoading] = useState(false);
     const [hasMore, setHasMore] = useState(true);
-    const [lastId, setLastId] = useState(null);
+    // Where the next page starts: the last row's `created` and its id, because
+    // that pair is what the list is ordered by. The id alone was the cursor
+    // once, and on any instance restored from a backup - where id 1 is the
+    // newest test - it asked for pages the list had already shown.
+    const [cursor, setCursor] = useState(null);
     const loadingRef = useRef(false);
     const lastLoadTimeRef = useRef(0);
     const [status] = useContext(StatusContext);
@@ -46,6 +50,14 @@ export const SpeedtestProvider = (props) => {
         return params.toString();
     }, [range]);
 
+    // `afterId` travels beside `after` rather than being replaced by it: a
+    // parent proxies this request to its nodes, and a node still running an
+    // older version understands only the id.
+    const cursorOf = (list) => {
+        const last = list[list.length - 1];
+        return last ? {created: last.created, id: last.id} : null;
+    };
+
     const selectTimeframe = useCallback((id) => {
         setTimeframe(id);
         setRange(isAllTime(id) ? null : resolveTimeframe(id));
@@ -65,16 +77,16 @@ export const SpeedtestProvider = (props) => {
             const tests = await jsonRequest(`/speedtests?${listQuery()}`);
             setSpeedtests(tests);
             if (tests.length > 0) {
-                setLastId(tests[tests.length - 1].id);
+                setCursor(cursorOf(tests));
                 setHasMore(tests.length === PAGE_SIZE);
             } else {
-                setLastId(null);
+                setCursor(null);
                 setHasMore(false);
             }
         } catch (error) {
             console.error("Failed to load initial tests:", error);
             setSpeedtests([]);
-            setLastId(null);
+            setCursor(null);
             setHasMore(false);
         } finally {
             setLoading(false);
@@ -84,20 +96,21 @@ export const SpeedtestProvider = (props) => {
 
     const loadMoreTests = useCallback(async () => {
         const now = Date.now();
-        if (loadingRef.current || !hasMore || !lastId || (now - lastLoadTimeRef.current) < 500) return;
+        if (loadingRef.current || !hasMore || !cursor || (now - lastLoadTimeRef.current) < 500) return;
 
         lastLoadTimeRef.current = now;
         loadingRef.current = true;
         setLoading(true);
         try {
-            const newTests = await jsonRequest(`/speedtests?${listQuery({afterId: lastId})}`);
+            const newTests = await jsonRequest(
+                `/speedtests?${listQuery({after: cursor.created, afterId: cursor.id})}`);
             if (newTests.length > 0) {
                 setSpeedtests(prev => {
                     const existingIds = new Set(prev.map(test => test.id));
                     const uniqueNewTests = newTests.filter(test => !existingIds.has(test.id));
 
                     if (uniqueNewTests.length > 0) {
-                        setLastId(newTests[newTests.length - 1].id);
+                        setCursor(cursorOf(newTests));
                         return [...prev, ...uniqueNewTests];
                     }
                     return prev;
@@ -110,13 +123,13 @@ export const SpeedtestProvider = (props) => {
             console.error("Failed to load more tests:", error);
             setHasMore(false);
             setTimeout(() => {
-                if (lastId) setHasMore(true);
+                if (cursor) setHasMore(true);
             }, 3000);
         } finally {
             setLoading(false);
             loadingRef.current = false;
         }
-    }, [hasMore, lastId, listQuery]);
+    }, [hasMore, cursor, listQuery]);
 
     const refreshTests = useCallback(async () => {
         const hasTests = speedtests.length > 0;
@@ -132,7 +145,7 @@ export const SpeedtestProvider = (props) => {
                 setSpeedtests(prev => mergeNewTests(prev, newTests));
             } else {
                 setSpeedtests(newTests);
-                setLastId(newTests[newTests.length - 1].id);
+                setCursor(cursorOf(newTests));
                 setHasMore(newTests.length === PAGE_SIZE);
             }
         } catch (error) {
@@ -148,10 +161,10 @@ export const SpeedtestProvider = (props) => {
             const remaining = prev.filter(test => test.id !== id);
 
             if (remaining.length === 0) {
-                setLastId(null);
+                setCursor(null);
                 setHasMore(false);
             } else if (remaining.length < prev.length) {
-                setLastId(remaining[remaining.length - 1].id);
+                setCursor(cursorOf(remaining));
             }
 
             return remaining;
