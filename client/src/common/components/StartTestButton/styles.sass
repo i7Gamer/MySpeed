@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
 
 // The tallest control in the toolbar row, so its text and padding are what the
 // row's height comes out as and what every other control stretches to. It kept
@@ -16,8 +17,10 @@
   background-color: var(--glass-bg)
   color: $white
   font-family: inherit
-  // The icon is sized in em by FontAwesome, so it grows with this.
-  font-size: 1.1rem
+  // The reference every other control in the toolbar matches, and - with the
+  // padding above - what the row's height comes out as. The icon is sized in
+  // em by FontAwesome, so it grows with this.
+  font-size: $toolbar-text-size
   font-weight: 600
   white-space: nowrap
   cursor: pointer

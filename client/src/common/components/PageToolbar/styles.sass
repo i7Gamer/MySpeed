@@ -55,6 +55,16 @@
     backdrop-filter: blur(16px)
     -webkit-backdrop-filter: blur(16px)
 
+  // One voice across the row. The picker and the export each set their own
+  // size and drifted a notch below the start button, so a row built to look
+  // like one set of controls announced itself as three. Stated here rather
+  // than in each component because the toolbar is the only place the three
+  // ever stand together - and it outranks the components' own rules at every
+  // width, media queries included.
+  .date-range-text,
+  .export-button
+    font-size: $toolbar-text-size
+
 // Four controls do not fit one line here: the bar takes a row of its own below
 // the three that bound it.
 @media screen and (max-width: 900px)

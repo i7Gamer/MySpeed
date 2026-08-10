@@ -223,13 +223,14 @@ $dialog-secondary-text: 0.85rem
     opacity: 0.25
     cursor: not-allowed
 
+// The trigger's text keeps the toolbar's size at every width - it stands
+// beside a start button that never shrinks, and a row consistent only on a
+// desktop is not consistent. Only the padding tightens; the text ellipsises
+// if the range outgrows the space, which it already knew how to do.
 @media screen and (max-width: 600px)
   .date-range-trigger
     padding: 0.55rem 0.75rem
     gap: 0.4rem
-
-  .date-range-text
-    font-size: 0.85rem
 
   .date-range-popover
     position: fixed
@@ -253,6 +254,3 @@ $dialog-secondary-text: 0.85rem
 @media screen and (max-width: 360px)
   .date-range-trigger
     padding: 0.5rem 0.6rem
-
-  .date-range-text
-    font-size: 0.8rem
