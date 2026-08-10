@@ -115,8 +115,12 @@ const HeaderComponent = () => {
             <AboutDialog open={showAboutDialog} onClose={() => setShowAboutDialog(false)}/>
             <div className="header-main">
                 <div className="header-left">
-                    {config.viewMode && <h2>{t("header.title")}</h2>}
-                    {!config.viewMode && <h2 className="header-about" onClick={() => setShowAboutDialog(true)}><img src="/assets/img/logo192.png" alt="MySpeed Logo" className="header-logo" /> {getNodeName()}</h2>}
+                    {/* The span is what lets the title shrink: a bare text
+                        node in a flex h2 is an anonymous item that cannot be
+                        styled, so it could never trade width for an ellipsis
+                        and pushed into the pagination instead. */}
+                    {config.viewMode && <h2><span className="header-title">{t("header.title")}</span></h2>}
+                    {!config.viewMode && <h2 className="header-about" onClick={() => setShowAboutDialog(true)}><img src="/assets/img/logo192.png" alt="MySpeed Logo" className="header-logo" /> <span className="header-title">{getNodeName()}</span></h2>}
 
                     {config.previewMode && <h2 className="demo-info" onClick={showDemoDialog}>{t("preview.info")}</h2>}
                 </div>

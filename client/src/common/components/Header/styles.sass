@@ -58,6 +58,16 @@ header
   // inheritance - under the old wildcard the title sat at 24pt only because
   // the wildcard flattened that default too.
   font-size: 24pt
+  // Released from the automatic minimum: around 1000px the side columns are
+  // narrower than the title, which used to hold its full width and get chopped
+  // mid-word on the pagination's border. With this it shrinks into its column
+  // and the title span below turns the lost width into an ellipsis.
+  min-width: 0
+
+.header-title
+  white-space: nowrap
+  overflow: hidden
+  text-overflow: ellipsis
 
 .header-logo
   width: 30px
@@ -110,6 +120,17 @@ header
     box-shadow: 0 0 0 10px transparent
   100%
     box-shadow: 0 0 0 0 transparent
+
+// The squeeze zone: down to 969px the pagination still carries its labels,
+// and inside the usual 10% inset the side columns end up narrower than the
+// title - which is to keep its size, logo and text alike. The inset is the
+// one thing here with no fixed size of its own, so it is what gives way;
+// below 968px the labels disappear and the usual inset fits again. A name
+// too long for even the widened column still ends in an ellipsis rather
+// than under the pagination.
+@media (min-width: 969px) and (max-width: 1250px)
+  .header-main
+    padding: 0 3%
 
 @media (max-width: 768px)
   .header-main
