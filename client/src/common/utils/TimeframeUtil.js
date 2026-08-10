@@ -34,6 +34,19 @@ export const PICKER_TIMEFRAMES = [ALL_TIME_PRESET, ...TIMEFRAMES];
 
 export const isAllTime = (timeframe) => timeframe === TIMEFRAME_ALL;
 
+/**
+ * The name the picker's trigger wears for a selection, or null when the
+ * concrete dates are the honest label.
+ *
+ * A chosen preset names itself: "Last 7 days" says more than the two dates it
+ * happens to resolve to today, and stays true tomorrow, when those dates no
+ * longer would be. All time always worked this way - it has no dates to fall
+ * back to - while the bounded presets used to show their resolved window. Only
+ * a custom range has nothing truer to say than its dates.
+ */
+export const timeframeLabelKey = (timeframe) =>
+    PICKER_TIMEFRAMES.find((preset) => preset.id === timeframe)?.labelKey ?? null;
+
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const findTimeframe = (id) => TIMEFRAMES.find(frame => frame.id === id) ?? null;

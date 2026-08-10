@@ -181,9 +181,10 @@ describe("the date range picker", () => {
         assert.match(picker, /PICKER_TIMEFRAMES\.map/);
     });
 
-    // With all-time selected there are no dates to show, and the trigger used
-    // to fall through to "Select date range" - which reads as nothing chosen.
-    it("names the selected preset when it has no dates to show", () => {
-        assert.match(picker, /PICKER_TIMEFRAMES\.find/);
+    // Every chosen preset names itself in the trigger - "Last 7 days" rather
+    // than the two dates it resolves to today. The lookup lives in
+    // timeframeLabelKey, whose own tests pin the mapping.
+    it("names the selected preset instead of its resolved dates", () => {
+        assert.match(picker, /timeframeLabelKey\(/);
     });
 });

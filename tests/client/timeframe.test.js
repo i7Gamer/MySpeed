@@ -1,12 +1,17 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
     TIMEFRAMES,
+    TIMEFRAME_ALL,
     TIMEFRAME_CUSTOM,
     DEFAULT_TIMEFRAME,
     formatDateParam,
     resolveTimeframe,
     timeframeFromRange,
+    timeframeLabelKey,
     parseRangeParams,
     serializeRange
 } from "../../client/src/common/utils/TimeframeUtil.js";
@@ -31,6 +36,37 @@ describe("TIMEFRAMES", () => {
 
     it("defaults to the seven day preset", () => {
         assert.equal(DEFAULT_TIMEFRAME, "7d");
+    });
+});
+
+/**
+ * What the picker's trigger shows. A chosen preset names itself - "Last 7
+ * days" says more than the two dates it happens to resolve to today - and only
+ * a custom range shows its concrete dates. All time already worked this way,
+ * because it has no dates to fall back to; the bounded presets used to show
+ * the resolved window instead.
+ */
+describe("timeframeLabelKey", () => {
+    it("names every picker preset, all time included", () => {
+        assert.equal(timeframeLabelKey(TIMEFRAME_ALL), "calendar.all_time");
+        assert.equal(timeframeLabelKey("7d"), "calendar.last_7_days");
+        assert.equal(timeframeLabelKey("1y"), "calendar.last_year");
+    });
+
+    it("answers null for a custom range, whose dates are the honest label", () => {
+        assert.equal(timeframeLabelKey(TIMEFRAME_CUSTOM), null);
+    });
+
+    it("answers null for anything it does not know", () => {
+        assert.equal(timeframeLabelKey(undefined), null);
+        assert.equal(timeframeLabelKey("last-fortnight"), null);
+    });
+
+    it("is what the picker's trigger renders", () => {
+        const source = fs.readFileSync(path.resolve(fileURLToPath(import.meta.url), "..", "..", "..",
+            "client", "src", "common", "components", "DateRangePicker", "DateRangePicker.jsx"), "utf8");
+
+        assert.match(source, /timeframeLabelKey\(/, "the trigger does not ask for the preset's name");
     });
 });
 

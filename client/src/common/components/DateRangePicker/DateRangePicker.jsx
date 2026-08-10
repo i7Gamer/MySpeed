@@ -4,7 +4,7 @@ import {
     faAnglesLeft, faAnglesRight, faCalendar, faChevronLeft, faChevronRight
 } from "@fortawesome/free-solid-svg-icons";
 import { t } from "i18next";
-import { PICKER_TIMEFRAMES } from "@/common/utils/TimeframeUtil";
+import { PICKER_TIMEFRAMES, timeframeLabelKey } from "@/common/utils/TimeframeUtil";
 import { useClickOutside } from "@/common/hooks/useClickOutside";
 import { isCurrentMonth, monthBack, monthForward, yearBack, yearForward } from "./calendarNav";
 import "./styles.sass";
@@ -211,15 +211,18 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                 onClick={() => isOpen ? closePicker() : setIsOpen(true)}
             >
                 <FontAwesomeIcon icon={faCalendar} className="calendar-icon" />
-                {/* A preset can select no dates at all - "All time" is the
-                    absence of a bound - so the trigger names it rather than
-                    falling through to "Select date range", which reads as
-                    nothing having been chosen. */}
+                {/* A chosen preset names itself: "Last 7 days" says more than
+                    the two dates it happens to resolve to today, and stays
+                    true tomorrow, when those dates no longer would be. Only a
+                    custom range shows its concrete dates - and with neither a
+                    preset nor dates, the trigger asks for a selection. */}
                 <span className="date-range-text">
-                    {from && to ? (
+                    {timeframeLabelKey(timeframe) ? (
+                        t(timeframeLabelKey(timeframe))
+                    ) : from && to ? (
                         <>{formatDisplayDate(from)} - {formatDisplayDate(to)}</>
                     ) : (
-                        t(PICKER_TIMEFRAMES.find(preset => preset.id === timeframe)?.labelKey ?? "calendar.select_range")
+                        t("calendar.select_range")
                     )}
                 </span>
             </div>
