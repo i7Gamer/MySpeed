@@ -56,15 +56,32 @@ export const listAll = async () => {
     return dbEntries;
 }
 
-export const listTests = async (afterId, limit) => {
+/**
+ * The where clause for one page of the tests list.
+ *
+ * Two independent halves - the scroll cursor and the range the overview's
+ * picker selected - and Sequelize takes them as one object, so a second
+ * condition written carelessly replaces the first instead of joining it. A
+ * function of its own so both halves can be checked without a database.
+ *
+ * `created` is compared as ISO-8601 UTC strings, the way findInRange does it:
+ * every write guarantees that format, so a lexicographic BETWEEN is
+ * chronological on every backend the project supports.
+ */
+export const listFilter = ({afterId, range} = {}) => {
+    const clause = {};
+
+    if (afterId) clause.id = {[Op.lt]: afterId};
+    if (range) clause.created = {[Op.between]: [range.from.toISOString(), range.to.toISOString()]};
+
+    return Object.keys(clause).length > 0 ? clause : undefined;
+};
+
+export const listTests = async (afterId, limit, range = null) => {
     limit = Math.min(parseInt(limit) || DEFAULT_TEST_LIMIT, MAX_TEST_LIMIT);
 
-    let whereClause = {};
-
-    if (afterId) whereClause.id = {[Op.lt]: afterId};
-
     let dbEntries = await tests.findAll({
-        where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
+        where: listFilter({afterId, range}),
         order: [["created", "DESC"]],
         limit
     });

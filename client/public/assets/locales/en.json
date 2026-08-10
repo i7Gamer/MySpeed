@@ -408,6 +408,7 @@
   },
   "calendar": {
     "select_range": "Select date range",
+    "all_time": "All time",
     "select_start": "Select start date",
     "select_end": "Select end date",
     "from": "From",

@@ -3,9 +3,17 @@ import {jsonRequest} from "@/common/utils/RequestUtil";
 import {runJustFinished} from "@/common/utils/StatusUtil";
 import {StatusContext} from "@/common/contexts/Status";
 import {NodeContext} from "@/common/contexts/Node";
+import {
+    TIMEFRAME_ALL, formatDateParam, isAllTime, resolveTimeframe, timeframeFromRange
+} from "@/common/utils/TimeframeUtil";
 import {mergeNewTests} from "./merge";
 
 export const SpeedtestContext = createContext({});
+
+// One page of the list, and the yardstick for whether another one exists: a
+// short page is the last one. Written down once because the fetch and that
+// judgement have to agree.
+const PAGE_SIZE = 30;
 
 export const SpeedtestProvider = (props) => {
     const [speedtests, setSpeedtests] = useState([]);
@@ -18,17 +26,47 @@ export const SpeedtestProvider = (props) => {
     const [, , currentNode] = useContext(NodeContext);
     const wasRunningRef = useRef(status.running);
 
+    // The overview's date picker. All-time is the default and carries no range
+    // at all - "everything" is the absence of a bound rather than a very wide
+    // one - so the list behaves exactly as it did until a range is chosen.
+    const [timeframe, setTimeframe] = useState(TIMEFRAME_ALL);
+    const [range, setRange] = useState(null);
+
+    const listQuery = useCallback((extra = {}) => {
+        const params = new URLSearchParams({limit: String(PAGE_SIZE), ...extra});
+
+        if (range) {
+            params.set("from", formatDateParam(range.from));
+            params.set("to", formatDateParam(range.to));
+            // The server would otherwise cut days on its own clock, which is
+            // UTC in the Docker image and rarely matches the viewer's.
+            params.set("tzOffset", String(new Date().getTimezoneOffset()));
+        }
+
+        return params.toString();
+    }, [range]);
+
+    const selectTimeframe = useCallback((id) => {
+        setTimeframe(id);
+        setRange(isAllTime(id) ? null : resolveTimeframe(id));
+    }, []);
+
+    const selectRange = useCallback((from, to) => {
+        setTimeframe(timeframeFromRange(from, to));
+        setRange({from, to});
+    }, []);
+
     const loadInitialTests = useCallback(async () => {
         if (loadingRef.current) return;
 
         loadingRef.current = true;
         setLoading(true);
         try {
-            const tests = await jsonRequest("/speedtests?limit=30");
+            const tests = await jsonRequest(`/speedtests?${listQuery()}`);
             setSpeedtests(tests);
             if (tests.length > 0) {
                 setLastId(tests[tests.length - 1].id);
-                setHasMore(tests.length === 30);
+                setHasMore(tests.length === PAGE_SIZE);
             } else {
                 setLastId(null);
                 setHasMore(false);
@@ -42,7 +80,7 @@ export const SpeedtestProvider = (props) => {
             setLoading(false);
             loadingRef.current = false;
         }
-    }, []);
+    }, [listQuery]);
 
     const loadMoreTests = useCallback(async () => {
         const now = Date.now();
@@ -52,7 +90,7 @@ export const SpeedtestProvider = (props) => {
         loadingRef.current = true;
         setLoading(true);
         try {
-            const newTests = await jsonRequest(`/speedtests?limit=30&afterId=${lastId}`);
+            const newTests = await jsonRequest(`/speedtests?${listQuery({afterId: lastId})}`);
             if (newTests.length > 0) {
                 setSpeedtests(prev => {
                     const existingIds = new Set(prev.map(test => test.id));
@@ -64,7 +102,7 @@ export const SpeedtestProvider = (props) => {
                     }
                     return prev;
                 });
-                setHasMore(newTests.length === 30);
+                setHasMore(newTests.length === PAGE_SIZE);
             } else {
                 setHasMore(false);
             }
@@ -78,13 +116,13 @@ export const SpeedtestProvider = (props) => {
             setLoading(false);
             loadingRef.current = false;
         }
-    }, [hasMore, lastId]);
+    }, [hasMore, lastId, listQuery]);
 
     const refreshTests = useCallback(async () => {
         const hasTests = speedtests.length > 0;
 
         try {
-            const newTests = await jsonRequest("/speedtests?limit=30");
+            const newTests = await jsonRequest(`/speedtests?${listQuery()}`);
             if (newTests.length === 0) return;
 
             if (hasTests) {
@@ -95,12 +133,12 @@ export const SpeedtestProvider = (props) => {
             } else {
                 setSpeedtests(newTests);
                 setLastId(newTests[newTests.length - 1].id);
-                setHasMore(newTests.length === 30);
+                setHasMore(newTests.length === PAGE_SIZE);
             }
         } catch (error) {
             console.error("Failed to refresh tests:", error);
         }
-    }, [speedtests]);
+    }, [speedtests, listQuery]);
 
     // Derives the new cursor from `prev` inside the updater rather than from the
     // captured `speedtests`, so it stays correct regardless of render timing and
@@ -124,9 +162,11 @@ export const SpeedtestProvider = (props) => {
         refreshTests();
     }, [refreshTests]);
 
-    // Keyed on the node: switching one swaps what every request answers with,
-    // and the list has to be replaced, not merged - the previous node's tests
-    // used to linger under the new node's until the next full reload.
+    // Keyed on the node, and on the selected range through loadInitialTests:
+    // both change what the endpoint answers with, and the list has to be
+    // replaced rather than merged - the previous node's tests used to linger
+    // under the new node's until the next full reload, and a narrowed range
+    // would otherwise leave the tests outside it on screen.
     useEffect(() => {
         loadInitialTests();
     }, [currentNode, loadInitialTests]);
@@ -152,7 +192,8 @@ export const SpeedtestProvider = (props) => {
     }, [refreshTests]);
 
     return (
-        <SpeedtestContext.Provider value={{speedtests, updateTests, deleteTest, loadMoreTests, loading, hasMore}}>
+        <SpeedtestContext.Provider value={{speedtests, updateTests, deleteTest, loadMoreTests, loading, hasMore,
+            timeframe, range, selectTimeframe, selectRange}}>
             {props.children}
         </SpeedtestContext.Provider>
     )

@@ -25,7 +25,21 @@ app.get("/", password(true), async (req, res) => {
     if (req.query.afterId && /[^0-9]/.test(req.query.afterId))
         return res.status(400).json({message: "You need to provide a correct number in the afterId parameter"});
 
-    const entries = await tests.listTests(req.query.afterId, req.query.limit);
+    // The overview's date picker bounds this list. Optional, and only parsed
+    // when asked for: every other caller - the header, the storage dialog, an
+    // older node being proxied - sends no range and still gets the full
+    // history its infinite scroll expects.
+    const {from, to, tzOffset} = req.query;
+    let range = null;
+
+    if (from !== undefined || to !== undefined) {
+        const parsed = parseDateRange(from, to, {offsetMinutes: tzOffset});
+        if (!parsed.valid) return res.status(400).json({message: parsed.message});
+
+        range = parsed;
+    }
+
+    const entries = await tests.listTests(req.query.afterId, req.query.limit, range);
 
     // A read-only viewer sees the measurements, not who the connection is:
     // the operator's provider and address are the operator's to see.

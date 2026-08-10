@@ -128,7 +128,12 @@ const HeaderComponent = () => {
                 <Pagination />
 
                 <div className="header-right">
-                    <TimeframeSelector />
+                    {/* Not on the overview: that page carries its own range
+                        picker now, and this one means something different -
+                        it always navigates to the statistics. Two range
+                        controls on one screen only raise the question of
+                        which one the list below obeys. */}
+                    {!showsStatusBar(location.pathname) && <TimeframeSelector />}
 
                     {updateAvailable ?
                         <div><FontAwesomeIcon icon={faCircleArrowUp} className="header-icon icon-orange update-icon"

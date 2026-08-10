@@ -17,11 +17,47 @@ export const TIMEFRAMES = [
     {id: "1y", days: DAYS_PER_YEAR, labelKey: "calendar.last_year"}
 ];
 
+export const TIMEFRAME_ALL = "all";
+
+/**
+ * The overview's way back to the full list.
+ *
+ * It shows every test it has by default, so a picker that could only narrow it
+ * would make choosing "Last 7 days" once a one-way door. Deliberately not a
+ * member of TIMEFRAMES: that list is what the statistics page and the header
+ * selector offer, and neither wants an option meaning "no range at all".
+ */
+export const ALL_TIME_PRESET = {id: TIMEFRAME_ALL, labelKey: "calendar.all_time"};
+
+export const OVERVIEW_TIMEFRAMES = [ALL_TIME_PRESET, ...TIMEFRAMES];
+
+export const isAllTime = (timeframe) => timeframe === TIMEFRAME_ALL;
+
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const findTimeframe = (id) => TIMEFRAMES.find(frame => frame.id === id) ?? null;
 
 const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+/**
+ * All-time expressed as a concrete range, for the export.
+ *
+ * The list omits the filter entirely rather than using this - "everything" is
+ * the absence of a bound, not a very wide one. The export endpoint takes a
+ * range though, so one has to exist: the server refuses any span wider than
+ * its own MAX_RANGE_DAYS, which it sets to the largest retention period the
+ * config accepts, so a window that wide provably contains every test that can
+ * still exist while remaining a request it will answer.
+ */
+const ALL_TIME_SPAN_DAYS = 10000;
+
+export const resolveAllTime = (now = new Date()) => {
+    const to = startOfDay(now);
+    const from = startOfDay(now);
+    from.setDate(from.getDate() - (ALL_TIME_SPAN_DAYS - 1));
+
+    return {from, to};
+};
 
 /** Formats a date as YYYY-MM-DD using local calendar fields, never UTC. */
 export const formatDateParam = (date) => {

@@ -5,7 +5,10 @@ import { t } from "i18next";
 import { TIMEFRAMES } from "@/common/utils/TimeframeUtil";
 import "./styles.sass";
 
-export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timeframe, onTimeframeChange }) => {
+// The presets a page offers are its own: the overview leads with "All time",
+// which the statistics page and the header selector must not gain.
+export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timeframe, onTimeframeChange,
+                                  presets = TIMEFRAMES }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [selecting, setSelecting] = useState("from");
     const [tempFrom, setTempFrom] = useState(from);
@@ -214,11 +217,15 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                 onClick={() => isOpen ? closePicker() : setIsOpen(true)}
             >
                 <FontAwesomeIcon icon={faCalendar} className="calendar-icon" />
+                {/* A preset can select no dates at all - "All time" is the
+                    absence of a bound - so the trigger names it rather than
+                    falling through to "Select date range", which reads as
+                    nothing having been chosen. */}
                 <span className="date-range-text">
                     {from && to ? (
                         <>{formatDisplayDate(from)} - {formatDisplayDate(to)}</>
                     ) : (
-                        t("calendar.select_range")
+                        t(presets.find(preset => preset.id === timeframe)?.labelKey ?? "calendar.select_range")
                     )}
                 </span>
             </div>
@@ -227,7 +234,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                 <div className="date-range-popover" ref={popoverRef}>
                     {onTimeframeChange && (
                         <div className="timeframe-presets">
-                            {TIMEFRAMES.map((preset) => (
+                            {presets.map((preset) => (
                                 <button
                                     key={preset.id}
                                     type="button"
