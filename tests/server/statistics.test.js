@@ -1,7 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
-    buildStatistics, MAX_CHART_POINTS, MIN_CHART_POINTS, TARGET_CHART_POINTS
+    buildStatistics, MAX_CHART_POINTS, MIN_CHART_POINTS, STATISTICS_COLUMNS, TARGET_CHART_POINTS
 } from "../../server/util/statistics.js";
 
 const at = (iso, overrides = {}) => ({
@@ -484,5 +487,40 @@ describe("loaded latency over the range", () => {
             assert.deepEqual(buildStatistics([at("2026-08-07T01:00:00.000Z")], DAY)
                 .consistency.loadedLatency.trend, []);
         });
+    });
+});
+
+/**
+ * A wide range holds every row it summarises in memory at once, and most of a
+ * row's weight is text this module never looks at - a server name, a hostname,
+ * an ISP, a result URL. The controller selects only the columns named here, so
+ * the list has to stay exactly what the code below reads: a column added to the
+ * aggregation but not to the list arrives as undefined, which is silent.
+ *
+ * Scanned from the source rather than asserted by hand for the same reason -
+ * a hand-written list is only right on the day it is written.
+ */
+describe("STATISTICS_COLUMNS", () => {
+    const source = fs.readFileSync(
+        path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "server", "util", "statistics.js"),
+        "utf8");
+
+    const columnsRead = () =>
+        new Set([...source.matchAll(/\bentry\.([a-zA-Z][a-zA-Z0-9_]*)/g)].map(([, column]) => column));
+
+    it("finds the property reads to check", () => {
+        assert.ok(columnsRead().size > 5, "expected the scanner to find the columns");
+    });
+
+    it("names every column the aggregation reads", () => {
+        const missing = [...columnsRead()].filter((column) => !STATISTICS_COLUMNS.includes(column));
+
+        assert.deepEqual(missing, [], "these are read but would not be selected");
+    });
+
+    it("names nothing the aggregation does not read", () => {
+        const unused = STATISTICS_COLUMNS.filter((column) => !columnsRead().has(column));
+
+        assert.deepEqual(unused, [], "these are selected but never read");
     });
 });

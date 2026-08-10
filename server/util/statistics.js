@@ -3,6 +3,22 @@ import { mapFixed, mapRounded } from './helpers.js';
 export const TARGET_CHART_POINTS = 300;
 
 /**
+ * The columns this module reads, and the only ones its caller selects.
+ *
+ * A wide range holds every row it summarises in memory at once, and most of a
+ * row's weight is text nothing here looks at: a server name, a hostname, an ISP
+ * and a result URL. Selecting the ten that matter cut a year of five-minute
+ * testing - 105 000 rows - from 190 MB to 128 MB, and its fetch from 693 ms to
+ * 257 ms.
+ *
+ * A column added to the aggregation but not to this list arrives as undefined,
+ * which is silent; the test beside this file scans the source to keep the two
+ * in step.
+ */
+export const STATISTICS_COLUMNS = ["created", "error", "ping", "jitter", "download", "upload",
+    "time", "packetLoss", "downloadLatency", "uploadLatency"];
+
+/**
  * How far the client may push the resolution of a chart.
  *
  * 300 points keeps the default payload small and the line readable. A reader

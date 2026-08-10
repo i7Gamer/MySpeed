@@ -1,6 +1,6 @@
 import tests from '../models/Speedtests.js';
 import { Op } from 'sequelize';
-import { buildStatistics } from '../util/statistics.js';
+import { buildStatistics, STATISTICS_COLUMNS } from '../util/statistics.js';
 import { previousRange } from '../util/dateRange.js';
 import { getValue } from './config.js';
 
@@ -176,14 +176,28 @@ export const importTests = async (data) => {
     return data.length === 0 || imported > 0;
 }
 
+/** Every test there is, oldest first - the order the aggregation reads them in. */
+const findEvery = async (query = {}) => tests.findAll({order: [["created", "ASC"]], ...query});
+
 // `created` always holds an ISO-8601 UTC string - both write paths guarantee it
 // (create() uses toISOString(), importTests() rejects anything else) - so a
 // lexicographic BETWEEN is chronologically correct on every supported backend.
 // Filtering here rather than in JS keeps the whole table out of memory.
-const findInRange = async ({from, to}, direction = "ASC") => tests.findAll({
+const findInRange = async ({from, to}, query = {}) => findEvery({
     where: {created: {[Op.between]: [from.toISOString(), to.toISOString()]}},
-    order: [["created", direction]]
+    ...query
 });
+
+/**
+ * How the rows a summary is built from are read.
+ *
+ * Only the columns the aggregation looks at, because a wide range holds all of
+ * them in memory at once and the rest of a row is text nothing there reads -
+ * see STATISTICS_COLUMNS. `raw` skips building a model instance per row, which
+ * nothing here needs either: buildStatistics only reads properties. The export
+ * below takes the whole row and so passes none of this.
+ */
+const STATISTICS_QUERY = {attributes: STATISTICS_COLUMNS, raw: true};
 
 // What a period-over-period comparison actually uses: the summary figures the
 // panels show. The series, labels and hourly buckets are deliberately not
@@ -201,7 +215,7 @@ const previousSummary = async (range, options) => {
     const previous = previousRange(range, options);
     if (!previous.valid) return null;
 
-    const statistics = buildStatistics(await findInRange(previous), previous, options);
+    const statistics = buildStatistics(await findInRange(previous, STATISTICS_QUERY), previous, options);
 
     return {
         ...Object.fromEntries(SUMMARY_KEYS.map((key) => [key, statistics[key]])),
@@ -245,8 +259,8 @@ const extentOf = (entries) => {
  */
 export const listStatistics = async (range, options = {}) => {
     const entries = range
-        ? await findInRange(range)
-        : await tests.findAll({order: [["created", "ASC"]]});
+        ? await findInRange(range, STATISTICS_QUERY)
+        : await findEvery(STATISTICS_QUERY);
 
     const covered = range ?? extentOf(entries);
 
