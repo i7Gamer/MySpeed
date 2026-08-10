@@ -15,6 +15,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import {ConfigContext} from "@/common/contexts/Config";
 import {takePasswordUnsetMark} from "@/common/utils/PasswordSetup";
+import {useClickOutside} from "@/common/hooks/useClickOutside";
 import {StatusContext} from "@/common/contexts/Status";
 import {useAlert} from "@/common/contexts/Alert";
 import {postRequest} from "@/common/utils/RequestUtil";
@@ -60,6 +61,13 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
         if (config.passwordSet === false && takePasswordUnsetMark()) setShowPasswordDialog(true);
     }, [config.passwordSet]);
 
+    // The gear that opened the dropdown must not count as outside, or its own
+    // click would close-and-reopen. closest() rather than walking
+    // composedPath() by fixed depth, which broke as soon as a wrapper element
+    // appeared between the icon and the id.
+    useClickOutside(isOpen, [ref], switchDropdown,
+        {ignore: (target) => target.closest?.("#open-header")});
+
     useEffect(() => {
         const onPress = event => {
             if (event.code === "Escape" && isOpen) {
@@ -67,19 +75,8 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
             }
         }
 
-        const onClick = event => {
-            let headerIcon = event.composedPath()[1].id || event.composedPath()[2].id;
-            if (isOpen && !ref.current.contains(event.target) && headerIcon !== "open-header") {
-                switchDropdown();
-            }
-        }
-
-        document.addEventListener("mousedown", onClick);
         document.addEventListener("keyup", onPress);
-        return () => {
-            document.removeEventListener("keyup", onPress);
-            document.removeEventListener("mousedown", onClick);
-        }
+        return () => document.removeEventListener("keyup", onPress);
     }, [isOpen]);
     
     const togglePause = async () => {

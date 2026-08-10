@@ -1,5 +1,6 @@
 import React, {useEffect, useRef, useState, useCallback} from "react";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
+import {useClickOutside} from "@/common/hooks/useClickOutside";
 import "./styles.sass";
 
 export const ContextMenu = ({items, position, onClose}) => {
@@ -15,13 +16,9 @@ export const ContextMenu = ({items, position, onClose}) => {
         onClose();
     }, [onClose]);
 
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (menuRef.current && !menuRef.current.contains(event.target)) {
-                onClose();
-            }
-        };
+    useClickOutside(true, [menuRef], onClose);
 
+    useEffect(() => {
         const handleKeyDown = (event) => {
             switch (event.key) {
                 case "Escape":
@@ -58,13 +55,9 @@ export const ContextMenu = ({items, position, onClose}) => {
             }
         };
 
-        document.addEventListener("mousedown", handleClickOutside);
         document.addEventListener("keydown", handleKeyDown);
 
-        return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
-            document.removeEventListener("keydown", handleKeyDown);
-        };
+        return () => document.removeEventListener("keydown", handleKeyDown);
     }, [onClose, focusedIndex, actionableItems, handleItemClick]);
 
     useEffect(() => {

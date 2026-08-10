@@ -5,6 +5,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { t } from "i18next";
 import { PICKER_TIMEFRAMES } from "@/common/utils/TimeframeUtil";
+import { useClickOutside } from "@/common/hooks/useClickOutside";
 import { isCurrentMonth, monthBack, monthForward, yearBack, yearForward } from "./calendarNav";
 import "./styles.sass";
 
@@ -37,24 +38,15 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
         setTempTo(to);
     }, [from, to]);
 
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (popoverRef.current && !popoverRef.current.contains(event.target) &&
-                triggerRef.current && !triggerRef.current.contains(event.target)) {
-                closePicker();
-            }
-        };
+    useClickOutside(isOpen, [popoverRef, triggerRef], closePicker);
 
+    useEffect(() => {
         const handleEscape = (event) => {
             if (event.key === "Escape") closePicker();
         };
 
-        document.addEventListener("mousedown", handleClickOutside);
         document.addEventListener("keydown", handleEscape);
-        return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
-            document.removeEventListener("keydown", handleEscape);
-        };
+        return () => document.removeEventListener("keydown", handleEscape);
     }, [closePicker]);
 
     useEffect(() => {

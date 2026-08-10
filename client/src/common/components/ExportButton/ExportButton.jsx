@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDownload, faChevronDown, faFileLines, faCode } from "@fortawesome/free-solid-svg-icons";
 import { t } from "i18next";
 import { downloadRequest } from "@/common/utils/RequestUtil";
 import { formatDateParam } from "@/common/utils/TimeframeUtil";
 import { useAlert } from "@/common/contexts/Alert";
+import { useClickOutside } from "@/common/hooks/useClickOutside";
 import { exportFilename } from "./filename";
 import "./styles.sass";
 
@@ -15,17 +16,7 @@ export const ExportButton = ({ dateRange, allTime = false }) => {
     const dropdownRef = useRef(null);
     const buttonRef = useRef(null);
 
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target) &&
-                buttonRef.current && !buttonRef.current.contains(event.target)) {
-                setIsOpen(false);
-            }
-        };
-
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
+    useClickOutside(isOpen, [dropdownRef, buttonRef], () => setIsOpen(false));
 
     const handleExport = async (format) => {
         setExporting(true);
