@@ -1,6 +1,7 @@
 import tests from '../models/Speedtests.js';
 import { Op } from 'sequelize';
 import { buildStatistics } from '../util/statistics.js';
+import { previousRange } from '../util/dateRange.js';
 import { getValue } from './config.js';
 
 const DEFAULT_RETENTION_DAYS = 365;
@@ -184,8 +185,36 @@ const findInRange = async ({from, to}, direction = "ASC") => tests.findAll({
     order: [["created", direction]]
 });
 
+// What a period-over-period comparison actually uses: the summary figures the
+// panels show. The series, labels and hourly buckets are deliberately not
+// carried - nothing draws a ghost chart, and they are most of the payload.
+const SUMMARY_KEYS = ["tests", "packetLoss", "ping", "jitter", "download", "upload", "time", "consistency"];
+
+/**
+ * The same summary, for the window immediately before the range.
+ *
+ * Computed server-side rather than by a second client request: the payload
+ * stays scalar, and the definition of "the previous period" lives here next to
+ * the range arithmetic instead of in a component.
+ */
+const previousSummary = async (range, options) => {
+    const previous = previousRange(range, options);
+    if (!previous.valid) return null;
+
+    const statistics = buildStatistics(await findInRange(previous), previous, options);
+
+    return {
+        ...Object.fromEntries(SUMMARY_KEYS.map((key) => [key, statistics[key]])),
+        dateRange: {
+            from: previous.from.toISOString(),
+            to: previous.to.toISOString()
+        }
+    };
+};
+
 export const listStatistics = async (range, options = {}) => ({
     ...buildStatistics(await findInRange(range), range, options),
+    ...(options.comparePrevious ? {previous: await previousSummary(range, options)} : {}),
     dateRange: {
         from: range.from.toISOString(),
         to: range.to.toISOString(),

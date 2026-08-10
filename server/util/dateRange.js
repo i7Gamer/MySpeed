@@ -44,6 +44,41 @@ const toCalendarParts = (value) => {
  *
  * @returns {{valid: true, from: Date, to: Date}|{valid: false, message: string}}
  */
+/**
+ * The window a range is compared against: the same span, immediately before it.
+ *
+ * Computed in calendar days rather than by subtracting milliseconds. A range is
+ * inclusive of both its days, so "last 7 days" covers 7 calendar days and its
+ * predecessor must be the 7 calendar days before that - a millisecond
+ * subtraction drifts by an hour across a daylight saving boundary and quietly
+ * compares six days and 23 hours against seven. Walking back through the
+ * calendar and re-parsing anchors both windows to the same midnight, the
+ * viewer's own when an offset was sent.
+ */
+export const previousRange = ({from, to}, {offsetMinutes} = {}) => {
+    const days = Math.round((to - from) / MS_PER_DAY);
+
+    // The calendar day the range starts on, in the timezone that anchored it -
+    // the UTC fields read the shifted instant back as that local day.
+    const useOffset = offsetMinutes !== undefined && offsetMinutes !== null
+        && offsetMinutes !== "" && Number.isFinite(Number(offsetMinutes));
+    const anchor = useOffset
+        ? new Date(from.getTime() - Number(offsetMinutes) * MS_PER_MINUTE)
+        : new Date(from.getTime() - from.getTimezoneOffset() * MS_PER_MINUTE);
+
+    const day = (date) => {
+        const shifted = new Date(date);
+        return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
+    };
+
+    const previousTo = new Date(anchor);
+    previousTo.setUTCDate(previousTo.getUTCDate() - 1);
+    const previousFrom = new Date(anchor);
+    previousFrom.setUTCDate(previousFrom.getUTCDate() - days);
+
+    return parseDateRange(day(previousFrom), day(previousTo), {offsetMinutes});
+};
+
 export const parseDateRange = (from, to, {offsetMinutes} = {}) => {
     if (!from || !to) return invalid("Both 'from' and 'to' date parameters are required");
 

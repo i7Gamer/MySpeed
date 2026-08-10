@@ -76,7 +76,13 @@ app.get("/statistics", password(true), async (req, res) => {
     if (points !== undefined && /[^0-9]/.test(points))
         return res.status(400).json({message: "You need to provide a correct number in the points parameter"});
 
-    res.json(await tests.listStatistics(range, { offsetMinutes: tzOffset, maxPoints: points }));
+    res.json(await tests.listStatistics(range, {
+        offsetMinutes: tzOffset,
+        maxPoints: points,
+        // The summary of the window immediately before the range, for the
+        // period-over-period deltas. Opt-in: it costs a second table scan.
+        comparePrevious: req.query.compare === "previous"
+    }));
 });
 
 app.get("/export", password(true), async (req, res) => {
