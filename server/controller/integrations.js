@@ -37,12 +37,16 @@ const shouldThrottlePing = (eventName, integration) => {
  */
 export const asDataObject = (value) => typeof value === "string" ? JSON.parse(value) : value;
 
-const getActiveByName = async (name) => {
-    const data = await IntegrationData.findAll({where: {name: name}});
+// One reader for the stored rows: every caller wants `data` as an object, and
+// the two copies of this mapping had already drifted once.
+const activeRows = async (where) => {
+    const data = await IntegrationData.findAll(where ? {where} : undefined);
     if (!data) return null;
 
     return data.map((item) => ({...item, data: asDataObject(item.data)}));
-}
+};
+
+const getActiveByName = (name) => activeRows({name});
 
 const triggerActivity = async (id, error = false) => {
     await IntegrationData.update({lastActivity: new Date().toISOString(), activityFailed: error}, {where: {id: id}});
@@ -71,12 +75,7 @@ export const initialize = async () => {
     }
 };
 
-export const getActive = async () => {
-    const data = await IntegrationData.findAll();
-    if (!data) return null;
-
-    return data.map((item) => ({...item, data: asDataObject(item.data)}));
-}
+export const getActive = () => activeRows();
 
 export const getIntegrationById = (id) => IntegrationData.findOne({where: {id: id}});
 
