@@ -6,7 +6,7 @@ import {
 import { t } from "i18next";
 import { PICKER_TIMEFRAMES, timeframeLabelKey } from "@/common/utils/TimeframeUtil";
 import { useClickOutside } from "@/common/hooks/useClickOutside";
-import { isCurrentMonth, monthBack, monthForward, yearBack, yearForward } from "./calendarNav";
+import { isCurrentMonth, monthBack, monthForward, monthToShow, yearBack, yearForward } from "./calendarNav";
 import "./styles.sass";
 
 // One list of presets, wherever the picker is: each page it sits on can show
@@ -18,7 +18,10 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
     const [tempFrom, setTempFrom] = useState(from);
     const [tempTo, setTempTo] = useState(to);
     const [hoverDate, setHoverDate] = useState(null);
-    const [currentMonth, setCurrentMonth] = useState(new Date(to || new Date()));
+    // Seeded from the range and re-anchored whenever it changes - see the
+    // effect below and monthToShow. Held in state rather than derived outright
+    // because the arrows move it while the picker is open.
+    const [currentMonth, setCurrentMonth] = useState(() => monthToShow(to));
     const popoverRef = useRef(null);
     const triggerRef = useRef(null);
 
@@ -52,6 +55,11 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
     useEffect(() => {
         setTempFrom(from);
         setTempTo(to);
+        // The calendar follows the range. Without this the view was whatever
+        // month the picker was first mounted with: choosing a preset moved the
+        // range a year or more and left the calendar behind, describing a
+        // window nothing on screen was showing.
+        setCurrentMonth(monthToShow(to));
     }, [from, to]);
 
     const formatDisplayDate = (date) => {

@@ -8,6 +8,25 @@
 
 const monthStart = (year, month) => new Date(year, month, 1);
 
+/**
+ * The month the calendar should be showing for a given selection.
+ *
+ * The view used to be seeded once, in a useState initialiser, from the range
+ * the picker happened to be mounted with - so it never followed a later
+ * selection. Opening the picker on a January 2025 range and then choosing
+ * "Last 7 days" left the calendar on January 2025, nineteen presses of the
+ * month arrow away from the range it was describing.
+ *
+ * All time selects no dates at all, so an absent or unusable `to` answers with
+ * the current month - the only month there is anything to say about.
+ */
+export const monthToShow = (to, now = new Date()) => {
+    if (!(to instanceof Date) || Number.isNaN(to.getTime()))
+        return monthStart(now.getFullYear(), now.getMonth());
+
+    return monthStart(to.getFullYear(), to.getMonth());
+};
+
 export const monthBack = (view) => monthStart(view.getFullYear(), view.getMonth() - 1);
 
 export const monthForward = (view) => monthStart(view.getFullYear(), view.getMonth() + 1);

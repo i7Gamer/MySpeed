@@ -240,6 +240,11 @@ $dialog-secondary-text: 0.85rem
     top: 50%
     left: 50%
     transform: translate(-50%, -50%)
+    // The width is the whole sheet, padding and border included. Without this
+    // the reset - which only covers `main > *` - left them added on top:
+    // 343 + 32 + 2 = 377px inside a 375px viewport, a pixel past both edges
+    // rather than the 1rem gutter the calc asks for.
+    box-sizing: border-box
     width: calc(100vw - 2rem)
     max-width: 22rem
     max-height: calc(100vh - 2rem)
