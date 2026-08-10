@@ -1,0 +1,28 @@
+@use "@/common/styles/colors" as *
+
+// The same clothing as the jitter value beside the ping: small, muted, held
+// off the number it annotates by a thin border. The tone colours only the
+// delta itself - the figure beside it keeps its own colour.
+.stat-delta
+  display: inline-flex
+  align-items: center
+  gap: 0.25rem
+  font-size: 0.85rem
+  font-weight: 600
+  padding-left: 0.45rem
+  margin-left: 0.45rem
+  border-left: 2px solid $light-gray
+  color: $subtext
+  white-space: nowrap
+
+  .stat-delta-arrow
+    font-size: 0.6rem
+
+.stat-delta-better
+  color: $green
+
+.stat-delta-worse
+  color: $red
+
+.stat-delta-neutral
+  color: $subtext

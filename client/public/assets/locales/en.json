@@ -347,6 +347,9 @@
   },
   "statistics": {
     "average": "Average",
+    "compare": {
+      "note": "Changes compared with {{from}} – {{to}}"
+    },
     "downsampled": "Averaged · showing {{shown}} of {{total}} tests",
     "detail": {
       "title": "Full resolution",

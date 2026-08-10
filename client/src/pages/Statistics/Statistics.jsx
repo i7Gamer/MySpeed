@@ -26,6 +26,7 @@ import {
 import PageToolbar from "@/common/components/PageToolbar";
 import ChartModal from "@/common/components/ChartModal";
 import {formatDay} from "@/common/utils/FormatUtil";
+import {hasPreviousData} from "@/common/components/Delta/deltas";
 import SpeedChart from "@/pages/Statistics/charts/SpeedChart";
 import LatestTestChart from "@/pages/Statistics/charts/LatestTestChart";
 import PingChart from "@/pages/Statistics/charts/PingChart";
@@ -144,7 +145,9 @@ export const Statistics = () => {
             to: formatDateParam(dateRange.to),
             // The server would otherwise cut days on its own clock, which is UTC
             // in the Docker image and rarely matches the viewer's.
-            tzOffset: String(new Date().getTimezoneOffset())
+            tzOffset: String(new Date().getTimezoneOffset()),
+            // The summary of the window immediately before, for the deltas.
+            compare: "previous"
         });
 
         startTransition(() => {
@@ -291,10 +294,14 @@ export const Statistics = () => {
 
     // `source` is the high-resolution payload when one has been fetched for this
     // chart, and the page payload otherwise.
+    // The gate in front of every delta: a previous window nobody tested in has
+    // no figures to compare against, and its zeros must not colour the page.
+    const previous = hasPreviousData(deferredStatistics.previous) ? deferredStatistics.previous : null;
+
     const renderChart = (chartType, source) => {
         switch (chartType) {
             case 'overview':
-                return <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} dateRange={dateRange}/>;
+                return <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} dateRange={dateRange} previous={previous}/>;
             case 'latest':
                 return <LatestTestChart test={latestTest} expanded/>;
             case 'consistency':
@@ -308,9 +315,9 @@ export const Statistics = () => {
             case 'hourly':
                 return <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages}/>;
             case 'avgDownload':
-                return <AverageChart title={t("statistics.values.down")} data={deferredStatistics.download}/>;
+                return <AverageChart title={t("statistics.values.down")} data={deferredStatistics.download} previous={previous?.download}/>;
             case 'avgUpload':
-                return <AverageChart title={t("statistics.values.up")} data={deferredStatistics.upload}/>;
+                return <AverageChart title={t("statistics.values.up")} data={deferredStatistics.upload} previous={previous?.upload}/>;
             default:
                 return null;
         }
@@ -340,7 +347,18 @@ export const Statistics = () => {
         <div className={`statistic-area${isStale ? ' statistic-stale' : ''}`}>
             {toolbar}
 
-            <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} dateRange={dateRange} onClick={() => setExpandedChart('overview')}/>
+            {/* Stated once for the whole page, so every delta below can be a
+                bare arrow and number instead of each repeating the window. */}
+            {previous && (
+                <p className="statistics-compare-note">
+                    {t("statistics.compare.note", {
+                        from: formatDay(previous.dateRange.from),
+                        to: formatDay(previous.dateRange.to)
+                    })}
+                </p>
+            )}
+
+            <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} dateRange={dateRange} previous={previous} onClick={() => setExpandedChart('overview')}/>
             <LatestTestChart test={latestTest} onClick={() => setExpandedChart('latest')}/>
             <ConsistencyChart consistency={deferredStatistics.consistency} onClick={() => setExpandedChart('consistency')}/>
 
@@ -350,8 +368,8 @@ export const Statistics = () => {
 
             <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages} onClick={() => setExpandedChart('hourly')}/>
 
-            <AverageChart title={t("statistics.values.down")} data={deferredStatistics.download} onClick={() => setExpandedChart('avgDownload')}/>
-            <AverageChart title={t("statistics.values.up")} data={deferredStatistics.upload} onClick={() => setExpandedChart('avgUpload')}/>
+            <AverageChart title={t("statistics.values.down")} data={deferredStatistics.download} previous={previous?.download} onClick={() => setExpandedChart('avgDownload')}/>
+            <AverageChart title={t("statistics.values.up")} data={deferredStatistics.upload} previous={previous?.upload} onClick={() => setExpandedChart('avgUpload')}/>
 
             <ChartModal
                 isOpen={!!expandedChart}

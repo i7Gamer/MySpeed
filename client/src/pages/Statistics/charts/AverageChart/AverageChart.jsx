@@ -5,6 +5,7 @@ import {useContext} from "react";
 import {t} from "i18next";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {convertSpeed, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
+import Delta from "@/common/components/Delta";
 import "./styles.sass";
 
 export const AverageChart = (props) => {
@@ -35,7 +36,16 @@ export const AverageChart = (props) => {
                 <div className="value-item">
                     <div className="value-info">
                         <h2>{t("statistics.values.avg")}</h2>
-                        <p>{formatWithUnit(convertSpeed(props.data.avg, preferences), speedUnit)}</p>
+                        {/* The delta compares the raw averages, before the
+                            unit conversion: a percentage is the same in
+                            either unit, and converting first would round
+                            twice. Only the average carries one - the min and
+                            max of two windows are single outliers, and their
+                            difference reads as noise. */}
+                        <p>
+                            {formatWithUnit(convertSpeed(props.data.avg, preferences), speedUnit)}
+                            <Delta current={props.data.avg} previous={props.previous?.avg} higherIsBetter={true}/>
+                        </p>
                     </div>
                     <FontAwesomeIcon icon={faGauge}/>
                 </div>
