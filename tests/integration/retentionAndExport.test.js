@@ -191,6 +191,24 @@ describe("import validation", () => {
         assert.equal(await server.tests.count(), 2);
     });
 
+    /**
+     * The rows are written inside one transaction - sqlite otherwise commits,
+     * and fsyncs, once per row, which is most of what restoring a backup costs.
+     * A row the validation passes can still be refused by the database: a
+     * hand-edited history with a duplicate id is the realistic way in. The
+     * rest of the file has to survive it rather than being rolled back with it.
+     */
+    it("keeps the rows around one the database itself refuses", async () => {
+        await seedTests(server.tests, []);
+
+        const {status} = await importTests([
+            row({id: 1}), row({id: 1, created: daysAgo(2)}), row({id: 2, created: daysAgo(3)})
+        ]);
+
+        assert.equal(status, 200);
+        assert.equal(await server.tests.count(), 2);
+    });
+
     // A failed test stores -1 placeholders and providers without jitter store
     // null, so neither may be treated as invalid.
     it("still accepts failed rows and absent jitter", async () => {
