@@ -1,9 +1,10 @@
-import React, {useState} from "react";
+import React, {useContext, useState} from "react";
 import {Dialog, DialogHeader, DialogBody, DialogFooter} from "@/common/contexts/Dialog";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
-import {faInfinity, faClock, faMugHot, faMoon, faChevronDown} from "@fortawesome/free-solid-svg-icons";
+import {faExclamationTriangle, faInfinity, faClock, faMugHot, faMoon, faChevronDown} from "@fortawesome/free-solid-svg-icons";
 import {t} from "i18next";
-import {postRequest} from "@/common/utils/RequestUtil";
+import {assertOk, postRequest, RequestError} from "@/common/utils/RequestUtil";
+import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
 import "./styles.sass";
 
@@ -15,6 +16,7 @@ const PRESETS = [
 ];
 
 export const PauseDialog = ({open, onClose, onPause}) => {
+    const updateToast = useContext(ToastNotificationContext);
     const [selected, setSelected] = useState("manual");
     const [customHours, setCustomHours] = useState("");
     const [showCustom, setShowCustom] = useState(false);
@@ -22,16 +24,26 @@ export const PauseDialog = ({open, onClose, onPause}) => {
     const handleSave = async (close) => {
         const preset = PRESETS.find(p => p.id === selected);
 
-        if (selected === "custom") {
-            if (customHours && parseFloat(customHours) > 0) {
-                await postRequest("/speedtests/pause", {resumeIn: parseFloat(customHours)});
+        // Checked, not assumed: postRequest hands back the raw Response, so a
+        // refused pause used to close the dialog as if the schedule had stopped.
+        const pause = async (resumeIn) => assertOk(await postRequest("/speedtests/pause", {resumeIn}), "pause");
+
+        try {
+            if (selected === "custom") {
+                if (customHours && parseFloat(customHours) > 0) {
+                    await pause(parseFloat(customHours));
+                } else {
+                    return;
+                }
+            } else if (preset.hours === null) {
+                await pause(0);
             } else {
-                return;
+                await pause(preset.hours);
             }
-        } else if (preset.hours === null) {
-            await postRequest("/speedtests/pause", {resumeIn: 0});
-        } else {
-            await postRequest("/speedtests/pause", {resumeIn: preset.hours});
+        } catch (e) {
+            updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
+                "red", faExclamationTriangle);
+            return;
         }
 
         onPause?.();

@@ -1,5 +1,6 @@
 import React, {useContext, useState} from "react";
 import {deleteRequest, downloadRequest, putRequest} from "@/common/utils/RequestUtil";
+import {chooseAndReadJson} from "@/common/utils/FileImport";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {ConfigContext} from "@/common/contexts/Config";
 import {t} from "i18next";
@@ -17,40 +18,36 @@ export default ({close}) => {
     // carries node passwords, integration tokens and the admin password hash.
     const [includeSecrets, setIncludeSecrets] = useState(false);
 
+    // Every action below answers with a toast either way: the helpers hand
+    // back the raw response, and a refused reset used to report "completed"
+    // over a configuration the server had left untouched.
     const exportConfig = () => {
         downloadRequest(`/storage/config${includeSecrets ? "?includeSecrets=true" : ""}`).then(() => {
             updateToast(t("storage.settings_exported"), "green", faFileExport);
             close();
-        });
+        }).catch((error) => updateToast(error.message || t("dropdown.changes_unsaved"), "red"));
     }
 
-    const importConfig = () => {
-        const input = document.createElement("input");
-        input.type = "file";
-        input.accept = ".json";
-
-        input.onchange = () => {
-            const file = input.files[0];
-            const reader = new FileReader();
-            reader.readAsText(file);
-
-            reader.onload = () => {
-                const data = JSON.parse(reader.result);
-                putRequest("/storage/config", data).then((res) => {
-                    if (res.ok) {
-                        updateToast(t("storage.settings_imported"), "green", faFileImport);
-                        updateConfig();
-                        close();
-                    } else {
-                        updateToast(t("storage.import_config_error"), "red");
-                        close();
-                    }
-                });
-            }
-            input.remove();
+    const importConfig = async () => {
+        // The helper owns the picker and the parse: a truncated backup used to
+        // throw uncaught inside reader.onload, and nothing on screen moved.
+        let data;
+        try {
+            data = await chooseAndReadJson();
+        } catch {
+            return updateToast(t("storage.import_config_error"), "red");
         }
 
-        input.click();
+        if (data === null) return;
+
+        const res = await putRequest("/storage/config", data).catch(() => null);
+        if (res?.ok) {
+            updateToast(t("storage.settings_imported"), "green", faFileImport);
+            updateConfig();
+        } else {
+            updateToast(t("storage.import_config_error"), "red");
+        }
+        close();
     }
 
     const factoryReset = () => {
@@ -59,12 +56,14 @@ export default ({close}) => {
             return;
         }
 
-        deleteRequest("/storage/config").then(() => {
+        deleteRequest("/storage/config").then((res) => {
             setDeleteWarning(false);
+            if (!res.ok) return updateToast(t("dropdown.changes_unsaved"), "red");
+
             updateToast(t("storage.factory_reset_completed"), "green", faClockRotateLeft);
             updateConfig();
             close();
-        });
+        }).catch(() => updateToast(t("dropdown.changes_unsaved"), "red"));
     }
 
     return (

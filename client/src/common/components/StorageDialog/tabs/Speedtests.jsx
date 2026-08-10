@@ -1,5 +1,6 @@
 import React, {useContext, useEffect, useState} from "react";
 import {deleteRequest, downloadRequest, patchRequest, putRequest} from "@/common/utils/RequestUtil";
+import {chooseAndReadJson} from "@/common/utils/FileImport";
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
@@ -71,53 +72,52 @@ export default ({tests, close}) => {
         }
     };
 
+    // Every action below answers with a toast either way: the helpers hand
+    // back the raw response, and a refused delete used to report "history
+    // cleared" over a table the server had left untouched.
     const deleteHistory = () => {
         if (!deleteWarning) {
             setDeleteWarning(true);
             return;
         }
 
-        deleteRequest("/storage/tests/history").then(() => {
+        deleteRequest("/storage/tests/history").then((res) => {
             setDeleteWarning(false);
+            if (!res.ok) return updateToast(t("dropdown.changes_unsaved"), "red");
+
             updateTests();
             updateToast(t("storage.history_cleared"), "green", faTrashCan);
             close();
-        });
+        }).catch(() => updateToast(t("dropdown.changes_unsaved"), "red"));
     }
 
     const downloadHistory = (type) => {
         downloadRequest(`/storage/tests/history/${type}`).then(() => {
             updateToast(t("storage.tests_exported"), "green", faFileExport);
             close();
-        });
+        }).catch((error) => updateToast(error.message || t("dropdown.changes_unsaved"), "red"));
     }
 
-    const importHistory = () => {
-        const input = document.createElement("input");
-        input.type = "file";
-        input.accept = ".json";
-
-        input.onchange = () => {
-            const file = input.files[0];
-            const reader = new FileReader();
-            reader.readAsText(file);
-
-            reader.onload = () => {
-                const data = JSON.parse(reader.result);
-                putRequest("/storage/tests/history", data).then((res) => {
-                    if (res.ok) {
-                        updateToast(t("storage.tests_imported"), "green", faFileImport);
-                        updateTests();
-                    } else {
-                        updateToast(t("storage.import_test_error"), "red");
-                    }
-                    close();
-                });
-            }
-            input.remove();
+    const importHistory = async () => {
+        // The helper owns the picker and the parse: a truncated backup used to
+        // throw uncaught inside reader.onload, and nothing on screen moved.
+        let data;
+        try {
+            data = await chooseAndReadJson();
+        } catch {
+            return updateToast(t("storage.import_test_error"), "red");
         }
 
-        input.click();
+        if (data === null) return;
+
+        const res = await putRequest("/storage/tests/history", data).catch(() => null);
+        if (res?.ok) {
+            updateToast(t("storage.tests_imported"), "green", faFileImport);
+            updateTests();
+        } else {
+            updateToast(t("storage.import_test_error"), "red");
+        }
+        close();
     }
 
 

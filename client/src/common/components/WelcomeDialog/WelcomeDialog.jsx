@@ -5,12 +5,15 @@ import Greetings from "./steps/Greetings";
 import ProviderChooser from "./steps/ProviderChooser";
 import DataHelper from "./steps/DataHelper";
 import OoklaLicense from "./steps/OoklaLicense";
-import {patchRequest} from "@/common/utils/RequestUtil";
+import {assertOk, patchRequest, RequestError} from "@/common/utils/RequestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
+import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
+import {faExclamationTriangle} from "@fortawesome/free-solid-svg-icons";
 import {t} from "i18next";
 
 export const WelcomeDialog = ({open, onClose}) => {
     const [config, reloadConfig] = useContext(ConfigContext);
+    const updateToast = useContext(ToastNotificationContext);
     const [step, setStep] = useState(1);
     const [provider, setProvider] = useState("ookla");
     const [ping, setPing] = useState(parseInt(config.ping) || 0);
@@ -19,14 +22,25 @@ export const WelcomeDialog = ({open, onClose}) => {
     const [animating, setAnimating] = useState(false);
 
     const finish = async (close) => {
-        await patchRequest("/config/provider", {value: provider});
-        if (config.previewMode) {
-            localStorage.setItem("welcomeShown", "true");
-        } else {
-            await patchRequest("/config/ping", {value: ping});
-            await patchRequest("/config/download", {value: download});
-            await patchRequest("/config/upload", {value: upload});
+        // Checked, not assumed: patchRequest hands back the raw Response, so a
+        // refused write used to close the wizard as if the setup had stuck.
+        const patch = async (path, value) => assertOk(await patchRequest(path, {value}), path);
+
+        try {
+            await patch("/config/provider", provider);
+            if (config.previewMode) {
+                localStorage.setItem("welcomeShown", "true");
+            } else {
+                await patch("/config/ping", ping);
+                await patch("/config/download", download);
+                await patch("/config/upload", upload);
+            }
+        } catch (e) {
+            updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
+                "red", faExclamationTriangle);
+            return;
         }
+
         reloadConfig();
         close();
     };

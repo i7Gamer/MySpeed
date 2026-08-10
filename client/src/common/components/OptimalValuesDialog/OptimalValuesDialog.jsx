@@ -5,7 +5,7 @@ import {faArrowDown, faArrowUp, faCheck, faExclamationTriangle, faTableTennis, f
 import "./styles.sass";
 import React, {useContext, useEffect, useState} from "react";
 import {Trans} from "react-i18next";
-import {jsonRequest, patchRequest} from "@/common/utils/RequestUtil";
+import {assertOk, jsonRequest, patchRequest, RequestError} from "@/common/utils/RequestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
@@ -54,15 +54,23 @@ export const OptimalValuesDialog = ({open, onClose}) => {
             updateToast(t("dropdown.invalid"), "red", faExclamationTriangle);
             return;
         }
+        // Checked, not assumed: patchRequest hands back the raw Response, and
+        // awaiting it alone toasted "changes applied" over a 400 - clearing a
+        // field, for one, was refused by the server and reported as saved.
+        const patch = async (path, value) => assertOk(await patchRequest(path, {value}), path);
+
         try {
-            if (ping !== config.ping) await patchRequest("/config/ping", {value: ping});
-            if (download !== config.download) await patchRequest("/config/download", {value: download});
-            if (upload !== config.upload) await patchRequest("/config/upload", {value: upload});
+            if (ping !== config.ping) await patch("/config/ping", ping);
+            if (download !== config.download) await patch("/config/download", download);
+            if (upload !== config.upload) await patch("/config/upload", upload);
             reloadConfig();
             updateToast(t("dropdown.changes_applied"), "green", faCheck);
             close();
         } catch (e) {
-            updateToast(t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
+            // The server's refusal says which value it disliked; only a network
+            // failure falls back to the generic line.
+            updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
+                "red", faExclamationTriangle);
         }
     };
 

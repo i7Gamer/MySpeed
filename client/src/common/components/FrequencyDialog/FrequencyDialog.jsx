@@ -3,7 +3,7 @@ import {Dialog, DialogHeader, DialogBody, DialogFooter} from "@/common/contexts/
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faCheck, faQuestionCircle, faBolt, faGauge, faClock, faLeaf, faSeedling, faChevronDown} from "@fortawesome/free-solid-svg-icons";
 import {t} from "i18next";
-import {patchRequest} from "@/common/utils/RequestUtil";
+import {assertOk, patchRequest, RequestError} from "@/common/utils/RequestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
@@ -72,18 +72,25 @@ export const FrequencyDialog = ({open, onClose}) => {
     const handleSave = async (close) => {
         const cronValue = selected === "custom" ? customCron : PRESETS.find(p => p.id === selected)?.cron;
         if (!cronValue || !getNextRun(cronValue)) return;
-        
+
         setSaving(true);
-        const cronRes = await patchRequest("/config/cron", {value: cronValue});
-        const offsetRes = await patchRequest("/config/scheduleOffset", {value: scheduleOffset ? "true" : "false"});
-        setSaving(false);
-        
-        if (cronRes.ok && offsetRes.ok) {
+        try {
+            // Two writes, checked one by one: the cron landing while the offset
+            // bounced used to report the whole save as unsaved - over a
+            // schedule that had in fact changed.
+            await assertOk(await patchRequest("/config/cron", {value: cronValue}), "cron");
+            await assertOk(await patchRequest("/config/scheduleOffset",
+                {value: scheduleOffset ? "true" : "false"}), "scheduleOffset");
+
             updateToast(t("dropdown.changes_applied"), "green", faCheck);
-            reloadConfig();
             close();
-        } else {
-            updateToast(t("dropdown.changes_unsaved"), "red");
+        } catch (e) {
+            updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"), "red");
+        } finally {
+            setSaving(false);
+            // Either way: a partial save has to show up, or the dialog re-opens
+            // on a schedule that is no longer the stored one.
+            reloadConfig();
         }
     };
 

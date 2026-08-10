@@ -55,7 +55,10 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
         if (field.required && isEmpty) return false;
         if (!isEmpty) {
             if (field.regex && !new RegExp(field.regex).test(value)) return false;
-            if (field.type === "text" && value.length > 255) return false;
+            // The same ceilings the server's validateInput holds these to: a
+            // laxer copy here let a value through unmarked that the save then
+            // bounced with nothing but a generic error state.
+            if (field.type === "text" && value.length > 250) return false;
             if (field.type === "textarea" && value.length > 2000) return false;
             if (field.type === "number") {
                 if (!Number.isInteger(Number(value))) return false;
@@ -109,7 +112,13 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
             onRemove(integration.uuid);
             return;
         }
-        await deleteRequest(`/integrations/${integration.id}`);
+        // Checked before the card disappears: a refused delete used to vanish
+        // from the dialog and be back on the next open, with nothing said.
+        const response = await deleteRequest(`/integrations/${integration.id}`).catch(() => null);
+        if (!response?.ok) {
+            setError(true);
+            return;
+        }
         onRemove(integration.uuid);
     };
 
