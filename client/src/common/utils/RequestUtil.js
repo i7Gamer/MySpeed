@@ -82,12 +82,24 @@ export const baseRequest = async (path, method = "GET", body = {}, headers = {})
     }
 }
 
-// Run a plain request with all default values
+// Run a plain request with all default values. The timeout mirrors
+// baseRequest and guards the time to the response headers only - it is
+// cleared once fetch resolves, so reading a large export body afterwards is
+// not raced. Without it a stalled connection, or a proxied node that accepted
+// and then went quiet, hung the fetch forever with nothing said on screen.
 export const request = async (path, method = "GET", body = {}, headers = {}) => {
-    return await fetch(getApiRoot() + path, {
-        headers: {...getHeaders(), ...headers}, method,
-        body: method !== "GET" ? JSON.stringify(body) : undefined
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+    try {
+        return await fetch(getApiRoot() + path, {
+            headers: {...getHeaders(), ...headers}, method,
+            body: method !== "GET" ? JSON.stringify(body) : undefined,
+            signal: controller.signal
+        });
+    } finally {
+        clearTimeout(timeout);
+    }
 }
 
 /**

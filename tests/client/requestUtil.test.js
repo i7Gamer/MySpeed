@@ -1,4 +1,4 @@
-import { describe, it, beforeEach } from "node:test";
+import { describe, it, beforeEach, mock } from "node:test";
 import assert from "node:assert/strict";
 
 // RequestUtil targets the browser; stub the globals it reaches for before the
@@ -117,6 +117,47 @@ describe("jsonRequest", () => {
         respondWith({body: {}});
         await jsonRequest("/speedtests");
         assert.equal(lastRequest.url, "/api/speedtests");
+    });
+});
+
+/**
+ * Regression: only baseRequest carried a timeout. request() - behind
+ * jsonRequest and with it the whole dashboard - had none, so a connection
+ * that stalled (or a proxied node that accepted and went quiet) hung the
+ * fetch forever and left the page on its skeleton with nothing said.
+ */
+describe("request timeout", () => {
+    // The documented REQUEST_TIMEOUT in RequestUtil.js.
+    const REQUEST_TIMEOUT_MS = 10000;
+
+    it("aborts a request that never answers", async () => {
+        mock.timers.enable({apis: ["setTimeout"]});
+        const originalFetch = globalThis.fetch;
+
+        let signal;
+        globalThis.fetch = (url, options) => new Promise(() => { signal = options.signal; });
+
+        try {
+            jsonRequest("/speedtests").catch(() => {});
+
+            assert.ok(signal instanceof AbortSignal, "the request carries no abort signal");
+            assert.equal(signal.aborted, false);
+
+            mock.timers.tick(REQUEST_TIMEOUT_MS);
+
+            assert.equal(signal.aborted, true, "the stalled request was never aborted");
+        } finally {
+            globalThis.fetch = originalFetch;
+            mock.timers.reset();
+        }
+    });
+
+    it("does not abort a request that answered in time", async () => {
+        respondWith({body: {}});
+
+        await jsonRequest("/speedtests");
+
+        assert.equal(lastRequest.options.signal.aborted, false);
     });
 });
 
