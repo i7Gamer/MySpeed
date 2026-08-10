@@ -62,15 +62,26 @@ const EMPTY_RANGE = {min: null, max: null, avg: null};
 // Math.min(...[]) is Infinity and 0/0 is NaN, both of which JSON.stringify
 // silently turns into null. Returning explicit nulls keeps the value honest for
 // in-process consumers such as the Prometheus exporter.
+//
+// Folded in a loop rather than spread into Math.min/Math.max: a spread puts
+// every value onto the call stack, which throws RangeError somewhere above
+// ~125k values - a range holding a year of five-minute tests - and took the
+// whole statistics endpoint down with it.
 const mapRange = (entries, type, averageOf) => {
     if (entries.length === 0) return {...EMPTY_RANGE};
 
-    const values = entries.map((entry) => entry[type]);
-    return {
-        min: Math.min(...values),
-        max: Math.max(...values),
-        avg: averageOf(values.reduce((a, b) => a + b, 0) / values.length)
-    };
+    let min = Infinity;
+    let max = -Infinity;
+    let total = 0;
+
+    for (const entry of entries) {
+        const value = entry[type];
+        if (value < min) min = value;
+        if (value > max) max = value;
+        total += value;
+    }
+
+    return {min, max, avg: averageOf(total / entries.length)};
 };
 
 export const mapFixed = (entries, type) =>

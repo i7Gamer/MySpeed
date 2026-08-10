@@ -29,6 +29,18 @@ describe("mapFixed", () => {
         const result = mapFixed([], "download");
         for (const value of Object.values(result)) assert.notEqual(Number.isNaN(value), true);
     });
+
+    /**
+     * Regression: Math.min(...values) puts every value onto the call stack, so
+     * a range holding ~125k tests - a year of five-minute testing - threw
+     * RangeError and the statistics endpoint answered 500 with no way back
+     * short of narrowing the range.
+     */
+    it("stays within the call stack on six-figure ranges", () => {
+        const entries = Array.from({length: 200000}, (_, i) => ({download: i % 100}));
+
+        assert.deepEqual(mapFixed(entries, "download"), {min: 0, max: 99, avg: 49.5});
+    });
 });
 
 describe("mapRounded", () => {
