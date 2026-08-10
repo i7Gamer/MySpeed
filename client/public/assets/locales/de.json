@@ -275,13 +275,15 @@
     "minutes": "{{minutes}} Minuten",
     "hour": "1 Stunde",
     "hours": "{{hours}} Stunden",
-    "day": "1 day",
-    "days": "{{days}} days",
+    "day": "1 Tag",
+    "days": "{{days}} Tage",
     "on": "Am",
     "at": "Um"
   },
   "test": {
     "not_available": "Es liegen aktuell keine Tests vor",
+    "not_available_in_range": "Keine Tests zwischen {{from}} und {{to}}",
+    "show_all_time": "Gesamten Zeitraum anzeigen",
     "no_latest": "Es liegt kein aktueller Test vor. Bitte führe einen Test durch oder warte, bis der nächste Test durchgeführt wurde.",
     "loading_more": "Lade weitere Tests...",
     "no_more_tests": "Keine Tests mehr zu laden",
@@ -345,6 +347,9 @@
   },
   "statistics": {
     "average": "Durchschnitt",
+    "compare": {
+      "note": "Veränderung gegenüber {{from}} – {{to}}"
+    },
     "downsampled": "Gemittelt · {{shown}} von {{total}} Tests",
     "detail": {
       "title": "Volle Auflösung",
@@ -408,6 +413,7 @@
   },
   "calendar": {
     "select_range": "Datumsbereich auswählen",
+    "all_time": "Gesamter Zeitraum",
     "select_start": "Startdatum auswählen",
     "select_end": "Enddatum auswählen",
     "from": "Von",
