@@ -1,6 +1,6 @@
 import { Dialog, DialogHeader, DialogBody } from "@/common/contexts/Dialog";
 import "./styles.sass";
-import React, { useEffect, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { t } from "i18next";
 import {
   faDownload,
@@ -9,15 +9,23 @@ import {
 import { faGithub } from "@fortawesome/free-brands-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { jsonRequest } from "@/common/utils/RequestUtil";
+import { ConfigContext } from "@/common/contexts/Config";
 import { PROJECT_URL, RELEASES_URL } from "@/index";
 
 export const AboutDialog = ({ open, onClose }) => {
+  const [config] = useContext(ConfigContext);
   const [version, setVersion] = useState("");
 
   useEffect(() => {
     if (!open) return;
+
+    // The version endpoint is admin-gated, the same policy as the header's
+    // update check - a read-only visitor would be refused anyway, so the
+    // dialog does not ask and the badge simply stays off.
+    if (config.viewMode) return setVersion(null);
+
     jsonRequest("/info/version").then((data) => setVersion(data.local)).catch(() => setVersion(null));
-  }, [open]);
+  }, [open, config.viewMode]);
 
   const links = [
     { icon: faGithub, label: t("about.github"), url: PROJECT_URL },
