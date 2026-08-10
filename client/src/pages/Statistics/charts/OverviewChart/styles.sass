@@ -49,18 +49,24 @@
     flex-wrap: wrap
     flex-direction: row
 
+// Card-only trimming. These queries key on the viewport because the page grid
+// gives the card less room as it narrows - but the modal renders the same
+// markup with the whole viewport to spend, and used to lose the icons and
+// descriptions its enlarged view exists to show. The modal is a DOM child of
+// the same .statistic-area as the cards, so the modal body is the only
+// ancestor that can tell the two apart.
 @media screen and (max-width: 1400px)
-  .info-area svg
+  .overview-item:not(.chart-modal-body *) .info-area svg
     display: none
-  .overview-item .info-area h2
+  .overview-item:not(.chart-modal-body *) .info-area h2
     display: inline-block
     width: 15rem
     white-space: nowrap
     overflow: hidden !important
     text-overflow: ellipsis
-  .overview-item .info-area .text-area p
+  .overview-item:not(.chart-modal-body *) .info-area .text-area p
     display: none
 
 @media screen and (max-width: 1000px)
-  .overview-item .info-area h2
+  .overview-item:not(.chart-modal-body *) .info-area h2
     width: 10rem
