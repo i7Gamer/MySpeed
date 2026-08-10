@@ -27,11 +27,21 @@ const shouldThrottlePing = (eventName, integration) => {
     return false;
 }
 
+/**
+ * The `data` column as an object, whichever dialect answered.
+ *
+ * sqlite hands the JSON column back as the string it stored; mysql2 parses
+ * JSON columns on the wire and hands back an object. An unconditional
+ * JSON.parse therefore threw on every MySQL read - taking the active list,
+ * the patch route and every event notification with it.
+ */
+export const asDataObject = (value) => typeof value === "string" ? JSON.parse(value) : value;
+
 const getActiveByName = async (name) => {
     const data = await IntegrationData.findAll({where: {name: name}});
     if (!data) return null;
 
-    return data.map((item) => ({...item, data: JSON.parse(item.data)}));
+    return data.map((item) => ({...item, data: asDataObject(item.data)}));
 }
 
 const triggerActivity = async (id, error = false) => {
@@ -65,7 +75,7 @@ export const getActive = async () => {
     const data = await IntegrationData.findAll();
     if (!data) return null;
 
-    return data.map((item) => ({...item, data: JSON.parse(item.data)}));
+    return data.map((item) => ({...item, data: asDataObject(item.data)}));
 }
 
 export const getIntegrationById = (id) => IntegrationData.findOne({where: {id: id}});
@@ -142,7 +152,7 @@ export const patch = async (id, data) => {
     // setting" into "clear everything else".
     const changes = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
 
-    const update = {data: {...JSON.parse(item.data), ...changes}};
+    const update = {data: {...asDataObject(item.data), ...changes}};
     if (displayName !== undefined) update.displayName = displayName;
 
     // Awaited: the route answered "Integration updated" before the write had

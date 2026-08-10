@@ -1,6 +1,8 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
-import { initialize, secretFieldNames, withoutSecrets, validateInput, getIntegrations } from "../../server/controller/integrations.js";
+import {
+    initialize, secretFieldNames, withoutSecrets, validateInput, getIntegrations, asDataObject
+} from "../../server/controller/integrations.js";
 
 /**
  * withoutSecrets is what stands between a downloadable config.json and every
@@ -32,6 +34,31 @@ describe("secretFieldNames", () => {
     it("knows every integration that is loaded", () => {
         for (const name of Object.keys(getIntegrations()))
             assert.notEqual(secretFieldNames(name), null, `${name} has no definition`);
+    });
+});
+
+/**
+ * Regression: every read of the `data` column went through JSON.parse
+ * unconditionally. sqlite hands the JSON column back as the string it stored,
+ * but mysql2 parses JSON columns on the wire - so on MySQL every read arrived
+ * as an object, JSON.parse threw on "[object Object]", and with it went
+ * GET /api/integrations/active, PATCH /api/integrations/:id and every
+ * notification the event fan-out tried to send.
+ */
+describe("asDataObject", () => {
+    it("parses the string sqlite stores", () => {
+        assert.deepEqual(asDataObject('{"url": "https://hook", "send_finished": true}'),
+            {url: "https://hook", send_finished: true});
+    });
+
+    it("passes the object mysql already parsed through untouched", () => {
+        const data = {url: "https://hook", send_finished: true};
+
+        assert.equal(asDataObject(data), data);
+    });
+
+    it("leaves null alone rather than throwing", () => {
+        assert.equal(asDataObject(null), null);
     });
 });
 
