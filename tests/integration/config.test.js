@@ -132,6 +132,17 @@ describe("validateInput", () => {
         it("rejects an interface that does not exist on this host", async () => {
             await rejects("interface", "eth99");
         });
+
+        /**
+         * "Does this key exist" was asked with configDefaults[key], which also
+         * answers for everything on Object.prototype - PATCH /api/config/toString
+         * walked past the check and died as a 500 in the update instead of the
+         * 400 an unknown key earns.
+         */
+        it("refuses prototype keys as unknown rather than erroring on them", async () => {
+            for (const key of ["toString", "__proto__", "constructor", "hasOwnProperty"])
+                await rejects(key, "x");
+        });
     });
 
     describe("password", () => {

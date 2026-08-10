@@ -241,7 +241,10 @@ export const validateInput = async (key, value) => {
         }
     }
 
-    if (configDefaults[key] === undefined)
+    // Object.hasOwn, not a lookup: configDefaults["toString"] answers with
+    // Object.prototype's, so a prototype name walked past this check and died
+    // as a 500 in the update instead of the 400 an unknown key earns.
+    if (!Object.hasOwn(configDefaults, key))
         return "The provided key does not exist";
 
     if (process.env.PREVIEW_MODE === "true" && (key === "password" || key === "passwordLevel"))
@@ -337,7 +340,9 @@ export const importConfig = async (obj) => {
 
     const updates = [];
     for (const key in obj.config ?? {}) {
-        if (configDefaults[key] === undefined) continue;
+        // hasOwn for the same reason as validateInput: a hand-edited backup
+        // carrying "toString" or "__proto__" must be skipped, not written.
+        if (!Object.hasOwn(configDefaults, key)) continue;
 
         // Restored verbatim. The exported value is already a bcrypt hash, and
         // validateInput would hash it a second time - the restored instance
