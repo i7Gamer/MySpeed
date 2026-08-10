@@ -1,6 +1,8 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import http from "node:http";
+import path from "node:path";
 import { bootServer, seedTests } from "./helpers/boot.js";
 
 let server;
@@ -98,5 +100,37 @@ describe("GET /api/opengraph/image", () => {
         const {status, headers} = await rawRequest("/api/opengraph/image");
 
         if (status === 302) assert.match(headers.location, /^https:\/\//);
+    });
+
+    /**
+     * Regression: only the font was checked before use. With a font bundled
+     * but the logo missing, `logo.toString("base64")` threw inside the
+     * renderer - the route's catch still answered with the banner, but every
+     * request burned a render attempt and logged an internal TypeError for a
+     * situation the loader documents as ordinary.
+     */
+    it("treats a missing logo like a missing font: banner, quietly", async () => {
+        const fontPath = path.join(process.cwd(), "build", "assets", "fonts",
+            "inter-v12-latin-regular.ttf");
+        fs.mkdirSync(path.dirname(fontPath), {recursive: true});
+        // Content is irrelevant: the logo check has to fire before anything
+        // tries to shape text with this.
+        fs.writeFileSync(fontPath, "not a real font");
+
+        const logged = [];
+        const original = console.error;
+        console.error = (...parts) => logged.push(parts.join(" "));
+
+        try {
+            const {status, headers} = await rawRequest("/api/opengraph/image");
+
+            assert.equal(status, 302);
+            assert.match(headers.location, /^https:\/\//);
+            assert.deepEqual(logged.filter((line) => /Could not generate/.test(line)), [],
+                "the missing logo was handled as an internal error rather than a known absence");
+        } finally {
+            console.error = original;
+            fs.rmSync(path.join(process.cwd(), "build"), {recursive: true, force: true});
+        }
     });
 });

@@ -61,9 +61,11 @@ async function renderOpenGraphImage() {
   const font = await readAsset("/assets/fonts/inter-v12-latin-regular.ttf");
   const logo = await readAsset("/assets/img/logo192.png");
 
-  // satori cannot render without a font, and the route answers a missing image
-  // with the project banner.
-  if (!font) return null;
+  // satori cannot render without a font, and the markup embeds the logo - the
+  // loader documents null as an ordinary answer for both, and the route shows
+  // the project banner instead. The logo used to be embedded unchecked, which
+  // turned its absence into a TypeError on every request.
+  if (!font || !logo) return null;
 
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const date = moment().tz(timeZone).format("MM/DD/YYYY");
