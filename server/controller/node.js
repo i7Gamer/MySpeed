@@ -74,8 +74,18 @@ export const proxyRequest = async (url, req, res) => {
     const body = req.method === "GET" || req.method === "HEAD" ? undefined : JSON.stringify(req.body ?? {});
     if (body !== undefined) headers["content-length"] = String(Buffer.byteLength(body));
 
+    // A caller that has gone away must not keep the upstream request open
+    // until its 15s timeout. This used to pass `req.signal`, but an Express
+    // request carries no such property - the signal was always undefined and
+    // the wiring never fired. The response's 'close' is the real event; it
+    // also fires after a normal answer, which writableEnded tells apart.
+    const disconnect = new AbortController();
+    res.on("close", () => {
+        if (!res.writableEnded) disconnect.abort();
+    });
+
     try {
-        const response = await safeRequest(url, {method: req.method, headers, body, signal: req.signal});
+        const response = await safeRequest(url, {method: req.method, headers, body, signal: disconnect.signal});
 
         if (isRedirect(response))
             return res.status(502).json({message: "The node redirected the request", type: "INVALID_URL"});
@@ -91,6 +101,7 @@ export const proxyRequest = async (url, req, res) => {
         // non-JSON response - both CSV export endpoints - into a literal null.
         res.status(response.status).send(response.body);
     } catch {
-        serverError(res);
+        // Nothing to answer when the failure is the caller having left.
+        if (!disconnect.signal.aborted) serverError(res);
     }
 }

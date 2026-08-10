@@ -14,6 +14,10 @@ let nodeId;
 /** Requests the fake node received, so the proxy's header handling is observable. */
 let received = [];
 
+/** How many /api/hang requests arrived, and how many were closed unanswered. */
+let hangReceived = 0;
+let hangClosed = 0;
+
 const CSV_BODY = "id,ping,download\r\n1,10,100";
 
 /**
@@ -46,6 +50,14 @@ const startUpstream = () => new Promise((resolve) => {
         if (req.url.startsWith("/api/speedtests/status")) {
             res.writeHead(200, {"content-type": "application/json"});
             return res.end(JSON.stringify({paused: false, running: false}));
+        }
+
+        // Accepts and then says nothing, so a disconnecting caller is the only
+        // thing that can end the exchange.
+        if (req.url.startsWith("/api/hang")) {
+            hangReceived += 1;
+            res.on("close", () => { hangClosed += 1; });
+            return;
         }
 
         res.writeHead(404, {"content-type": "application/json"});
@@ -138,6 +150,36 @@ describe("node proxy", () => {
 
     it("404s a request for a node that does not exist", async () => {
         assert.equal((await api(server.baseUrl, "/nodes/999999/speedtests/status")).status, 404);
+    });
+
+    /**
+     * Regression: the abort wiring passed `req.signal` to the upstream request,
+     * but an Express request carries no such property - the signal was always
+     * undefined, and a caller that gave up left the proxy holding its upstream
+     * request open until the 15s timeout.
+     */
+    it("drops the upstream request when the caller disconnects", async () => {
+        const waitFor = async (condition, timeoutMs) => {
+            const deadline = Date.now() + timeoutMs;
+            while (!condition() && Date.now() < deadline)
+                await new Promise((resolve) => setTimeout(resolve, 25));
+            return condition();
+        };
+
+        const controller = new AbortController();
+        const pending = fetch(`${server.baseUrl}/api/nodes/${nodeId}/hang`, {signal: controller.signal})
+            .catch(() => null);
+
+        assert.ok(await waitFor(() => hangReceived > 0, 2000), "the upstream never saw the request");
+        assert.equal(hangClosed, 0, "the upstream request ended before the caller left");
+
+        controller.abort();
+        await pending;
+
+        // Well under the proxy's own 15s timeout: this close has to come from
+        // the disconnect, not from the deadline.
+        assert.ok(await waitFor(() => hangClosed > 0, 2000),
+            "the upstream request outlived the caller");
     });
 });
 
