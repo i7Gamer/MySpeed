@@ -19,6 +19,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {NodeContext} from "@/common/contexts/Node";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
+import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 
 export const PasswordDialog = ({open, onClose}) => {
     const [config, reloadConfig] = useContext(ConfigContext);
@@ -29,18 +30,18 @@ export const PasswordDialog = ({open, onClose}) => {
 
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
-    const [accessLevel, setAccessLevel] = useState(config.passwordLevel || "none");
+    // Read when the dialog opens, never captured at mount: the mount-time
+    // config on a read-level instance omits passwordLevel, and save() compares
+    // this against the fresh config to decide whether to write the level - a
+    // stale "none" here meant changing the password silently switched
+    // read-access off as a side effect. See useSyncOnOpen.
+    const [accessLevel, setAccessLevel] = useState("none");
 
-    const resetState = () => {
+    useSyncOnOpen(open, () => {
         setPassword("");
         setShowPassword(false);
         setAccessLevel(config.passwordLevel || "none");
-    };
-
-    const handleClose = (close) => {
-        resetState();
-        close();
-    };
+    });
 
     const save = async (close) => {
         try {
@@ -63,7 +64,7 @@ export const PasswordDialog = ({open, onClose}) => {
 
             reloadConfig();
             updateToast(t("dropdown.changes_applied"), "green", faCheck);
-            handleClose(close);
+            close();
         } catch (e) {
             updateToast(t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
         }
@@ -86,7 +87,7 @@ export const PasswordDialog = ({open, onClose}) => {
 
             reloadConfig();
             updateToast(t("update.password_removed"), "green", faCheck);
-            handleClose(close);
+            close();
         } catch (e) {
             updateToast(t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
         }
@@ -103,7 +104,7 @@ export const PasswordDialog = ({open, onClose}) => {
         <Dialog open={open} onClose={onClose} className="password-dialog">
             {({close}) => (
                 <>
-                    <DialogHeader onClose={() => handleClose(close)}>{t("dropdown.password")}</DialogHeader>
+                    <DialogHeader onClose={close}>{t("dropdown.password")}</DialogHeader>
                     <DialogBody>
                         <div className="password-content">
                             <div className="password-section">

@@ -8,15 +8,23 @@ import {Trans} from "react-i18next";
 import {jsonRequest, patchRequest} from "@/common/utils/RequestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
+import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 
 const NOT_ENOUGH_TESTS_STATUS = 501;
 
 export const OptimalValuesDialog = ({open, onClose}) => {
     const [config, reloadConfig] = useContext(ConfigContext);
     const updateToast = useContext(ToastNotificationContext);
-    const [ping, setPing] = useState(config.ping || "");
-    const [download, setDownload] = useState(config.download || "");
-    const [upload, setUpload] = useState(config.upload || "");
+    // Read when the dialog opens, not at mount - see useSyncOnOpen.
+    const [ping, setPing] = useState("");
+    const [download, setDownload] = useState("");
+    const [upload, setUpload] = useState("");
+
+    useSyncOnOpen(open, () => {
+        setPing(config.ping || "");
+        setDownload(config.download || "");
+        setUpload(config.upload || "");
+    });
     const [recommendations, setRecommendations] = useState(null);
     // Distinguishes "not enough tests yet", which the API reports as 501, from a
     // genuine failure - only the former earns an explanation.

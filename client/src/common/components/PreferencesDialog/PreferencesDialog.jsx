@@ -13,6 +13,7 @@ import {
     TIME_FORMAT_12H,
     TIME_FORMAT_24H
 } from "@/common/contexts/Preferences";
+import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import "./styles.sass";
 
 const THEME_OPTIONS = [
@@ -58,9 +59,18 @@ export const PreferencesDialog = ({open, onClose}) => {
     const [preferences, updatePreferences] = useContext(PreferencesContext);
     const [isDarkMode, toggleTheme] = useContext(ThemeContext);
     const updateToast = useContext(ToastNotificationContext);
-    const [timeFormat, setTimeFormat] = useState(preferences.timeFormat);
-    const [speedUnit, setSpeedUnit] = useState(preferences.speedUnit);
-    const [theme, setTheme] = useState(isDarkMode ? "dark" : "light");
+    // Read when the dialog opens, not at mount - see useSyncOnOpen. This also
+    // replaces the hand-rolled reset the old close handler carried for the
+    // same purpose.
+    const [timeFormat, setTimeFormat] = useState(null);
+    const [speedUnit, setSpeedUnit] = useState(null);
+    const [theme, setTheme] = useState("dark");
+
+    useSyncOnOpen(open, () => {
+        setTimeFormat(preferences.timeFormat);
+        setSpeedUnit(preferences.speedUnit);
+        setTheme(isDarkMode ? "dark" : "light");
+    });
 
     const handleSave = (close) => {
         updatePreferences({timeFormat, speedUnit});
@@ -70,15 +80,8 @@ export const PreferencesDialog = ({open, onClose}) => {
         close();
     };
 
-    const handleClose = () => {
-        setTimeFormat(preferences.timeFormat);
-        setSpeedUnit(preferences.speedUnit);
-        setTheme(isDarkMode ? "dark" : "light");
-        onClose();
-    };
-
     return (
-        <Dialog open={open} onClose={handleClose} className="preferences-dialog">
+        <Dialog open={open} onClose={onClose} className="preferences-dialog">
             {({close}) => (
                 <>
                     <DialogHeader onClose={close}>{t("preferences.title")}</DialogHeader>

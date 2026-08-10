@@ -10,15 +10,21 @@ import {PreferencesContext} from "@/common/contexts/Preferences";
 import {formatDateTime} from "@/common/utils/FormatUtil";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
 import {CronExpressionParser} from "cron-parser";
+import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
+import {CRON_PRESETS, DEFAULT_CRON, frequencyStateFrom} from "./frequencyState";
 import "./styles.sass";
 
-const PRESETS = [
-    {id: "continuous", cron: "* * * * *", icon: faBolt},
-    {id: "frequent", cron: "0,30 * * * *", icon: faGauge},
-    {id: "default", cron: "0 * * * *", icon: faClock},
-    {id: "rare", cron: "0 0,3,6,9,12,15,18,21 * * *", icon: faLeaf},
-    {id: "really_rare", cron: "0 0,6,12,18 * * *", icon: faSeedling}
-];
+// The choices live in frequencyState.js, importable by tests; the icons are
+// this file's clothing for them.
+const PRESET_ICONS = {
+    continuous: faBolt,
+    frequent: faGauge,
+    default: faClock,
+    rare: faLeaf,
+    really_rare: faSeedling
+};
+
+const PRESETS = CRON_PRESETS.map((preset) => ({...preset, icon: PRESET_ICONS[preset.id]}));
 
 const getNextRunDate = (cron) => {
     try {
@@ -38,15 +44,25 @@ export const FrequencyDialog = ({open, onClose}) => {
         if (!date) return null;
         return formatDateTime(date, preferences);
     };
-    const isCustomPreset = !PRESETS.find(p => p.cron === config.cron);
-    const [selected, setSelected] = useState(() => {
-        const preset = PRESETS.find(p => p.cron === config.cron);
-        return preset ? preset.id : "custom";
-    });
-    const [customCron, setCustomCron] = useState(config.cron || "0 * * * *");
-    const [scheduleOffset, setScheduleOffset] = useState(config.scheduleOffset === "true");
-    const [showAdvanced, setShowAdvanced] = useState(isCustomPreset);
+    // Placeholders until the dialog opens: the stored values are read at that
+    // moment, not at mount. This component mounts with the header, and on an
+    // instance with read-level access the header first mounts against the
+    // visitor config - which omits cron and scheduleOffset entirely, so a
+    // mount-time capture showed defaults over the stored schedule for the
+    // whole session. See useSyncOnOpen.
+    const [selected, setSelected] = useState("default");
+    const [customCron, setCustomCron] = useState(DEFAULT_CRON);
+    const [scheduleOffset, setScheduleOffset] = useState(false);
+    const [showAdvanced, setShowAdvanced] = useState(false);
     const [saving, setSaving] = useState(false);
+
+    useSyncOnOpen(open, () => {
+        const state = frequencyStateFrom(config);
+        setSelected(state.selected);
+        setCustomCron(state.customCron);
+        setScheduleOffset(state.scheduleOffset);
+        setShowAdvanced(state.showAdvanced);
+    });
 
     const handlePresetClick = (preset) => {
         setSelected(preset.id);

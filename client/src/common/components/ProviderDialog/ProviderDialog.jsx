@@ -12,6 +12,7 @@ import {Trans} from "react-i18next";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
+import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 
 export const providers = [
     {id: "ookla", name: "Ookla", image: OoklaImage},
@@ -22,14 +23,23 @@ export const providers = [
 export const ProviderDialog = ({open, onClose}) => {
     const [config, reloadConfig] = useContext(ConfigContext);
     const updateToast = useContext(ToastNotificationContext);
-    const [provider, setProvider] = useState(config.provider || "ookla");
+    // Read when the dialog opens, not at mount - see useSyncOnOpen. The server
+    // id and libre URL keep their own effect below: they also follow provider
+    // switches while the dialog is in use.
+    const [provider, setProvider] = useState("ookla");
     const [interfaces, setInterfaces] = useState({});
-    const [currentInterface, setCurrentInterface] = useState(config.interface || "none");
+    const [currentInterface, setCurrentInterface] = useState("none");
     const [ooklaServers, setOoklaServers] = useState({});
     const [libreServers, setLibreServers] = useState({});
     const [serverId, setServerId] = useState("none");
-    const [libreUrl, setLibreUrl] = useState(config.libreUrl || "none");
-    const [acceptedOokla, setAcceptedOokla] = useState(config.provider === "ookla");
+    const [libreUrl, setLibreUrl] = useState("none");
+    const [acceptedOokla, setAcceptedOokla] = useState(false);
+
+    useSyncOnOpen(open, () => {
+        setProvider(config.provider || "ookla");
+        setCurrentInterface(config.interface || "none");
+        setAcceptedOokla(config.provider === "ookla");
+    });
 
     useEffect(() => {
         if (!open) return;
