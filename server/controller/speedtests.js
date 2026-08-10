@@ -318,20 +318,23 @@ export const removeOld = async () => {
 
     const cutoff = new Date(Date.now() - days * MS_PER_DAY);
 
-    // Both dialects compare against the same ISO-8601 string the rows are
-    // written with. sqlite's datetime() returns "YYYY-MM-DD HH:MM:SS" - a
-    // space where the stored value has a 'T', and no fractional seconds - and
-    // since 'T' sorts above ' ', every row from the cutoff day compared as
-    // newer than the cutoff and was never deleted.
-    await tests.destroy({
-        where: {
-            created: process.env.DB_TYPE === "mysql"
-                ? {[Op.lte]: cutoff}
-                : {[Op.lte]: cutoff.toISOString()}
-        }
-    });
+    await tests.destroy({where: {created: retentionCutoffFilter(cutoff)}});
     return true;
 }
+
+/**
+ * The comparison the sweep deletes with, on every dialect. Exported for its
+ * test, which is what holds the dialects to one behaviour.
+ *
+ * `created` is stored as an ISO-8601 UTC string everywhere - the model maps
+ * the column to STRING on mysql - so the cutoff has to be the same kind of
+ * string everywhere too. Each dialect has now had its own version of this bug:
+ * sqlite once compared against datetime()'s "YYYY-MM-DD HH:MM:SS", and mysql
+ * against a Date the dialect renders the same way - a space where the stored
+ * value has a 'T', and since ' ' sorts below 'T', every row from the cutoff
+ * day compared as newer and survived the sweep.
+ */
+export const retentionCutoffFilter = (cutoff) => ({[Op.lte]: cutoff.toISOString()});
 
 export const getLatest = async () => {
     let latest = await tests.findOne({order: [["created", "DESC"]]});
