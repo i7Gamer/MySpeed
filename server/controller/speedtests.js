@@ -128,6 +128,20 @@ export const listTests = async (afterId, limit, range = null, after = null) => {
 }
 
 /**
+ * The newest tests that actually measured something, newest first.
+ *
+ * The recommendations are built from these. They used to be filtered out of
+ * listTests(), whose default limit is 10 rows *including* failures - so one
+ * failed test among the newest ten shrank the sample below the required size
+ * and the recommendations silently stopped updating until the failure aged out.
+ */
+export const listSuccessful = async (limit) => tests.findAll({
+    where: {error: null},
+    order: LIST_ORDER,
+    limit
+});
+
+/**
  * How many tests failed since the given moment.
  *
  * A count rather than the rows: this is polled while a test runs, and the only

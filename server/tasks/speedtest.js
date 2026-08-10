@@ -51,18 +51,28 @@ const setRunning = (running, sendRequest = true) => {
     }
 }
 
-const createRecommendations = async () => {
-    let list = (await tests.listTests()).filter((entry) => !entry.error);
-    if (list.length >= 10) {
-        let recommendations = {ping: 1000, down: 0, up: 0};
-        for (let i = 0; i < 10; i++) {
-            if (list[i].ping < recommendations["ping"]) recommendations["ping"] = list[i].ping;
-            if (list[i].download > recommendations["down"]) recommendations["down"] = list[i].download;
-            if (list[i].upload > recommendations["up"]) recommendations["up"] = list[i].upload;
-        }
+// How many successful tests the recommended targets are read from. Fewer says
+// too little about the line to recommend anything.
+const RECOMMENDATION_SAMPLE = 10;
 
-        await controller.update(recommendations["ping"], recommendations["down"], recommendations["up"]);
+/**
+ * Exported for its tests. Filtering failures out of listTests() - whose default
+ * limit is 10 rows *including* failures - meant one failed test among the
+ * newest ten shrank the sample below the required size, and the recommendations
+ * silently stopped updating until the failure aged out of the newest page.
+ */
+export const createRecommendations = async () => {
+    const list = await tests.listSuccessful(RECOMMENDATION_SAMPLE);
+    if (list.length < RECOMMENDATION_SAMPLE) return;
+
+    let recommendations = {ping: Infinity, down: 0, up: 0};
+    for (const entry of list) {
+        if (entry.ping < recommendations.ping) recommendations.ping = entry.ping;
+        if (entry.download > recommendations.down) recommendations.down = entry.download;
+        if (entry.upload > recommendations.up) recommendations.up = entry.upload;
     }
+
+    await controller.update(recommendations.ping, recommendations.down, recommendations.up);
 }
 
 export const run = async (retryAuto = false) => {
@@ -159,7 +169,7 @@ const execute = async (type, retried) => {
 
         let testResult = await tests.create({ping, download, upload, time, serverId: test.serverId, type,
             resultId, jitter, serverName, serverHost, packetLoss, downloadLatency, uploadLatency, isp, externalIp});
-        console.log(`Test #${testResult} was executed successfully in ${time}s. 🏓 ${ping} (±${jitter || 'N/A'}) ⬇ ${download}️ ⬆ ${upload}️`);
+        console.log(`Test #${testResult} was executed successfully in ${time}s. 🏓 ${ping} (±${jitter ?? 'N/A'}) ⬇ ${download}️ ⬆ ${upload}️`);
         createRecommendations().catch(err =>
             console.error(`Could not update the recommendations: ${toErrorMessage(err)}`));
         setRunning(false);
