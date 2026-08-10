@@ -282,6 +282,8 @@
   },
   "test": {
     "not_available": "There are currently no tests available",
+    "not_available_in_range": "No tests between {{from}} and {{to}}",
+    "show_all_time": "Show all time",
     "no_latest": "There is no current test available. Please perform a test or wait until the next test is performed.",
     "loading_more": "Loading more tests...",
     "no_more_tests": "No more tests to load",

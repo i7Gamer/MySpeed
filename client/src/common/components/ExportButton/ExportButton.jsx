@@ -5,9 +5,10 @@ import { t } from "i18next";
 import { downloadRequest } from "@/common/utils/RequestUtil";
 import { formatDateParam } from "@/common/utils/TimeframeUtil";
 import { useAlert } from "@/common/contexts/Alert";
+import { exportFilename } from "./filename";
 import "./styles.sass";
 
-export const ExportButton = ({ dateRange }) => {
+export const ExportButton = ({ dateRange, allTime = false }) => {
     const alert = useAlert();
     const [isOpen, setIsOpen] = useState(false);
     const [exporting, setExporting] = useState(false);
@@ -44,7 +45,7 @@ export const ExportButton = ({ dateRange }) => {
             // fetch silently 401'd under a password and always hit the local
             // instance even while a remote node was being viewed.
             await downloadRequest(`/speedtests/export?${query}`, {}, {},
-                `myspeed-export-${fromParam}-to-${toParam}.${format}`);
+                exportFilename({allTime, from: fromParam, to: toParam, format}));
         } catch (error) {
             console.error('Export failed:', error);
             alert.openAlert(t("failed"), error.message, { buttonText: t("dialog.okay") });

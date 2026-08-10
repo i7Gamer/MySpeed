@@ -25,6 +25,7 @@ import {
 } from "@/common/utils/TimeframeUtil";
 import PageToolbar from "@/common/components/PageToolbar";
 import ChartModal from "@/common/components/ChartModal";
+import {formatDay} from "@/common/utils/FormatUtil";
 import SpeedChart from "@/pages/Statistics/charts/SpeedChart";
 import LatestTestChart from "@/pages/Statistics/charts/LatestTestChart";
 import PingChart from "@/pages/Statistics/charts/PingChart";
@@ -278,8 +279,12 @@ export const Statistics = () => {
     if (!deferredStatistics.tests || deferredStatistics.tests.total === 0) return (
         <div className="statistic-area">
             {toolbar}
+            {/* Named rather than a bare "no tests available": the range is
+                almost always what emptied this, and the picker sits directly
+                above the message to widen it. */}
             <div className="statistics-empty">
-                <p>{t("test.not_available")}</p>
+                <p>{t("test.not_available_in_range",
+                    {from: formatDay(dateRange.from), to: formatDay(dateRange.to)})}</p>
             </div>
         </div>
     );

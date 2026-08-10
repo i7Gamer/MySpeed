@@ -151,12 +151,22 @@ export const deleteRequest = async (path, body = {}, headers = {}) => {
     return await request(path, "DELETE", body, headers);
 }
 
-// Download a specific file from the response output
-export const downloadRequest = async (path, body = {}, headers = {}, fallbackName = "download") => {
+/**
+ * Downloads a file from the response output.
+ *
+ * The caller names the file when it cares, and the server names it otherwise.
+ * That order used to be reversed, which left the export of "all time" carrying
+ * the server's echo of the very wide window standing in for it - a name only
+ * the client can improve on, since only it knows the range was a stand-in.
+ * Callers that pass no name are unaffected: they still take the server's.
+ */
+export const downloadRequest = async (path, body = {}, headers = {}, preferredName = null) => {
     const file = await request(path, "GET", body, headers);
     await assertOk(file, path);
 
-    const filename = filenameFromDisposition(file.headers.get('Content-Disposition')) ?? fallbackName;
+    const filename = preferredName
+        ?? filenameFromDisposition(file.headers.get('Content-Disposition'))
+        ?? "download";
     const blob = await file.blob();
     const url = window.URL.createObjectURL(blob);
 

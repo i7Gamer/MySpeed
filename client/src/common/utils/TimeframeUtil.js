@@ -132,3 +132,24 @@ export const serializeRange = (timeframe, from, to) => {
     if (findTimeframe(timeframe)) return {range: timeframe};
     return {from: formatDateParam(from), to: formatDateParam(to)};
 };
+
+/**
+ * Reads the overview's selection out of the URL, defaulting to all time.
+ *
+ * The overview keeps its range in the URL for the same reason the statistics
+ * do - a view stays bookmarkable and shareable - but a bare URL has to mean
+ * all time here rather than the statistics' seven days, or merely opening the
+ * page would hide most of the history.
+ */
+export const selectionFromParams = (searchParams, now = new Date()) =>
+    parseRangeParams(searchParams, now) ?? {timeframe: TIMEFRAME_ALL, from: null, to: null};
+
+/**
+ * The other end of that round trip.
+ *
+ * All time carries no dates, so serializing it as a range would reach for a
+ * `from` that does not exist. Clearing the parameters says the same thing,
+ * leaves a clean URL, and reads back as all time.
+ */
+export const rangeToParams = (timeframe, from, to) =>
+    isAllTime(timeframe) ? {} : serializeRange(timeframe, from, to);

@@ -1,10 +1,11 @@
-import React, {useState, createContext, useContext, useEffect, useCallback, useRef} from "react";
+import React, {useState, createContext, useContext, useEffect, useCallback, useMemo, useRef} from "react";
+import {useSearchParams} from "react-router-dom";
 import {jsonRequest} from "@/common/utils/RequestUtil";
 import {runJustFinished} from "@/common/utils/StatusUtil";
 import {StatusContext} from "@/common/contexts/Status";
 import {NodeContext} from "@/common/contexts/Node";
 import {
-    TIMEFRAME_ALL, formatDateParam, isAllTime, resolveTimeframe, timeframeFromRange
+    formatDateParam, rangeToParams, selectionFromParams, timeframeFromRange
 } from "@/common/utils/TimeframeUtil";
 import {mergeNewTests} from "./merge";
 
@@ -30,11 +31,26 @@ export const SpeedtestProvider = (props) => {
     const [, , currentNode] = useContext(NodeContext);
     const wasRunningRef = useRef(status.running);
 
-    // The overview's date picker. All-time is the default and carries no range
-    // at all - "everything" is the absence of a bound rather than a very wide
-    // one - so the list behaves exactly as it did until a range is chosen.
-    const [timeframe, setTimeframe] = useState(TIMEFRAME_ALL);
-    const [range, setRange] = useState(null);
+    /**
+     * The overview's date picker, kept in the URL rather than in state here.
+     *
+     * The statistics page keeps its range in the URL so a view stays
+     * bookmarkable and shareable; held in state, the overview's reset on every
+     * reload and could not be linked to at all. One source of truth also means
+     * the two cannot disagree about what the address bar says.
+     *
+     * All time is the default and carries no range at all - "everything" is the
+     * absence of a bound rather than a very wide one - so the list behaves
+     * exactly as it did until a range is chosen.
+     */
+    const [searchParams, setSearchParams] = useSearchParams();
+    const search = searchParams.toString();
+
+    const selection = useMemo(() => selectionFromParams(new URLSearchParams(search)), [search]);
+    const timeframe = selection.timeframe;
+    const range = useMemo(
+        () => selection.from && selection.to ? {from: selection.from, to: selection.to} : null,
+        [selection]);
 
     const listQuery = useCallback((extra = {}) => {
         const params = new URLSearchParams({limit: String(PAGE_SIZE), ...extra});
@@ -58,15 +74,16 @@ export const SpeedtestProvider = (props) => {
         return last ? {created: last.created, id: last.id} : null;
     };
 
+    // Replaced rather than pushed: narrowing a range is refining one view, not
+    // arriving at a new one, and stacking every adjustment would make Back walk
+    // through each of them.
     const selectTimeframe = useCallback((id) => {
-        setTimeframe(id);
-        setRange(isAllTime(id) ? null : resolveTimeframe(id));
-    }, []);
+        setSearchParams(rangeToParams(id), {replace: true});
+    }, [setSearchParams]);
 
     const selectRange = useCallback((from, to) => {
-        setTimeframe(timeframeFromRange(from, to));
-        setRange({from, to});
-    }, []);
+        setSearchParams(rangeToParams(timeframeFromRange(from, to), from, to), {replace: true});
+    }, [setSearchParams]);
 
     const loadInitialTests = useCallback(async () => {
         if (loadingRef.current) return;

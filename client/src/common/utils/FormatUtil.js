@@ -20,6 +20,19 @@ const toDate = (value) => {
     return new Date(value);
 };
 
+/**
+ * A calendar day, in the language the app is set to.
+ *
+ * For naming a range in prose - "No tests between 12 Jul and 19 Jul" - where
+ * the time of day would be noise.
+ */
+export const formatDay = (value) => {
+    const date = toDate(value);
+    if (isNaN(date.getTime())) return "";
+
+    return date.toLocaleDateString(locale(), {day: "2-digit", month: "short", year: "numeric"});
+};
+
 export const formatTime = (value, preferences) => {
     const date = toDate(value);
     if (isNaN(date.getTime())) return "";

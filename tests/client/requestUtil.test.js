@@ -32,6 +32,28 @@ const respondWith = ({status = 200, body = {}, headers = {}} = {}) => {
     };
 };
 
+// downloadRequest hands the finished blob to an anchor, so it needs just
+// enough DOM to get there. The element it builds is kept so the name it chose
+// can be asserted.
+let lastAnchor = null;
+
+globalThis.document = {
+    createElement: () => {
+        lastAnchor = {
+            attributes: {},
+            setAttribute(name, value) { this.attributes[name] = value; },
+            click() {},
+            remove() {}
+        };
+        return lastAnchor;
+    },
+    body: {appendChild: () => {}}
+};
+
+globalThis.window = {
+    URL: {createObjectURL: () => "blob:stub", revokeObjectURL: () => {}}
+};
+
 const { jsonRequest, downloadRequest, RequestError, filenameFromDisposition } =
     await import("../../client/src/common/utils/RequestUtil.js");
 
@@ -129,6 +151,36 @@ describe("downloadRequest", () => {
             assert.ok(error instanceof RequestError, `expected RequestError, got ${error.name}`);
             assert.equal(error.status, 401);
             return true;
+        });
+    });
+
+    /**
+     * The caller names the file when it cares, and the server names it
+     * otherwise. It used to be the other way round, which left the export of
+     * "all time" carrying the server's echo of the very wide window that
+     * stands in for it - a name the client is the only one able to improve on,
+     * since only it knows the range was a stand-in.
+     */
+    describe("naming the file", () => {
+        it("uses the name the caller asked for", async () => {
+            respondWith({headers: {"Content-Disposition": 'attachment; filename="from-the-server.csv"'}});
+            await downloadRequest("/speedtests/export", {}, {}, "myspeed-export-all-time.csv");
+
+            assert.equal(lastAnchor.attributes.download, "myspeed-export-all-time.csv");
+        });
+
+        it("falls back to the server's name when the caller does not care", async () => {
+            respondWith({headers: {"Content-Disposition": 'attachment; filename="speedtests.json"'}});
+            await downloadRequest("/storage/tests/history/json");
+
+            assert.equal(lastAnchor.attributes.download, "speedtests.json");
+        });
+
+        it("still has a name when neither says anything", async () => {
+            respondWith({});
+            await downloadRequest("/storage/config");
+
+            assert.ok(lastAnchor.attributes.download, "the download was left unnamed");
         });
     });
 });

@@ -2,6 +2,7 @@ import DateRangePicker from "@/common/components/DateRangePicker";
 import StatusBarComponent from "@/common/components/StatusBar";
 import StartTestButton from "@/common/components/StartTestButton";
 import ExportButton from "@/common/components/ExportButton";
+import {isAllTime} from "@/common/utils/TimeframeUtil";
 import "./styles.sass";
 
 /**
@@ -33,7 +34,9 @@ export const PageToolbar = ({from, to, timeframe, onRangeChange, onTimeframeChan
             the action these pages are for. */}
         <StartTestButton/>
 
-        <ExportButton dateRange={exportRange}/>
+        {/* All time reaches the endpoint as a stand-in window; the export is
+            named for what was asked for rather than for that window. */}
+        <ExportButton dateRange={exportRange} allTime={isAllTime(timeframe)}/>
     </div>
 );
 

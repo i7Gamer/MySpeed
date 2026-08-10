@@ -4,6 +4,8 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
 import Speedtest from "../Speedtest";
 import {getIconBySpeed, previousConnection} from "@/common/utils/TestUtil";
+import {formatDay} from "@/common/utils/FormatUtil";
+import {TIMEFRAME_ALL} from "@/common/utils/TimeframeUtil";
 import "./styles.sass";
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
@@ -11,7 +13,7 @@ import {faArrowUp} from "@fortawesome/free-solid-svg-icons";
 
 const TestArea = () => {
     const config = useContext(ConfigContext)[0];
-    const {speedtests, loadMoreTests, loading, hasMore} = useContext(SpeedtestContext);
+    const {speedtests, loadMoreTests, loading, hasMore, range, selectTimeframe} = useContext(SpeedtestContext);
     const [stickyDate, setStickyDate] = useState(null);
     const [showStickyDate, setShowStickyDate] = useState(false);
     const [showBackToTop, setShowBackToTop] = useState(false);
@@ -125,8 +127,27 @@ const TestArea = () => {
 
     if (!initialLoadComplete || (speedtests.length === 0 && loading)) return <></>;
 
-    if (speedtests.length === 0 && initialLoadComplete)
-        return <h2 className="error-text">{t("test.not_available")}</h2>;
+    /**
+     * An empty list means two different things, and used to say the same
+     * sentence for both. Now that the page carries a range picker, "you picked
+     * a quiet week" is by far the more common - and saying "there are no tests"
+     * there is both wrong and a dead end, since nothing on screen suggests the
+     * range is what hid them.
+     */
+    if (speedtests.length === 0 && initialLoadComplete) {
+        if (!range) return <h2 className="error-text">{t("test.not_available")}</h2>;
+
+        return (
+            <div className="speedtest-empty">
+                <h2 className="error-text">
+                    {t("test.not_available_in_range", {from: formatDay(range.from), to: formatDay(range.to)})}
+                </h2>
+                <button className="dialog-btn" onClick={() => selectTimeframe(TIMEFRAME_ALL)}>
+                    {t("test.show_all_time")}
+                </button>
+            </div>
+        );
+    }
 
     return (
         <>
