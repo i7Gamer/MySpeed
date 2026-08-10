@@ -18,6 +18,7 @@ import {NodeContext} from "@/common/contexts/Node";
 import {useAlert} from "@/common/contexts/Alert";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {assertOk, baseRequest, patchRequest} from "@/common/utils/RequestUtil";
+import {promptUntilAccepted} from "@/common/utils/PasswordPrompt";
 import {t} from "i18next";
 import {Trans} from "react-i18next";
 import {getIconBySpeed, isFailedTest} from "@/common/utils/TestUtil";
@@ -50,8 +51,6 @@ export const NodeContainer = (node) => {
         if (!testRequest.ok) return setNodeError("SERVER_NOT_REACHABLE");
         const tests = await testRequest.json();
 
-        if (tests.length < 0) return setNodeError("SERVER_NOT_REACHABLE");
-
         const configRequest = await baseRequest(prefix + "/config");
 
         if (configRequest.status === 401) return setNodeError("PASSWORD_CHANGED");
@@ -77,26 +76,26 @@ export const NodeContainer = (node) => {
         });
     }
 
-    const updatePassword = async (wrong = false) => {
-        const result = await alert.openInput(t("nodes.password_outdated"), {
+    // The shared ask-again loop rather than a hand-rolled recursion, so this
+    // prompt cannot drift apart from the admin login's - see PasswordPrompt.
+    const updatePassword = () => promptUntilAccepted(
+        (previous) => alert.openInput(t("nodes.password_outdated"), {
             inputType: "password",
-            description: wrong ?
-                <span className="icon-red">{t("dialog.password.wrong")}</span> : t("nodes.update_password"),
+            description: previous
+                ? <span className="icon-red">{t("dialog.password.wrong")}</span>
+                : t("nodes.update_password"),
             placeholder: t("dialog.password.placeholder"),
             buttonText: t("dialog.update")
-        });
+        }),
+        async (password) => {
+            const res = await (await baseRequest(`/nodes/${node.id}/password`, "PATCH", {password})).json();
+            if (res.type !== "PASSWORD_UPDATED") return {ok: false};
 
-        if (result) {
-            const res = await (await baseRequest(`/nodes/${node.id}/password`, "PATCH", {password: result})).json();
-
-            if (res.type === "PASSWORD_UPDATED") {
-                updateData().catch(() => setNodeError("SERVER_NOT_REACHABLE"));
-                updateToast(t("nodes.password_updated"), "green", faKey);
-            } else {
-                updatePassword(true);
-            }
+            updateData().catch(() => setNodeError("SERVER_NOT_REACHABLE"));
+            updateToast(t("nodes.password_updated"), "green", faKey);
+            return {ok: true};
         }
-    };
+    );
 
     useEffect(() => {
         updateData().catch(() => setNodeError("SERVER_NOT_REACHABLE"));
