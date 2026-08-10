@@ -67,14 +67,17 @@ export const AlertProvider = ({children}) => {
     return (
         <AlertContext.Provider value={contextValue}>
             {children}
-            {alerts.map(alert => (
-                <AlertRenderer key={alert.id} alert={alert} onClose={(result) => closeAlert(alert.id, result)}/>
+            {/* Only the last-opened alert is "on top": alerts stack, and the
+                keyboard must reach exactly one of them. */}
+            {alerts.map((alert, index) => (
+                <AlertRenderer key={alert.id} alert={alert} isTop={index === alerts.length - 1}
+                               onClose={(result) => closeAlert(alert.id, result)}/>
             ))}
         </AlertContext.Provider>
     );
 };
 
-const AlertRenderer = ({alert, onClose}) => {
+const AlertRenderer = ({alert, isTop, onClose}) => {
     const areaRef = useRef();
     const dialogRef = useRef();
     const [inputValue, setInputValue] = useState(alert.value || "");
@@ -111,9 +114,14 @@ const AlertRenderer = ({alert, onClose}) => {
     }, [alert, inputValue]);
 
     useEffect(() => {
+        // The listener sits on the document, so every stacked alert used to
+        // hear the same Enter: one keypress submitted them all, the hidden
+        // ones resolving with whatever their inputs happened to hold.
+        if (!isTop) return;
+
         document.addEventListener("keydown", handleKeyDown);
         return () => document.removeEventListener("keydown", handleKeyDown);
-    }, [handleKeyDown]);
+    }, [handleKeyDown, isTop]);
 
     const handleSubmit = () => {
         if (alert.type === "input" && alert.required && !inputValue) {
