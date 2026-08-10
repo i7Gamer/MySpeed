@@ -1,8 +1,11 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCalendar, faChevronLeft, faChevronRight } from "@fortawesome/free-solid-svg-icons";
+import {
+    faAnglesLeft, faAnglesRight, faCalendar, faChevronLeft, faChevronRight
+} from "@fortawesome/free-solid-svg-icons";
 import { t } from "i18next";
 import { TIMEFRAMES } from "@/common/utils/TimeframeUtil";
+import { isCurrentMonth, monthBack, monthForward, yearBack, yearForward } from "./calendarNav";
 import "./styles.sass";
 
 // The presets a page offers are its own: the overview leads with "All time",
@@ -185,19 +188,18 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
         return false;
     };
 
-    const prevMonth = () => {
-        setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
-    };
+    const prevMonth = () => setCurrentMonth(monthBack(currentMonth));
 
-    const nextMonth = () => {
-        setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
-    };
+    const nextMonth = () => setCurrentMonth(monthForward(currentMonth));
 
-    const isCurrentMonthView = () => {
-        const now = new Date();
-        return currentMonth.getMonth() === now.getMonth() && 
-               currentMonth.getFullYear() === now.getFullYear();
-    };
+    const prevYear = () => setCurrentMonth(yearBack(currentMonth));
+
+    // Clamped rather than disabled short of the boundary: from December a
+    // hard-disabled jump would strand the view a year back with only the
+    // month arrow to walk out on - see calendarNav.
+    const nextYear = () => setCurrentMonth(yearForward(currentMonth, new Date()));
+
+    const isCurrentMonthView = () => isCurrentMonth(currentMonth, new Date());
 
     const weekDays = [
         t("calendar.mon"),
@@ -255,20 +257,38 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                         {t(selecting === "from" ? "calendar.select_start" : "calendar.select_end")}
                     </div>
 
+                    {/* Double chevrons step a year, single ones a month, so a
+                        window from last spring is one click away instead of
+                        twelve. Both forward buttons disable together: the
+                        calendar never shows a month after the current one. */}
                     <div className="calendar-nav">
-                        <button className="nav-btn" onClick={prevMonth}>
-                            <FontAwesomeIcon icon={faChevronLeft} />
-                        </button>
+                        <div className="calendar-nav-group">
+                            <button className="nav-btn" onClick={prevYear}>
+                                <FontAwesomeIcon icon={faAnglesLeft} />
+                            </button>
+                            <button className="nav-btn" onClick={prevMonth}>
+                                <FontAwesomeIcon icon={faChevronLeft} />
+                            </button>
+                        </div>
                         <span className="current-month">
                             {currentMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
                         </span>
-                        <button 
-                            className="nav-btn" 
-                            onClick={nextMonth}
-                            disabled={isCurrentMonthView()}
-                        >
-                            <FontAwesomeIcon icon={faChevronRight} />
-                        </button>
+                        <div className="calendar-nav-group">
+                            <button
+                                className="nav-btn"
+                                onClick={nextMonth}
+                                disabled={isCurrentMonthView()}
+                            >
+                                <FontAwesomeIcon icon={faChevronRight} />
+                            </button>
+                            <button
+                                className="nav-btn"
+                                onClick={nextYear}
+                                disabled={isCurrentMonthView()}
+                            >
+                                <FontAwesomeIcon icon={faAnglesRight} />
+                            </button>
+                        </div>
                     </div>
 
                     <div className="calendar-grid">
