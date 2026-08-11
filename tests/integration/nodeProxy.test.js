@@ -143,6 +143,34 @@ describe("node proxy", () => {
         assert.doesNotMatch(JSON.stringify(proxied.headers), /the-callers-own-password/);
     });
 
+    /**
+     * The caller's own credentials are the parent's, and the child has no use
+     * for them: each instance keeps its own session map, so a forwarded cookie
+     * can never authenticate anything there.
+     *
+     * Since sessions landed, `myspeed_session` *is* the browser credential -
+     * the password middleware honours it before it ever reads the stored hash.
+     * The password headers were stripped deliberately and the cookie was not,
+     * so while a node was selected the dashboard shipped a fresh copy of a
+     * seven-day full-access token to a third host every few seconds, usually
+     * over plain http on the LAN. Basic auth reaches the prometheus route the
+     * same way, so `authorization` goes with it.
+     */
+    it("never forwards the caller's own credentials to the node", async () => {
+        received = [];
+        await api(server.baseUrl, `/nodes/${nodeId}/speedtests/status`, {
+            headers: {
+                cookie: "myspeed_session=parents-own-session-token",
+                authorization: "Basic cGFyZW50OnNlY3JldA=="
+            }
+        });
+
+        const proxied = received.at(-1);
+        assert.equal(proxied.headers["cookie"], undefined);
+        assert.equal(proxied.headers["authorization"], undefined);
+        assert.doesNotMatch(JSON.stringify(proxied.headers), /parents-own-session-token/);
+    });
+
     it("preserves the upstream status code", async () => {
         const {status} = await api(server.baseUrl, `/nodes/${nodeId}/does-not-exist`);
         assert.equal(status, 404);

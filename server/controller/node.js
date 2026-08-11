@@ -51,7 +51,21 @@ export const checkStatus = async (url, password) => {
     }
 }
 
-const SKIP_HEADERS = new Set(["host", "content-length", "connection"]);
+/**
+ * Headers the proxy refuses to pass on.
+ *
+ * The last two are the caller's own credentials, which are the parent's and
+ * mean nothing to the child - each instance keeps its own session map, so a
+ * forwarded cookie could never authenticate anything there. routes/nodes.js
+ * already strips the password headers and substitutes the node's own; `cookie`
+ * carries exactly the same access now that `myspeed_session` is what the
+ * browser holds, and `authorization` reaches the prometheus route, which
+ * compares Basic auth against the parent's password hash. Left in, the
+ * dashboard shipped a fresh copy of a seven-day full-access token to a third
+ * host every few seconds for as long as a node stayed selected - usually over
+ * plain http on the LAN.
+ */
+const SKIP_HEADERS = new Set(["host", "content-length", "connection", "cookie", "authorization"]);
 
 // Enough for the caller to interpret the body it is handed. Everything else the
 // child sends is the child's business and is dropped.
