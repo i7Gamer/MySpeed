@@ -218,6 +218,35 @@ describe("ALLOWED_NODE_HOSTS", () => {
         assert.equal(await allows("192.168.1.50:5216", "http://192.168.1.50:9999"), false);
     });
 
+    /**
+     * Entries were normalised through `new URL("http://" + entry)`, whose
+     * parser strips the *http* default port - so `host:80` stored an empty
+     * port, which isAllowedHost reads as the documented "any port" wildcard.
+     * The operator's pin was silently discarded.
+     *
+     * The other direction locked them out instead: `host:443` stored "443",
+     * but `new URL("https://host:443").port` is also "" - so the entry could
+     * never match the https URL it was written for.
+     */
+    it("pins a port the URL parser treats as a default", async () => {
+        assert.equal(await allows("192.168.1.50:80", "http://192.168.1.50"), true);
+        assert.equal(await allows("192.168.1.50:80", "http://192.168.1.50:80"), true);
+        assert.equal(await allows("192.168.1.50:80", "https://192.168.1.50:8443"), false,
+            "a pinned default port must not become a wildcard");
+    });
+
+    // IP literals here too, so nothing depends on DNS.
+    it("matches an https URL pinned to its default port", async () => {
+        assert.equal(await allows("192.168.1.50:443", "https://192.168.1.50"), true);
+        assert.equal(await allows("192.168.1.50:443", "https://192.168.1.50:443"), true);
+        assert.equal(await allows("192.168.1.50:443", "https://192.168.1.50:5216"), false);
+    });
+
+    it("still allows any port when the entry names none", async () => {
+        assert.equal(await allows("192.168.1.50", "http://192.168.1.50"), true);
+        assert.equal(await allows("192.168.1.50", "https://192.168.1.50"), true);
+    });
+
     it("accepts several entries, and tolerates spacing", async () => {
         const list = " 192.168.1.50 , 10.0.0.5:5216 ";
 
