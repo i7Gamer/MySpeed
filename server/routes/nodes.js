@@ -16,7 +16,10 @@ app.put("/", password(false), async (req, res) => {
     if (process.env.PREVIEW_MODE === "true")
         return res.status(403).json({message: "For security reasons, you can't create nodes in preview mode"});
 
-    if (!req.body.name || !req.body.url) return res.status(400).json({message: "Missing parameters", type: "MISSING_PARAMETERS"});
+    // Optional chaining because body-parser 2.x leaves req.body undefined on a
+    // request it did not parse - 1.x defaulted it to {} - so the guard itself
+    // threw and Express answered its generic 500 where this 400 was owed.
+    if (!req.body?.name || !req.body?.url) return res.status(400).json({message: "Missing parameters", type: "MISSING_PARAMETERS"});
 
     const url = stripTrailingSlashes(req.body.url);
 
@@ -57,7 +60,7 @@ app.patch("/:nodeId/name", password(false), async (req, res) => {
     if (process.env.PREVIEW_MODE === "true")
         return res.status(403).json({message: "For security reasons, you can't update nodes in preview mode"});
 
-    if (!req.body.name) return res.status(400).json({message: "Missing parameters", type: "MISSING_PARAMETERS"});
+    if (!req.body?.name) return res.status(400).json({message: "Missing parameters", type: "MISSING_PARAMETERS"});
 
     const node = await nodes.getOne(req.params.nodeId);
     if (node === null) return res.status(404).json({message: "Node not found"});
@@ -70,7 +73,7 @@ app.patch("/:nodeId/password", password(false), async (req, res) => {
     if (process.env.PREVIEW_MODE === "true")
         return res.status(403).json({message: "For security reasons, you can't update nodes in preview mode"});
 
-    if (!req.body.password) return res.status(400).json({message: "Missing parameters", type: "MISSING_PARAMETERS"});
+    if (!req.body?.password) return res.status(400).json({message: "Missing parameters", type: "MISSING_PARAMETERS"});
 
     const node = await nodes.getOne(req.params.nodeId);
     if (node === null) return res.status(404).json({message: "Node not found"});

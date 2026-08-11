@@ -45,3 +45,44 @@ describe("body parser errors", () => {
         assert.doesNotMatch(text, /at .*\.js:\d+/);
     });
 });
+
+/**
+ * Under body-parser 2.x an unparsed request leaves `req.body` undefined; 1.x
+ * defaulted it to {}. The three node write endpoints still read it straight -
+ * `if (!req.body.name || !req.body.url)` - so the guard itself threw a
+ * TypeError and Express answered its generic 500 with no `type` field, where
+ * the caller had asked for exactly the 400 that guard exists to give.
+ *
+ * Not reachable from the UI, which always sends a JSON content type. It is the
+ * script and curl callers - the ones reading the `type` field - that met it.
+ */
+describe("a request that carries no body at all", () => {
+    const bodyless = (pathname, method = "PUT") => api(server.baseUrl, pathname, {method});
+
+    it("answers the node create endpoint with 400", async () => {
+        const {status, body} = await bodyless("/nodes");
+
+        assert.equal(status, 400);
+        assert.equal(body.type, "MISSING_PARAMETERS");
+    });
+
+    it("answers the rename endpoint with 400", async () => {
+        const {status, body} = await bodyless("/nodes/1/name", "PATCH");
+
+        assert.equal(status, 400);
+        assert.equal(body.type, "MISSING_PARAMETERS");
+    });
+
+    it("answers the node password endpoint with 400", async () => {
+        const {status, body} = await bodyless("/nodes/1/password", "PATCH");
+
+        assert.equal(status, 400);
+        assert.equal(body.type, "MISSING_PARAMETERS");
+    });
+
+    it("never answers one of them with a 500", async () => {
+        for (const [pathname, method] of [["/nodes", "PUT"], ["/nodes/1/name", "PATCH"],
+            ["/nodes/1/password", "PATCH"]])
+            assert.notEqual((await bodyless(pathname, method)).status, 500, `${method} ${pathname}`);
+    });
+});
