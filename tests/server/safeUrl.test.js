@@ -242,6 +242,16 @@ describe("ALLOWED_NODE_HOSTS", () => {
         assert.equal(await allows("192.168.1.50:443", "https://192.168.1.50:5216"), false);
     });
 
+    // Reading the port off the entry's own text rather than the parser means
+    // its text has to be normalised the way the parser would have: "080" and
+    // "80" name the same port, and refusing the first is the same silent
+    // lockout the other way round.
+    it("reads a zero-padded port as the port it names", async () => {
+        assert.equal(await allows("192.168.1.50:080", "http://192.168.1.50:80"), true);
+        assert.equal(await allows("192.168.1.50:05216", "http://192.168.1.50:5216"), true);
+        assert.equal(await allows("192.168.1.50:080", "http://192.168.1.50:8080"), false);
+    });
+
     it("still allows any port when the entry names none", async () => {
         assert.equal(await allows("192.168.1.50", "http://192.168.1.50"), true);
         assert.equal(await allows("192.168.1.50", "https://192.168.1.50"), true);

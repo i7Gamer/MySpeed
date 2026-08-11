@@ -34,14 +34,26 @@ const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
 let cachedRaw = null;
 let cachedHosts = null;
 
-// The port an entry actually names, or "" for none. Read off the text after the
-// host, so a default port is kept rather than normalised away: "[fd00::1]:80"
-// and "192.168.1.50:80" both name one, "[fd00::1]" does not.
+/**
+ * The port an entry actually names, or "" for none.
+ *
+ * Read off the text after the host, so a default port is kept rather than
+ * normalised away: "[fd00::1]:80" and "192.168.1.50:80" both name one,
+ * "[fd00::1]" does not. Only entries the URL parser already accepted reach
+ * this, so what follows the colon is either empty or digits.
+ *
+ * Those digits still need the normalisation the parser would have applied, or
+ * "080" would never match the ":80" it names - the same silent lockout this
+ * helper exists to prevent, in the other direction.
+ */
 const declaredPort = (entry) => {
     const afterHost = entry.startsWith("[") ? entry.slice(entry.indexOf("]") + 1) : entry;
     const colon = afterHost.lastIndexOf(":");
+    if (colon === -1) return "";
 
-    return colon === -1 ? "" : afterHost.slice(colon + 1);
+    const port = afterHost.slice(colon + 1);
+
+    return port === "" ? "" : String(Number(port));
 };
 
 // Both sides of the comparison have to be explicit about the port, because the
