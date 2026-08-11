@@ -9,38 +9,66 @@ const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", ".."
 const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
 
 /**
- * One measurement, one glyph, everywhere.
+ * One measurement, one glyph, everywhere - and no glyph doing two jobs.
  *
- * Packet loss was drawn two different ways on the same page - a square wave on
- * the overview card, a satellite dish on the last-test card - and the square
- * wave is what jitter uses, so the same glyph stood for two unrelated
- * measurements a few centimetres apart. A reader has no way to tell those apart
- * except by the label, which defeats the icon.
+ * The square wave had drifted into standing for three different things. Packet
+ * loss borrowed it on the overview card while using a satellite dish on the
+ * last-test card, so one measurement was drawn two ways and one glyph covered
+ * two unrelated measurements a few centimetres apart. Consistency borrowed it
+ * too: also variation, but throughput swinging across every test in a range,
+ * where jitter is latency moving within a single test. Different numbers,
+ * different units, same page.
  *
- * The square wave now means variation and nothing else: jitter, and the
- * standard deviation on the average cards, which is the same idea.
+ * Settled as: a broken link is packet loss, a tight range is consistency, and
+ * the square wave is jitter and nothing else.
  */
 const PACKET_LOSS_ICON = "faLinkSlash";
-const VARIATION_ICON = "faWaveSquare";
+const CONSISTENCY_ICON = "faCompress";
+const JITTER_ICON = "faWaveSquare";
 
 const PACKET_LOSS_SITES = [
     "pages/Statistics/charts/OverviewChart/OverviewChart.jsx",
     "pages/Statistics/charts/LatestTestChart/LatestTestChart.jsx"
 ];
 
-const VARIATION_SITES = [
+// Every remaining place the wave is drawn. All three are jitter.
+const JITTER_SITES = [
     "pages/Home/components/Speedtest/SpeedtestComponent.jsx",
     "pages/Statistics/charts/LatestTestChart/LatestTestChart.jsx",
-    "pages/Statistics/charts/ConsistencyChart/ConsistencyChart.jsx",
-    "pages/Statistics/charts/AverageChart/AverageChart.jsx"
+    "pages/Statistics/charts/ConsistencyChart/ConsistencyChart.jsx"
 ];
 
-/** The block of source that draws one labelled row, so the icon beside a label is checked. */
-const around = (source, anchor, before = 400, after = 400) => {
-    const at = source.indexOf(anchor);
-    assert.notEqual(at, -1, `could not find ${anchor}`);
+const CONSISTENCY_SITE = "pages/Statistics/charts/AverageChart/AverageChart.jsx";
 
-    return source.slice(Math.max(0, at - before), at + after);
+// Both spellings: the overview card lists its rows as objects, the others
+// render <FontAwesomeIcon icon={...}/>.
+const ICON_REFERENCE = /icon(?:=\{|:\s*)(fa[A-Za-z]+)/g;
+
+const at = (source, anchor) => {
+    const index = source.indexOf(anchor);
+    assert.notEqual(index, -1, `could not find ${anchor}`);
+    return index;
+};
+
+/**
+ * The icon nearest a label, searching in the direction the markup puts it.
+ *
+ * Nearest rather than "somewhere within N characters": a comment added above a
+ * row would push its icon out of any fixed window, which is a test breaking on
+ * prose rather than on the thing it guards.
+ */
+const iconAfter = (source, anchor) => {
+    const from = at(source, anchor);
+    ICON_REFERENCE.lastIndex = from;
+
+    return ICON_REFERENCE.exec(source)?.[1] ?? null;
+};
+
+const iconBefore = (source, anchor) => {
+    const until = at(source, anchor);
+    const head = source.slice(0, until);
+
+    return [...head.matchAll(ICON_REFERENCE)].at(-1)?.[1] ?? null;
 };
 
 describe("packet loss is drawn the same way everywhere", () => {
@@ -54,18 +82,14 @@ describe("packet loss is drawn the same way everywhere", () => {
         });
     }
 
+    // The overview card names the icon above the title, the last-test card below.
     it("the overview card uses it on the packet loss row", () => {
-        const row = around(read(PACKET_LOSS_SITES[0]), "overview.packet_loss_title", 300, 100);
-
-        assert.match(row, new RegExp(`icon: ${PACKET_LOSS_ICON}`));
-        assert.doesNotMatch(row, new RegExp(`icon: ${VARIATION_ICON}`),
-            "the packet loss row is back on the variation glyph");
+        assert.equal(iconBefore(read(PACKET_LOSS_SITES[0]), "overview.packet_loss_title"),
+            PACKET_LOSS_ICON);
     });
 
     it("the last-test card uses it on the packet loss row", () => {
-        const row = around(read(PACKET_LOSS_SITES[1]), "latest.packet_loss", 100, 700);
-
-        assert.match(row, new RegExp(`icon=\\{${PACKET_LOSS_ICON}\\}`));
+        assert.equal(iconAfter(read(PACKET_LOSS_SITES[1]), "latest.packet_loss"), PACKET_LOSS_ICON);
     });
 
     // The dish said "receiving a signal", which is not what packet loss is.
@@ -76,20 +100,46 @@ describe("packet loss is drawn the same way everywhere", () => {
     });
 });
 
-describe("the square wave means variation and nothing else", () => {
-    for (const file of VARIATION_SITES) {
+describe("the square wave means jitter and nothing else", () => {
+    for (const file of JITTER_SITES) {
         const name = path.basename(file, ".jsx");
 
-        it(`${name} still uses it`, () => {
-            assert.match(read(file), new RegExp(`\\b${VARIATION_ICON}\\b`),
-                `${name} lost the variation glyph`);
+        it(`${name} still uses it for jitter`, () => {
+            assert.match(read(file), new RegExp(`\\b${JITTER_ICON}\\b`),
+                `${name} lost the jitter glyph`);
         });
     }
 
     it("is not also standing in for packet loss", () => {
-        const overview = read(PACKET_LOSS_SITES[0]);
+        assert.doesNotMatch(read(PACKET_LOSS_SITES[0]), new RegExp(`\\b${JITTER_ICON}\\b`),
+            "the overview card imports the jitter glyph again - it has no jitter row");
+    });
 
-        assert.doesNotMatch(overview, new RegExp(`\\b${VARIATION_ICON}\\b`),
-            "the overview card imports the variation glyph again - it has no variation row");
+    it("is not also standing in for consistency", () => {
+        assert.doesNotMatch(read(CONSISTENCY_SITE), new RegExp(`\\b${JITTER_ICON}\\b`),
+            "the average card imports the jitter glyph again - it has no jitter row");
+    });
+});
+
+/**
+ * Consistency is variation too, which is what made it reach for the wave - but
+ * it is throughput across a whole range, not latency inside one test, and the
+ * two are read side by side.
+ */
+describe("consistency has a glyph of its own", () => {
+    const source = read(CONSISTENCY_SITE);
+
+    it("the expanded values pane uses it", () => {
+        assert.equal(iconAfter(source, "statistics.values.consistency"), CONSISTENCY_ICON,
+            "the Consistency row is not on the consistency glyph");
+    });
+
+    it("nothing else on the page claims it", () => {
+        for (const file of [...JITTER_SITES, ...PACKET_LOSS_SITES]) {
+            if (file === CONSISTENCY_SITE) continue;
+
+            assert.doesNotMatch(read(file), new RegExp(`\\b${CONSISTENCY_ICON}\\b`),
+                `${path.basename(file)} borrowed the consistency glyph`);
+        }
     });
 });

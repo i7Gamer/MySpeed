@@ -1,7 +1,7 @@
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
-    faGauge, faGaugeHigh, faMinusCircle, faPlusCircle, faWaveSquare
+    faCompress, faGauge, faGaugeHigh, faMinusCircle, faPlusCircle
 } from "@fortawesome/free-solid-svg-icons";
 import {useContext} from "react";
 import {t} from "i18next";
@@ -131,7 +131,12 @@ export const AverageChart = (props) => {
                                 </span>
                             )}
                         </div>
-                        <FontAwesomeIcon icon={faWaveSquare}
+                        {/* A tight range, not the square wave. Both are about
+                            variation, but the wave is jitter's - latency moving
+                            within a single test - and this is how far throughput
+                            swung across every test in the range. The two sit on
+                            the same page, so they cannot share a glyph. */}
+                        <FontAwesomeIcon icon={faCompress}
                                          className={"icon-" + consistencyColour(steadiness.consistency)}/>
                     </div>
                 )}
