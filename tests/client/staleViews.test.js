@@ -50,6 +50,20 @@ describe("the speedtest list supersedes rather than drops a query", () => {
             /generation !== requestGeneration\.current/,
             "a page load still settles against whatever query is current");
     });
+
+    /**
+     * The refresh needs the guard too, and more than the others do. Test ids
+     * are per-instance, so a poll that was in flight when the node changed
+     * comes back with another instance's rows: overlapping the new node's list
+     * by id they are merged into it, overlapping none of it they replace it.
+     */
+    it("discards a refresh that landed after the query changed", () => {
+        const refresh = context.slice(context.indexOf("const refreshTests"));
+
+        assert.match(refresh.slice(0, refresh.indexOf("const deleteTest")),
+            /generation !== requestGeneration\.current/,
+            "a refresh still settles against whatever node or range is current");
+    });
 });
 
 /**

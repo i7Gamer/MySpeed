@@ -183,8 +183,17 @@ export const SpeedtestProvider = (props) => {
     }, [hasMore, cursor, listQuery]);
 
     const refreshTests = useCallback(async () => {
+        // The same guard the two loads carry. A refresh that was already in
+        // flight when the node or the range changed is answering the *previous*
+        // question, and ids are per-instance - so its page can overlap the new
+        // node's by id and be merged into it, or overlap none of it and replace
+        // the list wholesale with another instance's history.
+        const generation = requestGeneration.current;
+
         try {
             const newTests = await jsonRequest(`/speedtests?${listQuery()}`);
+            if (generation !== requestGeneration.current) return;
+
             const {tests, replaced} = applyRefresh(speedtests, newTests);
 
             if (!replaced) {
