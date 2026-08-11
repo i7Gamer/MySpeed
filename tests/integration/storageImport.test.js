@@ -164,6 +164,27 @@ describe("PUT /api/storage/config", () => {
     });
 
     /**
+     * Sequelize.DATE.prototype._stringify was overridden with a function taking
+     * no argument at all - `() => new Date().toISOString()` - so every DATE
+     * written was substituted with the moment of the write. The sqlite DATE
+     * subclass inherits it, which makes integration_data.lastActivity the one
+     * column it reaches: a restore brought every integration back reporting
+     * "last run: a few seconds ago", whatever the backup said.
+     */
+    it("restores an integration's last activity rather than stamping it now", async () => {
+        const lastActivity = "2024-03-01T10:00:00.000Z";
+
+        await integrationModel.destroy({where: {}});
+        await integrationModel.create({...EXISTING_INTEGRATION, lastActivity});
+
+        const {body: exported} = await api(server.baseUrl, "/storage/config?includeSecrets=true");
+        assert.equal((await importConfig(exported)).status, 200);
+
+        const [restored] = await integrationModel.findAll();
+        assert.equal(new Date(restored.lastActivity).toISOString(), lastActivity);
+    });
+
+    /**
      * A restore has to put back what the backup says, including the settings
      * that happen to sit at their shipped default.
      *
