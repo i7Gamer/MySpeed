@@ -26,7 +26,7 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClic
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
 
     const filteredData = useMemo(() => {
-        if (!data?.[dataKey] || !labels) return { labels: [], data: [], average: 0, failed: [], errors: [], isSingleDay: false };
+        if (!data?.[dataKey] || !labels) return { labels: [], data: [], average: null, failed: [], errors: [], isSingleDay: false };
 
         const values = labels.map((_, index) => convertSpeed(data[dataKey][index], preferences));
 
@@ -84,7 +84,9 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClic
                 spanGaps: true,
                 order: 1
             },
-            averageLineDataset(filteredData.labels, filteredData.average, AVERAGE_ORDER),
+            // Left off entirely when nothing was measured: a line at zero is a
+            // reading, and a range in which every test failed made none.
+            ...(filteredData.average !== null ? [averageLineDataset(filteredData.labels, filteredData.average, AVERAGE_ORDER)] : []),
             ...(hasFailedTests ? [failedMarkersDataset(failedMarkerData, compact)] : [])
         ],
     }), [filteredData, color, titleKey, compact, pointStyle, hasFailedTests, failedMarkerData]);

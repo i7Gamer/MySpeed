@@ -1,5 +1,8 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import i18next from "i18next";
 import {
     averageLineDataset, chartMotion, chartThemeColors, failedMarkersDataset, failureMarkers,
@@ -71,9 +74,40 @@ describe("seriesAverage", () => {
         assert.equal(seriesAverage([null, undefined, 0, 30]), 30);
     });
 
-    it("answers zero when nothing was measured", () => {
-        assert.equal(seriesAverage([]), 0);
+    /**
+     * Null, not zero. Zero is a reading - "this line delivered nothing" - and
+     * both line charts added the average dataset unconditionally, so a range in
+     * which every test failed drew a dashed line along the axis labelled
+     * "Average" with a tooltip reading "Average: 0 Mbps". The AverageChart card
+     * beside it correctly said N/A for the same range, and `tests.total` counts
+     * failures so the page never reached its empty state.
+     */
+    it("answers null when nothing was measured", () => {
+        assert.equal(seriesAverage([]), null);
+        assert.equal(seriesAverage([null, null]), null);
+        assert.equal(seriesAverage([0, 0]), null, "a range in which every test failed measured nothing");
     });
+});
+
+describe("the charts that draw the average", () => {
+    const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
+    const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
+
+    for (const chart of ["pages/Statistics/charts/SpeedChart/SpeedChart.jsx",
+        "pages/Statistics/charts/PingChart.jsx"]) {
+        const source = read(chart);
+        const name = path.basename(chart, ".jsx");
+
+        it(`${name} leaves the line off when there is no average`, () => {
+            assert.match(source, /average !== null \? \[averageLineDataset\(/,
+                `${name} still draws an average line for a range that measured nothing`);
+        });
+
+        it(`${name} does not fall back to zero`, () => {
+            assert.doesNotMatch(source, /average: 0/,
+                `${name} still seeds its empty state with a measured-looking zero`);
+        });
+    }
 });
 
 describe("failureMarkers", () => {

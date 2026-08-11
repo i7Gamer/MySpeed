@@ -67,10 +67,18 @@ export const isSingleDaySeries = (labels) =>
 
 const AVERAGE_DECIMALS_FACTOR = 100;
 
-/** The dashed average line's value: measured points only, two decimals. */
+/**
+ * The dashed average line's value: measured points only, two decimals.
+ *
+ * Null when nothing was measured, so the caller can leave the line off. Zero is
+ * a reading - "this line delivered nothing" - and both charts drew it for a
+ * range in which every test failed: a dashed line along the axis labelled
+ * "Average" with a tooltip reading "Average: 0 Mbps", while the average card
+ * beside it correctly said N/A for the same range.
+ */
 export const seriesAverage = (values) => {
     const valid = values.filter((value) => value !== null && value !== undefined && value > 0);
-    if (valid.length === 0) return 0;
+    if (valid.length === 0) return null;
 
     return Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * AVERAGE_DECIMALS_FACTOR)
         / AVERAGE_DECIMALS_FACTOR;

@@ -28,7 +28,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
 
     const filteredData = useMemo(() => {
-        if (!props.data?.ping || !props.labels) return { labels: [], data: [], jitter: [], loaded: [], average: 0, failed: [], errors: [], isSingleDay: false };
+        if (!props.data?.ping || !props.labels) return { labels: [], data: [], jitter: [], loaded: [], average: null, failed: [], errors: [], isSingleDay: false };
 
         // The worse of the two directions per point, exactly as the grade takes
         // the worse direction - a line clean downstream and buffered upstream is
@@ -133,7 +133,9 @@ const PingChart = memo(({ compact = false, ...props }) => {
                 spanGaps: true,
                 order: 2
             }] : []),
-            averageLineDataset(filteredData.labels, filteredData.average, AVERAGE_ORDER),
+            // Left off entirely when nothing was measured: a line at zero is a
+            // reading, and a range in which every test failed made none.
+            ...(filteredData.average !== null ? [averageLineDataset(filteredData.labels, filteredData.average, AVERAGE_ORDER)] : []),
             ...(hasFailedTests ? [failedMarkersDataset(failedMarkerData, compact)] : [])
         ],
     }), [filteredData, compact, pointStyle, hasJitterData, hasLoadedData, hasFailedTests, failedMarkerData]);
