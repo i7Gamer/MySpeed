@@ -3,7 +3,13 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faXmark } from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
 
-export const ChartModal = ({ isOpen, onClose, isChart = false, toolbar, children }) => {
+/**
+ * @param isChart a plot, which wants the room *and* a tall body
+ * @param wide    a panel that wants the room but is not a plot - see
+ *                .modal-wide, which exists because a responsive grid cannot ask
+ *                a shrink-to-fit dialog for the width it needs
+ */
+export const ChartModal = ({ isOpen, onClose, isChart = false, wide = false, toolbar, children }) => {
     const handleEscape = useCallback((e) => {
         if (e.key === "Escape") {
             onClose();
@@ -31,7 +37,7 @@ export const ChartModal = ({ isOpen, onClose, isChart = false, toolbar, children
 
     return (
         <div className="chart-modal-backdrop" onClick={handleBackdropClick}>
-            <div className={`chart-modal-content${isChart ? ' modal-chart' : ''}`}>
+            <div className={`chart-modal-content${isChart ? ' modal-chart' : ''}${wide ? ' modal-wide' : ''}`}>
                 <button className="chart-modal-close" onClick={onClose}>
                     <FontAwesomeIcon icon={faXmark} />
                 </button>

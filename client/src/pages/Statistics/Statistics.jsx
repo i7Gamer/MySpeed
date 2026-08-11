@@ -51,6 +51,12 @@ const LINE_CHARTS = ['download', 'upload', 'ping'];
 
 const FULL_HEIGHT_CHARTS = [...LINE_CHARTS, 'hourly'];
 
+// Panels that are a responsive grid rather than a plot: they need the dialog to
+// have a width before they can lay out at all, but not a chart's height. Without
+// it the latest test's whole record stacked into one 400px column - see
+// .modal-wide.
+const WIDE_PANELS = ['latest'];
+
 // A request, not a guarantee: the server clamps this to its own ceiling and
 // echoes what it actually used as `maxDataPoints`.
 const FULL_DETAIL_POINTS = 1000;
@@ -448,6 +454,7 @@ export const Statistics = () => {
                 isOpen={!!expandedChart}
                 onClose={() => setExpandedChart(null)}
                 isChart={FULL_HEIGHT_CHARTS.includes(expandedChart)}
+                wide={WIDE_PANELS.includes(expandedChart)}
                 toolbar={detailToolbar}
             >
                 {expandedChart && renderChart(expandedChart, detailStatistics ?? deferredStatistics)}

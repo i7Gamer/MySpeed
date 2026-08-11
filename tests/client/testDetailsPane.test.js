@@ -152,4 +152,53 @@ describe("the chart modal", () => {
 
         assert.match(toolbar[1], /flex-shrink:\s*0/);
     });
+
+    /**
+     * The dialog is shrink-to-fit, which a panel made of responsive grids cannot
+     * survive: with no width to fit into, every `auto-fit` track collapses to one
+     * column, and the dialog then sizes itself to that narrow result. It fed back
+     * on itself - the latest test's whole record stood in a single 400px column,
+     * the same at 1280px and at 2560px, pinned to the dialog's own min-width.
+     */
+    it("gives a grid panel a width to lay out in, not just charts", () => {
+        const wide = ruleFor(".chart-modal-content.modal-wide")
+            ?? compiled.match(/\.modal-wide[^{]*\{([^}]*)}/);
+
+        assert.notEqual(wide, null, "no .modal-wide rule, so the dialog still shrinks to fit");
+        assert.match(wide[1], /width:\s*min\(/, ".modal-wide sets no definite width");
+    });
+
+    it("is asked for by the panel that needs it", () => {
+        assert.match(statistics, /const WIDE_PANELS = \[[^\]]*'latest'/,
+            "the latest test no longer asks for a width");
+        assert.match(statistics, /wide=\{WIDE_PANELS\.includes\(expandedChart\)}/);
+
+        const modal = read("common/components/ChartModal/ChartModal.jsx");
+        assert.match(modal, /wide \? ' modal-wide' : ''/, "the modal ignores the wide prop");
+    });
+});
+
+/**
+ * The result link used to own a row of its own for one short link. In a grid
+ * where every row costs a full line across three columns, it belongs under the
+ * provider that produced it - the way the server's host sits under the server.
+ */
+describe("the provider's result link", () => {
+    it("hangs under the provider's name rather than in a row of its own", () => {
+        // The provider fact itself, up to the tag that closes it - a character
+        // budget would only be measuring how long the comment inside it is.
+        const providerFact = pane.match(/measured_with[\s\S]*?<\/DetailFact>/);
+
+        assert.notEqual(providerFact, null, "the pane no longer names the provider");
+        assert.match(providerFact[0], /ResultLink/,
+            "the result link is not inside the provider fact");
+    });
+
+    // A row recorded before the provider column has a result id and no provider
+    // to hang it under, and losing the link outright would be worse than the row
+    // it used to cost.
+    it("keeps its own row on a test that cannot name its provider", () => {
+        assert.match(pane, /test\.resultId && !providerName\(test\.provider\)/,
+            "a row with no provider has nowhere left to show its result link");
+    });
 });

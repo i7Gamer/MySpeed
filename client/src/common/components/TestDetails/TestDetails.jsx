@@ -66,6 +66,21 @@ const DetailMetric = ({icon, label, value, unit, level, percent, targetLabel, ch
     );
 };
 
+/**
+ * The link to the provider's own result page.
+ *
+ * Its own component because it now appears in two places: under the provider's
+ * name where one is known, and as a fact of its own on the rows that predate the
+ * provider column and have nothing to hang it under.
+ */
+const ResultLink = ({resultId}) => (
+    <a href={RESULT_URL + resultId} target="_blank" rel="noreferrer"
+       onClick={(event) => event.stopPropagation()}>
+        {t("test.details.open_result")}
+        <FontAwesomeIcon icon={faUpRightFromSquare} className="detail-link-icon"/>
+    </a>
+);
+
 const DetailFact = ({label, children}) => (
     <div className="detail-fact">
         <span className="detail-fact-label">{label}</span>
@@ -205,6 +220,16 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                         {providerName(test.provider) && (
                             <DetailFact label={t("test.details.measured_with")}>
                                 {providerName(test.provider)}
+                                {/* The provider's own result page hangs under
+                                    its name, the way the server's host hangs
+                                    under the server's. It had a row to itself
+                                    for one short link, and a row in this grid
+                                    costs as much as a paragraph. */}
+                                {test.resultId && (
+                                    <span className="detail-secondary">
+                                        <ResultLink resultId={test.resultId}/>
+                                    </span>
+                                )}
                             </DetailFact>
                         )}
 
@@ -336,13 +361,14 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                             </DetailFact>
                         )}
 
-                        {test.resultId && (
+                        {/* Only for a row that cannot name its provider - every
+                            test recorded before that column existed. The link
+                            belongs under the provider's name, but those rows
+                            have no such fact to hang it under, and losing the
+                            link is worse than keeping the row it used to own. */}
+                        {test.resultId && !providerName(test.provider) && (
                             <DetailFact label={t("test.details.result")}>
-                                <a href={RESULT_URL + test.resultId} target="_blank" rel="noreferrer"
-                                   onClick={(event) => event.stopPropagation()}>
-                                    {t("test.details.open_result")}
-                                    <FontAwesomeIcon icon={faUpRightFromSquare} className="detail-link-icon"/>
-                                </a>
+                                <ResultLink resultId={test.resultId}/>
                             </DetailFact>
                         )}
                     </div>

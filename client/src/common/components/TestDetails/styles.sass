@@ -4,6 +4,18 @@
 // one page and inside the chart modal on the other, and each of those already
 // owns its border, padding and background.
 
+// It does claim the width, though. Everything below is an auto-fit grid, which
+// needs a definite width before it will lay out in more than one column - and
+// the statistics drop the pane into `.stats-content`, a flex row, where a block
+// child is a flex item that shrinks to its content instead. Content that is
+// itself waiting to be told how wide it is, so the whole record collapsed into a
+// single 13rem column. min-width: 0 because a flex item otherwise refuses to go
+// below its content's minimum, which is what makes a long hostname push the
+// pane wider than the dialog.
+.test-details
+  flex: 1 1 auto
+  min-width: 0
+
 .detail-metrics
   display: grid
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr))

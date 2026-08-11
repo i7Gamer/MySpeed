@@ -55,13 +55,22 @@ $modal-breakpoint-tall: 900px
   animation: scaleIn 0.25s ease-out
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3)
 
-  &.modal-chart
+  // A panel built out of responsive grids needs a definite width as much as a
+  // plot does, and unlike a plot it cannot fall back on an intrinsic size: under
+  // `fit-content` its auto-fit tracks have no width to fit into, so every grid
+  // collapses to a single column, and that narrow content is what the dialog
+  // then sizes itself to. The result fed back on itself - the latest test's
+  // whole record sat in one 400px column on a 2560px display, at its min-width,
+  // identical at every viewport.
+  &.modal-chart,
+  &.modal-wide
     width: min(100%, calc(100vw - #{$modal-gutter}))
 
   @media screen and (min-width: $modal-breakpoint-wide)
     max-width: min(#{$modal-max-width-wide}, calc(100vw - #{$modal-gutter-wide}))
 
-    &.modal-chart
+    &.modal-chart,
+    &.modal-wide
       width: min(100%, calc(100vw - #{$modal-gutter-wide}))
 
   @media screen and (min-width: $modal-breakpoint-ultrawide)
