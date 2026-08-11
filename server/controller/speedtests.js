@@ -304,7 +304,11 @@ export const listStatistics = async (range, options = {}) => {
         dateRange: {
             from: covered.from.toISOString(),
             to: covered.to.toISOString(),
-            days: Math.max(1, Math.ceil((covered.to - covered.from) / MS_PER_DAY))
+            // A parsed range counted its own calendar days, which no daylight
+            // saving change inside it can move; the ceiling of the span is only
+            // right for the all-time extent, whose bounds are two real test
+            // instants rather than two midnights.
+            days: covered.days ?? Math.max(1, Math.ceil((covered.to - covered.from) / MS_PER_DAY))
         }
     };
 };

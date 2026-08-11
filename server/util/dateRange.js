@@ -112,10 +112,30 @@ export const parseDateRange = (from, to, {offsetMinutes, zone} = {}) => {
 
     if (start > end) return invalid("The 'from' date must be before the 'to' date");
 
-    if ((end - start) / MS_PER_DAY > MAX_RANGE_DAYS)
+    /**
+     * Counted in calendar days, not in milliseconds.
+     *
+     * Anchoring each bound at its own offset means the span between them is no
+     * longer a whole number of days - a window whose ends sit at different
+     * offsets measures an hour more or less. Measured in milliseconds that hour
+     * pushed the client's all-time stand-in window, which is deliberately
+     * exactly MAX_RANGE_DAYS wide, over the limit: every all-time export was
+     * refused for roughly a third of the year in any zone that has ever
+     * shifted. The same hour ceiled the echoed day count to one too many for a
+     * range crossing a fall-back, so the overview divided its total by eight
+     * days under a heading naming seven.
+     *
+     * Both are questions about the calendar rather than about elapsed time, and
+     * no offset can move the answer.
+     */
+    const days = Math.round((Date.UTC(toParts.year, toParts.month - 1, toParts.day)
+        - Date.UTC(fromParts.year, fromParts.month - 1, fromParts.day)) / MS_PER_DAY) + 1;
+
+    if (days > MAX_RANGE_DAYS)
         return invalid(`The range must not span more than ${MAX_RANGE_DAYS} days`);
 
     // The zone travels with the range: previousRange has to anchor its window
-    // the same way, and the statistics bucket by the same clock.
-    return {valid: true, from: start, to: end, zone: resolved.zone};
+    // the same way, and the statistics bucket by the same clock. So does the
+    // day count, which the statistics echo for the client to divide by.
+    return {valid: true, from: start, to: end, zone: resolved.zone, days};
 };

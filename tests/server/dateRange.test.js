@@ -175,5 +175,74 @@ describe("parseDateRange", () => {
 
             assert.equal(from.toISOString(), "2026-08-06T22:00:00.000Z");
         });
+
+        /**
+         * Anchoring each bound at its own offset means the span between them is
+         * no longer a whole number of days: a window whose ends sit at different
+         * offsets measures an hour more or less.
+         *
+         * The ceiling was compared in milliseconds, so that hour pushed the
+         * client's all-time stand-in window - which is deliberately exactly
+         * MAX_RANGE_DAYS calendar days wide - over the limit. Every all-time
+         * export was refused with "The range must not span more than 10000
+         * days" for roughly a third of the year, in any zone whose offset has
+         * changed at any point in the window.
+         *
+         * Counted in calendar days now, which is what the limit was always
+         * about and what no offset can move.
+         */
+        describe("the span limit", () => {
+            const berlin = () => ({ zone: zoneFor("Europe/Berlin") });
+
+            // Exactly what resolveAllTime() builds: 10000 days counting both ends.
+            it("accepts a window of exactly the maximum span", () => {
+                assert.equal(parseDateRange("1998-08-17", "2026-01-01", berlin()).valid, true);
+                assert.equal(parseDateRange("1998-10-12", "2026-02-26", berlin()).valid, true);
+            });
+
+            it("still refuses one day more", () => {
+                const result = parseDateRange("1998-08-16", "2026-01-01", berlin());
+
+                assert.equal(result.valid, false);
+                assert.match(result.message, /10000 days/);
+            });
+
+            it("measures it the same however the offsets fall", () => {
+                for (const tz of ["Europe/Berlin", "America/New_York", "America/Sao_Paulo", "Asia/Tokyo"])
+                    assert.equal(parseDateRange("1998-08-17", "2026-01-01", { zone: zoneFor(tz) }).valid, true, tz);
+            });
+        });
+
+        /**
+         * The same arithmetic, the other way round: the statistics echo the
+         * window's length so the client can divide by it, and that was computed
+         * by taking the ceiling of the span in milliseconds. A range crossing a
+         * fall-back measures N days plus 59:59.999 and ceiled to N+1, so a
+         * "Last 7 days" selection reported its density over eight.
+         */
+        describe("the day count it carries", () => {
+            const daysFor = (from, to, tz = "Europe/Berlin") =>
+                parseDateRange(from, to, { zone: zoneFor(tz) }).days;
+
+            it("counts both of its own days", () => {
+                assert.equal(daysFor("2026-08-01", "2026-08-07"), 7);
+                assert.equal(daysFor("2026-08-07", "2026-08-07"), 1);
+            });
+
+            it("is unmoved by a fall-back inside the range", () => {
+                assert.equal(daysFor("2026-10-19", "2026-10-25"), 7);
+                assert.equal(daysFor("2026-10-25", "2026-10-25"), 1);
+                assert.equal(daysFor("2026-10-01", "2026-10-30"), 30);
+            });
+
+            it("is unmoved by a spring-forward inside the range", () => {
+                assert.equal(daysFor("2026-03-23", "2026-03-29"), 7);
+                assert.equal(daysFor("2026-03-29", "2026-03-29"), 1);
+            });
+
+            it("counts a whole year as its calendar days", () => {
+                assert.equal(daysFor("2025-11-01", "2026-10-31"), 365);
+            });
+        });
     });
 });

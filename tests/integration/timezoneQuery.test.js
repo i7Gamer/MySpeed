@@ -88,6 +88,58 @@ describe("the timezone parameters", () => {
         });
     });
 
+    /**
+     * All time is the default state of both pages, and the export endpoint has
+     * no `range=all` escape hatch - the client sends a stand-in window of
+     * exactly the widest span the server accepts. Once each bound was anchored
+     * at its own offset that window measured an hour over the limit, so the
+     * export was refused outright with "The range must not span more than 10000
+     * days" for roughly a third of the year in any zone that has ever shifted.
+     */
+    describe("the all-time stand-in window", () => {
+        // Exactly what resolveAllTime() builds: 10000 days counting both ends.
+        const STAND_IN = "from=1998-08-17&to=2026-01-01";
+
+        it("exports rather than refusing the range", async () => {
+            const {status} = await api(server.baseUrl,
+                `/speedtests/export?${STAND_IN}&tz=Europe/Berlin&format=json`);
+
+            assert.equal(status, 200);
+        });
+
+        it("does so in every zone", async () => {
+            for (const tz of ["Europe/Berlin", "America/New_York", "America/Sao_Paulo", "Asia/Tokyo"])
+                assert.equal((await api(server.baseUrl,
+                    `/speedtests/export?${STAND_IN}&tz=${tz}&format=json`)).status, 200, tz);
+        });
+
+        it("still refuses a window wider than the limit", async () => {
+            const {status} = await api(server.baseUrl,
+                "/speedtests/export?from=1998-08-16&to=2026-01-01&tz=Europe/Berlin&format=json");
+
+            assert.equal(status, 400);
+        });
+    });
+
+    /**
+     * The window's length travels with its bounds so the client can divide by
+     * it. Taken as the ceiling of the span in milliseconds, a range crossing a
+     * fall-back came out one too high - the overview then reported its density
+     * "over 8 days" under a heading naming seven.
+     */
+    describe("the day count it echoes", () => {
+        const daysFor = async (query) => (await statistics(query)).body.dateRange.days;
+
+        it("counts the days a fall-back range actually covers", async () => {
+            assert.equal(await daysFor("from=2026-10-19&to=2026-10-25&tz=Europe/Berlin"), 7);
+            assert.equal(await daysFor("from=2026-10-25&to=2026-10-25&tz=Europe/Berlin"), 1);
+        });
+
+        it("counts an ordinary range the same as before", async () => {
+            assert.equal(await daysFor("from=2026-08-01&to=2026-08-07&tz=Europe/Berlin"), 7);
+        });
+    });
+
     describe("the other endpoints that take a range", () => {
         it("bounds the list by the zone", async () => {
             const {status, body} = await api(server.baseUrl,
