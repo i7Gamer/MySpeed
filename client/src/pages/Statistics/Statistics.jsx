@@ -15,6 +15,7 @@ import {useEffect, useState, useCallback, useContext, useMemo, startTransition, 
 import {useSearchParams} from "react-router-dom";
 import {jsonRequest} from "@/common/utils/RequestUtil";
 import {PreferencesContext} from "@/common/contexts/Preferences";
+import {ConfigContext} from "@/common/contexts/Config";
 import {
     DEFAULT_TIMEFRAME,
     TIMEFRAME_ALL,
@@ -147,6 +148,10 @@ export const Statistics = () => {
 
     const [searchParams, setSearchParams] = useSearchParams();
     const [preferences, updatePreferences] = useContext(PreferencesContext);
+    // The configured optima, which the value cards measure their averages
+    // against. Absent until the config has loaded, and unset on an instance
+    // nobody has told what it pays for - both render as no percentage.
+    const [config] = useContext(ConfigContext);
 
     // The URL is the source of truth so a view stays bookmarkable and shareable;
     // the stored preference only supplies the default when the URL says nothing.
@@ -373,9 +378,9 @@ export const Statistics = () => {
             case 'hourly':
                 return <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages}/>;
             case 'avgDownload':
-                return <AverageChart title={t("statistics.values.down")} data={deferredStatistics.download} previous={previous?.download}/>;
+                return <AverageChart title={t("statistics.values.down")} data={deferredStatistics.download} previous={previous?.download} target={config?.download}/>;
             case 'avgUpload':
-                return <AverageChart title={t("statistics.values.up")} data={deferredStatistics.upload} previous={previous?.upload}/>;
+                return <AverageChart title={t("statistics.values.up")} data={deferredStatistics.upload} previous={previous?.upload} target={config?.upload}/>;
             default:
                 return null;
         }
@@ -426,8 +431,8 @@ export const Statistics = () => {
 
             <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages} onClick={() => setExpandedChart('hourly')}/>
 
-            <AverageChart title={t("statistics.values.down")} data={deferredStatistics.download} previous={previous?.download} onClick={() => setExpandedChart('avgDownload')}/>
-            <AverageChart title={t("statistics.values.up")} data={deferredStatistics.upload} previous={previous?.upload} onClick={() => setExpandedChart('avgUpload')}/>
+            <AverageChart title={t("statistics.values.down")} data={deferredStatistics.download} previous={previous?.download} target={config?.download} onClick={() => setExpandedChart('avgDownload')}/>
+            <AverageChart title={t("statistics.values.up")} data={deferredStatistics.upload} previous={previous?.upload} target={config?.upload} onClick={() => setExpandedChart('avgUpload')}/>
 
             <ChartModal
                 isOpen={!!expandedChart}
