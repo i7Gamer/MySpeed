@@ -15,6 +15,18 @@ $modal-max-width-ultrawide: 2240px
 $modal-breakpoint-wide: 1600px
 $modal-breakpoint-ultrawide: 2100px
 
+// Where the opened overview has room for its items in two columns rather than
+// one tall stack: 2 x 32rem of track, a 3rem gap, the body's padding and the
+// dialog's gutter, with a little slack.
+$modal-breakpoint-two-column: 1200px
+
+// What one of the overview's rows needs to stay on one line. Measured from the
+// single-column layout, where the widest of them - a description reading
+// "Average latency, between 4 ms and 38 ms" beside its value - settled at just
+// over 500px. Narrower tracks buy the second column by wrapping every long
+// description and breaking "11 ms" across two lines.
+$overview-column: 32rem
+
 // Height follows the viewport separately from width: a tall 16:10 display has
 // room for a much deeper plot than the 500px the single tier allowed.
 $modal-breakpoint-tall: 900px
@@ -170,9 +182,26 @@ $modal-breakpoint-tall: 900px
         .consistency-detail
           font-size: 0.95rem
 
+  // Eight items, each a single line, stacked into a column taller than most
+  // screens. Two columns halve that without crowding either one.
+  //
+  // The tracks are given a definite maximum rather than a share of the width:
+  // the dialog is shrink-to-fit, so `1fr` would have nothing to take a fraction
+  // of, and a track that grows without limit puts a hand's width between each
+  // label and its value on a wide display.
   .overview-items
-    gap: 1.5rem
-        
+    display: grid
+    grid-template-columns: minmax(0, #{$overview-column})
+    width: auto
+    gap: 1.5rem 3rem
+
+    // Two columns only where two fit at their full width. Below the threshold
+    // the second column would be bought by squeezing both - wrapped
+    // descriptions and a value broken across two lines - which is worse than
+    // the tall single column it replaces.
+    @media screen and (min-width: $modal-breakpoint-two-column)
+      grid-template-columns: repeat(2, minmax(0, #{$overview-column}))
+
     .overview-item
       .info-area
         svg

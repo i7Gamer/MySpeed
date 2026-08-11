@@ -168,6 +168,40 @@ describe("the chart modal", () => {
         assert.match(wide[1], /width:\s*min\(/, ".modal-wide sets no definite width");
     });
 
+    /**
+     * Eight rows in one column made the opened overview taller than most
+     * screens, each row being a single line. Two columns halve it - but only
+     * where two fit at their full width. Bought by squeezing, the second column
+     * wraps every description and breaks "11 ms" across two lines, which is
+     * worse than the tall column it replaced.
+     */
+    describe("the opened overview's two columns", () => {
+        const TWO_COLUMNS = /grid-template-columns:\s*repeat\(2,/;
+
+        it("is one column before any width is known", () => {
+            const base = compiled.match(/\.chart-modal-body \.overview-items \{([^}]*)}/);
+
+            assert.notEqual(base, null, "the modal no longer lays the overview out");
+            assert.match(base[1], /display:\s*grid/);
+            assert.doesNotMatch(base[1], TWO_COLUMNS, "the second column is not gated on width at all");
+        });
+
+        it("takes the second column only above a width that fits both", () => {
+            const at = compiled.search(TWO_COLUMNS);
+            assert.notEqual(at, -1, "the overview never reaches two columns");
+
+            // The media query the rule sits in, i.e. the nearest one opened
+            // before it.
+            const queries = [...compiled.slice(0, at).matchAll(/@media([^{]*)\{/g)];
+            const gate = queries.at(-1)?.[1] ?? "";
+
+            const minWidth = gate.match(/min-width:\s*(\d+)px/);
+            assert.notEqual(minWidth, null, `two columns are gated on "${gate.trim()}", not a minimum width`);
+            assert.ok(Number(minWidth[1]) >= 1200,
+                `gated at ${minWidth[1]}px, which is narrower than two full columns plus the dialog's own chrome`);
+        });
+    });
+
     it("is asked for by the panel that needs it", () => {
         assert.match(statistics, /const WIDE_PANELS = \[[^\]]*'latest'/,
             "the latest test no longer asks for a width");
