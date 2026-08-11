@@ -36,9 +36,13 @@ export const ProviderDialog = ({open, onClose}) => {
     const [acceptedOokla, setAcceptedOokla] = useState(false);
 
     useSyncOnOpen(open, () => {
-        setProvider(config.provider || "ookla");
+        const stored = config.provider || "ookla";
+
+        setProvider(stored);
         setCurrentInterface(config.interface || "none");
         setAcceptedOokla(config.provider === "ookla");
+        setServerId(config[stored + "Id"] || "none");
+        setLibreUrl(config.libreUrl || "none");
     });
 
     useEffect(() => {
@@ -48,10 +52,22 @@ export const ProviderDialog = ({open, onClose}) => {
         jsonRequest("/info/interfaces").then(setInterfaces).catch(() => setInterfaces([]));
     }, [open]);
 
+    /**
+     * Switching provider inside the dialog re-reads that provider's stored
+     * server. Keyed on the provider alone.
+     *
+     * With `config` in the list too, the only thing that reset these fields was
+     * a config reload - which happens on save. So an edit the operator
+     * abandoned by closing the dialog survived, was shown on reopen as though
+     * it were what is stored, and was then written by the next unrelated save,
+     * because it differed from the config. It went both ways: an abandoned
+     * "choose automatically" overwrote a stored server id just as readily.
+     */
     useEffect(() => {
-        if (config[provider + "Id"]) setServerId(config[provider + "Id"]);
-        if (config.libreUrl) setLibreUrl(config.libreUrl);
-    }, [provider, config]);
+        if (!open) return;
+
+        setServerId(config[provider + "Id"] || "none");
+    }, [provider]);
 
     useEffect(() => {
         if (serverId === "") setServerId("none");

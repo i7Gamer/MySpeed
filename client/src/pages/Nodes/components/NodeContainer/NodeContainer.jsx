@@ -59,7 +59,16 @@ export const NodeContainer = (node) => {
 
         if (config.viewMode) return setNodeError("PASSWORD_CHANGED");
 
-        if (tests[0] === undefined) return setNodeData({pending: true});
+        // Cleared before the early return, not after it. Every healthy branch
+        // of the card is gated on !nodeError, so a node that recovered but had
+        // not recorded a test yet kept whatever error the last poll set - on
+        // every poll, forever. The card stayed red and switchNode refused to
+        // navigate; for PASSWORD_CHANGED it re-prompted for a password that
+        // was already correct.
+        if (tests[0] === undefined) {
+            setNodeError(undefined);
+            return setNodeData({pending: true});
+        }
 
         setNodeError(undefined);
         setNodeData({

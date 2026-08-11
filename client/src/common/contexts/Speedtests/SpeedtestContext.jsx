@@ -27,6 +27,9 @@ export const SpeedtestProvider = (props) => {
     // newest test - it asked for pages the list had already shown.
     const [cursor, setCursor] = useState(null);
     const loadingRef = useRef(false);
+    // Bumped by every fresh query, so a response for one the user has moved on
+    // from can tell that it is no longer wanted. See loadInitialTests.
+    const requestGeneration = useRef(0);
     const lastLoadTimeRef = useRef(0);
     const [status] = useContext(StatusContext);
     const [, , currentNode] = useContext(NodeContext);
@@ -78,13 +81,32 @@ export const SpeedtestProvider = (props) => {
         setSearchParams(rangeToParams(timeframeFromRange(from, to), from, to), {replace: true});
     }, [setSearchParams]);
 
+    /**
+     * Loads the first page of whatever query is now selected.
+     *
+     * A newer request supersedes an older one rather than being dropped. This
+     * used to open with `if (loadingRef.current) return;` - a ref shared with
+     * loadMoreTests - so clicking a range preset while any fetch was in flight
+     * discarded the new query outright, with nothing to retry it. The response
+     * already on its way then wrote the *old* query's rows into state and left
+     * the cursor pointing into that result set, so the list went on mixing two
+     * queries: a refresh prepended correctly-in-range rows on top of
+     * out-of-range ones, and paging walked the wrong history.
+     *
+     * The counter is what makes that safe. Only the newest request is allowed
+     * to settle; an earlier one returns without touching state, including its
+     * loading flag, which the newer request still owns.
+     */
     const loadInitialTests = useCallback(async () => {
-        if (loadingRef.current) return;
+        const generation = ++requestGeneration.current;
+        const superseded = () => generation !== requestGeneration.current;
 
         loadingRef.current = true;
         setLoading(true);
         try {
             const tests = await jsonRequest(`/speedtests?${listQuery()}`);
+            if (superseded()) return;
+
             setSpeedtests(tests);
             if (tests.length > 0) {
                 setCursor(cursorOf(tests));
@@ -94,13 +116,17 @@ export const SpeedtestProvider = (props) => {
                 setHasMore(false);
             }
         } catch (error) {
+            if (superseded()) return;
+
             console.error("Failed to load initial tests:", error);
             setSpeedtests([]);
             setCursor(null);
             setHasMore(false);
         } finally {
-            setLoading(false);
-            loadingRef.current = false;
+            if (!superseded()) {
+                setLoading(false);
+                loadingRef.current = false;
+            }
         }
     }, [listQuery]);
 
@@ -118,12 +144,19 @@ export const SpeedtestProvider = (props) => {
         const now = Date.now();
         if (loadingRef.current || !hasMore || !cursor || (now - lastLoadTimeRef.current) < 500) return;
 
+        // Read, not bumped: a page is more of the query already being shown,
+        // not a new one. If the range changes while it is in flight the page
+        // belongs to a list that no longer exists and must not be merged in.
+        const generation = requestGeneration.current;
+
         lastLoadTimeRef.current = now;
         loadingRef.current = true;
         setLoading(true);
         try {
             const fetched = await jsonRequest(
                 `/speedtests?${listQuery({after: cursor.created, afterId: cursor.id})}`);
+            if (generation !== requestGeneration.current) return;
+
             if (fetched.length > 0) {
                 setSpeedtests(prev => applyPage(prev, fetched, PAGE_SIZE).tests);
                 setCursor(cursorOf(fetched));
@@ -132,14 +165,20 @@ export const SpeedtestProvider = (props) => {
                 setHasMore(false);
             }
         } catch (error) {
+            if (generation !== requestGeneration.current) return;
+
             console.error("Failed to load more tests:", error);
             setHasMore(false);
             setTimeout(() => {
                 if (cursor) setHasMore(true);
             }, 3000);
         } finally {
-            setLoading(false);
-            loadingRef.current = false;
+            // A fresh query took the flags over while this page was in flight,
+            // and clearing them here would stop its spinner on its behalf.
+            if (generation === requestGeneration.current) {
+                setLoading(false);
+                loadingRef.current = false;
+            }
         }
     }, [hasMore, cursor, listQuery]);
 

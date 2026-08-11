@@ -309,7 +309,14 @@ export const Statistics = () => {
     // The request failing used to leave `statistics` null with loading false,
     // which fell through to the empty fragment below: the page went completely
     // blank, with no message and nothing to click.
-    if (loadError && !deferredStatistics) {
+    //
+    // Not gated on the statistics being absent any more. That gate made this
+    // branch unreachable once anything had loaded, so a later failure fell
+    // through and rendered the *previous* range's numbers under the new
+    // range's heading - and OverviewChart divides them by the new range's day
+    // count, so the heading and the density disagreed with nothing to say why.
+    // An ordinary request timeout was enough to get there.
+    if (loadError) {
         return (
             <div className="statistic-area">
                 {/* The toolbar works without the statistics, and a failed load
