@@ -64,6 +64,32 @@ describe("isKnownTimeZone", () => {
     });
 });
 
+/**
+ * The zone name arrives in the query string, and Intl accepts far more than the
+ * ~600 IANA names - offset zones like "+05:30" and "-1245" are a few thousand
+ * more values an anonymous caller can mint on an instance with no password.
+ * Each one built a formatter that was kept for the life of the process.
+ */
+describe("the formatter cache", () => {
+    it("keeps answering correctly however many zones it is asked about", () => {
+        const berlin = zoneOf({tz: BERLIN});
+        assert.equal(berlin.offsetAt(SUMMER), -120);
+
+        // Comfortably past any sane cache size.
+        for (let hour = 0; hour < 14; hour++)
+            for (let minute = 0; minute < 60; minute += 15)
+                zoneOf({tz: `+${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`});
+
+        assert.equal(berlin.offsetAt(SUMMER), -120, "an evicted zone must still resolve");
+        assert.equal(zoneOf({tz: BERLIN}).offsetAt(WINTER), -60);
+    });
+
+    it("resolves an offset zone the way it reads", () => {
+        assert.equal(zoneOf({tz: "+05:30"}).offsetAt(SUMMER), -330);
+        assert.equal(zoneOf({tz: "-04:00"}).offsetAt(WINTER), 240);
+    });
+});
+
 describe("utcFromLocal", () => {
     const berlin = () => zoneOf({tz: BERLIN});
 

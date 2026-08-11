@@ -28,17 +28,30 @@ const partFormat = {
     hour: "2-digit", minute: "2-digit", second: "2-digit"
 };
 
-// Building an Intl.DateTimeFormat is expensive and the statistics path resolves
-// an offset once per stored test.
+/**
+ * Building an Intl.DateTimeFormat is expensive and the statistics path resolves
+ * an offset once per stored test, so they are kept.
+ *
+ * Bounded, because the key comes from the query string. Beyond the ~600 IANA
+ * names, Intl also accepts offset zones - "+05:30", "-1245" - which is a few
+ * thousand more distinct values an anonymous caller can mint on an instance
+ * that has no password. One zone per viewer is the real working set; the cap is
+ * only here so the map cannot be filled from outside. Oldest out first, as the
+ * session map does.
+ */
+const MAX_CACHED_FORMATTERS = 64;
+
 const formatters = new Map();
 
 const formatterFor = (timeZone) => {
-    let formatter = formatters.get(timeZone);
+    const cached = formatters.get(timeZone);
+    if (cached !== undefined) return cached;
 
-    if (formatter === undefined) {
-        formatter = new Intl.DateTimeFormat("en-US", {timeZone, ...partFormat});
-        formatters.set(timeZone, formatter);
-    }
+    // Before the insert, so a name Intl refuses is never stored.
+    const formatter = new Intl.DateTimeFormat("en-US", {timeZone, ...partFormat});
+
+    if (formatters.size >= MAX_CACHED_FORMATTERS) formatters.delete(formatters.keys().next().value);
+    formatters.set(timeZone, formatter);
 
     return formatter;
 };
