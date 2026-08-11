@@ -7,7 +7,7 @@ import {NodeContext} from "@/common/contexts/Node";
 import {
     formatDateParam, rangeToParams, selectionFromParams, timeframeFromRange
 } from "@/common/utils/TimeframeUtil";
-import {mergeNewTests} from "./merge";
+import {applyRefresh, mergeNewTests} from "./merge";
 import {applyPage, cursorOf, removeTest} from "./paging";
 
 export const SpeedtestContext = createContext({});
@@ -144,22 +144,25 @@ export const SpeedtestProvider = (props) => {
     }, [hasMore, cursor, listQuery]);
 
     const refreshTests = useCallback(async () => {
-        const hasTests = speedtests.length > 0;
-
         try {
             const newTests = await jsonRequest(`/speedtests?${listQuery()}`);
-            if (newTests.length === 0) return;
+            const {tests, replaced} = applyRefresh(speedtests, newTests);
 
-            if (hasTests) {
-                // mergeNewTests decides what is actually new. Doing it by id here
-                // grew the list without bound on any instance restored from a
-                // backup - see the note in merge.js.
+            if (!replaced) {
+                // Still through an updater so a page load landing at the same
+                // moment is not clobbered. mergeNewTests only ever prepends, so
+                // re-running it against the newer snapshot gives the same answer
+                // applyRefresh just reached.
                 setSpeedtests(prev => mergeNewTests(prev, newTests));
-            } else {
-                setSpeedtests(newTests);
-                setCursor(cursorOf(newTests));
-                setHasMore(newTests.length === PAGE_SIZE);
+                return;
             }
+
+            // The list was swapped, not grown, so the cursor pointed into a
+            // result set that no longer exists - paging from it would walk a
+            // history the list is not showing.
+            setSpeedtests(tests);
+            setCursor(tests.length > 0 ? cursorOf(tests) : null);
+            setHasMore(tests.length === PAGE_SIZE);
         } catch (error) {
             console.error("Failed to refresh tests:", error);
         }
@@ -212,8 +215,12 @@ export const SpeedtestProvider = (props) => {
     }, [refreshTests]);
 
     return (
-        <SpeedtestContext.Provider value={{speedtests, updateTests, deleteTest, loadMoreTests, loading, hasMore,
-            timeframe, range, selectTimeframe, selectRange}}>
+        // reloadTests is for the actions that replace the history wholesale -
+        // clearing it, importing one. Those cannot be reconciled by a refresh
+        // of the newest page: an import appends *older* rows, which that page
+        // never sees, so the merge path reported success and showed nothing.
+        <SpeedtestContext.Provider value={{speedtests, updateTests, reloadTests: loadInitialTests, deleteTest,
+            loadMoreTests, loading, hasMore, timeframe, range, selectTimeframe, selectRange}}>
             {props.children}
         </SpeedtestContext.Provider>
     )

@@ -21,7 +21,11 @@ const matchPreset = (days) => RETENTION_PRESETS.find(p => p.days === days)?.id |
 
 export default ({tests, close}) => {
     const [deleteWarning, setDeleteWarning] = useState(false);
-    const {updateTests} = useContext(SpeedtestContext);
+    // Both actions below replace the history rather than add to it, so neither
+    // can be reconciled by a refresh of the newest page: an empty answer used
+    // to be read as "nothing to do", and an import appends older rows that page
+    // never sees. A full reload is the only honest answer to either.
+    const {reloadTests} = useContext(SpeedtestContext);
     const [config, reloadConfig] = useContext(ConfigContext);
     const updateToast = useContext(ToastNotificationContext);
 
@@ -85,7 +89,7 @@ export default ({tests, close}) => {
             setDeleteWarning(false);
             if (!res.ok) return updateToast(t("dropdown.changes_unsaved"), "red");
 
-            updateTests();
+            reloadTests();
             updateToast(t("storage.history_cleared"), "green", faTrashCan);
             close();
         }).catch(() => updateToast(t("dropdown.changes_unsaved"), "red"));
@@ -113,7 +117,7 @@ export default ({tests, close}) => {
         const res = await putRequest("/storage/tests/history", data).catch(() => null);
         if (res?.ok) {
             updateToast(t("storage.tests_imported"), "green", faFileImport);
-            updateTests();
+            reloadTests();
         } else {
             updateToast(t("storage.import_test_error"), "red");
         }

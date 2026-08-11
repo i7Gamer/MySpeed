@@ -29,3 +29,39 @@ export const mergeNewTests = (previous, incoming) => {
 
     return [...additions, ...previous];
 };
+
+/**
+ * What a refresh should do with the page it just fetched.
+ *
+ * The refresh asks the very same query the list was built from, so the answer
+ * is authoritative about what that query now returns - which is more than a
+ * handful of rows to prepend. Read as the latter, two things went wrong.
+ *
+ * An empty answer was taken as "nothing to do" and returned before touching
+ * state, so clearing the history reported success over a list still showing
+ * every row the server had just deleted - and deleting one of those ghosts then
+ * failed with a red toast.
+ *
+ * And a page that overlapped nothing was prepended anyway, landing a full page
+ * directly on top of a much older row. Everything between became unreachable:
+ * the cursor sits at the bottom of the list and only ever pages further back.
+ *
+ * `replaced` tells the caller the list was swapped rather than grown, which
+ * means the cursor it was holding pointed into a result set that is now gone.
+ */
+export const applyRefresh = (previous, incoming) => {
+    if (!Array.isArray(incoming)) return {tests: previous, replaced: false};
+
+    if (incoming.length === 0)
+        return previous.length === 0
+            ? {tests: previous, replaced: false}
+            : {tests: incoming, replaced: true};
+
+    // Sharing no row with what is on screen means this is not an addition to
+    // it. That covers a list emptied and refilled, an import that rewrote the
+    // history, and a gap too wide for one page to bridge.
+    const known = new Set(previous.map((test) => test.id));
+    if (!incoming.some((test) => known.has(test.id))) return {tests: incoming, replaced: true};
+
+    return {tests: mergeNewTests(previous, incoming), replaced: false};
+};
