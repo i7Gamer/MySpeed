@@ -161,7 +161,12 @@ app.get('/metrics', async (req, res) => {
         jitterGauge.set(labels, latest.jitter);
     downloadGauge.set(labels, latest.download);
     uploadGauge.set(labels, latest.upload);
-    currentServerGauge.set(latest.serverId);
+    // Defended the same way resolveServerLabels defends the same field:
+    // prom-client throws "Value is not a valid number" for null, and an
+    // imported row - PUT /storage/tests/history validates only ping, download,
+    // upload and time - can carry one. That took down the whole scrape for as
+    // long as the row stayed the newest.
+    currentServerGauge.set(latest.serverId ?? 0);
     serverInfoGauge.set(labels, 1);
 
     // Left unset rather than zeroed when the provider did not measure them: an

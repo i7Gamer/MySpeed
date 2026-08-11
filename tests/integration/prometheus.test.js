@@ -85,7 +85,10 @@ describe("GET /api/prometheus/metrics", () => {
  */
 describe("what the metrics endpoint reports", () => {
     const valueOf = (text, metric) => {
-        const line = text.split("\n").find((row) => row.startsWith(`${metric}{`) || row === metric);
+        // Three shapes: labelled, bare with a value, and bare on its own. The
+        // trailing space keeps myspeed_server from matching myspeed_server_info.
+        const line = text.split("\n").find((row) =>
+            row.startsWith(`${metric}{`) || row.startsWith(`${metric} `) || row === metric);
         return line === undefined ? null : parseFloat(line.slice(line.lastIndexOf(" ") + 1));
     };
 
@@ -134,6 +137,27 @@ describe("what the metrics endpoint reports", () => {
         assert.match(text, /myspeed_ping\{[^}]*server_name="Arcade Solutions AG"/);
         assert.match(text, /myspeed_ping\{[^}]*server_host="speedtest\.arcade\.ch"/);
         assert.equal(valueOf(text, "myspeed_server_info"), 1);
+    });
+
+    /**
+     * `currentServerGauge.set(latest.serverId)` passed the raw column value
+     * while resolveServerLabels, fifty lines above, already defended the same
+     * field with `?? 0`. prom-client 15 throws "Value is not a valid number"
+     * for null, which took the whole scrape down with it.
+     *
+     * Not reachable from a normal run - the task always writes a number or the
+     * default 0 - but PUT /api/storage/tests/history validates only ping,
+     * download, upload and time, so one imported row with a null serverId
+     * broke every scrape for as long as it stayed the newest.
+     */
+    it("scrapes a row whose server id was never recorded", async () => {
+        await seedLatest({serverId: null, serverName: null, serverHost: null});
+
+        const {status, text} = await metrics();
+
+        assert.equal(status, 200);
+        assert.equal(valueOf(text, "myspeed_server"), 0);
+        assert.equal(valueOf(text, "myspeed_ping"), 10);
     });
 
     // A failed test carries -1 in every column, and exporting that would put a
