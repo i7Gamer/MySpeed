@@ -109,17 +109,31 @@ export const resolveTimezone = ({tz, tzOffset} = {}) => {
 /**
  * The UTC instant at which a zone's wall clock reads the given local time.
  *
- * Two passes, because an offset can only be read *at* an instant and the only
- * instant to start from is the wall-clock reading treated as UTC - which is out
- * by the offset itself. That matters whenever the guess lands on the other side
- * of a daylight saving change from the answer, as it does for the midnight of
- * the day the clocks move.
+ * An offset can only be read *at* an instant, and the only instant to start
+ * from is the wall-clock reading treated as UTC - which is out by the offset
+ * itself. So each candidate is checked against its own offset rather than
+ * against the guess that produced it: reading the offset at the guess and
+ * trusting it put the midnight of a zone that moves its clocks at midnight an
+ * hour into the *previous* day, which swept an hour of its tests into the range.
+ *
+ * When neither candidate agrees with itself, the wall clock never read this at
+ * all - the hour was skipped. The later instant is the first one that did
+ * happen, which is what every date library answers for a time that never was.
  */
 export const utcFromLocal = (zone, {year, month, day, hour = 0, minute = 0, second = 0, ms = 0}) => {
     const local = Date.UTC(year, month - 1, day, hour, minute, second, ms);
-    const guess = local + zone.offsetAt(new Date(local)) * MS_PER_MINUTE;
 
-    return new Date(local + zone.offsetAt(new Date(guess)) * MS_PER_MINUTE);
+    const firstOffset = zone.offsetAt(new Date(local));
+    const first = local + firstOffset * MS_PER_MINUTE;
+    if (zone.offsetAt(new Date(first)) === firstOffset) return new Date(first);
+
+    // Ambiguous times - the hour a zone repeats when its clocks go back - settle
+    // here, on the first reading, which is the earlier of the two.
+    const alternateOffset = zone.offsetAt(new Date(first));
+    const alternate = local + alternateOffset * MS_PER_MINUTE;
+    if (zone.offsetAt(new Date(alternate)) === alternateOffset) return new Date(alternate);
+
+    return new Date(Math.max(first, alternate));
 };
 
 /** The hour of the day an instant falls in, on the zone's wall clock. */

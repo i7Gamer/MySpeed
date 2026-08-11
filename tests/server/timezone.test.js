@@ -101,6 +101,51 @@ describe("utcFromLocal", () => {
         assert.equal(instant.toISOString(), "2026-01-15T22:59:59.999Z");
     });
 
+    /**
+     * A handful of zones move their clocks at midnight rather than in the small
+     * hours - Chile, Egypt, Cuba, Paraguay - so on one day a year the local
+     * midnight a range is anchored to never happens.
+     *
+     * The two-pass resolution read the offset at its own guess without checking
+     * it against the answer, and for Santiago that landed an hour *before* the
+     * gap: the range began at 23:00 on the previous day and swept in an hour of
+     * tests belonging to it. Cairo happened to fall the other way. Both now skip
+     * the gap, which is what every date library does with a time that never was.
+     */
+    describe("a local midnight that never happened", () => {
+        const readsAs = (tz, instant) => new Intl.DateTimeFormat("en-US", {
+            timeZone: tz, hourCycle: "h23", dateStyle: "short", timeStyle: "medium"
+        }).format(instant);
+
+        it("moves forward past the gap in Santiago", () => {
+            // 00:00 became 01:00 on 8 September 2024.
+            const instant = utcFromLocal(zoneOf({tz: "America/Santiago"}), {year: 2024, month: 9, day: 8});
+
+            assert.equal(instant.toISOString(), "2024-09-08T04:00:00.000Z");
+            assert.match(readsAs("America/Santiago", instant), /9\/8\/24, 01:00:00/);
+        });
+
+        it("moves forward past the gap in Cairo", () => {
+            const instant = utcFromLocal(zoneOf({tz: "Africa/Cairo"}), {year: 2024, month: 4, day: 26});
+
+            assert.equal(instant.toISOString(), "2024-04-25T22:00:00.000Z");
+            assert.match(readsAs("Africa/Cairo", instant), /4\/26\/24, 01:00:00/);
+        });
+
+        // The failure that mattered: the bound must never fall on the day before
+        // the one that was asked for.
+        it("never lands on the previous day", () => {
+            for (const [tz, year, month, day] of [
+                ["America/Santiago", 2024, 9, 8], ["America/Santiago", 2025, 9, 7],
+                ["Africa/Cairo", 2025, 4, 25], ["America/Havana", 2025, 3, 9]
+            ]) {
+                const shown = readsAs(tz, utcFromLocal(zoneOf({tz}), {year, month, day}));
+
+                assert.match(shown, new RegExp(`^${month}/${day}/`), `${tz} ${year}-${month}-${day} -> ${shown}`);
+            }
+        });
+    });
+
     it("agrees with a fixed offset when one was supplied instead", () => {
         const instant = utcFromLocal(zoneOf({tzOffset: "-120"}), {year: 2026, month: 8, day: 7});
 
