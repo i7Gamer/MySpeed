@@ -54,21 +54,79 @@ describe("migrations", () => {
      * integrations were never told, and the running flag was left set, which
      * suppressed the keep-alive ping until a test finally succeeded.
      */
-    it("stores the CLI's error output in a column that can hold it", async () => {
-        const columns = await queryInterface.describeTable("speedtests");
+    /**
+     * The error column holds whatever the CLI printed to stderr, and Ookla logs
+     * one line per candidate server it could not reach - three of those already
+     * exceed 255 characters. MySQL in its default strict mode raises
+     * ER_DATA_TOO_LONG, and it does so from inside the failure handler, so the
+     * failed test was never recorded at all.
+     *
+     * sqlite ignores a declared length entirely, so what has to hold there is
+     * the behaviour rather than the type.
+     */
+    it("stores an error far longer than a VARCHAR would hold", async () => {
+        const message = "Error: [0] Cannot open socket to 2001:db8::1 port 8080\n".repeat(30);
 
-        assert.match(columns.error.type, /TEXT/i,
-            `speedtests.error is ${columns.error.type}, which truncates or rejects a real stderr dump`);
+        const stored = await server.tests.create({
+            ping: -1, download: -1, upload: -1, time: null, serverId: 0, type: "auto",
+            error: message, created: new Date().toISOString()
+        });
+
+        const read = await server.tests.findOne({where: {id: stored.id}});
+        assert.equal(read.error.length, message.length);
+
+        await server.tests.destroy({where: {id: stored.id}});
     });
 
-    // Sequelize implements changeColumn on sqlite by rebuilding the table, which
-    // drops every index defined on it. Widening the error column must not cost
-    // the index every read of this table depends on.
-    it("keeps the created index after the column was widened", async () => {
+    /**
+     * Sequelize implements changeColumn on sqlite by rebuilding the table from
+     * describeTable's output - and describeTable does not report autoIncrement.
+     * Widening the error column there therefore stripped AUTOINCREMENT off the
+     * primary key and took the created index with it.
+     *
+     * Without AUTOINCREMENT sqlite hands out max(rowid)+1, so deleting the
+     * newest test frees its id for the next one. The client's list is keyed on
+     * that id: a tab that still shows the deleted row would never see its
+     * replacement, and deleteOne resolves by id alone, so clicking delete on
+     * the ghost destroys the newer record.
+     */
+    it("keeps the primary key auto-incrementing", async () => {
+        if (server.db.getDialect() !== "sqlite") return;
+
+        const [{sql}] = await server.db.query(
+            "SELECT sql FROM sqlite_master WHERE name = 'speedtests'", {type: server.db.QueryTypes.SELECT});
+
+        assert.match(sql, /AUTOINCREMENT/i,
+            "a migration rebuilt the table and dropped AUTOINCREMENT from the primary key");
+    });
+
+    it("does not hand out an id it has already used", async () => {
+        const row = () => ({ping: 1, download: 1, upload: 1, time: 1, serverId: 0, type: "auto",
+            created: new Date().toISOString()});
+
+        const first = await server.tests.create(row());
+        await server.tests.destroy({where: {id: first.id}});
+        const second = await server.tests.create(row());
+
+        assert.notEqual(second.id, first.id, "the id of a deleted test was handed out again");
+
+        await server.tests.destroy({where: {id: second.id}});
+    });
+
+    // Every read of this table filters or sorts on `created`, so losing the
+    // index turns each one into a full scan.
+    it("keeps the created index", async () => {
         const indexes = await queryInterface.showIndex("speedtests");
 
         assert.ok(indexes.some((index) => index.name === "speedtests_created"),
-            "widening a column dropped the index on created");
+            "a migration dropped the index on created");
+    });
+
+    it("leaves no rebuild scaffolding behind", async () => {
+        const tables = await queryInterface.showAllTables();
+
+        assert.ok(!tables.some((name) => String(name).endsWith("_backup")),
+            `a table rebuild left its backup behind: ${tables.join(", ")}`);
     });
 
     /**
