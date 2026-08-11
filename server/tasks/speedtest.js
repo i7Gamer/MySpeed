@@ -105,8 +105,14 @@ export const run = async (retryAuto = false) => {
         ? speedTest(mode, undefined, undefined, updateProgress)
         : speedTest(mode, serverId, serverUrl, updateProgress));
 
+    // Recorded on the row, not written back into the configuration. Persisting
+    // it turned "choose automatically" into a pin the moment the first test
+    // finished: the dialog still offered the option, but selecting it lasted
+    // exactly one run, and nothing on screen said the server had been fixed.
+    // A pinned server that later degrades makes the line look slower with no
+    // explanation, and one that dies costs a full attempt - up to the CLI's
+    // three-minute timeout - before the run falls back to automatic.
     if (mode === "ookla" && speedtest.server) {
-        if (serverId === undefined) await config.updateValue("ooklaId", speedtest.server?.id);
         serverId = speedtest.server?.id;
     }
 
@@ -115,7 +121,6 @@ export const run = async (retryAuto = false) => {
             .filter(([, value]) => value === speedtest.server.name)[0];
 
         if (serverEntry) {
-            if (serverId === undefined) await config.updateValue("libreId", serverEntry[0]);
             serverId = parseInt(serverEntry[0]);
         }
     }
