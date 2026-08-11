@@ -38,7 +38,9 @@ export const StartTestButton = () => {
     // control that would only answer 401.
     if (blocked === START_BLOCKED_VIEW_MODE) return <></>;
 
-    const start = () => startSpeedtest({status, config, updateStatus, setRunning, updateTests, alert});
+    // Whether starting is allowed is decided here, where `disabled` is derived
+    // from the same snapshot - passing it on only invited the two to disagree.
+    const start = () => startSpeedtest({updateStatus, setRunning, updateTests, alert});
 
     return (
         <button className="start-test" onClick={start} disabled={blocked !== null}>

@@ -1,31 +1,23 @@
 import {t} from "i18next";
 import {postRequest} from "@/common/utils/RequestUtil";
-import {startBlockedReason, START_BLOCKED_PAUSED} from "@/common/utils/StatusUtil";
 
 /**
  * Starts a speedtest on behalf of whichever control asked for one.
  *
- * The header gauge and the status bar both offer this, and each used to carry
- * its own copy - which is how two controls for the same action end up disagreeing
- * about when it is allowed.
+ * The status is refreshed either side of the run - the poll backs off while
+ * nothing is running, so what the interface last heard can be several seconds
+ * stale by the time someone clicks, and the gauge has to catch up once the
+ * request is away.
  *
- * The status is refreshed first: the poll backs off while nothing is running, so
- * what the interface last heard can be several seconds stale by the time someone
- * clicks.
+ * There is deliberately no guard here on top of that. There used to be one, and
+ * it could never fire: it re-read the `status` it was handed, a render-time
+ * snapshot that the awaited refresh cannot change, and StartTestButton derives
+ * its own `disabled` from that same snapshot - so by the time this ran, the
+ * answer was already known to be "not blocked". The refusal that matters is the
+ * server's, which is read off the response below.
  */
-export const startSpeedtest = async ({status, config, updateStatus, setRunning, updateTests, alert}) => {
+export const startSpeedtest = async ({updateStatus, setRunning, updateTests, alert}) => {
     await updateStatus();
-
-    const blocked = startBlockedReason(status, config);
-
-    if (blocked === START_BLOCKED_PAUSED) {
-        alert.openAlert(t("failed"), t("header.paused"), {buttonText: t("dialog.okay")});
-        return;
-    }
-
-    // Already running, or not something this visitor may do - the server refuses
-    // either way, so there is nothing to say.
-    if (blocked !== null) return;
 
     setRunning(true);
 
