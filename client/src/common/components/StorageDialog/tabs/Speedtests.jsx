@@ -66,9 +66,15 @@ export default ({tests, close}) => {
     const saveRetention = async () => {
         if (!isRetentionValid) return;
         setSavingRetention(true);
-        const res = await patchRequest("/config/retentionDays", {value: String(currentRetentionDays)});
+        // patchRequest *rejects* on a dropped connection or its ten second
+        // abort rather than answering a non-ok response, and the rejection
+        // escaped a bare onClick - so the flag was never cleared and no toast
+        // appeared. The button sat disabled reading "Saving..." until the tab
+        // unmounted, while every sibling mutation here reported the failure.
+        const res = await patchRequest("/config/retentionDays",
+            {value: String(currentRetentionDays)}).catch(() => null);
         setSavingRetention(false);
-        if (res.ok) {
+        if (res?.ok) {
             updateToast(t("storage.retention_saved"), "green", faCheck);
             reloadConfig();
         } else {

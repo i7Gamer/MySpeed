@@ -103,3 +103,28 @@ describe("the storage tabs import and destroy with feedback", () => {
         });
     }
 });
+
+/**
+ * patchRequest *rejects* on a dropped connection or its ten second abort rather
+ * than answering a non-ok response, and the retention save had no catch at all
+ * - the rejection escaped a bare onClick, so setSavingRetention(false) never
+ * ran and no toast appeared. The button sat disabled reading "Saving..." until
+ * the tab unmounted, while every sibling mutation in the same file toasted.
+ */
+describe("a save that never answers still releases its button", () => {
+    const source = read("common/components/StorageDialog/tabs/Speedtests.jsx");
+    const save = source.slice(source.indexOf("const saveRetention"));
+    const body = save.slice(0, save.indexOf("\n    };"));
+
+    it("catches the rejected request", () => {
+        assert.match(body, /\.catch\(/, "a dropped connection wedges the button on \"Saving...\"");
+    });
+
+    it("clears the saving flag whatever happened", () => {
+        assert.match(body, /setSavingRetention\(false\)/);
+    });
+
+    it("reports the failure", () => {
+        assert.match(body, /changes_unsaved/);
+    });
+});
