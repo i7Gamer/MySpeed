@@ -59,7 +59,17 @@ export const triggerEvent = async (name, data) => {
         const active = await getActiveByName(module.module);
         for (const integration of active) {
             if (shouldThrottlePing(name, integration)) continue;
-            await module.callback(integration, data, (error = false) => triggerActivity(integration.id, error));
+
+            // Contained per integration. One throwing callback used to end the
+            // whole fan-out, so every integration registered after it missed
+            // the event with nothing said - and the throw could come from a
+            // stored value the validator should never have accepted.
+            try {
+                await module.callback(integration, data, (error = false) => triggerActivity(integration.id, error));
+            } catch (e) {
+                console.error(`Integration "${module.module}" failed to handle ${name}: ${e?.message ?? e}`);
+                await triggerActivity(integration.id, true).catch(() => undefined);
+            }
         }
     }
 }
@@ -188,6 +198,16 @@ export const validateInput = (module, data) => {
 
         if (data[field.name] !== undefined && data[field.name] !== null && data[field.name] !== "") {
             if (field.regex && !new RegExp(field.regex).test(data[field.name])) return false;
+
+            // Checked before the lengths, which read `.length`: `undefined >
+            // 250` is false, so a number, an object or an array sailed past
+            // them and was whitelisted into the stored data column. At send
+            // time replaceVariables calls message.replaceAll() on it and
+            // throws - the influxdb module already guarded against exactly
+            // this locally and named the hazard in a comment.
+            if ((field.type === "text" || field.type === "textarea")
+                && typeof data[field.name] !== "string") return false;
+
             if (field.type === "text" && data[field.name].length > 250) return false;
             if (field.type === "textarea" && data[field.name].length > 2000) return false;
             if (field.type === "boolean" && typeof data[field.name] !== "boolean") return false;

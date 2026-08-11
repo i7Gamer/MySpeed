@@ -165,6 +165,36 @@ describe("validateInput", () => {
         assert.equal(validateInput("telegram", telegram({send_finished: "yes"})), false);
     });
 
+    /**
+     * The length checks read `.length`, and `undefined > 250` is false - so a
+     * number, an object or an array sailed past them and was whitelisted into
+     * the stored data column. At send time replaceVariables calls
+     * `message.replaceAll(...)` on it and throws, which used to abort the whole
+     * fan-out, so every integration registered after it missed the event.
+     *
+     * The influxdb module already guarded against exactly this locally and
+     * named the hazard in a comment; the validator that let it in did not.
+     */
+    it("requires a text field to actually be a string", () => {
+        for (const value of [42, {}, [], true])
+            assert.equal(validateInput("telegram", telegram({error_message: value})), false,
+                `${JSON.stringify(value)} was accepted as a textarea value`);
+    });
+
+    // A text field with no declared pattern has nothing else standing in the
+    // way - the pattern check is what happened to catch the others.
+    it("requires a short text field to actually be a string", () => {
+        const influx = (overrides) => validateInput("influxdb", {
+            url: "https://influx.example", org: "myspeed", bucket: "speed", token: "abc", ...overrides
+        });
+
+        assert.notEqual(influx({}), false, "the baseline configuration must be accepted");
+
+        for (const value of [42, {}, [], true])
+            assert.equal(influx({org: value}), false,
+                `${JSON.stringify(value)} was accepted as a text value`);
+    });
+
     it("coerces a numeric field and holds it to its bounds", () => {
         const withinBounds = validateInput("webhook", {url: "https://hook.example", interval: "30"});
         assert.equal(withinBounds.interval, 30, "a numeric field should be stored as a number");
