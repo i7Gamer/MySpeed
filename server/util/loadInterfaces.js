@@ -4,6 +4,42 @@ import * as config from '../controller/config.js';
 
 export let interfaces = {};
 
+/**
+ * The interface map after a probing round.
+ *
+ * The map only ever grew. Nothing removed the key for an adapter that was no
+ * longer there, so a VPN that went down stayed in GET /api/info/interfaces,
+ * stayed accepted by updateValue("interface"), and - because the stale key made
+ * `if (!interfaces[current])` below false - defeated the very fallback that
+ * exists for this. Every scheduled test then went on binding to an address that
+ * was gone, and failed, until the process restarted.
+ *
+ * The prune is keyed on the adapter being absent from the operating system, not
+ * on this round's probe. A live interface whose Cloudflare probe happened to
+ * fail is still there, and dropping it would fire the one-way fallback and
+ * overwrite the operator's pinned choice for good.
+ *
+ * @param previous the map as it stands
+ * @param probed   {name: [address]} for the adapters that answered this round
+ * @param present  every adapter name the operating system reports
+ */
+export const resolveInterfaces = (previous, probed, present) => {
+    const next = {};
+
+    for (const name of Object.keys(previous))
+        if (present.includes(name)) next[name] = previous[name];
+
+    // This round's answer wins over the stored one. The fallback that picks an
+    // address used to read the stored map, so once an adapter had an IPv4
+    // address it could never be updated to an IPv6-only one - which is exactly
+    // what happens when a dual-stack interface loses its v4 lease.
+    for (const [name, addresses] of Object.entries(probed))
+        if (addresses.length > 0)
+            next[name] = addresses.find((address) => address.includes(".")) ?? addresses[0];
+
+    return next;
+};
+
 export const requestInterfaces = async () => {
     let interfacesNode = os.networkInterfaces();
     let interfacesResult = {};
@@ -40,16 +76,13 @@ export const requestInterfaces = async () => {
         if (!interfacesResult[i]) delete interfacesResult[i];
     }
 
-    for (let i in interfacesResult) {
-        for (let j in interfacesResult[i]) {
-            if (interfacesResult[i][j].includes(".")) {
-                interfaces[i] = interfacesResult[i][j];
-                break;
-            }
-        }
+    const resolved = resolveInterfaces(interfaces, interfacesResult, Object.keys(interfacesNode));
 
-        if (!interfaces[i]) interfaces[i] = interfacesResult[i][0];
-    }
+    // Mutated rather than reassigned: the exported binding is read through a
+    // namespace import in several places, and replacing the object would leave
+    // any of them that happened to hold it looking at the old map.
+    for (const name of Object.keys(interfaces)) delete interfaces[name];
+    Object.assign(interfaces, resolved);
 
     for (let i in interfaces) {
         console.log(`Found interface ${i} with IP ${interfaces[i]}`);
