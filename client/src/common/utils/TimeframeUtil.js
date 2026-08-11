@@ -178,12 +178,19 @@ export const serializeRange = (timeframe, from, to) => {
  * render as "Invalid Date".
  */
 export const shownRange = (dateRange, statistics, now = new Date()) => {
-    if (dateRange) return dateRange;
-
     const echoed = statistics?.dateRange;
+
+    // The length of that window travels with its bounds. The server counts it in
+    // whole days over the window it actually answered for, so a page that
+    // divides by it cannot disagree with the dates in the heading above.
+    // Absent from a node running a version that did not send it.
+    const days = typeof echoed?.days === "number" && Number.isFinite(echoed.days) ? {days: echoed.days} : {};
+
+    if (dateRange) return {...dateRange, ...days};
+
     if (!echoed?.from || !echoed?.to) return resolveAllTime(now);
 
-    return {from: new Date(echoed.from), to: new Date(echoed.to)};
+    return {from: new Date(echoed.from), to: new Date(echoed.to), ...days};
 };
 
 /**

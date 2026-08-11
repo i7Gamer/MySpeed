@@ -271,6 +271,37 @@ describe("GET /api/speedtests/statistics", () => {
         });
 
         /**
+         * The length of that window, beside its bounds. The aggregation used to
+         * count this too, and the echo was spread over the top of it one line
+         * later - so the figure was computed on every request and thrown away
+         * before the response was written, leaving the client to work it out
+         * again from the dates.
+         *
+         * Whole days over the window actually answered for: an all-time range
+         * on a young instance is the extent of its own tests, and a few hours
+         * of them is one day of testing rather than a fraction of one.
+         */
+        it("reports how many days that extent covers", async () => {
+            await seedTests(server.tests, [
+                at("2026-08-01T00:00:00.000Z"),
+                at("2026-08-07T23:00:00.000Z")
+            ]);
+
+            const {body} = await allTime();
+            assert.equal(body.dateRange.days, 7);
+        });
+
+        it("counts an extent shorter than a day as one", async () => {
+            await seedTests(server.tests, [
+                at("2026-08-07T09:00:00.000Z"),
+                at("2026-08-07T12:00:00.000Z")
+            ]);
+
+            const {body} = await allTime();
+            assert.equal(body.dateRange.days, 1);
+        });
+
+        /**
          * The regression this exists to prevent: bucketed over a stand-in window
          * of ten thousand days, six hours of testing lands in a single bucket and
          * the chart is one point wide.

@@ -22,17 +22,35 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const PER_DAY_DECIMALS = 1;
 
 /**
- * How densely the range was actually sampled.
+ * How many whole days the shown window covers.
  *
- * The server computes this window's length and the controller then replaces
- * `dateRange` with the window's bounds, so the day count never reaches the
- * client - it is taken back off the bounds here.
+ * The server counts this over the window it actually answered for and sends it
+ * with the bounds, so the divisor here and the dates in the heading above
+ * cannot describe different windows. Derived from the bounds only when it was
+ * not sent: a parent proxies this request to its nodes, and a node running an
+ * older version answers without it.
+ *
+ * Whole days, not the exact span. An all-time range on a young instance is the
+ * extent of its own tests, and three hours of them is one day of testing rather
+ * than an eighth of one - dividing by the fraction reports a rate nobody ran.
+ */
+const daysCovered = (dateRange) => {
+    if (typeof dateRange?.days === "number" && Number.isFinite(dateRange.days)) return dateRange.days;
+
+    const span = (new Date(dateRange?.to) - new Date(dateRange?.from)) / MS_PER_DAY;
+    if (!Number.isFinite(span) || span <= 0) return null;
+
+    return Math.max(1, Math.ceil(span));
+};
+
+/**
+ * How densely the range was actually sampled.
  */
 const testsPerDay = (total, dateRange) => {
-    const days = (new Date(dateRange.to) - new Date(dateRange.from)) / MS_PER_DAY;
-    if (!Number.isFinite(days) || days <= 0) return null;
+    const days = daysCovered(dateRange);
+    if (days === null || days <= 0) return null;
 
-    return {perDay: parseFloat((total / days).toFixed(PER_DAY_DECIMALS)), days: Math.max(1, Math.round(days))};
+    return {perDay: parseFloat((total / days).toFixed(PER_DAY_DECIMALS)), days};
 };
 
 /**

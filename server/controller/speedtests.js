@@ -296,10 +296,15 @@ export const listStatistics = async (range, options = {}) => {
     return {
         ...buildStatistics(entries, covered, options),
         ...(range && options.comparePrevious ? {previous: await previousSummary(range, options)} : {}),
+        // The window actually answered for, which the client names its headings
+        // after and measures its per-day figures against. Whole days rather than
+        // the exact span: an all-time range on a young instance is the extent of
+        // its tests, and three hours of them is one day of testing rather than
+        // an eighth of one - dividing by the fraction reports a rate nobody ran.
         dateRange: {
             from: covered.from.toISOString(),
             to: covered.to.toISOString(),
-            days: Math.ceil((covered.to - covered.from) / MS_PER_DAY)
+            days: Math.max(1, Math.ceil((covered.to - covered.from) / MS_PER_DAY))
         }
     };
 };

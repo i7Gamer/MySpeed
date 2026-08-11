@@ -367,10 +367,21 @@ describe("buildStatistics", () => {
         });
     });
 
+    /**
+     * The echo is listStatistics', because only it knows which window was
+     * covered: all time is answered over the extent of the tests rather than
+     * over the range asked for.
+     *
+     * This used to claim a dateRange of its own, holding a day count, and the
+     * controller spread its own over the top one line later - so the figure was
+     * computed on every statistics request and thrown away before the response
+     * was written. Anything put back here meets the same fate silently.
+     */
     describe("range echo", () => {
-        it("reports the day span of the range", () => {
+        it("leaves the echo to the caller rather than being overwritten", () => {
             const stats = buildStatistics([], range("2026-08-01T00:00:00.000Z", "2026-08-07T23:59:59.999Z"));
-            assert.equal(stats.dateRange.days, 7);
+
+            assert.equal(stats.dateRange, undefined);
         });
     });
 });

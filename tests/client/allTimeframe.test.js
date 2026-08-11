@@ -157,13 +157,14 @@ describe("selectionOf", () => {
  * echoes the extent of the tests themselves - the first to the last.
  */
 describe("shownRange", () => {
-    const payload = (from, to) => ({dateRange: {from, to}});
+    const payload = (from, to, days) => ({dateRange: {from, to, days}});
 
     it("is the selection itself when one is bounded", () => {
         const selected = {from: new Date(2026, 0, 1), to: new Date(2026, 0, 31)};
+        const range = shownRange(selected, payload("2020-01-01T00:00:00.000Z", "2026-08-07T00:00:00.000Z"), NOW);
 
-        assert.equal(shownRange(selected, payload("2020-01-01T00:00:00.000Z", "2026-08-07T00:00:00.000Z"), NOW),
-            selected);
+        assert.equal(range.from, selected.from);
+        assert.equal(range.to, selected.to);
     });
 
     it("is the extent the server echoed when the selection is all time", () => {
@@ -171,6 +172,36 @@ describe("shownRange", () => {
 
         assert.equal(range.from.toISOString(), "2025-03-04T10:00:00.000Z");
         assert.equal(range.to.toISOString(), "2026-08-07T09:00:00.000Z");
+    });
+
+    /**
+     * The window's length rides with its bounds, so a page dividing by it
+     * cannot disagree with the dates in the heading above. The server counts it
+     * over the window it actually answered for, which for all time is the
+     * extent of the tests and not the stand-in window that was sent.
+     */
+    describe("the day count", () => {
+        it("carries the count the server sent, for a bounded selection", () => {
+            const selected = {from: new Date(2026, 0, 1), to: new Date(2026, 0, 31)};
+
+            assert.equal(shownRange(selected, payload("2026-01-01", "2026-01-31", 31), NOW).days, 31);
+        });
+
+        it("carries it for all time too", () => {
+            assert.equal(shownRange(null, payload("2025-03-04T10:00:00.000Z", "2026-08-07T09:00:00.000Z", 522),
+                NOW).days, 522);
+        });
+
+        // A parent proxies this request to its nodes, and a node running an
+        // older version answers without it. Undefined is what the caller checks
+        // for; a zero or a NaN would be divided by.
+        it("is absent rather than wrong when the server sent none", () => {
+            for (const days of [undefined, null, NaN, Infinity, "7"]) {
+                const range = shownRange(null, payload("2025-03-04T10:00:00.000Z", "2026-08-07T09:00:00.000Z", days), NOW);
+
+                assert.equal(range.days, undefined, `days ${String(days)}`);
+            }
+        });
     });
 
     // A parent proxies these requests to its nodes, and a node running an older

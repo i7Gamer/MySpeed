@@ -42,7 +42,6 @@ const clampPoints = (value) => {
 
 const HOURS_PER_DAY = 24;
 const MS_PER_MINUTE = 60 * 1000;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const PERCENT = 100;
 const SPEED_DECIMALS = 2;
 
@@ -299,9 +298,12 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, maxPoints} 
         downsampled: entries.length > targetPoints,
         // Echoed so the client can tell "you are already seeing every test"
         // apart from "there is more detail available if you ask for it".
-        maxDataPoints: targetPoints,
-        dateRange: {
-            days: Math.ceil((to - from) / MS_PER_DAY)
-        }
+        maxDataPoints: targetPoints
+        // No dateRange: listStatistics owns the echo, because only it knows
+        // which window was covered - all time is answered over the extent of
+        // the tests rather than over the range asked for. This used to return a
+        // day count here as well, and the controller spread its own dateRange
+        // over the top one line later, so the figure was computed on every
+        // request and thrown away before the response was written.
     };
 };

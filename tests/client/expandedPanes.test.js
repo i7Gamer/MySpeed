@@ -63,17 +63,24 @@ describe("the overview pane", () => {
         assert.match(overview, /formatDuration\(props\.time\.min\)} – \$\{formatDuration\(props\.time\.max\)/);
     });
 
-    // The server computes the window's length and the controller then replaces
-    // dateRange with its bounds, so the day count never reaches the client.
-    it("takes the day count back off the range's bounds", () => {
-        assert.match(overview, /const testsPerDay = \(total, dateRange\)/);
-        assert.match(overview, /new Date\(dateRange\.to\) - new Date\(dateRange\.from\)/);
+    // The count the server sent for the window it actually answered for, so the
+    // divisor and the dates in the heading cannot describe different windows.
+    it("divides by the day count the server sent", () => {
+        assert.match(overview, /if \(typeof dateRange\?\.days === "number" && Number\.isFinite\(dateRange\.days\)\) return dateRange\.days/);
+    });
+
+    // A parent proxies this request to its nodes, and a node running an older
+    // version answers without the count.
+    it("falls back to the bounds when none was sent", () => {
+        assert.match(overview, /new Date\(dateRange\?\.to\) - new Date\(dateRange\?\.from\)/);
+        assert.match(overview, /Math\.max\(1, Math\.ceil\(span\)\)/);
     });
 
     // A range of zero width divides by zero, and all-time on a fresh instance
     // is exactly that.
     it("renders no density row rather than dividing by an empty range", () => {
-        assert.match(overview, /if \(!Number\.isFinite\(days\) \|\| days <= 0\) return null/);
+        assert.match(overview, /if \(!Number\.isFinite\(span\) \|\| span <= 0\) return null/);
+        assert.match(overview, /if \(days === null \|\| days <= 0\) return null/);
     });
 
     it("adds none of this to the card", () => {
