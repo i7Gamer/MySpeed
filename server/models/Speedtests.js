@@ -68,8 +68,13 @@ export default db.define("speedtests", {
         allowNull: true,
         defaultValue: null
     },
+    // TEXT, not STRING: this holds whatever the CLI printed to stderr, which
+    // routinely runs past the 255 characters a VARCHAR gives it. sqlite ignores
+    // the length, but MySQL in strict mode refused the insert - and it did so
+    // from inside the handler that records failed tests, so the failure was
+    // never stored at all.
     error: {
-        type: Sequelize.STRING,
+        type: Sequelize.TEXT,
         allowNull: true
     },
     type: {

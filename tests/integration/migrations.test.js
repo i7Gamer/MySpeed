@@ -23,6 +23,7 @@ describe("migrations", () => {
         assert.ok(names.includes("0004-index-speedtests-created.js"));
         assert.ok(names.includes("0005-add-quality-columns.js"));
         assert.ok(names.includes("0006-add-connection-identity-columns.js"));
+        assert.ok(names.includes("0007-widen-speedtest-error.js"));
     });
 
     it("creates the columns the model expects", async () => {
@@ -42,6 +43,32 @@ describe("migrations", () => {
 
         assert.ok(created, `no index on created, found: ${indexes.map((i) => i.name).join(", ")}`);
         assert.deepEqual(created.fields.map((field) => field.attribute), ["created"]);
+    });
+
+    /**
+     * The error column holds whatever the CLI printed to stderr, and Ookla logs
+     * one line per candidate server it could not reach - three of those already
+     * exceed 255 characters. sqlite ignores the declared length, but MySQL in
+     * its default strict mode raises ER_DATA_TOO_LONG, and it does so from
+     * inside the failure handler: the failed test was never recorded, the
+     * integrations were never told, and the running flag was left set, which
+     * suppressed the keep-alive ping until a test finally succeeded.
+     */
+    it("stores the CLI's error output in a column that can hold it", async () => {
+        const columns = await queryInterface.describeTable("speedtests");
+
+        assert.match(columns.error.type, /TEXT/i,
+            `speedtests.error is ${columns.error.type}, which truncates or rejects a real stderr dump`);
+    });
+
+    // Sequelize implements changeColumn on sqlite by rebuilding the table, which
+    // drops every index defined on it. Widening the error column must not cost
+    // the index every read of this table depends on.
+    it("keeps the created index after the column was widened", async () => {
+        const indexes = await queryInterface.showIndex("speedtests");
+
+        assert.ok(indexes.some((index) => index.name === "speedtests_created"),
+            "widening a column dropped the index on created");
     });
 
     /**

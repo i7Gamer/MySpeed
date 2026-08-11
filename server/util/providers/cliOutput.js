@@ -1,6 +1,32 @@
 const RATE_LIMIT_MESSAGE = "Too many requests. Please try again later";
 
 /**
+ * How much of a failing run's output is worth storing.
+ *
+ * The whole of stderr used to go into the database verbatim, and a run can
+ * spend its full three-minute timeout logging one line per candidate server it
+ * could not reach - three of those already exceed the 255 characters the column
+ * used to hold. MySQL in its default strict mode then refused the insert from
+ * inside the very handler that exists to record failures, so the failed test
+ * was never written, the integrations were never told, and the running flag was
+ * left set. The column is TEXT now; this keeps a runaway CLI from filling it.
+ *
+ * The beginning is kept because that is where the reason is - the rest is the
+ * same line repeated - and the mark makes a cut message visibly incomplete.
+ */
+export const MAX_ERROR_LENGTH = 2000;
+
+const TRUNCATION_MARK = "…";
+
+const capError = (message) => {
+    const text = String(message);
+
+    return text.length <= MAX_ERROR_LENGTH
+        ? text
+        : text.slice(0, MAX_ERROR_LENGTH - TRUNCATION_MARK.length) + TRUNCATION_MARK;
+};
+
+/**
  * Whether a parsed line is the measurement itself rather than progress chatter.
  *
  * Ookla labels its result; librespeed prints only the one object. Cloudflare
@@ -55,6 +81,9 @@ export const parseCliOutput = (mode, stdout, stderr) => {
     if (!hasResult && !result.error && stderr.trim()) {
         result.error = stderr.includes("Too many requests") ? RATE_LIMIT_MESSAGE : stderr.trim();
     }
+
+    // Capped in one place, so it holds however the error was arrived at.
+    if (result.error !== undefined) result.error = capError(result.error);
 
     return result;
 };

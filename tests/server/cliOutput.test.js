@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseCliOutput } from "../../server/util/providers/cliOutput.js";
+import { parseCliOutput, MAX_ERROR_LENGTH } from "../../server/util/providers/cliOutput.js";
 
 // A shortened but otherwise verbatim result line from the Ookla CLI.
 const OOKLA_RESULT = JSON.stringify({
@@ -80,6 +80,45 @@ describe("parseCliOutput", () => {
 
         it("ignores whitespace-only stderr", () => {
             assert.deepEqual(parseCliOutput("ookla", "", "   \n  "), {});
+        });
+    });
+
+    /**
+     * The whole of stderr used to go straight into the database. A run can
+     * spend its full three-minute timeout logging one line per unreachable
+     * candidate server, and the column it lands in is bounded - so the insert
+     * that records the failure could itself fail, inside the very handler that
+     * exists to record failures. The column is now TEXT, and this keeps a
+     * runaway CLI from writing megabytes into it either way.
+     */
+    describe("an error far longer than the column", () => {
+        const NOISE = "Error: [0] Cannot open socket to 2001:db8::1 port 8080\n".repeat(500);
+
+        it("caps the stderr fallback", () => {
+            const parsed = parseCliOutput("ookla", "", NOISE);
+
+            assert.ok(parsed.error.length <= MAX_ERROR_LENGTH,
+                `stored ${parsed.error.length} characters`);
+        });
+
+        it("caps an error the CLI printed on stdout", () => {
+            const parsed = parseCliOutput("ookla", JSON.stringify({error: NOISE}), "");
+
+            assert.ok(parsed.error.length <= MAX_ERROR_LENGTH);
+        });
+
+        // Truncation has to be visible, or a cut-off message reads as the whole
+        // of what the CLI said.
+        it("says that it truncated", () => {
+            assert.match(parseCliOutput("ookla", "", NOISE).error, /…$/);
+        });
+
+        it("keeps the beginning, which is where the reason is", () => {
+            assert.match(parseCliOutput("ookla", "", NOISE).error, /^Error: \[0\] Cannot open socket/);
+        });
+
+        it("leaves an error that fits exactly as the CLI printed it", () => {
+            assert.equal(parseCliOutput("ookla", "", "Cannot open socket").error, "Cannot open socket");
         });
     });
 
