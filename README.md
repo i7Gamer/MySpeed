@@ -198,22 +198,19 @@ over untouched. No migration step is needed.
 
 #### Homepage (List View)
 
-<img src="https://i.imgur.com/NHX7Ba9.png" alt="Homepage">
+<img src=".github/screenshots/homepage-list.png" alt="Homepage">
 
 #### Homepage (Statistics View)
-<img src="https://i.imgur.com/5JAFgrk.png" alt="Statistics">
+
+<img src=".github/screenshots/homepage-statistics.png" alt="Statistics">
 
 #### Server Selection
 
-<img src="https://i.imgur.com/hgOR93G.png" alt="Server Selection">
-
-#### Dropdown Menu
-
-<img src="https://i.imgur.com/alKEMrg.png" alt="Dropdown Menu">
+<img src=".github/screenshots/server-selection.png" alt="Server Selection">
 
 #### Page During a Speed Test
 
-<img src="https://i.imgur.com/kxsrjIe.png" alt="Page During a Speed Test">
+<img src=".github/screenshots/speed-test.gif" alt="Page During a Speed Test">
 
 ## Convinced?
 

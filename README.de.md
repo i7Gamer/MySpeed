@@ -202,22 +202,19 @@ bleibt unverändert. Ein Migrationsschritt ist nicht nötig.
 
 #### Startseite (Listen-Ansicht)
 
-<img src="https://i.imgur.com/XXDLXVX.png" alt="Startseite">
+<img src=".github/screenshots/homepage-list.png" alt="Startseite">
 
 #### Startseite (Statistik-Ansicht)
-<img src="https://i.imgur.com/nNaTJTe.png" alt="Statistik">
+
+<img src=".github/screenshots/homepage-statistics.png" alt="Statistik">
 
 #### Serverauswahl
 
-<img src="https://i.imgur.com/gZnGSJb.png" alt="Serverauswahl">
-
-#### Auswahl-Menü
-
-<img src="https://i.imgur.com/zCzTJ53.png" alt="Auswahl-Menü">
+<img src=".github/screenshots/server-selection.png" alt="Serverauswahl">
 
 #### Seite während eines Speedtests
 
-<img src="https://i.imgur.com/RccxiUb.png" alt="Seite während eines Speedtests">
+<img src=".github/screenshots/speed-test.gif" alt="Seite während eines Speedtests">
 
 ## Überzeugt?
 
