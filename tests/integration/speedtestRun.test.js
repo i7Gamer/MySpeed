@@ -68,6 +68,32 @@ describe("a speedtest that cannot start", () => {
         assert.doesNotMatch(test.error, /^undefined$/);
     });
 
+    /**
+     * Nothing was parsed, so the provider comes from the setting - and it has to
+     * be recorded here of all places: the first question about a failure is
+     * which provider could not complete, and the setting may well have been
+     * changed to a different one by the time anyone reads the row.
+     */
+    it("records which provider it was that failed", async () => {
+        await api(server.baseUrl, "/speedtests/run", {method: "POST"});
+        const test = await waitForTest();
+
+        assert.equal(test.provider, "ookla");
+    });
+
+    // Against a second provider as well, or the assertion above is satisfied by
+    // any implementation that writes the string "ookla" - which is exactly what
+    // it exists to rule out. The LibreSpeed CLI is equally absent here, so this
+    // run fails through the same handler.
+    it("names the provider it actually ran, not a fixed one", async () => {
+        await setConfig(server.config, "provider", "libre");
+
+        await api(server.baseUrl, "/speedtests/run", {method: "POST"});
+        const test = await waitForTest();
+
+        assert.equal(test.provider, "libre");
+    });
+
     it("marks the row as failed rather than as a real measurement", async () => {
         await api(server.baseUrl, "/speedtests/run", {method: "POST"});
         const test = await waitForTest();

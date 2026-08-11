@@ -36,3 +36,34 @@ describe("an automatically chosen server", () => {
         assert.match(source, /return \{\.\.\.speedtest, serverId\}/);
     });
 });
+
+/**
+ * What the parser worked out has to actually reach the row.
+ *
+ * Source-scanned for the same reason as above: the success branch of execute()
+ * shells out to a real CLI, so no test in the suite ever runs it - every run
+ * here lands in the catch block for want of a binary. That leaves the one line
+ * joining a covered parser to a covered controller uncovered, and it is exactly
+ * the kind of line a column gets forgotten in: the server name and host spent a
+ * release parsed, stored and never exported for want of one like it.
+ */
+describe("everything the parser measured reaches the row", () => {
+    // Taken off parseData's own return so this cannot drift: a key the parser
+    // produces and the task drops would otherwise be invisible here too.
+    const PARSED = ["ping", "jitter", "download", "upload", "time", "resultId", "serverName", "serverHost",
+        "packetLoss", "downloadLatency", "uploadLatency", "isp", "externalIp", "provider",
+        "bytesDownloaded", "bytesUploaded"];
+
+    const created = source.match(/tests\.create\(\{[\s\S]*?\}\);/);
+
+    it("finds the call that records a successful test", () => {
+        assert.notEqual(created, null, "no tests.create call to check");
+    });
+
+    for (const column of PARSED) {
+        it(`hands ${column} to tests.create`, () => {
+            assert.match(created[0], new RegExp(`\\b${column}\\b`),
+                `${column} is parsed but never reaches the stored row`);
+        });
+    }
+});

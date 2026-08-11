@@ -6,9 +6,9 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatDateTime, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {convertSpeed, formatBytes, formatDateTime, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {bufferbloat, bufferbloatColour, connectionChange, getIconBySpeed} from "@/common/utils/TestUtil";
-import {changeFrom, differenceFromTarget, percentOfTarget} from "./utils/details";
+import {changeFrom, differenceFromTarget, percentOfTarget, providerName} from "./utils/details";
 import {describeError} from "./utils/errors";
 import "./styles.sass";
 
@@ -197,9 +197,43 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                                 {day: "numeric", month: "short", year: "numeric"})}
                         </DetailFact>
 
+                        {/* Which provider measured this. The three do not
+                            measure the same things, so this is what tells a
+                            reader that a missing packet loss below is a provider
+                            that never looked rather than a line that lost
+                            nothing. */}
+                        {providerName(test.provider) && (
+                            <DetailFact label={t("test.details.measured_with")}>
+                                {providerName(test.provider)}
+                            </DetailFact>
+                        )}
+
                         {isMeasured(test.time) && (
                             <DetailFact label={t("test.details.duration")}>
                                 {t("test.details.seconds", {seconds: test.time})}
+                            </DetailFact>
+                        )}
+
+                        {/* What the run cost in traffic. A single Ookla test
+                            moves a couple of gigabytes, which is the figure that
+                            decides whether testing every fifteen minutes is
+                            affordable on a metered line. */}
+                        {isMeasured(test.bytesDownloaded) && isMeasured(test.bytesUploaded) && (
+                            <DetailFact label={t("test.details.data_used")}>
+                                <span className="detail-pair"
+                                      role="img"
+                                      aria-label={t("test.details.data_used_value",
+                                          {down: formatBytes(test.bytesDownloaded),
+                                              up: formatBytes(test.bytesUploaded)})}>
+                                    <span className="detail-pair-part">
+                                        <FontAwesomeIcon icon={faArrowDown} className="detail-pair-icon"/>
+                                        {formatBytes(test.bytesDownloaded)}
+                                    </span>
+                                    <span className="detail-pair-part">
+                                        <FontAwesomeIcon icon={faArrowUp} className="detail-pair-icon"/>
+                                        {formatBytes(test.bytesUploaded)}
+                                    </span>
+                                </span>
                             </DetailFact>
                         )}
 
@@ -224,19 +258,19 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                                     sentence stays as the accessible name: an
                                     arrow points somewhere only to someone who
                                     can see it. */}
-                                <span className="detail-latency"
+                                <span className="detail-pair"
                                       role="img"
                                       aria-label={t("test.details.loaded_latency_value",
                                           {down: test.downloadLatency, up: test.uploadLatency})}>
-                                    <span className="detail-latency-part">
-                                        <FontAwesomeIcon icon={faArrowDown} className="detail-latency-icon"/>
+                                    <span className="detail-pair-part">
+                                        <FontAwesomeIcon icon={faArrowDown} className="detail-pair-icon"/>
                                         {test.downloadLatency}
                                     </span>
-                                    <span className="detail-latency-part">
-                                        <FontAwesomeIcon icon={faArrowUp} className="detail-latency-icon"/>
+                                    <span className="detail-pair-part">
+                                        <FontAwesomeIcon icon={faArrowUp} className="detail-pair-icon"/>
                                         {test.uploadLatency}
                                     </span>
-                                    <span className="detail-latency-unit">{t("latest.ping_unit")}</span>
+                                    <span className="detail-pair-unit">{t("latest.ping_unit")}</span>
                                 </span>
                             </DetailFact>
                         )}

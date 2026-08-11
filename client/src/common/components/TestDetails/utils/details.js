@@ -68,6 +68,30 @@ export const differenceFromTarget = (current, target) => {
 };
 
 /**
+ * What each provider is called, in its own spelling.
+ *
+ * Proper nouns, so they are not translated - only the label beside them is.
+ */
+const PROVIDER_NAMES = {ookla: "Ookla", libre: "LibreSpeed", cloudflare: "Cloudflare"};
+
+/**
+ * The name of the provider that measured a test, or null if the row cannot say.
+ *
+ * Null rather than a fallback: every test recorded before the column existed
+ * carries nothing, and naming whichever provider happens to be configured today
+ * would dress a guess up as a record - which is the opposite of what the column
+ * was added for.
+ *
+ * hasOwn rather than a plain lookup: the stored value is whatever reached the
+ * column, and "constructor" would otherwise resolve off the prototype and put a
+ * function where the pane expects a provider's name.
+ *
+ * @returns {string|null}
+ */
+export const providerName = (provider) =>
+    Object.hasOwn(PROVIDER_NAMES, provider) ? PROVIDER_NAMES[provider] : null;
+
+/**
  * The change against the test before this one.
  *
  * @returns {{difference: number, direction: "up"|"down"|"same"}|null}

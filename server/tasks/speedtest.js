@@ -168,12 +168,17 @@ const execute = async (type, retried) => {
             test = await run(retried);
         }
 
+        // The parser names the provider itself, so the row cannot end up
+        // attributed to one that did not produce it - including under preview
+        // mode, where the generated result is ookla-shaped whatever is configured.
         let {ping, jitter, download, upload, time, resultId, serverName, serverHost,
-            packetLoss, downloadLatency, uploadLatency, isp, externalIp} = await parseData.parseData(process.env.PREVIEW_MODE === "true" ?
-            "ookla" : mode, test);
+            packetLoss, downloadLatency, uploadLatency, isp, externalIp, provider,
+            bytesDownloaded, bytesUploaded} = await parseData.parseData(process.env.PREVIEW_MODE === "true" ?
+            parseData.OOKLA : mode, test);
 
         let testResult = await tests.create({ping, download, upload, time, serverId: test.serverId, type,
-            resultId, jitter, serverName, serverHost, packetLoss, downloadLatency, uploadLatency, isp, externalIp});
+            resultId, jitter, serverName, serverHost, packetLoss, downloadLatency, uploadLatency, isp, externalIp,
+            provider, bytesDownloaded, bytesUploaded});
         console.log(`Test #${testResult} was executed successfully in ${time}s. 🏓 ${ping} (±${jitter ?? 'N/A'}) ⬇ ${download}️ ⬆ ${upload}️`);
         createRecommendations().catch(err =>
             console.error(`Could not update the recommendations: ${toErrorMessage(err)}`));
@@ -189,8 +194,11 @@ const execute = async (type, retried) => {
         // its -1 placeholder values poison every average.
         const message = toErrorMessage(e);
 
+        // The provider is recorded on a failure too: nothing was parsed, but
+        // which provider could not complete is the first thing a reader of the
+        // error wants, and the setting may have changed by the time they look.
         let testResult = await tests.create({ping: FAILED, download: FAILED, upload: FAILED, time: null,
-            serverId: 0, type, error: message});
+            serverId: 0, type, error: message, provider: mode});
         await sendError(message);
         setRunning(false, false);
         console.log(`Test #${testResult} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);

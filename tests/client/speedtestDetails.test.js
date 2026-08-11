@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    changeFrom, differenceFromTarget, percentOfTarget
+    changeFrom, differenceFromTarget, percentOfTarget, providerName
 } from "../../client/src/common/components/TestDetails/utils/details.js";
 
 describe("percentOfTarget", () => {
@@ -108,6 +108,33 @@ describe("differenceFromTarget", () => {
             assert.equal(differenceFromTarget("24", 20), null);
             assert.equal(differenceFromTarget(null, 20), null);
         });
+    });
+});
+
+/**
+ * Which provider measured a row is the fact that explains its blanks: only Ookla
+ * reports packet loss and latency under load, so on the other two those facts
+ * are absent rather than perfect.
+ */
+describe("providerName", () => {
+    it("names each provider the way it spells itself", () => {
+        assert.equal(providerName("ookla"), "Ookla");
+        assert.equal(providerName("libre"), "LibreSpeed");
+        assert.equal(providerName("cloudflare"), "Cloudflare");
+    });
+
+    // Every test recorded before the column existed carries nothing, and naming
+    // whichever provider runs today would dress a guess up as a record.
+    it("names nothing for a row that cannot say", () => {
+        for (const provider of [null, undefined, "", "none", "nonsense"])
+            assert.equal(providerName(provider), null, `provider ${JSON.stringify(provider)}`);
+    });
+
+    // The lookup is an object, so a row whose provider is "constructor" or
+    // "toString" must not resolve to something off the prototype.
+    it("names nothing for an inherited property", () => {
+        assert.equal(providerName("constructor"), null);
+        assert.equal(providerName("toString"), null);
     });
 });
 

@@ -21,6 +21,15 @@ export default db.define("speedtests", {
         allowNull: true,
         defaultValue: null
     },
+    // Which provider measured the row. The three do not measure the same things,
+    // so without this a blank packet loss could equally mean a clean line or a
+    // provider that never looked. Null on every row recorded before the column
+    // existed, which genuinely cannot say.
+    provider: {
+        type: Sequelize.STRING,
+        allowNull: true,
+        defaultValue: null
+    },
     ping: {
         type: Sequelize.INTEGER,
         allowNull: false
@@ -65,6 +74,20 @@ export default db.define("speedtests", {
     },
     externalIp: {
         type: Sequelize.STRING,
+        allowNull: true,
+        defaultValue: null
+    },
+    // What the run itself cost in traffic. DOUBLE rather than BIGINT: a byte
+    // count is far below the 2^53 a double holds exactly, and sequelize hands
+    // BIGINT back as a string on some dialects - which would reach the interface
+    // as a string on MySQL and a number on sqlite.
+    bytesDownloaded: {
+        type: Sequelize.DOUBLE,
+        allowNull: true,
+        defaultValue: null
+    },
+    bytesUploaded: {
+        type: Sequelize.DOUBLE,
         allowNull: true,
         defaultValue: null
     },

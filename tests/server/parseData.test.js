@@ -139,6 +139,46 @@ describe("parseOokla", () => {
             assert.equal(parsed.isp, "Salt Mobile");
         });
     });
+
+    /**
+     * How much the run itself moved. One real test measured against this CLI
+     * transferred 1.14 GB down and 0.92 GB up - which is worth knowing before
+     * scheduling one every fifteen minutes on a line that bills by the gigabyte,
+     * and the CLI has always reported it.
+     */
+    describe("the data the test transferred", () => {
+        const withBytes = {
+            ...ooklaResult,
+            download: {...ooklaResult.download, bytes: 1135809960},
+            upload: {...ooklaResult.upload, bytes: 917831105}
+        };
+
+        it("records the bytes each direction moved", () => {
+            const parsed = parseOokla(withBytes);
+
+            assert.equal(parsed.bytesDownloaded, 1135809960);
+            assert.equal(parsed.bytesUploaded, 917831105);
+        });
+
+        it("nulls them when the result does not carry them", () => {
+            const parsed = parseOokla(ooklaResult);
+
+            assert.equal(parsed.bytesDownloaded, null);
+            assert.equal(parsed.bytesUploaded, null);
+        });
+
+        // Zero is a count: a direction that moved nothing is a fact about the
+        // run, where null says the provider never counted at all.
+        it("keeps a counted zero", () => {
+            const parsed = parseOokla({...withBytes, upload: {...ooklaResult.upload, bytes: 0}});
+
+            assert.equal(parsed.bytesUploaded, 0);
+        });
+    });
+
+    it("names itself as the row's provider", () => {
+        assert.equal(parseOokla(ooklaResult).provider, "ookla");
+    });
 });
 
 describe("parseLibre", () => {
@@ -169,15 +209,95 @@ describe("parseLibre", () => {
 
     // Neither of the other providers measures packet loss or latency under
     // load. They have to say so rather than leave the columns undefined, which
-    // would read as an unmeasured perfect result.
+    // would read as an unmeasured perfect result. The connection's identity is
+    // a different case - it depends on the backend, see below.
     it("reports the quality figures it cannot measure as absent", () => {
         const parsed = parseLibre(libreResult);
 
         assert.equal(parsed.packetLoss, null);
         assert.equal(parsed.downloadLatency, null);
         assert.equal(parsed.uploadLatency, null);
-        assert.equal(parsed.isp, null);
-        assert.equal(parsed.externalIp, null);
+    });
+
+    /**
+     * LibreSpeed does report who the connection is - but only as far as the
+     * backend it selected does. The report's client block is filled from
+     * whatever that server's getIP endpoint returned, and a server with no GeoIP
+     * database behind it answers with every field an empty string. An empty
+     * string is not an answer, and storing one would put a row that knows
+     * nothing about its connection beside one that does, both looking equally
+     * measured.
+     */
+    describe("the connection's identity", () => {
+        const withClient = {
+            ...libreResult,
+            client: {
+                ip: "203.0.113.7", hostname: "", city: "Berlin", region: "Berlin",
+                country: "DE", loc: "52.52,13.40", org: "AS3320 Deutsche Telekom AG",
+                postal: "10115", timezone: "Europe/Berlin"
+            }
+        };
+
+        it("records the address and the network the backend named", () => {
+            const parsed = parseLibre(withClient);
+
+            assert.equal(parsed.externalIp, "203.0.113.7");
+            assert.equal(parsed.isp, "Deutsche Telekom AG");
+        });
+
+        // The organisation arrives prefixed with its AS number where Ookla
+        // reports a plain name. Both write into the one column, and the
+        // interface compares them as strings to mark a changed connection - so
+        // the two providers have to spell the same network the same way.
+        it("drops the AS number so the value matches what Ookla writes", () => {
+            assert.equal(parseLibre({...withClient, client: {org: "AS13335 Cloudflare, Inc."}}).isp,
+                "Cloudflare, Inc.");
+        });
+
+        it("keeps an organisation that carries no AS number", () => {
+            assert.equal(parseLibre({...withClient, client: {org: "Deutsche Telekom AG"}}).isp,
+                "Deutsche Telekom AG");
+        });
+
+        // What an unequipped backend actually returns - measured against the
+        // shipped CLI, not imagined.
+        it("treats the empty strings an unequipped backend returns as absent", () => {
+            const parsed = parseLibre({
+                ...libreResult,
+                client: {ip: "", hostname: "", city: "", region: "", country: "",
+                    loc: "", org: "", postal: "", timezone: ""}
+            });
+
+            assert.equal(parsed.externalIp, null);
+            assert.equal(parsed.isp, null);
+        });
+
+        it("nulls both when the report carries no client at all", () => {
+            const parsed = parseLibre(libreResult);
+
+            assert.equal(parsed.externalIp, null);
+            assert.equal(parsed.isp, null);
+        });
+    });
+
+    describe("the data the test transferred", () => {
+        it("records the bytes the run moved in each direction", () => {
+            const parsed = parseLibre({...libreResult, bytes_received: 32505856, bytes_sent: 45318144});
+
+            assert.equal(parsed.bytesDownloaded, 32505856);
+            assert.equal(parsed.bytesUploaded, 45318144);
+        });
+
+        it("nulls them when the report omits them", () => {
+            const parsed = parseLibre(libreResult);
+
+            assert.equal(parsed.bytesDownloaded, null);
+            assert.equal(parsed.bytesUploaded, null);
+        });
+    });
+
+    it("names itself as the row's provider", () => {
+        assert.equal(parseLibre(libreResult).provider, "libre");
     });
 
     it("converts the elapsed milliseconds to seconds and has no result id", () => {
@@ -267,14 +387,106 @@ describe("parseCloudflare", () => {
     it("returns a zeroed result rather than throwing on an unusable payload", () => {
         assert.deepEqual(parseCloudflare({}), {
             ping: 0, jitter: null, download: 0, upload: 0, time: 0,
-            resultId: null, serverName: null, serverHost: null,
+            resultId: null, provider: "cloudflare", serverName: null, serverHost: null,
             packetLoss: null, downloadLatency: null, uploadLatency: null,
-            isp: null, externalIp: null
+            isp: null, externalIp: null, bytesDownloaded: null, bytesUploaded: null
         });
     });
 
     it("returns a zeroed result for a null payload", () => {
         assert.equal(parseCloudflare(null).download, 0);
+    });
+
+    /**
+     * The metadata block the CLI prints beside the measurements. It was
+     * discarded whole, which left a Cloudflare row unable to say which edge
+     * answered or what address the test went out from - both of which the CLI
+     * had already reported, and neither of which can be recovered afterwards.
+     */
+    describe("the connection and the edge that served it", () => {
+        const withMetadata = {
+            ...cloudflareResult,
+            metadata: {country: "CH", ip: "2a04:ee41:2:4256::1", colo: "ZRH"}
+        };
+
+        // Cloudflare names its edges by airport code. It is the only server
+        // identity the CLI reports, and these rows used to name no server at all.
+        it("names the edge that answered as the server", () => {
+            assert.equal(parseCloudflare(withMetadata).serverName, "ZRH");
+        });
+
+        it("records the address the test went out from", () => {
+            assert.equal(parseCloudflare(withMetadata).externalIp, "2a04:ee41:2:4256::1");
+        });
+
+        // Nothing the CLI prints names the network the client is on, so this one
+        // column stays Ookla's alone.
+        it("still reports no isp", () => {
+            assert.equal(parseCloudflare(withMetadata).isp, null);
+        });
+
+        // True of the attempt even when the measurement is not: the CLI got far
+        // enough to say who was asking and which edge took the question.
+        it("keeps the identity when the measurements are unusable", () => {
+            const parsed = parseCloudflare({metadata: withMetadata.metadata});
+
+            assert.equal(parsed.serverName, "ZRH");
+            assert.equal(parsed.externalIp, "2a04:ee41:2:4256::1");
+            assert.equal(parsed.download, 0);
+        });
+
+        it("nulls the identity when no metadata was printed", () => {
+            const parsed = parseCloudflare(cloudflareResult);
+
+            assert.equal(parsed.serverName, null);
+            assert.equal(parsed.externalIp, null);
+        });
+    });
+
+    /**
+     * The CLI reports no byte count, but it states the payload size it used and
+     * how many runs at that size succeeded - and a run that succeeded moved
+     * exactly that payload. The figure is stated, not estimated.
+     */
+    describe("the data the test transferred", () => {
+        const measured = {
+            ...cloudflareResult,
+            speed_measurements: [
+                {test_type: "Download", payload_size: 100000, successes: 10, max: 95.5},
+                {test_type: "Download", payload_size: 1000000, successes: 8, skipped: 2, max: 100.25},
+                {test_type: "Upload", payload_size: 100000, successes: 5, max: 48.5}
+            ]
+        };
+
+        it("counts the payload of every run that succeeded", () => {
+            const parsed = parseCloudflare(measured);
+
+            assert.equal(parsed.bytesDownloaded, 100000 * 10 + 1000000 * 8);
+            assert.equal(parsed.bytesUploaded, 100000 * 5);
+        });
+
+        // A skipped run moved nothing. Counting it as though it had transferred
+        // its payload would report 250 MB for a phase the CLI declined to run.
+        it("counts no payload for the runs that were skipped", () => {
+            const parsed = parseCloudflare({
+                ...cloudflareResult,
+                speed_measurements: [{test_type: "Download", payload_size: 25000000, successes: 0, skipped: 10, max: 0}]
+            });
+
+            assert.equal(parsed.bytesDownloaded, 0);
+        });
+
+        it("nulls a direction whose runs never stated a payload", () => {
+            const parsed = parseCloudflare(cloudflareResult);
+
+            assert.equal(parsed.bytesDownloaded, null);
+            assert.equal(parsed.bytesUploaded, null);
+        });
+    });
+
+    it("names itself as the row's provider", () => {
+        assert.equal(parseCloudflare(cloudflareResult).provider, "cloudflare");
+        assert.equal(parseCloudflare({}).provider, "cloudflare");
     });
 });
 

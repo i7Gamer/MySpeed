@@ -182,6 +182,26 @@ describe("import validation", () => {
         assert.equal(await server.tests.count(), 0);
     });
 
+    // The byte counts are numeric columns too, and the same store-anything
+    // behaviour applies to them: a string there is not a quantity of data, and
+    // the row would carry it looking like one that had been counted.
+    it("rejects a row whose byte counts are strings", async () => {
+        await seedTests(server.tests, []);
+
+        assert.equal((await importTests([row({bytesDownloaded: "fast"})])).status, 500);
+        assert.equal((await importTests([row({bytesUploaded: "lots"})])).status, 500);
+        assert.equal(await server.tests.count(), 0);
+    });
+
+    // Absent is still legitimate: every row exported before the columns existed
+    // has none, and a restore must not drop the whole history over it.
+    it("accepts a row that states no byte counts at all", async () => {
+        await seedTests(server.tests, []);
+
+        assert.equal((await importTests([row()])).status, 200);
+        assert.equal(await server.tests.count(), 1);
+    });
+
     it("keeps the good rows and drops only the bad ones", async () => {
         await seedTests(server.tests, []);
 

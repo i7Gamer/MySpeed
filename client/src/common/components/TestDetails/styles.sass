@@ -156,26 +156,27 @@
   width: 0.7rem
   height: 0.7rem
 
-// The two loaded latencies read as one value, with the arrows doing the work
-// the words "down" and "up" used to - the same two arrows the speed rows above
-// use, so the direction is read the same way in both places.
-.detail-latency
+// A fact that is a down/up pair read as one value, with the arrows doing the
+// work the words "down" and "up" used to - the same two arrows the speed rows
+// above use, so the direction is read the same way everywhere. Used by the
+// loaded latencies and by the data the run transferred.
+.detail-pair
   display: inline-flex
   align-items: center
   gap: 0.55rem
 
-.detail-latency-part
+.detail-pair-part
   display: inline-flex
   align-items: center
   gap: 0.25rem
 
-.detail-latency-icon
+.detail-pair-icon
   width: 0.65rem
   height: 0.65rem
   color: $subtext
   flex-shrink: 0
 
-.detail-latency-unit
+.detail-pair-unit
   color: $subtext
 
 .detail-error

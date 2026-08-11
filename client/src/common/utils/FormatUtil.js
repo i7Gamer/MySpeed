@@ -186,4 +186,42 @@ export const formatDuration = (seconds) =>
 export const formatWithUnit = (value, unit) =>
     typeof value === "number" && Number.isFinite(value) ? `${value} ${unit}` : NOT_MEASURED;
 
+// The ladder a byte count is stepped down, and the size of a step. Decimal
+// rather than binary: the providers state their payloads in decimal - a "100 MB"
+// Cloudflare payload is 100 000 000 bytes - so reporting 95.4 MiB for it would
+// describe the transfer in a unit nobody involved used.
+const BYTE_STEP = 1000;
+const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"];
+
+// One decimal from a kilobyte up. "1.1 GB" is as much precision as the figure
+// supports; "1.136 GB" implies a count exact to the megabyte.
+const BYTE_DECIMALS = 1;
+
+/**
+ * A quantity of data in the largest unit that leaves it readable.
+ *
+ * Whole bytes stay whole - "512 B" rather than "512.0 B" - because under a
+ * kilobyte the decimal is noise.
+ */
+export const formatBytes = (bytes) => {
+    if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) return NOT_MEASURED;
+
+    let value = bytes;
+    let step = 0;
+
+    // The figure as it will actually be printed. The ladder is climbed against
+    // this rather than against the raw value: 999 999 999 divides to 999.999999
+    // MB, which one decimal rounds to 1000.0 - a number that belongs in the next
+    // unit, and printed with this one it reads "1000 MB". A gigabit line's
+    // download lands in that band routinely.
+    const printed = () => step === 0 ? value : parseFloat(value.toFixed(BYTE_DECIMALS));
+
+    while (printed() >= BYTE_STEP && step < BYTE_UNITS.length - 1) {
+        value /= BYTE_STEP;
+        step++;
+    }
+
+    return `${printed()} ${BYTE_UNITS[step]}`;
+};
+
 export {SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H};

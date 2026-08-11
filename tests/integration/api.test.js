@@ -1,6 +1,7 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, api, seedTests, setConfig } from "./helpers/boot.js";
+import { CSV_COLUMNS } from "../../server/util/csv.js";
 
 let server;
 
@@ -41,9 +42,10 @@ describe("GET /api/speedtests/export", () => {
         const {status, text, headers} = await exportUrl("from=2026-08-01&to=2026-08-07&tzOffset=0&format=csv");
         assert.equal(status, 200);
         assert.match(headers.get("content-type"), /text\/csv/);
-        assert.equal(text.split("\n")[0],
-            "id,ping,jitter,download,upload,time,type,created,serverId,serverName,serverHost," +
-            "packetLoss,downloadLatency,uploadLatency,isp,externalIp,resultId,error");
+        // Against the exported column list rather than a copy of it: what this
+        // asserts is that the endpoint emits the header at all, and the columns
+        // themselves are pinned once, beside toCsv.
+        assert.equal(text.split("\n")[0], CSV_COLUMNS.join(","));
     });
 
     /**
@@ -58,7 +60,8 @@ describe("GET /api/speedtests/export", () => {
             created: "2026-08-05T10:00:00.000Z",
             serverName: "Arcade Solutions AG", serverHost: "speedtest.arcade.ch",
             packetLoss: 0, downloadLatency: 7.5, uploadLatency: 43.77,
-            isp: "Salt Mobile", externalIp: "203.0.113.7"
+            isp: "Salt Mobile", externalIp: "203.0.113.7",
+            provider: "cloudflare", bytesDownloaded: 1135809960, bytesUploaded: 917831105
         }]);
 
         const {body} = await exportUrl("from=2026-08-01&to=2026-08-07&tzOffset=0&format=json");
@@ -70,6 +73,9 @@ describe("GET /api/speedtests/export", () => {
         assert.equal(body[0].uploadLatency, 43.77);
         assert.equal(body[0].isp, "Salt Mobile");
         assert.equal(body[0].externalIp, "203.0.113.7");
+        assert.equal(body[0].provider, "cloudflare");
+        assert.equal(body[0].bytesDownloaded, 1135809960);
+        assert.equal(body[0].bytesUploaded, 917831105);
     });
 
     it("carries those columns through the CSV as values, not empty cells", async () => {
@@ -77,7 +83,8 @@ describe("GET /api/speedtests/export", () => {
             created: "2026-08-05T10:00:00.000Z",
             serverName: "Arcade Solutions AG", serverHost: "speedtest.arcade.ch",
             packetLoss: 0, downloadLatency: 7.5, uploadLatency: 43.77,
-            isp: "Salt Mobile", externalIp: "203.0.113.7"
+            isp: "Salt Mobile", externalIp: "203.0.113.7",
+            provider: "cloudflare", bytesDownloaded: 1135809960, bytesUploaded: 917831105
         }]);
 
         const {text} = await exportUrl("from=2026-08-01&to=2026-08-07&tzOffset=0&format=csv");
@@ -90,6 +97,9 @@ describe("GET /api/speedtests/export", () => {
         assert.equal(valueOf("uploadLatency"), "43.77");
         assert.equal(valueOf("isp"), "Salt Mobile");
         assert.equal(valueOf("externalIp"), "203.0.113.7");
+        assert.equal(valueOf("provider"), "cloudflare");
+        assert.equal(valueOf("bytesDownloaded"), "1135809960");
+        assert.equal(valueOf("bytesUploaded"), "917831105");
     });
 
     // Regression: the old exporter only swapped commas out of `error`, so a

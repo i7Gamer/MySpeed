@@ -24,6 +24,8 @@ describe("migrations", () => {
         assert.ok(names.includes("0005-add-quality-columns.js"));
         assert.ok(names.includes("0006-add-connection-identity-columns.js"));
         assert.ok(names.includes("0007-widen-speedtest-error.js"));
+        assert.ok(names.includes("0008-add-provider-column.js"));
+        assert.ok(names.includes("0009-add-transfer-columns.js"));
     });
 
     it("creates the columns the model expects", async () => {
@@ -31,8 +33,39 @@ describe("migrations", () => {
 
         for (const column of ["ping", "jitter", "download", "upload", "time", "type", "created", "error",
             "serverId", "serverName", "serverHost", "resultId",
-            "packetLoss", "downloadLatency", "uploadLatency", "isp", "externalIp"])
+            "packetLoss", "downloadLatency", "uploadLatency", "isp", "externalIp",
+            "provider", "bytesDownloaded", "bytesUploaded"])
             assert.ok(columns[column], `speedtests.${column} is missing`);
+    });
+
+    /**
+     * A column the model declares but no migration creates is invisible until
+     * the first query touches it, and then every read of the table fails. The
+     * list above is hand-written, so it can only catch what someone remembered
+     * to add; this asks the model itself.
+     */
+    it("leaves no model column without a column in the table", async () => {
+        const columns = await queryInterface.describeTable("speedtests");
+        const missing = Object.keys(server.tests.getAttributes())
+            .filter((attribute) => !columns[attribute]);
+
+        assert.deepEqual(missing, [], "declared on the model but never migrated");
+    });
+
+    /**
+     * The declared type, not a stored value: sqlite's integer affinity is 64-bit
+     * and dynamically typed, so it holds any byte count whatever the column
+     * says, and the suite only ever runs sqlite. MySQL is the backend this
+     * matters on - INTEGER caps there at 2 147 483 647, and one Ookla run
+     * already moves more than half of that in a single direction, so a longer
+     * test or a faster line would be truncated or refused outright.
+     */
+    it("declares the byte counts wide enough for a real test", async () => {
+        const columns = await queryInterface.describeTable("speedtests");
+
+        for (const column of ["bytesDownloaded", "bytesUploaded"])
+            assert.doesNotMatch(columns[column].type, /^INT(EGER)?$/i,
+                `speedtests.${column} is ${columns[column].type}, which overflows on MySQL`);
     });
 
     // Every read filters or sorts on `created`, so without this each one is a

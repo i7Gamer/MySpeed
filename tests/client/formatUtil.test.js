@@ -2,8 +2,8 @@ import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import i18n from "i18next";
 import {
-    convertSpeed, formatDateTime, formatDuration, formatLastTest, formatShortTime, formatTime,
-    formatHour, formatWithUnit, generateRelativeTime, getSpeedUnit,
+    convertSpeed, formatBytes, formatDateTime, formatDuration, formatLastTest, formatShortTime, formatTime,
+    formatHour, formatWithUnit, generateRelativeTime, getSpeedUnit, NOT_MEASURED,
     SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H
 } from "@/common/utils/FormatUtil.js";
 
@@ -315,5 +315,69 @@ describe("formatHour", () => {
         assert.equal(formatHour(9, CLOCK_12H), "9:00 AM");
         assert.equal(formatHour(13, CLOCK_12H), "1:00 PM");
         assert.equal(formatHour(23, CLOCK_12H), "11:00 PM");
+    });
+});
+
+/**
+ * How much a test transferred. Ookla and LibreSpeed report the count, and
+ * Cloudflare's payload sizes give it - a single Ookla run moves a couple of
+ * gigabytes, which is what decides whether testing every fifteen minutes is
+ * affordable on a metered line.
+ */
+describe("formatBytes", () => {
+    it("steps up to the largest unit that keeps the number small", () => {
+        assert.equal(formatBytes(512), "512 B");
+        assert.equal(formatBytes(1000), "1 KB");
+        assert.equal(formatBytes(1500000), "1.5 MB");
+        assert.equal(formatBytes(1135809960), "1.1 GB");
+        assert.equal(formatBytes(2500000000000), "2.5 TB");
+    });
+
+    // Under a kilobyte the decimal is noise, and "512.0 B" is a byte count
+    // pretending to a precision bytes do not have.
+    it("leaves whole bytes whole", () => {
+        assert.equal(formatBytes(0), "0 B");
+        assert.equal(formatBytes(999), "999 B");
+    });
+
+    // Decimal, not binary: the providers state their payloads in decimal, so a
+    // 100 MB Cloudflare payload has to read back as 100 MB and not 95.4.
+    it("counts a thousand to the step, the way the providers do", () => {
+        assert.equal(formatBytes(100000000), "100 MB");
+    });
+
+    it("drops a trailing zero rather than writing 1.0 GB", () => {
+        assert.equal(formatBytes(1000000000), "1 GB");
+    });
+
+    /**
+     * The rounding decides the unit, not just the digits. A count just under a
+     * boundary divides to 999.99…, which one decimal turns into 1000.0 - and
+     * printed with the unit below it that reads "1000 MB" for what is a
+     * gigabyte. A gigabit line's download lands in that band routinely.
+     */
+    it("promotes a count that only reaches the next unit once rounded", () => {
+        assert.equal(formatBytes(999999999), "1 GB");
+        assert.equal(formatBytes(999999), "1 MB");
+        assert.equal(formatBytes(999950), "1 MB");
+        assert.equal(formatBytes(999999999999), "1 TB");
+    });
+
+    // The other side of that boundary still belongs to the smaller unit.
+    it("keeps a count that stays below the boundary once rounded", () => {
+        assert.equal(formatBytes(999949), "999.9 KB");
+    });
+
+    // Past the top of the ladder the number keeps growing rather than inventing
+    // a unit - a petabyte of speedtests is not a case worth a rung.
+    it("stays in terabytes past the end of the ladder", () => {
+        assert.equal(formatBytes(3000000000000000), "3000 TB");
+    });
+
+    // A column that was never measured, and the -1 a failed run writes into its
+    // numeric columns. Neither is a quantity of data.
+    it("reports anything that is not a count as unmeasured", () => {
+        for (const value of [null, undefined, NaN, Infinity, -1, "1000", {}])
+            assert.equal(formatBytes(value), NOT_MEASURED, `value ${String(value)}`);
     });
 });

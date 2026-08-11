@@ -116,6 +116,38 @@ describe("recording a speedtest", () => {
         assert.equal(row.resultId, null);
         assert.equal(row.serverName, null);
         assert.equal(row.serverHost, null);
+        assert.equal(row.provider, null);
+        assert.equal(row.bytesDownloaded, null);
+        assert.equal(row.bytesUploaded, null);
+    });
+
+    /**
+     * Which provider measured the row, and what the run cost in traffic. The
+     * first is what tells a reader that the packet loss below is absent because
+     * the provider never measures it, rather than because the line lost nothing.
+     */
+    it("records the provider and the data the run transferred", async () => {
+        const id = await controller.create({
+            ping: 4, download: 100, upload: 50, time: 20, serverId: 0,
+            provider: "cloudflare", bytesDownloaded: 1135809960, bytesUploaded: 917831105
+        });
+
+        const row = await stored(id);
+
+        assert.equal(row.provider, "cloudflare");
+        assert.equal(row.bytesDownloaded, 1135809960);
+        assert.equal(row.bytesUploaded, 917831105);
+    });
+
+    // The counts run past what a 32-bit column holds: one Ookla test moves over
+    // a gigabyte in each direction, and a truncated count is worse than none.
+    it("keeps a byte count larger than a 32-bit integer", async () => {
+        const huge = 9_007_199_254_740_991;
+        const id = await controller.create({
+            ping: 4, download: 100, upload: 50, time: 20, serverId: 0, bytesDownloaded: huge
+        });
+
+        assert.equal((await stored(id)).bytesDownloaded, huge);
     });
 
     it("stamps the row with the time it was recorded", async () => {

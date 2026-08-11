@@ -17,7 +17,11 @@ const MAX_TEST_LIMIT = 1000;
 // Columns an import has to supply as numbers. `jitter` is absent on providers
 // that do not measure it, and a failed row carries -1 placeholders, so null and
 // negative values are both legitimate.
-const NUMERIC_COLUMNS = ["ping", "download", "upload", "time"];
+//
+// The byte counts are in here for the same reason the speeds are: sqlite stores
+// whatever it is handed, so an imported "fast" survives the write and then sits
+// in the row looking like a measurement that cannot be rendered.
+const NUMERIC_COLUMNS = ["ping", "download", "upload", "time", "bytesDownloaded", "bytesUploaded"];
 
 const isImportableNumber = (value) =>
     value === null || value === undefined || (typeof value === "number" && Number.isFinite(value));
@@ -34,10 +38,12 @@ export const create = async ({
     ping, download, upload, time, serverId, type = "auto",
     resultId = null, error = null, jitter = null, serverName = null, serverHost = null,
     packetLoss = null, downloadLatency = null, uploadLatency = null,
-    isp = null, externalIp = null
+    isp = null, externalIp = null, provider = null,
+    bytesDownloaded = null, bytesUploaded = null
 }) => {
     return (await tests.create({ping, jitter, download, upload, error, serverId, serverName, serverHost, type,
-        resultId, time, packetLoss, downloadLatency, uploadLatency, isp, externalIp,
+        resultId, time, packetLoss, downloadLatency, uploadLatency, isp, externalIp, provider,
+        bytesDownloaded, bytesUploaded,
         created: new Date().toISOString()})).id;
 }
 
@@ -366,6 +372,9 @@ export const exportTests = async (range) => (await findInRange(range)).map(entry
     time: entry.time,
     type: entry.type,
     created: entry.created,
+    // Which provider measured the row. Without it a restored history cannot say
+    // why its older rows carry no packet loss, and neither can its reader.
+    provider: entry.provider,
     // The id the Ookla CLI is pointed at with --server-id, and the label the
     // Prometheus exporter emits. Left out, an export/import round trip reset
     // every row to the column's 0 default.
@@ -377,6 +386,8 @@ export const exportTests = async (range) => (await findInRange(range)).map(entry
     uploadLatency: entry.uploadLatency,
     isp: entry.isp,
     externalIp: entry.externalIp,
+    bytesDownloaded: entry.bytesDownloaded,
+    bytesUploaded: entry.bytesUploaded,
     // The provider's own result page. Shown in the interface as a link since
     // long before it was exported, and left out of every export until the
     // column guard in retentionAndExport asked why.

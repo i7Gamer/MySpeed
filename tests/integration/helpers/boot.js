@@ -114,6 +114,7 @@ export const seedTests = async (model, rows) => {
     await model.bulkCreate(rows.map((row) => ({
         ping: 10, jitter: 2, download: 100, upload: 50, time: 30,
         serverId: 0, type: "auto", error: null,
-        packetLoss: 0, downloadLatency: 12, uploadLatency: 20, ...row
+        packetLoss: 0, downloadLatency: 12, uploadLatency: 20,
+        provider: "ookla", bytesDownloaded: 1135809960, bytesUploaded: 917831105, ...row
     })));
 };
