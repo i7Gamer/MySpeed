@@ -1,7 +1,10 @@
 export const ooklaVersion = "1.2.0";
 export const ooklaList = [
-    // MacOS
-    {os: 'darwin', arch: 'x64', suffix: 'macosx-x86_64.tgz'},
+    // MacOS. Ookla publishes one universal build, not a per-architecture pair:
+    // install.speedtest.net answers 403 for macosx-x86_64.tgz, so the Intel
+    // entry that named it had never worked, and arm64 was missing entirely.
+    {os: 'darwin', arch: 'x64', suffix: 'macosx-universal.tgz'},
+    {os: 'darwin', arch: 'arm64', suffix: 'macosx-universal.tgz'},
 
     // Windows
     {os: 'win32', arch: 'x64', suffix: 'win64.zip'},
