@@ -53,6 +53,21 @@ const findTimeframe = (id) => TIMEFRAMES.find(frame => frame.id === id) ?? null;
 
 const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * How many calendar days a selection covers, counting both of its own.
+ *
+ * Both bounds are local midnights, so the span between them is one day short of
+ * what the range actually covers. Rounded rather than floored or ceiled: a day
+ * the clocks change on is 23 or 25 hours long and still counts as one.
+ */
+const inclusiveDays = ({from, to}) => {
+    const span = Math.round((to - from) / MS_PER_DAY);
+
+    return Number.isFinite(span) ? Math.max(1, span + 1) : 1;
+};
+
 /**
  * All-time expressed as a concrete range, for the callers that need one.
  *
@@ -186,7 +201,13 @@ export const shownRange = (dateRange, statistics, now = new Date()) => {
     // Absent from a node running a version that did not send it.
     const days = typeof echoed?.days === "number" && Number.isFinite(echoed.days) ? {days: echoed.days} : {};
 
-    if (dateRange) return {...dateRange, ...days};
+    // A bounded selection knows its own length, so it does not need the echo.
+    // Its bounds are two local midnights and the range covers the whole of both
+    // days, which is one more day than the span between them - the consumer's
+    // fallback took Math.ceil of that span and reported a seven-day selection
+    // as six, overstating tests-per-day by 16.7% under a heading naming seven.
+    // Rounded, so a day that is 23 or 25 hours long still counts as one.
+    if (dateRange) return {...dateRange, days: inclusiveDays(dateRange), ...days};
 
     if (!echoed?.from || !echoed?.to) return resolveAllTime(now);
 

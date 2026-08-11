@@ -192,6 +192,43 @@ describe("shownRange", () => {
                 NOW).days, 522);
         });
 
+        /**
+         * A bounded selection knows its own length, so it does not need the
+         * echo. Its two bounds are local midnights and the range covers the
+         * whole of both days, which is one more day than the span between them
+         * - OverviewChart's fallback took `Math.ceil(span)` and reported a
+         * seven-day selection as six, overstating tests-per-day by 16.7% under
+         * a heading naming seven days. It is DST-sensitive the same way: six
+         * across spring-forward, seven across fall-back.
+         */
+        it("derives an inclusive count from a bounded selection when the server sent none", () => {
+            const selected = {from: new Date(2026, 7, 1), to: new Date(2026, 7, 7)};
+
+            assert.equal(shownRange(selected, payload("2026-08-01", "2026-08-07"), NOW).days, 7);
+        });
+
+        it("counts a single day as one", () => {
+            const selected = {from: new Date(2026, 7, 7), to: new Date(2026, 7, 7)};
+
+            assert.equal(shownRange(selected, undefined, NOW).days, 1);
+        });
+
+        it("counts the same either side of a daylight saving change", () => {
+            // 29 March 2026 in a northern-hemisphere zone: one 23-hour day.
+            const spring = {from: new Date(2026, 2, 26), to: new Date(2026, 3, 1)};
+            // 25 October 2026: one 25-hour day.
+            const autumn = {from: new Date(2026, 9, 22), to: new Date(2026, 9, 28)};
+
+            assert.equal(shownRange(spring, undefined, NOW).days, 7);
+            assert.equal(shownRange(autumn, undefined, NOW).days, 7);
+        });
+
+        it("still prefers the count the server sent", () => {
+            const selected = {from: new Date(2026, 7, 1), to: new Date(2026, 7, 7)};
+
+            assert.equal(shownRange(selected, payload("2026-08-01", "2026-08-07", 3), NOW).days, 3);
+        });
+
         // A parent proxies this request to its nodes, and a node running an
         // older version answers without it. Undefined is what the caller checks
         // for; a zero or a NaN would be divided by.
