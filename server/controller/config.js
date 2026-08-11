@@ -396,6 +396,13 @@ export const importConfig = async (obj) => {
         return false;
     }
 
+    // Restoring a backup is usually the remediation, so a session issued
+    // against the password it replaced must not outlive it. password.js honours
+    // a valid session before it ever reads the stored hash, so the old holder
+    // would otherwise keep full access for the rest of its seven days - past
+    // the point where the old password itself correctly stops working.
+    if (updates.some((update) => update.key === "password")) destroyAllSessions();
+
     // Restarting the scheduler is not something a transaction can roll back, so
     // it only happens once the import has actually committed.
     const cron = updates.find((update) => update.key === "cron");
@@ -412,6 +419,10 @@ export const factoryReset = async () => {
     for (let i = 0; i < configValues.length; i++) {
         await config.update({value: configDefaults[configValues[i].key]}, {where: {key: configValues[i].key}});
     }
+
+    // The reset put the password back to the unprotected sentinel without going
+    // through updateValue, which is the only place that revoked sessions.
+    destroyAllSessions();
 
     await node.destroy({where: {}});
     await recommendations.destroy({where: {}});
