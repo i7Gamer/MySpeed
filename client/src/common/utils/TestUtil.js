@@ -117,6 +117,28 @@ export const packetLossColour = (value) => gradeBelow(value, PACKET_LOSS_GOOD, P
 
 export const jitterColour = (value) => gradeBelow(value, JITTER_GOOD, JITTER_FAIR);
 
+// Where a consistency score stops being good, then acceptable. Unlike the two
+// above this one reads upwards: it is a percentage of steadiness, so more is
+// better.
+const CONSISTENCY_GOOD = 90;
+const CONSISTENCY_FAIR = 70;
+
+/**
+ * How steady a metric was, as a colour.
+ *
+ * Neutral when there is no score rather than red: a range in which every test
+ * failed has no consistency to report, and the worst possible colour is as
+ * wrong an answer as the best one - it says the line is unstable when nothing
+ * was measured.
+ */
+export const consistencyColour = (value) => {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "blue";
+    if (value >= CONSISTENCY_GOOD) return "green";
+    if (value >= CONSISTENCY_FAIR) return "orange";
+
+    return "red";
+};
+
 /**
  * The colour a grade is shown in. Kept beside the thresholds so the two cannot
  * drift into disagreeing about what counts as a good line.

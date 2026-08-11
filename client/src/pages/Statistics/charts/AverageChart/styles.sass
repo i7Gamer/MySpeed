@@ -18,6 +18,13 @@
   height: 2.25rem
   color: $accent-primary
 
+// Takes the row's free space so the target bar below spans it rather than
+// stopping at the width of the longest word above. space-between already put
+// the icon at the far edge, so the text keeps the position it had.
+.value-item .value-info
+  flex: 1
+  min-width: 0
+
 .value-item .value-info h2
   font-size: 15pt
   color: $white
@@ -40,3 +47,37 @@
   font-size: 0.9rem
   font-weight: 500
   white-space: nowrap
+
+// The optimum itself and the deviation are context for the figure above them,
+// not readings in their own right - so they are told apart from the graded
+// percentage by colour rather than by size.
+.value-item .value-info .value-target-muted
+  color: $subtext
+
+// The same bar the expanded test row draws, at the same height: this is the
+// enlarged view of a card, and a second visual idiom for one ratio would read
+// as a second measurement.
+.value-item .value-info .value-bar
+  display: block
+  height: 0.375rem
+  margin-top: 0.5rem
+  border-radius: 0.25rem
+  background-color: $light-gray
+  overflow: hidden
+
+.value-item .value-info .value-bar-fill
+  display: block
+  height: 100%
+  border-radius: 0.25rem
+  transition: width 0.3s ease
+
+  &.icon-green
+    background-color: $accent-primary
+  &.icon-orange
+    background-color: $accent-warning
+  &.icon-red
+    background-color: $accent-danger
+  &.icon-blue
+    background-color: var(--blue)
+  &.icon-error
+    background-color: $accent-danger

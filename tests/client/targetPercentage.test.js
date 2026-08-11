@@ -109,3 +109,69 @@ describe("the arithmetic behind it", () => {
         assert.equal(getIconBySpeed(null, 250, true), "blue");
     });
 });
+
+/**
+ * These two panes opened to exactly what their cards showed, same as the other
+ * three did. Opened, they now add what the page holds and puts nowhere near
+ * these numbers: the bar behind the percentage, the optimum it is measured
+ * against, how steady the metric was, and how many tests all three figures are
+ * over - a minimum taken over eleven tests and one over eleven thousand are the
+ * same number and not the same claim.
+ */
+describe("the expanded value panes", () => {
+    it("draw the bar the expanded test row draws for the same ratio", () => {
+        assert.match(average, /\{props\.expanded && reached !== null && \(/);
+        assert.match(average, /Math\.min\(reached, MAX_BAR_PERCENT\)/);
+    });
+
+    it("name the optimum, which lives in a dialog nobody has open while reading", () => {
+        assert.match(average, /t\("statistics\.values\.target",/);
+        assert.match(english.statistics.values.target, /\{\{target}}/);
+    });
+
+    // The target is stored in Mbps whatever the reader has chosen to see, so
+    // naming it has to convert where the ratio above deliberately did not.
+    it("convert that optimum into the unit being read", () => {
+        assert.match(average, /convertSpeed\(Number\(props\.target\), preferences\)/);
+    });
+
+    it("score how steady the metric was, beside the average it qualifies", () => {
+        assert.match(average, /consistencyColour\(steadiness\.consistency\)/);
+        assert.match(statistics, /consistency=\{deferredStatistics\.consistency\?\.download}/);
+        assert.match(statistics, /consistency=\{deferredStatistics\.consistency\?\.upload}/);
+    });
+
+    // Every aggregate is an explicit null for a range in which nothing
+    // succeeded, and "null%" is what interpolating one produces.
+    it("say N/A rather than null when nothing was measured", () => {
+        assert.match(average, /steadiness\.consistency === null \|\| steadiness\.consistency === undefined\s*\?\s*NOT_MEASURED/);
+    });
+
+    // The figures are over the tests that succeeded; the failures are in the
+    // total and in none of the arithmetic.
+    it("count the successful tests, not every row in the range", () => {
+        assert.match(average, /props\.tests\.total - props\.tests\.failed/);
+    });
+
+    it("add none of it to the cards", () => {
+        const cards = statistics.slice(statistics.indexOf("<div className={`statistic-area${isStale"));
+
+        assert.doesNotMatch(cards, /<AverageChart[^>]*\bexpanded\b/);
+        for (const key of ["target", "consistency", "samples"])
+            assert.equal(typeof english.statistics.values[key], "string", `statistics.values.${key}`);
+    });
+});
+
+/**
+ * The stability card and the value panes score the same thing and used to hold
+ * their own copies of the thresholds, which is two places to disagree about
+ * what counts as a steady line.
+ */
+describe("the consistency grading", () => {
+    it("is shared rather than reimplemented per card", () => {
+        const stability = read("pages/Statistics/charts/ConsistencyChart/ConsistencyChart.jsx");
+
+        assert.match(stability, /consistencyColour\(value\)/);
+        assert.doesNotMatch(stability, /value >= 90/);
+    });
+});

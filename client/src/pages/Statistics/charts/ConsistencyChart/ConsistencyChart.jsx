@@ -4,7 +4,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
     faArrowDown, faArrowUp, faGaugeHigh, faPingPongPaddleBall, faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
-import { bufferbloatColour, gradeForIncrease, jitterColour } from "@/common/utils/TestUtil";
+import { bufferbloatColour, consistencyColour, gradeForIncrease, jitterColour } from "@/common/utils/TestUtil";
 import { formatDateTime } from "@/common/utils/FormatUtil";
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import { PreferencesContext } from "@/common/contexts/Preferences";
@@ -29,19 +29,9 @@ export const ConsistencyChart = (props) => {
     const loadedGrade = gradeForIncrease(loaded?.increase);
     const trend = loaded?.trend ?? [];
 
-    /**
-     * Neutral when there is no score, rather than red.
-     *
-     * A range in which every test failed has no consistency to report, and the
-     * worst possible colour is as wrong an answer as the best one - it says the
-     * line is unstable when nothing was measured.
-     */
-    const getConsistencyColor = (value) => {
-        if (value === null || value === undefined) return 'icon-blue';
-        if (value >= 90) return 'icon-green';
-        if (value >= 70) return 'icon-orange';
-        return 'icon-red';
-    };
+    // The thresholds live beside the app's other colour graders, so the value
+    // cards can score their own steadiness by the same rule this card does.
+    const getConsistencyColor = (value) => "icon-" + consistencyColour(value);
 
     const percentage = (value) => value === null || value === undefined ? NOT_MEASURED : `${value}%`;
 

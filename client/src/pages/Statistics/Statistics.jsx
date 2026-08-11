@@ -378,9 +378,11 @@ export const Statistics = () => {
             case 'hourly':
                 return <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages}/>;
             case 'avgDownload':
-                return <AverageChart title={t("statistics.values.down")} data={deferredStatistics.download} previous={previous?.download} target={config?.download}/>;
+                return <AverageChart title={t("statistics.values.down")} data={deferredStatistics.download} previous={previous?.download} target={config?.download}
+                                    consistency={deferredStatistics.consistency?.download} tests={deferredStatistics.tests} expanded/>;
             case 'avgUpload':
-                return <AverageChart title={t("statistics.values.up")} data={deferredStatistics.upload} previous={previous?.upload} target={config?.upload}/>;
+                return <AverageChart title={t("statistics.values.up")} data={deferredStatistics.upload} previous={previous?.upload} target={config?.upload}
+                                    consistency={deferredStatistics.consistency?.upload} tests={deferredStatistics.tests} expanded/>;
             default:
                 return null;
         }

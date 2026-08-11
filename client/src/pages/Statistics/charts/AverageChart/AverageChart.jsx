@@ -1,14 +1,21 @@
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
-import {faGauge, faMinusCircle, faPlusCircle} from "@fortawesome/free-solid-svg-icons";
+import {
+    faGauge, faGaugeHigh, faMinusCircle, faPlusCircle, faWaveSquare
+} from "@fortawesome/free-solid-svg-icons";
 import {useContext} from "react";
 import {t} from "i18next";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
-import {getIconBySpeed} from "@/common/utils/TestUtil";
+import {convertSpeed, formatWithUnit, getSpeedUnit, NOT_MEASURED} from "@/common/utils/FormatUtil";
+import {consistencyColour, getIconBySpeed} from "@/common/utils/TestUtil";
 import {percentOfTarget} from "@/common/components/TestDetails/utils/details";
 import Delta from "@/common/components/Delta";
 import "./styles.sass";
+
+// The bar would otherwise run off its track on a line that beats its target,
+// which is the one case where the number is unambiguously good news - the same
+// rule the expanded test row's bars follow.
+const MAX_BAR_PERCENT = 100;
 
 export const AverageChart = (props) => {
     const [preferences] = useContext(PreferencesContext);
@@ -34,6 +41,14 @@ export const AverageChart = (props) => {
      * number in either unit anyway.
      */
     const reached = percentOfTarget(props.data.avg, props.target);
+    const level = getIconBySpeed(props.data.avg, props.target, true);
+
+    // How steady this metric was, and how many tests all three figures above are
+    // over. Both are on the page already and neither is beside the numbers they
+    // qualify: a minimum taken over eleven tests and one taken over eleven
+    // thousand are the same number and not the same claim.
+    const steadiness = props.consistency ?? {};
+    const measured = props.tests ? props.tests.total - props.tests.failed : null;
 
     return (
         <StatisticContainer title={props.title} size="small" center={true} onClick={props.onClick}>
@@ -74,13 +89,62 @@ export const AverageChart = (props) => {
                             arrow on the overview cannot disagree about whether
                             the line is meeting its target. */}
                         {reached !== null && (
-                            <span className={"value-target icon-" + getIconBySpeed(props.data.avg, props.target, true)}>
+                            <span className={"value-target icon-" + level}>
                                 {t("test.details.of_target", {percent: reached})}
                             </span>
+                        )}
+
+                        {/* Opened, the percentage gets the bar the expanded test
+                            row draws for the same figure, and the optimum it is
+                            measured against gets named - it lives in a settings
+                            dialog nobody has open while reading this. */}
+                        {props.expanded && reached !== null && (
+                            <>
+                                <span className="value-bar">
+                                    <span className={"value-bar-fill icon-" + level}
+                                          style={{width: `${Math.min(reached, MAX_BAR_PERCENT)}%`}}/>
+                                </span>
+                                <span className="value-target value-target-muted">
+                                    {t("statistics.values.target",
+                                        {target: formatWithUnit(convertSpeed(Number(props.target), preferences), speedUnit)})}
+                                </span>
+                            </>
                         )}
                     </div>
                     <FontAwesomeIcon icon={faGauge}/>
                 </div>
+
+                {/* An average says nothing on its own about whether the line
+                    held there or swung either side of it, and the stability
+                    card scores that a page away from the numbers it is about. */}
+                {props.expanded && (
+                    <div className="value-item">
+                        <div className="value-info">
+                            <h2>{t("statistics.values.consistency")}</h2>
+                            <p className={"icon-" + consistencyColour(steadiness.consistency)}>
+                                {steadiness.consistency === null || steadiness.consistency === undefined
+                                    ? NOT_MEASURED : `${steadiness.consistency}%`}
+                            </p>
+                            {steadiness.stdDev !== null && steadiness.stdDev !== undefined && (
+                                <span className="value-target value-target-muted">
+                                    {"±" + formatWithUnit(convertSpeed(steadiness.stdDev, preferences), speedUnit)}
+                                </span>
+                            )}
+                        </div>
+                        <FontAwesomeIcon icon={faWaveSquare}
+                                         className={"icon-" + consistencyColour(steadiness.consistency)}/>
+                    </div>
+                )}
+
+                {props.expanded && measured !== null && (
+                    <div className="value-item">
+                        <div className="value-info">
+                            <h2>{t("statistics.values.samples")}</h2>
+                            <p>{measured}</p>
+                        </div>
+                        <FontAwesomeIcon icon={faGaugeHigh}/>
+                    </div>
+                )}
             </div>
         </StatisticContainer>
     );

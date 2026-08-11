@@ -401,7 +401,10 @@
       "max": "Höchster",
       "avg": "Durchschnitt",
       "down": "Download-Werte",
-      "up": "Upload-Werte"
+      "up": "Upload-Werte",
+      "target": "Ziel: {{target}}",
+      "consistency": "Konstanz",
+      "samples": "Gemessene Tests"
     },
     "failed_test": "Fehlgeschlagener Test",
     "hourly": {

@@ -401,7 +401,10 @@
       "max": "Maximum",
       "avg": "Average",
       "down": "Download values",
-      "up": "Upload values"
+      "up": "Upload values",
+      "target": "Target: {{target}}",
+      "consistency": "Consistency",
+      "samples": "Measured tests"
     },
     "failed_test": "Failed test",
     "hourly": {
