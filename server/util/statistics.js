@@ -1,4 +1,5 @@
 import { mapFixed, mapRounded } from './helpers.js';
+import { localHourAt, serverZone, zoneFromOffset } from './timezone.js';
 
 export const TARGET_CHART_POINTS = 300;
 
@@ -41,7 +42,6 @@ const clampPoints = (value) => {
 };
 
 const HOURS_PER_DAY = 24;
-const MS_PER_MINUTE = 60 * 1000;
 const PERCENT = 100;
 const SPEED_DECIMALS = 2;
 
@@ -87,20 +87,11 @@ const consistencyScore = (values) => {
     };
 };
 
-// `offsetMinutes` follows Date.prototype.getTimezoneOffset (minutes behind UTC),
-// so subtracting it shifts a UTC instant onto the client's wall clock. Without
-// it we fall back to the server's own timezone, which is UTC in the Docker image.
-const localHourOf = (created, offsetMinutes) => {
-    const date = new Date(created);
-    if (!Number.isFinite(offsetMinutes)) return date.getHours();
-    return new Date(date.getTime() - offsetMinutes * MS_PER_MINUTE).getUTCHours();
-};
-
-const buildHourlyAverages = (entries, offsetMinutes) => {
+const buildHourlyAverages = (entries, zone) => {
     const buckets = Array.from({length: HOURS_PER_DAY}, () => ({download: [], upload: [], ping: [], jitter: []}));
 
     entries.forEach(entry => {
-        const bucket = buckets[localHourOf(entry.created, offsetMinutes)];
+        const bucket = buckets[localHourAt(zone, new Date(entry.created))];
         bucket.download.push(entry.download);
         bucket.upload.push(entry.upload);
         bucket.ping.push(entry.ping);
@@ -247,12 +238,16 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
  *
  * @param entries rows already restricted to the requested range, any order
  * @param range   {from, to} Date boundaries, used for bucketing and the echo
- * @param options {offsetMinutes} client UTC offset for hour-of-day bucketing,
+ * @param options {zone} the clock hour-of-day bucketing is done on, or
+ *                {offsetMinutes} a bare UTC offset to build one from,
  *                {maxPoints} requested chart resolution, clamped to the range
  *                the constants above allow
  */
-export const buildStatistics = (entries, {from, to}, {offsetMinutes, maxPoints} = {}) => {
-    const offset = Number(offsetMinutes);
+export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPoints} = {}) => {
+    // An offset outside any real zone is answered on the server's own clock
+    // rather than thrown on: this is pure aggregation, and the route it came
+    // through is where a nonsense parameter earns its 400.
+    const bucketZone = zone ?? zoneFromOffset(offsetMinutes).zone ?? serverZone;
     const targetPoints = clampPoints(maxPoints);
     const succeeded = entries.filter(entry => entry.error === null);
     const sorted = [...entries].sort((a, b) => new Date(a.created) - new Date(b.created));
@@ -283,7 +278,7 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, maxPoints} 
         labels: series.labels,
         failed: series.failed,
         errors: series.errors,
-        hourlyAverages: buildHourlyAverages(succeeded, offset),
+        hourlyAverages: buildHourlyAverages(succeeded, bucketZone),
         consistency: {
             download: consistencyScore(succeeded.map(entry => entry.download)),
             upload: consistencyScore(succeeded.map(entry => entry.upload)),

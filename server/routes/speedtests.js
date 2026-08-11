@@ -5,6 +5,7 @@ import * as config from '../controller/config.js';
 import * as testTask from '../tasks/speedtest.js';
 import password from '../middlewares/password.js';
 import { ALL_TIME_RANGE, parseDateRange } from '../util/dateRange.js';
+import { resolveTimezone } from '../util/timezone.js';
 import { stripConnectionIdentity } from '../util/connectionIdentity.js';
 import { toCsv } from '../util/csv.js';
 import * as timer from '../tasks/timer.js';
@@ -34,11 +35,14 @@ app.get("/", password(true), async (req, res) => {
     // when asked for: every other caller - the header, the storage dialog, an
     // older node being proxied - sends no range and still gets the full
     // history its infinite scroll expects.
-    const {from, to, tzOffset} = req.query;
+    const {from, to} = req.query;
     let range = null;
 
+    const timezone = resolveTimezone(req.query);
+    if (!timezone.valid) return res.status(400).json({message: timezone.message});
+
     if (from !== undefined || to !== undefined) {
-        const parsed = parseDateRange(from, to, {offsetMinutes: tzOffset});
+        const parsed = parseDateRange(from, to, {zone: timezone.zone});
         if (!parsed.valid) return res.status(400).json({message: parsed.message});
 
         range = parsed;
@@ -64,7 +68,15 @@ app.get("/", password(true), async (req, res) => {
 });
 
 app.get("/statistics", password(true), async (req, res) => {
-    const { from, to, tzOffset, points } = req.query;
+    const { from, to, points } = req.query;
+
+    // Resolved before the all-time branch, not inside the range parser. The
+    // bound on the offset used to live in parseDateRange, which range=all
+    // skips - so the same parameter earned a 400 on one path, was silently
+    // accepted on another, and crashed the request with a 500 when it was
+    // large enough to push the Date out of range.
+    const timezone = resolveTimezone(req.query);
+    if (!timezone.valid) return res.status(400).json({message: timezone.message});
 
     // Checked ahead of the dates, which the client sends beside it: a parent
     // proxies this request to its nodes, and a node running a version that
@@ -73,7 +85,7 @@ app.get("/statistics", password(true), async (req, res) => {
     // but here the name has to win, or the stand-in would decide what
     // "everything" means and the charts would bucket over a quarter of a century.
     const allTime = req.query.range === ALL_TIME_RANGE;
-    const range = allTime ? null : parseDateRange(from, to, { offsetMinutes: tzOffset });
+    const range = allTime ? null : parseDateRange(from, to, { zone: timezone.zone });
 
     if (range && !range.valid) {
         return res.status(400).json({ message: range.message });
@@ -86,7 +98,7 @@ app.get("/statistics", password(true), async (req, res) => {
         return res.status(400).json({message: "You need to provide a correct number in the points parameter"});
 
     res.json(await tests.listStatistics(range, {
-        offsetMinutes: tzOffset,
+        zone: timezone.zone,
         maxPoints: points,
         // The summary of the window immediately before the range, for the
         // period-over-period deltas. Opt-in: it costs a second table scan.
@@ -96,8 +108,12 @@ app.get("/statistics", password(true), async (req, res) => {
 });
 
 app.get("/export", password(true), async (req, res) => {
-    const { from, to, format, tzOffset } = req.query;
-    const range = parseDateRange(from, to, { offsetMinutes: tzOffset });
+    const { from, to, format } = req.query;
+
+    const timezone = resolveTimezone(req.query);
+    if (!timezone.valid) return res.status(400).json({message: timezone.message});
+
+    const range = parseDateRange(from, to, { zone: timezone.zone });
     if (!range.valid) {
         return res.status(400).json({ message: range.message });
     }

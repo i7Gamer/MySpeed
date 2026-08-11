@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveTimezone } from "../../server/util/timezone.js";
 import {
     buildStatistics, MAX_CHART_POINTS, MIN_CHART_POINTS, STATISTICS_COLUMNS, TARGET_CHART_POINTS
 } from "../../server/util/statistics.js";
@@ -257,6 +258,32 @@ describe("buildStatistics", () => {
             );
             assert.equal(stats.hourlyAverages[1].count, 1);
             assert.equal(stats.hourlyAverages[23].count, 0);
+        });
+
+        /**
+         * The offset the client sends is a snapshot of today. Over a range that
+         * reaches across a daylight saving change it credits half the tests to
+         * the wrong hour, which is enough for the overview to name the wrong
+         * hour as the slowest of the day.
+         */
+        it("buckets by the zone's own clock on each side of a daylight saving change", () => {
+            const zone = resolveTimezone({tz: "Europe/Berlin"}).zone;
+            const stats = buildStatistics(
+                [at("2026-08-10T18:30:00.000Z"), at("2026-01-10T18:30:00.000Z")],
+                range("2026-01-01T00:00:00.000Z", "2026-12-31T23:59:59.999Z"),
+                {zone}
+            );
+
+            assert.equal(stats.hourlyAverages[20].count, 1, "the summer test belongs to 20:00 CEST");
+            assert.equal(stats.hourlyAverages[19].count, 1, "the winter test belongs to 19:00 CET");
+        });
+
+        // #21's crash: the bound lived inside parseDateRange, which range=all
+        // skips, so an absurd offset reached the bucketing and indexed the
+        // array with NaN.
+        it("does not throw on an offset outside any real zone", () => {
+            assert.doesNotThrow(() => buildStatistics([at("2026-08-07T05:30:00.000Z")], DAY,
+                {offsetMinutes: "99999999999999"}));
         });
     });
 

@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { parseDateRange } from "../../server/util/dateRange.js";
+import { resolveTimezone } from "../../server/util/timezone.js";
 
 describe("parseDateRange", () => {
     describe("required parameters", () => {
@@ -125,6 +126,54 @@ describe("parseDateRange", () => {
             const result = parseDateRange("2026-08-01", "2026-08-07", { offsetMinutes: "abc" });
             assert.equal(result.valid, true);
             assert.equal(result.from.getHours(), 0);
+        });
+    });
+
+    /**
+     * A single offset is a snapshot of today, and a range routinely reaches
+     * back across a daylight saving change. Anchored to today's offset, the
+     * far end of the window lands an hour off its real local midnight - so a
+     * "last 90 days" taken in January silently dropped the first hour of the
+     * October day it starts on, from every aggregate on the page.
+     *
+     * The named zone is resolved at each bound instead.
+     */
+    describe("a named timezone", () => {
+        const zoneFor = (tz) => resolveTimezone({tz}).zone;
+
+        it("anchors each end at that end's own offset", () => {
+            const { from, to } = parseDateRange("2025-10-17", "2026-01-15",
+                { zone: zoneFor("Europe/Berlin") });
+
+            // 17 October is still summer time (UTC+2); 15 January is not (UTC+1).
+            assert.equal(from.toISOString(), "2025-10-16T22:00:00.000Z");
+            assert.equal(to.toISOString(), "2026-01-15T22:59:59.999Z");
+        });
+
+        it("is what a single snapshot offset gets wrong", () => {
+            const named = parseDateRange("2025-10-17", "2026-01-15", { zone: zoneFor("Europe/Berlin") });
+            // What the client would have sent on 15 January: UTC+1.
+            const snapshot = parseDateRange("2025-10-17", "2026-01-15", { offsetMinutes: -60 });
+
+            assert.notEqual(named.from.toISOString(), snapshot.from.toISOString());
+            assert.equal(snapshot.from.toISOString(), "2025-10-16T23:00:00.000Z",
+                "the snapshot used to start an hour into the first day");
+        });
+
+        it("takes the whole of a day the clocks change on", () => {
+            const { from, to } = parseDateRange("2026-03-29", "2026-03-29",
+                { zone: zoneFor("Europe/Berlin") });
+
+            // 23 hours, because that day is 23 hours long where it happened.
+            assert.equal(from.toISOString(), "2026-03-28T23:00:00.000Z");
+            assert.equal(to.toISOString(), "2026-03-29T21:59:59.999Z");
+        });
+
+        it("prefers the zone over an offset supplied beside it", () => {
+            const { from } = parseDateRange("2026-08-07", "2026-08-07",
+                { zone: zoneFor("Europe/Berlin"), offsetMinutes: 0 });
+
+            assert.equal(from.toISOString(), "2026-08-06T22:00:00.000Z");
         });
     });
 });

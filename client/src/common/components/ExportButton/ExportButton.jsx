@@ -3,7 +3,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDownload, faChevronDown, faFileLines, faCode } from "@fortawesome/free-solid-svg-icons";
 import { t } from "i18next";
 import { downloadRequest } from "@/common/utils/RequestUtil";
-import { formatDateParam } from "@/common/utils/TimeframeUtil";
+import { formatDateParam, timezoneParams } from "@/common/utils/TimeframeUtil";
 import { useAlert } from "@/common/contexts/Alert";
 import { useClickOutside } from "@/common/hooks/useClickOutside";
 import { exportFilename } from "./filename";
@@ -27,8 +27,7 @@ export const ExportButton = ({ dateRange, allTime = false }) => {
 
         try {
             const query = new URLSearchParams({
-                from: fromParam, to: toParam, format,
-                tzOffset: String(new Date().getTimezoneOffset())
+                from: fromParam, to: toParam, format, ...timezoneParams()
             });
 
             // Goes through RequestUtil rather than a bare fetch so the export

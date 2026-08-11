@@ -5,7 +5,7 @@ import {runJustFinished} from "@/common/utils/StatusUtil";
 import {StatusContext} from "@/common/contexts/Status";
 import {NodeContext} from "@/common/contexts/Node";
 import {
-    formatDateParam, rangeToParams, selectionFromParams, timeframeFromRange
+    formatDateParam, rangeToParams, selectionFromParams, timeframeFromRange, timezoneParams
 } from "@/common/utils/TimeframeUtil";
 import {applyRefresh, mergeNewTests} from "./merge";
 import {applyPage, cursorOf, removeTest} from "./paging";
@@ -61,7 +61,7 @@ export const SpeedtestProvider = (props) => {
             params.set("to", formatDateParam(range.to));
             // The server would otherwise cut days on its own clock, which is
             // UTC in the Docker image and rarely matches the viewer's.
-            params.set("tzOffset", String(new Date().getTimezoneOffset()));
+            for (const [key, value] of Object.entries(timezoneParams())) params.set(key, value);
         }
 
         return params.toString();

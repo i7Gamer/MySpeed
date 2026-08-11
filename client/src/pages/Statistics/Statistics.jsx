@@ -26,7 +26,8 @@ import {
     resolveAllTime,
     selectionOf,
     serializeRange,
-    shownRange
+    shownRange,
+    timezoneParams
 } from "@/common/utils/TimeframeUtil";
 import PageToolbar from "@/common/components/PageToolbar";
 import ChartModal from "@/common/components/ChartModal";
@@ -85,7 +86,7 @@ const rangeQuery = (dateRange) => {
         to: formatDateParam(requested.to),
         // The server would otherwise cut days on its own clock, which is UTC in
         // the Docker image and rarely matches the viewer's.
-        tzOffset: String(new Date().getTimezoneOffset())
+        ...timezoneParams()
     });
 
     if (!dateRange) query.set("range", TIMEFRAME_ALL);

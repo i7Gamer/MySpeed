@@ -213,3 +213,22 @@ export const selectionFromParams = (searchParams, now = new Date()) =>
  */
 export const rangeToParams = (timeframe, from, to) =>
     isAllTime(timeframe) ? {} : serializeRange(timeframe, from, to);
+
+/**
+ * How a request says which clock it wants to be answered on.
+ *
+ * Both travel together. The named zone is the accurate one: an offset is a
+ * snapshot of *today*, and a range routinely reaches back across a daylight
+ * saving change, which anchors the far end an hour off its real local midnight
+ * and buckets every test on the other side of the transition into the wrong
+ * hour. The offset stays because a parent proxies these requests to its nodes,
+ * and a node running an older version understands only that.
+ */
+export const timezoneParams = () => {
+    const params = {tzOffset: String(new Date().getTimezoneOffset())};
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    if (zone) params.tz = zone;
+
+    return params;
+};

@@ -1,10 +1,8 @@
+import { utcFromLocal, zoneFromOffset } from './timezone.js';
+
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-const MINUTES_PER_HOUR = 60;
 const MS_PER_MINUTE = 60 * 1000;
-
-// Widest real-world UTC offsets are UTC-12 (+720) and UTC+14 (-840).
-const MAX_OFFSET_MINUTES = 14 * MINUTES_PER_HOUR;
 
 // Matches the largest retention period the config accepts, so no range that
 // could contain data is ever refused. Without a ceiling, from=0001-01-01 to
@@ -64,16 +62,15 @@ const toCalendarParts = (value) => {
  * calendar and re-parsing anchors both windows to the same midnight, the
  * viewer's own when an offset was sent.
  */
-export const previousRange = ({from, to}, {offsetMinutes} = {}) => {
+export const previousRange = ({from, to}, {offsetMinutes, zone} = {}) => {
+    const resolved = zone ? {valid: true, zone} : zoneFromOffset(offsetMinutes);
+    if (!resolved.valid) return invalid(resolved.message);
+
     const days = Math.round((to - from) / MS_PER_DAY);
 
     // The calendar day the range starts on, in the timezone that anchored it -
     // the UTC fields read the shifted instant back as that local day.
-    const useOffset = offsetMinutes !== undefined && offsetMinutes !== null
-        && offsetMinutes !== "" && Number.isFinite(Number(offsetMinutes));
-    const anchor = useOffset
-        ? new Date(from.getTime() - Number(offsetMinutes) * MS_PER_MINUTE)
-        : new Date(from.getTime() - from.getTimezoneOffset() * MS_PER_MINUTE);
+    const anchor = new Date(from.getTime() - resolved.zone.offsetAt(from) * MS_PER_MINUTE);
 
     const day = (date) => {
         const shifted = new Date(date);
@@ -85,10 +82,10 @@ export const previousRange = ({from, to}, {offsetMinutes} = {}) => {
     const previousFrom = new Date(anchor);
     previousFrom.setUTCDate(previousFrom.getUTCDate() - days);
 
-    return parseDateRange(day(previousFrom), day(previousTo), {offsetMinutes});
+    return parseDateRange(day(previousFrom), day(previousTo), {zone: resolved.zone});
 };
 
-export const parseDateRange = (from, to, {offsetMinutes} = {}) => {
+export const parseDateRange = (from, to, {offsetMinutes, zone} = {}) => {
     if (!from || !to) return invalid("Both 'from' and 'to' date parameters are required");
 
     if (!DATE_PATTERN.test(from)) return invalid("Invalid 'from' date format. Use YYYY-MM-DD");
@@ -100,27 +97,25 @@ export const parseDateRange = (from, to, {offsetMinutes} = {}) => {
     const toParts = toCalendarParts(to);
     if (toParts === null) return invalid("The 'to' value is not a real calendar date");
 
-    const offset = Number(offsetMinutes);
-    const useOffset = offsetMinutes !== undefined && offsetMinutes !== null
-        && offsetMinutes !== "" && Number.isFinite(offset);
+    // Each bound is anchored at its own offset. A single offset for the whole
+    // window is a snapshot of one day, and any range reaching across a daylight
+    // saving change has one end an hour off its real local midnight.
+    const resolved = zone ? {valid: true, zone} : zoneFromOffset(offsetMinutes);
+    if (!resolved.valid) return invalid(resolved.message);
 
-    if (useOffset && Math.abs(offset) > MAX_OFFSET_MINUTES)
-        return invalid("The 'tzOffset' parameter is outside the valid range");
+    const start = utcFromLocal(resolved.zone, fromParts);
 
-    const start = useOffset
-        ? new Date(Date.UTC(fromParts.year, fromParts.month - 1, fromParts.day) + offset * MS_PER_MINUTE)
-        : new Date(fromParts.year, fromParts.month - 1, fromParts.day, 0, 0, 0, 0);
-
-    const end = useOffset
-        ? new Date(Date.UTC(toParts.year, toParts.month - 1, toParts.day,
-            LAST_HOUR, LAST_MINUTE, LAST_SECOND, LAST_MILLISECOND) + offset * MS_PER_MINUTE)
-        : new Date(toParts.year, toParts.month - 1, toParts.day,
-            LAST_HOUR, LAST_MINUTE, LAST_SECOND, LAST_MILLISECOND);
+    const end = utcFromLocal(resolved.zone, {
+        ...toParts,
+        hour: LAST_HOUR, minute: LAST_MINUTE, second: LAST_SECOND, ms: LAST_MILLISECOND
+    });
 
     if (start > end) return invalid("The 'from' date must be before the 'to' date");
 
     if ((end - start) / MS_PER_DAY > MAX_RANGE_DAYS)
         return invalid(`The range must not span more than ${MAX_RANGE_DAYS} days`);
 
-    return {valid: true, from: start, to: end};
+    // The zone travels with the range: previousRange has to anchor its window
+    // the same way, and the statistics bucket by the same clock.
+    return {valid: true, from: start, to: end, zone: resolved.zone};
 };
