@@ -14,6 +14,7 @@ import { initialize as initializeIntegrations } from './controller/integrations.
 import { requestInterfaces } from './util/loadInterfaces.js';
 import { load as loadCli } from './util/loadCli.js';
 import { removeOld } from './tasks/speedtest.js';
+import { createShutdown } from './util/shutdown.js';
 
 const INTERFACE_REFRESH_INTERVAL = 3600000;
 const RETENTION_SWEEP_INTERVAL = 60000;
@@ -50,21 +51,42 @@ process.on('uncaughtException', err => errorHandler(err));
 process.on('unhandledRejection', reason =>
     errorHandler(reason instanceof Error ? reason : new Error(String(reason)), {fatal: false}));
 
+// Filled in as they start, so a signal arriving mid-start-up still closes
+// whatever is already listening.
+const listeners = [];
+const intervals = [];
+
+const shutdown = createShutdown({
+    listeners,
+    onStop: () => {
+        for (const interval of intervals) clearInterval(interval);
+        timerTask.stopTimer();
+        integrationTask.stopTimer();
+    }
+});
+
+// Registering these is also what makes the signals deliverable: the runtime
+// only installs a watcher once JS asks for one, and the kernel discards a
+// signal still at its default disposition - which it is for PID 1, as bun is
+// under docker-entrypoint.sh's exec with no init process in front of it.
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
 const run = async () => {
     await runMigrations();
 
     await initializeIntegrations();
 
     await requestInterfaces();
-    setInterval(() => requestInterfaces(), INTERFACE_REFRESH_INTERVAL);
+    intervals.push(setInterval(() => requestInterfaces(), INTERFACE_REFRESH_INTERVAL));
 
     if (process.env.PREVIEW_MODE !== "true") await loadCli();
 
     await config.insertDefaults();
 
     timerTask.startTimer(await config.getValue("cron"));
-    setInterval(() => removeOld().catch(err =>
-        console.error(`Could not apply the retention policy: ${err?.message ?? err}`)), RETENTION_SWEEP_INTERVAL);
+    intervals.push(setInterval(() => removeOld().catch(err =>
+        console.error(`Could not apply the retention policy: ${err?.message ?? err}`)), RETENTION_SWEEP_INTERVAL));
 
     integrationTask.startTimer();
     if (process.env.RUN_TEST_ON_STARTUP === "true") {
@@ -74,7 +96,7 @@ const run = async () => {
 
     await announceAccess();
 
-    app.listen(port, () => console.log(`Server listening on port ${port}`));
+    listeners.push(app.listen(port, () => console.log(`Server listening on port ${port}`)));
 
     if (hasSSLCerts()) {
         try {
@@ -92,6 +114,8 @@ const run = async () => {
                 setHttpsListening(false);
                 console.error(`HTTPS server error: ${err.message}`);
             });
+
+            listeners.push(httpsServer);
 
             httpsServer.listen(httpsPort, () => {
                 setHttpsListening(true);
