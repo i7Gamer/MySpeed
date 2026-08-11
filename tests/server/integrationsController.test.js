@@ -31,6 +31,26 @@ describe("secretFieldNames", () => {
         assert.equal(secretFieldNames("myspace"), null);
     });
 
+    /**
+     * A bare `integrations[name]` lookup answers a truthy value for every
+     * member of Object.prototype, so these names read as known integrations
+     * with no `fields` - which reaches `.filter` on undefined here, and skipped
+     * the 404 in the route. The config controller had already fixed the
+     * identical trap with Object.hasOwn.
+     */
+    it("returns null for a name off Object.prototype", () => {
+        for (const name of ["toString", "constructor", "hasOwnProperty", "valueOf", "__proto__"])
+            assert.equal(secretFieldNames(name), null, `${name} was treated as an integration`);
+    });
+
+    // withoutSecrets blanks everything it cannot identify, so a stored row with
+    // one of these names must be redacted rather than throw.
+    it("blanks a stored row named after one of them", () => {
+        const [redacted] = withoutSecrets([{name: "toString", data: {url: "https://hook.example"}}]);
+
+        assert.equal(redacted.data.url, null);
+    });
+
     it("knows every integration that is loaded", () => {
         for (const name of Object.keys(getIntegrations()))
             assert.notEqual(secretFieldNames(name), null, `${name} has no definition`);

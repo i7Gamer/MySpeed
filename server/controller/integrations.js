@@ -98,7 +98,7 @@ export const getIntegrationById = (id) => IntegrationData.findOne({where: {id: i
  * that has since been removed would otherwise export in full.
  */
 export const secretFieldNames = (name) => {
-    const definition = integrations[name];
+    const definition = getIntegration(name);
     if (!definition) return null;
 
     return definition.fields.filter((field) => field.secret).map((field) => field.name);
@@ -137,7 +137,7 @@ export const deleteIntegration = async (id) => {
 }
 
 export const create = async (name, data) => {
-    const integration = integrations[name];
+    const integration = getIntegration(name);
     if (!integration) return null;
 
     const displayName = data.integration_name;
@@ -187,10 +187,19 @@ export const getIntegrations = () => {
     return result;
 };
 
-export const getIntegration = (name) => integrations[name];
+/**
+ * The definition registered under a name, or undefined.
+ *
+ * Object.hasOwn, not a bare lookup: `integrations["toString"]` answers
+ * Object.prototype's, which is truthy - so a prototype name walked past the
+ * route's 404 and died as a 500 inside validateInput instead. The config
+ * controller had already been fixed for the identical trap.
+ */
+export const getIntegration = (name) =>
+    Object.hasOwn(integrations, name) ? integrations[name] : undefined;
 
 export const validateInput = (module, data) => {
-    const integration = integrations[module];
+    const integration = getIntegration(module);
     if (!integration) return false;
 
     for (const field of integration.fields) {
