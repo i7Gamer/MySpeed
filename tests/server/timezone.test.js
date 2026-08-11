@@ -146,6 +146,64 @@ describe("utcFromLocal", () => {
         });
     });
 
+    /**
+     * The mirror of the gap: where a zone puts its clocks back at midnight, an
+     * hour of the wall clock happens twice, so a bound naming it has two
+     * instants to choose from.
+     *
+     * Which one is right depends on which end of a range it is. The start must
+     * take the earliest, or the first pass of the doubled hour falls outside the
+     * range; the end must take the latest, or the second pass does. Left to
+     * chance it went whichever way the offsets happened to fall - Cairo landed
+     * right, Santiago and Asuncion dropped an hour off the end of the range.
+     */
+    describe("a local time that happened twice", () => {
+        it("takes the first reading for a bound that starts a range", () => {
+            // Cuba puts its clocks back at 01:00, so 00:00 on 3 November 2024
+            // is reached at 04:00Z and again at 05:00Z.
+            const instant = utcFromLocal(zoneOf({tz: "America/Havana"}), {year: 2024, month: 11, day: 3});
+
+            assert.equal(instant.toISOString(), "2024-11-03T04:00:00.000Z");
+        });
+
+        it("takes the last reading for a bound that ends a range", () => {
+            // Chile puts its clocks back at midnight, so 23:59 on 6 April 2024
+            // is reached at 02:59Z and again at 03:59Z.
+            const instant = utcFromLocal(zoneOf({tz: "America/Santiago"}),
+                {year: 2024, month: 4, day: 6, hour: 23, minute: 59, second: 59, ms: 999},
+                {prefer: "latest"});
+
+            assert.equal(instant.toISOString(), "2024-04-07T03:59:59.999Z");
+        });
+
+        it("does the same where the offsets happened to fall the other way", () => {
+            const instant = utcFromLocal(zoneOf({tz: "Africa/Cairo"}),
+                {year: 2024, month: 10, day: 31, hour: 23, minute: 59, second: 59, ms: 999},
+                {prefer: "latest"});
+
+            assert.equal(instant.toISOString(), "2024-10-31T21:59:59.999Z");
+        });
+
+        it("changes nothing for a time that happened once", () => {
+            const zone = zoneOf({tz: "Europe/Berlin"});
+            const parts = {year: 2026, month: 8, day: 7, hour: 23, minute: 59, second: 59, ms: 999};
+
+            assert.equal(utcFromLocal(zone, parts).toISOString(),
+                utcFromLocal(zone, parts, {prefer: "latest"}).toISOString());
+        });
+
+        // A time that never happened has no readings to choose between, so the
+        // preference must not change where the gap is skipped to.
+        it("still skips a gap the same way whichever end asked", () => {
+            const zone = zoneOf({tz: "America/Santiago"});
+            const parts = {year: 2024, month: 9, day: 8};
+
+            assert.equal(utcFromLocal(zone, parts).toISOString(), "2024-09-08T04:00:00.000Z");
+            assert.equal(utcFromLocal(zone, parts, {prefer: "latest"}).toISOString(),
+                "2024-09-08T04:00:00.000Z");
+        });
+    });
+
     it("agrees with a fixed offset when one was supplied instead", () => {
         const instant = utcFromLocal(zoneOf({tzOffset: "-120"}), {year: 2026, month: 8, day: 7});
 

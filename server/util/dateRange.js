@@ -103,12 +103,15 @@ export const parseDateRange = (from, to, {offsetMinutes, zone} = {}) => {
     const resolved = zone ? {valid: true, zone} : zoneFromOffset(offsetMinutes);
     if (!resolved.valid) return invalid(resolved.message);
 
+    // Each end takes its own reading of an hour the clocks repeated: the first
+    // for the start, the last for the end, so the whole of the doubled hour
+    // falls inside the range rather than half of it.
     const start = utcFromLocal(resolved.zone, fromParts);
 
     const end = utcFromLocal(resolved.zone, {
         ...toParts,
         hour: LAST_HOUR, minute: LAST_MINUTE, second: LAST_SECOND, ms: LAST_MILLISECOND
-    });
+    }, {prefer: "latest"});
 
     if (start > end) return invalid("The 'from' date must be before the 'to' date");
 

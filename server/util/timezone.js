@@ -106,34 +106,51 @@ export const resolveTimezone = ({tz, tzOffset} = {}) => {
     return zoneFromOffset(tzOffset);
 };
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 /**
  * The UTC instant at which a zone's wall clock reads the given local time.
  *
- * An offset can only be read *at* an instant, and the only instant to start
- * from is the wall-clock reading treated as UTC - which is out by the offset
- * itself. So each candidate is checked against its own offset rather than
- * against the guess that produced it: reading the offset at the guess and
- * trusting it put the midnight of a zone that moves its clocks at midnight an
- * hour into the *previous* day, which swept an hour of its tests into the range.
+ * An offset can only be read *at* an instant, and the only instant available to
+ * start from is the wall-clock reading treated as UTC - which is out by the
+ * offset itself. So rather than trusting the offset at a guess, every offset
+ * the zone uses anywhere near that day is tried, and a candidate counts only if
+ * the zone really is at that offset when it arrives.
  *
- * When neither candidate agrees with itself, the wall clock never read this at
- * all - the hour was skipped. The later instant is the first one that did
- * happen, which is what every date library answers for a time that never was.
+ * Two days a year that leaves other than exactly one answer.
+ *
+ * A time in the hour a zone *skips* has none: the clock never read it. The
+ * later instant is the first one that did happen, which is what every date
+ * library answers for a time that never was.
+ *
+ * A time in the hour a zone *repeats* has two, and which is right depends on
+ * which end of a range asked. A range must start at the first reading, or the
+ * first pass of the doubled hour falls outside it, and end at the last, or the
+ * second pass does. Left to whichever branch matched first, Chile and Paraguay
+ * lost the second hour off the end of a range while Cairo kept it by luck.
  */
-export const utcFromLocal = (zone, {year, month, day, hour = 0, minute = 0, second = 0, ms = 0}) => {
+export const utcFromLocal = (zone, parts, {prefer = "earliest"} = {}) => {
+    const {year, month, day, hour = 0, minute = 0, second = 0, ms = 0} = parts;
     const local = Date.UTC(year, month - 1, day, hour, minute, second, ms);
 
-    const firstOffset = zone.offsetAt(new Date(local));
-    const first = local + firstOffset * MS_PER_MINUTE;
-    if (zone.offsetAt(new Date(first)) === firstOffset) return new Date(first);
+    // A day either side, so both offsets around a transition are in hand
+    // whichever side of it the wall-clock reading itself falls on. No zone
+    // changes its offset twice within a day.
+    const offsets = new Set([
+        zone.offsetAt(new Date(local - MS_PER_DAY)),
+        zone.offsetAt(new Date(local)),
+        zone.offsetAt(new Date(local + MS_PER_DAY))
+    ]);
 
-    // Ambiguous times - the hour a zone repeats when its clocks go back - settle
-    // here, on the first reading, which is the earlier of the two.
-    const alternateOffset = zone.offsetAt(new Date(first));
-    const alternate = local + alternateOffset * MS_PER_MINUTE;
-    if (zone.offsetAt(new Date(alternate)) === alternateOffset) return new Date(alternate);
+    const candidates = [...offsets].map((offset) => local + offset * MS_PER_MINUTE);
 
-    return new Date(Math.max(first, alternate));
+    // The zone has to actually be at the offset that produced the instant.
+    const real = candidates.filter((candidate) =>
+        zone.offsetAt(new Date(candidate)) * MS_PER_MINUTE === candidate - local);
+
+    if (real.length === 0) return new Date(Math.max(...candidates));
+
+    return new Date(prefer === "latest" ? Math.max(...real) : Math.min(...real));
 };
 
 /** The hour of the day an instant falls in, on the zone's wall clock. */

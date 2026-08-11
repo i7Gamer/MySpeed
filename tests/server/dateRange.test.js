@@ -160,6 +160,29 @@ describe("parseDateRange", () => {
                 "the snapshot used to start an hour into the first day");
         });
 
+        /**
+         * Where a zone puts its clocks back at midnight an hour of the wall
+         * clock happens twice, and a range naming that day has to cover both
+         * passes of it - the end bound used to settle on the first, dropping
+         * the second hour of tests off the end of the range.
+         */
+        it("covers both passes of an hour the clocks repeated", () => {
+            const { from, to } = parseDateRange("2024-04-06", "2024-04-06",
+                { zone: zoneFor("America/Santiago") });
+
+            assert.equal(from.toISOString(), "2024-04-06T03:00:00.000Z");
+            assert.equal(to.toISOString(), "2024-04-07T03:59:59.999Z");
+            // 25 hours, because that day was 25 hours long where it happened.
+            assert.equal(to - from, 25 * 60 * 60 * 1000 - 1);
+        });
+
+        it("starts at the first pass of a repeated hour", () => {
+            const { from } = parseDateRange("2024-11-03", "2024-11-03",
+                { zone: zoneFor("America/Havana") });
+
+            assert.equal(from.toISOString(), "2024-11-03T04:00:00.000Z");
+        });
+
         it("takes the whole of a day the clocks change on", () => {
             const { from, to } = parseDateRange("2026-03-29", "2026-03-29",
                 { zone: zoneFor("Europe/Berlin") });
