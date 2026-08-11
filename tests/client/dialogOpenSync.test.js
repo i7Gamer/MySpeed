@@ -18,18 +18,28 @@ const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
  * and the password dialog, comparing its stale access level against the fresh
  * config, would have written passwordLevel back to "none" as a side effect of
  * changing the password.
+ *
+ * The welcome wizard is the same disease with a worse ending. It is rendered by
+ * ConfigProvider itself, so it mounts on the provider's very first render -
+ * when the config is still `{}` - and its three targets seed to 0. Finishing
+ * the wizard PATCHes all three unconditionally, so clicking through a fresh
+ * install without editing that step writes 0 over the shipped defaults: every
+ * metric then renders blue forever and no target bar appears anywhere.
  */
 const SETTINGS_DIALOGS = [
     "common/components/FrequencyDialog/FrequencyDialog.jsx",
     "common/components/OptimalValuesDialog/OptimalValuesDialog.jsx",
     "common/components/PasswordDialog/PasswordDialog.jsx",
     "common/components/ProviderDialog/ProviderDialog.jsx",
-    "common/components/PreferencesDialog/PreferencesDialog.jsx"
+    "common/components/PreferencesDialog/PreferencesDialog.jsx",
+    "common/components/WelcomeDialog/WelcomeDialog.jsx"
 ];
 
-// A useState whose initial value reads the config or preferences context -
-// the capture-at-mount pattern this sweep removed.
-const MOUNT_CAPTURE = /useState\(\s*(\(\)\s*=>\s*)?(config|preferences)[.[]/;
+// A useState whose initial value reads the config or preferences context - the
+// capture-at-mount pattern this sweep removed. The context reference may sit
+// inside a call, which is how `useState(parseInt(config.ping) || 0)` slipped
+// past the narrower version of this pattern.
+const MOUNT_CAPTURE = /useState\([^)]*\b(config|preferences)[.[]/;
 
 describe("the settings dialogs read their values when they open", () => {
     for (const dialog of SETTINGS_DIALOGS) {

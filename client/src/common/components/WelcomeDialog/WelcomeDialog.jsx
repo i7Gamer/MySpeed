@@ -1,6 +1,7 @@
 import {Dialog} from "@/common/contexts/Dialog";
 import "./styles.sass";
 import {useContext, useState} from "react";
+import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import Greetings from "./steps/Greetings";
 import ProviderChooser from "./steps/ProviderChooser";
 import DataHelper from "./steps/DataHelper";
@@ -16,10 +17,26 @@ export const WelcomeDialog = ({open, onClose}) => {
     const updateToast = useContext(ToastNotificationContext);
     const [step, setStep] = useState(1);
     const [provider, setProvider] = useState("ookla");
-    const [ping, setPing] = useState(parseInt(config.ping) || 0);
-    const [download, setDownload] = useState(parseInt(config.download) || 0);
-    const [upload, setUpload] = useState(parseInt(config.upload) || 0);
+    const [ping, setPing] = useState(0);
+    const [download, setDownload] = useState(0);
+    const [upload, setUpload] = useState(0);
     const [animating, setAnimating] = useState(false);
+
+    /**
+     * Seeded when the wizard opens, not when it mounts.
+     *
+     * ConfigProvider renders this itself, so it mounts on the provider's very
+     * first render - before the config has been fetched - and an initialiser
+     * never runs again. All three targets stayed at 0, and finish() PATCHes
+     * them unconditionally: clicking through a fresh install without touching
+     * that step replaced the shipped defaults with zeroes, which leaves every
+     * metric rendering blue forever and no target bar anywhere.
+     */
+    useSyncOnOpen(open, () => {
+        setPing(parseInt(config.ping) || 0);
+        setDownload(parseInt(config.download) || 0);
+        setUpload(parseInt(config.upload) || 0);
+    });
 
     const finish = async (close) => {
         // Checked, not assumed: patchRequest hands back the raw Response, so a
