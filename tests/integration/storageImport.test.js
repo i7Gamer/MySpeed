@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, api } from "./helpers/boot.js";
+import { bootServer, api, setConfig } from "./helpers/boot.js";
 
 let server;
 let nodeModel;
@@ -15,6 +15,9 @@ before(async () => {
 });
 
 after(async () => {
+    // An import that moves the schedule starts a real node-schedule job, and
+    // that job keeps the event loop alive long after the assertions are done.
+    (await import("../../server/tasks/timer.js")).stopTimer();
     await server?.close();
 });
 
@@ -158,5 +161,60 @@ describe("PUT /api/storage/config", () => {
         await importConfig({config: {password: "smuggled"}, nodes: [], integrations: [], recommendations: []});
 
         assert.equal(await server.config.getValue("password"), "none");
+    });
+
+    /**
+     * A restore has to put back what the backup says, including the settings
+     * that happen to sit at their shipped default.
+     *
+     * The skip that made this fail tested the *backup's* value against the
+     * default rather than the stored one, so a restore was a no-op for exactly
+     * the keys an operator most needs put back - and answered 200 while doing
+     * nothing. Restoring a year of retention onto an instance pruning weekly
+     * left it pruning weekly; restoring open access onto one locked to
+     * read-only left it locked.
+     */
+    describe("a backup value that sits at the shipped default", () => {
+        const restore = (config) => importConfig({config, nodes: [], integrations: [], recommendations: []});
+
+        it("restores the default retention over a changed one", async () => {
+            await setConfig(server.config, "retentionDays", "7");
+
+            assert.equal((await restore({retentionDays: "365"})).status, 200);
+            assert.equal(await server.config.getValue("retentionDays"), "365");
+        });
+
+        it("restores open access over read-only", async () => {
+            await setConfig(server.config, "passwordLevel", "read");
+
+            assert.equal((await restore({passwordLevel: "none"})).status, 200);
+            assert.equal(await server.config.getValue("passwordLevel"), "none");
+        });
+
+        it("restores an unpinned server over a pinned one", async () => {
+            await setConfig(server.config, "ooklaId", "49631");
+
+            assert.equal((await restore({ooklaId: "none"})).status, 200);
+            assert.equal(await server.config.getValue("ooklaId"), "none");
+        });
+
+        it("restores the default schedule over a changed one", async () => {
+            await setConfig(server.config, "cron", "*/15 * * * *");
+
+            assert.equal((await restore({cron: "0 * * * *"})).status, 200);
+            assert.equal(await server.config.getValue("cron"), "0 * * * *");
+        });
+
+        /**
+         * Why the skip existed. `provider: "none"` is the stored sentinel for
+         * "not chosen yet" and validateInput refuses it as user input, so the
+         * default has to be written without being validated - not skipped.
+         */
+        it("restores a sentinel default validateInput refuses as user input", async () => {
+            await setConfig(server.config, "provider", "ookla");
+
+            assert.equal((await restore({provider: "none"})).status, 200);
+            assert.equal(await server.config.getValue("provider"), "none");
+        });
     });
 });

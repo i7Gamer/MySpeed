@@ -354,16 +354,32 @@ export const importConfig = async (obj) => {
             continue;
         }
 
-        // A value already at its default needs no write, which also keeps a
-        // round-tripped export importable: several defaults are sentinels that
-        // validateInput deliberately refuses as user input.
-        if (obj.config[key] === configDefaults[key]) continue;
+        // What is skipped for a default is the *validation*, not the write.
+        // Several defaults are sentinels validateInput deliberately refuses as
+        // user input - `provider: "none"` means "not chosen yet" - so a
+        // round-tripped export could not carry them back through it.
+        //
+        // Skipping the write as well made a restore a no-op for exactly the
+        // settings an operator most needs put back, while still answering 200:
+        // restoring a year of retention onto an instance pruning weekly left it
+        // pruning weekly, and restoring open access onto one locked to
+        // read-only left it locked.
+        if (obj.config[key] === configDefaults[key]) {
+            updates.push({key, value: configDefaults[key]});
+            continue;
+        }
 
         const validated = await validateInput(key, obj.config[key]);
         if (typeof validated === "string") return false;
 
         updates.push({key, value: validated.value});
     }
+
+    // Read before the write, so the scheduler is only rebuilt when the restore
+    // actually moves the schedule. Now that a default is written rather than
+    // skipped, every full backup carries a cron - and restarting on all of them
+    // tears down a working timer and starts a fresh one for no reason.
+    const storedCron = await getValue("cron");
 
     try {
         await db.transaction(async (transaction) => {
@@ -383,7 +399,7 @@ export const importConfig = async (obj) => {
     // Restarting the scheduler is not something a transaction can roll back, so
     // it only happens once the import has actually committed.
     const cron = updates.find((update) => update.key === "cron");
-    if (cron) {
+    if (cron && cron.value.toString() !== storedCron) {
         timer.stopTimer();
         timer.startTimer(cron.value.toString());
     }
