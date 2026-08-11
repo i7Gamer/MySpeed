@@ -1,7 +1,7 @@
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
-    faArrowDown, faArrowUp, faPingPongPaddleBall, faSatelliteDish, faWaveSquare
+    faArrowDown, faArrowUp, faLinkSlash, faPingPongPaddleBall, faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
 import {bufferbloat, bufferbloatColour, packetLossColour} from "@/common/utils/TestUtil";
 import "./styles.sass";
@@ -94,7 +94,11 @@ export const LatestTestChart = (props) => {
                                 {props.test.packetLoss}%
                             </p>
                         </div>
-                        <FontAwesomeIcon icon={faSatelliteDish}
+                        {/* The same broken link the overview card uses. A dish
+                            says "receiving a signal", which is not what this
+                            measures, and it left packet loss drawn two
+                            different ways on two cards of the same page. */}
+                        <FontAwesomeIcon icon={faLinkSlash}
                                          className={"icon-" + packetLossColour(props.test.packetLoss)}/>
                     </div>
                 )}

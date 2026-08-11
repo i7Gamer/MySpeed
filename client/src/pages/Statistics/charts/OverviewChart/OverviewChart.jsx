@@ -4,7 +4,7 @@ import {useContext} from "react";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
     faCalendarDay, faCircleExclamation, faClockRotateLeft, faGaugeHigh, faHourglassHalf,
-    faPingPongPaddleBall, faStopwatch, faWaveSquare
+    faLinkSlash, faPingPongPaddleBall, faStopwatch
 } from "@fortawesome/free-solid-svg-icons";
 import {
     formatDay, formatDuration, formatHour, formatWithUnit, NOT_MEASURED
@@ -154,7 +154,11 @@ export const OverviewChart = (props) => {
                 higherIsBetter: false}
         },
         {
-            icon: faWaveSquare,
+            // A broken link, not the square wave: that one means variation -
+            // jitter here, standard deviation on the average cards - and this
+            // row borrowing it left the same glyph standing for two unrelated
+            // measurements on the same page.
+            icon: faLinkSlash,
             title: t("statistics.overview.packet_loss_title"),
             description: t("statistics.overview.packet_loss_description"),
             // Absent when nothing in the range measured it - only Ookla reports
