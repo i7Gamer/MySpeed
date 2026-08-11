@@ -1,5 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { promptUntilAccepted } from "../../client/src/common/utils/PasswordPrompt.js";
 
 /**
@@ -115,5 +117,43 @@ describe("promptUntilAccepted", () => {
         });
 
         assert.deepEqual(seen, ["wrong", "hunter2"]);
+    });
+});
+
+/**
+ * The other half of the same regression, one layer up.
+ *
+ * promptUntilAccepted reads an empty value as a dismissal, and that is
+ * deliberate - it is pinned above. But the credential prompt is opened with
+ * disableClose precisely because there is nothing behind it to go back to, and
+ * AlertRenderer only refuses an empty box when the call site asked it to. It
+ * did not, so pressing Enter on the autofocused empty input resolved with "",
+ * the loop read a dismissal, askForCredential returned without reloading, and
+ * the config stayed {} - a gutted page with the prompt gone and no way back
+ * short of F5.
+ */
+describe("the credential prompt cannot be emptied out of existence", () => {
+    const source = fs.readFileSync(fileURLToPath(
+        new URL("../../client/src/common/contexts/Config/ConfigContext.jsx", import.meta.url)), "utf8");
+
+    const openInput = source.slice(source.indexOf("alert.openInput"));
+    const options = openInput.slice(0, openInput.indexOf("});"));
+
+    it("asks for a value it will not accept as empty", () => {
+        assert.match(options, /required: true/,
+            "an empty submit still closes the unclosable prompt for good");
+    });
+
+    it("still refuses to be closed any other way", () => {
+        assert.match(options, /disableClose/);
+    });
+});
+
+describe("the alert renderer honours that request", () => {
+    const renderer = fs.readFileSync(fileURLToPath(
+        new URL("../../client/src/common/contexts/Alert/AlertContext.jsx", import.meta.url)), "utf8");
+
+    it("refuses to submit a required input that is empty", () => {
+        assert.match(renderer, /alert\.required && !inputValue/);
     });
 });

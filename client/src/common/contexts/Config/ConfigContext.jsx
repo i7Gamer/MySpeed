@@ -83,7 +83,14 @@ export const ConfigProvider = (props) => {
                 description: dialogConfig.description,
                 inputType: dialogConfig.type,
                 buttonText: dialogConfig.buttonText,
-                disableClose: dialogConfig.disableCloseButton
+                disableClose: dialogConfig.disableCloseButton,
+                // The X, Escape and the backdrop are all blocked because there
+                // is nothing behind this prompt to go back to - but Enter on
+                // the autofocused empty box resolved with "", which the loop
+                // below reads as a dismissal. That returned without reloading
+                // and left the config {}: a gutted page with the prompt gone
+                // and no way back short of F5.
+                required: true
             });
         };
 
