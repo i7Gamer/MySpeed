@@ -16,8 +16,18 @@ const STORAGE_PATH = `data/storage${process.env.PREVIEW_MODE === "true" ? "_prev
  *
  * A value that is not a date at all still falls back to now, which is what the
  * column meant before and is better than writing an invalid string.
+ *
+ * Absent is not the same as unparseable, though, and this used to treat it as
+ * such. `new Date(null)` is the epoch - a valid time, so it walked straight
+ * past the isNaN guard and wrote 1970-01-01 - while `new Date(undefined)` hit
+ * the guard and wrote the moment of the write. integration_data.lastActivity is
+ * nullable and means "has never run", so a fresh integration came back claiming
+ * it had just run and a cleared one came back having last run in 1970. A column
+ * with no value keeps having no value.
  */
 Sequelize.DATE.prototype._stringify = (date) => {
+    if (date === null || date === undefined) return date;
+
     const value = new Date(date);
 
     return Number.isNaN(value.getTime()) ? new Date().toISOString() : value.toISOString();

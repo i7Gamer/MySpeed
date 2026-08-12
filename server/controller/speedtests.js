@@ -183,6 +183,13 @@ export const importTests = async (data) => {
      */
     await db.transaction(async (transaction) => {
         for (let entry of data) {
+            // Before the two deletes below, which read through `entry` and are
+            // outside the per-row try/catch: a null element threw a TypeError
+            // out of this callback rather than being skipped, and the
+            // transaction that wraps the whole import then rolled back every
+            // good row already written. One hole in a backup restored nothing.
+            if (entry === null || typeof entry !== "object") { skipped++; continue; }
+
             if (entry.error === null) delete entry.error;
             if (entry.resultId === null) delete entry.resultId;
 

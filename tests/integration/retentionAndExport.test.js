@@ -150,6 +150,54 @@ describe("PUT /api/storage/tests/history", () => {
     it("accepts an empty list as a no-op", async () => {
         assert.equal((await importTests([])).status, 200);
     });
+
+    /**
+     * A hole in the file used to cost the whole file.
+     *
+     * The two `delete entry.x` lines run before the per-row try/catch, so a
+     * null entry threw a TypeError out of the transaction callback rather than
+     * being skipped - and the transaction that wraps the entire import then
+     * rolled back every good row that had already been written. A backup with
+     * one bad element restored nothing and said only "Tests could not be
+     * imported", which reads as a rejected file rather than a skipped row.
+     */
+    describe("a file with a hole in it", () => {
+        it("skips a null row and keeps the rest", async () => {
+            await seedTests(server.tests, []);
+
+            const {status} = await importTests([
+                {ping: 10, download: 100, upload: 50, time: 30, type: "auto", created: daysAgo(1)},
+                null,
+                {ping: 20, download: 200, upload: 60, time: 30, type: "auto", created: daysAgo(2)}
+            ]);
+
+            assert.equal(status, 200);
+            assert.equal(await server.tests.count(), 2,
+                "one null element rolled back the rows that were perfectly good");
+        });
+
+        it("skips a primitive where a row was expected", async () => {
+            await seedTests(server.tests, []);
+
+            const {status} = await importTests([
+                42,
+                "not a row",
+                {ping: 10, download: 100, upload: 50, time: 30, type: "auto", created: daysAgo(1)}
+            ]);
+
+            assert.equal(status, 200);
+            assert.equal(await server.tests.count(), 1);
+        });
+
+        it("still reports failure when the holes were all there was", async () => {
+            await seedTests(server.tests, []);
+
+            const {status} = await importTests([null, null]);
+
+            assert.equal(status, 500);
+            assert.equal(await server.tests.count(), 0);
+        });
+    });
 });
 
 describe("import validation", () => {
