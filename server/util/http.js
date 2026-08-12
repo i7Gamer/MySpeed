@@ -2,7 +2,11 @@
  * Integrations are notified from inside the speedtest run, which holds the
  * run lock until every one of them has answered. A webhook pointed at a host
  * that accepts the connection and then says nothing would otherwise hang that
- * run forever, so every outbound call carries its own deadline.
+ * run forever, so every outbound post carries this deadline.
+ *
+ * getJson takes it only as the default for a caller that has no opinion. The
+ * run lock says nothing about a GET, so a caller whose request is slower or
+ * more expendable than a webhook is expected to name its own deadline instead.
  */
 const OUTBOUND_TIMEOUT = 10000;
 
@@ -69,8 +73,15 @@ export const postText = async (url, body, {headers, activity} = {}) => {
     }
 };
 
-export const getJson = async (url, {headers, signal} = {}) => {
-    const res = await fetch(url, {headers, signal});
+/**
+ * The deadline is composed with the caller's signal, never replaced by it.
+ * `signal` used to default to the timeout, which meant a caller that passed a
+ * signal of its own to gain cancellation silently lost the deadline - and got
+ * back exactly the hang the deadline was there to prevent.
+ */
+export const getJson = async (url, {headers, signal, timeout = OUTBOUND_TIMEOUT} = {}) => {
+    const deadline = AbortSignal.timeout(timeout);
+    const res = await fetch(url, {headers, signal: signal ? AbortSignal.any([signal, deadline]) : deadline});
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
 };

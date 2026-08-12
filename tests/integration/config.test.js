@@ -254,3 +254,79 @@ describe("config routes", () => {
         assert.doesNotMatch(JSON.stringify(body), /Hunter2!|\$2[aby]\$/);
     });
 });
+
+/**
+ * What the PATCH route reads out of validateInput, pinned.
+ *
+ * This is a contract, not a bug that shipped. The route asks whether the answer
+ * is a string; it used to ask whether the answer had exactly one key, which for
+ * a refusal is its character count - and every refusal validateInput writes
+ * today is a whole sentence, so the two questions have always agreed. A refusal
+ * of a single character would not have: it would have counted as one key,
+ * walked past the guard and been written through as `value.value`, which is
+ * undefined for a string. Nothing here reproduces that, because no input can
+ * reach it. What is pinned is the shape both sides rely on, so a later refusal
+ * message or a second key on the acceptance cannot quietly turn a refusal into
+ * a write.
+ */
+describe("the validateInput contract the PATCH route reads", () => {
+    // One key per kind of check validateInput makes, each with a value it takes
+    // and one it turns down. `interface` is left out: which names it accepts
+    // depends on the adapters of whatever host runs the tests.
+    const CONTRACT_CASES = [
+        {key: "download", accepted: "250", refused: "fast"},
+        {key: "ping", accepted: "25.9", refused: "soon"},
+        {key: "retentionDays", accepted: "30", refused: "forever"},
+        {key: "provider", accepted: "libre", refused: "speedtest.net"},
+        {key: "cron", accepted: "0 * * * *", refused: "every hour please"},
+        {key: "scheduleOffset", accepted: "false", refused: "yes"},
+        {key: "passwordLevel", accepted: "read", refused: "write"},
+        {key: "ooklaId", accepted: "1234", refused: "frankfurt"},
+        {key: "libreUrl", accepted: "https://speed.example.net", refused: "not a url"},
+        {key: "password", accepted: "Hunter2!", refused: "none"}
+    ];
+
+    const patch = (key, value) => api(server.baseUrl, `/config/${key}`, {
+        method: "PATCH",
+        headers: {"content-type": "application/json"},
+        body: JSON.stringify({value})
+    });
+
+    // Read back the way a client reads it, so a value written as undefined
+    // shows up here instead of being taken on the controller's word.
+    const stored = async (key) => (await api(server.baseUrl, "/config")).body[key];
+
+    it("refuses with a string and accepts with an object carrying only `value`", async () => {
+        for (const {key, accepted, refused} of CONTRACT_CASES) {
+            assert.equal(typeof await validate(key, refused), "string",
+                `${key} refused ${JSON.stringify(refused)} with something other than a message`);
+
+            const result = await validate(key, accepted);
+
+            assert.equal(typeof result, "object", `${key} accepted ${JSON.stringify(accepted)} without an object`);
+            assert.deepEqual(Object.keys(result), ["value"], `${key} accepted with more than the value`);
+            assert.notEqual(result.value, undefined, `${key} accepted with no value to write`);
+        }
+
+        // The two refusals that belong to no key in particular.
+        assert.equal(typeof await validate("thereIsNoSuchKey", "5"), "string");
+        assert.equal(typeof await validate("download", ""), "string");
+    });
+
+    it("PATCH answers a refused value with 400, its message, and no write", async () => {
+        const before = await stored("download");
+
+        const {status, body} = await patch("download", "fast");
+
+        assert.equal(status, 400);
+        assert.equal(body.message, await validate("download", "fast"), "the refusal did not reach the client");
+        assert.equal(await stored("download"), before, "a refused value was written anyway");
+    });
+
+    it("PATCH answers an accepted value with 200 and stores it", async () => {
+        const {status} = await patch("download", "250");
+
+        assert.equal(status, 200);
+        assert.equal(await stored("download"), "250");
+    });
+});

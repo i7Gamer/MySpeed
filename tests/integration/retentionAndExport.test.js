@@ -202,6 +202,51 @@ describe("import validation", () => {
         assert.equal(await server.tests.count(), 1);
     });
 
+    /**
+     * Regression: the millisecond separator in the `created` check was an
+     * unescaped dot, so any single character stood where the dot belongs and
+     * `12:00:00X123Z` passed a test written to demand an ISO-8601 instant. Every
+     * read of the column compares it lexicographically as an ISO-8601 string -
+     * the retention sweep, findInRange, the list cursor - and such a row sorts
+     * outside every window they can ask for, so nothing sees it again.
+     *
+     * The route cannot show this: one usable row in the file is already
+     * "Tests imported", so the skipped row is only visible in the table.
+     */
+    it("skips a row whose millisecond separator is not a dot", async () => {
+        await seedTests(server.tests, []);
+        const usable = daysAgo(1);
+
+        const {status} = await importTests([row({created: usable}), row({created: "2026-08-07T12:00:00X123Z"})]);
+
+        assert.equal(status, 200);
+        assert.deepEqual((await server.tests.findAll()).map((test) => test.created), [usable]);
+    });
+
+    // The other half of that check: escaping the dot must not have narrowed what
+    // an export actually contains, which is exactly this - an instant with
+    // milliseconds, the only shape toISOString() produces.
+    it("imports a row whose created is a well-formed instant", async () => {
+        await seedTests(server.tests, []);
+
+        const {status} = await importTests([row({created: "2026-08-07T12:00:00.123Z"})]);
+
+        assert.equal(status, 200);
+        assert.deepEqual((await server.tests.findAll()).map((test) => test.created), ["2026-08-07T12:00:00.123Z"]);
+    });
+
+    // Milliseconds have always been required, and the escaped dot left that
+    // alone: a second-precision stamp is still refused rather than newly let in.
+    it("still skips a row that states no milliseconds at all", async () => {
+        await seedTests(server.tests, []);
+        const usable = daysAgo(1);
+
+        const {status} = await importTests([row({created: usable}), row({created: "2026-08-07T12:00:00Z"})]);
+
+        assert.equal(status, 200);
+        assert.deepEqual((await server.tests.findAll()).map((test) => test.created), [usable]);
+    });
+
     it("keeps the good rows and drops only the bad ones", async () => {
         await seedTests(server.tests, []);
 

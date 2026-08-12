@@ -258,6 +258,56 @@ describe("GET /api/speedtests/statistics", () => {
             assert.equal(body.tests.total, 1);
         });
 
+        /**
+         * sqlite keeps whatever it is handed - the same dynamic typing that lets
+         * an imported "fast" sit in the download column - so `created` can hold
+         * a string that is not a date at all. Every bound of an all-time range is
+         * read off those values, and Math.min against NaN is NaN, so one such row
+         * turned both bounds into Invalid Dates: the echo below threw on
+         * toISOString() and the whole range answered 500.
+         */
+        describe("a test whose created does not parse", () => {
+            const UNDATEABLE = "not a timestamp";
+
+            it("still answers, and bounds the range with the tests that do parse", async () => {
+                await seedTests(server.tests, [
+                    at(UNDATEABLE),
+                    at("2025-03-04T10:00:00.000Z"),
+                    at("2026-08-05T11:00:00.000Z")
+                ]);
+
+                const {status, body} = await allTime();
+
+                assert.equal(status, 200);
+                assert.equal(body.dateRange.from, "2025-03-04T10:00:00.000Z");
+                assert.equal(body.dateRange.to, "2026-08-05T11:00:00.000Z");
+            });
+
+            // Counted, because the measurement it carries is real - only the
+            // instant it claims to have been taken at is not, so it cannot be
+            // drawn anywhere on the line.
+            it("counts it without placing it on the chart", async () => {
+                await seedTests(server.tests, [at(UNDATEABLE), at("2026-08-05T11:00:00.000Z")]);
+
+                const {body} = await allTime();
+
+                assert.equal(body.tests.total, 2);
+                assert.deepEqual(body.labels, ["2026-08-05T11:00:00.000Z"]);
+            });
+
+            // Nothing left to take a bound from, which is the empty extent again
+            // rather than a window running from Infinity.
+            it("answers an instance whose every test is undateable", async () => {
+                await seedTests(server.tests, [at(UNDATEABLE), at(UNDATEABLE)]);
+
+                const {status, body} = await allTime();
+
+                assert.equal(status, 200);
+                assert.equal(body.tests.total, 2);
+                assert.deepEqual(body.labels, []);
+            });
+        });
+
         it("echoes the extent of the tests as the range it answered for", async () => {
             await seedTests(server.tests, [
                 at("2025-03-04T10:00:00.000Z"),

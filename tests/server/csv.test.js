@@ -108,5 +108,44 @@ describe("toCsv", () => {
             // Header plus exactly one data row, despite the embedded separators.
             assert.equal(csv.split("\n").length - 1, 1);
         });
+
+        it("escapes formula trigger characters to prevent CSV formula injection", () => {
+            const line = lines([row({error: "=SUM(A1:A10)"})])[1];
+            assert.ok(line.endsWith('"' + "'" + '=SUM(A1:A10)"'));
+        });
+
+        it("prefixes the remaining formula triggers as well", () => {
+            const line = (error) => lines([row({error})])[1];
+
+            assert.equal(field(line("+1+1"), "error"), "'+1+1");
+            assert.equal(field(line("@import"), "error"), "'@import");
+            assert.equal(field(line("\tcmd|'/c calc'!A0"), "error"), "'\tcmd|'/c calc'!A0");
+        });
+
+        // Regression: a failed test stores the -1 placeholder in all three of
+        // these, so the injection prefix turned the columns that carry the actual
+        // measurements into text for every consumer of the export.
+        it("leaves the -1 placeholder of a failed test as a number", () => {
+            const line = lines([row({ping: -1, download: -1, upload: -1})])[1];
+
+            for (const column of ["ping", "download", "upload"])
+                assert.equal(field(line, column), "-1");
+        });
+
+        // sqlite's dynamic typing hands a stored number back as a string often
+        // enough that the exemption cannot rest on the value still being one.
+        it("leaves a negative decimal alone, as a number and as a string", () => {
+            assert.equal(field(lines([row({jitter: -12.5})])[1], "jitter"), "-12.5");
+            assert.equal(field(lines([row({jitter: "-12.5"})])[1], "jitter"), "-12.5");
+        });
+
+        // The whole field has to be the number: these open like one and would
+        // otherwise ride the exemption straight past the hardening.
+        it("still prefixes a formula that merely starts out looking numeric", () => {
+            const line = (error) => lines([row({error})])[1];
+
+            assert.equal(field(line("-1+1"), "error"), "'-1+1");
+            assert.equal(field(line("-1;=cmd"), "error"), "'-1;=cmd");
+        });
     });
 });

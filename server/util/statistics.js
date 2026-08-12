@@ -164,6 +164,22 @@ const emptySeries = () => ({
         downloadLatency: [], uploadLatency: []}
 });
 
+/**
+ * Whether a row can be placed on a timeline at all.
+ *
+ * Three separate things index on `created`, and one unparseable value killed
+ * each of them differently: toISOString() threw outright in the full series,
+ * the bucket index came out NaN - which no bounds check catches - in the
+ * downsampled one, and the hour-of-day averages indexed their array with it.
+ * Any of the three answered 500 for the whole range on the strength of a single
+ * bad row, so this is applied once to everything that reads a timestamp rather
+ * than guarded three times over.
+ *
+ * Such a row still counts and still averages. Its measurements are real; only
+ * the instant it claims to have been taken at is not.
+ */
+const isPlaceable = (entry) => !Number.isNaN(new Date(entry.created).getTime());
+
 const fullSeries = (sorted) => ({
     labels: sorted.map(entry => new Date(entry.created).toISOString()),
     failed: sorted.map(entry => entry.error !== null),
@@ -182,7 +198,14 @@ const fullSeries = (sorted) => ({
 });
 
 const downsampledSeries = (sorted, from, to, targetPoints) => {
-    const bucketSize = (to.getTime() - from.getTime()) / targetPoints;
+    const timeSpan = to.getTime() - from.getTime();
+
+    // Zero when the range has no width and NaN when a bound itself does not
+    // parse. Both divide every offset into a bucket index that is not a number,
+    // and NaN walks straight through the bounds check below.
+    if (!Number.isFinite(timeSpan) || timeSpan <= 0) return emptySeries();
+
+    const bucketSize = timeSpan / targetPoints;
     const buckets = Array.from({length: targetPoints}, () => ({entries: [], errors: []}));
 
     sorted.forEach(entry => {
@@ -250,7 +273,7 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
     const bucketZone = zone ?? zoneFromOffset(offsetMinutes).zone ?? serverZone;
     const targetPoints = clampPoints(maxPoints);
     const succeeded = entries.filter(entry => entry.error === null);
-    const sorted = [...entries].sort((a, b) => new Date(a.created) - new Date(b.created));
+    const sorted = entries.filter(isPlaceable).sort((a, b) => new Date(a.created) - new Date(b.created));
 
     const series = sorted.length <= targetPoints
         ? fullSeries(sorted)
@@ -278,7 +301,7 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
         labels: series.labels,
         failed: series.failed,
         errors: series.errors,
-        hourlyAverages: buildHourlyAverages(succeeded, bucketZone),
+        hourlyAverages: buildHourlyAverages(succeeded.filter(isPlaceable), bucketZone),
         consistency: {
             download: consistencyScore(succeeded.map(entry => entry.download)),
             upload: consistencyScore(succeeded.map(entry => entry.upload)),

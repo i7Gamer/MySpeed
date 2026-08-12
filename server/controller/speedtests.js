@@ -187,7 +187,7 @@ export const importTests = async (data) => {
             if (entry.resultId === null) delete entry.resultId;
 
             if (!["custom", "auto"].includes(entry.type)) { skipped++; continue; }
-            if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(entry.created)) { skipped++; continue; }
+            if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(entry.created)) { skipped++; continue; }
 
             // sqlite stores whatever it is handed, so an imported "fast" in the
             // download column survives the write and then poisons every average
@@ -276,8 +276,19 @@ const extentOf = (entries) => {
 
     const {first, last} = entries.reduce((extent, entry) => {
         const time = new Date(entry.created).getTime();
+
+        // A row whose created does not parse cannot bound a window it has no
+        // place in. Math.min against NaN is NaN, so one of them turned both
+        // bounds into Invalid Dates - which the dateRange echo below throws on,
+        // and which the chart bucketing reads as a range of no width.
+        if (Number.isNaN(time)) return extent;
+
         return {first: Math.min(extent.first, time), last: Math.max(extent.last, time)};
     }, {first: Infinity, last: -Infinity});
+
+    // Every row the instance holds is undateable, which is the empty extent
+    // again: there is no window its tests can be said to cover.
+    if (!Number.isFinite(first)) return {from: new Date(), to: new Date()};
 
     // A single test - or several sharing one instant - is an extent of zero
     // width, and the bucketing divides by it.

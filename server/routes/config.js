@@ -50,7 +50,7 @@ app.delete("/password", password(false), async (req, res) => {
 
 app.patch("/:key", password(false), async (req, res) => {
     const value = await config.validateInput(req.params.key, req.body?.value);
-    if (Object.keys(value).length !== 1) return res.status(400).json({message: value});
+    if (typeof value === "string") return res.status(400).json({message: value});
 
     if (!await config.updateValue(req.params.key, value.value))
         return res.status(500).json({message: `Error updating the key '${req.params.key}'`});

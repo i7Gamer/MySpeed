@@ -1,6 +1,15 @@
 import fs from 'node:fs';
 import { getJson } from './http.js';
 
+/**
+ * These lists are fetched once at startup, off any request, and are a far
+ * larger payload than a webhook body. Giving up on the deadline a webhook gets
+ * cost the provider dialog its whole server list until the next restart - the
+ * catch below only logs, nothing retries - so this one call is allowed to wait
+ * a good deal longer than an integration ever may.
+ */
+const SERVER_LIST_TIMEOUT = 60000;
+
 const sources = [
     {
         file: "data/servers/ookla.json",
@@ -37,7 +46,7 @@ const isFileCurrent = (file, isCurrent) => {
 for (const {file, url, format, isCurrent} of sources) {
     if (fs.existsSync(file) && isFileCurrent(file, isCurrent)) continue;
 
-    getJson(url)
+    getJson(url, {timeout: SERVER_LIST_TIMEOUT})
         .then((data) => {
             const servers = Object.fromEntries((data ?? []).map((row) => [row.id, format(row)]));
             fs.writeFileSync(file, JSON.stringify(servers, null, 4));

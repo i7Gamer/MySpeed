@@ -288,6 +288,13 @@ describe("buildStatistics", () => {
     });
 
     describe("chart series", () => {
+        const sameLengthAsLabels = (stats) => {
+            assert.equal(stats.failed.length, stats.labels.length, "failed is out of step with the labels");
+            assert.equal(stats.errors.length, stats.labels.length, "errors is out of step with the labels");
+            for (const [metric, values] of Object.entries(stats.data))
+                assert.equal(values.length, stats.labels.length, `${metric} is out of step with the labels`);
+        };
+
         it("returns every entry in ascending time order when under the target", () => {
             const stats = buildStatistics([
                 at("2026-08-07T03:00:00.000Z", {download: 300}),
@@ -329,6 +336,127 @@ describe("buildStatistics", () => {
             assert.ok(stats.labels.length <= TARGET_CHART_POINTS);
             assert.equal(stats.data.download.length, stats.labels.length);
             assert.equal(stats.rawDataPoints, TARGET_CHART_POINTS * 2);
+        });
+
+        /**
+         * The bucket a row lands in is (created - from) / bucketSize, and a range
+         * of no width, a range that runs backwards, and a timestamp that does not
+         * parse all turn that into a number no bounds check catches. buckets[NaN]
+         * is undefined, so the push threw a TypeError and the statistics route
+         * answered 500 for the whole range. The bounds are guarded here; the
+         * unplaceable row is dropped before it ever reaches a bucket.
+         *
+         * Every set here outnumbers the requested resolution on purpose: at or
+         * below it the series is returned whole and never sees a bucket at all,
+         * which is what made the test this replaced pass against the crash.
+         */
+        describe("degenerate bounds while downsampling", () => {
+            // clampPoints() refuses to go below MIN_CHART_POINTS, so this is the
+            // smallest set of entries that can outnumber the buckets.
+            const BUCKETED_ENTRIES = MIN_CHART_POINTS + 10;
+            const ENTRY_SPACING_MS = 60_000;
+
+            const spreadFrom = (iso) => Array.from({length: BUCKETED_ENTRIES}, (unused, index) =>
+                at(new Date(new Date(iso).getTime() + index * ENTRY_SPACING_MS).toISOString()));
+
+            // A range of no width makes bucketSize 0, and the row sitting exactly
+            // on the bound then divides 0 by 0: the index is NaN, which walked
+            // straight through the index < 0 / index >= targetPoints check.
+            it("answers a zero-width range with an empty series rather than throwing", () => {
+                const instant = "2026-08-07T12:00:00.000Z";
+                const stats = buildStatistics(spreadFrom(instant), range(instant, instant),
+                    {maxPoints: MIN_CHART_POINTS});
+
+                assert.ok(stats.downsampled, "the series never went through the bucketing path");
+                assert.deepEqual(stats.labels, []);
+                sameLengthAsLabels(stats);
+            });
+
+            // Backwards, a negative offset divided by a negative bucket size lands
+            // every row in a plausible-looking bucket, so the chart drew a line -
+            // mirrored - for a window that never existed.
+            // This module answers a nonsense range rather than throwing on one -
+            // the route it came through is where that earns its 400 - so a bound
+            // that does not parse has to be as survivable as one that is merely
+            // backwards. Unguarded it makes bucketSize NaN, and every index with
+            // it.
+            it("returns an empty series for a range whose bounds do not parse", () => {
+                const stats = buildStatistics(spreadFrom("2026-08-07T12:00:00.000Z"),
+                    {from: new Date("not a date"), to: new Date("not a date")},
+                    {maxPoints: MIN_CHART_POINTS});
+
+                assert.deepEqual(stats.labels, []);
+                sameLengthAsLabels(stats);
+            });
+
+            it("returns an empty series for a range whose end precedes its start", () => {
+                const stats = buildStatistics(spreadFrom("2026-08-07T12:00:00.000Z"),
+                    range("2026-08-07T23:59:59.999Z", "2026-08-07T00:00:00.000Z"),
+                    {maxPoints: MIN_CHART_POINTS});
+
+                assert.deepEqual(stats.labels, []);
+                sameLengthAsLabels(stats);
+            });
+
+            // One corrupt row used to take the whole range with it: an unparseable
+            // created offsets to NaN, and NaN survives both Math.floor and
+            // Math.min.
+            it("skips an entry whose timestamp does not parse and buckets the rest", () => {
+                const stats = buildStatistics([
+                    ...spreadFrom("2026-08-07T00:00:00.000Z"),
+                    at("not a timestamp", {error: "Cannot open socket"})
+                ], DAY, {maxPoints: MIN_CHART_POINTS});
+
+                assert.ok(stats.downsampled, "the series never went through the bucketing path");
+                assert.ok(stats.labels.length > 0, "the well-formed entries went out with the bad one");
+                sameLengthAsLabels(stats);
+                for (const value of stats.data.download) assert.equal(value, 100);
+                assert.deepEqual(stats.errors.filter(error => error !== null), [],
+                    "the unparseable row reached a bucket");
+                assert.equal(stats.tests.failed, 1, "it is still counted, just not drawn");
+            });
+        });
+
+        /**
+         * The same corrupt row, down each of the other two paths that index on
+         * `created`. Bucketing was only one of the three: the full series called
+         * toISOString() on an Invalid Date, which throws outright, and the
+         * hour-of-day averages indexed their array with the NaN hour. A range
+         * small enough to be returned whole takes the first, and a *succeeded*
+         * row - the downsampling case above deliberately carries an error, which
+         * keeps it out of the hourly averages - takes the second.
+         */
+        describe("an entry whose timestamp does not parse", () => {
+            const GOOD = "2026-08-07T01:00:00.000Z";
+
+            it("is left out of a series small enough to be returned whole", () => {
+                const stats = buildStatistics([at(GOOD), at("not a timestamp")], DAY);
+
+                assert.equal(stats.downsampled, false, "this no longer covers the full-series path");
+                assert.deepEqual(stats.labels, [GOOD]);
+                sameLengthAsLabels(stats);
+            });
+
+            // Asserted as a total rather than against a named hour: which hour
+            // the good row lands in is the server's own clock's business, and
+            // the point here is only that one row was placed and one was not.
+            it("is left out of the hour-of-day averages when it succeeded", () => {
+                const stats = buildStatistics([at(GOOD), at("not a timestamp")], DAY);
+
+                const measured = stats.hourlyAverages.filter(hour => hour.count > 0);
+                assert.equal(measured.length, 1, "the undateable row was given an hour of its own");
+                assert.equal(measured[0].count, 1, "the undateable row was counted into an hour");
+            });
+
+            // Its measurements are real - only the instant it claims is not - so
+            // it is still counted and still averaged.
+            it("still counts and still averages", () => {
+                const stats = buildStatistics([at(GOOD, {download: 100}),
+                    at("not a timestamp", {download: 200})], DAY);
+
+                assert.equal(stats.tests.total, 2);
+                assert.equal(stats.download.avg, 150);
+            });
         });
     });
 

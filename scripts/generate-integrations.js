@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { integrationIdentifier, moduleName } from './identifiers.js';
 
 const integrationsDir = path.join(import.meta.dirname, '..', 'server', 'integrations');
 const outputFile = path.join(integrationsDir, 'index.js');
@@ -14,13 +15,13 @@ if (files.length === 0) {
 }
 
 const imports = files.map((file) => {
-    const varName = file.replace('.js', '');
+    const varName = integrationIdentifier(file);
     return `import ${varName} from './${file}';`;
 }).join('\n');
 
 const entries = files.map((file) => {
-    const varName = file.replace('.js', '');
-    return `    { name: '${varName}', setup: ${varName} },`;
+    const varName = integrationIdentifier(file);
+    return `    { name: '${moduleName(file)}', setup: ${varName} },`;
 }).join('\n');
 
 const output = `${imports}

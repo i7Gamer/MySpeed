@@ -55,6 +55,12 @@ const setRunning = (running, sendRequest = true) => {
 // too little about the line to recommend anything.
 const RECOMMENDATION_SAMPLE = 10;
 
+// What a ping has to clear before it counts as something that was measured.
+// FAILED sits below every real latency, so a failed row that reaches the sample
+// anyway - one whose error column somehow stayed null - would take "lowest
+// ping" from every genuine test beside it.
+const LOWEST_REAL_PING = FAILED + 1;
+
 /**
  * Exported for its tests. Filtering failures out of listTests() - whose default
  * limit is 10 rows *including* failures - meant one failed test among the
@@ -67,10 +73,28 @@ export const createRecommendations = async () => {
 
     let recommendations = {ping: Infinity, down: 0, up: 0};
     for (const entry of list) {
-        if (entry.ping < recommendations.ping) recommendations.ping = entry.ping;
-        if (entry.download > recommendations.down) recommendations.down = entry.download;
-        if (entry.upload > recommendations.up) recommendations.up = entry.upload;
+        const {ping, download, upload} = entry;
+
+        // Number.isFinite with no typeof beside it: it coerces nothing, so every
+        // non-number is already out. That matters because sqlite keeps whatever
+        // it was handed, and a history imported before importTests() checked its
+        // numeric columns can still hold an empty string in one - which compares
+        // as zero and so took "lowest ping" from the whole sample.
+        if (Number.isFinite(ping) && ping >= LOWEST_REAL_PING && ping < recommendations.ping)
+            recommendations.ping = ping;
+
+        if (Number.isFinite(download) && download > recommendations.down)
+            recommendations.down = download;
+
+        if (Number.isFinite(upload) && upload > recommendations.up)
+            recommendations.up = upload;
     }
+
+    // Nothing in the sample measured a latency, so there is nothing to
+    // recommend. Falling through handed the untouched Infinity to the
+    // controller, whose Math.round() passes it along unchanged, and the row came
+    // back with a null ping beside a perfectly good download and upload.
+    if (!Number.isFinite(recommendations.ping)) return;
 
     await controller.update(recommendations.ping, recommendations.down, recommendations.up);
 }

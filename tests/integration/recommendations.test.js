@@ -23,6 +23,12 @@ const failure = (overrides = {}) => ({
     error: "Too many requests", ...overrides
 });
 
+// A full sample of rows the error column calls successful and every numeric
+// column calls failed, spread over the same window the successes above use.
+const RECOMMENDATION_SAMPLE = 10;
+const unmeasured = () => Array.from({length: RECOMMENDATION_SAMPLE},
+    (unused, i) => failure({created: minutesAgo(20 - i), error: null}));
+
 before(async () => {
     server = await bootServer();
     recommendations = await import("../../server/controller/recommendations.js");
@@ -83,5 +89,65 @@ describe("createRecommendations", () => {
 
         const current = await recommendations.getCurrent();
         assert.equal(current.ping, 21);
+    });
+
+    /**
+     * A row carrying the placeholders while its error column says it succeeded
+     * has no business existing, but a botched import writes one and listTests()
+     * hands it over as a success. Only the ping guard keeps -1 out of the
+     * result: it is lower than any latency a line can actually manage.
+     */
+    it("ignores a -1 ping on a test that reports no error", async () => {
+        await seedTests(server.tests, [...successes(), failure({error: null})]);
+
+        await createRecommendations();
+
+        const current = await recommendations.getCurrent();
+        assert.equal(current.ping, 21);
+    });
+
+    it("recommends nothing when no test in the sample measured a ping", async () => {
+        await seedTests(server.tests, unmeasured());
+
+        await createRecommendations();
+
+        assert.equal(await recommendations.getCurrent(), null,
+            "a sample of placeholders was written as a recommendation");
+    });
+
+    /**
+     * The half of the same story that costs something. A sample nothing can be
+     * read from used to overwrite the targets already on record: first with the
+     * -1 placeholder, and once that was guarded, with the untouched Infinity -
+     * which the ping column stores as null, beside a download and upload reset
+     * to the zero the loop starts from. Yesterday's recommendation was fine and
+     * should simply stay.
+     */
+    it("leaves the standing recommendation alone when the sample measured no ping", async () => {
+        await seedTests(server.tests, successes());
+        await createRecommendations();
+
+        await seedTests(server.tests, unmeasured());
+        await createRecommendations();
+
+        const current = await recommendations.getCurrent();
+        assert.deepEqual({ping: current.ping, download: current.download, upload: current.upload},
+            {ping: 21, download: 190, upload: 95});
+    });
+
+    it("still recommends from the other nine when one ping is not a number", async () => {
+        // sqlite stores what it is handed, so an empty string survives in a
+        // numeric column - and it is the newest row, so the loop meets it first
+        // and every real ping behind it then compares as higher.
+        const sample = successes();
+        sample[sample.length - 1].ping = "";
+
+        await seedTests(server.tests, sample);
+
+        await createRecommendations();
+
+        const current = await recommendations.getCurrent();
+        assert.deepEqual({ping: current.ping, download: current.download, upload: current.upload},
+            {ping: 22, download: 190, upload: 95});
     });
 });
