@@ -176,4 +176,60 @@ describe("parseCliOutput", () => {
             assert.equal(parsed.error, "no server found");
         });
     });
+
+    /**
+     * A CLI that explains itself on stdout, in plain text, with nothing on
+     * stderr at all.
+     *
+     * stderr was the only stream a failure could come from, so this parsed as
+     * neither a result nor an error and returned {}. speedtest.js then added
+     * `elapsed` and handed it on, and tasks/speedtest.js reached its
+     * `Object.keys(speedtest).length <= 1` guard and reported "No response,
+     * even after trying again, test timed out." - a run that had failed in the
+     * first second, blamed on a three-minute timeout that never happened, with
+     * the CLI's own sentence discarded on the way past.
+     */
+    describe("a failure the CLI printed to stdout", () => {
+        it("reports plain text from stdout when stderr is silent", () => {
+            const parsed = parseCliOutput("ookla", "Fatal: host unreachable", "");
+
+            assert.equal(parsed.error, "Fatal: host unreachable");
+        });
+
+        it("recognises rate limiting there too", () => {
+            const parsed = parseCliOutput("ookla", "Too many requests, slow down", "");
+
+            assert.match(parsed.error, /try again later/);
+        });
+
+        it("still prefers stderr, which is where a failure usually is", () => {
+            const parsed = parseCliOutput("ookla", "Fatal: host unreachable", "the real reason");
+
+            assert.equal(parsed.error, "the real reason");
+        });
+
+        it("keeps a result that happens to sit beside chatter on stdout", () => {
+            const parsed = parseCliOutput("ookla", `Connecting...\n${OOKLA_RESULT}`, "");
+
+            assert.equal(parsed.error, undefined);
+            assert.equal(parsed.download.bandwidth, 291995750);
+        });
+
+        /**
+         * Progress records are not a failure. They are JSON, so they are
+         * skipped rather than mistaken for the plain-text explanation this
+         * looks for - otherwise every run that was cut short mid-measurement
+         * would report its own progress log as the reason.
+         */
+        it("does not mistake unparsed json chatter for an explanation", () => {
+            const progress = JSON.stringify({type: "download", download: {bandwidth: 100}});
+            const parsed = parseCliOutput("ookla", progress, "");
+
+            assert.equal(parsed.error, undefined);
+        });
+
+        it("says nothing at all when both streams are empty", () => {
+            assert.equal(parseCliOutput("ookla", "", "").error, undefined);
+        });
+    });
 });

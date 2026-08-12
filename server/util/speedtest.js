@@ -9,6 +9,59 @@ import path from 'node:path';
 const MS_PER_SECOND = 1000;
 const CLI_TIMEOUT = 180 * MS_PER_SECOND;
 
+// How long a CLI gets to honour SIGTERM before it is killed outright.
+export const KILL_GRACE = 5 * MS_PER_SECOND;
+
+/**
+ * Whether the child is actually gone.
+ *
+ * Not `killed`, which only says a signal was delivered - kill() sets it whether
+ * or not the child does anything about it, so a child that ignores SIGTERM
+ * looks killed and is still running.
+ */
+export const hasExited = (child) => child.exitCode !== null || child.signalCode !== null;
+
+/**
+ * Ends a run, escalating if the CLI will not take the hint.
+ *
+ * kill() sends SIGTERM, which a process blocked in a socket read is free to
+ * ignore - and several of these CLIs do. The child then never exits, 'close'
+ * never fires, the promise below never settles, and the run latch
+ * tasks/speedtest.js drops in its `finally` is never dropped: no scheduled
+ * speedtest runs again for the life of the process. A timeout that cannot end
+ * the process it is timing is not a timeout.
+ *
+ * Returns the escalation handle so a child that does close cleanly can cancel
+ * it rather than leave the event loop holding a five-second timer.
+ */
+export const terminate = (child, graceMs = KILL_GRACE) => {
+    child.kill();
+
+    const escalation = setTimeout(() => {
+        if (!hasExited(child)) child.kill("SIGKILL");
+    }, graceMs);
+
+    // Never a reason to hold the process open on its own.
+    escalation.unref?.();
+
+    return escalation;
+};
+
+/**
+ * The failure an exit code implies, or null when the streams already said
+ * everything worth saying.
+ *
+ * Only consulted when nothing at all was parsed: a non-zero exit alongside a
+ * result is the Ookla CLI's habit of failing after it has already printed the
+ * measurement, and the measurement is the thing worth keeping. A clean exit
+ * with no result is left alone too - that is a killed run, and the timeout is
+ * what should explain it.
+ */
+export const exitError = (code, result) =>
+    code !== 0 && !result.error && Object.keys(result).length === 0
+        ? `The speedtest CLI exited with code ${code} without producing a result`
+        : null;
+
 /**
  * Why the configured interface cannot carry this run, or null when it can.
  *
@@ -104,9 +157,10 @@ export default async (mode, serverId, serverUrl, onProgress) => {
     const testProcess = spawn(binaryPath, args, {windowsHide: true});
 
     let timedOut = false;
+    let escalation;
     const timeout = setTimeout(() => {
         timedOut = true;
-        testProcess.kill();
+        escalation = terminate(testProcess);
     }, CLI_TIMEOUT);
 
     testProcess.stderr.on('data', (buffer) => {
@@ -141,14 +195,23 @@ export default async (mode, serverId, serverUrl, onProgress) => {
         // in a string column.
         testProcess.on('error', (error) => {
             clearTimeout(timeout);
+            clearTimeout(escalation);
             reject(error);
         });
 
         // 'close' rather than 'exit': the process can exit while its pipes still
         // hold output, and parsing then would read a truncated result.
-        testProcess.on('close', () => {
+        testProcess.on('close', (code) => {
             clearTimeout(timeout);
+            clearTimeout(escalation);
             result = parseCliOutput(mode, stdout, stderr);
+
+            // The exit code has the last word when the streams had nothing to
+            // say. Without it a run that failed instantly and explained itself
+            // nowhere the parser looks was reported as "test timed out".
+            const failure = exitError(code, result);
+            if (failure) result.error = failure;
+
             resolve();
         });
     });

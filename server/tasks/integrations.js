@@ -28,7 +28,15 @@ export const sendFinished = async (data) => {
     await triggerEvent("testFinished", data);
 };
 
+/** The scheduled job, for the tests that assert it was cancelled. */
+export const currentJob = () => job;
+
 export const startTimer = () => {
+    // Same reason as the speedtest timer: the module holds one job reference,
+    // and overwriting it leaves the old minute job in node-schedule's registry
+    // pinging every integration a second time, every minute, forever.
+    stopTimer();
+
     job = schedule.scheduleJob('* * * * *', () => sendCurrent());
 };
 

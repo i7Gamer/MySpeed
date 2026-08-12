@@ -42,6 +42,13 @@ const isResult = (mode, data) => {
     return true;
 };
 
+// Whatever a CLI wrote that was not one of its own JSON records, i.e. the part
+// a human wrote for a human.
+const plainTextLines = (text) => text.trim().split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("{") && !line.startsWith("["))
+    .join('\n');
+
 /**
  * Turns what a provider CLI printed into either a result or an error.
  *
@@ -78,8 +85,18 @@ export const parseCliOutput = (mode, stdout, stderr) => {
         }
     }
 
-    if (!hasResult && !result.error && stderr.trim()) {
-        result.error = stderr.includes("Too many requests") ? RATE_LIMIT_MESSAGE : stderr.trim();
+    if (!hasResult && !result.error) {
+        // stdout as a last resort, and only its plain-text lines. A CLI that
+        // explains itself there with nothing on stderr - "Fatal: host
+        // unreachable" and an immediate exit - parsed as neither a result nor
+        // an error, and the caller's empty-result guard then blamed the
+        // three-minute timeout for a run that had failed in the first second.
+        // The JSON lines are skipped because they are progress records, not an
+        // explanation: reporting those would make every interrupted run cite
+        // its own progress log as the reason it stopped.
+        const text = stderr.trim() || plainTextLines(stdout);
+
+        if (text) result.error = text.includes("Too many requests") ? RATE_LIMIT_MESSAGE : text;
     }
 
     // Capped in one place, so it holds however the error was arrived at.
