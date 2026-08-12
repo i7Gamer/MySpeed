@@ -42,7 +42,16 @@ export const downloadToFile = (url, destPath, {redirectsLeft = MAX_DOWNLOAD_REDI
             // file sitting where its archive goes.
             // The partial file is gone before the caller hears about the
             // failure, so a retry cannot find one where its archive goes.
+            //
+            // The response is destroyed too, not just the write side. When the
+            // failure starts on the write side, pipe() only unpipes - the
+            // response stops being read but stays checked out of the agent with
+            // its socket open and its body buffered, until the peer eventually
+            // times out. Settling once is enough: destroy() on an already
+            // destroyed stream is a no-op, and reject after the first call is
+            // ignored.
             const fail = (error) => {
+                res.destroy();
                 writeStream.destroy();
                 fs.promises.unlink(destPath).catch(() => undefined).then(() => reject(error));
             };

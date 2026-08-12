@@ -9,13 +9,16 @@ import { Sequelize } from "sequelize";
  * is written as an ISO-8601 UTC string rather than in whatever local form the
  * dialect would pick. It falls back to "now" for a value that is not a date,
  * which is right for a garbage string - but `new Date(null)` is not garbage to
- * JavaScript. It is the epoch, a perfectly valid time, so a null sailed past
- * the isNaN guard and was stored as 1970-01-01. `undefined` did hit the guard
- * and was stored as the moment of the write.
+ * JavaScript. It is the epoch, a perfectly valid time, so a null renders as
+ * 1970-01-01, and `undefined` renders as the moment of the write. Neither is
+ * what a nullable column such as integration_data.lastActivity means by "has
+ * never run".
  *
- * integration_data.lastActivity is nullable and means "has never run". Both
- * paths destroyed that: a fresh integration came back claiming it had just run,
- * and one whose activity was cleared came back having last run in 1970.
+ * These two cases are asserted as a property of the function, not as a
+ * regression: sequelize 6 writes SQL NULL without consulting _stringify on
+ * either dialect this project supports, so no ORM path reaches the fallback
+ * today. The round-trip below is what pins the behaviour that is actually
+ * exercised; the null cases pin that the function is correct in isolation.
  */
 
 let stringify;

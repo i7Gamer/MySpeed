@@ -52,17 +52,32 @@ else
 
   # Remove folder
   if [ "$1" == "--keep-data" ]; then
+    # A fresh staging directory every run, rather than a fixed /tmp path.
+    #
     # mv renames into an empty destination but moves *into* an existing
-    # directory, so a leftover from an earlier or interrupted uninstall turned
-    # this into /tmp/myspeed_data/data - and the restore below put that back as
-    # $INSTALLATION_PATH/data/data. The database and the settings were still on
-    # disk, one level too deep for the server to find, which presents as total
-    # data loss on the one flag whose purpose is not losing data.
-    rm -rf "/tmp/myspeed_data"
-    mv "$INSTALLATION_PATH/data" "/tmp/myspeed_data"
+    # directory, so a fixed path left behind by an interrupted uninstall turned
+    # the staging step into /tmp/myspeed_data/data, and the restore put that
+    # back as $INSTALLATION_PATH/data/data - one level too deep for the server
+    # to find, which presents as total data loss.
+    #
+    # Deleting that leftover first would be worse, not better: after an
+    # interrupted run it is the only surviving copy of the database. mktemp
+    # cannot collide with anything, so there is nothing to delete.
+    STAGING="$(mktemp -d)" || { echo -e "$RED✗ Could not create a staging directory. Nothing was removed.$NORMAL"; exit 1; }
+
+    # Guarded, because the step after it is the one that cannot be undone. This
+    # is a cross-filesystem copy in practice - /opt on disk, /tmp often tmpfs -
+    # so a full /tmp fails here, and deleting the installation anyway would
+    # destroy the data this flag exists to keep.
+    if ! mv "$INSTALLATION_PATH/data" "$STAGING/data"; then
+      echo -e "$RED✗ Could not move the data directory to safety. Nothing was removed.$NORMAL"
+      exit 1
+    fi
+
     rm -R "$INSTALLATION_PATH"
     mkdir "$INSTALLATION_PATH"
-    mv "/tmp/myspeed_data" "$INSTALLATION_PATH/data"
+    mv "$STAGING/data" "$INSTALLATION_PATH/data"
+    rmdir "$STAGING"
   else
     rm -R "$INSTALLATION_PATH"
   fi

@@ -48,6 +48,26 @@ describe("pauseIntent", () => {
         assert.equal(pauseIntent(""), null);
     });
 
+    /**
+     * Number(false) is 0, which is the indefinite sentinel - so coercing before
+     * testing for it turned `{"resumeIn": false}` from the 400 it used to earn
+     * into a pause that never ends on its own. A boolean is not a duration and
+     * never was one.
+     */
+    it("rejects a boolean rather than reading false as indefinite", () => {
+        assert.equal(pauseIntent(false), null);
+        assert.equal(pauseIntent(true), null);
+    });
+
+    /**
+     * Whitespace and alternative spellings of zero reach Number() all the same;
+     * these are only listed to pin which of them count as the sentinel.
+     */
+    it("reads a padded numeric string", () => {
+        assert.equal(pauseIntent(" 2 "), 2);
+        assert.equal(pauseIntent("0.0"), PAUSE_INDEFINITE);
+    });
+
     it("rejects something that is not a number at all", () => {
         assert.equal(pauseIntent("soon"), null);
         assert.equal(pauseIntent({}), null);

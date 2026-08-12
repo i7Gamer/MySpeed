@@ -35,17 +35,27 @@ beforeEach(() => {
 
 const request = {on() { return this; }};
 
-const success = (body) => ({
-    statusCode: 200, headers: {},
-    on() {},
-    resume() {},
+/**
+ * A stand-in for the IncomingMessage node hands the callback.
+ *
+ * destroy() is part of that interface - every readable stream has it - and
+ * leaving it off the fake made the fake, not the code, decide what the code was
+ * allowed to call. It records instead of no-opping so the socket release can be
+ * asserted rather than assumed.
+ */
+const responseStub = (props) => {
+    const stub = {statusCode: 200, headers: {}, destroyed: false, on() {}, resume() {}, ...props};
+
+    stub.destroy = function () { this.destroyed = true; };
+    return stub;
+};
+
+const success = (body) => responseStub({
     pipe(writeStream) { writeStream.end(body); }
 });
 
 /** A response that starts arriving and then fails. */
-const failsMidStream = () => ({
-    statusCode: 200, headers: {},
-    resume() {},
+const failsMidStream = () => responseStub({
     on(event, handler) {
         if (event === "error") setTimeout(() => handler(new Error("connection reset")), 5);
     },
@@ -109,6 +119,22 @@ describe("a download that fails part way through", () => {
 
         assert.equal(fs.existsSync(archivePath), false,
             "a half-written archive was left on disk, and a retry would extract from it");
+    });
+
+    /**
+     * pipe() only unpipes when the write side errors - the response stops being
+     * read but stays checked out of the agent with its socket open and its body
+     * buffered, until the peer times out. Releasing the write side without the
+     * read side trades a file descriptor for a socket.
+     */
+    it("releases the response socket too", async () => {
+        const response = failsMidStream();
+
+        await assert.rejects(() => downloadToFile("https://example.test/cli.tgz", archivePath,
+            {client: clientFor(response)}), /connection reset/);
+
+        assert.equal(response.destroyed, true,
+            "the response was left open, holding its socket until the peer gave up");
     });
 
     it("still writes the file when the download succeeds", async () => {

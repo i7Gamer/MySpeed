@@ -88,22 +88,26 @@ const IMPORTED_TABLES = [
     {key: "recommendations", model: recommendations}
 ];
 
-export const insertDefaults = async () => {
+// `transaction` is optional so factoryReset can clear the table and re-seed it
+// as one unit. Without it, a failure between the two left the instance with no
+// configuration at all, which every reader treats as neither the stored value
+// nor the default.
+export const insertDefaults = async (transaction = undefined) => {
     let insert = [];
     for (let key in configDefaults) {
-        if (key !== "interface" && !(await config.findOne({where: {key: key}})))
+        if (key !== "interface" && !(await config.findOne({where: {key: key}, transaction})))
             insert.push({key: key, value: configDefaults[key]});
 
         if (key === "interface") {
             const ips = Object.keys(interfaces.interfaces);
             let ip = ips.length > 0 ? ips[0] : "none";
 
-            if (!(await config.findOne({where: {key: key}})))
+            if (!(await config.findOne({where: {key: key}, transaction})))
                 insert.push({key: key, value: ip});
         }
     }
 
-    await config.bulkCreate(insert, {validate: true});
+    await config.bulkCreate(insert, {validate: true, transaction});
 }
 
 export const listAll = async () => {
@@ -218,12 +222,21 @@ export const validateInput = async (key, value) => {
     if (key === "cron" && !cron.isValidCron(value.toString()))
         return "Not a valid cron expression";
 
-    // Compared as a string: this is stored in a STRING column and the client
-    // sends "true"/"false", but a boolean true is the obvious thing for anyone
-    // driving the API to send and it was rejected with "provide either true or
-    // false" - which is exactly what they had sent.
-    if (key === "scheduleOffset" && !["true", "false"].includes(value?.toString()))
-        return "You need to provide either true or false";
+    // Compared as a string, and then *stored* as one. A boolean true is the
+    // obvious thing for anyone driving the API to send, and it used to be
+    // rejected with "provide either true or false" - which is what they had
+    // sent. Accepting it without this normalisation was worse than the
+    // rejection though: the raw boolean reached a STRING column and came back
+    // as sqlite's rendering of a bound boolean, the text "1.0", which no reader
+    // compares equal to "true". The offset silently stayed off behind a 200,
+    // and every later config export carried a value that fails validation on
+    // the way back in, so the whole restore was refused.
+    if (key === "scheduleOffset") {
+        if (!["true", "false"].includes(value?.toString()))
+            return "You need to provide either true or false";
+
+        value = value.toString();
+    }
 
     if (key === "interface" && !Object.keys(interfaces.interfaces).includes(value))
         return "The provided interface does not exist";
@@ -426,8 +439,15 @@ export const factoryReset = async () => {
     // middle of the reset, leaving the configuration half-default and skipping
     // everything below, including the session revocation. It also never
     // restored a default whose row was missing altogether.
-    await config.destroy({where: {}});
-    await insertDefaults();
+    //
+    // Both halves in one transaction: an unwrapped destroy commits on its own,
+    // so a failure in the re-seed would leave the table empty - which is worse
+    // than the half-default state this replaced, because "no row" is not a
+    // value any reader has a fallback for.
+    await db.transaction(async (transaction) => {
+        await config.destroy({where: {}, transaction});
+        await insertDefaults(transaction);
+    });
 
     // The reset put the password back to the unprotected sentinel without going
     // through updateValue, which is the only place that revoked sessions.

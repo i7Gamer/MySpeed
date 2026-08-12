@@ -17,13 +17,18 @@ const STORAGE_PATH = `data/storage${process.env.PREVIEW_MODE === "true" ? "_prev
  * A value that is not a date at all still falls back to now, which is what the
  * column meant before and is better than writing an invalid string.
  *
- * Absent is not the same as unparseable, though, and this used to treat it as
- * such. `new Date(null)` is the epoch - a valid time, so it walked straight
- * past the isNaN guard and wrote 1970-01-01 - while `new Date(undefined)` hit
- * the guard and wrote the moment of the write. integration_data.lastActivity is
- * nullable and means "has never run", so a fresh integration came back claiming
- * it had just run and a cleared one came back having last run in 1970. A column
- * with no value keeps having no value.
+ * Absent is not the same as unparseable, and the fallback cannot tell them
+ * apart on its own: `new Date(null)` is the epoch - a valid time, so it walks
+ * past the isNaN guard and renders 1970-01-01 - while `new Date(undefined)` is
+ * caught by it and renders the moment of the write. Neither is what a nullable
+ * column such as integration_data.lastActivity means by "has never run".
+ *
+ * This guard is defensive rather than a fix for an observed corruption:
+ * sequelize 6 does not route a null through _stringify on either dialect it is
+ * given here - it writes SQL NULL directly - so no ORM path reaches the
+ * fallback today. What it costs is one comparison, and what it buys is that the
+ * function is correct in isolation, which is the only thing its callers can
+ * rely on if that ever changes.
  */
 Sequelize.DATE.prototype._stringify = (date) => {
     if (date === null || date === undefined) return date;

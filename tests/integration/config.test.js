@@ -124,6 +124,31 @@ describe("validateInput", () => {
             await rejects("scheduleOffset", "yes");
         });
 
+        /**
+         * The column is a STRING and every reader compares against the literal
+         * "true", so whatever is accepted has to be stored in that spelling.
+         *
+         * Accepting a JSON boolean without normalising it stored sqlite's
+         * rendering of a bound boolean - the text "1.0" - which no reader
+         * recognises: the offset silently stayed off, the API answered 200, and
+         * the dialog toggle showed OFF. It also poisoned every later config
+         * export, because re-importing "1.0" fails validation and refuses the
+         * whole restore. A loud 400 was better than that, so the widening only
+         * pays for itself if the value is normalised on the way in.
+         */
+        it("stores a boolean true as the string every reader compares against", async () => {
+            assert.equal(await accepts("scheduleOffset", true), "true");
+        });
+
+        it("stores a boolean false the same way", async () => {
+            assert.equal(await accepts("scheduleOffset", false), "false");
+        });
+
+        it("still refuses a value that is neither", async () => {
+            await rejects("scheduleOffset", 1);
+            await rejects("scheduleOffset", "1.0");
+        });
+
         it("accepts only none or read for passwordLevel", async () => {
             assert.equal(await accepts("passwordLevel", "read"), "read");
             await rejects("passwordLevel", "write");

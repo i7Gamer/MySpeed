@@ -101,16 +101,52 @@ describe("the toast provider", () => {
      * The pending timer lived in useState, so updateToast closed over whatever
      * value its own render had - two toasts raised in the same tick left the
      * first timer running, and it closed the second one early.
+     *
+     * Asserted as "the handle the timer is stored in is a ref", by name, rather
+     * than by the absence of a particular old identifier: a doesNotMatch
+     * against the previous spelling passes the moment anyone renames the
+     * variable, whether or not it went back into state.
      */
     it("holds its dismissal timer in a ref, not in state", () => {
-        assert.doesNotMatch(provider, /useState\(\s*null\s*\)[^\n]*\n?[^\n]*timeOut/i);
-        assert.match(provider, /useRef/);
-        assert.doesNotMatch(provider, /setTimeOutId/,
-            "the timer is still state, so rapid toasts read a stale handle");
+        const timerHandle = provider.match(/const\s+(\w+)\s*=\s*useRef\(/g) ?? [];
+
+        assert.ok(timerHandle.length > 0, "no ref is declared at all");
+        assert.match(provider, /setTimeout\(/, "nothing schedules a dismissal");
+
+        // Whatever holds the setTimeout handle must be a ref, i.e. assigned
+        // through `.current`, not through a setState function.
+        assert.match(provider, /\.current\s*=\s*setTimeout\(/,
+            "the dismissal handle is not stored in a ref, so rapid toasts read a stale one");
+        assert.doesNotMatch(provider, /set\w*\(\s*setTimeout\(/,
+            "the dismissal handle is still going into state");
     });
 
+    /**
+     * Named for the unmount cleanup, so it has to assert the cleanup - that the
+     * effect returns something that clears the timer, not merely that the file
+     * mentions useEffect somewhere.
+     */
     it("clears its timer when it goes away", () => {
-        assert.match(provider, /useEffect/,
-            "nothing cancels the pending timer on unmount");
+        assert.match(provider, /clearTimeout\(/, "the dismissal timer is never cleared anywhere");
+
+        const effect = provider.match(/useEffect\(([\s\S]*?),\s*\[\s*\]\s*\)/);
+        assert.notEqual(effect, null, "there is no mount-scoped effect to clean up from");
+        assert.match(effect[1], /clear\w*/i,
+            "the effect does not return a cleanup that clears the pending timer");
+    });
+
+    /**
+     * A second toast must reset the countdown rather than inherit the first
+     * one's remaining time, which is what a stale handle caused.
+     */
+    it("clears the previous timer before scheduling the next", () => {
+        const update = provider.match(/const updateToast[\s\S]*?\n    \};/);
+
+        assert.notEqual(update, null, "updateToast is no longer recognisable");
+        const cleared = update[0].search(/clear\w*\(/i);
+        const scheduled = update[0].search(/setTimeout\(/);
+
+        assert.ok(cleared !== -1, "a new toast does not cancel the pending dismissal");
+        assert.ok(cleared < scheduled, "the pending dismissal is cancelled after the new one is armed");
     });
 });

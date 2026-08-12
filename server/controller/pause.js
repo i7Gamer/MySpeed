@@ -42,6 +42,12 @@ export const pauseIntent = (resumeIn) => {
     if (resumeIn === undefined || resumeIn === null || resumeIn === "") return null;
     if (typeof resumeIn === "object") return null;
 
+    // Number(false) is 0, which is the indefinite sentinel - so coercing a
+    // boolean here would read `{"resumeIn": false}` as "pause until I say
+    // otherwise" rather than the 400 it has always earned. A boolean is not a
+    // duration and never was one.
+    if (typeof resumeIn === "boolean") return null;
+
     const value = Number(resumeIn);
     if (!Number.isFinite(value)) return null;
 

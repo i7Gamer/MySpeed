@@ -66,18 +66,40 @@ describe("uninstall.sh --keep-data", () => {
      * level too deep for the server to find, which presents as total data loss
      * on a flag whose entire purpose is not losing data.
      */
-    it("clears the staging directory before moving into it", () => {
-        const keepData = source.slice(source.indexOf("--keep-data"));
-        const stage = keepData.indexOf("mv");
-        const clear = keepData.search(/rm\s+-[rR]f?\s+"?\/tmp\/myspeed_data/);
+    /**
+     * The first attempt at this fix removed a pre-existing /tmp/myspeed_data
+     * before staging into it. That does prevent the nesting, but it deletes the
+     * data an *interrupted* uninstall left there - which is the one state where
+     * /tmp holds the only surviving copy of the database. The old nesting bug
+     * was recoverable by hand; deleting is not. A staging directory that is new
+     * every run cannot collide with anything, so there is nothing to remove.
+     */
+    it("stages into a directory that cannot already exist", () => {
+        const keepData = source.slice(source.indexOf('"--keep-data"'));
 
-        assert.notEqual(clear, -1,
-            "nothing removes a pre-existing /tmp/myspeed_data, so the move nests inside it");
-        assert.ok(clear < stage, "the staging directory is cleared after the move, which is too late");
+        assert.match(keepData, /mktemp\s+-d/,
+            "the staging location is a fixed path, so it collides with an interrupted run");
+        assert.doesNotMatch(keepData, /rm\s+-[rR]f?\s+"?\/tmp\/myspeed_data/,
+            "this deletes the only copy of the data an interrupted uninstall left staged");
+    });
+
+    /**
+     * The move is what puts the data somewhere safe; the rm is what makes it
+     * unrecoverable. If the first fails - a full /tmp, a cross-device copy that
+     * dies part way - the second must not run.
+     */
+    it("does not delete the installation unless the data reached safety", () => {
+        const keepData = source.slice(source.indexOf('"--keep-data"'));
+        const move = keepData.search(/\bmv\b/);
+        const remove = keepData.search(/\brm\s+-R\b/);
+
+        assert.ok(move !== -1 && remove !== -1);
+        assert.match(keepData.slice(move, remove), /\|\||exit|&&/,
+            "the staging move is unchecked, yet the original is deleted right after it");
     });
 
     it("still restores the data directory afterwards", () => {
-        assert.match(source, /mv\s+"?\/tmp\/myspeed_data"?\s+"?\$\{?INSTALLATION_PATH\}?\/data"?/);
+        assert.match(source, /mv\s+"[^"]*"\s+"\$\{?INSTALLATION_PATH\}?\/data"/);
     });
 
     /**
@@ -85,12 +107,22 @@ describe("uninstall.sh --keep-data", () => {
      * `rm -R $INSTALLATION_PATH` with the variable somehow empty is `rm -R`
      * against the working directory.
      */
-    it("quotes the paths it moves and removes", () => {
-        const dangerous = source.split("\n")
+    /**
+     * Every interpolation on the line, not just one of them. Filtering on
+     * "does this line contain a quoted variable anywhere" passed a line with
+     * one quoted and one bare path, which is precisely the mistake worth
+     * catching - `mv "$SRC" $DEST` is as broken as quoting neither.
+     */
+    it("quotes every path it moves and removes", () => {
+        const unquoted = source.split("\n")
             .filter((line) => /^\s*(mv|rm|mkdir)\b/.test(line))
-            .filter((line) => /\$\{?[A-Z_]+\}?/.test(line))
-            .filter((line) => !/"\$\{?[A-Z_]+\}?/.test(line));
+            .filter((line) => {
+                // Blank out every correctly quoted "$VAR" and see if any
+                // interpolation is left standing outside quotes.
+                const remaining = line.replace(/"[^"]*"/g, '""');
+                return /\$\{?[A-Za-z_]+\}?/.test(remaining);
+            });
 
-        assert.deepEqual(dangerous, [], "these lines interpolate a path without quoting it");
+        assert.deepEqual(unquoted, [], "these lines interpolate a path without quoting it");
     });
 });

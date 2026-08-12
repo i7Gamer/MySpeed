@@ -118,6 +118,37 @@ describe("ntfy headers", () => {
         assert.doesNotMatch(sent[0].headers["Title"], /[\r\n]/);
     });
 
+    /**
+     * A header value is Latin-1 on the wire. undici rejects any code point
+     * above U+00FF just as flatly as it rejects a newline, so stripping only
+     * CR/LF left the same failure in place for the more likely input: ntfy's
+     * own documentation shows emoji titles, and a German or Cyrillic instance
+     * name is ordinary.
+     */
+    it("does not let an emoji in the title kill the request", async () => {
+        await fire(events, "testFinished", config({title: "MySpeed ✅"}), RESULT);
+
+        assert.equal(sent.length, 1, "the request never went out");
+    });
+
+    it("does not let non-latin text in the tags kill the request", async () => {
+        await fire(events, "testFinished", config({tags: "Geschwindigkeit-Прогресс"}), RESULT);
+
+        assert.equal(sent.length, 1, "the request never went out");
+    });
+
+    it("keeps a plain ascii title exactly as it was typed", async () => {
+        await fire(events, "testFinished", config({title: "Speedtest report"}), RESULT);
+
+        assert.equal(sent[0].headers["Title"], "Speedtest report");
+    });
+
+    it("keeps latin-1 accents, which the wire encoding can carry", async () => {
+        await fire(events, "testFinished", config({title: "Réseau"}), RESULT);
+
+        assert.equal(sent[0].headers["Title"], "Réseau");
+    });
+
     it("still sends the priority it was configured with", async () => {
         await fire(events, "testFinished", config({priority: "4"}), RESULT);
 

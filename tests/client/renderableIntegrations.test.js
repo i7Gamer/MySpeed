@@ -85,8 +85,33 @@ describe("renderableIntegrations", () => {
 });
 
 describe("the integrations dialog", () => {
-    it("filters the list it renders", () => {
-        assert.match(dialog, /renderableIntegrations/,
+    /**
+     * A bare /renderableIntegrations/ match is satisfied by the import line
+     * alone, so it would pass on a dialog that imports the helper and then maps
+     * over `active` regardless. What matters is that nothing renders straight
+     * from the unfiltered list.
+     */
+    it("calls the filter rather than merely importing it", () => {
+        const body = dialog.slice(dialog.indexOf("export const IntegrationDialog"));
+
+        assert.match(body, /renderableIntegrations\s*\(/,
+            "the helper is imported but never called");
+    });
+
+    it("renders the filtered list, not the raw one", () => {
+        assert.doesNotMatch(dialog, /\{active\.map\(/,
             "the dialog still maps over every stored row, including ones it cannot render");
+        assert.match(dialog, /renderable\.map\(/);
+    });
+
+    /**
+     * The empty state has to be decided on the same list that gets rendered.
+     * Counting the raw rows would show a list container with nothing in it when
+     * every stored row is stale.
+     */
+    it("decides the empty state on the filtered list too", () => {
+        assert.doesNotMatch(dialog, /active\.length\s*===\s*0/,
+            "a list of nothing but unrenderable rows shows an empty list instead of the empty state");
+        assert.match(dialog, /renderable\.length\s*===\s*0/);
     });
 });
