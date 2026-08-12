@@ -198,12 +198,30 @@ export const getIntegrations = () => {
 export const getIntegration = (name) =>
     Object.hasOwn(integrations, name) ? integrations[name] : undefined;
 
-export const validateInput = (module, data) => {
+/**
+ * @param isPatch  whether this body is changing some settings rather than
+ *                 supplying all of them.
+ *
+ * A PATCH that omits a required field used to be rejected outright, so
+ * "change the message template" meant re-sending the token, the url and
+ * everything else or getting a flat 400. patch() below is built for the
+ * opposite - it filters undefined keys out and merges what is left over the
+ * stored object, with a comment saying a field the caller left out arrives as
+ * undefined, which can only happen if this let it through. The two halves
+ * disagreed about their own contract.
+ *
+ * An explicit null or "" is still a rejection either way: that is not "leave it
+ * alone", it is "clear a field that is required".
+ */
+export const validateInput = (module, data, isPatch = false) => {
     const integration = getIntegration(module);
     if (!integration) return false;
 
     for (const field of integration.fields) {
-        if (field.required && (data[field.name] === undefined || data[field.name] === null || data[field.name] === "")) return false;
+        const omitted = data[field.name] === undefined;
+
+        if (field.required && !(isPatch && omitted)
+            && (omitted || data[field.name] === null || data[field.name] === "")) return false;
 
         if (data[field.name] !== undefined && data[field.name] !== null && data[field.name] !== "") {
             if (field.regex && !new RegExp(field.regex).test(data[field.name])) return false;

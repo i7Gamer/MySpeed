@@ -136,9 +136,14 @@ describe("the generated import identifiers", () => {
 
     // Read back out of the generated registry rather than recomputed, so the pin
     // still holds if a generator ever stops asking moduleName for the name.
+    //
+    // The literal is parsed rather than pattern-matched out of its quotes: the
+    // generator emits it with JSON.stringify, so what a filename with a quote of
+    // its own produces is a JSON string and nothing else.
     it("has written those exact names into the registry", () => {
         const generated = fs.readFileSync(path.join(SERVER_DIR, "integrations", "index.js"), "utf8");
-        const names = [...generated.matchAll(/name: '([^']*)'/g)].map((match) => match[1]);
+        const names = [...generated.matchAll(/name: ("(?:[^"\\]|\\.)*")/g)]
+            .map((match) => JSON.parse(match[1]));
 
         assert.deepEqual(names, PINNED_INTEGRATION_NAMES,
             'the registry is stale or renamed - run "npm run generate-integrations"');

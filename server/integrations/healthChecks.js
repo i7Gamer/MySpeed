@@ -1,4 +1,5 @@
 import { postJson } from "../util/http.js";
+import { stripTrailingSlashes } from "../util/helpers.js";
 
 const events = [
     ['minutePassed'],
@@ -11,7 +12,15 @@ export default (registerEvent) => {
     for (const [event, path] of events) {
         registerEvent(event, async ({data: c}, payload, activity) => {
             if (!c.url) return;
-            await postJson(path ? `${c.url}/${path}` : c.url, payload ?? {},
+
+            // Stripped first, the way the ntfy module beside this one already
+            // does it. A url copied out of a browser's address bar ends in a
+            // slash, and `${c.url}/${path}` then produced .../uuid//start - an
+            // empty path segment, which the ping endpoint answers 404 to. The
+            // check reported as down and the integration reported as working.
+            const url = stripTrailingSlashes(c.url);
+
+            await postJson(path ? `${url}/${path}` : url, payload ?? {},
                 {headers: {"user-agent": "MySpeed/HealthAgent"}, activity});
         });
     }

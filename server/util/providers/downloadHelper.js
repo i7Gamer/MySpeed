@@ -35,12 +35,50 @@ export const downloadToFile = (url, destPath, {redirectsLeft = MAX_DOWNLOAD_REDI
                 return reject(new Error(`Download failed: ${url} returned ${res.statusCode}`));
             }
             const writeStream = fs.createWriteStream(destPath);
+
+            // A stream that errors mid-transfer used to be left open, with
+            // however much of the archive had arrived still on disk - so the
+            // descriptor leaked and the next attempt could find a truncated
+            // file sitting where its archive goes.
+            // The partial file is gone before the caller hears about the
+            // failure, so a retry cannot find one where its archive goes.
+            const fail = (error) => {
+                writeStream.destroy();
+                fs.promises.unlink(destPath).catch(() => undefined).then(() => reject(error));
+            };
+
             res.pipe(writeStream);
             writeStream.on('finish', () => resolve());
-            writeStream.on('error', reject);
-            res.on('error', reject);
+            writeStream.on('error', fail);
+            res.on('error', fail);
         }).on('error', reject);
     });
+
+/**
+ * Fetches a release archive, takes the binary out of it, and removes the
+ * archive however that went.
+ *
+ * All three loaders did the first two steps and stopped, so every download left
+ * a .tgz or .zip of some tens of megabytes in os.tmpdir() for good - under a
+ * random name, so nothing would ever overwrite it either. Once per install
+ * sounds harmless until ./bin is not persisted, at which point it is once per
+ * container start.
+ *
+ * `extract` and `tmp` are injectable for the same reason `client` is: so the
+ * cleanup can be tested without a real archive or the network.
+ */
+export const downloadAndExtract = async (url, {outputDir, binaryRegex, outputName,
+    client = get, extract = extractBinary, tmp = tmpFile, suffix = ''} = {}) => {
+
+    const archivePath = tmp(suffix);
+
+    try {
+        await downloadToFile(url, archivePath, {client});
+        await extract(archivePath, outputDir, binaryRegex, outputName);
+    } finally {
+        await fs.promises.unlink(archivePath).catch(() => undefined);
+    }
+};
 
 export const extractBinary = (archivePath, outputDir, binaryRegex, outputName) =>
     decompress(archivePath, outputDir, {

@@ -42,6 +42,7 @@ import AverageChart from "@/pages/Statistics/charts/AverageChart";
 import HourlyChart from "@/pages/Statistics/charts/HourlyChart.jsx";
 import ConsistencyChart from "@/pages/Statistics/charts/ConsistencyChart";
 import ToggleSwitch from "@/common/components/ToggleSwitch";
+import {crosshairPlugin} from "@/pages/Statistics/crosshairPlugin";
 import i18n, {t} from "i18next";
 import "./styles.sass";
 
@@ -98,29 +99,6 @@ const rangeQuery = (dateRange) => {
     if (!dateRange) query.set("range", TIMEFRAME_ALL);
 
     return query;
-};
-
-const crosshairPlugin = {
-    id: 'crosshair',
-    afterDraw: (chart) => {
-        if (chart.tooltip?._active?.length) {
-            const ctx = chart.ctx;
-            const activePoint = chart.tooltip._active[0];
-            const x = activePoint.element.x;
-            const topY = chart.scales.y.top;
-            const bottomY = chart.scales.y.bottom;
-
-            ctx.save();
-            ctx.beginPath();
-            ctx.setLineDash([5, 5]);
-            ctx.moveTo(x, topY);
-            ctx.lineTo(x, bottomY);
-            ctx.lineWidth = 1;
-            ctx.strokeStyle = 'hsla(215, 20%, 65%, 0.6)';
-            ctx.stroke();
-            ctx.restore();
-        }
-    }
 };
 
 if (!ChartJS.registry.plugins.get('crosshair')) ChartJS.register(crosshairPlugin);

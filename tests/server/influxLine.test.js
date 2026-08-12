@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildLine } from "../../server/integrations/influxdb.js";
+import { buildLine, parseTags } from "../../server/integrations/influxdb.js";
 
 const TIMESTAMP = 1786100000;
 
@@ -60,5 +60,58 @@ describe("influx line protocol", () => {
 
     it("leaves the equals sign alone in a measurement name", () => {
         assert.match(buildLine("a=b", {}, fields, TIMESTAMP), /^a=b /);
+    });
+});
+
+/**
+ * The extra tags an operator types into the integration form, as
+ * `key=value,key=value`.
+ *
+ * This split on every `=` and destructured the first two pieces, so a value
+ * carrying one of its own lost everything from the second onwards: a perfectly
+ * ordinary `source=http://nas.local/?id=1` was stored as
+ * `source=http://nas.local/?id`. Silent, and wrong in the direction that
+ * matters - the tag is what the series is grouped by in Grafana.
+ */
+describe("parseTags", () => {
+    it("reads a single tag", () => {
+        assert.deepEqual(parseTags("site=basement"), {site: "basement"});
+    });
+
+    it("reads several tags", () => {
+        assert.deepEqual(parseTags("site=basement,rack=a"), {site: "basement", rack: "a"});
+    });
+
+    it("trims the whitespace around each part", () => {
+        assert.deepEqual(parseTags(" site = basement , rack = a "), {site: "basement", rack: "a"});
+    });
+
+    it("keeps everything after the first equals sign", () => {
+        assert.deepEqual(parseTags("source=http://nas.local/?id=1"),
+            {source: "http://nas.local/?id=1"});
+    });
+
+    it("keeps a value that is nothing but equals signs", () => {
+        assert.deepEqual(parseTags("padding=a==b=="), {padding: "a==b=="});
+    });
+
+    it("drops a fragment with no value", () => {
+        assert.deepEqual(parseTags("site=basement,broken,rack=a"), {site: "basement", rack: "a"});
+    });
+
+    it("drops a fragment with no key", () => {
+        assert.deepEqual(parseTags("=orphan,site=basement"), {site: "basement"});
+    });
+
+    /**
+     * Only the form guarantees a string here. A hand-crafted PATCH can store a
+     * number, and .split on that threw inside the event loop - aborting every
+     * integration queued behind this one.
+     */
+    it("answers with nothing for a value that is not a string", () => {
+        assert.deepEqual(parseTags(undefined), {});
+        assert.deepEqual(parseTags(null), {});
+        assert.deepEqual(parseTags(42), {});
+        assert.deepEqual(parseTags(""), {});
     });
 });

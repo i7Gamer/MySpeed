@@ -183,22 +183,19 @@ app.get("/status", password(true), async (req, res) => {
     });
 });
 
-// Both 0 and -1 mean "until manually resumed": the pause dialog sends 0, older
-// clients send -1. Only an absent field is a bad request - guarding on
-// falsiness rejected the dialog's own default and left the scheduler running.
-const PAUSE_INDEFINITELY = [0, -1];
-
 app.post("/pause", password(false), (req, res) => {
-    const resumeIn = req.body?.resumeIn;
-    const badRequest = () => res.status(400).json({message: "You need to provide when to resume"});
+    // Both 0 and -1 mean "until manually resumed": the pause dialog sends 0,
+    // older clients send -1. The reading lives in the controller so that it can
+    // be tested, and so that "0" is read the same as 0 - this was an
+    // Array.includes over [0, -1], which compares strictly and sent the string
+    // spelling down the duration path to be rejected as no duration at all.
+    const intent = pauseController.pauseIntent(req.body?.resumeIn);
 
-    if (resumeIn === undefined || resumeIn === null) return badRequest();
+    if (intent === null)
+        return res.status(400).json({message: "You need to provide when to resume"});
 
-    if (PAUSE_INDEFINITELY.includes(resumeIn)) {
-        pauseController.updateState(true);
-    } else if (!pauseController.resumeIn(resumeIn)) {
-        return badRequest();
-    }
+    if (intent === pauseController.PAUSE_INDEFINITE) pauseController.updateState(true);
+    else pauseController.resumeIn(intent);
 
     res.json({message: "Successfully paused the speedtests"});
 });

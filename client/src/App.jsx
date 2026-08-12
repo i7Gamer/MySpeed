@@ -67,6 +67,34 @@ const Providers = ({children}) => {
     );
 };
 
+/**
+ * Built once, at module scope.
+ *
+ * RouterProvider treats a new router object as a different router: it remounts
+ * the whole tree beneath it and drops the navigation state with it. Called from
+ * inside App's body this produced a fresh one on every render. App only
+ * re-renders twice today, when the translations resolve, so nothing visible
+ * came of it - but it left the cost of any state ever added to App as a full
+ * remount of the application, payable by whoever added it.
+ */
+const router = createBrowserRouter([
+    {
+        path: "/",
+        element: (
+            <Providers>
+                <HeaderComponent/>
+                <main><Outlet/></main>
+            </Providers>
+        ),
+        errorElement: <RouteError />,
+        children: [
+            {path: "/", element: <Home/>},
+            {path: "/nodes", element: <Nodes/>},
+            {path: "/statistics", element: <Statistics/>}
+        ]
+    }
+]);
+
 const App = () => {
     const [translationsLoaded, setTranslationsLoaded] = useState(false);
     const [translationError, setTranslationError] = useState(false);
@@ -75,24 +103,6 @@ const App = () => {
         i18n.on("initialized", () => setTranslationsLoaded(true));
         i18n.on("failedLoading", () => setTranslationError(true));
     }, []);
-
-    const router = createBrowserRouter([
-        {
-            path: "/",
-            element: (
-                <Providers>
-                    <HeaderComponent/>
-                    <main><Outlet/></main>
-                </Providers>
-            ),
-            errorElement: <RouteError />,
-            children: [
-                {path: "/", element: <Home/>},
-                {path: "/nodes", element: <Nodes/>},
-                {path: "/statistics", element: <Statistics/>}
-            ]
-        }
-    ]);
 
     if (!translationsLoaded && !translationError) {
         return <Loading/>;

@@ -218,7 +218,11 @@ export const validateInput = async (key, value) => {
     if (key === "cron" && !cron.isValidCron(value.toString()))
         return "Not a valid cron expression";
 
-    if (key === "scheduleOffset" && !["true", "false"].includes(value))
+    // Compared as a string: this is stored in a STRING column and the client
+    // sends "true"/"false", but a boolean true is the obvious thing for anyone
+    // driving the API to send and it was rejected with "provide either true or
+    // false" - which is exactly what they had sent.
+    if (key === "scheduleOffset" && !["true", "false"].includes(value?.toString()))
         return "You need to provide either true or false";
 
     if (key === "interface" && !Object.keys(interfaces.interfaces).includes(value))
@@ -415,10 +419,15 @@ export const importConfig = async (obj) => {
 }
 
 export const factoryReset = async () => {
-    let configValues = await config.findAll();
-    for (let i = 0; i < configValues.length; i++) {
-        await config.update({value: configDefaults[configValues[i].key]}, {where: {key: configValues[i].key}});
-    }
+    // Cleared and re-seeded rather than updated key by key. The loop read
+    // configDefaults[key] for every key the table happened to hold, so a key
+    // left behind by an older version - or one written by hand - resolved to
+    // undefined and was written into a NOT NULL column. That threw from the
+    // middle of the reset, leaving the configuration half-default and skipping
+    // everything below, including the session revocation. It also never
+    // restored a default whose row was missing altogether.
+    await config.destroy({where: {}});
+    await insertDefaults();
 
     // The reset put the password back to the unprotected sentinel without going
     // through updateValue, which is the only place that revoked sessions.

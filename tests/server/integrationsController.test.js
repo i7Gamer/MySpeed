@@ -235,3 +235,57 @@ describe("validateInput", () => {
         assert.equal(result.token, "123456:abcdefghijklmnop");
     });
 });
+
+/**
+ * A PATCH that changes one setting.
+ *
+ * validateInput is the same function for a create and an update, and it
+ * rejected any body missing a required field - so changing just the message
+ * template meant re-sending the token, the url and everything else or getting a
+ * flat 400 "Invalid data". patch() in the same controller is built for the
+ * opposite: it filters undefined keys out of the body and merges what is left
+ * over the stored object, with a comment explaining that a field the caller
+ * left out arrives as undefined. That can only happen if validation let it
+ * through, so the two halves disagreed about their own contract.
+ *
+ * An explicit null or "" is still a rejection: that is not "leave it alone", it
+ * is "clear a field that is required".
+ */
+describe("validateInput on a partial update", () => {
+    const stored = {url: "https://ntfy.sh", topic: "myspeed", priority: "3"};
+
+    it("rejects a body missing a required field when creating", () => {
+        assert.equal(validateInput("ntfy", {topic: "myspeed"}), false);
+    });
+
+    it("accepts the same body when patching", () => {
+        const result = validateInput("ntfy", {topic: "myspeed"}, true);
+
+        assert.notEqual(result, false, "changing one setting demanded every other one back");
+        assert.equal(result.topic, "myspeed");
+    });
+
+    it("leaves the fields it was not given undefined, for patch() to skip", () => {
+        const result = validateInput("ntfy", {topic: "myspeed"}, true);
+
+        assert.equal(result.url, undefined);
+    });
+
+    it("still rejects a required field explicitly blanked", () => {
+        assert.equal(validateInput("ntfy", {...stored, topic: ""}, true), false);
+        assert.equal(validateInput("ntfy", {...stored, topic: null}, true), false);
+    });
+
+    it("still validates the fields it was given", () => {
+        assert.equal(validateInput("ntfy", {topic: "not a valid topic!!"}, true), false);
+        assert.equal(validateInput("ntfy", {priority: "9"}, true), false);
+    });
+
+    it("still refuses an integration it does not know", () => {
+        assert.equal(validateInput("myspace", {}, true), false);
+    });
+
+    it("is strict by default, so a create cannot reach the lenient path by accident", () => {
+        assert.equal(validateInput("ntfy", {topic: "myspeed"}), false);
+    });
+});

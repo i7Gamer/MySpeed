@@ -6,11 +6,23 @@ const defaults = {
     failed: "A speedtest has failed. Reason: %error%"
 };
 
+/**
+ * A header value cannot hold a line break.
+ *
+ * The title and the tags are free text from the integration form and go into
+ * headers verbatim, so a newline in either made undici throw "Invalid character
+ * in header content" before the request left the process. postText caught it,
+ * logged it and answered null, so the notification was silently dropped while
+ * the integration went on showing as configured. A value split across lines is
+ * also how a request smuggles a second header in.
+ */
+const singleLine = (value) => String(value).replace(/[\r\n]+/g, " ");
+
 const buildHeaders = ({token, title, tags}, priority) => {
     const headers = {};
     if (priority) headers["Priority"] = String(parseInt(priority));
-    if (title) headers["Title"] = title;
-    if (tags) headers["Tags"] = tags;
+    if (title) headers["Title"] = singleLine(title);
+    if (tags) headers["Tags"] = singleLine(tags);
     if (token) headers["Authorization"] = "Bearer " + token;
     return headers;
 };

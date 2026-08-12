@@ -32,6 +32,32 @@ export const buildLine = (measurement, tags, fields, timestampSeconds) => {
     return `${prefix} ${fieldPart} ${timestampSeconds}`;
 };
 
+/**
+ * The extra tags an operator typed in, as `key=value,key=value`.
+ *
+ * Split at the *first* equals sign only. Splitting on every one and taking the
+ * first two pieces cost a value everything from its second onwards, so an
+ * ordinary `source=http://nas.local/?id=1` was stored as
+ * `source=http://nas.local/?id` - silently, and wrong in the direction that
+ * matters, since the tag is what the series gets grouped by.
+ *
+ * Only the form guarantees a string here; a hand-crafted PATCH can store a
+ * number, and .split on that threw inside the event loop and aborted every
+ * integration queued behind this one.
+ */
+export const parseTags = (raw) => {
+    if (typeof raw !== "string" || !raw) return {};
+
+    const entries = raw.split(",").map((fragment) => {
+        const split = fragment.indexOf("=");
+        if (split === -1) return ["", ""];
+
+        return [fragment.slice(0, split).trim(), fragment.slice(split + 1).trim()];
+    });
+
+    return Object.fromEntries(entries.filter(([key, value]) => key && value));
+};
+
 const send = (c, line, activity) => {
     const baseUrl = stripTrailingSlashes(c.url);
     const url = `${baseUrl}/api/v2/write?org=${encodeURIComponent(c.org)}` +
@@ -49,12 +75,7 @@ export default (registerEvent) => {
     registerEvent("testFinished", async ({data: c}, data, activity) => {
         const tags = {
             host: c.host || os.hostname(),
-            // Only the UI guarantees a string here; a hand-crafted PATCH can
-            // store a number, and .split would then throw inside the event
-            // loop and abort every integration queued behind this one.
-            ...(typeof c.tags === "string" && c.tags ? Object.fromEntries(c.tags.split(",")
-                .map(t => t.split("=").map(s => s.trim()))
-                .filter(([k, v]) => k && v)) : {})
+            ...parseTags(c.tags)
         };
 
         const fields = {

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { libreVersion, libreList } from '../../config/binaries.js';
-import { tmpFile, downloadToFile, extractBinary } from './downloadHelper.js';
+import { downloadAndExtract } from './downloadHelper.js';
 
 const binaryName = `librespeed-cli${process.platform === 'win32' ? '.exe' : ''}`;
 const binaryRegex = /librespeed-cli(.exe)?$/;
@@ -17,9 +17,8 @@ export const downloadFile = async () => {
     if (!binary)
         throw new Error(`Your platform (${process.platform}-${process.arch}) is not supported by the LibreSpeed CLI`);
 
-    const archivePath = tmpFile(binary.suffix);
-    await downloadToFile(downloadPath + binary.suffix, archivePath);
-    await extractBinary(archivePath, binaryDirectory, binaryRegex, binaryName);
+    await downloadAndExtract(downloadPath + binary.suffix,
+        {suffix: binary.suffix, outputDir: binaryDirectory, binaryRegex, outputName: binaryName});
 };
 
 export const load = async () => {

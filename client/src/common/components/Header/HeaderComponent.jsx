@@ -18,6 +18,7 @@ import { t } from "i18next";
 import { ConfigContext } from "@/common/contexts/Config";
 import { NodeContext } from "@/common/contexts/Node";
 import { INSTALL_URL, RELEASES_URL } from "@/index";
+import { nodeTitle } from "@/common/components/Header/nodeTitle";
 import { Trans } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import Pagination from "./components/Pagination";
@@ -91,7 +92,7 @@ const HeaderComponent = () => {
         if (!config.viewMode) updateVersion();
     }, [config]);
 
-    const getNodeName = () => currentNode === "0" ? t("header.title") : findNode(currentNode)?.name || t("header.title");
+    const getNodeName = () => nodeTitle(currentNode, findNode, t("header.title"));
 
     if (location.pathname === "/nodes") return <></>;
     if (Object.keys(config).length === 0) return <></>;

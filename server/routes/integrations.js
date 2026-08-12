@@ -34,7 +34,7 @@ app.patch("/:id", password(false), async (req, res) => {
     const integration = await integrations.getIntegrationById(req.params.id);
     if (!integration) return res.status(404).json({message: "Integration not found"});
 
-    const validatedInput = validateInput(integration?.name, req.body);
+    const validatedInput = validateInput(integration?.name, req.body, true);
     if (!validatedInput) return res.status(400).json({message: "Invalid data"});
 
     await integrations.patch(req.params.id, validatedInput);
