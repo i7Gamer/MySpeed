@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { integrationIdentifier, moduleName } from './identifiers.js';
+import { integrationRegistrySource } from './registrySource.js';
 
 const integrationsDir = path.join(import.meta.dirname, '..', 'server', 'integrations');
 const outputFile = path.join(integrationsDir, 'index.js');
@@ -14,24 +14,5 @@ if (files.length === 0) {
     process.exit(1);
 }
 
-const imports = files.map((file) => {
-    const varName = integrationIdentifier(file);
-    return `import ${varName} from './${file}';`;
-}).join('\n');
-
-const entries = files.map((file) => {
-    const varName = integrationIdentifier(file);
-    return `    { name: '${moduleName(file)}', setup: ${varName} },`;
-}).join('\n');
-
-const output = `${imports}
-
-const integrations = [
-${entries}
-];
-
-export default integrations;
-`;
-
-fs.writeFileSync(outputFile, output);
+fs.writeFileSync(outputFile, integrationRegistrySource(files));
 console.log(`Generated ${outputFile} with ${files.length} integration(s)`);

@@ -12,7 +12,7 @@ if [ $EUID -ne 0 ]; then
   echo -e "$RED✗ ABORTED"
   echo -e "$NORMAL The installation is currently running via a user without root privileges. However, this is required. Please log in with a Root Account to continue."
   echo -e "$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-"
-  exit
+  exit 1
 fi
 
 echo -e "${GREEN}---------${BLUE} MySpeed Installation ${GREEN}---------${NORMAL}"

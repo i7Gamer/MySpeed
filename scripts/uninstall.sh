@@ -12,7 +12,7 @@ DOCKER_INSTALLATION_PATH="/opt/myspeed-dockerized"
 
 if [ $EUID -ne 0 ]; then
   echo -e "$RED✗ Uninstallation Error:$NORMAL You need root privileges to initiate the uninstallation."
-  exit
+  exit 1
 fi
 
 echo -e "$GREEN ---------$BLUE Automatic Uninstallation$GREEN ---------"
@@ -35,7 +35,7 @@ if docker ps -a --format '{{.Names}}' | grep -q "MySpeed"; then
   if [ "$1" != "--keep-data" ]; then
     docker volume rm myspeed-dockerized_myspeed
   fi
-  rm -rf $DOCKER_INSTALLATION_PATH
+  rm -rf "$DOCKER_INSTALLATION_PATH"
 else
   if command -v systemctl &> /dev/null && systemctl --all --type service | grep -n "myspeed.service"; then
     systemctl stop myspeed
@@ -52,12 +52,19 @@ else
 
   # Remove folder
   if [ "$1" == "--keep-data" ]; then
-    mv $INSTALLATION_PATH/data /tmp/myspeed_data
-    rm -R $INSTALLATION_PATH
-    mkdir $INSTALLATION_PATH
-    mv /tmp/myspeed_data $INSTALLATION_PATH/data
+    # mv renames into an empty destination but moves *into* an existing
+    # directory, so a leftover from an earlier or interrupted uninstall turned
+    # this into /tmp/myspeed_data/data - and the restore below put that back as
+    # $INSTALLATION_PATH/data/data. The database and the settings were still on
+    # disk, one level too deep for the server to find, which presents as total
+    # data loss on the one flag whose purpose is not losing data.
+    rm -rf "/tmp/myspeed_data"
+    mv "$INSTALLATION_PATH/data" "/tmp/myspeed_data"
+    rm -R "$INSTALLATION_PATH"
+    mkdir "$INSTALLATION_PATH"
+    mv "/tmp/myspeed_data" "$INSTALLATION_PATH/data"
   else
-    rm -R $INSTALLATION_PATH
+    rm -R "$INSTALLATION_PATH"
   fi
 fi
 

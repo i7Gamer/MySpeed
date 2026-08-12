@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { migrationIdentifier } from './identifiers.js';
+import { migrationRegistrySource } from './registrySource.js';
 
 const migrationsDir = path.join(import.meta.dirname, '..', 'server', 'migrations');
 const outputFile = path.join(migrationsDir, 'index.js');
@@ -14,24 +14,5 @@ if (files.length === 0) {
     process.exit(1);
 }
 
-const imports = files.map((file, i) => {
-    const varName = migrationIdentifier(file, i);
-    return `import { up as ${varName} } from './${file}';`;
-}).join('\n');
-
-const entries = files.map((file, i) => {
-    const varName = migrationIdentifier(file, i);
-    return `    { name: '${file}', up: ${varName} },`;
-}).join('\n');
-
-const output = `${imports}
-
-const migrations = [
-${entries}
-];
-
-export default migrations;
-`;
-
-fs.writeFileSync(outputFile, output);
+fs.writeFileSync(outputFile, migrationRegistrySource(files));
 console.log(`Generated ${outputFile} with ${files.length} migration(s)`);
