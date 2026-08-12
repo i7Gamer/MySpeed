@@ -111,6 +111,80 @@ describe("the statistics fetch enough tests to compare against", () => {
     });
 });
 
+/**
+ * Ping, jitter and packet loss are three readings of one thing - what the line
+ * does before anything is asked of it - and the pane split them across a metric
+ * card and two rows of a grid where a row costs a full line. Jitter was drawn
+ * twice over on the overview besides: beside the ping in the row, and again as a
+ * fact once the row was opened.
+ *
+ * Packet loss joins the ping rather than the two throughput cards because Ookla
+ * reports one figure for the connection and neither other provider reports any -
+ * printed under download and upload it would claim two measurements from one.
+ */
+describe("the connection's quality figures sit on the ping card", () => {
+    // Either side of the facts grid, so "moved onto the card" is asserted as
+    // something stronger than "mentioned somewhere in the file".
+    const factsAt = pane.indexOf('className="detail-facts"');
+    const beforeFacts = pane.slice(0, factsAt);
+    const facts = pane.slice(factsAt);
+
+    const metricsBlock = pane.match(/const metrics = \[([\s\S]*?)\n {4}];/)?.[1] ?? "";
+    const metricSource = (key) => metricsBlock.split(/key: "/).slice(1)
+        .find((part) => part.startsWith(`${key}"`)) ?? "";
+
+    it("finds the metric cards to check", () => {
+        assert.notEqual(factsAt, -1, "the pane no longer renders a facts grid");
+        for (const key of ["ping", "download", "upload"])
+            assert.notEqual(metricSource(key), "", `the ${key} metric is gone`);
+    });
+
+    it("gives jitter no row of its own", () => {
+        assert.doesNotMatch(facts, /DetailFact label=\{t\("latest\.jitter"\)}/,
+            "jitter still costs a row of the facts grid");
+    });
+
+    it("gives packet loss no row of its own", () => {
+        assert.doesNotMatch(facts, /DetailFact label=\{t\("test\.details\.packet_loss"\)}/,
+            "packet loss still costs a row of the facts grid");
+    });
+
+    it("hangs both on the ping card", () => {
+        assert.match(metricSource("ping"), /sub:/, "the ping card takes no secondary figures");
+        assert.match(beforeFacts, /test\.jitter/, "jitter never reaches the metric cards");
+        assert.match(beforeFacts, /test\.packetLoss/, "packet loss never reaches the metric cards");
+    });
+
+    // The half that matters most: one figure shown under both directions would
+    // read as two, and neither direction measured it.
+    it("claims no packet loss for either direction", () => {
+        for (const key of ["download", "upload"])
+            assert.doesNotMatch(metricSource(key), /packetLoss/,
+                `the ${key} card claims a packet loss of its own`);
+    });
+
+    // Zero loss is the best reading there is and the one most often seen, so a
+    // truthiness check would hide exactly the result worth showing.
+    it("treats a measured zero as a measurement", () => {
+        assert.match(beforeFacts, /isMeasured\(test\.packetLoss\)/);
+        assert.match(beforeFacts, /isMeasured\(test\.jitter\)/);
+    });
+
+    // The same icons the rest of the app draws these with - the wave beside the
+    // ping on the overview row, the broken link on both packet loss cards.
+    it("draws them the way every other card does", () => {
+        assert.match(beforeFacts, /faWaveSquare/, "jitter is drawn with a different icon here");
+        assert.match(beforeFacts, /faLinkSlash/, "packet loss is drawn with a different icon here");
+        // Graded with the same functions the consistency panel and the
+        // latest-test card use, so one figure cannot change colour between two
+        // views of the same test.
+        assert.match(beforeFacts, /packetLossColour\(test\.packetLoss\)/,
+            "packet loss is not graded, so a lossy line reads the same as a clean one");
+        assert.match(beforeFacts, /jitterColour\(test\.jitter\)/,
+            "jitter sits ungraded beside a graded packet loss");
+    });
+});
+
 describe("the chart modal", () => {
     const aliasImporter = {
         findFileUrl(url) {

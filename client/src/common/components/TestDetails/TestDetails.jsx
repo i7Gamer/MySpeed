@@ -2,12 +2,14 @@ import {useContext} from "react";
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
-    faArrowDown, faArrowRight, faArrowUp, faPingPongPaddleBall, faUpRightFromSquare
+    faArrowDown, faArrowRight, faArrowUp, faLinkSlash, faPingPongPaddleBall, faUpRightFromSquare, faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
 import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {convertSpeed, formatBytes, formatDateTime, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
-import {bufferbloat, bufferbloatColour, connectionChange, getIconBySpeed} from "@/common/utils/TestUtil";
+import {
+    bufferbloat, bufferbloatColour, connectionChange, getIconBySpeed, jitterColour, packetLossColour
+} from "@/common/utils/TestUtil";
 import {changeFrom, differenceFromTarget, percentOfTarget, providerName} from "./utils/details";
 import {describeError} from "./utils/errors";
 import "./styles.sass";
@@ -28,7 +30,8 @@ const isMeasured = (value) => value !== null && value !== undefined;
  * One measurement, with how it compares to the configured optimum and to the
  * test before it.
  */
-const DetailMetric = ({icon, label, value, unit, level, percent, targetLabel, change, changeUnit, higherIsBetter}) => {
+const DetailMetric = ({icon, label, value, unit, level, percent, targetLabel, change, changeUnit, higherIsBetter,
+                          sub = null}) => {
     const improved = change !== null && change.direction !== "same"
         && (change.direction === "up") === higherIsBetter;
 
@@ -41,6 +44,8 @@ const DetailMetric = ({icon, label, value, unit, level, percent, targetLabel, ch
             <div className="detail-metric-value">
                 {value}<span className="detail-metric-unit">{unit}</span>
             </div>
+
+            {sub}
 
             {percent !== null && (
                 <div className="detail-target">
@@ -134,9 +139,61 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
             {amount: distance.difference, unit: t("latest.ping_unit")});
     };
 
+    /**
+     * What the line is like before anything is asked of it, beside the latency
+     * itself: how much that latency wanders, and how much of the traffic never
+     * arrived at all. Three readings of one thing, so they are read in one
+     * place - each used to cost a full row of the facts grid below, and jitter
+     * was drawn twice over on the overview, beside the ping in the row and
+     * again as a fact once the row was opened.
+     *
+     * Packet loss hangs here rather than on the download and upload cards
+     * because there is one figure for the connection: only Ookla measures it,
+     * and it measures it once. Repeated under both directions it would read as
+     * two measurements, and neither of them was taken.
+     */
+    const qualityFigures = [
+        // Both graded against what a call needs rather than against a configured
+        // optimum - there is a setting for the ping above them and none for
+        // either of these. The same two gradings the consistency panel and the
+        // latest-test card already draw them with, so one figure does not change
+        // colour between two views of the same test.
+        isMeasured(test.jitter) && {
+            key: "jitter",
+            icon: faWaveSquare,
+            level: jitterColour(test.jitter),
+            text: formatWithUnit(test.jitter, t("latest.jitter_unit")),
+            label: `${t("latest.jitter")} ${formatWithUnit(test.jitter, t("latest.jitter_unit"))}`
+        },
+        isMeasured(test.packetLoss) && {
+            key: "packetLoss",
+            icon: faLinkSlash,
+            level: packetLossColour(test.packetLoss),
+            text: `${test.packetLoss}%`,
+            label: `${t("test.details.packet_loss")} ${test.packetLoss}%`
+        }
+    ].filter(Boolean);
+
+    // One image with one name, the way the down/up pairs below are read: the
+    // icons say which figure is which only to someone who can see them, and
+    // "± 2 ms · 0%" is not a sentence.
+    const quality = qualityFigures.length > 0 && (
+        <span className="detail-metric-sub"
+              role="img"
+              aria-label={qualityFigures.map((figure) => figure.label).join(", ")}>
+            {qualityFigures.map(({key, icon, text, level}) => (
+                <span key={key} className={`detail-metric-sub-part${level ? " icon-" + level : ""}`}>
+                    <FontAwesomeIcon icon={icon} className="detail-metric-sub-icon"/>
+                    {text}
+                </span>
+            ))}
+        </span>
+    );
+
     const metrics = [
         {
             key: "ping",
+            sub: quality || null,
             icon: faPingPongPaddleBall,
             label: t("latest.ping"),
             value: test.ping,
@@ -266,12 +323,6 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                             {t("test.result." + (test.type === "custom" ? "from_you" : "automatic"))}
                         </DetailFact>
 
-                        {isMeasured(test.jitter) && (
-                            <DetailFact label={t("latest.jitter")}>
-                                {formatWithUnit(test.jitter, t("latest.jitter_unit"))}
-                            </DetailFact>
-                        )}
-
                         {/* Only for a test that carried them. A row recorded
                             before these were captured, or from a provider that
                             cannot measure them, has no value rather than zero -
@@ -313,12 +364,6 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                                     create no word break, so the accessible text
                                     read "Aadds 19 ms". */}
                                 {" " + t("test.details.bufferbloat_value", {increase: bloat.increase})}
-                            </DetailFact>
-                        )}
-
-                        {isMeasured(test.packetLoss) && (
-                            <DetailFact label={t("test.details.packet_loss")}>
-                                {test.packetLoss}%
                             </DetailFact>
                         )}
 

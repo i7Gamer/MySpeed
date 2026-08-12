@@ -57,6 +57,31 @@
   color: $subtext
   margin-left: 0.35rem
 
+// Under the value rather than trailing it: the cards sit on an auto-fit grid
+// whose tracks go down to 13rem, and a second figure on the same line pushed the
+// unit onto a line of its own long before the track got that narrow.
+//
+// The colour is set here and not on the parts, so a part carrying an icon-*
+// grade overrides it by declaring one at all - an inherited colour loses to any
+// declaration, whatever the two selectors weigh.
+.detail-metric-sub
+  display: flex
+  flex-wrap: wrap
+  align-items: center
+  gap: 0.75rem
+  margin-top: 0.4rem
+  font-size: 0.9rem
+  color: $subtext
+
+.detail-metric-sub-part
+  display: flex
+  align-items: center
+  gap: 0.3rem
+
+.detail-metric-sub-icon
+  width: 0.8rem
+  height: 0.8rem
+
 .detail-target
   margin-top: 0.75rem
 
