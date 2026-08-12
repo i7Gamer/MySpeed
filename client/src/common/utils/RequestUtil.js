@@ -1,5 +1,10 @@
 const REQUEST_TIMEOUT = 10000;
 
+// How long a download's blob url is kept alive after the click that uses it.
+// Long enough for any browser to have started reading it, short enough that the
+// data is not held for the life of the page.
+const BLOB_LIFETIME = 1000;
+
 export class RequestError extends Error {
     constructor(status, message) {
         super(message);
@@ -188,5 +193,13 @@ export const downloadRequest = async (path, body = {}, headers = {}, preferredNa
     document.body.appendChild(element);
     element.click();
     element.remove();
-    window.URL.revokeObjectURL(url);
+
+    // Not in the same tick as the click. The click only *starts* the download -
+    // the browser reads the blob afterwards - so revoking here dropped the only
+    // reference to the data before it had been read, and the download landed as
+    // "Failed - Network error". Chrome usually survives it by reading the blob
+    // synchronously, which is why every export worked in development and failed
+    // for anyone on Firefox or Safari. Still revoked, so the blob is not held
+    // for the life of the page.
+    setTimeout(() => window.URL.revokeObjectURL(url), BLOB_LIFETIME);
 }

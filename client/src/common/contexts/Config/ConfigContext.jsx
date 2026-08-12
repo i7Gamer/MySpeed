@@ -9,6 +9,7 @@ import {
 } from "@/common/contexts/Config/dialog";
 import WelcomeDialog from "@/common/components/WelcomeDialog";
 import {useNavigate} from "react-router-dom";
+import {configOutcome, failureOutcome} from "@/common/contexts/Config/configOutcome";
 
 export const ConfigContext = createContext({});
 
@@ -38,12 +39,18 @@ export const ConfigProvider = (props) => {
                 throw {credential: false};
             }
         }).then(result => {
-            if (config !== result)
-                result.viewMode && localStorage.getItem("currentNode") !== null && localStorage.getItem("currentNode") !== "0"
-                    ? navigate("/nodes") : setConfig(result);
+            // Stored unconditionally. This was a ternary - navigate *or* store -
+            // and the redirect took the config with it, leaving every consumer
+            // reading {} for the rest of the session. Where to be and what to
+            // hold are two separate answers.
+            const {config: loaded, redirectToNodes} = configOutcome(result, localStorage.getItem("currentNode"));
+
+            setConfig(loaded);
+            if (redirectToNodes) navigate("/nodes");
         }).catch((reason) => {
-            localStorage.getItem("currentNode") !== null && localStorage.getItem("currentNode") !== "0"
-                ? navigate("/nodes") : showErrorDialog(reason);
+            if (failureOutcome(localStorage.getItem("currentNode")).redirectToNodes) return navigate("/nodes");
+
+            showErrorDialog(reason);
         });
     }
 

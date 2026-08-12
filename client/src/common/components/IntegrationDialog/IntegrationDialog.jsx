@@ -12,6 +12,7 @@ import {generateRelativeTime} from "@/common/utils/FormatUtil";
 import FormField from "@/common/components/FormField";
 import ExpandableCard from "@/common/components/ExpandableCard";
 import DropdownSelect from "@/common/components/DropdownSelect";
+import {renderableIntegrations} from "@/common/components/IntegrationDialog/renderableIntegrations";
 
 const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, config}) => {
     const [displayName, setDisplayName] = useState(integration.displayName || t(`integrations.${integration.name}.title`));
@@ -186,6 +187,14 @@ export const IntegrationDialog = ({open, onClose}) => {
 
     const loading = !integrations || !active;
 
+    // The rows this dialog can actually draw. A stored row whose integration
+    // has since been removed has no definition, and IntegrationCard reads
+    // `integrationDef.fields` in a state initialiser - so one of those did not
+    // render a broken card, it threw during render and took the whole dialog
+    // with it. Counted from here too, so a list of nothing but stale rows shows
+    // the empty state rather than an empty list.
+    const renderable = renderableIntegrations(active, integrations);
+
     return (
         <Dialog open={open} onClose={onClose} className="integration-dialog">
             {({close}) => (
@@ -196,13 +205,13 @@ export const IntegrationDialog = ({open, onClose}) => {
                             <div className="lds-ellipsis"><div/><div/><div/><div/></div>
                         ) : (
                             <div className="integrations-wrapper">
-                                {config.previewMode && active.length > 0 && (
+                                {config.previewMode && renderable.length > 0 && (
                                     <div className="preview-warning">
                                         <FontAwesomeIcon icon={faExclamationTriangle}/>
                                         <span>{t("integrations.preview_active")}</span>
                                     </div>
                                 )}
-                                {active.length === 0 ? (
+                                {renderable.length === 0 ? (
                                     <div className="empty-state">
                                         <FontAwesomeIcon icon={faCircleNodes}/>
                                         <p>{t("integrations.none_active").replace("<br/>", " ").replace("<Bold>", "").replace("</Bold>", "")}</p>
@@ -211,7 +220,7 @@ export const IntegrationDialog = ({open, onClose}) => {
                                 ) : (
                                     <>
                                         <div className="integrations-list">
-                                            {active.map(item => (
+                                            {renderable.map(item => (
                                                 <IntegrationCard key={item.uuid} integration={item} integrationDef={integrations[item.name]}
                                                     onRemove={removeIntegration} onUpdate={updateIntegration} config={config}/>
                                             ))}

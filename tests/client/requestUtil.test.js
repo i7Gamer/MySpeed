@@ -42,7 +42,7 @@ globalThis.document = {
         lastAnchor = {
             attributes: {},
             setAttribute(name, value) { this.attributes[name] = value; },
-            click() {},
+            click() { blobEvents.push({event: "click", url: this.href}); },
             remove() {}
         };
         return lastAnchor;
@@ -50,8 +50,15 @@ globalThis.document = {
     body: {appendChild: () => {}}
 };
 
+// The order matters as much as the calls: a blob url revoked in the same tick
+// as the click is gone before the download manager has read it.
+let blobEvents = [];
+
 globalThis.window = {
-    URL: {createObjectURL: () => "blob:stub", revokeObjectURL: () => {}}
+    URL: {
+        createObjectURL: () => "blob:stub",
+        revokeObjectURL: (url) => blobEvents.push({event: "revoke", url})
+    }
 };
 
 const { jsonRequest, downloadRequest, RequestError, filenameFromDisposition } =
@@ -60,6 +67,7 @@ const { jsonRequest, downloadRequest, RequestError, filenameFromDisposition } =
 beforeEach(() => {
     store.clear();
     lastRequest = null;
+    blobEvents = [];
 });
 
 describe("jsonRequest", () => {
@@ -222,6 +230,49 @@ describe("downloadRequest", () => {
             await downloadRequest("/storage/config");
 
             assert.ok(lastAnchor.attributes.download, "the download was left unnamed");
+        });
+    });
+
+    /**
+     * A blob url has to outlive the click that uses it.
+     *
+     * revokeObjectURL was called on the line after element.click(), in the same
+     * tick - but the click only *starts* the download, and the browser reads
+     * the blob afterwards. Revoking it first drops the only reference to the
+     * data, so the download manager finds nothing behind the url it was handed
+     * and the entry lands as "Failed - Network error". Chrome usually survives
+     * it by reading the blob synchronously; Firefox and Safari do not, so
+     * every export was broken there and worked here.
+     */
+    describe("the blob url behind the download", () => {
+        it("is still alive when the click happens", async () => {
+            respondWith({});
+            await downloadRequest("/storage/config");
+
+            const clicked = blobEvents.findIndex((entry) => entry.event === "click");
+            const revoked = blobEvents.findIndex((entry) => entry.event === "revoke");
+
+            assert.notEqual(clicked, -1, "the download was never triggered");
+            assert.ok(revoked === -1 || revoked > clicked,
+                "the url was revoked before the browser could read the blob");
+        });
+
+        it("is not revoked in the same tick as the click", async () => {
+            respondWith({});
+            await downloadRequest("/storage/config");
+
+            assert.equal(blobEvents.some((entry) => entry.event === "revoke"), false,
+                "the revoke is still synchronous, so the download races it");
+        });
+
+        it("is revoked eventually rather than leaked", async () => {
+            respondWith({});
+            await downloadRequest("/storage/config");
+
+            await new Promise((resolve) => setTimeout(resolve, 1200));
+
+            assert.equal(blobEvents.some((entry) => entry.event === "revoke"), true,
+                "the blob is never released, so every export leaks it for the session");
         });
     });
 });
