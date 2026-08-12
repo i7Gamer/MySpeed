@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
 
 // The dialog was capped at 1400px on every display, so opening a chart on a
 // 1440p or 4K screen used barely half the room available - the detail view was
@@ -84,6 +85,15 @@ $modal-breakpoint-tall: 900px
     &.modal-chart,
     &.modal-wide
       width: min(100%, calc(100vw - #{$modal-gutter-wide}))
+
+    // But no wider than the page behind it. The tiers above exist for plots,
+    // which gain resolution from every pixel; a panel is the same record the
+    // card it opened from shows, and past the page's own width its columns just
+    // stand further apart than the overview's do. Capped here rather than per
+    // tier because two classes outrank the single-class rule each query
+    // restates, so this one declaration holds at the ultrawide tier as well.
+    &.modal-wide
+      max-width: $page-max-width
 
   @media screen and (min-width: $modal-breakpoint-ultrawide)
     max-width: min(#{$modal-max-width-ultrawide}, calc(100vw - #{$modal-gutter-wide}))

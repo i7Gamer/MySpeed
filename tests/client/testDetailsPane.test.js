@@ -122,8 +122,18 @@ describe("the chart modal", () => {
     const compiled = sass.compile(path.join(CLIENT_SRC, "common/components/ChartModal/styles.sass"),
         {importers: [aliasImporter]}).css;
 
+    const escape = (selector) => selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
     const ruleFor = (selector) =>
-        compiled.match(new RegExp(`(?:^|})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)}`));
+        compiled.match(new RegExp(`(?:^|})\\s*${escape(selector)}\\s*\\{([^}]*)}`));
+
+    // The body of every rule whose selector list mentions the given one, rather
+    // than of the first that does. A property can legitimately be declared in
+    // any of them - the tiers restate max-width in three separate queries - so
+    // reading only the first match starts reading the wrong rule the moment
+    // another is added beside it.
+    const bodiesFor = (selector) => [...compiled.matchAll(
+        new RegExp(`${escape(selector)}[^{}]*\\{([^}]*)}`, "g"))].map(([, body]) => body);
 
     /**
      * The dialog clips at 90vh with overflow hidden. Nothing it opened used to
@@ -161,11 +171,13 @@ describe("the chart modal", () => {
      * the same at 1280px and at 2560px, pinned to the dialog's own min-width.
      */
     it("gives a grid panel a width to lay out in, not just charts", () => {
-        const wide = ruleFor(".chart-modal-content.modal-wide")
-            ?? compiled.match(/\.modal-wide[^{]*\{([^}]*)}/);
+        const bodies = bodiesFor(".chart-modal-content.modal-wide");
 
-        assert.notEqual(wide, null, "no .modal-wide rule, so the dialog still shrinks to fit");
-        assert.match(wide[1], /width:\s*min\(/, ".modal-wide sets no definite width");
+        assert.ok(bodies.length > 0, "no .modal-wide rule, so the dialog still shrinks to fit");
+        // Anchored, or `max-width` satisfies it and the panel goes back to
+        // shrinking to fit with a ceiling it never reaches.
+        assert.ok(bodies.some((body) => /(^|;)\s*width:\s*min\(/.test(body)),
+            ".modal-wide sets no definite width");
     });
 
     /**
@@ -199,6 +211,51 @@ describe("the chart modal", () => {
             assert.notEqual(minWidth, null, `two columns are gated on "${gate.trim()}", not a minimum width`);
             assert.ok(Number(minWidth[1]) >= 1200,
                 `gated at ${minWidth[1]}px, which is narrower than two full columns plus the dialog's own chrome`);
+        });
+    });
+
+    /**
+     * The dialog is allowed past the page's own width on a large display, which
+     * is right for a plot and wrong for a panel. A plot gains resolution from
+     * every pixel; the latest test is the same record the card behind it shows,
+     * and at the widest tier it stood 840px wider than the overview's detail
+     * view - the same two columns, pushed a hand's width further apart, on a
+     * page whose every other box stops at 1400px.
+     *
+     * So the panel is capped where the page is, and only the plot keeps the
+     * tiers. The cap carries across every tier on specificity: two classes beat
+     * the single-class rule each media query restates.
+     */
+    describe("a panel is never wider than the page", () => {
+        // Read from layout.sass rather than restated here: the whole point of
+        // the cap is that the two agree, and a copy of the number could not
+        // notice the page moving.
+        const pageMaxWidth = Number(read("common/styles/layout.sass")
+            .match(/\$page-max-width:\s*(\d+)px/)?.[1]);
+
+        const maxWidthsOf = (selector) => bodiesFor(selector)
+            .flatMap((body) => [...body.matchAll(/max-width:[^;]*?(\d+)px/g)])
+            .map(([, px]) => Number(px));
+
+        it("finds the width the page is given", () => {
+            assert.ok(pageMaxWidth > 0, "layout.sass no longer states a page width");
+        });
+
+        it("caps the panel at it", () => {
+            const widths = maxWidthsOf(".chart-modal-content.modal-wide");
+
+            assert.ok(widths.length > 0, "no .modal-wide max-width, so the panel still takes every tier");
+            assert.ok(Math.max(...widths) <= pageMaxWidth,
+                `the panel reaches ${Math.max(...widths)}px against a page of ${pageMaxWidth}px`);
+        });
+
+        // The other half of it. Capping every tier would satisfy the assertion
+        // above and quietly cost the charts the room the tiers were added for.
+        it("leaves the plot the tiers it was given them for", () => {
+            const widths = maxWidthsOf(".chart-modal-content");
+
+            assert.ok(Math.max(...widths) > pageMaxWidth,
+                "no tier is wider than the page any more, so the charts lost their room too");
         });
     });
 
