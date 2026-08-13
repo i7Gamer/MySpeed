@@ -1,4 +1,4 @@
-import React, {useState, useContext} from "react";
+import React, {useState, useContext, useMemo} from "react";
 import {Dialog, DialogHeader, DialogBody, DialogFooter} from "@/common/contexts/Dialog";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faCheck, faQuestionCircle, faBolt, faGauge, faClock, faLeaf, faSeedling, faChevronDown} from "@fortawesome/free-solid-svg-icons";
@@ -67,15 +67,6 @@ export const FrequencyDialog = ({open, onClose}) => {
     const updateToast = useContext(ToastNotificationContext);
     const [preferences] = useContext(PreferencesContext);
 
-    // The window comes out of the same /config payload the schedule does. View
-    // mode withholds both, and withholds this dialog with them - it is reached
-    // from an operator-only entry in the dropdown - so anyone who can see the
-    // preview can see what shapes it.
-    const getNextRun = (cron) => {
-        const date = getNextRunDate(cron, config.quietHoursStart, config.quietHoursEnd);
-        if (!date) return null;
-        return formatDateTime(date, preferences);
-    };
     // Placeholders until the dialog opens: the stored values are read at that
     // moment, not at mount. This component mounts with the header, and on an
     // instance with read-level access the header first mounts against the
@@ -127,7 +118,21 @@ export const FrequencyDialog = ({open, onClose}) => {
     };
 
     const isCustomValid = selected !== "custom" || isCronValid(customCron);
-    const nextRun = getNextRun(customCron);
+
+    // The window comes out of the same /config payload the schedule does. View
+    // mode withholds both, and withholds this dialog with them - it is reached
+    // from an operator-only entry in the dropdown - so anyone who can see the
+    // preview can see what shapes it.
+    //
+    // Memoized, and skipped outright while closed: this dialog stays mounted
+    // under the dropdown, which re-renders with every status poll, and a window
+    // that swallows the schedule makes each evaluation walk up to
+    // MAX_QUIET_OCCURRENCES occurrences. Going stale across an occurrence while
+    // the dialog sits open is the cheaper wrong.
+    const nextRunDate = useMemo(
+        () => open ? getNextRunDate(customCron, config.quietHoursStart, config.quietHoursEnd) : null,
+        [open, customCron, config.quietHoursStart, config.quietHoursEnd]);
+    const nextRun = nextRunDate ? formatDateTime(nextRunDate, preferences) : null;
 
     return (
         <Dialog open={open} onClose={onClose} className="frequency-dialog">
