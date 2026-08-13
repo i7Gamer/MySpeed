@@ -77,9 +77,10 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
             info: jitterInfo,
             label: t("info.jitter.title"),
             level: jitterColour(props.jitter),
-            // A latency, printed like every other one: it is stored with two
-            // decimals and stood beside a ping trimmed to one, the same
-            // measurement in the same unit written two ways on one line.
+            // A latency, printed at the one decimal the ping beside it uses:
+            // it is stored with two, and stood next to a ping trimmed to one -
+            // the same measurement in the same unit written two ways on one
+            // line.
             text: formatLatency(props.jitter)
         },
         isMeasured(props.packetLoss) && {

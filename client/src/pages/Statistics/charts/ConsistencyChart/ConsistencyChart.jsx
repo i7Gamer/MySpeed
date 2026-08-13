@@ -8,7 +8,9 @@ import { bufferbloatColour, consistencyColour, gradeForIncrease, jitterColour } 
 import { formatDateTime } from "@/common/utils/FormatUtil";
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import { PreferencesContext } from "@/common/contexts/Preferences";
-import { convertSpeed, formatWithUnit, getSpeedUnit, NOT_MEASURED } from "@/common/utils/FormatUtil";
+import {
+    convertSpeed, formatLatency, formatLatencyWithUnit, formatWithUnit, getSpeedUnit, NOT_MEASURED
+} from "@/common/utils/FormatUtil";
 import "./styles.sass";
 
 export const ConsistencyChart = (props) => {
@@ -55,7 +57,11 @@ export const ConsistencyChart = (props) => {
 
     const ranges = props.ranges ?? {};
     const speed = (value) => formatWithUnit(convertSpeed(value, preferences), speedUnit);
-    const latency = (value) => formatWithUnit(value, t("latest.ping_unit"));
+    // Trimmed to the one decimal a card prints a latency at: the server sends
+    // the two it stores, and this card read "5.23 ms" one panel away from a
+    // latest-test card reading "5.2 ms" for the same measurement. The same
+    // trim goes on the jitter average and the ping deviation below.
+    const latency = (value) => formatLatencyWithUnit(value, t("latest.ping_unit"));
 
     const spreads = {
         download: spread(ranges.download, speed),
@@ -99,7 +105,7 @@ export const ConsistencyChart = (props) => {
                     <div className="consistency-info">
                         <h2>{t("latest.ping")}</h2>
                         <p className={data.ping.stdDev === null ? "icon-blue" : "icon-orange"}>
-                            {deviation(data.ping.stdDev, t("latest.ping_unit"))}
+                            {deviation(formatLatency(data.ping.stdDev), t("latest.ping_unit"))}
                         </p>
                         <span className="consistency-detail">{t("statistics.consistency.ping_variance")}</span>
                         {spreads.ping && <span className="consistency-detail">{spreads.ping}</span>}
@@ -116,7 +122,7 @@ export const ConsistencyChart = (props) => {
                     <div className="consistency-info">
                         <h2>{t("latest.jitter")}</h2>
                         <p className={"icon-" + jitterColour(data.ping.jitter)}>
-                            {formatWithUnit(data.ping.jitter, t("latest.jitter_unit"))}
+                            {formatLatencyWithUnit(data.ping.jitter, t("latest.jitter_unit"))}
                         </p>
                         <span className="consistency-detail">{t("statistics.consistency.jitter_detail")}</span>
                         {spreads.jitter && <span className="consistency-detail">{spreads.jitter}</span>}

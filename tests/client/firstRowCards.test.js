@@ -95,8 +95,10 @@ describe("the jitter row on the stability card", () => {
 
     // A range in which nothing measured jitter returns an explicit null, and
     // `{value} {unit}` around that leaves a bare "ms" standing on its own.
+    // The latency variant, so the figure is also trimmed to the one decimal
+    // every other latency on screen shows.
     it("formats it rather than interpolating a unit onto it", () => {
-        assert.match(consistency, /formatWithUnit\(data\.ping\.jitter, t\("latest\.jitter_unit"\)\)/);
+        assert.match(consistency, /formatLatencyWithUnit\(data\.ping\.jitter, t\("latest\.jitter_unit"\)\)/);
     });
 
     it("has its sub-label", () => {

@@ -77,11 +77,16 @@ describe("the overview row carries both quality figures", () => {
     });
 
     /**
-     * The jitter is a latency, and every latency in this interface is shown to
-     * one decimal. It went out at the two decimals it is stored with, on the
-     * same line as a ping trimmed to one - the same measurement in the same
-     * unit, printed two ways a centimetre apart. The packet loss beside it is a
-     * percentage and keeps the shape it has.
+     * The jitter is a latency, and a card prints a latency to one decimal -
+     * the test rows, the detail pane, the latest-test card and the stability
+     * card all trim through the same formatter. The boundary runs at the
+     * overview pane's latency row and the chart tooltips, which still print
+     * the stored two decimals, and at the bufferbloat increase, which keeps
+     * two deliberately, pinned to the server's arithmetic. This one went out
+     * at the two decimals it is stored with, on
+     * the same line as a ping trimmed to one - the same measurement in the
+     * same unit, printed two ways a centimetre apart. The packet loss beside
+     * it is a percentage and keeps the shape it has.
      */
     it("prints the jitter to the precision the ping beside it uses", () => {
         assert.match(figures, /text:\s*formatLatency\(props\.jitter\)/,
