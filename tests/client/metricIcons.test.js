@@ -26,12 +26,13 @@ const PACKET_LOSS_ICON = "faLinkSlash";
 const CONSISTENCY_ICON = "faCompress";
 const JITTER_ICON = "faWaveSquare";
 
-// The two figures about a line under load. Neither may borrow the ping's
-// paddle: the whole point of both is that they are not the idle ping, and a
-// glyph that stood for "latency" in general would say the same thing about
-// three different measurements.
+// The latency under load. It may not borrow the ping's paddle: the whole point
+// of the figure is that it is not the idle ping, and a glyph standing for
+// "latency" in general would say the same thing about two measurements taken
+// under opposite conditions.
+//
+// Its grade has no glyph at all - see below.
 const LOADED_LATENCY_ICON = "faStopwatch";
-const BUFFERBLOAT_ICON = "faGaugeHigh";
 
 const PACKET_LOSS_SITES = [
     "pages/Statistics/charts/OverviewChart/OverviewChart.jsx",
@@ -147,8 +148,21 @@ describe("the figures measured under load have their own glyphs", () => {
         assert.equal(iconAfter(pane, "info.loaded_latency.title"), LOADED_LATENCY_ICON);
     });
 
-    it("draws the bufferbloat with the gauge", () => {
-        assert.equal(iconAfter(row, "info.bufferbloat.title"), BUFFERBLOAT_ICON);
+    /**
+     * The grade is the exception that proves the rule: it has never been drawn
+     * as a glyph anywhere - the letter is the glyph, coloured by the grade, and
+     * every view that shows one shows the same badge. Drawn as an icon with a
+     * number beside it on the overview row, it took a full column's width to
+     * say one character's worth and left a hole in every row whose provider
+     * measures no latency under load.
+     */
+    it("draws the bufferbloat as its badge, not as a glyph", () => {
+        assert.match(row, /bufferbloat-grade/);
+        assert.doesNotMatch(row, /faGauge/, "the grade is back to borrowing a glyph");
+    });
+
+    it("uses that same badge in the panel", () => {
+        assert.match(pane, /bufferbloat-grade/);
     });
 
     // The paddle is the idle ping. Latency under load is the measurement that
@@ -159,8 +173,8 @@ describe("the figures measured under load have their own glyphs", () => {
         assert.doesNotMatch(loaded.slice(0, loaded.indexOf("const metrics")), /faPingPongPaddleBall/);
     });
 
-    it("gives each of the five measurements a glyph of its own", () => {
-        const glyphs = [PACKET_LOSS_ICON, JITTER_ICON, CONSISTENCY_ICON, LOADED_LATENCY_ICON, BUFFERBLOAT_ICON];
+    it("gives each of the four measurements a glyph of its own", () => {
+        const glyphs = [PACKET_LOSS_ICON, JITTER_ICON, CONSISTENCY_ICON, LOADED_LATENCY_ICON];
 
         assert.equal(new Set(glyphs).size, glyphs.length);
     });

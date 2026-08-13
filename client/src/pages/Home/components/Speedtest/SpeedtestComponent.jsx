@@ -2,7 +2,7 @@ import React, {forwardRef, useContext, useRef, useState, useImperativeHandle} fr
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
     faArrowDown, faArrowUp, faChevronDown, faClockRotateLeft, faClose,
-    faExclamationTriangle, faGaugeHigh, faInfo, faLinkSlash, faPingPongPaddleBall,
+    faExclamationTriangle, faInfo, faLinkSlash, faPingPongPaddleBall,
     faTrashCan, faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
@@ -208,23 +208,38 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                             loudest thing in the column. */}
                         <div className="speedtest-row speedtest-bufferbloat">
                             {props.bufferbloat && (
-                                <>
-                                    {/* The grade rides in the label, not only in
-                                        the icon's colour: a colour is not a
-                                        reading a screen reader can take, and the
-                                        letter is the half of this figure worth
-                                        having at a glance. */}
-                                    <HelpButton label={`${t("info.bufferbloat.title")} ${props.bufferbloat.grade}`}
-                                                onOpen={(event) => openInfo(event, bufferbloatInfo)}>
-                                        <FontAwesomeIcon icon={faGaugeHigh}
-                                                         className={"speedtest-icon icon-"
-                                                             + bufferbloatColour(props.bufferbloat.grade)}/>
-                                    </HelpButton>
-                                    <h2 className="speedtest-text">
-                                        {"+" + props.bufferbloat.increase}
-                                        <span className="speedtest-unit">{t("latest.ping_unit")}</span>
-                                    </h2>
-                                </>
+                                /* The grade alone, where the other columns
+                                   carry an icon, a number and a unit. It has
+                                   never had a glyph anywhere in this interface
+                                   - the letter is the glyph - and drawn as a
+                                   number it took a full column's width to say
+                                   one character's worth. The milliseconds it
+                                   stands for follow it into the label, which is
+                                   also where a screen reader finds the reading
+                                   that the colour alone cannot give.
+
+                                   The badge itself is the button here, unlike
+                                   the metric icons: there the value beside the
+                                   icon must not look clickable, and here the
+                                   value is all there is. */
+                                <HelpButton className="bufferbloat-button"
+                                            label={`${t("info.bufferbloat.title")} ${props.bufferbloat.grade} · `
+                                                + t("test.details.bufferbloat_value", {increase: props.bufferbloat.increase})}
+                                            onOpen={(event) => openInfo(event, bufferbloatInfo)}>
+                                    <span className={"bufferbloat-grade icon-"
+                                        + bufferbloatColour(props.bufferbloat.grade)}>
+                                        {props.bufferbloat.grade}
+                                    </span>
+                                    {/* Shown only once the row is a stack. A
+                                        letter alone is a column heading the
+                                        columns beside it explain; on a phone
+                                        there are no columns, no pointer to
+                                        hover for the title, and a green "A" on
+                                        a line of its own says nothing. */}
+                                    <span className="bufferbloat-increase">
+                                        {t("test.details.bufferbloat_value", {increase: props.bufferbloat.increase})}
+                                    </span>
+                                </HelpButton>
                             )}
                         </div>
                         <div className="speedtest-row">

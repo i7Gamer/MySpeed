@@ -185,20 +185,35 @@ describe("the overview row shows the bufferbloat", () => {
         assert.ok(columnAt < row.indexOf("info.down.title"));
     });
 
-    // The three columns beside it are a number and a unit; a bare letter would
-    // be the one value in the list that is not a measurement.
-    it("shows the added latency rather than the letter", () => {
-        assert.match(column, /increase/);
-        assert.match(column, /speedtest-unit/);
-        assert.doesNotMatch(column, /speedtest-text">\{[^}]*grade}/,
-            "the grade stands where the other three columns put a number");
+    /**
+     * The grade, drawn as the badge the rest of the interface draws it as.
+     *
+     * It went in as an icon, a number and a unit, like the three columns beside
+     * it - and that gave a single character a full column's width, which is
+     * what left a hole in the row on every test whose provider measures no
+     * latency under load. It has never had a glyph anywhere: the letter is the
+     * glyph, and it takes the width of one.
+     */
+    it("shows the grade rather than the milliseconds behind it", () => {
+        assert.match(column, /bufferbloat-grade/);
+        assert.doesNotMatch(column, /speedtest-unit/,
+            "the grade is back to being drawn as a measurement");
     });
 
-    // Colour is not a reading a screen reader can take, and the grade is the
-    // half of this figure that is worth reading at a glance.
-    it("carries the grade in the label, not only in the colour", () => {
+    // The number it stands for is not thrown away: it rides in the label, which
+    // is the title a pointer reads and the name a screen reader announces -
+    // colour and a letter are not a reading on their own.
+    it("keeps the milliseconds in the label", () => {
         assert.match(column, /bufferbloatColour/);
+        assert.match(column, /bufferbloat_value/);
         assert.match(column, /grade/);
+    });
+
+    // The whole badge is the button, unlike the metric columns where only the
+    // icon is: there the value beside it must not look clickable, and here the
+    // value is all there is.
+    it("makes the badge itself the button", () => {
+        assert.match(column, /<HelpButton className="bufferbloat-button"/);
     });
 
     /**
@@ -253,17 +268,25 @@ describe("the row's grid makes room for it", () => {
      * Every track is either a fixed width or a fraction with a zero floor, so
      * two rows of the same list cannot lay out differently.
      */
+    // The second is whichever width the smaller font step sits at, read from the
+    // stylesheet rather than pinned: the step moves whenever the row's content
+    // changes width, and a test that has to be edited for that is a test that
+    // will be edited without being read.
     for (const [name, rule] of [["at full width", "\\.speedtest"],
-        ["at the smaller step", "@media \\(max-width: 1400px\\)[^{]*\\{\\s*\\.speedtest"]]) {
+        ["at the smaller step", "@media \\(max-width: \\d+px\\)[^{]*\\{\\s*\\.speedtest"]]) {
         it(`gives every row identical tracks ${name}`, () => {
             const tracks = tracksOf(rule);
 
             assert.ok(tracks.length >= 6, `no template found for ${name}`);
-            for (const track of tracks.slice(1, 5))
-                assert.match(track, /^minmax\(0,/,
-                    `"${track}" grows to fit its own row's content`);
-            assert.match(tracks[0], /^[\d.]+rem$/,
-                `the date track is "${tracks[0]}", which is measured per row`);
+            // The three measurements: equal shares with a zero floor, so one
+            // rhythm reads down the row and no row's content inflates a track.
+            for (const track of [tracks[1], tracks[3], tracks[4]])
+                assert.match(track, /^minmax\(0, 1fr\)$/,
+                    `"${track}" is not an equal share with a zero floor`);
+            // The date and the badge hold no measurement, so they hold a width.
+            for (const track of [tracks[0], tracks[2]])
+                assert.match(track, /^[\d.]+rem$/,
+                    `"${track}" is measured per row, which shifts every column after it`);
         });
     }
 
