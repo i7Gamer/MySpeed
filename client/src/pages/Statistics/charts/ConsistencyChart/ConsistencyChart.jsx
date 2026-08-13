@@ -104,10 +104,10 @@ export const ConsistencyChart = (props) => {
                 <div className="consistency-item">
                     <div className="consistency-info">
                         <h2>{t("latest.ping")}</h2>
-                        <p className={data.ping.stdDev === null ? "icon-blue" : "icon-orange"}>
-                            {deviation(formatLatency(data.ping.stdDev), t("latest.ping_unit"))}
+                        <p className={data.ping.deviation === null ? "icon-blue" : "icon-orange"}>
+                            {deviation(formatLatency(data.ping.deviation), t("latest.ping_unit"))}
                         </p>
-                        <span className="consistency-detail">{t("statistics.consistency.ping_variance")}</span>
+                        <span className="consistency-detail">{t("statistics.consistency.ping_deviation")}</span>
                         {spreads.ping && <span className="consistency-detail">{spreads.ping}</span>}
                     </div>
                     <FontAwesomeIcon icon={faPingPongPaddleBall} className="icon-orange" />

@@ -347,8 +347,7 @@
       "excellent": "Excellent",
       "good": "Good",
       "fair": "Fair",
-      "poor": "Poor",
-      "ping_variance": "Ping variance"
+      "poor": "Poor"
     }
   },
   "calendar": {

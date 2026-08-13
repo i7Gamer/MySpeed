@@ -347,8 +347,7 @@
       "excellent": "Znakomita",
       "good": "Dobra",
       "fair": "Przyzwoita",
-      "poor": "Słaba",
-      "ping_variance": "Wariant ping"
+      "poor": "Słaba"
     }
   },
   "calendar": {

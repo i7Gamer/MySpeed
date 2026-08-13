@@ -124,8 +124,45 @@ describe("buildStatistics", () => {
                 at("2026-08-07T01:00:00.000Z", {ping: 10, jitter: 1}),
                 at("2026-08-07T02:00:00.000Z", {ping: 90, jitter: 1})
             ], DAY);
-            assert.equal(stats.consistency.ping.stdDev, 40);
+            assert.equal(stats.consistency.ping.deviation, 40);
             assert.equal(stats.consistency.ping.jitter, 1);
+        });
+
+        /**
+         * The spread a typical test sees, not the one the worst test caused.
+         *
+         * This figure was a standard deviation, which squares its distances:
+         * a real history of 170 pings between 4 and 7 with a single spike to
+         * 26 read "±1.72 ms" - the one spike carried three quarters of the
+         * squared mass and nearly doubled the figure, while the typical test
+         * sat within a millisecond of the middle. Medians on both steps keep
+         * the outlier from speaking for the range: here the deviation is 1,
+         * where the standard deviation of the same five pings is over 8.
+         */
+        it("reports the typical ping deviation, not the outlier's", () => {
+            const stats = buildStatistics([
+                at("2026-08-07T01:00:00.000Z", {ping: 4}),
+                at("2026-08-07T02:00:00.000Z", {ping: 5}),
+                at("2026-08-07T03:00:00.000Z", {ping: 6}),
+                at("2026-08-07T04:00:00.000Z", {ping: 7}),
+                at("2026-08-07T05:00:00.000Z", {ping: 26})
+            ], DAY);
+
+            assert.equal(stats.consistency.ping.deviation, 1);
+        });
+
+        // An even count has no middle test; the two nearest split the
+        // difference, as every median does.
+        it("splits the median between an even count of tests", () => {
+            const stats = buildStatistics([
+                at("2026-08-07T01:00:00.000Z", {ping: 4}),
+                at("2026-08-07T02:00:00.000Z", {ping: 6}),
+                at("2026-08-07T03:00:00.000Z", {ping: 10}),
+                at("2026-08-07T04:00:00.000Z", {ping: 20})
+            ], DAY);
+
+            // Median 8; distances 4, 2, 2, 12; their median (2+4)/2 = 3.
+            assert.equal(stats.consistency.ping.deviation, 3);
         });
 
         /**
@@ -231,13 +268,13 @@ describe("buildStatistics", () => {
             assert.equal(stats.consistency.download.consistency, null);
             assert.equal(stats.consistency.download.stdDev, null);
             assert.equal(stats.consistency.upload.consistency, null);
-            assert.equal(stats.consistency.ping.stdDev, null);
+            assert.equal(stats.consistency.ping.deviation, null);
         });
 
         it("still never reports NaN from an empty set", () => {
             const {download, upload, ping} = buildStatistics([], DAY).consistency;
 
-            for (const value of [download.consistency, download.stdDev, upload.consistency, upload.stdDev, ping.stdDev])
+            for (const value of [download.consistency, download.stdDev, upload.consistency, upload.stdDev, ping.deviation])
                 assert.ok(value === null || Number.isFinite(value), `got ${value}`);
         });
 

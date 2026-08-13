@@ -446,7 +446,7 @@
       "good": "Good",
       "fair": "Fair",
       "poor": "Poor",
-      "ping_variance": "Ping variance",
+      "ping_deviation": "Typical deviation",
       "loaded_latency_average": "Adds {{increase}} ms under load on average, across {{tests}} tests",
       "jitter_detail": "Variation within a test",
       "range": "Between {{min}} and {{max}}",

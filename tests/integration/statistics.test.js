@@ -181,7 +181,7 @@ describe("GET /api/speedtests/statistics", () => {
             assert.equal(body.consistency.download.consistency, null);
             assert.equal(body.consistency.download.stdDev, null);
             assert.equal(body.consistency.upload.consistency, null);
-            assert.equal(body.consistency.ping.stdDev, null);
+            assert.equal(body.consistency.ping.deviation, null);
         });
 
         // A single test is a measurement, but not a spread: there is nothing to
@@ -202,7 +202,7 @@ describe("GET /api/speedtests/statistics", () => {
             ]);
 
             const {body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
-            assert.equal(body.consistency.ping.stdDev, 40);
+            assert.equal(body.consistency.ping.deviation, 40);
             assert.equal(body.consistency.ping.jitter, 1);
         });
 

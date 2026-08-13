@@ -67,6 +67,34 @@ const standardDeviation = (values) => {
     return Math.sqrt(average(values.map(value => Math.pow(value - mean, 2))));
 };
 
+const median = (values) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    const half = Math.floor(sorted.length / 2);
+
+    return sorted.length % 2 === 1 ? sorted[half] : (sorted[half - 1] + sorted[half]) / 2;
+};
+
+/**
+ * How far a typical test sits from the middle one.
+ *
+ * The ping's spread was a standard deviation, which squares its distances: a
+ * real history of 170 pings between 4 and 7 with one spike to 26 read
+ * "±1.72 ms", the lone spike carrying three quarters of the squared mass -
+ * the figure described the outlier, not the line. Medians on both steps let
+ * no single test speak for the range: half the tests sit within this
+ * distance of the middle one.
+ *
+ * The same nothing/one semantics as standardDeviation above, and for the same
+ * reasons.
+ */
+const medianAbsoluteDeviation = (values) => {
+    if (values.length === 0) return null;
+    if (values.length < 2) return 0;
+
+    const middle = median(values);
+    return median(values.map(value => Math.abs(value - middle)));
+};
+
 // The score is presented as a percentage, but the formula is unbounded below:
 // once the standard deviation exceeds the mean it goes negative, and a single
 // outlier among a few slow tests is enough. "-240% consistent" is not a reading
@@ -311,7 +339,11 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
             download: consistencyScore(succeeded.map(entry => entry.download)),
             upload: consistencyScore(succeeded.map(entry => entry.upload)),
             ping: {
-                stdDev: roundOrNull(standardDeviation(succeeded.map(entry => entry.ping))),
+                // `deviation`, not `stdDev` like the speeds above: the speeds
+                // feed a consistency percentage whose formula wants the
+                // standard deviation, while this figure is read directly by a
+                // person - so it is the median kind, and named for what it is.
+                deviation: roundOrNull(medianAbsoluteDeviation(succeeded.map(entry => entry.ping))),
                 jitter: averageOrNull(withJitter.map(entry => entry.jitter))
             },
             loadedLatency: loadedLatencyOver(succeeded)

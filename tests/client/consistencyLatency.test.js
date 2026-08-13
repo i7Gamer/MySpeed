@@ -59,7 +59,7 @@ describe("the stability card prints its latencies to one decimal", () => {
     // a range without successes returns passes through the formatter
     // untouched, so the deviation helper still says N/A for it.
     it("trims the ping deviation it prints in the same unit", () => {
-        assert.match(card, /deviation\(formatLatency\(data\.ping\.stdDev\), t\("latest\.ping_unit"\)\)/,
+        assert.match(card, /deviation\(formatLatency\(data\.ping\.deviation\), t\("latest\.ping_unit"\)\)/,
             "the ping deviation still prints the stored two decimals");
         assert.equal(formatLatency(2.94), 2.9);
         assert.equal(formatLatency(null), null);

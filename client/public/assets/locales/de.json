@@ -446,7 +446,7 @@
       "good": "Gut",
       "fair": "Faire",
       "poor": "Arm",
-      "ping_variance": "Ping-Varianz",
+      "ping_deviation": "Typische Abweichung",
       "loaded_latency_average": "Steigt im Schnitt um {{increase}} ms unter Last, über {{tests}} Tests",
       "jitter_detail": "Schwankung innerhalb eines Tests",
       "range": "Zwischen {{min}} und {{max}}",

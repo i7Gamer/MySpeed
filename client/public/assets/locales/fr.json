@@ -347,8 +347,7 @@
       "excellent": "Excellent",
       "good": "Bon",
       "fair": "Équitable",
-      "poor": "Mauvais",
-      "ping_variance": "Variance de ping"
+      "poor": "Mauvais"
     }
   },
   "calendar": {

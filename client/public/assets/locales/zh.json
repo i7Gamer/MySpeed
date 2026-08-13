@@ -347,8 +347,7 @@
       "excellent": "极佳",
       "good": "良好",
       "fair": "一般",
-      "poor": "较差",
-      "ping_variance": "Ping 方差"
+      "poor": "较差"
     }
   },
   "calendar": {
