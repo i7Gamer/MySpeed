@@ -2,8 +2,8 @@ import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import i18n from "i18next";
 import {
-    convertSpeed, formatBytes, formatDateTime, formatDuration, formatLastTest, formatShortTime, formatTime,
-    formatHour, formatWithUnit, generateRelativeTime, getSpeedUnit, NOT_MEASURED,
+    convertSpeed, formatBytes, formatDateTime, formatDuration, formatLastTest, formatShortDay,
+    formatShortTime, formatTime, formatHour, formatWithUnit, generateRelativeTime, getSpeedUnit, NOT_MEASURED,
     SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H
 } from "@/common/utils/FormatUtil.js";
 
@@ -256,6 +256,54 @@ describe("formatShortTime", () => {
 
     it("defaults to the 24-hour clock", () => {
         assert.equal(formatShortTime(AFTERNOON, undefined), "14:05");
+    });
+});
+
+/**
+ * The label an averaged row wears in the test list, where the row stands for a
+ * whole day rather than a moment.
+ *
+ * It used to be assembled by hand as `DD.MM`, the one place left in the
+ * interface still spelling a date numerically. That ordering is read as MM.DD
+ * by roughly half the people who see it and is unreadable either way once the
+ * month is ambiguous - upstream #785. The year is deliberately left off: the
+ * row is narrow, and the list is already bounded by the chosen range.
+ */
+describe("formatShortDay", () => {
+    const AUGUST_17 = new Date(2026, 7, 17, 14, 5, 0);
+
+    it("names the month rather than numbering it", () => {
+        const formatted = formatShortDay(AUGUST_17);
+
+        assert.match(formatted, /17/);
+        assert.match(formatted, /[A-Za-z]/, "the month is still a number");
+        assert.doesNotMatch(formatted, /^\d+\.\d+$/);
+    });
+
+    it("leaves the year off", () => {
+        assert.doesNotMatch(formatShortDay(AUGUST_17), /2026/);
+    });
+
+    it("follows the language the app is set to", () => {
+        const previous = i18n.language;
+        const july = new Date(2026, 6, 8);
+
+        try {
+            i18n.changeLanguage("de");
+            const german = formatShortDay(july);
+
+            i18n.changeLanguage("en");
+            const english = formatShortDay(july);
+
+            assert.notEqual(german, english, "the language made no difference");
+        } finally {
+            i18n.changeLanguage(previous);
+        }
+    });
+
+    it("says nothing rather than NaN when there is no date", () => {
+        for (const absent of [null, undefined, ""])
+            assert.equal(formatShortDay(absent), "", `failed for ${JSON.stringify(absent)}`);
     });
 });
 

@@ -14,7 +14,7 @@ import {t} from "i18next";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatShortTime, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {convertSpeed, formatShortDay, formatShortTime, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {useAlert} from "@/common/contexts/Alert";
 import {downloadInfo, jitterInfo, pingInfo, uploadInfo} from "@/pages/Home/components/Speedtest/utils/dialogs";
 
@@ -65,8 +65,12 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
     const reason = describeError(props.error);
 
     let isAverage = props.type === "average";
+    // An averaged row stands for a whole day, so it is labelled with the day
+    // rather than a time. Spelled out through the shared formatter: it was the
+    // one date left in the interface written numerically as DD.MM, which half
+    // its readers parse as MM.DD.
     let timeString = isAverage
-        ? String(props.time.getDate()).padStart(2, '0') + "." + String(props.time.getMonth() + 1).padStart(2, '0')
+        ? formatShortDay(props.time)
         : formatShortTime(props.time, preferences);
 
     const downValue = props.error ? "" : convertSpeed(props.down, preferences);

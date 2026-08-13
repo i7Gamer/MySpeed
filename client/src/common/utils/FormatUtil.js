@@ -33,6 +33,22 @@ export const formatDay = (value) => {
     return date.toLocaleDateString(locale(), {day: "2-digit", month: "short", year: "numeric"});
 };
 
+/**
+ * A calendar day without its year, for a label that has no room for one.
+ *
+ * The averaged rows in the test list used to build this by hand as `DD.MM` -
+ * the last numeric date left in the interface, read as MM.DD by about half the
+ * people who saw it. The month is named instead, which is unambiguous in every
+ * locale; the year stays off because the list is already bounded by the range
+ * the reader chose.
+ */
+export const formatShortDay = (value) => {
+    const date = toDate(value);
+    if (isNaN(date.getTime())) return "";
+
+    return date.toLocaleDateString(locale(), {day: "2-digit", month: "short"});
+};
+
 export const formatTime = (value, preferences) => {
     const date = toDate(value);
     if (isNaN(date.getTime())) return "";
