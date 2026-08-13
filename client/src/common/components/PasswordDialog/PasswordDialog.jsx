@@ -16,6 +16,7 @@ import "./styles.sass";
 import React, {useContext, useState} from "react";
 import {assertOk, baseRequest, deleteRequest, login, logout, patchRequest, RequestError} from "@/common/utils/RequestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
+import {useAlert} from "@/common/contexts/Alert";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {NodeContext} from "@/common/contexts/Node";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
@@ -23,6 +24,7 @@ import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 
 export const PasswordDialog = ({open, onClose}) => {
     const [config, reloadConfig] = useContext(ConfigContext);
+    const alert = useAlert();
     const updateToast = useContext(ToastNotificationContext);
     const findNode = useContext(NodeContext)[4];
     const updateNodes = useContext(NodeContext)[1];
@@ -101,6 +103,27 @@ export const PasswordDialog = ({open, onClose}) => {
         }
     };
 
+    /**
+     * Removing the password is the one action here that can lock the operator
+     * out of their own instance, and it used to fire on the first click of a
+     * button labelled "Unlock" - the same word the login prompt puts on its
+     * submit button. Read as "unlock the settings", it instead deleted the
+     * password, signed the operator out with it, and left an instance that asks
+     * every remote client for a setup token out of the server log.
+     *
+     * So the button says what it does, and this says what that costs before it
+     * is done.
+     */
+    const confirmRemoval = async (close) => {
+        const confirmed = await alert.openConfirm(
+            t("update.remove_password_title"),
+            t("update.remove_password_desc"),
+            {buttonText: t("dialog.unset"), danger: true}
+        );
+
+        if (confirmed) await removePassword(close);
+    };
+
     // Answered by the server, not by this browser's own storage: the old check
     // meant an instance with a password looked unprotected on every other
     // device, and protected on this one long after the password was gone.
@@ -160,9 +183,9 @@ export const PasswordDialog = ({open, onClose}) => {
                     </DialogBody>
                     <DialogFooter>
                         {isPasswordSet && (
-                            <button className="dialog-btn dialog-btn-danger" onClick={() => removePassword(close)}>
+                            <button className="dialog-btn dialog-btn-danger" onClick={() => confirmRemoval(close)}>
                                 <FontAwesomeIcon icon={faLockOpen}/>
-                                {t("dialog.password.unlock")}
+                                {t("update.remove_password")}
                             </button>
                         )}
                         <button className="dialog-btn" onClick={() => save(close)}>{t("dialog.update")}</button>

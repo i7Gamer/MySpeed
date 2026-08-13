@@ -124,13 +124,15 @@ describe("promptUntilAccepted", () => {
  * The other half of the same regression, one layer up.
  *
  * promptUntilAccepted reads an empty value as a dismissal, and that is
- * deliberate - it is pinned above. But the credential prompt is opened with
- * disableClose precisely because there is nothing behind it to go back to, and
- * AlertRenderer only refuses an empty box when the call site asked it to. It
- * did not, so pressing Enter on the autofocused empty input resolved with "",
- * the loop read a dismissal, askForCredential returned without reloading, and
- * the config stayed {} - a gutted page with the prompt gone and no way back
- * short of F5.
+ * deliberate - it is pinned above. AlertRenderer only refuses an empty box when
+ * the call site asked it to, though, and it did not: pressing Enter on the
+ * autofocused empty input resolved with "", the loop read a dismissal,
+ * askForCredential returned without reloading, and the config stayed {} - a
+ * gutted page with the prompt gone and no way back short of F5.
+ *
+ * The X, Escape and the backdrop are ways out on purpose now, and land on
+ * LockedNotice rather than on that gutted page - see lockedOut.test.js. An
+ * empty submit is still not one of them: it is a keypress, not a decision.
  */
 describe("the credential prompt cannot be emptied out of existence", () => {
     const source = fs.readFileSync(fileURLToPath(
@@ -141,11 +143,13 @@ describe("the credential prompt cannot be emptied out of existence", () => {
 
     it("asks for a value it will not accept as empty", () => {
         assert.match(options, /required: true/,
-            "an empty submit still closes the unclosable prompt for good");
+            "one keypress on an empty box would dismiss a prompt nobody meant to dismiss");
     });
 
-    it("still refuses to be closed any other way", () => {
-        assert.match(options, /disableClose/);
+    // Each prompt decides for itself: the two credential prompts are closable,
+    // the lockout and API notices are not.
+    it("takes its close policy from the dialog it was handed", () => {
+        assert.match(options, /disableClose: dialogConfig\.disableCloseButton/);
     });
 });
 

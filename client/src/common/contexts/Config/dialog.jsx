@@ -4,13 +4,18 @@ import {t} from "i18next";
 // prompts share one retry loop - see PasswordPrompt. Holding login() here meant
 // the caller had no way to learn a password had been rejected, so it did
 // nothing about it.
+// Closable, unlike every other prompt here. It used to refuse the X, Escape and
+// the backdrop, because dismissing it left the page gutted - but a prompt that
+// cannot be left is only reasonable while its question can be answered, and
+// LockedNotice now catches the dismissal, so neither half of that trade is
+// needed. Submitting an empty box is still refused; see askForCredential.
 export const passwordRequiredDialog = (failed = false) => ({
     title: t("dialog.password.title"),
     placeholder: t("dialog.password.placeholder"),
     description: failed ? <span className="icon-red">{t("dialog.password.wrong")}</span> : "",
     type: "password",
     buttonText: t("dialog.login"),
-    disableCloseButton: true
+    disableCloseButton: false
 });
 
 /**
@@ -21,6 +26,10 @@ export const passwordRequiredDialog = (failed = false) => ({
  * operator could not answer - there was no password, and nothing on the page
  * said a token existed. The description carries that, since a log line is not
  * somewhere anyone looks unless told to.
+ *
+ * This is the prompt that most needs a way out: the answer lives on the server,
+ * not in the operator's head, so being unable to answer it right now is the
+ * normal case rather than the exceptional one.
  */
 export const setupTokenDialog = (failed = false) => ({
     title: t("dialog.setup_token.title"),
@@ -30,7 +39,7 @@ export const setupTokenDialog = (failed = false) => ({
         : t("dialog.setup_token.description"),
     type: "password",
     buttonText: t("dialog.password.unlock"),
-    disableCloseButton: true
+    disableCloseButton: false
 });
 
 // Not an input: nothing typed here can be accepted until the window expires,

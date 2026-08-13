@@ -8,6 +8,7 @@ import {
     apiErrorDialog, passwordRequiredDialog, setupTokenDialog, throttledDialog
 } from "@/common/contexts/Config/dialog";
 import WelcomeDialog from "@/common/components/WelcomeDialog";
+import LockedNotice from "@/common/components/LockedNotice";
 import {useNavigate} from "react-router-dom";
 import {configOutcome, failureOutcome} from "@/common/contexts/Config/configOutcome";
 
@@ -16,6 +17,10 @@ export const ConfigContext = createContext({});
 export const ConfigProvider = (props) => {
     const [config, setConfig] = useState({});
     const alert = useAlert();
+    // The refusal a dismissed prompt left behind, or null while there is
+    // nothing to explain. Held as an object because the type itself may be
+    // undefined - an older node answers 401 with no type at all.
+    const [locked, setLocked] = useState(null);
     const [welcomeShown, setWelcomeShown] = useState(false);
     const navigate = useNavigate();
 
@@ -74,9 +79,15 @@ export const ConfigProvider = (props) => {
      * the only instruction they get.
      */
     const askForCredential = async (initialType) => {
+        // The refusal the loop ended on, which is not always the one it started
+        // with - a wrong password often enough becomes a lockout, and the
+        // notice has to describe where the operator actually is.
+        let lastType = initialType;
+
         // Dismissing the lockout notice returns nothing, which ends the loop -
         // there is no credential that would be accepted until it expires.
         const ask = async (type, failed) => {
+            lastType = type;
             const kind = promptFor(type);
 
             if (kind === PROMPT_THROTTLED) return openAlertDialog(throttledDialog());
@@ -91,15 +102,18 @@ export const ConfigProvider = (props) => {
                 inputType: dialogConfig.type,
                 buttonText: dialogConfig.buttonText,
                 disableClose: dialogConfig.disableCloseButton,
-                // The X, Escape and the backdrop are all blocked because there
-                // is nothing behind this prompt to go back to - but Enter on
-                // the autofocused empty box resolved with "", which the loop
-                // below reads as a dismissal. That returned without reloading
-                // and left the config {}: a gutted page with the prompt gone
-                // and no way back short of F5.
+                // Enter on the autofocused empty box resolves with "", which
+                // the loop below reads as a dismissal - so without this, one
+                // keypress dismissed a prompt nobody meant to dismiss. The X,
+                // Escape and the backdrop are deliberate ways out; an empty
+                // submit is not one of them.
                 required: true
             });
         };
+
+        // Down while the prompt is up, so reopening from the notice does not
+        // leave the two stacked.
+        setLocked(null);
 
         const accepted = await promptUntilAccepted(
             (previous) => ask(previous ? previous.type : initialType, previous !== null),
@@ -108,7 +122,12 @@ export const ConfigProvider = (props) => {
             login
         );
 
-        if (!accepted) return;
+        // Giving up used to return to nothing: the config stayed {} and the
+        // dashboard behind the prompt rendered an empty shell, which is what
+        // made closing the prompt unthinkable in the first place. The notice is
+        // what makes it thinkable - it carries the same explanation and opens
+        // the prompt again on demand.
+        if (!accepted) return setLocked({type: lastType});
 
         // Getting in with a setup token leaves the instance exactly as it was -
         // without a password, and issuing a different token at the next
@@ -138,6 +157,7 @@ export const ConfigProvider = (props) => {
     return (
         <ConfigContext.Provider value={[config, reloadConfig, checkConfig]}>
             <WelcomeDialog open={welcomeShown} onClose={() => setWelcomeShown(false)}/>
+            {locked && <LockedNotice type={locked.type} onRetry={() => askForCredential(locked.type)}/>}
             {props.children}
         </ConfigContext.Provider>
     )

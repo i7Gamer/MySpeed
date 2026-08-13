@@ -56,3 +56,46 @@ export const refusalDescriptionKey = (type) => {
             return "dialog.password.wrong";
     }
 };
+
+/**
+ * What the page says once the prompt has been dismissed.
+ *
+ * The prompt refused to close, because dismissing it left the config {} and the
+ * dashboard behind it empty. That held until the question became unanswerable:
+ * an instance with no password asks for a token printed in a server log, and an
+ * operator who cannot reach that log had a modal they could neither answer nor
+ * leave. Dismissing lands on this notice instead, so closing the prompt gives
+ * up the box without giving up the explanation - and the button opens it again.
+ *
+ * The keys are the prompt's own wherever they already say the right thing.
+ * They are translated in sixteen locales, and a second copy of "Password
+ * required" would drift from the first the day either is reworded.
+ */
+export const lockedNoticeKeys = (type) => {
+    switch (promptFor(type)) {
+        case PROMPT_SETUP_TOKEN:
+            return {
+                title: "dialog.setup_token.title",
+                description: "dialog.setup_token.description",
+                // The token is reprinted whenever a request is refused, which
+                // turns "hunt through the log" into "reload and read the end
+                // of it". Nothing else in the interface says so.
+                hint: "locked.token_hint",
+                action: "locked.enter_token"
+            };
+        case PROMPT_THROTTLED:
+            return {
+                title: "dialog.throttled.title",
+                description: "dialog.throttled.description",
+                // Nothing to type until the window expires, so the button
+                // retries rather than reopening a box that answers nothing.
+                action: "dialog.retry"
+            };
+        default:
+            return {
+                title: "dialog.password.title",
+                description: "locked.password_desc",
+                action: "dialog.login"
+            };
+    }
+};

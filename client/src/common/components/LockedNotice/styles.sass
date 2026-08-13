@@ -1,0 +1,55 @@
+@use "@/common/styles/colors" as *
+
+// Opaque and over everything: the page behind is the shell the server refuses
+// to fill, so showing it through would only offer controls that answer nothing.
+// Below the dialog layer (999) so the prompt this reopens covers it.
+.locked-notice
+  position: fixed
+  inset: 0
+  z-index: 900
+  display: flex
+  align-items: center
+  justify-content: center
+  padding: 1rem
+  box-sizing: border-box
+  background-color: $background
+  overflow-y: auto
+
+.locked-card
+  display: flex
+  flex-direction: column
+  align-items: center
+  text-align: center
+  gap: 0.75rem
+  max-width: min(34rem, 90vw)
+  padding: 2rem 1.5rem
+  background-color: $dark-gray
+  border: 1px solid $light-gray
+  border-radius: 1rem
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3)
+
+  h1
+    margin: 0
+    font-size: 1.5rem
+    color: $white
+
+.locked-icon
+  font-size: 2.5rem
+  color: $subtext
+
+.locked-description
+  margin: 0
+  font-size: 1.05rem
+  font-weight: 600
+  line-height: 1.6
+  color: $subtext
+
+.locked-hint
+  margin: 0
+  font-size: 0.9rem
+  line-height: 1.5
+  color: $subtext
+  opacity: 0.8
+
+.locked-action
+  margin-top: 0.75rem

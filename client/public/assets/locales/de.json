@@ -114,6 +114,11 @@
       "read_access": "Nur Lesezugriff"
     }
   },
+  "locked": {
+    "password_desc": "Diese Instanz ist mit einem Passwort geschützt. Melde dich an, um ihre Daten zu sehen.",
+    "token_hint": "Der Server schreibt das Token erneut in sein Log, sobald er eine Anfrage ablehnt - höchstens einmal alle zehn Minuten. Ein Neuladen dieser Seite legt also eine frische Kopie ans Ende des Logs.",
+    "enter_token": "Setup-Token eingeben"
+  },
   "password": {
     "no_access_desc": "Besucher müssen das Passwort eingeben um irgendetwas zu sehen",
     "read_access_desc": "Besucher können Daten ansehen, können aber Einstellungen nicht ändern"
@@ -150,6 +155,9 @@
     "manually": "Manuell festlegen",
     "new_password": "Neues Passwort festlegen",
     "password_placeholder": "Neues Passwort",
+    "remove_password": "Passwort entfernen",
+    "remove_password_title": "Passwort entfernen?",
+    "remove_password_desc": "Du wirst abgemeldet und diese Instanz bleibt ohne Passwort zurück. Auf dem Rechner, auf dem sie läuft, ist sie danach für jeden offen, und von jedem anderen Rechner verlangt sie das Setup-Token aus dem Server-Log, bis ein neues Passwort gesetzt wird.",
     "password_removed": "Die Passwortsperre wurde aufgehoben und das festgelegte Passwort wurde entfernt.",
     "level": "Stufe ändern",
     "level_title": "Rechte für Besucher",
