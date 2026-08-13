@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import i18next from "i18next";
 import {
     averageLineDataset, chartMotion, chartThemeColors, failedMarkersDataset, failureMarkers,
-    isSingleDaySeries, lineChartOptions, seriesAverage, tooltipTheme, verticalGradientFill
+    isSingleDaySeries, lineChartOptions, seriesAverage, timeAxisStep, timePoints, tooltipTheme,
+    verticalGradientFill
 } from "../../client/src/pages/Statistics/charts/lineChartConfig.js";
 
 /**
@@ -116,20 +117,84 @@ describe("failureMarkers", () => {
     });
 });
 
+/**
+ * Every point carries the instant it was measured at, not its position in the
+ * list.
+ *
+ * The x axis used to be a category axis, which places points at equal intervals
+ * whatever their timestamps say. A test run manually between two scheduled ones,
+ * a paused night, an outage, a changed interval - all of it rendered as though
+ * the tests had been evenly spaced, so the shape of the line said something the
+ * data did not - upstream #791. On a linear axis the spacing is the elapsed
+ * time, and a gap in the history looks like a gap.
+ */
+describe("timePoints", () => {
+    it("places each value at the instant its label names", () => {
+        assert.deepEqual(timePoints(LABELS, [10, 20, 30]), [
+            {x: Date.parse(LABELS[0]), y: 10},
+            {x: Date.parse(LABELS[1]), y: 20},
+            {x: Date.parse(LABELS[2]), y: 30}
+        ]);
+    });
+
+    // The distances between the points are the whole point: the first two are
+    // four hours apart and the next is nineteen.
+    it("spaces the points by the time between them", () => {
+        const [first, second, third] = timePoints(LABELS, [1, 2, 3]);
+
+        assert.equal(second.x - first.x, 4 * 3600 * 1000);
+        assert.equal(third.x - second.x, 19 * 3600 * 1000);
+    });
+
+    it("keeps a gap a gap rather than dropping to zero", () => {
+        assert.deepEqual(timePoints(LABELS, [10, null, 30]).map((point) => point.y), [10, null, 30]);
+        assert.deepEqual(timePoints(LABELS, [10, undefined, 30]).map((point) => point.y), [10, null, 30]);
+    });
+
+    // A measured zero is a reading - "this line delivered nothing" - and must
+    // not be confused with the absent value above.
+    it("keeps a measured zero", () => {
+        assert.equal(timePoints(LABELS, [0, 1, 2])[0].y, 0);
+    });
+
+    /**
+     * An unplaceable point is emitted as an empty one rather than dropped: the
+     * tooltip reads `errors` and `failed` by data index, so removing an entry
+     * here would shift every reason onto the wrong test.
+     */
+    it("keeps its place for a label that names no instant", () => {
+        const points = timePoints(["not a date", LABELS[1]], [10, 20]);
+
+        assert.equal(points.length, 2);
+        assert.deepEqual(points[0], {x: null, y: null});
+        assert.equal(points[1].y, 20);
+    });
+});
+
 describe("datasets", () => {
     it("draws the average as a dashed, pointless line", () => {
         const dataset = averageLineDataset(LABELS, 42, 4);
 
-        assert.deepEqual(dataset.data, [42, 42, 42]);
+        assert.deepEqual(dataset.data, timePoints(LABELS, [42, 42, 42]));
         assert.deepEqual(dataset.borderDash, [6, 4]);
         assert.equal(dataset.pointRadius, 0);
         assert.equal(dataset.order, 4);
     });
 
     it("sizes the failure markers for the layout", () => {
-        assert.equal(failedMarkersDataset([null, 0], true).pointRadius, 3);
-        assert.equal(failedMarkersDataset([null, 0], false).pointRadius, 6);
-        assert.equal(failedMarkersDataset([null, 0], false).pointStyle, "crossRot");
+        assert.equal(failedMarkersDataset(LABELS, [null, 0, null], true).pointRadius, 3);
+        assert.equal(failedMarkersDataset(LABELS, [null, 0, null], false).pointRadius, 6);
+        assert.equal(failedMarkersDataset(LABELS, [null, 0, null], false).pointStyle, "crossRot");
+    });
+
+    it("puts each failure marker at the instant that test failed", () => {
+        const dataset = failedMarkersDataset(LABELS, failureMarkers([false, true, false]), false);
+
+        assert.deepEqual(dataset.data, [
+            {x: Date.parse(LABELS[0]), y: null},
+            {x: Date.parse(LABELS[1]), y: 0},
+            {x: Date.parse(LABELS[2]), y: null}
+        ]);
     });
 
     it("builds the fill gradient from the line's own colour", () => {
@@ -147,10 +212,91 @@ describe("datasets", () => {
     });
 });
 
+/**
+ * Chart.js's own "nice" tick stepping is nice in decimal terms, which for
+ * milliseconds means ticks every 5,000,000 of them - one hour and twenty-three
+ * minutes. The step is chosen from durations a person reads instead.
+ */
+describe("timeAxisStep", () => {
+    const MINUTE = 60 * 1000;
+    const HOUR = 60 * MINUTE;
+    const DAY = 24 * HOUR;
+
+    const spanOf = (ms) => ["2026-08-09T00:00:00.000Z", new Date(Date.parse("2026-08-09T00:00:00.000Z") + ms).toISOString()];
+
+    it("steps a day in hours and a fortnight in days", () => {
+        assert.equal(timeAxisStep(spanOf(DAY), 12), 3 * HOUR);
+        assert.equal(timeAxisStep(spanOf(14 * DAY), 5), 7 * DAY);
+    });
+
+    it("steps a short range in minutes", () => {
+        assert.equal(timeAxisStep(spanOf(30 * MINUTE), 5), 10 * MINUTE);
+    });
+
+    /**
+     * The rule the numbers above are instances of: the finest step on the list
+     * that still fits inside the tick budget. A step any smaller would overrun
+     * maxTicksLimit and chart.js would drop labels back out again.
+     */
+    it("picks the finest step that stays inside the tick budget", () => {
+        for (const span of [30 * MINUTE, 6 * HOUR, DAY, 3 * DAY, 14 * DAY, 200 * DAY]) {
+            for (const maxTicks of [5, 12]) {
+                const step = timeAxisStep(spanOf(span), maxTicks);
+
+                assert.ok(span / step <= maxTicks - 1,
+                    `${span}ms in ${maxTicks} ticks: a ${step}ms step overruns the budget`);
+            }
+        }
+    });
+
+    it("never steps below a minute", () => {
+        assert.equal(timeAxisStep(spanOf(10 * 1000), 5), MINUTE);
+    });
+
+    // The axis is read left to right whatever order the series arrived in.
+    it("reads the span regardless of which end comes first", () => {
+        const [from, to] = spanOf(DAY);
+
+        assert.equal(timeAxisStep([to, from], 12), timeAxisStep([from, to], 12));
+    });
+
+    it("leaves the step to chart.js when there is no span to divide", () => {
+        assert.equal(timeAxisStep([], 5), undefined);
+        assert.equal(timeAxisStep([LABELS[0]], 5), undefined);
+        assert.equal(timeAxisStep([LABELS[0], LABELS[0]], 5), undefined);
+        assert.equal(timeAxisStep(["not a date", "nor this"], 5), undefined);
+    });
+});
+
 describe("lineChartOptions", () => {
+    /**
+     * A category axis draws every point the same distance from the last, so a
+     * manual test wedged between two scheduled ones, or a night with no tests at
+     * all, looked exactly like a regular interval - upstream #791.
+     */
+    it("measures the x axis in time rather than in points", () => {
+        assert.equal(options().scales.x.type, "linear");
+    });
+
+    it("steps the axis by a duration a person would read", () => {
+        assert.equal(options().scales.x.ticks.stepSize, timeAxisStep(LABELS, 5));
+        assert.equal(options({isSingleDay: true}).scales.x.ticks.stepSize, timeAxisStep(LABELS, 12));
+    });
+
     it("shows more ticks inside a single day", () => {
         assert.equal(options({isSingleDay: true}).scales.x.ticks.maxTicksLimit, 12);
         assert.equal(options().scales.x.ticks.maxTicksLimit, 5);
+    });
+
+    // The tick is now placed at an instant of the axis's choosing rather than on
+    // a data point, so the callback has to read the value it is handed instead
+    // of looking the index up in the labels.
+    it("labels a tick with the instant it sits at, not with a data point", () => {
+        const instant = Date.parse("2026-08-09T18:30:00.000Z");
+        const tick = options({isSingleDay: true}).scales.x.ticks.callback(instant, 0);
+
+        assert.equal(tick, new Date(instant).toLocaleTimeString("en",
+            {hour: "2-digit", minute: "2-digit", hour12: false}));
     });
 
     it("keeps the failure markers out of the tooltip and the legend", () => {
@@ -188,8 +334,9 @@ describe("lineChartOptions", () => {
     it("formats the ticks in the app's language, not the browser's", async () => {
         await i18next.changeLanguage("de");
         try {
-            const tick = options().scales.x.ticks.callback(0, 0);
-            const date = new Date(LABELS[0]);
+            const instant = Date.parse(LABELS[0]);
+            const tick = options().scales.x.ticks.callback(instant, 0);
+            const date = new Date(instant);
             const expected = date.toLocaleDateString("de", {month: "short", day: "numeric"}) + " " +
                 date.toLocaleTimeString("de", {hour: "2-digit", minute: "2-digit", hour12: false});
 

@@ -65,6 +65,90 @@ export const tooltipTheme = (themeColors) => ({
 export const isSingleDaySeries = (labels) =>
     new Set(labels.map((label) => new Date(label).toDateString())).size === 1;
 
+const instantOf = (label) => {
+    const time = new Date(label).getTime();
+
+    return Number.isFinite(time) ? time : null;
+};
+
+/**
+ * A series placed on the clock rather than in a queue.
+ *
+ * The x axis used to be a category axis, which draws every point the same
+ * distance from the last whatever the timestamps say. A test run by hand
+ * between two scheduled ones, a night the tests were paused, an outage, a
+ * changed interval - all of it rendered as an even cadence, so the shape of the
+ * line described a history that never happened. Pairing each value with its own
+ * instant lets the axis space them by the time between them, and a hole in the
+ * history reads as a hole.
+ *
+ * An absent value stays absent - `{y: null}` is the gap chart.js draws nothing
+ * for, where zero would be a reading. A label that names no instant yields an
+ * empty point rather than being dropped: the tooltip looks `errors` and
+ * `failed` up by data index, and removing an entry would shift every reason
+ * onto the neighbouring test.
+ */
+export const timePoints = (labels, values) => labels.map((label, index) => {
+    const x = instantOf(label);
+    const y = values[index];
+
+    return x === null
+        ? {x: null, y: null}
+        : {x, y: y === undefined ? null : y};
+});
+
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/**
+ * The intervals an axis is allowed to step in.
+ *
+ * Chart.js picks "nice" numbers for a linear axis, but nice in decimal terms -
+ * on an axis measured in milliseconds that lands on steps like 5,000,000, an
+ * hour and twenty-three minutes apart. These are the durations someone reading
+ * a chart expects to see a tick at.
+ */
+const TIME_STEPS = [
+    MINUTE, 2 * MINUTE, 5 * MINUTE, 10 * MINUTE, 15 * MINUTE, 30 * MINUTE,
+    HOUR, 2 * HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR,
+    DAY, 2 * DAY, 7 * DAY, 14 * DAY, 30 * DAY, 90 * DAY, 365 * DAY
+];
+
+/**
+ * The tick interval for a series, or undefined to let chart.js decide.
+ *
+ * Undefined for anything with no span to divide - an empty series, a single
+ * point, every test at the same instant - where any step at all would be
+ * arbitrary.
+ */
+export const timeAxisStep = (labels, maxTicks) => {
+    // Folded rather than spread into Math.min/Math.max. The series is capped at
+    // MAX_CHART_POINTS today, but the same spread is what put a RangeError in
+    // the statistics aggregate, and the bound here is the server's to change.
+    let earliest = Infinity;
+    let latest = -Infinity;
+    let counted = 0;
+
+    for (const label of labels) {
+        const instant = instantOf(label);
+        if (instant === null) continue;
+
+        if (instant < earliest) earliest = instant;
+        if (instant > latest) latest = instant;
+        counted++;
+    }
+
+    if (counted < 2) return undefined;
+
+    const span = latest - earliest;
+    if (span <= 0) return undefined;
+
+    const ideal = span / Math.max(1, maxTicks - 1);
+
+    return TIME_STEPS.find((step) => step >= ideal) ?? TIME_STEPS[TIME_STEPS.length - 1];
+};
+
 const AVERAGE_DECIMALS_FACTOR = 100;
 
 /**
@@ -106,7 +190,7 @@ const AVERAGE_COLOR = 'hsl(330, 80%, 60%)';
 /** The dashed average line. `order` differs per chart - it sits behind the data. */
 export const averageLineDataset = (labels, average, order) => ({
     label: t("statistics.average"),
-    data: labels.map(() => average),
+    data: timePoints(labels, labels.map(() => average)),
     borderColor: AVERAGE_COLOR,
     backgroundColor: 'transparent',
     borderWidth: 2,
@@ -121,9 +205,9 @@ const FAILED_COLOR = 'hsl(0, 72%, 51%)';
 const FAILED_BORDER_COLOR = 'hsl(0, 84%, 60%)';
 
 /** The red crosses marking failed tests along the axis. */
-export const failedMarkersDataset = (markers, compact) => ({
+export const failedMarkersDataset = (labels, markers, compact) => ({
     label: t("statistics.failed_test"),
-    data: markers,
+    data: timePoints(labels, markers),
     borderColor: 'transparent',
     backgroundColor: FAILED_COLOR,
     pointBackgroundColor: FAILED_COLOR,
@@ -141,6 +225,8 @@ export const failedMarkersDataset = (markers, compact) => ({
 // all the axis has room for once each carries a date.
 const SINGLE_DAY_TICKS = 12;
 const MULTI_DAY_TICKS = 5;
+
+const maxTicksFor = (isSingleDay) => isSingleDay ? SINGLE_DAY_TICKS : MULTI_DAY_TICKS;
 
 /**
  * The whole options object of a statistics line chart.
@@ -212,7 +298,12 @@ export const lineChartOptions = ({
         }
     },
     scales: {
+        // Linear, over the timestamps the points carry, rather than the category
+        // axis this used to be: that one spaced every point equally whatever the
+        // clock said, so an outage, a pause or a manually run test all drew as a
+        // regular interval and the line described a history that never happened.
         x: {
+            type: 'linear',
             reverse: false,
             grid: {
                 color: themeColors.gridColor,
@@ -223,9 +314,13 @@ export const lineChartOptions = ({
             },
             ticks: {
                 color: themeColors.tickColor,
-                maxTicksLimit: isSingleDay ? SINGLE_DAY_TICKS : MULTI_DAY_TICKS,
-                callback: (value, index) => {
-                    const date = new Date(labels[index]);
+                maxTicksLimit: maxTicksFor(isSingleDay),
+                // A tick now sits wherever the axis puts it rather than on a data
+                // point, so the instant is the value itself - there is no index
+                // to look up.
+                stepSize: timeAxisStep(labels, maxTicksFor(isSingleDay)),
+                callback: (value) => {
+                    const date = new Date(value);
                     if (isSingleDay) {
                         return date.toLocaleTimeString(appLocale(), {hour: "2-digit", minute: "2-digit", hour12: use12h});
                     }

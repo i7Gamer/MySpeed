@@ -8,7 +8,7 @@ import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
 import { lineTensionFor, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
 import {
     averageLineDataset, chartThemeColors, failedMarkersDataset, failureMarkers,
-    isSingleDaySeries, lineChartOptions, seriesAverage, verticalGradientFill
+    isSingleDaySeries, lineChartOptions, seriesAverage, timePoints, verticalGradientFill
 } from "@/pages/Statistics/charts/lineChartConfig";
 import "./styles.sass";
 
@@ -73,7 +73,7 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClic
         datasets: [
             {
                 label: t(titleKey),
-                data: filteredData.data,
+                data: timePoints(filteredData.labels, filteredData.data),
                 borderColor: color,
                 backgroundColor: verticalGradientFill(color),
                 fill: true,
@@ -87,7 +87,7 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClic
             // Left off entirely when nothing was measured: a line at zero is a
             // reading, and a range in which every test failed made none.
             ...(filteredData.average !== null ? [averageLineDataset(filteredData.labels, filteredData.average, AVERAGE_ORDER)] : []),
-            ...(hasFailedTests ? [failedMarkersDataset(failedMarkerData, compact)] : [])
+            ...(hasFailedTests ? [failedMarkersDataset(filteredData.labels, failedMarkerData, compact)] : [])
         ],
     }), [filteredData, color, titleKey, compact, pointStyle, hasFailedTests, failedMarkerData]);
 

@@ -8,7 +8,7 @@ import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
 import { lineTensionFor, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
 import {
     averageLineDataset, chartThemeColors, failedMarkersDataset, failureMarkers,
-    isSingleDaySeries, lineChartOptions, seriesAverage, verticalGradientFill
+    isSingleDaySeries, lineChartOptions, seriesAverage, timePoints, verticalGradientFill
 } from "@/pages/Statistics/charts/lineChartConfig";
 import "./SpeedChart/styles.sass";
 
@@ -91,7 +91,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
         datasets: [
             {
                 label: t("latest.ping"),
-                data: filteredData.data,
+                data: timePoints(filteredData.labels, filteredData.data),
                 borderColor: PING_COLOR,
                 backgroundColor: verticalGradientFill(PING_COLOR),
                 fill: true,
@@ -109,7 +109,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
             // and a line must not read as a row of failures.
             ...(hasLoadedData ? [{
                 label: t("statistics.loaded_latency"),
-                data: filteredData.loaded,
+                data: timePoints(filteredData.labels, filteredData.loaded),
                 borderColor: LOADED_COLOR,
                 backgroundColor: 'transparent',
                 fill: false,
@@ -122,7 +122,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
             }] : []),
             ...(hasJitterData ? [{
                 label: t("latest.jitter"),
-                data: filteredData.jitter,
+                data: timePoints(filteredData.labels, filteredData.jitter),
                 borderColor: JITTER_COLOR,
                 backgroundColor: verticalGradientFill(JITTER_COLOR, JITTER_PEAK_ALPHA),
                 fill: true,
@@ -136,7 +136,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
             // Left off entirely when nothing was measured: a line at zero is a
             // reading, and a range in which every test failed made none.
             ...(filteredData.average !== null ? [averageLineDataset(filteredData.labels, filteredData.average, AVERAGE_ORDER)] : []),
-            ...(hasFailedTests ? [failedMarkersDataset(failedMarkerData, compact)] : [])
+            ...(hasFailedTests ? [failedMarkersDataset(filteredData.labels, failedMarkerData, compact)] : [])
         ],
     }), [filteredData, compact, pointStyle, hasJitterData, hasLoadedData, hasFailedTests, failedMarkerData]);
 
