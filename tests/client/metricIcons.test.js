@@ -26,6 +26,13 @@ const PACKET_LOSS_ICON = "faLinkSlash";
 const CONSISTENCY_ICON = "faCompress";
 const JITTER_ICON = "faWaveSquare";
 
+// The two figures about a line under load. Neither may borrow the ping's
+// paddle: the whole point of both is that they are not the idle ping, and a
+// glyph that stood for "latency" in general would say the same thing about
+// three different measurements.
+const LOADED_LATENCY_ICON = "faStopwatch";
+const BUFFERBLOAT_ICON = "faGaugeHigh";
+
 const PACKET_LOSS_SITES = [
     "pages/Statistics/charts/OverviewChart/OverviewChart.jsx",
     "pages/Statistics/charts/LatestTestChart/LatestTestChart.jsx",
@@ -124,6 +131,38 @@ describe("the square wave means jitter and nothing else", () => {
     it("is not also standing in for consistency", () => {
         assert.doesNotMatch(read(CONSISTENCY_SITE), new RegExp(`\\b${JITTER_ICON}\\b`),
             "the average card imports the jitter glyph again - it has no jitter row");
+    });
+});
+
+/**
+ * What the line does once it is busy, drawn in two places that sit a click
+ * apart: the latency each direction showed under load, on the pane's speed
+ * cards, and the grade for the worse of them, on the overview row.
+ */
+describe("the figures measured under load have their own glyphs", () => {
+    const pane = read("common/components/TestDetails/TestDetails.jsx");
+    const row = read("pages/Home/components/Speedtest/SpeedtestComponent.jsx");
+
+    it("draws the loaded latency with the stopwatch", () => {
+        assert.equal(iconAfter(pane, "info.loaded_latency.title"), LOADED_LATENCY_ICON);
+    });
+
+    it("draws the bufferbloat with the gauge", () => {
+        assert.equal(iconAfter(row, "info.bufferbloat.title"), BUFFERBLOAT_ICON);
+    });
+
+    // The paddle is the idle ping. Latency under load is the measurement that
+    // exists precisely because those two differ.
+    it("leaves the ping's paddle to the ping", () => {
+        const loaded = pane.slice(pane.indexOf("const loadedLatency"));
+
+        assert.doesNotMatch(loaded.slice(0, loaded.indexOf("const metrics")), /faPingPongPaddleBall/);
+    });
+
+    it("gives each of the five measurements a glyph of its own", () => {
+        const glyphs = [PACKET_LOSS_ICON, JITTER_ICON, CONSISTENCY_ICON, LOADED_LATENCY_ICON, BUFFERBLOAT_ICON];
+
+        assert.equal(new Set(glyphs).size, glyphs.length);
     });
 });
 

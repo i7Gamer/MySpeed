@@ -24,3 +24,9 @@ export const uploadInfo = () => ({title: t("info.up.title"), description: t("inf
 // Only the detail pane shows one, and only Ookla measures one - which is why it
 // is the figure most in need of a sentence saying what it is.
 export const packetLossInfo = () => ({title: t("info.packet_loss.title"), description: t("info.packet_loss.description"), buttonText: t("dialog.okay")});
+
+// The two halves of what the line does while it is busy: the latency each
+// direction showed under load, and the grade for the worse of them.
+export const loadedLatencyInfo = () => ({title: t("info.loaded_latency.title"), description: t("info.loaded_latency.description"), buttonText: t("dialog.okay")});
+
+export const bufferbloatInfo = () => ({title: t("info.bufferbloat.title"), description: t("info.bufferbloat.description"), buttonText: t("dialog.okay")});

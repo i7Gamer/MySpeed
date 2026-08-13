@@ -3,7 +3,7 @@ import {createPortal} from "react-dom";
 import {ConfigContext} from "@/common/contexts/Config";
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
 import Speedtest from "../Speedtest";
-import {getIconBySpeed, previousConnection} from "@/common/utils/TestUtil";
+import {bufferbloat, getIconBySpeed, previousConnection} from "@/common/utils/TestUtil";
 import {formatDay} from "@/common/utils/FormatUtil";
 import {TIMEFRAME_ALL} from "@/common/utils/TimeframeUtil";
 import "./styles.sass";
@@ -179,6 +179,13 @@ const TestArea = () => {
                             // no load, and only one of them was legible without
                             // opening a row.
                             packetLoss={test.packetLoss}
+                            // A column of its own after the ping, being the
+                            // other thing latency does - what the line gains
+                            // once it is busy. Graded here rather than in the
+                            // row: it is derived from three of the row's
+                            // columns, and one function deciding that keeps the
+                            // grade the same as the panel's.
+                            bufferbloat={bufferbloat(test)}
                             down={test.download}
                             downLevel={getIconBySpeed(test.download, config.download, true)}
                             up={test.upload}

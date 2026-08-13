@@ -273,6 +273,14 @@
       "title": "Jitter",
       "description": "Jitter ist die Variation in Ping-Reaktionszeiten. Niedrigere Jitter bedeutet eine stabilere Verbindung, was für Echtzeitanwendungen wie Videoanrufe und Gaming wichtig ist."
     },
+    "loaded_latency": {
+      "title": "Latenz unter Last",
+      "description": "Der Ping, gemessen während diese Richtung ausgelastet war, statt im Leerlauf. Er entscheidet, ob ein Anruf es übersteht, wenn jemand anders einen Download startet - eine Verbindung kann in beide Richtungen schnell und während einer Übertragung trotzdem unbrauchbar sein."
+    },
+    "bufferbloat": {
+      "title": "Bufferbloat",
+      "description": "Wie viel Latenz die Leitung gewinnt, sobald sie beschäftigt ist: die schlechtere der beiden Latenzen unter Last, minus dem Ping im Leerlauf. Unter 5 ms ist ausgezeichnet, über 200 ms macht Anrufe und Spiele unbrauchbar, solange nebenher etwas übertragen wird. Bewertet wird die schlechtere Richtung, denn eine Leitung, die im Download sauber und im Upload schlecht gepuffert ist, ist eine schlecht gepufferte Leitung."
+    },
     "packet_loss": {
       "title": "Paketverlust",
       "description": "Paketverlust ist der Anteil der Daten, die nie ankamen und erneut gesendet werden mussten. Alles über null macht sich als Stocken in Anrufen und Spielen bemerkbar, lange bevor es als niedrigere Geschwindigkeit sichtbar wird. Nur Ookla misst ihn, ein Test eines anderen Anbieters lässt ihn deshalb leer statt null zu melden."
@@ -348,6 +356,7 @@
       "packet_loss": "Paketverlust",
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
+      "connection": "Verbindung",
       "isp": "Anbieter",
       "external_ip": "Externe Adresse",
       "changed": "geändert"

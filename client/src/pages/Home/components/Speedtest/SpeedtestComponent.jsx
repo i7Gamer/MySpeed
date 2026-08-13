@@ -2,8 +2,8 @@ import React, {forwardRef, useContext, useRef, useState, useImperativeHandle} fr
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
     faArrowDown, faArrowUp, faChevronDown, faClockRotateLeft, faClose,
-    faExclamationTriangle, faInfo, faLinkSlash, faPingPongPaddleBall, faTrashCan,
-    faWaveSquare
+    faExclamationTriangle, faGaugeHigh, faInfo, faLinkSlash, faPingPongPaddleBall,
+    faTrashCan, faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
 import {assertOk, deleteRequest} from "@/common/utils/RequestUtil";
@@ -15,8 +15,10 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {convertSpeed, formatLatency, formatShortDay, formatShortTime, getSpeedUnit} from "@/common/utils/FormatUtil";
-import {downloadInfo, jitterInfo, packetLossInfo, pingInfo, uploadInfo} from "@/common/utils/MetricInfo";
-import {isMeasured, jitterColour, packetLossColour} from "@/common/utils/TestUtil";
+import {
+    bufferbloatInfo, downloadInfo, jitterInfo, packetLossInfo, pingInfo, uploadInfo
+} from "@/common/utils/MetricInfo";
+import {bufferbloatColour, isMeasured, jitterColour, packetLossColour} from "@/common/utils/TestUtil";
 import HelpButton from "@/common/components/HelpButton";
 import {useMetricInfo} from "@/common/hooks/useMetricInfo";
 
@@ -193,6 +195,37 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                     </span>
                                 )}
                             </h2>
+                        </div>
+                        {/* The wrapper is drawn whether or not there is a grade
+                            to put in it. Grid items are placed in order, so a
+                            column that renders nothing lets the download slide
+                            into its track and every number below stops lining
+                            up - which is the whole reason this list is a grid.
+
+                            Left empty rather than filled with a dash: only
+                            Ookla measures the latencies this is built from, so
+                            on a mixed history the placeholder would be the
+                            loudest thing in the column. */}
+                        <div className="speedtest-row speedtest-bufferbloat">
+                            {props.bufferbloat && (
+                                <>
+                                    {/* The grade rides in the label, not only in
+                                        the icon's colour: a colour is not a
+                                        reading a screen reader can take, and the
+                                        letter is the half of this figure worth
+                                        having at a glance. */}
+                                    <HelpButton label={`${t("info.bufferbloat.title")} ${props.bufferbloat.grade}`}
+                                                onOpen={(event) => openInfo(event, bufferbloatInfo)}>
+                                        <FontAwesomeIcon icon={faGaugeHigh}
+                                                         className={"speedtest-icon icon-"
+                                                             + bufferbloatColour(props.bufferbloat.grade)}/>
+                                    </HelpButton>
+                                    <h2 className="speedtest-text">
+                                        {"+" + props.bufferbloat.increase}
+                                        <span className="speedtest-unit">{t("latest.ping_unit")}</span>
+                                    </h2>
+                                </>
+                            )}
                         </div>
                         <div className="speedtest-row">
                             <HelpButton label={t("info.down.title")} onOpen={(event) => openInfo(event, downloadInfo)}>

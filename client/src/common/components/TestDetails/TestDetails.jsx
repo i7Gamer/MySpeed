@@ -2,7 +2,8 @@ import {useContext} from "react";
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
-    faArrowDown, faArrowRight, faArrowUp, faLinkSlash, faPingPongPaddleBall, faUpRightFromSquare, faWaveSquare
+    faArrowDown, faArrowRight, faArrowUp, faLinkSlash, faPingPongPaddleBall, faStopwatch, faUpRightFromSquare,
+    faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
 import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
@@ -14,7 +15,9 @@ import {changeFrom, differenceFromTarget, percentOfTarget, providerName} from ".
 import {describeError} from "./utils/errors";
 import HelpButton from "@/common/components/HelpButton";
 import {useMetricInfo} from "@/common/hooks/useMetricInfo";
-import {downloadInfo, jitterInfo, packetLossInfo, pingInfo, uploadInfo} from "@/common/utils/MetricInfo";
+import {
+    downloadInfo, jitterInfo, loadedLatencyInfo, packetLossInfo, pingInfo, uploadInfo
+} from "@/common/utils/MetricInfo";
 import "./styles.sass";
 
 const RESULT_URL = "https://www.speedtest.net/result/c/";
@@ -226,6 +229,30 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
         </span>
     );
 
+    /**
+     * The latency that direction showed while it was saturating the line.
+     *
+     * It was one row of the facts grid for both directions, a paragraph away
+     * from the speeds it belongs to, so reading "24 down / 31 up" meant
+     * carrying each number back up to its own card. On the card it is what it
+     * actually is: a second fact about that direction's transfer.
+     *
+     * Its own glyph rather than the ping's paddle. It is not the idle ping -
+     * that is the whole point of the figure - and one glyph covering two
+     * measurements is how the icons went wrong before.
+     */
+    const loadedLatency = (value) => isMeasured(value) && (
+        <span className="detail-metric-sub">
+            <span className="detail-metric-sub-part">
+                <HelpButton label={`${t("info.loaded_latency.title")} ${formatWithUnit(value, t("latest.ping_unit"))}`}
+                            onOpen={(event) => openInfo(event, loadedLatencyInfo)}>
+                    <FontAwesomeIcon icon={faStopwatch} className="detail-metric-sub-icon"/>
+                </HelpButton>
+                {formatWithUnit(value, t("latest.ping_unit"))}
+            </span>
+        </span>
+    );
+
     const metrics = [
         {
             key: "ping",
@@ -244,6 +271,7 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
         },
         {
             key: "download",
+            sub: loadedLatency(test.downloadLatency) || null,
             icon: faArrowDown,
             info: downloadInfo,
             label: t("latest.down"),
@@ -258,6 +286,7 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
         },
         {
             key: "upload",
+            sub: loadedLatency(test.uploadLatency) || null,
             icon: faArrowUp,
             info: uploadInfo,
             label: t("latest.up"),
@@ -313,6 +342,18 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                                 the longest value on the panel. */}
                             {formatDateTime(test.created, preferences,
                                 {day: "numeric", month: "short", year: "numeric"})}
+                            {/* How long the run took, under when it ran rather
+                                than in a row of its own. It hangs here and not
+                                off the data used - the other fact about what
+                                the run cost - because `created` is always
+                                present, where the byte counts are not: there
+                                the duration would disappear along with them on
+                                every provider that reports none. */}
+                            {isMeasured(test.time) && (
+                                <span className="detail-secondary">
+                                    {t("test.details.seconds", {seconds: test.time})}
+                                </span>
+                            )}
                         </DetailFact>
 
                         {/* Which provider measured this. The three do not
@@ -333,12 +374,6 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                                         <ResultLink resultId={test.resultId}/>
                                     </span>
                                 )}
-                            </DetailFact>
-                        )}
-
-                        {isMeasured(test.time) && (
-                            <DetailFact label={t("test.details.duration")}>
-                                {t("test.details.seconds", {seconds: test.time})}
                             </DetailFact>
                         )}
 
@@ -369,38 +404,16 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                             {t("test.result." + (test.type === "custom" ? "from_you" : "automatic"))}
                         </DetailFact>
 
-                        {/* Only for a test that carried them. A row recorded
-                            before these were captured, or from a provider that
-                            cannot measure them, has no value rather than zero -
-                            and a packet loss of zero is a result worth showing. */}
-                        {isMeasured(test.downloadLatency) && isMeasured(test.uploadLatency) && (
-                            <DetailFact label={t("test.details.loaded_latency")}>
-                                {/* The same two arrows the speed rows use,
-                                    rather than the words "down" and "up". The
-                                    sentence stays as the accessible name: an
-                                    arrow points somewhere only to someone who
-                                    can see it. */}
-                                <span className="detail-pair"
-                                      role="img"
-                                      aria-label={t("test.details.loaded_latency_value",
-                                          {down: test.downloadLatency, up: test.uploadLatency})}>
-                                    <span className="detail-pair-part">
-                                        <FontAwesomeIcon icon={faArrowDown} className="detail-pair-icon"/>
-                                        {test.downloadLatency}
-                                    </span>
-                                    <span className="detail-pair-part">
-                                        <FontAwesomeIcon icon={faArrowUp} className="detail-pair-icon"/>
-                                        {test.uploadLatency}
-                                    </span>
-                                    <span className="detail-pair-unit">{t("latest.ping_unit")}</span>
-                                </span>
-                            </DetailFact>
-                        )}
+                        {/* The grade is the readable form of the two figures now
+                            on the download and upload cards: how much latency
+                            the line gains once it is saturated, which is what a
+                            call breaking up during an upload actually is.
 
-                        {/* The grade is the readable form of the two figures
-                            above: how much latency the line gains once it is
-                            saturated, which is what a call breaking up during
-                            an upload actually is. */}
+                            It keeps its row rather than moving to the overview
+                            with the rest. This pane is also the expanded latest
+                            test on the statistics page, where no overview row
+                            surrounds it - dropping the row there would have made
+                            opening the card show less than the card itself. */}
                         {bloat && (
                             <DetailFact label={t("test.details.bufferbloat")}>
                                 <span className={"bufferbloat-grade icon-" + bufferbloatColour(bloat.grade)}>
@@ -413,25 +426,40 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                             </DetailFact>
                         )}
 
-                        {test.isp && (
-                            <DetailFact label={t("test.details.isp")}>
-                                {test.isp}
-                                {/* Below the value, not trailing it - see
-                                    .detail-changed. A block element breaks the
-                                    reading too, so the space that used to keep
-                                    this from being read as "Salt MobileCHANGED"
-                                    is no longer carrying anything. */}
-                                {change?.isp && <span className="detail-changed">{t("test.details.changed")}</span>}
-                            </DetailFact>
-                        )}
+                        {/* Who the line is on the internet, and what address it
+                            went out from. One fact, not two: connectionChange
+                            reads them as a pair, and a reassigned lease or a
+                            failover - which is usually why a run of results
+                            steps - moves both at once. Two rows made one event
+                            read as two coincidences.
 
-                        {/* The address the test went out from. A change here is
-                            usually why a run of results steps: a reassigned
-                            lease, a failover, a swapped router. */}
-                        {test.externalIp && (
-                            <DetailFact label={t("test.details.external_ip")}>
-                                <span className="detail-address">{test.externalIp}</span>
-                                {change?.externalIp && <span className="detail-changed">{t("test.details.changed")}</span>}
+                            Either half may be missing. Only Ookla reports both;
+                            the other two report what their backend happens to
+                            know. */}
+                        {(test.isp || test.externalIp) && (
+                            <DetailFact label={t("test.details.connection")}>
+                                {test.isp && (
+                                    <>
+                                        {test.isp}
+                                        {/* Below the value, not trailing it -
+                                            see .detail-changed. A block element
+                                            breaks the reading too, so the space
+                                            that used to keep this from being
+                                            read as "Salt MobileCHANGED" is no
+                                            longer carrying anything. */}
+                                        {change?.isp &&
+                                            <span className="detail-changed">{t("test.details.changed")}</span>}
+                                    </>
+                                )}
+                                {/* A marker each: one for the pair would report
+                                    a changed address as a changed provider. */}
+                                {test.externalIp && (
+                                    <span className="detail-address detail-secondary">
+                                        {test.externalIp}
+                                        {change?.externalIp &&
+                                            <span className="detail-changed">{t("test.details.changed")}</span>}
+                                    </span>
+                                )}
                             </DetailFact>
                         )}
 

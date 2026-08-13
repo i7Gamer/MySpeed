@@ -273,6 +273,14 @@
       "title": "Jitter",
       "description": "Jitter is the variation in ping response times. Lower jitter means a more stable connection, which is important for real-time applications like video calls and gaming."
     },
+    "loaded_latency": {
+      "title": "Latency under load",
+      "description": "The ping measured while that direction was saturated, rather than while the line was idle. It is the number that decides whether a call survives someone else starting a download - a connection can be fast both ways and unusable during a transfer."
+    },
+    "bufferbloat": {
+      "title": "Bufferbloat",
+      "description": "How much latency the line gains once it is busy: the worse of the two loaded latencies, minus the idle ping. Under 5 ms is excellent; over 200 ms makes calls and games unusable while anything else is transferring. It is graded on the worse direction, because a line that is clean downstream and badly buffered upstream is a badly buffered line."
+    },
     "packet_loss": {
       "title": "Packet loss",
       "description": "Packet loss is the share of data that never arrived and had to be sent again. Anything above zero is felt as stutter in calls and games long before it shows as a lower speed. Only Ookla measures it, so a test from another provider leaves it blank rather than reporting zero."
@@ -348,6 +356,7 @@
       "packet_loss": "Packet loss",
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
+      "connection": "Connection",
       "isp": "Provider",
       "external_ip": "External address",
       "changed": "changed"

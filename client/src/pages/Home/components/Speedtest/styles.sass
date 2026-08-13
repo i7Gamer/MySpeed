@@ -45,7 +45,11 @@ $metric-line-height: 1.2
 // could not be compared down a column - which is the whole point of a list.
 .speedtest
   display: grid
-  grid-template-columns: minmax(11rem, 1.2fr) 1fr 1fr 1fr auto
+  // The date, four measurements and the chevron. The fourth track is the
+  // bufferbloat, and it is a track rather than something the ping column
+  // carries because a figure the eye compares down a list needs a column of its
+  // own to be compared in.
+  grid-template-columns: minmax(11rem, 1.2fr) 1fr 1fr 1fr 1fr auto
   padding: 1.5rem 2rem
   align-items: center
   width: 100%
@@ -69,7 +73,7 @@ $metric-line-height: 1.2
   display: flex
   align-items: center
   gap: 0.5rem
-  grid-column: 2 / 5
+  grid-column: 2 / 6
   min-width: 0
   // The line box the measurements would have occupied.
   min-height: $metric-font-size * $metric-line-height
@@ -202,19 +206,50 @@ $metric-line-height: 1.2
     width: 0.85rem
     height: 0.85rem
 
-@media (max-width: 605px)
+// A fourth measurement needs width the three did not, and 28pt numbers were
+// already crowding four tracks below a laptop. One step down buys back roughly
+// what the new column costs; the date gives up its 11rem floor in the same
+// breath, being the one column whose content is not a measurement.
+@media (max-width: 1000px)
+  .speedtest
+    grid-template-columns: minmax(8rem, 1fr) 1fr 1fr 1fr 1fr auto
+    padding: 1.25rem 1.25rem
+  .date-text
+    font-size: 18pt
+    margin-left: 0.6rem
+  .speedtest-text
+    font-size: 18pt
+  .speedtest-unit
+    font-size: 10pt
+    padding-bottom: 0.25rem
+  .quality-suffix
+    font-size: 11pt
+
+// Below this the columns stop fitting at any size worth reading, and the row
+// stacks instead. It used to give up at 605px, where three tracks still had
+// room; a fourth moves that threshold up with it.
+@media (max-width: 700px)
   // Back to a stack: the desktop rule is a grid now, and flex-direction on a
   // grid silently does nothing.
   .speedtest
     display: flex
     flex-direction: column
     align-items: flex-start
+    padding: 1.5rem 2rem
   .date-text
     font-size: 32pt
+    margin-left: 1rem
   .speedtest-text
     font-size: 32pt
+  .speedtest-unit
+    font-size: 12pt
+    padding-bottom: 0.45rem
   .quality-suffix
     font-size: 16pt
+  // Nothing to hold open once the row is a stack, and an empty line in the
+  // middle of one reads as a missing measurement rather than as an absent one.
+  .speedtest-bufferbloat:empty
+    display: none
   .speedtest-chevron
     position: absolute
     top: 1.5rem
