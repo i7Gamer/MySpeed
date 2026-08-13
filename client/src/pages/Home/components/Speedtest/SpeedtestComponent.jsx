@@ -164,7 +164,12 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                             keyboard-operable, and these sit inside it, so as
                             bare svgs they were the one thing on the card a
                             keyboard could not reach at all. */}
-                        <div className="speedtest-row speedtest-ping">
+                        {/* Marked when there is no grade to sit under it, so
+                            the narrower layouts can give the ping both lines of
+                            its column and centre it - level with the date,
+                            rather than hanging above an empty half. */}
+                        <div className={"speedtest-row speedtest-ping"
+                            + (props.bufferbloat ? "" : " speedtest-ping-alone")}>
                             <HelpButton label={t("info.ping.title")} onOpen={(event) => openInfo(event, pingInfo)}>
                                 <FontAwesomeIcon icon={faPingPongPaddleBall}
                                                  className={"speedtest-icon icon-" + props.pingLevel}/>

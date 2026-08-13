@@ -80,9 +80,15 @@ $metric-line-height: 1.2
   opacity: 0
   animation: fadeOut 0.3s
 
+// Every measurement reserves the same height, the way a failed row reserves the
+// line box below. The grade is drawn at the size of an icon, which is taller
+// than a value's line box, so a card carrying one stood 13px taller than the
+// card under it that did not - and a list that changes row height as it scrolls
+// is the thing this file starts by pinning down.
 .speedtest-row
   display: flex
   align-items: center
+  min-height: 3rem
 
 // Takes the space the three metric columns would have used, so a failed row is
 // the same height as every other one and the list does not jump.
@@ -305,7 +311,12 @@ $metric-line-height: 1.2
 // The date spans both lines rather than sitting on the first: it is one figure
 // against two stacks, and level with the top of them it reads as a label for
 // the ping alone.
-@media (max-width: 1150px)
+//
+// It starts where one line stops fitting and not a pixel earlier: measured
+// against a 2.3 Gbit line's values, all five measurements still sit side by
+// side down to 1050px, so a 1100 window gets to keep them. The threshold is 30
+// above that, which is a digit's worth of slack.
+@media (max-width: 1080px)
   .speedtest
     grid-template-columns: 10rem minmax(0, 1fr) minmax(0, 1fr)
     // Both lines reserve the badge's height whether or not there is a badge on
@@ -322,6 +333,11 @@ $metric-line-height: 1.2
   .speedtest-ping
     grid-column: 2
     grid-row: 1
+  // Nothing under it on a test whose provider measures no latency under load,
+  // so it takes both lines and centres on them - level with the date, rather
+  // than sitting at the top of a column that is empty below it.
+  .speedtest-ping-alone
+    grid-row: 1 / 3
   .speedtest-bufferbloat
     grid-column: 2
     grid-row: 2
@@ -352,9 +368,10 @@ $metric-line-height: 1.2
   .speedtest-details
     padding: 1.25rem
 
-// One column at last. Two of the widest values do not fit a phone side by side,
-// and the numbers go back up to the size they are worth reading at.
-@media (max-width: 600px)
+// One column at last. Two of the widest values do not fit a phone side by side
+// - three columns want 620px, measured - and the numbers go back up to the size
+// they are worth reading at.
+@media (max-width: 660px)
   // A stack, not a grid: flex-direction on a grid silently does nothing.
   .speedtest
     display: flex

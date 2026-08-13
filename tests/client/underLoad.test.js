@@ -359,6 +359,24 @@ describe("the row's grid makes room for it", () => {
             assert.match(threeUp.body, /grid-template-rows:\s*repeat\(2, minmax\(/);
         });
 
+        // The same floor one line up, where the badge made a card 13px taller
+        // than the card beneath it for the same reason.
+        it("reserves it on the single line too", () => {
+            assert.match(css, /\.speedtest-row\s*\{[^}]*min-height:/);
+        });
+
+        /**
+         * A ping with nothing under it takes both lines and centres on them, so
+         * it sits level with the date rather than hanging at the top of a
+         * column that is empty below it. The component says when that is the
+         * case - the stylesheet cannot know whether a grade was measured.
+         */
+        it("centres a ping that has no grade under it", () => {
+            assert.match(row, /speedtest-ping-alone/, "the row never marks a ping that stands alone");
+            assert.match(row, /props\.bufferbloat \? "" : " speedtest-ping-alone"/);
+            assert.match(threeUp.body, /\.speedtest-ping-alone\s*\{[^}]*grid-row:\s*1\s*\/\s*3/);
+        });
+
         // Beside the date and over both lines: a failed test has one sentence
         // where the measurements would be.
         it("spans a failed test across the measurements", () => {
