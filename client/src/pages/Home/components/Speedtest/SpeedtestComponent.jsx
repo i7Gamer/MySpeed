@@ -16,7 +16,7 @@ import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {convertSpeed, formatLatency, formatShortDay, formatShortTime, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {downloadInfo, jitterInfo, packetLossInfo, pingInfo, uploadInfo} from "@/common/utils/MetricInfo";
-import {isMeasured} from "@/common/utils/TestUtil";
+import {isMeasured, jitterColour, packetLossColour} from "@/common/utils/TestUtil";
 import HelpButton from "@/common/components/HelpButton";
 import {useMetricInfo} from "@/common/hooks/useMetricInfo";
 
@@ -62,6 +62,11 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
      * A packet loss of zero is a measurement and the best one there is; only
      * null and undefined mean the provider never looked. Ookla is the only one
      * that does, so most histories carry rows of both kinds.
+     *
+     * Graded by the same two functions the panel uses, so one figure cannot
+     * change colour between the row and the row opened. The colour goes on the
+     * glyph and not on the number, which is how the three metrics beside it are
+     * already read - a list of a hundred tests is scanned by icon colour.
      */
     const quality = [
         isMeasured(props.jitter) && {
@@ -69,6 +74,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
             icon: faWaveSquare,
             info: jitterInfo,
             label: t("info.jitter.title"),
+            level: jitterColour(props.jitter),
             text: props.jitter
         },
         isMeasured(props.packetLoss) && {
@@ -76,6 +82,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
             icon: faLinkSlash,
             info: packetLossInfo,
             label: t("info.packet_loss.title"),
+            level: packetLossColour(props.packetLoss),
             text: `${props.packetLoss}%`
         }
     ].filter(Boolean);
@@ -165,7 +172,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                 <span className="speedtest-unit">{t("latest.ping_unit")}</span>
                                 {quality.length > 0 && (
                                     <span className="quality-suffix">
-                                        {quality.map(({key, icon, info, label, text}) => (
+                                        {quality.map(({key, icon, info, label, level, text}) => (
                                             <span key={key} className="quality-suffix-part">
                                                 {/* Only the icon is the button: the
                                                     help cursor is the affordance,
@@ -177,9 +184,10 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                                     swallowed it. */}
                                                 <HelpButton label={label}
                                                             onOpen={(event) => openInfo(event, info)}>
-                                                    <FontAwesomeIcon icon={icon} className="quality-suffix-icon"/>
+                                                    <FontAwesomeIcon icon={icon}
+                                                                     className={"quality-suffix-icon icon-" + level}/>
                                                 </HelpButton>
-                                                {text}
+                                                <span className="quality-suffix-value">{text}</span>
                                             </span>
                                         ))}
                                     </span>

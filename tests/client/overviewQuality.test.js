@@ -24,8 +24,11 @@ const css = sass.compile(path.join(CLIENT_SRC, "pages/Home/components/Speedtest/
 
 const escape = (selector) => selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// The lookahead matters: without it ".quality-suffix" also matches the rule for
+// ".quality-suffix-value", and every question about the container is answered
+// by whichever of its children happens to declare the property.
 const bodiesFor = (selector) => [...css.matchAll(
-    new RegExp(`${escape(selector)}[^{},]*\\{([^}]*)}`, "g"))].map(([, body]) => body);
+    new RegExp(`${escape(selector)}(?![-\\w])[^{},]*\\{([^}]*)}`, "g"))].map(([, body]) => body);
 
 const declares = (selector, property) => bodiesFor(selector).some((body) => property.test(body));
 
@@ -99,8 +102,35 @@ describe("the overview row carries both quality figures", () => {
     // They are footnotes to the latency, not a fourth and fifth column: the
     // three main figures are what the eye lands on when scrolling a list.
     it("stays quieter than the numbers it hangs off", () => {
-        assert.ok(declares(".quality-suffix", /opacity/));
+        assert.ok(declares(".quality-suffix-value", /opacity/));
         assert.ok(declares(".quality-suffix", /font-size/));
+    });
+
+    /**
+     * Graded the way every other icon in the row is: the colour is on the
+     * glyph, the number stays plain. A row is read by icon colour first - that
+     * is what makes a bad test findable while scrolling a hundred of them - and
+     * a jitter of 40 ms sat in exactly the same grey as one of 2.
+     */
+    it("grades both figures with the same functions the pane uses", () => {
+        assert.match(figures, /level:\s*jitterColour\(props\.jitter\)/);
+        assert.match(figures, /level:\s*packetLossColour\(props\.packetLoss\)/);
+    });
+
+    it("colours the icon and nothing else", () => {
+        assert.match(quality, /quality-suffix-icon icon-/,
+            "the grade never reaches the glyph");
+        assert.doesNotMatch(quality, /quality-suffix-part[^"]*icon-/,
+            "the whole figure is coloured, so the number is graded too");
+        assert.doesNotMatch(quality, /quality-suffix-value[^"]*icon-/,
+            "the number carries the grade, and the row colours icons rather than values");
+    });
+
+    // opacity is a group operation: dimming the row of figures dims the graded
+    // glyph inside it, and no child can opt back out of its parent's alpha.
+    it("does not wash the grade out with the group's dimming", () => {
+        assert.ok(!declares(".quality-suffix", /opacity/),
+            "the container dims everything below it, the coloured icons included");
     });
 
     it("still shrinks with the row on a narrow screen", () => {

@@ -32,8 +32,12 @@ const escape = (selector) => selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // Every rule whose selector mentions this one: a property can legitimately be
 // declared in any of them, and reading only the first starts reading the wrong
 // rule the moment another is added beside it.
+//
+// The lookahead keeps ".detail-metric-value" from also matching the rule for
+// ".detail-metric-value-row", which would answer a question about one element
+// with the other's declarations.
 const bodiesFor = (css, selector) => [...css.matchAll(
-    new RegExp(`${escape(selector)}[^{},]*\\{([^}]*)}`, "g"))].map(([, body]) => body);
+    new RegExp(`${escape(selector)}(?![-\\w])[^{},]*\\{([^}]*)}`, "g"))].map(([, body]) => body);
 
 const declares = (css, selector, property) =>
     bodiesFor(css, selector).some((body) => property.test(body));
