@@ -1,11 +1,23 @@
 @use "@/common/styles/colors" as *
 
+// Wider than the 34rem it used to be pinned at, and no longer a fixed size.
+// Each setting is a space-between row of a label against its input, so the
+// width is what a long label and a long value - a webhook URL, a message
+// template, a translated "only notify when a result misses its target" -
+// compete for, and there was room going spare: `.dialog.integration-dialog` is
+// allowed 90vw.
+//
+// max-width alongside the min() because the wrapper sits inside the dialog's
+// own 1.25rem of padding, and `.dialog-main` hides its horizontal overflow
+// rather than scrolling it - a wrapper wider than the dialog is silently cut
+// off rather than reachable.
 .integrations-wrapper
   display: flex
   flex-direction: column
   gap: 1.25rem
   margin-top: 1rem
-  width: 34rem
+  width: min(44rem, 85vw)
+  max-width: 100%
 
 .preview-warning
   display: flex
@@ -40,16 +52,14 @@
     margin: 0
     font-size: 1.1rem
 
+// No height cap and no scrollport of its own. This used to be a 20rem window
+// scrolling inside `.dialog-main`, which already scrolls and is already bounded
+// by the dialog's own `max-height: calc(100vh - 2rem)` - so on a screen with
+// several hundred pixels going spare the cards were squeezed into 320px, and
+// reaching a field near the bottom of an expanded card meant scrolling the
+// inner box to its end and then the outer one. One scrollport, belonging to the
+// dialog body, reaches everything.
 .integrations-list
   display: flex
   flex-direction: column
   gap: 0.875rem
-  max-height: 20rem
-  overflow-y: auto
-
-@media (max-width: 600px)
-  .integrations-wrapper
-    width: 85vw
-
-  .integrations-list
-    max-height: 50vh

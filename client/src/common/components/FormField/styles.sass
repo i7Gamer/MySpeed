@@ -15,8 +15,12 @@
 .form-field-error
   color: $accent-danger !important
 
+// Capped as well as proportional, so a wider dialog gives its extra room to the
+// label rather than to an input that is already long enough for any value it
+// holds. The labels are what run out of room first - a German field name wraps
+// to two or three lines in the column a bare 55% leaves it.
 .form-field-input
-  width: 55%
+  width: min(55%, 22rem)
   flex-shrink: 0
   background-color: $dark-gray
   border: 1px solid $light-gray

@@ -33,7 +33,11 @@ const blocks = (css) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
 const SHEETS = [
     "common/components/WelcomeDialog/steps/DataHelper/styles.sass",
     "common/components/OptimalValuesDialog/styles.sass",
-    "common/contexts/Dialog/styles.sass"
+    "common/contexts/Dialog/styles.sass",
+    // The row every integration setting is drawn as, and the one with the most
+    // to lose: an integration card carries the longest labels in the app, and
+    // the input beside them does not yield.
+    "common/components/FormField/styles.sass"
 ];
 
 describe("space-between rows keep a gap as their floor", () => {
