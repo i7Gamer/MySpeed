@@ -1,7 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import setupDiscord from "../../server/integrations/discord.js";
 import setupPushover from "../../server/integrations/pushover.js";
+
+const INTEGRATIONS_DIR = path.resolve(fileURLToPath(import.meta.url),
+    "..", "..", "..", "server", "integrations");
 
 /**
  * The patterns the integration modules declare for their credential fields.
@@ -110,4 +116,35 @@ describe("discord webhook url", () => {
     it("rejects a url whose id is not a number", () => {
         assert.equal(accepts(setupDiscord, "url", `https://discord.com/api/webhooks/abc/${TOKEN}`), false);
     });
+});
+
+/**
+ * A module may set `notifier: true`; it may not explain who else does.
+ *
+ * Which integrations abstain from the flag, and why, is a fact about the whole
+ * set - and the same three-line rationale naming influxdb and healthChecks had
+ * been pasted above the flag in all six notifiers, so a seventh integration, or
+ * a change of heart about influxdb, was six edits in files that have no reason
+ * to know about each other. That knowledge belongs where the flag is read:
+ * isNotifier and suppressesEvent in controller/integrations.js.
+ *
+ * Asserted over the source text because the duplication was in comments, which
+ * is precisely why nothing caught it drifting. Only the two abstainers' names
+ * are forbidden, not cross-references in general: healthChecks legitimately
+ * points at ntfy for a shared header quirk, and discord's own docblocks are full
+ * of the word "webhook".
+ */
+describe("the notifier flag", () => {
+    const NOTIFIER_MODULES = ["discord", "gotify", "ntfy", "pushover", "telegram", "webhook"];
+    const ABSTAINERS = ["influxdb", "healthChecks"];
+
+    for (const module of NOTIFIER_MODULES)
+        it(`${module} does not restate which integrations opt out`, () => {
+            const source = fs.readFileSync(path.join(INTEGRATIONS_DIR, `${module}.js`), "utf8");
+
+            for (const abstainer of ABSTAINERS)
+                assert.equal(source.includes(abstainer), false,
+                    `${module}.js names ${abstainer}, so the make-up of the notifier set is `
+                    + `recorded somewhere that cannot keep it current`);
+        });
 });

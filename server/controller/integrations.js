@@ -131,7 +131,19 @@ const ALERT_FIELDS = [
     ...ALERT_METRICS.map(({field}) => ({name: field, type: "number", required: false, min: 0, decimals: true}))
 ];
 
-/** Whether a module asked to be offered the threshold settings. */
+/**
+ * Whether a module asked to be offered the threshold settings.
+ *
+ * `notifier: true` is a module's own opt-in: it exists to tell a person
+ * something, so it can sensibly be asked to stay quiet while the line is fine.
+ * influxdb and healthChecks do not set it, for the reasons suppressesEvent
+ * gives below.
+ *
+ * That last sentence is why this note lives here rather than above the flag in
+ * each module, where it had been copied out six times: which integrations
+ * abstain is a fact about the whole set, and no single module owns it or can
+ * notice when it changes.
+ */
 const isNotifier = (definition) => definition?.notifier === true;
 
 /**
