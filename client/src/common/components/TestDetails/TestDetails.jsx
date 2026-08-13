@@ -414,6 +414,32 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                             </DetailFact>
                         )}
 
+                        {/* Third, and the last of the three facts that carry a
+                            second line under their value - the duration, the
+                            result link, the host below. A grid row is as tall as
+                            its tallest cell, so with these scattered through the
+                            grid every row had one of them in it and every row
+                            was two lines tall, each with a one-line fact beside
+                            it sitting in the empty half. Together they cost one
+                            tall row and the short facts close up under it.
+
+                            The host used to be shown only when the name was
+                            missing, so a named server threw its address away -
+                            and the address is which one to pin in the settings
+                            to keep measuring against it. See serverDetail for
+                            what the second line carries; the id it ends on is
+                            gated because zero is the column's default, i.e. a
+                            provider that numbers no servers rather than a server
+                            numbered zero. */}
+                        {serverPrimary && (
+                            <DetailFact label={t("test.details.server")}>
+                                {serverPrimary}
+                                {serverDetail && (
+                                    <span className="detail-address detail-secondary">{serverDetail}</span>
+                                )}
+                            </DetailFact>
+                        )}
+
                         {/* What the run cost in traffic. A single Ookla test
                             moves a couple of gigabytes, which is the figure that
                             decides whether testing every fifteen minutes is
@@ -496,23 +522,6 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                                         {change?.externalIp &&
                                             <span className="detail-changed">{t("test.details.changed")}</span>}
                                     </span>
-                                )}
-                            </DetailFact>
-                        )}
-
-                        {/* The host used to be shown only when the name was
-                            missing, so a named server threw its address away -
-                            and the address is which one to pin in the settings
-                            to keep measuring against it. See serverDetail for
-                            what the second line carries; the id it ends on is
-                            gated because zero is the column's default, i.e. a
-                            provider that numbers no servers rather than a server
-                            numbered zero. */}
-                        {serverPrimary && (
-                            <DetailFact label={t("test.details.server")}>
-                                {serverPrimary}
-                                {serverDetail && (
-                                    <span className="detail-address detail-secondary">{serverDetail}</span>
                                 )}
                             </DetailFact>
                         )}
