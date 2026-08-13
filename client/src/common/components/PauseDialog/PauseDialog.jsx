@@ -9,7 +9,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import {
-    quietHoursUpdates, storedTimeToInput, windowProblem
+    carriesWindow, storedTimeToInput, windowProblem, writeQuietHours
 } from "@/common/components/PauseDialog/quietHoursWindow";
 import "./styles.sass";
 
@@ -22,7 +22,7 @@ const PRESETS = [
 
 export const PauseDialog = ({open, onClose, onPause}) => {
     const updateToast = useContext(ToastNotificationContext);
-    const [config, reloadConfig] = useContext(ConfigContext);
+    const [config, reloadConfig, checkConfig] = useContext(ConfigContext);
     const [selected, setSelected] = useState("manual");
     const [customHours, setCustomHours] = useState("");
     const [showCustom, setShowCustom] = useState(false);
@@ -35,13 +35,15 @@ export const PauseDialog = ({open, onClose, onPause}) => {
     const [quietEnd, setQuietEnd] = useState("");
     const [savingQuiet, setSavingQuiet] = useState(false);
 
+    const showStoredWindow = (stored) => {
+        setQuietStart(storedTimeToInput(stored.quietHoursStart));
+        setQuietEnd(storedTimeToInput(stored.quietHoursEnd));
+    };
+
     // Read when the dialog opens rather than at mount: the config arrives
     // asynchronously, and a value read once at mount is whatever was there
     // before it did.
-    useSyncOnOpen(open, () => {
-        setQuietStart(storedTimeToInput(config.quietHoursStart));
-        setQuietEnd(storedTimeToInput(config.quietHoursEnd));
-    });
+    useSyncOnOpen(open, () => showStoredWindow(config));
 
     const quietProblem = windowProblem(quietStart, quietEnd);
 
@@ -50,16 +52,28 @@ export const PauseDialog = ({open, onClose, onPause}) => {
 
         setSavingQuiet(true);
         try {
-            for (const {key, value} of quietHoursUpdates(quietStart, quietEnd))
-                await assertOk(await patchRequest(`/config/${key}`, {value}), "update quiet hours");
+            await writeQuietHours(
+                async (key, value) => assertOk(await patchRequest(`/config/${key}`, {value}), "update quiet hours"),
+                quietStart, quietEnd, config);
 
-            reloadConfig();
             updateToast(t("update.quiet_hours_saved"), "green", faMoon);
         } catch (e) {
             updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
                 "red", faExclamationTriangle);
+
+            // A refused write can leave the server holding a pair this dialog
+            // never showed, and writeQuietHours only attempts to undo that - a
+            // session that expired refuses the undo as well. The fields would
+            // otherwise go on showing the window that was asked for, and
+            // reopening would re-seed them from a config just as stale, so
+            // nothing on screen would ever name the pair the scheduler obeys.
+            const stored = await checkConfig().catch(() => null);
+            if (carriesWindow(stored)) showStoredWindow(stored);
         } finally {
             setSavingQuiet(false);
+            // Either way, and for everyone else reading these two keys: the
+            // frequency dialog's next-test preview is one of them.
+            reloadConfig();
         }
     };
 

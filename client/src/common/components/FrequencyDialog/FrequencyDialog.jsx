@@ -11,6 +11,7 @@ import {formatDateTime} from "@/common/utils/FormatUtil";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
 import {CronExpressionParser} from "cron-parser";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
+import {firstRunOutsideWindow} from "@/common/components/PauseDialog/quietHoursWindow";
 import {CRON_PRESETS, DEFAULT_CRON, frequencyStateFrom} from "./frequencyState";
 import "./styles.sass";
 
@@ -26,9 +27,36 @@ const PRESET_ICONS = {
 
 const PRESETS = CRON_PRESETS.map((preset) => ({...preset, icon: PRESET_ICONS[preset.id]}));
 
-const getNextRunDate = (cron) => {
+/**
+ * Whether the expression describes a schedule at all, the quiet hours aside.
+ *
+ * Kept separate from the preview below: a window that happens to swallow every
+ * occurrence of a perfectly good cron must not make it unsaveable, and the way
+ * out of that is the quiet hours dialog rather than this one.
+ */
+const isCronValid = (cron) => {
     try {
-        return CronExpressionParser.parse(cron).next().toDate();
+        CronExpressionParser.parse(cron).next();
+        return true;
+    } catch {
+        return false;
+    }
+};
+
+/**
+ * When a test would actually run next, or null if the window swallows them all.
+ *
+ * Quiet-aware because the scheduler is: server/tasks/timer.js steps over the
+ * occurrences inside the window, since runTask refuses them, and the status bar
+ * counts down to what it answers. A bare next() here announced 00:00 to an
+ * operator whose quiet hours ran to 08:00 - disagreeing with the countdown on
+ * the same screen about a test that was never going to happen.
+ */
+const getNextRunDate = (cron, quietStart, quietEnd) => {
+    try {
+        const schedule = CronExpressionParser.parse(cron);
+
+        return firstRunOutsideWindow(() => schedule.next().toDate(), quietStart, quietEnd);
     } catch {
         return null;
     }
@@ -39,8 +67,12 @@ export const FrequencyDialog = ({open, onClose}) => {
     const updateToast = useContext(ToastNotificationContext);
     const [preferences] = useContext(PreferencesContext);
 
+    // The window comes out of the same /config payload the schedule does. View
+    // mode withholds both, and withholds this dialog with them - it is reached
+    // from an operator-only entry in the dropdown - so anyone who can see the
+    // preview can see what shapes it.
     const getNextRun = (cron) => {
-        const date = getNextRunDate(cron);
+        const date = getNextRunDate(cron, config.quietHoursStart, config.quietHoursEnd);
         if (!date) return null;
         return formatDateTime(date, preferences);
     };
@@ -71,7 +103,7 @@ export const FrequencyDialog = ({open, onClose}) => {
 
     const handleSave = async (close) => {
         const cronValue = selected === "custom" ? customCron : PRESETS.find(p => p.id === selected)?.cron;
-        if (!cronValue || !getNextRun(cronValue)) return;
+        if (!cronValue || !isCronValid(cronValue)) return;
 
         setSaving(true);
         try {
@@ -94,7 +126,7 @@ export const FrequencyDialog = ({open, onClose}) => {
         }
     };
 
-    const isCustomValid = selected !== "custom" || getNextRun(customCron);
+    const isCustomValid = selected !== "custom" || isCronValid(customCron);
     const nextRun = getNextRun(customCron);
 
     return (
