@@ -286,6 +286,45 @@ describe("buildStatistics", () => {
             assert.equal(stats.consistency.download.stdDev, 0);
             assert.equal(stats.consistency.download.consistency, 100);
         });
+
+        /**
+         * The ping deviation parts company with the speeds above on this one
+         * point, because it is the only one of them read as a figure in its
+         * own right rather than as the input to a percentage.
+         *
+         * "±0 ms" is the strongest claim the card can make - a line that never
+         * wavered - and one test cannot support it. It is not a rare shape
+         * either: a day on which the connection dropped and every test but one
+         * failed lands here, which is exactly the day the card is opened.
+         */
+        it("reports no ping deviation from a single test rather than a perfect one", () => {
+            const stats = buildStatistics([at("2026-08-07T01:00:00.000Z", {ping: 5})], DAY);
+
+            assert.equal(stats.consistency.ping.deviation, null);
+        });
+
+        // The single *successful* test, not the single row: the failures around
+        // it are what makes this shape common.
+        it("reports no ping deviation when only one test in the range succeeded", () => {
+            const stats = buildStatistics([
+                at("2026-08-07T01:00:00.000Z", {ping: 5}),
+                at("2026-08-07T02:00:00.000Z", {ping: -1, error: "Cannot open socket"}),
+                at("2026-08-07T03:00:00.000Z", {ping: -1, error: "Cannot open socket"})
+            ], DAY);
+
+            assert.equal(stats.consistency.ping.deviation, null);
+        });
+
+        // Two is the fewest that can disagree, so it is the fewest that has a
+        // spread to report - and zero is then a real reading, not an absent one.
+        it("reports a spread from two tests, zero when they agree", () => {
+            const stats = buildStatistics([
+                at("2026-08-07T01:00:00.000Z", {ping: 5}),
+                at("2026-08-07T02:00:00.000Z", {ping: 5})
+            ], DAY);
+
+            assert.equal(stats.consistency.ping.deviation, 0);
+        });
     });
 
     describe("hourly averages", () => {

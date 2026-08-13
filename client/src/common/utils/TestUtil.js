@@ -108,6 +108,14 @@ const PACKET_LOSS_FAIR = 2.5;
 const JITTER_GOOD = 5;
 const JITTER_FAIR = 20;
 
+// Tighter than the jitter above, because it measures a different thing: jitter
+// is the spread within one test, this is the spread between them. A line whose
+// latency wanders by five milliseconds from one hour to the next is not the
+// steady one that five milliseconds of jitter describes - it is one whose route
+// or load keeps changing underneath it.
+const PING_DEVIATION_GOOD = 2;
+const PING_DEVIATION_FAIR = 10;
+
 // Blue for anything that is not a measurement: a range in which nothing
 // reported the figure has no colour to earn, and red would say the line is bad
 // when nothing was measured at all.
@@ -122,6 +130,16 @@ const gradeBelow = (value, good, fair) => {
 export const packetLossColour = (value) => gradeBelow(value, PACKET_LOSS_GOOD, PACKET_LOSS_FAIR);
 
 export const jitterColour = (value) => gradeBelow(value, JITTER_GOOD, JITTER_FAIR);
+
+/**
+ * How far apart two tests' pings were, as a colour.
+ *
+ * The stability card used to print this figure in a fixed orange - the value
+ * never entered into it - so "±0 ms", the best reading there is, was shown in
+ * the warning colour, among four rows whose colours really are verdicts.
+ */
+export const pingDeviationColour = (value) =>
+    gradeBelow(value, PING_DEVIATION_GOOD, PING_DEVIATION_FAIR);
 
 /**
  * Whether a figure was measured at all.

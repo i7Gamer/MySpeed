@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
     bufferbloat, bufferbloatTrend, connectionChange, failureRate, getIconBySpeed, gradeForIncrease, isFailedTest,
-    jitterColour, packetLossColour, previousConnection, TREND_LENGTH
+    jitterColour, packetLossColour, pingDeviationColour, previousConnection, TREND_LENGTH
 } from "../../client/src/common/utils/TestUtil.js";
 
 /**
@@ -424,5 +424,44 @@ describe("jitterColour", () => {
     it("has no colour for anything that is not a measurement", () => {
         for (const value of [null, undefined, NaN, -1, "5"])
             assert.equal(jitterColour(value), "blue", `${String(value)} must not grade`);
+    });
+});
+
+/**
+ * How far apart two tests' pings were, graded.
+ *
+ * The stability card printed this figure in a fixed orange - the value never
+ * entered into the colour at all - so the best reading there is, ±0 ms, was
+ * shown in the warning colour, sitting among four rows whose colours *are*
+ * verdicts. A tighter scale than the jitter beside it: jitter is the spread
+ * within one test and this is the spread between tests, and a line whose ping
+ * wanders by five milliseconds from hour to hour is not the steady one that
+ * five milliseconds of jitter describes.
+ */
+describe("pingDeviationColour", () => {
+    it("calls a line that holds its latency green", () => {
+        assert.equal(pingDeviationColour(0), "green");
+        assert.equal(pingDeviationColour(1.9), "green");
+    });
+
+    it("warns from two milliseconds, and condemns from ten", () => {
+        assert.equal(pingDeviationColour(2), "orange");
+        assert.equal(pingDeviationColour(9.9), "orange");
+        assert.equal(pingDeviationColour(10), "red");
+        assert.equal(pingDeviationColour(140), "red");
+    });
+
+    // The card's own reason for existing: a null here is the server saying the
+    // range held fewer than two successful tests, which is not a spread of zero.
+    it("has no colour for anything that is not a measurement", () => {
+        for (const value of [null, undefined, NaN, Infinity, -1, "2", {}])
+            assert.equal(pingDeviationColour(value), "blue", `${String(value)} must not grade`);
+    });
+
+    // The thresholds are exact, so the card that trims the figure to one decimal
+    // has to trim before it grades - see the stability card's own test.
+    it("grades on the value it is handed, to the threshold", () => {
+        assert.equal(pingDeviationColour(1.99), "green");
+        assert.equal(pingDeviationColour(2.0), "orange");
     });
 });

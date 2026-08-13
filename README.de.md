@@ -119,6 +119,29 @@ Menü ein richtiges Passwort fest. Bei jedem Neustart wird ein neues Token erzeu
 gespeichert wird es nie. In einem vertrauenswürdigen Netz lässt sich das mit
 `ALLOW_NO_PASSWORD=true` überspringen – bei einer öffentlichen Adresse nicht.
 
+#### Wenn das Passwort nicht mehr funktioniert
+
+Das Setup-Token gilt nur für eine Instanz *ohne* Passwort und hilft deshalb nicht
+weiter, sobald eines gesetzt ist – ebenso wenig wie der lokale Zugriff oder
+`ALLOW_NO_PASSWORD`. Ein gesetztes, aber unbekanntes Passwort wird über die
+Kommandozeile gelöscht:
+
+```bash
+MySpeed --reset-password
+```
+
+Unter Docker im Container ausführen: `docker exec <container> ./MySpeed
+--reset-password`. Der Befehl muss im selben Verzeichnis laufen wie der Server –
+er löst `data/storage.db` relativ zum Arbeitsverzeichnis auf und sagt es, wenn er
+dort keine Konfiguration findet.
+
+Danach ist die Instanz wieder im oben beschriebenen Zustand des ersten Starts:
+offen für den Rechner, auf dem sie läuft, und für alle anderen mit Setup-Token,
+das sie bei der nächsten abgelehnten Anfrage ins Log schreibt. Ein Neustart ist
+nicht nötig; lege im Menü ein neues Passwort fest. Bereits angemeldete Sitzungen
+bleiben bis zu ihrem Ablauf gültig – für ein sofortiges Ende den Server neu
+starten.
+
 #### Einen Reverse Proxy davorsetzen
 
 Das ist der unterstützte Weg. Der Proxy übernimmt TLS und idealerweise auch die

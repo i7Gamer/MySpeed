@@ -116,6 +116,27 @@ the dropdown menu. A new token is issued on every restart and is never written t
 disk. On a network you fully trust you can skip this with `ALLOW_NO_PASSWORD=true`
 — on a public address, don't.
 
+#### If the password no longer works
+
+The setup token only applies to an instance that has *no* password, so it is no
+help once one is set — and neither is loopback access nor `ALLOW_NO_PASSWORD`.
+A password that is set but not known is cleared from the command line:
+
+```bash
+MySpeed --reset-password
+```
+
+Under Docker, run it in the container: `docker exec <container> ./MySpeed
+--reset-password`. Run it from the same directory the server runs in — it
+resolves `data/storage.db` relative to the working directory, and will say so if
+it finds no configuration there.
+
+The instance is then back to the first-run state above: open on the machine it
+runs on, asking every other machine for a setup token, which it prints to its log
+as it turns the next request away. Nothing needs restarting; set a new password
+from the dropdown menu. Sessions already signed in stay valid until they expire —
+restart the server to end them.
+
 #### Put a reverse proxy in front
 
 This is the supported way to expose MySpeed. The proxy terminates TLS and, ideally,

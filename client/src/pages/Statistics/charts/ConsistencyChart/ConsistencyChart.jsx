@@ -4,7 +4,9 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
     faArrowDown, faArrowUp, faGaugeHigh, faPingPongPaddleBall, faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
-import { bufferbloatColour, consistencyColour, gradeForIncrease, jitterColour } from "@/common/utils/TestUtil";
+import {
+    bufferbloatColour, consistencyColour, gradeForIncrease, jitterColour, pingDeviationColour
+} from "@/common/utils/TestUtil";
 import { formatDateTime } from "@/common/utils/FormatUtil";
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import { PreferencesContext } from "@/common/contexts/Preferences";
@@ -63,6 +65,13 @@ export const ConsistencyChart = (props) => {
     // trim goes on the jitter average and the ping deviation below.
     const latency = (value) => formatLatencyWithUnit(value, t("latest.ping_unit"));
 
+    // Graded from the trimmed figure, not the stored one, exactly as the jitter
+    // below is: the row prints one decimal and the thresholds are exact, so
+    // grading 1.96 would put a green beside a value reading "±2 ms". One
+    // expression for the value and the icon - they said different things about
+    // the same measurement for as long as the icon was a constant.
+    const pingGrade = "icon-" + pingDeviationColour(formatLatency(data.ping.deviation));
+
     const spreads = {
         download: spread(ranges.download, speed),
         upload: spread(ranges.upload, speed),
@@ -104,13 +113,13 @@ export const ConsistencyChart = (props) => {
                 <div className="consistency-item">
                     <div className="consistency-info">
                         <h2>{t("latest.ping")}</h2>
-                        <p className={data.ping.deviation === null ? "icon-blue" : "icon-orange"}>
+                        <p className={pingGrade}>
                             {deviation(formatLatency(data.ping.deviation), t("latest.ping_unit"))}
                         </p>
                         <span className="consistency-detail">{t("statistics.consistency.ping_deviation")}</span>
                         {spreads.ping && <span className="consistency-detail">{spreads.ping}</span>}
                     </div>
-                    <FontAwesomeIcon icon={faPingPongPaddleBall} className="icon-orange" />
+                    <FontAwesomeIcon icon={faPingPongPaddleBall} className={pingGrade} />
                 </div>
 
                 {/* The ping row above says how far apart two tests' latencies

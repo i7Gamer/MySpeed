@@ -15,9 +15,17 @@ import { requestInterfaces } from './util/loadInterfaces.js';
 import { load as loadCli } from './util/loadCli.js';
 import { removeOld } from './tasks/speedtest.js';
 import { createShutdown } from './util/shutdown.js';
+import {
+    RESET_ALREADY_CLEAR, RESET_NO_CONFIG, resetPassword, wantsPasswordReset
+} from './util/resetPassword.js';
 
 const INTERFACE_REFRESH_INTERVAL = 3600000;
 const RETENTION_SWEEP_INTERVAL = 60000;
+
+// Nothing was wrong and nothing was done - the database opened, it simply held
+// no configuration to reset. Distinct from the failures below so a script can
+// tell "recovered" from "you pointed me at the wrong file".
+const RESET_NOTHING_TO_DO_EXIT = 113;
 
 const port = process.env.SERVER_PORT || 5216;
 
@@ -39,6 +47,42 @@ const announceAccess = async () => {
     }
 
     announceSetupToken();
+};
+
+/**
+ * Clears the password and stops, instead of starting the server.
+ *
+ * Deliberately does *not* print a setup token: this process would mint one of
+ * its own, and an instance already running holds a different one - the operator
+ * would be handed a credential that the server refusing them has never heard
+ * of. The running server prints its own the moment it next turns someone away,
+ * which is what loading the page does, so pointing at the log is both correct
+ * and enough. Nothing needs restarting either: the stored password is read from
+ * the database on every request.
+ */
+const runPasswordReset = async () => {
+    const outcome = await resetPassword();
+
+    if (outcome === RESET_NO_CONFIG) {
+        console.error("This database holds no MySpeed configuration, so there is no password to reset.");
+        console.error("Check that the data directory is the one the server actually runs against.");
+        return process.exit(RESET_NOTHING_TO_DO_EXIT);
+    }
+
+    console.log("");
+    console.log(outcome === RESET_ALREADY_CLEAR
+        ? "  This instance already had no password set."
+        : "  The password has been removed.");
+    console.log("");
+    console.log("  The instance is now open to the machine it runs on, and asks every other");
+    console.log("  machine for a setup token. Open the interface: the server prints that token");
+    console.log("  to its log as it turns the request away. Then set a new password from the");
+    console.log("  settings menu - no restart is needed.");
+    console.log("");
+
+    // Explicit: the database handle and whatever the top-level imports left open
+    // would otherwise hold a command that has finished its work.
+    return process.exit(0);
 };
 
 process.on('uncaughtException', err => errorHandler(err));
@@ -129,6 +173,17 @@ const run = async () => {
 
 db.authenticate().then(() => {
     console.log("Successfully connected to the database " + (process.env.DB_TYPE === "mysql" ? "server" : "file"));
+
+    // Ahead of run(), and it never returns: the recovery command must not
+    // migrate, download a CLI, start the scheduler or take the port - an
+    // instance is usually still running on it while this is being used.
+    if (wantsPasswordReset()) {
+        return runPasswordReset().catch(err => {
+            console.error("The password could not be reset: " + (err?.message ?? err));
+            process.exit(RESET_NOTHING_TO_DO_EXIT);
+        });
+    }
+
     // Startup is not optional: a failure here leaves a listening server with no
     // migrations, no defaults and no scheduler, which is worse than not
     // starting at all.

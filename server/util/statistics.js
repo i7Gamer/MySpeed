@@ -84,12 +84,15 @@ const median = (values) => {
  * no single test speak for the range: half the tests sit within this
  * distance of the middle one.
  *
- * The same nothing/one semantics as standardDeviation above, and for the same
- * reasons.
+ * Unlike standardDeviation above, one value is *not* answered with 0 here. That
+ * figure feeds a consistency percentage; this one is printed to a person as
+ * "±0 ms", which is the strongest claim the card can make - a line that never
+ * wavered - and a single test cannot support it. Nor is one test a rare shape:
+ * a day on which the connection dropped and every test but one failed lands
+ * here, and that is precisely the day someone opens the card.
  */
 const medianAbsoluteDeviation = (values) => {
-    if (values.length === 0) return null;
-    if (values.length < 2) return 0;
+    if (values.length < 2) return null;
 
     const middle = median(values);
     return median(values.map(value => Math.abs(value - middle)));
