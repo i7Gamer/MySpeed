@@ -133,18 +133,39 @@ describe("discord webhook url", () => {
  * are forbidden, not cross-references in general: healthChecks legitimately
  * points at ntfy for a shared header quirk, and discord's own docblocks are full
  * of the word "webhook".
+ *
+ * The scanned set is read off the directory rather than listed here, because a
+ * list here has the very defect the guard exists to catch: a seventh module
+ * pasted in with the old comment is exactly the file a frozen list never names.
+ * Every module is held to the ban regardless of its own notifier flag - only a
+ * module's own name is its own business to mention.
  */
 describe("the notifier flag", () => {
-    const NOTIFIER_MODULES = ["discord", "gotify", "ntfy", "pushover", "telegram", "webhook"];
+    const MODULE_FILES = fs.readdirSync(INTEGRATIONS_DIR)
+        .filter((file) => file.endsWith(".js") && file !== "index.js");
     const ABSTAINERS = ["influxdb", "healthChecks"];
 
-    for (const module of NOTIFIER_MODULES)
-        it(`${module} does not restate which integrations opt out`, () => {
-            const source = fs.readFileSync(path.join(INTEGRATIONS_DIR, `${module}.js`), "utf8");
+    // If an abstainer is renamed, the ban list above goes stale silently: the
+    // old name matches no file, and comments naming the new one sail through.
+    it("names abstainers that exist on disk", () => {
+        for (const abstainer of ABSTAINERS)
+            assert.ok(MODULE_FILES.includes(`${abstainer}.js`),
+                `${abstainer}.js is not in server/integrations; update ABSTAINERS`);
+    });
 
-            for (const abstainer of ABSTAINERS)
+    for (const file of MODULE_FILES) {
+        const module = path.basename(file, ".js");
+
+        it(`${module} does not restate which integrations opt out`, () => {
+            const source = fs.readFileSync(path.join(INTEGRATIONS_DIR, file), "utf8");
+
+            for (const abstainer of ABSTAINERS) {
+                if (abstainer === module) continue;
+
                 assert.equal(source.includes(abstainer), false,
                     `${module}.js names ${abstainer}, so the make-up of the notifier set is `
                     + `recorded somewhere that cannot keep it current`);
+            }
         });
+    }
 });

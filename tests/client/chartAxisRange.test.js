@@ -44,9 +44,11 @@ const seriesOf = (span) => Array.from({length: POINTS}, (_, index) =>
 /**
  * The axis chart.js builds from the options the chart hands it.
  *
- * Only the two lookups a scale makes into the chart it belongs to are stood in
- * for - how wide it is, and which way round it runs - because there is no chart
- * here. Everything else, the tick generation included, is chart.js's own.
+ * Only the lookups a scale makes into the chart it belongs to are stood in for
+ * - how wide it is, which way round it runs, the tick font it would measure
+ * against, and what the datasets plot - because there is no chart here.
+ * Everything else, the range handling and the tick generation included, is
+ * chart.js's own.
  */
 const axisOf = (labels, {isSingleDay = false} = {}) => {
     const x = lineChartOptions({
@@ -61,7 +63,16 @@ const axisOf = (labels, {isSingleDay = false} = {}) => {
         valueUnit: "ms"
     }).scales.x;
 
-    assert.ok(x.ticks.stepSize, "a series the chart gave no step is not what this harness drives");
+    const instants = labels.map((label) => Date.parse(label));
+    const spansTime = Math.max(...instants) > Math.min(...instants);
+
+    // A series that spans time must arrive with the chart's own step - driving
+    // chart.js's decimal-nice stepping instead would measure a configuration
+    // the chart never ships. A zero-span series rightly arrives without one;
+    // whether the bounds it carries instead keep it readable is exactly what
+    // the lone-test cases below measure.
+    if (spansTime) assert.ok(x.ticks.stepSize,
+        "a spanning series the chart gave no step is not what this harness drives");
 
     const scale = new LinearScale({id: "x", type: "linear", ctx: null, chart: null});
 
@@ -76,13 +87,20 @@ const axisOf = (labels, {isSingleDay = false} = {}) => {
         ticks: {maxTicksLimit: x.ticks.maxTicksLimit, stepSize: x.ticks.stepSize}
     };
 
-    // What determineDataLimits would read off the plotted points.
-    const instants = labels.map((label) => Date.parse(label));
+    scale.isHorizontal = () => true;
+    scale.width = PLOT_WIDTH;
+    scale._resolveTickFontOptions = () => ({lineHeight: TICK_LINE_HEIGHT});
+
+    // What determineDataLimits would settle on: the bounds the chart imposed
+    // where it imposed them, the plotted points where it did not - reading
+    // those for real needs the chart's dataset metas - and then chart.js's own
+    // range handling, the code that widens a range left with no width by five
+    // per cent of the timestamp itself.
+    scale._userMin = x.min;
+    scale._userMax = x.max;
     scale.min = x.min ?? Math.min(...instants);
     scale.max = x.max ?? Math.max(...instants);
-
-    scale.isHorizontal = () => true;
-    scale._maxDigits = () => PLOT_WIDTH / TICK_LINE_HEIGHT;
+    scale.handleTickRangeOptions();
 
     return {ticks: scale.buildTicks().map((tick) => tick.value), min: scale.min, max: scale.max};
 };
@@ -152,5 +170,56 @@ describe("the range a line chart plots", () => {
         const labels = seriesOf(400 * DAY);
 
         assert.equal(axisOf(labels).ticks[0], Date.parse(labels[0]));
+    });
+});
+
+/**
+ * The axis a series with no width of its own draws, on the same real scale.
+ *
+ * chart.js widens a range whose min equals its max by five per cent of the
+ * value, and five per cent of a 2026 epoch timestamp is a little over a
+ * thousand days: a lone test drew in the middle of a six-year axis, ticks
+ * nineteen months apart and none of them near the reading. bounds: 'data' has
+ * no say here - one instant gives the data no width to bound to - so the chart
+ * imposes a half-hour window either side instead, and only that window stands
+ * between a fresh install's first test and those six years. Dropping
+ * timeAxisBounds on the grounds that bounds: 'data' covers it would leave
+ * every other case in this file green; these reproduce the six-year axis.
+ */
+describe("the axis a lone test draws", () => {
+    // Half the window the chart imposes - lineChartConfig's own
+    // SINGLE_POINT_PADDING, restated here because the assertions are about the
+    // axis chart.js drew from it, not about the option being set.
+    const SINGLE_POINT_PADDING = 30 * MINUTE;
+
+    const INSTANT = SERIES_START;
+    const LONE_LABEL = new Date(INSTANT).toISOString();
+
+    const assertPaddedWindow = ({min, max}) => {
+        assert.equal(min, INSTANT - SINGLE_POINT_PADDING,
+            `the axis starts ${((INSTANT - min) / DAY).toFixed(0)} days before the only test`);
+        assert.equal(max, INSTANT + SINGLE_POINT_PADDING,
+            `the axis runs ${((max - INSTANT) / DAY).toFixed(0)} days past the only test`);
+    };
+
+    it("spans the padded hour around the test rather than years", () => {
+        assertPaddedWindow(axisOf([LONE_LABEL], {isSingleDay: true}));
+    });
+
+    it("lands its ticks beside the reading", () => {
+        const {ticks} = axisOf([LONE_LABEL], {isSingleDay: true});
+        const inside = ticks.filter((tick) =>
+            tick >= INSTANT - SINGLE_POINT_PADDING && tick <= INSTANT + SINGLE_POINT_PADDING);
+
+        assert.ok(inside.length >= 1, "no tick stands anywhere near the only reading");
+        assert.deepEqual(inside, ticks,
+            `${ticks.length - inside.length} of ${ticks.length} ticks sit outside the hour around the test: ` +
+            ticks.map((tick) => new Date(tick).toISOString()).join(", "));
+    });
+
+    // Several tests sharing an instant - two rows imported with the same
+    // `created`, say - have no width either.
+    it("draws a same-instant series on the same window", () => {
+        assertPaddedWindow(axisOf([LONE_LABEL, LONE_LABEL, LONE_LABEL], {isSingleDay: true}));
     });
 });

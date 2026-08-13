@@ -187,7 +187,10 @@ describe("parsing the labels", () => {
      *
      * The module looks `Date` up on the global at each call, so this counts the
      * parses it actually performs. Only a string costs anything - an instant is
-     * already a number, and building a Date from one parses nothing.
+     * already a number, and building a Date from one parses nothing. Both
+     * spellings of reading a string count, `new Date(label)` and
+     * `Date.parse(label)`: they are the same parse, and trading one for the
+     * other must not read as the cache breaking.
      */
     const parsesDuring = (work) => {
         const RealDate = globalThis.Date;
@@ -197,6 +200,11 @@ describe("parsing the labels", () => {
             constructor(...args) {
                 if (typeof args[0] === "string") parses++;
                 super(...args);
+            }
+
+            static parse(...args) {
+                if (typeof args[0] === "string") parses++;
+                return RealDate.parse(...args);
             }
         };
 
@@ -211,7 +219,9 @@ describe("parsing the labels", () => {
 
     it("counts what it is watching for", () => {
         assert.equal(parsesDuring(() => new Date("2026-08-09T10:00:00.000Z")), 1);
+        assert.equal(parsesDuring(() => Date.parse("2026-08-09T10:00:00.000Z")), 1);
         assert.equal(parsesDuring(() => new Date(0)), 0);
+        assert.equal(parsesDuring(() => new Date(new Date(0))), 0);
     });
 
     // Everything one PingChart recompute builds out of one series.

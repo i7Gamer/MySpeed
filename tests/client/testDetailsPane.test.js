@@ -78,16 +78,12 @@ describe("the pane shows every stored column", () => {
         });
     }
 
-    it("shows the server's address and number beside its name rather than instead of it", () => {
-        // The secondary line drops whatever the line above it is already
-        // showing, rather than gating the address on the name: a row whose name
-        // is absent used to print the city on both lines and the address that
-        // actually answered on neither.
-        assert.match(pane, /const serverPrimary = test\.serverName \|\| test\.serverLocation \|\| test\.serverHost/);
-        assert.doesNotMatch(pane, /serverName \? test\.serverHost/);
-        assert.match(pane, /part !== serverPrimary/);
-        assert.match(pane, /test\.serverId \? `#\$\{test\.serverId}` : null/);
-    });
+    // The columns loop above already proves the pane reads every server
+    // column; HOW the two server lines divide them - the fallback chain, the
+    // dedupe, the host no longer gated on the name - is executed against
+    // fixture rows in detailServerLine.test.js rather than pinned as source
+    // text here, so a refactor of the expression answers to its behaviour in
+    // one place instead of its spelling in two.
 });
 
 /**

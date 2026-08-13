@@ -13,6 +13,10 @@ const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), "utf8");
 const clientSource = read("client", "src", "common", "components", "PauseDialog", "quietHoursWindow.js");
 const serverSource = read("server", "util", "quietHours.js");
 
+// The server's give-up limit lives with the schedule walker in tasks/timer.js
+// rather than beside the window test, so the parity here reads a third file.
+const timerSource = read("server", "tasks", "timer.js");
+
 /**
  * The client re-implements the server's quiet window so the dialogs can say what
  * the scheduler is going to do without asking it: whether a window is complete
@@ -47,6 +51,13 @@ const boundsOf = (source) => {
     return {hours: Number(match[1]), minutes: Number(match[2])};
 };
 
+const occurrenceLimitOf = (source) => {
+    const match = source.match(/MAX_QUIET_OCCURRENCES\s*=\s*(\d+)/);
+    assert.ok(match, "no swallowed-occurrence limit found");
+
+    return Number(match[1]);
+};
+
 describe("the quiet hours window is read the same on both sides", () => {
     it("uses the same off sentinel", () => {
         assert.equal(sentinelOf(clientSource), sentinelOf(serverSource));
@@ -58,6 +69,15 @@ describe("the quiet hours window is read the same on both sides", () => {
 
     it("bounds the hour and the minute the same way", () => {
         assert.deepEqual(boundsOf(clientSource), boundsOf(serverSource));
+    });
+
+    // Both walkers step over the occurrences a window swallows before giving
+    // up, and the client's limit claims to mirror the server's: a client
+    // allowed fewer steps would show no preview for a window the scheduler
+    // still finds a way out of, and one allowed more would preview a test the
+    // scheduler has already given up on.
+    it("gives up after the same number of swallowed occurrences", () => {
+        assert.equal(occurrenceLimitOf(clientSource), occurrenceLimitOf(timerSource));
     });
 });
 
