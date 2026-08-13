@@ -133,7 +133,7 @@ describe("the overview row carries both quality figures", () => {
      * a jitter of 40 ms sat in exactly the same grey as one of 2.
      */
     it("grades both figures with the same functions the pane uses", () => {
-        assert.match(figures, /level:\s*jitterColour\(props\.jitter\)/);
+        assert.match(figures, /level:\s*jitterColour\(formatLatency\(props\.jitter\)\)/);
         assert.match(figures, /level:\s*packetLossColour\(props\.packetLoss\)/);
     });
 

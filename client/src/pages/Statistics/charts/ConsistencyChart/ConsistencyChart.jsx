@@ -121,14 +121,14 @@ export const ConsistencyChart = (props) => {
                 <div className="consistency-item">
                     <div className="consistency-info">
                         <h2>{t("latest.jitter")}</h2>
-                        <p className={"icon-" + jitterColour(data.ping.jitter)}>
+                        <p className={"icon-" + jitterColour(formatLatency(data.ping.jitter))}>
                             {formatLatencyWithUnit(data.ping.jitter, t("latest.jitter_unit"))}
                         </p>
                         <span className="consistency-detail">{t("statistics.consistency.jitter_detail")}</span>
                         {spreads.jitter && <span className="consistency-detail">{spreads.jitter}</span>}
                     </div>
                     <FontAwesomeIcon icon={faWaveSquare}
-                                     className={"icon-" + jitterColour(data.ping.jitter)} />
+                                     className={"icon-" + jitterColour(formatLatency(data.ping.jitter))} />
                 </div>
 
                 {/* Bufferbloat is stability under load, so it sits with the

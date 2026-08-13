@@ -213,7 +213,12 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
             key: "jitter",
             icon: faWaveSquare,
             info: jitterInfo,
-            level: jitterColour(test.jitter),
+            // The printed figure, like the ping above: a stored 4.96 prints
+            // "5", and green beside a printed 5 - the number the scale calls
+            // orange - is the icon contradicting its own caption. The row and
+            // the consistency card grade the same way, so the colour still
+            // never changes between two views of one measurement.
+            level: jitterColour(formatLatency(test.jitter)),
             text: formatLatencyWithUnit(test.jitter, t("latest.jitter_unit")),
             label: `${t("latest.jitter")} ${formatLatencyWithUnit(test.jitter, t("latest.jitter_unit"))}`
         },

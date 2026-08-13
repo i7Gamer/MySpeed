@@ -277,14 +277,15 @@ describe("the quality strip beside the ping", () => {
     });
 
     /**
-     * The colour is deliberately left on the stored figure. The overview row
-     * draws the same jitter through the same helper, so grading it here on the
-     * printed value would make one measurement change colour between a row and
-     * the pane it expands to - the worse of the two faults, and one this test
-     * exists to catch.
+     * The colour grades the printed figure, exactly as the ping's does. A
+     * stored 19.96 prints "20", and a green icon beside a printed 20 - the very
+     * number the scale calls orange - reads as the interface disagreeing with
+     * itself. The row, this pane and the consistency card all moved together,
+     * so no measurement changes colour between two views either - the fault
+     * the previous version of this test held the raw grading in place against.
      */
-    it("grades it from the stored figure, not the printed one", () => {
-        assert.equal(entry("jitter").level, jitterColour(19.96));
+    it("grades it from the printed figure, not the stored one", () => {
+        assert.equal(entry("jitter").level, jitterColour(formatLatency(19.96)));
         assert.notEqual(jitterColour(19.96), jitterColour(formatLatency(19.96)),
             "a fixture both gradings agree on proves nothing here");
     });

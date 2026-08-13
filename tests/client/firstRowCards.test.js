@@ -90,7 +90,7 @@ describe("the jitter row on the stability card", () => {
      */
     it("renders the average the payload already carried", () => {
         assert.match(consistency, /data\.ping\.jitter/);
-        assert.match(consistency, /jitterColour\(data\.ping\.jitter\)/);
+        assert.match(consistency, /jitterColour\(formatLatency\(data\.ping\.jitter\)\)/);
     });
 
     // A range in which nothing measured jitter returns an explicit null, and

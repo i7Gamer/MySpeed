@@ -182,7 +182,7 @@ describe("the connection's quality figures sit on the ping card", () => {
         // views of the same test.
         assert.match(beforeFacts, /packetLossColour\(test\.packetLoss\)/,
             "packet loss is not graded, so a lossy line reads the same as a clean one");
-        assert.match(beforeFacts, /jitterColour\(test\.jitter\)/,
+        assert.match(beforeFacts, /jitterColour\(formatLatency\(test\.jitter\)\)/,
             "jitter sits ungraded beside a graded packet loss");
     });
 });

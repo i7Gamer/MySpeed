@@ -76,7 +76,9 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
             icon: faWaveSquare,
             info: jitterInfo,
             label: t("info.jitter.title"),
-            level: jitterColour(props.jitter),
+            // Graded from the same 1-dp figure printed below it, as the ping's
+            // colour is - see the pane's quality strip for why.
+            level: jitterColour(formatLatency(props.jitter)),
             // A latency, printed at the one decimal the ping beside it uses:
             // it is stored with two, and stood next to a ping trimmed to one -
             // the same measurement in the same unit written two ways on one
