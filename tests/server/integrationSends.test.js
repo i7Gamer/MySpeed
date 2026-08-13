@@ -57,6 +57,16 @@ describe("discord", () => {
         assert.match(sent[0].body.embeds[0].description, /100/);
     });
 
+    // Discord documents a User-Agent as required and its edge rejects requests
+    // that arrive without one; node's fetch supplies no default.
+    it("identifies itself on every request", async () => {
+        const {events} = load(setupDiscord);
+        await fire(events, "testFinished", config, RESULT);
+        await fire(events, "testFailed", config, "boom");
+
+        for (const request of sent) assert.match(request.headers["user-agent"], /^MySpeed/);
+    });
+
     it("substitutes every measurement into the default message", async () => {
         const {events} = load(setupDiscord);
         await fire(events, "testFinished", config, RESULT);

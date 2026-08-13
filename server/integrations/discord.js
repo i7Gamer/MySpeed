@@ -6,11 +6,42 @@ const defaults = {
     failed: ":x: **A speedtest has failed**\n > `Reason`: %error%"
 };
 
+/**
+ * Discord's HTTP API documents a User-Agent as required, and the edge in front
+ * of it does reject requests that arrive without one. Node's fetch sends no
+ * default, so every notification went out headerless - which fits the half of
+ * the reports that say the webhook saves and then never delivers. The webhook
+ * integration beside this one has always identified itself.
+ */
+const USER_AGENT = "MySpeed (https://github.com/i7Gamer/MySpeed)";
+
 const send = (url, username, color, description, activity) =>
     postJson(url, {
         content: null, username,
         embeds: [{description, color, footer: {text: "MySpeed"}, timestamp: new Date().toISOString()}]
-    }, {activity});
+    }, {headers: {"user-agent": USER_AGENT}, activity});
+
+/**
+ * A discord webhook URL, as discord itself issues them.
+ *
+ * Three things were wrong with the pattern this replaces,
+ * `/https:\/\/.*discord.com\/api\/webhooks\/\d+\/.+/`:
+ *
+ * - `discordapp.com` was rejected. That host is still served and still handed
+ *   out, and the unescaped `.` did not rescue it - "discord" plus any single
+ *   character plus "com" does not match "discordapp.com". The reported
+ *   workaround was to delete "app" from one's own webhook URL.
+ * - It was unanchored, and both ends check it with `RegExp.test`, which matches
+ *   anywhere in the string. Any URL at all that merely contained a
+ *   webhook-shaped substring was accepted - and the value that is stored is
+ *   where the speedtest results are then posted.
+ * - The leading `.*` accepted any host ending in the pattern, so
+ *   `notdiscord.com` passed.
+ *
+ * The optional query string is discord's own thread targeting (`?thread_id=`),
+ * and the version segment is the equally valid `/api/v10/webhooks/...` form.
+ */
+const WEBHOOK_URL = /^https:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api(?:\/v\d+)?\/webhooks\/\d+\/[\w-]+(?:\?\S*)?$/;
 
 export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {
@@ -26,7 +57,7 @@ export default (registerEvent) => {
     return {
         icon: "fa-brands fa-discord",
         fields: [
-            {name: "url", type: "text", required: true, secret: true, regex: /https:\/\/.*discord.com\/api\/webhooks\/\d+\/.+/},
+            {name: "url", type: "text", required: true, secret: true, regex: WEBHOOK_URL},
             {name: "display_name", type: "text", required: false},
             {name: "send_finished", type: "boolean", required: false},
             {name: "finished_message", type: "textarea", required: false},
