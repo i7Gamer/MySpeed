@@ -80,8 +80,13 @@ export const parseOokla = (test) => {
     let download = roundSpeed(test.download.bandwidth);
     let upload = roundSpeed(test.upload.bandwidth);
     let time = Math.round((test.download.elapsed + test.upload.elapsed) / 1000);
-    let serverName = test.server?.name ?? null;
-    let serverHost = test.server?.host ?? null;
+    // text(), like the location below: an empty name used to pass through
+    // unchanged, and the detail pane skips it in its fallback chain while
+    // gating the host on the name being truthy - so a server answering
+    // {"name":"","location":"Glattbrugg"} printed the city twice and the host
+    // that actually answered nowhere.
+    let serverName = text(test.server?.name);
+    let serverHost = text(test.server?.host);
     // Where the server is, as opposed to who runs it. The CLI keeps the two
     // apart - {"name":"Salt Mobile SA","location":"Glattbrugg"} - and writes
     // them as a pair in its own CSV. Only the sponsor was kept, so a history
@@ -89,7 +94,7 @@ export const parseOokla = (test) => {
     // not be compared for whether the traffic had moved city.
     let serverLocation = text(test.server?.location);
 
-    return {ping, jitter, download, upload, time, resultId: test.result?.id, serverName, serverHost,
+    return {ping, jitter, download, upload, time, resultId: text(test.result?.id), serverName, serverHost,
         serverLocation,
         provider: OOKLA,
         packetLoss: round(test.packetLoss),
@@ -98,8 +103,8 @@ export const parseOokla = (test) => {
         // Who the connection was, as the provider saw it: a changed address or
         // provider explains a step in the numbers that otherwise reads as the
         // line itself degrading.
-        isp: test.isp ?? null,
-        externalIp: test.interface?.externalIp ?? null,
+        isp: text(test.isp),
+        externalIp: text(test.interface?.externalIp),
         // What the run cost in traffic. A single test here moved over two
         // gigabytes, which is the sort of thing worth knowing before scheduling
         // one every fifteen minutes on a metered line.
@@ -129,7 +134,7 @@ export const parseLibre = (test) => ({...test, ...NO_QUALITY_FIGURES, provider: 
     // measured zero rather than nulling it as falsy.
     jitter: round(test.jitter),
     time: Math.round(test.elapsed / 1000), resultId: null,
-    serverName: test.server?.name ?? null, serverHost: test.server?.url ?? null,
+    serverName: text(test.server?.name), serverHost: text(test.server?.url),
     // Its result names the backend and its URL, and nothing about where it is.
     serverLocation: null,
     // Reported only as far as the selected backend reports it: the client block
@@ -260,7 +265,7 @@ const directionSpeed = (measurements) => {
             best = {size, figure};
     }
 
-    return best === null ? 0 : parseFloat(best.figure.toFixed(2));
+    return best === null ? 0 : round(best.figure);
 };
 
 export const parseCloudflare = (test) => {

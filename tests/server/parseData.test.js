@@ -98,7 +98,35 @@ describe("parseOokla", () => {
 
         assert.equal(parsed.serverName, null);
         assert.equal(parsed.serverHost, null);
-        assert.equal(parsed.resultId, undefined);
+        // Null rather than an absent key, as the other two parsers already
+        // report a run with no result page: every consumer reads the row's
+        // identity fields as "reported or null", and an undefined travelled as
+        // far as the webhook before anything coerced it.
+        assert.equal(parsed.resultId, null);
+    });
+
+    /**
+     * An empty name is not a name.
+     *
+     * The location beside it was normalised and the name was not, so a server
+     * answering {"name":"","location":"Glattbrugg"} stored an empty string. The
+     * detail pane's fallback chain skips it and prints the location, while the
+     * line beneath gates the host on the name being truthy - so the city was
+     * printed twice and the host that actually answered nowhere.
+     */
+    it("treats a blank server name as none at all", () => {
+        assert.equal(parseOokla({...ooklaResult, server: {...ooklaResult.server, name: ""}}).serverName, null);
+        assert.equal(parseOokla({...ooklaResult, server: {...ooklaResult.server, name: "   "}}).serverName, null);
+    });
+
+    it("treats a blank server host as none at all", () => {
+        assert.equal(parseOokla({...ooklaResult, server: {...ooklaResult.server, host: ""}}).serverHost, null);
+    });
+
+    // An empty id links to no result page, and the interface offers the link on
+    // the id being present at all.
+    it("treats a blank result id as none at all", () => {
+        assert.equal(parseOokla({...ooklaResult, result: {id: "  "}}).resultId, null);
     });
 
     it("nulls a missing jitter rather than reporting NaN", () => {
@@ -189,6 +217,16 @@ describe("parseOokla", () => {
 
             assert.equal(parsed.externalIp, null);
             assert.equal(parsed.isp, "Salt Mobile");
+        });
+
+        // A field the provider printed but could not fill is not an answer, and
+        // storing one would sit a row that knows nothing about its connection
+        // beside one that does, both looking equally measured.
+        it("treats blank identity strings as absent", () => {
+            const parsed = parseOokla({...withIdentity, isp: "", interface: {externalIp: "   "}});
+
+            assert.equal(parsed.isp, null);
+            assert.equal(parsed.externalIp, null);
         });
     });
 
@@ -377,6 +415,16 @@ describe("parseLibre", () => {
         assert.equal(parsed.serverName, null);
         assert.equal(parsed.serverHost, null);
     });
+
+    // The backends that fill their fields from an absent database answer with
+    // empty strings rather than omitting them, and the server block is no
+    // different: a blank name must not reach a reader as a server that has one.
+    it("treats a blank server name and url as none at all", () => {
+        const parsed = parseLibre({...libreResult, server: {name: "", url: "   "}});
+
+        assert.equal(parsed.serverName, null);
+        assert.equal(parsed.serverHost, null);
+    });
 });
 
 describe("parseCloudflare", () => {
@@ -520,6 +568,16 @@ describe("parseCloudflare", () => {
             assert.equal(upload, 0);
         });
 
+        // Two decimals, the same as every other measurement on the row and by
+        // the same helper the rest of the module rounds with.
+        it("holds the direction's speed to two decimals", () => {
+            const {download} = parseCloudflare(sizedResult([
+                {test_type: "Download", payload_size: 1000000, median: 197.4567, successes: 5}
+            ]));
+
+            assert.equal(download, 197.46);
+        });
+
         it("keeps a genuinely measured zero out of the fallback", () => {
             const {download} = parseCloudflare(sizedResult([
                 {test_type: "Download", payload_size: 100000, median: 0, avg: 0, max: 0, successes: 3}
@@ -531,6 +589,15 @@ describe("parseCloudflare", () => {
 
     it("derives jitter as the mean absolute difference between latency samples", () => {
         assert.equal(parseCloudflare(cloudflareResult).jitter, 3);
+    });
+
+    it("holds the derived jitter to two decimals", () => {
+        const parsed = parseCloudflare({
+            ...cloudflareResult,
+            latency_measurement: {avg_latency_ms: 23.4, latency_measurements: [10, 14.333, 12]}
+        });
+
+        assert.equal(parsed.jitter, 3.33);
     });
 
     it("nulls jitter when there are fewer than two latency samples", () => {
