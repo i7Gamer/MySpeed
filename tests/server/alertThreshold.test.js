@@ -153,11 +153,12 @@ describe("breachesThreshold", () => {
             });
         }
 
-        // On a speed, zero is a real reading - the line delivered nothing - and
-        // it is below every positive limit, so it breaches on the comparison
-        // itself. This is the direction that must never change: reading it as
-        // unusable would still breach, but reading it as no reading at all for
-        // every metric would stop the alert on a dead line.
+        // On a speed, zero is a real reading - the line delivered nothing -
+        // and it is below every positive limit, so it breaches on the
+        // comparison itself. Reading it as unusable would breach too, through
+        // the fail-open case above, so a dead line is announced either way;
+        // what this pins is that the speeds never needed a `measured` hook for
+        // the zero, which is why only latency carries one.
         it("counts a measured zero as the breach it is", () => {
             assert.equal(breachesThreshold(result({download: 0}), {alert_download_below: 100}), true);
             assert.equal(breachesThreshold(result({upload: 0}), {alert_upload_below: 20}), true);
@@ -174,6 +175,15 @@ describe("breachesThreshold", () => {
          */
         it("counts a latency of zero as the non-measurement it is", () => {
             assert.equal(breachesThreshold(result({ping: 0}), {alert_ping_above: 50}), true);
+        });
+
+        // The boundary is exact zero, nothing wider. A fibre or LAN ping
+        // really does live below the millisecond - the parsers keep two
+        // decimals precisely so it can - and a gate that read "under a
+        // millisecond" as "not a reading" would fail open into a breach on
+        // every healthy test such a line runs.
+        it("keeps a sub-millisecond ping as the reading it is", () => {
+            assert.equal(breachesThreshold(result({ping: 0.24}), {alert_ping_above: 50}), false);
         });
 
         // The whole payload parseCloudflare answers on its success path when

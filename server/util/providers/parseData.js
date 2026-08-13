@@ -81,10 +81,12 @@ export const parseOokla = (test) => {
     let upload = roundSpeed(test.upload.bandwidth);
     let time = Math.round((test.download.elapsed + test.upload.elapsed) / 1000);
     // text(), like the location below: an empty name used to pass through
-    // unchanged, and the detail pane skips it in its fallback chain while
-    // gating the host on the name being truthy - so a server answering
-    // {"name":"","location":"Glattbrugg"} printed the city twice and the host
-    // that actually answered nowhere.
+    // unchanged, so a server answering {"name":"","location":"Glattbrugg"}
+    // stored "" where every consumer of an absent value expects null. The
+    // detail pane dedupes its two server lines these days and no longer trips
+    // over it, but the row is read by more than one consumer - the CSV export,
+    // the notification payload, prometheus - and "" is a value each of them
+    // has to know to disbelieve, where null already reads as absent.
     let serverName = text(test.server?.name);
     let serverHost = text(test.server?.host);
     // Where the server is, as opposed to who runs it. The CLI keeps the two

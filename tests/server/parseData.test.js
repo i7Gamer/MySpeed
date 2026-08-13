@@ -109,10 +109,12 @@ describe("parseOokla", () => {
      * An empty name is not a name.
      *
      * The location beside it was normalised and the name was not, so a server
-     * answering {"name":"","location":"Glattbrugg"} stored an empty string. The
-     * detail pane's fallback chain skips it and prints the location, while the
-     * line beneath gates the host on the name being truthy - so the city was
-     * printed twice and the host that actually answered nowhere.
+     * answering {"name":"","location":"Glattbrugg"} stored an empty string
+     * where every consumer of the row's identity fields reads "reported or
+     * null". The detail pane of the day tripped over it visibly - the city
+     * printed twice, the host nowhere - and though the pane has since learned
+     * to dedupe, the CSV export, the notification payload and prometheus all
+     * still read the column as stored.
      */
     it("treats a blank server name as none at all", () => {
         assert.equal(parseOokla({...ooklaResult, server: {...ooklaResult.server, name: ""}}).serverName, null);
@@ -568,8 +570,10 @@ describe("parseCloudflare", () => {
             assert.equal(upload, 0);
         });
 
-        // Two decimals, the same as every other measurement on the row and by
-        // the same helper the rest of the module rounds with.
+        // Two decimals, the same as every other measurement on the row. This
+        // pins the contract, not the wiring: round() and the inline expression
+        // it replaced agree on every finite input, so no test can tell them
+        // apart - which is exactly what made the swap safe.
         it("holds the direction's speed to two decimals", () => {
             const {download} = parseCloudflare(sizedResult([
                 {test_type: "Download", payload_size: 1000000, median: 197.4567, successes: 5}
@@ -591,6 +595,10 @@ describe("parseCloudflare", () => {
         assert.equal(parseCloudflare(cloudflareResult).jitter, 3);
     });
 
+    // calculateJitter rounds with its own spelled-out expression rather than
+    // round() - older than the round() helper itself, and left that way on
+    // purpose when directionSpeed was deduplicated. This holds the two to the
+    // same answer so that divergence, not spelling, is what fails a test.
     it("holds the derived jitter to two decimals", () => {
         const parsed = parseCloudflare({
             ...cloudflareResult,

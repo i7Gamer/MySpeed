@@ -33,11 +33,15 @@ const FAILED = -1;
 /**
  * The latency of a run that measured nothing.
  *
- * No connection answers in under a millisecond, so a stored zero here is never
- * a reading. parseCloudflare produces exactly that on its success path: its
- * no-usable-figures fallback answers `{ping: 0, download: 0, upload: 0}`, and
- * `round(avg_latency_ms) ?? 0` yields the same whenever the latency block
- * carries no average.
+ * Not because fast lines do not exist - on fibre or a LAN the whole reading
+ * lives below the millisecond, which is exactly why the parsers keep two
+ * decimals - but because those decimals are kept: a genuine 0.24 arrives here
+ * as 0.24. Only a fabricated value stores as exactly zero, and parseCloudflare
+ * produces one on its success path: its no-usable-figures fallback answers
+ * `{ping: 0, download: 0, upload: 0}`, and `round(avg_latency_ms) ?? 0` yields
+ * the same whenever the latency block carries no average. The comparison
+ * below must stay exact for the same reason - widened to "under a
+ * millisecond", it would swallow every real fibre reading with it.
  */
 const UNMEASURED_LATENCY = 0;
 
@@ -53,9 +57,11 @@ const UNMEASURED_LATENCY = 0;
  *
  * That inverted comparison is also why only latency declares which readings are
  * real. A zero speed is a genuine and alarming reading - the line delivered
- * nothing, and `0 < limit` breaches every limit there is - so `measured` is
- * deliberately absent from the two speeds. Extending it to them would mute the
- * alert on a dead line, which is the worse fault by far.
+ * nothing, and `0 < limit` breaches every limit there is - so on the speeds a
+ * `measured` hook has nothing to decide: read as a reading the zero breaches by
+ * arithmetic, read as unusable it breaches through the fail-open case in
+ * breachesThreshold. Only on latency do the two roads part, because a zero
+ * compared with `>` is the one value that can never breach anything.
  */
 export const ALERT_METRICS = [
     {
