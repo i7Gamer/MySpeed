@@ -45,11 +45,25 @@
   text-transform: uppercase
   letter-spacing: 0.03em
 
+// Beside the value, wrapping under it where there is no room for both. The
+// cards sit on an auto-fit grid whose tracks go down to 13rem, which is too
+// narrow for two figures on one line - and putting the pair on one line without
+// letting it wrap broke the unit off the number instead, which is worse than
+// the stack it replaced.
+.detail-metric-value-row
+  display: flex
+  flex-wrap: wrap
+  align-items: baseline
+  gap: 0.5rem 0.75rem
+
 .detail-metric-value
   font-size: 1.75rem
   font-weight: 600
   color: $white
   line-height: 1.1
+  // The row is free to break between the value and the figures beside it, and
+  // must never break inside the value itself.
+  white-space: nowrap
 
 .detail-metric-unit
   font-size: 0.9rem
@@ -57,10 +71,7 @@
   color: $subtext
   margin-left: 0.35rem
 
-// Under the value rather than trailing it: the cards sit on an auto-fit grid
-// whose tracks go down to 13rem, and a second figure on the same line pushed the
-// unit onto a line of its own long before the track got that narrow.
-//
+// Right of the value, the way the target label sits right of the change below.
 // The colour is set here and not on the parts, so a part carrying an icon-*
 // grade overrides it by declaring one at all - an inherited colour loses to any
 // declaration, whatever the two selectors weigh.
@@ -69,7 +80,7 @@
   flex-wrap: wrap
   align-items: center
   gap: 0.75rem
-  margin-top: 0.4rem
+  margin-left: auto
   font-size: 0.9rem
   color: $subtext
 
@@ -107,17 +118,32 @@
   &.icon-error
     background-color: $accent-danger
 
+// One line for both comparisons: how far this reading is from the target, and
+// how far it moved since the last test. They were a line each, under a bar that
+// already says the first of them in pictures.
+//
+// Wrapping, because the two together are the widest thing on the card - "Exactly
+// on your target" beside "+12.4 Mbps" does not fit a 13rem track.
+.detail-metric-foot
+  display: flex
+  flex-wrap: wrap
+  align-items: center
+  justify-content: space-between
+  gap: 0.35rem 0.75rem
+  margin-top: 0.6rem
+
 .detail-target-label
-  display: block
-  margin-top: 0.35rem
   font-size: 0.8rem
   color: $subtext
+  // Right by its own margin rather than by the gap: the oldest test has no
+  // earlier one to compare against, and space-between alone would leave the
+  // label sitting on the left where the change should have been.
+  margin-left: auto
 
 .detail-change
   display: flex
   align-items: center
   gap: 0.35rem
-  margin-top: 0.6rem
   font-size: 0.85rem
 
   svg

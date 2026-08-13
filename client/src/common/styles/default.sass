@@ -61,6 +61,26 @@ body::before
 .help-icon
   cursor: help
 
+// Strips the button chrome back to what the icon looked like as a bare svg,
+// keeping only what makes it operable - including a visible focus ring, since
+// a control you can tab to but cannot see is no better than one you cannot
+// reach. Global, like the button itself: the overview row drew the first one,
+// the detail pane draws five more.
+.help-button
+  display: inline-flex
+  align-items: center
+  padding: 0
+  border: none
+  background: none
+  color: inherit
+  font: inherit
+  cursor: help
+
+  &:focus-visible
+    outline: 2px solid var(--accent-primary)
+    outline-offset: 3px
+    border-radius: 0.25rem
+
 .icon-red
   color: $accent-danger
 

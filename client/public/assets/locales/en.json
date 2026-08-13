@@ -273,6 +273,10 @@
       "title": "Jitter",
       "description": "Jitter is the variation in ping response times. Lower jitter means a more stable connection, which is important for real-time applications like video calls and gaming."
     },
+    "packet_loss": {
+      "title": "Packet loss",
+      "description": "Packet loss is the share of data that never arrived and had to be sent again. Anything above zero is felt as stutter in calls and games long before it shows as a lower speed. Only Ookla measures it, so a test from another provider leaves it blank rather than reporting zero."
+    },
     "up": {
       "title": "Upload speed",
       "description": "Upload speed affects your browsing experience. The more you get, the faster your computer can send data."

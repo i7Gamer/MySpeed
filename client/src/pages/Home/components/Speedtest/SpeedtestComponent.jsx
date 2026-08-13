@@ -15,24 +15,9 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {convertSpeed, formatLatency, formatShortDay, formatShortTime, getSpeedUnit} from "@/common/utils/FormatUtil";
-import {useAlert} from "@/common/contexts/Alert";
-import {downloadInfo, jitterInfo, pingInfo, uploadInfo} from "@/pages/Home/components/Speedtest/utils/dialogs";
-
-/**
- * A metric icon that opens its explanation.
- *
- * A button rather than a click handler on the svg, so it can be tabbed to and
- * activated with the keyboard - Enter and Space come free with the element.
- * `type="button"` because it sits inside no form but browsers default to
- * submit, and the label is what a screen reader announces in place of an icon
- * that means nothing to it.
- */
-const HelpButton = ({label, onOpen, className = "", children}) => (
-    <button type="button" className={`help-button help-icon ${className}`.trim()}
-            aria-label={label} title={label} onClick={onOpen}>
-        {children}
-    </button>
-);
+import {downloadInfo, jitterInfo, pingInfo, uploadInfo} from "@/common/utils/MetricInfo";
+import HelpButton from "@/common/components/HelpButton";
+import {useMetricInfo} from "@/common/hooks/useMetricInfo";
 
 const SpeedtestComponent = forwardRef((props, forwardedRef) => {
     const updateToast = useContext(ToastNotificationContext);
@@ -42,22 +27,12 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
     const [expanded, setExpanded] = useState(false);
 
     const ref = useRef();
-    const alert = useAlert();
+    // Shared with the detail pane this row opens, which draws the same icons
+    // for the same measurements - the click is stopped in there, because the
+    // whole row is the control that expands the panel.
+    const openInfo = useMetricInfo();
 
     useImperativeHandle(forwardedRef, () => ref.current);
-
-    /**
-     * Opens the explanation of a measurement.
-     *
-     * These used to hang off the latest-test panel, so only the newest test
-     * explained itself. The click is stopped here because the whole row is the
-     * control that expands the detail panel.
-     */
-    const openInfo = (event, info) => {
-        event.stopPropagation();
-        const {title, description, buttonText} = info();
-        alert.openAlert(title, description, {buttonText});
-    };
 
     // The friendly reason, or null when the output is not one we can explain.
     // The row shows only this sentence; the panel below appends the raw output,

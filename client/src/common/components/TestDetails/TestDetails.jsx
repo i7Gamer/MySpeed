@@ -12,6 +12,9 @@ import {
 } from "@/common/utils/TestUtil";
 import {changeFrom, differenceFromTarget, percentOfTarget, providerName} from "./utils/details";
 import {describeError} from "./utils/errors";
+import HelpButton from "@/common/components/HelpButton";
+import {useMetricInfo} from "@/common/hooks/useMetricInfo";
+import {downloadInfo, jitterInfo, packetLossInfo, pingInfo, uploadInfo} from "@/common/utils/MetricInfo";
 import "./styles.sass";
 
 const RESULT_URL = "https://www.speedtest.net/result/c/";
@@ -29,23 +32,36 @@ const isMeasured = (value) => value !== null && value !== undefined;
 /**
  * One measurement, with how it compares to the configured optimum and to the
  * test before it.
+ *
+ * Two lines carrying two figures each, rather than four carrying one: the value
+ * and what the line does beside it, then how far this is from the target
+ * against how far it moved since the last test. Stacked, the card ran four
+ * lines deep while its widest line used half the track.
+ *
+ * The icon opens the explanation of what the measurement is, the way the same
+ * glyph does on the row that opens this pane - it was decoration here, so
+ * expanding a row for more information took the explanations away.
  */
 const DetailMetric = ({icon, label, value, unit, level, percent, targetLabel, change, changeUnit, higherIsBetter,
-                          sub = null}) => {
+                          info, openInfo, sub = null}) => {
     const improved = change !== null && change.direction !== "same"
         && (change.direction === "up") === higherIsBetter;
 
     return (
         <div className="detail-metric">
             <div className="detail-metric-head">
-                <FontAwesomeIcon icon={icon} className={"detail-metric-icon icon-" + level}/>
+                <HelpButton label={label} onOpen={(event) => openInfo(event, info)}>
+                    <FontAwesomeIcon icon={icon} className={"detail-metric-icon icon-" + level}/>
+                </HelpButton>
                 <span className="detail-metric-label">{label}</span>
             </div>
-            <div className="detail-metric-value">
-                {value}<span className="detail-metric-unit">{unit}</span>
-            </div>
 
-            {sub}
+            <div className="detail-metric-value-row">
+                <div className="detail-metric-value">
+                    {value}<span className="detail-metric-unit">{unit}</span>
+                </div>
+                {sub}
+            </div>
 
             {percent !== null && (
                 <div className="detail-target">
@@ -53,18 +69,28 @@ const DetailMetric = ({icon, label, value, unit, level, percent, targetLabel, ch
                         <div className={"detail-target-fill icon-" + level}
                              style={{width: `${Math.min(percent, MAX_BAR_PERCENT)}%`}}/>
                     </div>
-                    <span className="detail-target-label">{targetLabel}</span>
                 </div>
             )}
 
-            {change !== null && (
-                <div className={`detail-change detail-change-${improved ? "better" : change.direction === "same" ? "same" : "worse"}`}>
-                    <FontAwesomeIcon icon={DIRECTION_ICONS[change.direction]}/>
-                    <span>
-                        {change.direction === "same"
-                            ? t("test.details.unchanged")
-                            : `${change.difference > 0 ? "+" : ""}${change.difference} ${changeUnit}`}
-                    </span>
+            {/* The change leads and the target label is pushed right by its own
+                margin: on the oldest test there is no earlier one to compare
+                against, and letting the gap do the alignment would leave the
+                label sitting where the change should be. */}
+            {(change !== null || (percent !== null && targetLabel)) && (
+                <div className="detail-metric-foot">
+                    {change !== null && (
+                        <div className={`detail-change detail-change-${improved ? "better" : change.direction === "same" ? "same" : "worse"}`}>
+                            <FontAwesomeIcon icon={DIRECTION_ICONS[change.direction]}/>
+                            <span>
+                                {change.direction === "same"
+                                    ? t("test.details.unchanged")
+                                    : `${change.difference > 0 ? "+" : ""}${change.difference} ${changeUnit}`}
+                            </span>
+                        </div>
+                    )}
+                    {percent !== null && targetLabel && (
+                        <span className="detail-target-label">{targetLabel}</span>
+                    )}
                 </div>
             )}
         </div>
@@ -112,6 +138,9 @@ const DetailFact = ({label, children}) => (
 export const TestDetails = ({test, previous, previousConnection, className = "", children}) => {
     const [config] = useContext(ConfigContext);
     const [preferences] = useContext(PreferencesContext);
+    // Above the early return: a hook cannot be called conditionally, and a pane
+    // rendered with no test is the condition.
+    const openInfo = useMetricInfo();
 
     if (!test) return null;
 
@@ -161,6 +190,7 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
         isMeasured(test.jitter) && {
             key: "jitter",
             icon: faWaveSquare,
+            info: jitterInfo,
             level: jitterColour(test.jitter),
             text: formatWithUnit(test.jitter, t("latest.jitter_unit")),
             label: `${t("latest.jitter")} ${formatWithUnit(test.jitter, t("latest.jitter_unit"))}`
@@ -168,22 +198,32 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
         isMeasured(test.packetLoss) && {
             key: "packetLoss",
             icon: faLinkSlash,
+            info: packetLossInfo,
             level: packetLossColour(test.packetLoss),
             text: `${test.packetLoss}%`,
             label: `${t("test.details.packet_loss")} ${test.packetLoss}%`
         }
     ].filter(Boolean);
 
-    // One image with one name, the way the down/up pairs below are read: the
-    // icons say which figure is which only to someone who can see them, and
-    // "± 2 ms · 0%" is not a sentence.
+    /**
+     * Beside the latency rather than under it, and each icon explains its own
+     * figure - packet loss appears nowhere else in the interface, so this is
+     * the only place it can be explained at all.
+     *
+     * The group used to be one image with one name, because "± 2 ms · 0%" is
+     * not a sentence and the icons say which figure is which only to someone
+     * who can see them. The name moves onto the buttons: role="img" replaces
+     * everything below it with its own label, so a button inside one is a
+     * control a screen reader never announces. Only the icon is the button -
+     * as button content the value would be swallowed by the label too.
+     */
     const quality = qualityFigures.length > 0 && (
-        <span className="detail-metric-sub"
-              role="img"
-              aria-label={qualityFigures.map((figure) => figure.label).join(", ")}>
-            {qualityFigures.map(({key, icon, text, level}) => (
+        <span className="detail-metric-sub">
+            {qualityFigures.map(({key, icon, info, text, level, label}) => (
                 <span key={key} className={`detail-metric-sub-part${level ? " icon-" + level : ""}`}>
-                    <FontAwesomeIcon icon={icon} className="detail-metric-sub-icon"/>
+                    <HelpButton label={label} onOpen={(event) => openInfo(event, info)}>
+                        <FontAwesomeIcon icon={icon} className="detail-metric-sub-icon"/>
+                    </HelpButton>
                     {text}
                 </span>
             ))}
@@ -195,6 +235,7 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
             key: "ping",
             sub: quality || null,
             icon: faPingPongPaddleBall,
+            info: pingInfo,
             label: t("latest.ping"),
             value: formatLatency(test.ping),
             unit: t("latest.ping_unit"),
@@ -208,6 +249,7 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
         {
             key: "download",
             icon: faArrowDown,
+            info: downloadInfo,
             label: t("latest.down"),
             value: convertSpeed(test.download, preferences),
             unit: speedUnit,
@@ -221,6 +263,7 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
         {
             key: "upload",
             icon: faArrowUp,
+            info: uploadInfo,
             label: t("latest.up"),
             value: convertSpeed(test.upload, preferences),
             unit: speedUnit,
@@ -264,7 +307,8 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
             ) : (
                 <>
                     <div className="detail-metrics">
-                        {metrics.map(({key, ...metric}) => <DetailMetric key={key} {...metric}/>)}
+                        {metrics.map(({key, ...metric}) =>
+                            <DetailMetric key={key} openInfo={openInfo} {...metric}/>)}
                     </div>
 
                     <div className="detail-facts">
