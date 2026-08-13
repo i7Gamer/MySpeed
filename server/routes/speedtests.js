@@ -158,7 +158,12 @@ app.post("/run", password(false), async (req, res) => {
 app.get("/status", password(true), async (req, res) => {
     const latest = await tests.getLatest();
     const progress = testTask.getProgress();
-    const nextTest = timer.nextRun(await config.getValue("cron"));
+    // The quiet window too, or the countdown names a test the scheduler will
+    // refuse and then resets to the next one it will also refuse.
+    const nextTest = timer.nextRun(await config.getValue("cron"), {
+        start: await config.getValue("quietHoursStart"),
+        end: await config.getValue("quietHoursEnd")
+    });
 
     // getLatest strips a null error rather than reporting it, and answers
     // with undefined on an install that has never run a test - so absence is

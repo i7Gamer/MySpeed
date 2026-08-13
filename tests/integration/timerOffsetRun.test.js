@@ -1,6 +1,7 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, setConfig } from "./helpers/boot.js";
+import { isQuietHour } from "../../server/util/quietHours.js";
 
 /**
  * runTask() itself, which is the only place the offset guard actually lives.
@@ -190,5 +191,62 @@ describe("runTask during the configured quiet hours", () => {
         await timer.runTask();
 
         assert.equal(await countTests(), 1, "half a window silenced the run");
+    });
+});
+
+/**
+ * What the status endpoint counts down to.
+ *
+ * `nextRun` read the cron and nothing else, so through a quiet window the
+ * dashboard advertised a test at the top of each hour, the scheduler refused
+ * it, and the countdown reset to the next one - all night, with nothing saying
+ * why. The time shown has to be a time a test will actually run.
+ *
+ * The window is computed from the schedule's own next occurrence rather than
+ * written out, so the assertions hold whenever the suite happens to run.
+ */
+describe("nextRun through the configured quiet hours", () => {
+    const HOURLY = "0 * * * *";
+    const HOURS_PER_DAY = 24;
+
+    const atHour = (date, offsetHours) =>
+        `${String((date.getHours() + offsetHours + HOURS_PER_DAY) % HOURS_PER_DAY).padStart(2, "0")}:00`;
+
+    it("names the plain next occurrence when no window is set", () => {
+        assert.equal(timer.nextRun(HOURLY), timer.nextRun(HOURLY, {start: "none", end: "none"}));
+    });
+
+    it("names the plain next occurrence for a window it falls outside", () => {
+        const plain = new Date(timer.nextRun(HOURLY));
+        // A window starting an hour after the next test and lasting an hour.
+        const window = {start: atHour(plain, 1), end: atHour(plain, 2)};
+
+        assert.equal(timer.nextRun(HOURLY, window), plain.toISOString());
+    });
+
+    // The whole point: an occurrence the scheduler would skip is not offered.
+    it("skips the occurrences a quiet window would swallow", () => {
+        const plain = new Date(timer.nextRun(HOURLY));
+        const window = {start: atHour(plain, 0), end: atHour(plain, 2)};
+
+        const announced = new Date(timer.nextRun(HOURLY, window));
+
+        assert.ok(announced > plain, "the quiet window did not push the announced test out");
+        assert.equal(isQuietHour(announced, window.start, window.end), false,
+            "the announced test still falls inside the quiet window");
+    });
+
+    // A window that crosses midnight is the one people actually set.
+    it("skips a window that crosses midnight", () => {
+        const plain = new Date(timer.nextRun(HOURLY));
+        const window = {start: atHour(plain, 0), end: atHour(plain, 3)};
+
+        const announced = new Date(timer.nextRun(HOURLY, window));
+
+        assert.equal(isQuietHour(announced, window.start, window.end), false);
+    });
+
+    it("still answers null for a cron it cannot read", () => {
+        assert.equal(timer.nextRun("not a cron", {start: "23:00", end: "08:00"}), null);
     });
 });

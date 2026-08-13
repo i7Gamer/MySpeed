@@ -103,11 +103,41 @@ export const startTimer = (cron) => {
  * Approximate when the schedule offset is enabled: that deliberately delays each
  * run by up to a few minutes to avoid every instance testing on the same tick.
  */
-export const nextRun = (cron = currentCron) => {
+/**
+ * How many scheduled occurrences are stepped over before giving up.
+ *
+ * A window can swallow a long run of them - a minutely cron under an eight-hour
+ * quiet window is 480 - and a pair that swallows every one of them must end the
+ * search rather than walk the schedule forever. Answering null then is honest:
+ * no test is going to run.
+ */
+const MAX_QUIET_OCCURRENCES = 1500;
+
+/**
+ * When the schedule will next actually fire, or null if none is running.
+ *
+ * `quietHours` is optional and defaults to none, so a caller that has no
+ * business reading the configuration still gets the plain cron answer.
+ *
+ * Occurrences inside the quiet window are stepped over rather than reported:
+ * runTask refuses them, so announcing one meant the dashboard counted down to a
+ * test that never happened, then silently reset to the next - all night, with
+ * nothing saying why.
+ */
+export const nextRun = (cron = currentCron, quietHours = null) => {
     if (!cron || !isValidCron(cron)) return null;
 
     try {
-        return CronExpressionParser.parse(cron).next().toISOString();
+        const schedule = CronExpressionParser.parse(cron);
+
+        for (let stepped = 0; stepped < MAX_QUIET_OCCURRENCES; stepped++) {
+            const occurrence = schedule.next().toDate();
+
+            if (!isQuietHour(occurrence, quietHours?.start, quietHours?.end))
+                return occurrence.toISOString();
+        }
+
+        return null;
     } catch (e) {
         return null;
     }
@@ -128,6 +158,15 @@ export const runTask = async () => {
         return;
     }
 
+    // Captured before the first await, so a teardown during any of the config
+    // reads or the delay counts against this run. It has to precede the quiet
+    // hours check below rather than follow it: that check awaits two config
+    // reads of its own, and a schedule replaced while they were in flight would
+    // otherwise be captured here as the new generation - leaving this run
+    // looking current and firing one test from a schedule that no longer
+    // exists, which is the whole thing the counter exists to catch.
+    const startedIn = generation;
+
     // Only the scheduled runs are held to the quiet hours. A test started by
     // hand is someone asking for one now, and create() is reached directly for
     // those - refusing it here would be a fault rather than a courtesy.
@@ -135,10 +174,6 @@ export const runTask = async () => {
         console.warn("Within the configured quiet hours. Skipping this test...");
         return;
     }
-
-    // Captured before the first await, so a teardown during either the config
-    // read or the delay counts against this run.
-    const startedIn = generation;
 
     const scheduleOffset = await config.getValue("scheduleOffset");
 
