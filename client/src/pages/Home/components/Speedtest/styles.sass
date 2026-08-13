@@ -1,12 +1,20 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/layout" as *
 
-// The measurements are what give a row its height. A failed row shows a sentence
-// instead of them, so it has to reserve the same line box or the list jogs as it
-// scrolls past. Both are stated here rather than left to the browser's default,
-// so the two cannot drift.
+// The measurements are what give a row its height. Their size is stated here
+// rather than left to the browser's default, so the line box a row takes is one
+// this file knows - a list that changes row height as it scrolls is what the
+// constants here exist to prevent.
 $metric-font-size: 28pt
 $metric-line-height: 1.2
+
+// The floor every line inside a card stands on, the failure sentence included.
+// It was the metric line box above until the grade badge arrived: drawn at the
+// size of an icon, that is taller than a value's line box, so the measurement
+// rows were raised to clear it and the failure row was left behind on the old
+// floor - three pixels short of every neighbour it scrolls past. One value, so
+// raising the rows raises the sentence beside them.
+$row-min-height: 3rem
 
 // The card chrome lives on the wrapper so the detail panel opens inside the
 // same card rather than under a detached one.
@@ -87,7 +95,7 @@ $metric-line-height: 1.2
 .speedtest-row
   display: flex
   align-items: center
-  min-height: 3rem
+  min-height: $row-min-height
 
 // Takes the space the three metric columns would have used, so a failed row is
 // the same height as every other one and the list does not jump.
@@ -97,8 +105,8 @@ $metric-line-height: 1.2
   gap: 0.5rem
   grid-column: 2 / 6
   min-width: 0
-  // The line box the measurements would have occupied.
-  min-height: $metric-font-size * $metric-line-height
+  // The same floor the measurements stand on.
+  min-height: $row-min-height
 
 .speedtest-failure-text
   margin: 0
@@ -323,7 +331,7 @@ $metric-line-height: 1.2
     // value's line box, so without this a row carrying one stood 14px taller
     // than the row below it that did not - the list jogging as it scrolls is
     // the thing the fixed line box at the top of this file exists to stop.
-    grid-template-rows: repeat(2, minmax(3rem, auto))
+    grid-template-rows: repeat(2, minmax($row-min-height, auto))
     row-gap: 0.75rem
     // Room on the right for the chevron, which is out of the flow here: the
     // last column reaches the padding edge, and centred in its track the

@@ -77,7 +77,10 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
             info: jitterInfo,
             label: t("info.jitter.title"),
             level: jitterColour(props.jitter),
-            text: props.jitter
+            // A latency, printed like every other one: it is stored with two
+            // decimals and stood beside a ping trimmed to one, the same
+            // measurement in the same unit written two ways on one line.
+            text: formatLatency(props.jitter)
         },
         isMeasured(props.packetLoss) && {
             key: "packetLoss",
@@ -137,6 +140,16 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
             <div className="speedtest" onClick={() => setExpanded(!expanded)}
                  role="button" tabIndex={0} aria-expanded={expanded}
                  onKeyDown={(event) => {
+                     // Only the keys aimed at the row itself. The help buttons
+                     // inside it are controls of their own, and Enter and Space
+                     // on one bubble up here: preventDefault on a keydown
+                     // cancels the click the browser would have synthesised from
+                     // that key, so the button's own handler never ran and the
+                     // row expanded instead of explaining the measurement. The
+                     // shared hook stops the click, which by then is an event
+                     // that no longer happens.
+                     if (event.target !== event.currentTarget) return;
+
                      if (event.key === "Enter" || event.key === " ") {
                          event.preventDefault();
                          setExpanded(!expanded);

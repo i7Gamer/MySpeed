@@ -76,6 +76,21 @@ describe("the overview row carries both quality figures", () => {
             "a packet loss of 0% is falsy, and hiding it hides a clean line");
     });
 
+    /**
+     * The jitter is a latency, and every latency in this interface is shown to
+     * one decimal. It went out at the two decimals it is stored with, on the
+     * same line as a ping trimmed to one - the same measurement in the same
+     * unit, printed two ways a centimetre apart. The packet loss beside it is a
+     * percentage and keeps the shape it has.
+     */
+    it("prints the jitter to the precision the ping beside it uses", () => {
+        assert.match(figures, /text:\s*formatLatency\(props\.jitter\)/,
+            "the jitter goes out raw, at two decimals next to a ping at one");
+        assert.match(row, /formatLatency\(props\.ping\)/, "the ping it is printed beside is no longer formatted");
+        assert.doesNotMatch(figures, /formatLatency\(props\.packetLoss\)/,
+            "packet loss is a percentage, not a latency");
+    });
+
     it("explains both figures the way the detail pane does", () => {
         assert.match(figures, /info:\s*jitterInfo/);
         assert.match(figures, /info:\s*packetLossInfo/);
