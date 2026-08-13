@@ -179,6 +179,14 @@ describe("bufferbloat", () => {
         assert.equal(test(4, 4, 900).grade, "F");
     });
 
+    it("keeps the second decimal the server also works to", () => {
+        // Not trimmed to the one decimal a latency is shown at: the server
+        // averages this same quantity across a range, and the two are pinned to
+        // the same arithmetic - so this figure answers to that agreement rather
+        // than to how it is printed.
+        assert.equal(test(10, 14.96, 0).increase, 4.96);
+    });
+
     it("never reports a negative increase", () => {
         // Latency under load below the idle ping is noise, not an improvement.
         assert.equal(test(20, 5, 6).increase, 0);

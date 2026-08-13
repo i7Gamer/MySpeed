@@ -79,7 +79,13 @@ describe("the pane shows every stored column", () => {
     }
 
     it("shows the server's address and number beside its name rather than instead of it", () => {
-        assert.match(pane, /serverName \? test\.serverHost : null/);
+        // The secondary line drops whatever the line above it is already
+        // showing, rather than gating the address on the name: a row whose name
+        // is absent used to print the city on both lines and the address that
+        // actually answered on neither.
+        assert.match(pane, /const serverPrimary = test\.serverName \|\| test\.serverLocation \|\| test\.serverHost/);
+        assert.doesNotMatch(pane, /serverName \? test\.serverHost/);
+        assert.match(pane, /part !== serverPrimary/);
         assert.match(pane, /test\.serverId \? `#\$\{test\.serverId}` : null/);
     });
 });

@@ -7,7 +7,9 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatBytes, formatDateTime, formatLatency, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {
+    convertSpeed, formatBytes, formatDateTime, formatLatency, formatLatencyWithUnit, getSpeedUnit
+} from "@/common/utils/FormatUtil";
 import {
     bufferbloat, bufferbloatColour, connectionChange, getIconBySpeed, isMeasured, jitterColour, packetLossColour
 } from "@/common/utils/TestUtil";
@@ -155,11 +157,27 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
 
     const earlier = previous ?? {};
 
+    // The latency as it is printed, once, for everything that reads it. The card
+    // showed formatLatency's one decimal and computed the change, the distance
+    // from the target, the percentage and the colour from the two the column
+    // stores: 25.44 after 25.36 drew two cards both reading "25.4 ms" with
+    // "+0.08 ms" of change between them, and called that displayed 25.4 "0.44 ms
+    // over" a target of 25. Both sides of every comparison, or the figure and
+    // the sentence under it disagree again.
+    //
+    // The target is whatever was typed into the settings dialog, i.e. a string -
+    // formatLatency hands anything that is not a number back untouched, so it
+    // reaches asTarget exactly as it did before, as do the -1 a failed run
+    // stores and the null of a provider that measured nothing.
+    const ping = formatLatency(test.ping);
+    const pingTarget = formatLatency(targets.ping);
+    const earlierPing = formatLatency(earlier.ping);
+
     // A percentage says everything worth saying about throughput. For latency it
     // does not: the plain distance from the target is what the reader wants, and
     // it cannot be read backwards.
     const latencyTargetLabel = () => {
-        const distance = differenceFromTarget(test.ping, targets.ping);
+        const distance = differenceFromTarget(ping, pingTarget);
         if (distance === null) return null;
         if (distance.direction === "same") return t("test.details.on_target");
 
@@ -185,14 +203,19 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
         // optimum - there is a setting for the ping above them and none for
         // either of these. The same two gradings the consistency panel and the
         // latest-test card already draw them with, so one figure does not change
-        // colour between two views of the same test.
+        // colour between two views of the same test - which is why the jitter is
+        // printed on the trimmed figure and still graded on the stored one. At
+        // two decimals it stood beside a ping trimmed to one, the same
+        // measurement in the same unit written two ways on one card; grading it
+        // on the trimmed figure would move this card's colour away from the
+        // overview row's, which is the worse fault of the two.
         isMeasured(test.jitter) && {
             key: "jitter",
             icon: faWaveSquare,
             info: jitterInfo,
             level: jitterColour(test.jitter),
-            text: formatWithUnit(test.jitter, t("latest.jitter_unit")),
-            label: `${t("latest.jitter")} ${formatWithUnit(test.jitter, t("latest.jitter_unit"))}`
+            text: formatLatencyWithUnit(test.jitter, t("latest.jitter_unit")),
+            label: `${t("latest.jitter")} ${formatLatencyWithUnit(test.jitter, t("latest.jitter_unit"))}`
         },
         isMeasured(test.packetLoss) && {
             key: "packetLoss",
@@ -244,11 +267,11 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
     const loadedLatency = (value) => isMeasured(value) && (
         <span className="detail-metric-sub">
             <span className="detail-metric-sub-part">
-                <HelpButton label={`${t("info.loaded_latency.title")} ${formatWithUnit(value, t("latest.ping_unit"))}`}
+                <HelpButton label={`${t("info.loaded_latency.title")} ${formatLatencyWithUnit(value, t("latest.ping_unit"))}`}
                             onOpen={(event) => openInfo(event, loadedLatencyInfo)}>
                     <FontAwesomeIcon icon={faStopwatch} className="detail-metric-sub-icon"/>
                 </HelpButton>
-                {formatWithUnit(value, t("latest.ping_unit"))}
+                {formatLatencyWithUnit(value, t("latest.ping_unit"))}
             </span>
         </span>
     );
@@ -260,13 +283,13 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
             icon: faPingPongPaddleBall,
             info: pingInfo,
             label: t("latest.ping"),
-            value: formatLatency(test.ping),
+            value: ping,
             unit: t("latest.ping_unit"),
             changeUnit: t("latest.ping_unit"),
-            level: getIconBySpeed(test.ping, targets.ping, false),
-            percent: percentOfTarget(test.ping, targets.ping, {higherIsBetter: false}),
+            level: getIconBySpeed(ping, pingTarget, false),
+            percent: percentOfTarget(ping, pingTarget, {higherIsBetter: false}),
             targetLabel: latencyTargetLabel(),
-            change: changeFrom(test.ping, earlier.ping),
+            change: changeFrom(ping, earlierPing),
             higherIsBetter: false
         },
         {
@@ -303,17 +326,26 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
 
     const bloat = bufferbloat(test);
 
-    // What the server's name alone does not say: where it is, the address that
-    // answered, and the number to pin it by. Any of them may be absent, and on
-    // a provider that reports none the whole line is.
+    // What the main line calls the server: the sponsor - which is what Ookla's
+    // `serverName` holds - falling back to the city, because "which server"
+    // usually means the city rather than the company, and then to whatever
+    // answered.
+    const serverPrimary = test.serverName || test.serverLocation || test.serverHost;
+
+    // What the name alone does not say: where it is, the address that answered,
+    // and the number to pin it by. Any of them may be absent, and on a provider
+    // that reports none the whole line is.
     //
-    // The location leads, because "which server" usually means the city rather
-    // than the company - `serverName` holds what Ookla calls the name, which is
-    // the sponsor.
-    const serverDetail = [test.serverLocation,
-        test.serverName ? test.serverHost : null,
+    // Whichever of them the main line is already showing is dropped rather than
+    // printed twice. The location used to lead this line unconditionally and the
+    // address was shown only when there was a name, so a row that reports a city
+    // and no sponsor - an imported row, whose columns are barely validated, or
+    // any provider that names no server - printed the city on both lines and its
+    // host on neither. The host, with the id beside it, is the half that says
+    // which of a provider's dozen identically named servers answered.
+    const serverDetail = [test.serverLocation, test.serverHost,
         test.serverId ? `#${test.serverId}` : null]
-        .filter(Boolean).join(" · ");
+        .filter((part) => part && part !== serverPrimary).join(" · ");
 
     // Against the nearest earlier test that carries an identity, not simply the
     // row before - see previousConnection.
@@ -465,15 +497,15 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
 
                         {/* The host used to be shown only when the name was
                             missing, so a named server threw its address away -
-                            and the address, with the id beside it, is the half
-                            that says which of a provider's dozen identically
-                            named servers answered, and which one to pin in the
-                            settings to keep measuring against it. Zero is the
-                            column's default, i.e. a provider that numbers no
-                            servers, rather than a server numbered zero. */}
-                        {(test.serverName || test.serverHost || test.serverLocation) && (
+                            and the address is which one to pin in the settings
+                            to keep measuring against it. See serverDetail for
+                            what the second line carries; the id it ends on is
+                            gated because zero is the column's default, i.e. a
+                            provider that numbers no servers rather than a server
+                            numbered zero. */}
+                        {serverPrimary && (
                             <DetailFact label={t("test.details.server")}>
-                                {test.serverName || test.serverLocation || test.serverHost}
+                                {serverPrimary}
                                 {serverDetail && (
                                     <span className="detail-address detail-secondary">{serverDetail}</span>
                                 )}

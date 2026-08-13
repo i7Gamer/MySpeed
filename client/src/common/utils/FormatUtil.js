@@ -225,6 +225,16 @@ export const formatDuration = (seconds) =>
 export const formatWithUnit = (value, unit) =>
     typeof value === "number" && Number.isFinite(value) ? `${value} ${unit}` : NOT_MEASURED;
 
+/**
+ * A latency with its unit, at the one decimal every latency is shown at.
+ *
+ * The two formatters had drifted apart wherever more than one latency is printed
+ * at a time: a detail card trimmed the ping through formatLatency and handed the
+ * jitter beside it straight to formatWithUnit, so one card claimed two different
+ * precisions for two figures measured the same way.
+ */
+export const formatLatencyWithUnit = (ms, unit) => formatWithUnit(formatLatency(ms), unit);
+
 // The ladder a byte count is stepped down, and the size of a step. Decimal
 // rather than binary: the providers state their payloads in decimal - a "100 MB"
 // Cloudflare payload is 100 000 000 bytes - so reporting 95.4 MiB for it would

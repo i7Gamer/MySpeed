@@ -2,9 +2,10 @@ import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import i18n from "i18next";
 import {
-    convertSpeed, formatBytes, formatDateTime, formatDuration, formatLastTest, formatLatency, formatShortDay,
-    formatShortTime, formatTime, formatHour, formatWithUnit, generateRelativeTime, getSpeedUnit, NOT_MEASURED,
-    SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H
+    convertSpeed, formatBytes, formatDateTime, formatDuration, formatLastTest, formatLatency,
+    formatLatencyWithUnit, formatShortDay, formatShortTime, formatTime, formatHour, formatWithUnit,
+    generateRelativeTime, getSpeedUnit, NOT_MEASURED, SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H,
+    TIME_FORMAT_24H
 } from "@/common/utils/FormatUtil.js";
 
 // Moved here from the latest-test panel when the status bar replaced it, and
@@ -174,6 +175,38 @@ describe("formatLatency", () => {
     it("passes through anything that is not a number", () => {
         for (const absent of [null, undefined, "N/A", NaN])
             assert.deepEqual(formatLatency(absent), absent);
+    });
+});
+
+/**
+ * A latency and its unit in one call, because the two had drifted apart: the
+ * detail pane printed the ping through formatLatency and the jitter beside it
+ * through formatWithUnit, so one card carried "25.4 ms" and "1.72 ms" as though
+ * the two had been measured to different precisions.
+ */
+describe("formatLatencyWithUnit", () => {
+    it("trims the figure and appends the unit", () => {
+        assert.equal(formatLatencyWithUnit(25.44, "ms"), "25.4 ms");
+        assert.equal(formatLatencyWithUnit(1.72, "ms"), "1.7 ms");
+    });
+
+    it("agrees with the latency the interface prints on its own", () => {
+        assert.equal(formatLatencyWithUnit(25.44, "ms"), `${formatLatency(25.44)} ms`);
+    });
+
+    it("leaves a whole millisecond whole", () => {
+        assert.equal(formatLatencyWithUnit(13, "ms"), "13 ms");
+    });
+
+    it("keeps a genuine zero", () => {
+        assert.equal(formatLatencyWithUnit(0, "ms"), "0 ms");
+    });
+
+    // Same as formatWithUnit: a figure the provider never measured must not
+    // leave a bare unit standing on its own.
+    it("says nothing was measured rather than showing a lone unit", () => {
+        for (const absent of [null, undefined, NaN])
+            assert.equal(formatLatencyWithUnit(absent, "ms"), NOT_MEASURED, `failed for ${String(absent)}`);
     });
 });
 

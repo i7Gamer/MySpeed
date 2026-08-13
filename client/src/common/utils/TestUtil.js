@@ -41,6 +41,12 @@ const BUFFERBLOAT_GRADES = [
 
 const WORST_GRADE = "F";
 
+// Two, and not the one decimal every latency is *shown* at: this figure is not
+// only shown. The server works the same quantity out across a range to average
+// it, and tests/server/loadedLatencyAgreement.test.js pins the two to the same
+// arithmetic - so the precision cannot be changed on one side alone. Rounding
+// it to one decimal here would also move the grade boundaries, which are read
+// as "under 5 ms" rather than as "under whatever 5 rounds from".
 const INCREASE_DECIMALS = 2;
 
 /**
