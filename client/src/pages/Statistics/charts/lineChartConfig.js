@@ -116,16 +116,13 @@ const TIME_STEPS = [
 ];
 
 /**
- * The tick interval for a series, or undefined to let chart.js decide.
+ * The ends of a series and how many of its labels named an instant at all.
  *
- * Undefined for anything with no span to divide - an empty series, a single
- * point, every test at the same instant - where any step at all would be
- * arbitrary.
+ * Folded rather than spread into Math.min/Math.max. The series is capped at
+ * MAX_CHART_POINTS today, but the same spread is what put a RangeError in the
+ * statistics aggregate, and the bound here is the server's to change.
  */
-export const timeAxisStep = (labels, maxTicks) => {
-    // Folded rather than spread into Math.min/Math.max. The series is capped at
-    // MAX_CHART_POINTS today, but the same spread is what put a RangeError in
-    // the statistics aggregate, and the bound here is the server's to change.
+const timeSpanOf = (labels) => {
     let earliest = Infinity;
     let latest = -Infinity;
     let counted = 0;
@@ -138,6 +135,56 @@ export const timeAxisStep = (labels, maxTicks) => {
         if (instant > latest) latest = instant;
         counted++;
     }
+
+    return {earliest, latest, counted};
+};
+
+/**
+ * Half the window drawn around a series that names a single instant.
+ *
+ * Wide enough that the point sits in a readable hour rather than on a hairline,
+ * narrow enough that the ticks either side of it are minutes rather than years.
+ */
+const SINGLE_POINT_PADDING = 30 * MINUTE;
+
+/**
+ * The x axis bounds to impose, or an empty object to let chart.js choose.
+ *
+ * A linear axis is measured in epoch milliseconds, and chart.js widens a range
+ * whose min equals its max by five per cent *of the value* - five per cent of a
+ * 2026 timestamp being a little over a thousand days. So a range holding one
+ * test drew it in the middle of a six-year axis, ticks nineteen months apart
+ * and not one of them near the reading. The category axis this replaced drew a
+ * single tick at the test's own time.
+ *
+ * That is an ordinary install, not a corner: a fresh one, or "Today" looked at
+ * shortly after the day's first test. Several tests sharing an instant - two
+ * rows imported with the same `created` - have no width either.
+ *
+ * A series that does span time is left alone: it spaces its own points, and
+ * chart.js pads it proportionately.
+ */
+export const timeAxisBounds = (labels) => {
+    const {earliest, latest, counted} = timeSpanOf(labels);
+
+    // Nothing placeable at all, so there is no instant to build a window
+    // around; imposing one would invent a window around the epoch.
+    if (counted === 0) return {};
+
+    if (latest > earliest) return {};
+
+    return {min: earliest - SINGLE_POINT_PADDING, max: latest + SINGLE_POINT_PADDING};
+};
+
+/**
+ * The tick interval for a series, or undefined to let chart.js decide.
+ *
+ * Undefined for anything with no span to divide - an empty series, a single
+ * point, every test at the same instant - where any step at all would be
+ * arbitrary. timeAxisBounds above is what keeps those cases readable.
+ */
+export const timeAxisStep = (labels, maxTicks) => {
+    const {earliest, latest, counted} = timeSpanOf(labels);
 
     if (counted < 2) return undefined;
 
@@ -304,6 +351,10 @@ export const lineChartOptions = ({
         // regular interval and the line described a history that never happened.
         x: {
             type: 'linear',
+            // Imposed only where there is no span for chart.js to work from -
+            // otherwise it would pad a zero-width range by a proportion of the
+            // timestamp itself, which is measured in years.
+            ...timeAxisBounds(labels),
             reverse: false,
             grid: {
                 color: themeColors.gridColor,

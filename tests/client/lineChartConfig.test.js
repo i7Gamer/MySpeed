@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import i18next from "i18next";
 import {
     averageLineDataset, chartMotion, chartThemeColors, failedMarkersDataset, failureMarkers,
-    isSingleDaySeries, lineChartOptions, seriesAverage, timeAxisStep, timePoints, tooltipTheme,
-    verticalGradientFill
+    isSingleDaySeries, lineChartOptions, seriesAverage, timeAxisBounds, timeAxisStep, timePoints,
+    tooltipTheme, verticalGradientFill
 } from "../../client/src/pages/Statistics/charts/lineChartConfig.js";
 
 /**
@@ -268,6 +268,65 @@ describe("timeAxisStep", () => {
     });
 });
 
+/**
+ * A series with no width of its own still has to draw on a sensible axis.
+ *
+ * A linear axis is measured in epoch milliseconds, and chart.js widens a range
+ * whose min equals its max by five per cent *of the value* - five per cent of a
+ * 2026 timestamp being a little over a thousand days. So a range holding a
+ * single test drew that test in the middle of a six-year axis, with ticks
+ * nineteen months apart and no two of them near the reading. The category axis
+ * this replaced simply drew one tick at the test's own time.
+ *
+ * Reachable on an ordinary install: a fresh one, or "Today" looked at shortly
+ * after the day's first test. Statistics only shows its empty state when the
+ * range holds no tests at all, so one test renders the charts.
+ */
+describe("timeAxisBounds", () => {
+    const HALF_HOUR = 30 * 60 * 1000;
+    const DAY = 24 * 60 * 60 * 1000;
+
+    // A series that already spans time spaces its own points, and chart.js
+    // pads it proportionately. Nothing to impose.
+    it("leaves a series that spans time to chart.js", () => {
+        assert.deepEqual(timeAxisBounds(LABELS), {});
+    });
+
+    it("puts a window around a single point", () => {
+        const instant = Date.parse(LABELS[0]);
+
+        assert.deepEqual(timeAxisBounds([LABELS[0]]),
+            {min: instant - HALF_HOUR, max: instant + HALF_HOUR});
+    });
+
+    // Several tests sharing an instant have no width either - two rows imported
+    // with the same `created`, say.
+    it("puts a window around a series whose points share an instant", () => {
+        const instant = Date.parse(LABELS[0]);
+
+        assert.deepEqual(timeAxisBounds([LABELS[0], LABELS[0], LABELS[0]]),
+            {min: instant - HALF_HOUR, max: instant + HALF_HOUR});
+    });
+
+    // Nothing placeable: leave the axis alone rather than invent a window
+    // around an epoch of zero.
+    it("leaves an unplaceable series alone entirely", () => {
+        assert.deepEqual(timeAxisBounds([]), {});
+        assert.deepEqual(timeAxisBounds(["not a date", "nor this"]), {});
+    });
+
+    /**
+     * The property the whole thing exists for, stated without reference to the
+     * padding above: one test must not draw a multi-year axis.
+     */
+    it("keeps a single point's axis inside a day", () => {
+        const {min, max} = timeAxisBounds([LABELS[0]]);
+
+        assert.ok(max - min <= DAY,
+            `a single test spans ${((max - min) / DAY).toFixed(1)} days`);
+    });
+});
+
 describe("lineChartOptions", () => {
     /**
      * A category axis draws every point the same distance from the last, so a
@@ -276,6 +335,21 @@ describe("lineChartOptions", () => {
      */
     it("measures the x axis in time rather than in points", () => {
         assert.equal(options().scales.x.type, "linear");
+    });
+
+    // The axis carries the bounds rather than merely offering them: chart.js is
+    // only asked to choose where there is a span for it to choose within.
+    it("bounds the axis itself when the series names one instant", () => {
+        const {min, max} = options({labels: [LABELS[0]]}).scales.x;
+
+        assert.deepEqual({min, max}, timeAxisBounds([LABELS[0]]));
+    });
+
+    it("leaves the axis unbounded for a series that spans time", () => {
+        const {min, max} = options().scales.x;
+
+        assert.equal(min, undefined);
+        assert.equal(max, undefined);
     });
 
     it("steps the axis by a duration a person would read", () => {
