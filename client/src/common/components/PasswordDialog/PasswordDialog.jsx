@@ -3,6 +3,7 @@ import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
     faCheck,
+    faCheckDouble,
     faExclamationTriangle,
     faEye,
     faEyeSlash,
@@ -21,6 +22,7 @@ import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {NodeContext} from "@/common/contexts/Node";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
+import {passwordConfirmationProblem} from "@/common/utils/PasswordConfirmation";
 
 export const PasswordDialog = ({open, onClose}) => {
     const [config, reloadConfig] = useContext(ConfigContext);
@@ -31,6 +33,9 @@ export const PasswordDialog = ({open, onClose}) => {
     const currentNode = useContext(NodeContext)[2];
 
     const [password, setPassword] = useState("");
+    // The whole point of the second box is that it is typed, not pasted from
+    // the first, so it keeps its own state and is compared verbatim.
+    const [confirmation, setConfirmation] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     // Read when the dialog opens, never captured at mount: the mount-time
     // config on a read-level instance omits passwordLevel, and save() compares
@@ -41,11 +46,26 @@ export const PasswordDialog = ({open, onClose}) => {
 
     useSyncOnOpen(open, () => {
         setPassword("");
+        setConfirmation("");
         setShowPassword(false);
         setAccessLevel(config.passwordLevel || "none");
     });
 
+    // Held rather than computed at save time as well, so the mismatch is shown
+    // under the box while it is being typed instead of only once it is too
+    // late to matter. Silent until the operator has actually typed a
+    // confirmation - it must not shout at an untouched box.
+    const mismatch = confirmation ? passwordConfirmationProblem(password, confirmation) : null;
+
     const save = async (close) => {
+        // Before the PATCH, not after: the server hashes what it is given and
+        // never sees it again, so a typo caught afterwards is already the
+        // password. Outside the try because nothing has been attempted yet -
+        // the refusal names the mismatch rather than falling into the generic
+        // "changes unsaved".
+        const problem = passwordConfirmationProblem(password, confirmation);
+        if (problem) return updateToast(t(problem), "red", faExclamationTriangle);
+
         try {
             if (password) {
                 // Checked, not assumed: patchRequest hands back the raw
@@ -160,6 +180,27 @@ export const PasswordDialog = ({open, onClose}) => {
                                     </button>
                                 </div>
                             </div>
+
+                            {/* One reveal for both boxes: seeing them together
+                                is how an operator settles a mismatch they
+                                cannot otherwise explain. */}
+                            <div className="password-section">
+                                <div className="password-label">
+                                    <FontAwesomeIcon icon={faCheckDouble}/>
+                                    <h3>{t("update.confirm_password")}</h3>
+                                </div>
+                                <div className="password-input-wrapper">
+                                    <input
+                                        type={showPassword ? "text" : "password"}
+                                        className="dialog-input"
+                                        placeholder={t("update.confirm_password_placeholder")}
+                                        value={confirmation}
+                                        onChange={(e) => setConfirmation(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            {mismatch && <span className="password-mismatch icon-red">{t(mismatch)}</span>}
 
                             <div className="access-section">
                                 <div className="access-label">

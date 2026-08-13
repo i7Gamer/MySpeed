@@ -66,6 +66,14 @@
   &:hover
     color: $white
 
+// Sits directly under the confirmation box, so the negative gap pulls it out of
+// the 1.25rem the content column puts between its sections - it belongs to the
+// box above it, not between the two.
+.password-mismatch
+  font-size: 0.85rem
+  margin-top: -0.9rem
+  text-align: right
+
 .access-section
   display: flex
   flex-direction: column
@@ -99,4 +107,7 @@
   .password-input-wrapper
     max-width: 100%
     width: 100%
+
+  .password-mismatch
+    text-align: left
 
