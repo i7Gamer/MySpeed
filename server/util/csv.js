@@ -2,14 +2,15 @@
 // means a reader scanning the numeric columns never has to step over it. New
 // columns are inserted before it rather than appended.
 export const CSV_COLUMNS = ["id", "ping", "jitter", "download", "upload", "time", "type", "created", "provider",
-    "serverId", "serverName", "serverHost", "packetLoss", "downloadLatency", "uploadLatency", "isp", "externalIp",
+    "serverId", "serverName", "serverHost", "serverLocation", "packetLoss", "downloadLatency", "uploadLatency", "isp", "externalIp",
     "bytesDownloaded", "bytesUploaded", "resultId", "error"];
 
 export const CSV_HEADER = `${CSV_COLUMNS.join(",")}\n`;
 
 // A field opening with one of these is evaluated by a spreadsheet, and quoting
 // it does not stop that, so it is defused with a leading apostrophe. `error`,
-// `serverName`, `serverHost` and `isp` all carry text a remote provider chose.
+// `serverName`, `serverHost`, `serverLocation` and `isp` all carry text a
+// remote provider chose.
 const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
 
 // Except when the whole field is just a number: every failed test stores -1 in

@@ -235,10 +235,16 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
 
     const bloat = bufferbloat(test);
 
-    // What the server's name alone does not say: the address that answered, and
-    // the number to pin it by. Either may be absent, and on a provider that
-    // reports neither the whole line is.
-    const serverDetail = [test.serverName ? test.serverHost : null, test.serverId ? `#${test.serverId}` : null]
+    // What the server's name alone does not say: where it is, the address that
+    // answered, and the number to pin it by. Any of them may be absent, and on
+    // a provider that reports none the whole line is.
+    //
+    // The location leads, because "which server" usually means the city rather
+    // than the company - `serverName` holds what Ookla calls the name, which is
+    // the sponsor.
+    const serverDetail = [test.serverLocation,
+        test.serverName ? test.serverHost : null,
+        test.serverId ? `#${test.serverId}` : null]
         .filter(Boolean).join(" · ");
 
     // Against the nearest earlier test that carries an identity, not simply the
@@ -397,9 +403,9 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                             settings to keep measuring against it. Zero is the
                             column's default, i.e. a provider that numbers no
                             servers, rather than a server numbered zero. */}
-                        {(test.serverName || test.serverHost) && (
+                        {(test.serverName || test.serverHost || test.serverLocation) && (
                             <DetailFact label={t("test.details.server")}>
-                                {test.serverName || test.serverHost}
+                                {test.serverName || test.serverLocation || test.serverHost}
                                 {serverDetail && (
                                     <span className="detail-address detail-secondary">{serverDetail}</span>
                                 )}

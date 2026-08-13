@@ -82,8 +82,15 @@ export const parseOokla = (test) => {
     let time = Math.round((test.download.elapsed + test.upload.elapsed) / 1000);
     let serverName = test.server?.name ?? null;
     let serverHost = test.server?.host ?? null;
+    // Where the server is, as opposed to who runs it. The CLI keeps the two
+    // apart - {"name":"Salt Mobile SA","location":"Glattbrugg"} - and writes
+    // them as a pair in its own CSV. Only the sponsor was kept, so a history
+    // could say which company answered but not from where, and two tests could
+    // not be compared for whether the traffic had moved city.
+    let serverLocation = text(test.server?.location);
 
     return {ping, jitter, download, upload, time, resultId: test.result?.id, serverName, serverHost,
+        serverLocation,
         provider: OOKLA,
         packetLoss: round(test.packetLoss),
         downloadLatency: loadedLatency(test.download),
@@ -123,6 +130,8 @@ export const parseLibre = (test) => ({...test, ...NO_QUALITY_FIGURES, provider: 
     jitter: round(test.jitter),
     time: Math.round(test.elapsed / 1000), resultId: null,
     serverName: test.server?.name ?? null, serverHost: test.server?.url ?? null,
+    // Its result names the backend and its URL, and nothing about where it is.
+    serverLocation: null,
     // Reported only as far as the selected backend reports it: the client block
     // is filled from that server's getIP endpoint, and one without a GeoIP
     // database answers with empty strings throughout.
@@ -245,6 +254,9 @@ export const parseCloudflare = (test) => {
         // these rows named no server at all.
         serverName: text(metadata.colo),
         serverHost: null,
+        // The colo airport code above is the only thing the CLI says about
+        // where the edge is, and it is already the server's name here.
+        serverLocation: null,
         externalIp: text(metadata.ip),
         ...NO_QUALITY_FIGURES,
         // Nothing the CLI prints names the network the client is on.

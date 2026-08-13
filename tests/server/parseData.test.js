@@ -13,7 +13,9 @@ describe("parseOokla", () => {
         ping: {latency: 12.6, jitter: 3.456},
         download: {bandwidth: 12500000, elapsed: 5000},
         upload: {bandwidth: 6250000, elapsed: 5000},
-        server: {name: "Frankfurt", host: "fra.example.net:8080"},
+        // As the CLI really spells it: `name` is the sponsor and `location` the
+        // city. Its own CSV output writes the pair as "Salt Mobile SA - Glattbrugg".
+        server: {name: "Salt Mobile SA", location: "Glattbrugg", host: "fra.example.net:8080"},
         result: {id: "abc123"}
     };
 
@@ -57,9 +59,37 @@ describe("parseOokla", () => {
 
     it("carries the server identity and result id through", () => {
         const {serverName, serverHost, resultId} = parseOokla(ooklaResult);
-        assert.equal(serverName, "Frankfurt");
+        assert.equal(serverName, "Salt Mobile SA");
         assert.equal(serverHost, "fra.example.net:8080");
         assert.equal(resultId, "abc123");
+    });
+
+    /**
+     * `name` and `location` are two different things, and the one people mean
+     * by "which server" is usually the second.
+     *
+     * The CLI's own server list spells it out - {"name":"Salt Mobile SA",
+     * "location":"Glattbrugg"} - and its CSV output writes the pair as "Salt
+     * Mobile SA - Glattbrugg". Only the sponsor was being kept, so a history
+     * could say which company answered but not from where, and comparing two
+     * tests told the reader nothing about whether the traffic had moved city.
+     * Upstream #1250 asks for the location by name.
+     */
+    it("keeps where the server is, not only who runs it", () => {
+        assert.equal(parseOokla(ooklaResult).serverLocation, "Glattbrugg");
+    });
+
+    it("nulls the location when the provider omits it", () => {
+        const {server, ...withoutServer} = ooklaResult;
+
+        assert.equal(parseOokla(withoutServer).serverLocation, null);
+        assert.equal(parseOokla({...ooklaResult, server: {name: "Someone"}}).serverLocation, null);
+    });
+
+    // The LibreSpeed backends with no GeoIP database answer every client field
+    // as an empty string; a blank location must not sit beside a real one.
+    it("treats a blank location as none at all", () => {
+        assert.equal(parseOokla({...ooklaResult, server: {...ooklaResult.server, location: "   "}}).serverLocation, null);
     });
 
     it("nulls the server identity when the provider omits it", () => {
@@ -488,7 +518,7 @@ describe("parseCloudflare", () => {
     it("returns a zeroed result rather than throwing on an unusable payload", () => {
         assert.deepEqual(parseCloudflare({}), {
             ping: 0, jitter: null, download: 0, upload: 0, time: 0,
-            resultId: null, provider: "cloudflare", serverName: null, serverHost: null,
+            resultId: null, provider: "cloudflare", serverName: null, serverHost: null, serverLocation: null,
             packetLoss: null, downloadLatency: null, uploadLatency: null,
             isp: null, externalIp: null, bytesDownloaded: null, bytesUploaded: null
         });

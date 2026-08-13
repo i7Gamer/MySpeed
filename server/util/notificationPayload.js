@@ -27,7 +27,7 @@ const FINISHED_KEYS = [
     "ping", "jitter", "download", "upload", "time",
     "packetLoss", "downloadLatency", "uploadLatency",
     // What it measured against.
-    "serverId", "serverName", "serverHost",
+    "serverId", "serverName", "serverHost", "serverLocation",
     // What the connection was, as the provider saw it.
     "isp", "externalIp",
     // Where the provider's own report of this run can be read.

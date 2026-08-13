@@ -196,7 +196,7 @@ const execute = async (type, retried) => {
         // The parser names the provider itself, so the row cannot end up
         // attributed to one that did not produce it - including under preview
         // mode, where the generated result is ookla-shaped whatever is configured.
-        let {ping, jitter, download, upload, time, resultId, serverName, serverHost,
+        let {ping, jitter, download, upload, time, resultId, serverName, serverHost, serverLocation,
             packetLoss, downloadLatency, uploadLatency, isp, externalIp, provider,
             bytesDownloaded, bytesUploaded} = await parseData.parseData(process.env.PREVIEW_MODE === "true" ?
             parseData.OOKLA : mode, test);
@@ -204,8 +204,8 @@ const execute = async (type, retried) => {
         const serverId = test.serverId;
 
         let testResult = await tests.create({ping, download, upload, time, serverId, type,
-            resultId, jitter, serverName, serverHost, packetLoss, downloadLatency, uploadLatency, isp, externalIp,
-            provider, bytesDownloaded, bytesUploaded});
+            resultId, jitter, serverName, serverHost, serverLocation, packetLoss, downloadLatency, uploadLatency,
+            isp, externalIp, provider, bytesDownloaded, bytesUploaded});
         console.log(`Test #${testResult.id} was executed successfully in ${time}s. 🏓 ${ping} (±${jitter ?? 'N/A'}) ⬇ ${download}️ ⬆ ${upload}️`);
         createRecommendations().catch(err =>
             console.error(`Could not update the recommendations: ${toErrorMessage(err)}`));
@@ -215,7 +215,7 @@ const execute = async (type, retried) => {
         // cannot tell which provider or server produced a number can do little
         // with it.
         sendFinished(finishedPayload({...testResult, provider, ping, jitter, download, upload, time,
-            packetLoss, downloadLatency, uploadLatency, serverId, serverName, serverHost,
+            packetLoss, downloadLatency, uploadLatency, serverId, serverName, serverHost, serverLocation,
             isp, externalIp, resultId, bytesDownloaded, bytesUploaded})).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
     } catch (e) {

@@ -36,7 +36,7 @@ const isImportableNumber = (value) =>
  */
 export const create = async ({
     ping, download, upload, time, serverId, type = "auto",
-    resultId = null, error = null, jitter = null, serverName = null, serverHost = null,
+    resultId = null, error = null, jitter = null, serverName = null, serverHost = null, serverLocation = null,
     packetLoss = null, downloadLatency = null, uploadLatency = null,
     isp = null, externalIp = null, provider = null,
     bytesDownloaded = null, bytesUploaded = null
@@ -47,7 +47,7 @@ export const create = async ({
     // one the caller stamped a moment later.
     const created = new Date().toISOString();
 
-    const row = await tests.create({ping, jitter, download, upload, error, serverId, serverName, serverHost, type,
+    const row = await tests.create({ping, jitter, download, upload, error, serverId, serverName, serverHost, serverLocation, type,
         resultId, time, packetLoss, downloadLatency, uploadLatency, isp, externalIp, provider,
         bytesDownloaded, bytesUploaded, created});
 
@@ -406,6 +406,7 @@ export const exportTests = async (range) => (await findInRange(range)).map(entry
     serverId: entry.serverId,
     serverName: entry.serverName,
     serverHost: entry.serverHost,
+    serverLocation: entry.serverLocation,
     packetLoss: entry.packetLoss,
     downloadLatency: entry.downloadLatency,
     uploadLatency: entry.uploadLatency,

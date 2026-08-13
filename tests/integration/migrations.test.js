@@ -27,6 +27,7 @@ describe("migrations", () => {
         assert.ok(names.includes("0008-add-provider-column.js"));
         assert.ok(names.includes("0009-add-transfer-columns.js"));
         assert.ok(names.includes("0010-widen-speedtest-ping.js"));
+        assert.ok(names.includes("0011-add-server-location-column.js"));
     });
 
     /**
@@ -94,7 +95,7 @@ describe("migrations", () => {
         const columns = await queryInterface.describeTable("speedtests");
 
         for (const column of ["ping", "jitter", "download", "upload", "time", "type", "created", "error",
-            "serverId", "serverName", "serverHost", "resultId",
+            "serverId", "serverName", "serverHost", "serverLocation", "resultId",
             "packetLoss", "downloadLatency", "uploadLatency", "isp", "externalIp",
             "provider", "bytesDownloaded", "bytesUploaded"])
             assert.ok(columns[column], `speedtests.${column} is missing`);

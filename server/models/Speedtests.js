@@ -21,6 +21,14 @@ export default db.define("speedtests", {
         allowNull: true,
         defaultValue: null
     },
+    // Where the server is, as against who runs it: `serverName` holds what
+    // Ookla calls the server's name, which is the sponsor. Only Ookla reports
+    // this, so null means the provider does not say.
+    serverLocation: {
+        type: Sequelize.STRING,
+        allowNull: true,
+        defaultValue: null
+    },
     // Which provider measured the row. The three do not measure the same things,
     // so without this a blank packet loss could equally mean a clean line or a
     // provider that never looked. Null on every row recorded before the column
