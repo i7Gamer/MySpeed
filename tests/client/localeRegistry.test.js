@@ -100,3 +100,40 @@ describe("locale files", () => {
         });
     }
 });
+
+/**
+ * The two optimal-speed labels are not swapped.
+ *
+ * uk.json had dropdown.upload reading "Оптимальна швидкість завантаження" and
+ * dropdown.download reading "Оптимальна швидкість вивантаження", the wrong way
+ * round: everywhere else the same file uses завантаження for downloading and
+ * вивантаження for uploading. No component reads the two keys today, so the
+ * mistake was armed rather than visible, and the stale-key check above cannot
+ * see it because English still carries both keys.
+ *
+ * The words to look for come out of the same file, from latest.down and
+ * latest.up, so a retranslation that changes the vocabulary retires the check
+ * instead of failing it. Only the presence of the opposite direction's word
+ * fails - a rewording in different terms passes.
+ */
+describe("the Ukrainian optimal-speed labels", () => {
+    const uk = JSON.parse(fs.readFileSync(path.join(LOCALES, "uk.json"), "utf8"));
+
+    const downwards = uk.latest.down.toLowerCase();
+    const upwards = uk.latest.up.toLowerCase();
+
+    it("names the two directions with words that tell them apart", () => {
+        assert.ok(!downwards.includes(upwards) && !upwards.includes(downwards),
+            `"${uk.latest.down}" and "${uk.latest.up}" cannot be told apart by containment`);
+    });
+
+    it("does not describe the optimal down-speed as uploading", () => {
+        assert.ok(!uk.dropdown.download.toLowerCase().includes(upwards),
+            `dropdown.download reads "${uk.dropdown.download}", which is the word for ${uk.latest.up}`);
+    });
+
+    it("does not describe the optimal up-speed as downloading", () => {
+        assert.ok(!uk.dropdown.upload.toLowerCase().includes(downwards),
+            `dropdown.upload reads "${uk.dropdown.upload}", which is the word for ${uk.latest.down}`);
+    });
+});
