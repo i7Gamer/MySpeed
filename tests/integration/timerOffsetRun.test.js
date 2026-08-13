@@ -1,7 +1,7 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, setConfig } from "./helpers/boot.js";
-import { isQuietHour } from "../../server/util/quietHours.js";
+import { isQuietHour, QUIET_HOURS_OFF } from "../../server/util/quietHours.js";
 
 /**
  * runTask() itself, which is the only place the offset guard actually lives.
@@ -191,6 +191,107 @@ describe("runTask during the configured quiet hours", () => {
         await timer.runTask();
 
         assert.equal(await countTests(), 1, "half a window silenced the run");
+    });
+});
+
+/**
+ * A reschedule that lands while the run is reading the quiet hours.
+ *
+ * The generation counter only closes the window between the offset's sleep and
+ * the speedtest for as long as nothing is awaited after its guard. Reading the
+ * quiet window is two config reads, and a PATCH /config/cron arriving while
+ * those were in flight was seen by no guard at all - the one before them had
+ * already passed - so one test still fired from the schedule that had just been
+ * replaced, which is the exact failure the counter exists to catch.
+ *
+ * The config reads runTask makes are answered from here rather than from the
+ * database. That is what puts the reschedule at precisely that moment, and it
+ * also leaves the offset's own sleep as the only long timer created while the
+ * run is on its way to it.
+ */
+describe("a reschedule landing while the post-delay quiet hours are read", () => {
+    // getRandomDelay never goes below this, so a timer at least this long,
+    // created while nothing else in the run is running, can only be the sleep.
+    const OFFSET_MIN_DELAY_MS = 30 * 1000;
+
+    const REPLACEMENT_CRON = "0 4 1 1 *";
+
+    let configModel;
+    let realFindByPk;
+
+    before(async () => {
+        configModel = (await import("../../server/models/Config.js")).default;
+        realFindByPk = configModel.findByPk;
+    });
+
+    /**
+     * Runs the offset's sleep out at once, and reports when it began.
+     *
+     * It steps aside the moment it has seen that timer, so the speedtest a
+     * broken run would go on to start still runs on real ones.
+     */
+    const shortenOffsetSleep = (onSleepStarted) => {
+        const realSetTimeout = globalThis.setTimeout;
+        const restore = () => { globalThis.setTimeout = realSetTimeout; };
+
+        globalThis.setTimeout = (callback, ms, ...args) => {
+            if (ms >= OFFSET_MIN_DELAY_MS) {
+                restore();
+                onSleepStarted();
+                return realSetTimeout(callback, 0, ...args);
+            }
+
+            return realSetTimeout(callback, ms, ...args);
+        };
+
+        return restore;
+    };
+
+    /** Answers the two settings runTask consults, and watches for the reads. */
+    const answerConfigReads = (onQuietHoursRead) => {
+        configModel.findByPk = async (key, ...rest) => {
+            if (key === "scheduleOffset") return {value: "true"};
+
+            if (key === "quietHoursStart" || key === "quietHoursEnd") {
+                onQuietHoursRead();
+                return {value: QUIET_HOURS_OFF};
+            }
+
+            return realFindByPk.call(configModel, key, ...rest);
+        };
+
+        return () => { configModel.findByPk = realFindByPk; };
+    };
+
+    it("does not test", async () => {
+        // Armed before the shim, or its own far-future timer would be taken for
+        // the offset's sleep.
+        timer.startTimer(DISTANT_CRON);
+
+        let sleeping = false;
+        let rescheduled = false;
+
+        const restoreTimers = shortenOffsetSleep(() => { sleeping = true; });
+        const restoreConfig = answerConfigReads(() => {
+            // Only the check on the far side of the sleep. A reschedule during
+            // the one before it is caught whichever way the guards are ordered,
+            // so it would prove nothing.
+            if (!sleeping || rescheduled) return;
+
+            rescheduled = true;
+            timer.startTimer(REPLACEMENT_CRON);
+        });
+
+        try {
+            await timer.runTask();
+        } finally {
+            restoreTimers();
+            restoreConfig();
+        }
+
+        assert.ok(rescheduled, "the reschedule never landed, so this proves nothing");
+        assert.equal(await countTests(), 0,
+            "a cron replaced while the quiet hours were being read was still followed by one test from the schedule it replaced");
     });
 });
 

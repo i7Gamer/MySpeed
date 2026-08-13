@@ -182,6 +182,17 @@ export const runTask = async () => {
         console.log(`Schedule offset enabled. Delaying speedtest by ${Math.round(delay / 1000)} seconds...`);
         await delayRun(delay);
 
+        // Checked again on the far side for the same reason the pause is: the
+        // offset sleeps for up to five minutes, which is long enough for a run
+        // that started just before the quiet hours to wake up inside them.
+        //
+        // Read before the two guards rather than after them, because reading it
+        // is two config reads: asking afterwards left an await between the last
+        // guard and the speedtest, so a reschedule or a pause landing while
+        // those reads were in flight was seen by no guard at all and one test
+        // still fired from the schedule that had just been replaced.
+        const quietHoursBegan = await withinQuietHours();
+
         if (scheduleChangedSince(startedIn)) {
             console.warn("The schedule changed during the delay. Skipping this test...");
             return;
@@ -192,10 +203,7 @@ export const runTask = async () => {
             return;
         }
 
-        // Checked again on the far side for the same reason the pause is: the
-        // offset sleeps for up to five minutes, which is long enough for a run
-        // that started just before the quiet hours to wake up inside them.
-        if (await withinQuietHours()) {
+        if (quietHoursBegan) {
             console.warn("Quiet hours began during delay. Skipping this test...");
             return;
         }
