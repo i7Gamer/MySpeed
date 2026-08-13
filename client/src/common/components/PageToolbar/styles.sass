@@ -79,3 +79,17 @@
     > .status-bar
       flex: 1 1 100%
       order: 1
+
+    // Keeps the export at the right-hand end wherever it lands.
+    //
+    // Below about 366px the picker hits its own minimum and the export is
+    // pushed onto a line of its own, where it sat at the *left* - the only
+    // width in the app where that control is not at the right-hand end. Its
+    // menu hangs off its right edge, so from there the menu opened leftwards
+    // and ran 114px off the side of the screen.
+    //
+    // A no-op on the line it shares with the picker: that one grows to fill the
+    // row, so there is no free space for this to absorb. On a line of its own
+    // there is, and it takes all of it.
+    > .export-button-container
+      margin-left: auto

@@ -36,6 +36,11 @@
 
 // Only the horizontal room tightens; the height is shared with every other
 // control in the toolbar.
-@media screen and (max-width: 600px)
+//
+// At the width the export drops its label, measured rather than guessed - the
+// two sit in the same row and tightening one of them early only moves the
+// slack to the other. This button keeps its word at every width: it is the
+// page's primary action, and a bare gauge glyph does not say "start a test".
+@media screen and (max-width: 480px)
   .start-test
     padding: $toolbar-control-padding-y 1.25rem

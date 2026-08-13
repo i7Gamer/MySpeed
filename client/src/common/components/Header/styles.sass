@@ -157,14 +157,19 @@ header
   100%
     box-shadow: 0 0 0 0 transparent
 
-// The squeeze zone: down to 969px the pagination still carries its labels,
-// and inside the usual 10% inset the side columns end up narrower than the
-// title - which is to keep its size, logo and text alike. The inset is the
-// one thing here with no fixed size of its own, so it is what gives way;
-// below 968px the labels disappear and the usual inset fits again. A name
-// too long for even the widened column still ends in an ellipsis rather
-// than under the pagination.
-@media (min-width: 969px) and (max-width: 1250px)
+// The squeeze zone: while the header is three columns the side columns are
+// narrower than the title - which is to keep its size, logo and text alike -
+// and the 10% inset is the one thing here with no fixed size of its own, so it
+// is what gives way. A name too long for even the widened column still ends in
+// an ellipsis rather than under the pagination.
+//
+// It used to stop at 969px, on the reasoning that the pagination drops its
+// labels below 968 and the usual inset then fits again. Measured, it does not:
+// the title box wants 227px and at 800px the 10% inset left the column 215, so
+// the name lost its last letter to an ellipsis a good 45px before the
+// pagination moved down and gave it the room back. The zone now runs to the
+// width where that actually happens.
+@media (min-width: 769px) and (max-width: 1250px)
   .header-main
     padding: 0 3%
 
@@ -175,6 +180,25 @@ header
 @media screen and (max-width: 650px)
   .header-left
     flex-direction: column
+    // Horizontal alignment, now that this is a column - and `center` was
+    // clipping the logo off the page. A flex item wider than its container
+    // overflows it equally on both sides when centred, and .header-left hides
+    // its overflow, so the title box - 198px against a 192px column at 480px,
+    // against 135px at 338px - was trimmed from *both* edges: the logo went
+    // first, a pixel at 480 and the whole 30 by 338, and the name lost its
+    // last letter off the other end at the same time.
+    //
+    // Aligned to the start, the box begins where the column does and only ever
+    // gives at the right, which is where the title's ellipsis already handles
+    // it.
+    align-items: flex-start
+
+  // And it has to be able to give. Left to its content width the heading would
+  // simply overflow the column instead of being centred in it - the same clip,
+  // one edge fewer. Capped, the button inside shrinks, the logo holds its 30px
+  // on its flex-shrink: 0, and the name ellipses.
+  .header-about-heading
+    max-width: 100%
 
 @media (max-width: 530px)
   .header-left div
@@ -187,6 +211,26 @@ header
   .header-icon
     width: 20px
     height: 20px
+
+// Below this the column is narrower than the title box even aligned to its
+// start, so the box gives up its own size rather than the name giving up
+// letters: 24pt of text behind a 30px logo, a 1rem gap and 1rem of padding
+// wants 227px, and the two-column header gives it 224 at 560px and 135 at 338.
+// Trimmed to these it wants 134, and the logo and the whole name both fit at
+// every width down to 330.
+//
+// 570 is where that shortfall starts, measured rather than picked: at 580 the
+// column is 232px and the full-size box fits with room to spare.
+@media (max-width: 570px)
+  .header-main
+    padding: 0 4%
+
+  .header-main h2
+    font-size: 15pt
+
+  .header-about
+    gap: 0.5rem
+    padding: 0.35rem 0.5rem
 
 @media screen and (max-width: 365px)
   .header-main .demo-info

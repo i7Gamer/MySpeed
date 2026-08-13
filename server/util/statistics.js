@@ -107,7 +107,15 @@ const consistencyScore = (values) => {
     // fall through to 100% whenever the mean was not above zero - which includes
     // having no successful tests to take a mean of - so a day on which every
     // test failed reported a flawlessly stable line at 100% and ±0.
-    if (values.length === 0) return {stdDev: null, consistency: null};
+    //
+    // One test is the same overclaim in a shape that looks like data: it has a
+    // mean, so the formula ran, and a lone reading deviates from itself by
+    // nothing - "100% consistent, ±0" off a single measurement. Two is the
+    // fewest that can disagree, and so the fewest that has a spread to report;
+    // zero across two is a real reading and still scores a hundred. A day on
+    // which the line dropped and every test but one failed is exactly when this
+    // card is read, and exactly when it was most confident.
+    if (values.length < 2) return {stdDev: null, consistency: null};
 
     const mean = average(values);
     const score = mean > 0 ? PERCENT - (standardDeviation(values) / mean * PERCENT) : PERCENT;

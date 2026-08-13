@@ -94,25 +94,37 @@
     font-size: 0.95rem
     font-weight: 500
 
-@media screen and (max-width: 600px)
+// Where the label is actually out of room, not where it was once guessed to
+// be. Measured across the range: the picker beside it absorbs the slack, and
+// the three controls hold one line with every label on it down to 480px - at
+// 460 the row wraps. Collapsing at 600 threw the word "Export" away with
+// 120px of space still under it.
+@media screen and (max-width: 480px)
   .export-text
     display: none
-  
+
   // Drops to an icon-only square; the height stays the toolbar's.
   .export-button
     padding: $toolbar-control-padding-y 0.7rem
     aspect-ratio: 1 / 1
     justify-content: center
-  
+
   .chevron-icon
     display: none
-  
+
+  // Anchored under the button, like it is at every other width.
+  //
+  // It used to become a fixed bottom sheet here - `bottom: 1rem` against the
+  // viewport - which put the menu at the foot of the screen, a long way from
+  // the icon that opened it and with nothing to say which control it belonged
+  // to. Worse, the open animation it shares tweens `transform`, which is what
+  // the sheet was using to centre itself, so it slid in from half a screen off
+  // before snapping back.
+  //
+  // The button is a ~45px square once collapsed and the container is only as
+  // wide, so the panel hangs from its right edge and takes the width its own
+  // options need rather than the button's.
   .export-dropdown
-    position: fixed
-    top: auto
-    bottom: 1rem
-    left: 50%
-    right: auto
-    transform: translateX(-50%)
-    width: calc(100vw - 2rem)
-    max-width: 20rem
+    left: auto
+    right: 0
+    min-width: 10rem

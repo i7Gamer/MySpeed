@@ -185,9 +185,26 @@ describe("GET /api/speedtests/statistics", () => {
         });
 
         // A single test is a measurement, but not a spread: there is nothing to
-        // be consistent with yet.
-        it("scores no deviation from a single test", async () => {
+        // be consistent with yet. It used to answer "100%, ±0" - a flawlessly
+        // steady line off one reading - which is the same overclaim an empty
+        // range made above, in a shape that looks like data.
+        it("scores nothing from a single test rather than scoring it perfect", async () => {
             await seedTests(server.tests, [at("2026-08-05T10:00:00.000Z", {download: 100})]);
+
+            const {body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
+
+            assert.equal(body.consistency.download.stdDev, null);
+            assert.equal(body.consistency.download.consistency, null);
+            assert.equal(body.consistency.ping.deviation, null);
+        });
+
+        // Two is the fewest that can disagree, and zero across two is a real
+        // reading that still scores a hundred.
+        it("scores two identical tests as perfectly consistent", async () => {
+            await seedTests(server.tests, [
+                at("2026-08-05T10:00:00.000Z", {download: 100}),
+                at("2026-08-05T11:00:00.000Z", {download: 100})
+            ]);
 
             const {body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
 

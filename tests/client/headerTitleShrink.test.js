@@ -65,15 +65,60 @@ describe("the header title gives way to the pagination", () => {
         assert.match(source, /className="header-title"/);
     });
 
-    // Nothing in the header may pay for the squeeze with its size - not the
-    // text, not the logo. The inset is the one thing with no size of its own,
-    // so the squeeze zone relaxes it and only it; the ellipsis above stays
-    // reserved for names too long for any inset to save.
+    /**
+     * While the header is three columns, nothing in it pays for the squeeze
+     * with its size - not the text, not the logo. The inset is the one thing
+     * with no size of its own, so the squeeze zone relaxes it and only it.
+     *
+     * The zone used to stop at 969px because the pagination drops its labels
+     * below 968 and the inset was thought to fit again from there. Measured, it
+     * does not: at 800px the title box wants 227px and the 10% inset left the
+     * column 215, so the name was ellipsed some 45px before the pagination
+     * moved down at 768 and handed the room back. It now runs to the reflow.
+     */
     it("spends the inset on the squeeze, never the title's size", () => {
         assert.match(compiled,
-            /@media[^{]*min-width:\s*969px[^{]*max-width:\s*1250px[^{]*\{\s*\.header-main\s*\{[^}]*padding:\s*0\s+3%/);
-        assert.doesNotMatch(compiled, /@media[^{]*\{[^@]*\.header-main h2\s*\{[^}]*font-size/,
-            "a media query resizes the title text");
+            /@media[^{]*min-width:\s*769px[^{]*max-width:\s*1250px[^{]*\{\s*\.header-main\s*\{[^}]*padding:\s*0\s+3%/);
+    });
+
+    /**
+     * Below the reflow the invariant above cannot hold, and holding it was
+     * costing the thing it was written to protect.
+     *
+     * The header is two columns there, so the title box gets half the width:
+     * 135px of a 338px screen against the 227px it wants at 24pt. No inset can
+     * pay that - at a 0% inset the column is still only 169px - so the choice
+     * is not "shrink the text or keep it", it is "shrink the text or show
+     * `MyS…`". The box gives up its own size instead, and the whole name and
+     * the logo both fit.
+     */
+    it("lets the box give up its size below the reflow, where no inset can pay", () => {
+        const narrow = [...compiled.matchAll(/@media([^{]*)\{([\s\S]*?)\n}/g)]
+            .filter(([, condition]) => condition.includes("570px"))
+            .map(([, , body]) => body);
+
+        assert.ok(narrow.some((body) => /\.header-main h2\s*\{[^}]*font-size/.test(body)),
+            "the title still holds 24pt on a phone, where it cannot fit");
+    });
+
+    // Above the reflow the rule still stands, and that is where it was written
+    // for: a title chopped on the pagination's border is what it prevents.
+    it("still resizes nothing while the header is three columns", () => {
+        const wide = [...compiled.matchAll(/@media([^{]*)\{([\s\S]*?)\n}/g)]
+            .filter(([, condition]) => /1250px|969px|900px/.test(condition))
+            .map(([, , body]) => body);
+
+        for (const body of wide) {
+            assert.doesNotMatch(body, /\.header-main h2\s*\{[^}]*font-size/,
+                "a wide media query resizes the title text");
+            assert.doesNotMatch(body, /\.header-logo\s*\{[^}]*(width|height)/,
+                "a wide media query resizes the logo");
+        }
+    });
+
+    // The logo never shrinks at any width. A name can lose a character and
+    // still be read; a 30px mark cannot lose 10px and still be itself.
+    it("never resizes the logo at any width", () => {
         assert.doesNotMatch(compiled, /@media[^{]*\{[^@]*\.header-logo\s*\{[^}]*(width|height)/,
             "a media query resizes the logo");
     });

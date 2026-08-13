@@ -278,13 +278,44 @@ describe("buildStatistics", () => {
                 assert.ok(value === null || Number.isFinite(value), `got ${value}`);
         });
 
-        // One test is a measurement but not a spread - it deviates from itself
-        // by nothing, which is a real answer rather than an absent one.
-        it("scores a single entry as having no deviation", () => {
+        /**
+         * One test is a measurement but not a spread, and the speeds used to
+         * answer it with "±0, 100% consistent" - a flawlessly steady line, on
+         * the strength of a single reading. The same overclaim the ping
+         * deviation below made, in the figure people actually read off the
+         * card, so it goes the same way: nothing measured, rather than
+         * perfection measured.
+         */
+        it("scores a single entry as having no spread to report", () => {
             const stats = buildStatistics([at("2026-08-07T01:00:00.000Z", {download: 100})], DAY);
+
+            assert.equal(stats.consistency.download.stdDev, null);
+            assert.equal(stats.consistency.download.consistency, null);
+            assert.equal(stats.consistency.upload.stdDev, null);
+            assert.equal(stats.consistency.upload.consistency, null);
+        });
+
+        // Two is the fewest that can disagree. Zero spread across two tests is
+        // a real reading and still scores a perfect hundred.
+        it("scores two identical tests as perfectly consistent", () => {
+            const stats = buildStatistics([
+                at("2026-08-07T01:00:00.000Z", {download: 100}),
+                at("2026-08-07T02:00:00.000Z", {download: 100})
+            ], DAY);
 
             assert.equal(stats.consistency.download.stdDev, 0);
             assert.equal(stats.consistency.download.consistency, 100);
+        });
+
+        // The single *successful* test, as with the ping: the failures around
+        // it are what makes this shape common.
+        it("scores nothing when only one test in the range succeeded", () => {
+            const stats = buildStatistics([
+                at("2026-08-07T01:00:00.000Z", {download: 100}),
+                at("2026-08-07T02:00:00.000Z", {download: -1, error: "Cannot open socket"})
+            ], DAY);
+
+            assert.equal(stats.consistency.download.consistency, null);
         });
 
         /**
