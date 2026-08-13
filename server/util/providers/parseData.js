@@ -200,6 +200,30 @@ const payloadSizeOf = (measurement) => {
 };
 
 /**
+ * Whether the CLI actually completed a run at this payload size.
+ *
+ * A size it collected nothing at is reported with its statistics zeroed rather
+ * than nulled - {"payload_size":25000000,"successes":0,"skipped":10,"max":0} -
+ * so the figure alone cannot tell a line that delivered nothing from a size
+ * that was never measured. Taken as the largest payload's answer, that zero
+ * became the speed for the whole direction on a healthy connection, and a zero
+ * is stored as a genuine measurement rather than the -1 a failure carries: it
+ * drags every average and chart built on the row, and the alert gate reads it
+ * as measured and raises an outage that never happened.
+ *
+ * `successes` is what transferred() above already reads to decide the same
+ * question, so the two no longer disagree about whether an entry ran.
+ *
+ * An entry stating no count at all is trusted rather than discarded: output not
+ * shaped the way a real run's is should still answer with what it does report.
+ */
+const ranAnything = (measurement) => {
+    const runs = Number(measurement?.successes);
+
+    return !Number.isFinite(runs) || runs > 0;
+};
+
+/**
  * The one figure that stands for a direction, out of the CLI's statistics.
  *
  * `speed_measurements` carries one entry per payload size per direction, and
@@ -222,6 +246,8 @@ const directionSpeed = (measurements) => {
     let best = null;
 
     for (const measurement of measurements) {
+        if (!ranAnything(measurement)) continue;
+
         const figure = figureOf(measurement);
         if (figure === null) continue;
 

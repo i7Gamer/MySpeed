@@ -457,6 +457,42 @@ describe("parseCloudflare", () => {
             assert.equal(download, 140);
         });
 
+        /**
+         * A skipped payload reports zeroes, not nulls.
+         *
+         * The entry for a size the CLI collected nothing at is emitted as
+         * {"payload_size":25000000,"successes":0,"skipped":10,"max":0} - the
+         * shape the fixture further down this file already uses - so the figure
+         * alone cannot tell "the line delivered nothing" from "this size was
+         * never measured". Read as the largest payload's answer it reported
+         * 0 Mbit for the whole direction on a perfectly healthy connection, and
+         * a zero is stored as a real measurement rather than the -1 a failure
+         * carries: it drags every average and chart built on the row, and the
+         * alert gate reads it as measured and raises a false outage.
+         *
+         * `successes` is the signal, as transferred() in the same module
+         * already treats it.
+         */
+        it("ignores a skipped payload that reports zeroes rather than nulls", () => {
+            const {download} = parseCloudflare(sizedResult([
+                {test_type: "Download", payload_size: 100000, successes: 10, median: 90, max: 95.5},
+                {test_type: "Download", payload_size: 25000000, successes: 0, skipped: 10, max: 0}
+            ]));
+
+            assert.equal(download, 90);
+        });
+
+        // An entry stating no success count at all is trusted: output that is
+        // not shaped the way a real run's is should still answer with what it
+        // does report, rather than being discarded wholesale.
+        it("still reads an entry that states no success count", () => {
+            const {download} = parseCloudflare(sizedResult([
+                {test_type: "Download", payload_size: 1000000, median: 80}
+            ]));
+
+            assert.equal(download, 80);
+        });
+
         it("prefers the median, then the average, then the maximum", () => {
             const of = (entry) => parseCloudflare(sizedResult([{test_type: "Download", payload_size: 1000000, ...entry}])).download;
 
