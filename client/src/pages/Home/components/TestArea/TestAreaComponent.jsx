@@ -4,7 +4,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
 import Speedtest from "../Speedtest";
 import {bufferbloat, getIconBySpeed, previousConnection} from "@/common/utils/TestUtil";
-import {formatDay} from "@/common/utils/FormatUtil";
+import {formatDay, formatLatency} from "@/common/utils/FormatUtil";
 import {TIMEFRAME_ALL} from "@/common/utils/TimeframeUtil";
 import "./styles.sass";
 import {t} from "i18next";
@@ -200,7 +200,13 @@ const TestArea = () => {
                             ref={isLast ? lastElementRef : null}
                             time={date}
                             ping={test.ping}
-                            pingLevel={getIconBySpeed(test.ping, config.ping, false)}
+                            // Graded from the one-decimal figure the row
+                            // prints, not the stored two: the pane this row
+                            // expands into grades what it prints, and
+                            // getIconBySpeed floors a percentage - graded raw,
+                            // a ping that rounds across a bucket boundary is
+                            // green here and orange once opened.
+                            pingLevel={getIconBySpeed(formatLatency(test.ping), config.ping, false)}
                             jitter={test.jitter}
                             // Beside the jitter, the way the opened panel pairs
                             // them: they are the two things the line does under

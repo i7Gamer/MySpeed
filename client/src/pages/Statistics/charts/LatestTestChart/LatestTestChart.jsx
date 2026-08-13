@@ -57,14 +57,19 @@ export const LatestTestChart = (props) => {
                             interface is shown at. The measurement is stored
                             with two, and the card printed both of them while
                             the pane that opens from clicking it printed one -
-                            the same reading, twice, in two precisions. */}
-                        <p className={"icon-" + getIconBySpeed(props.test.ping, config.ping, false)}>
+                            the same reading, twice, in two precisions. The
+                            colour is graded from that same trimmed figure,
+                            here and on the icon beside it: the pane grades
+                            what it prints, and a raw ping that rounds across
+                            a bucket boundary would wear a different colour
+                            there. */}
+                        <p className={"icon-" + getIconBySpeed(formatLatency(props.test.ping), config.ping, false)}>
                             {(props.test.ping === -1 ? "N/A" : formatLatency(props.test.ping)) + " " + t("latest.ping_unit")}
                             {hasJitter && <span className="jitter-value"><FontAwesomeIcon icon={faWaveSquare} className="jitter-icon" />{formatLatency(props.test.jitter)}</span>}
                         </p>
                     </div>
                     <FontAwesomeIcon icon={faPingPongPaddleBall}
-                                     className={"icon-" + getIconBySpeed(props.test.ping, config.ping, false)}/>
+                                     className={"icon-" + getIconBySpeed(formatLatency(props.test.ping), config.ping, false)}/>
                 </div>
                 <div className="test-container">
                     <div className="test-info">

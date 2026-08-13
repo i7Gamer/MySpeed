@@ -24,7 +24,7 @@ import {Trans} from "react-i18next";
 import {getIconBySpeed, isFailedTest} from "@/common/utils/TestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {convertSpeed, formatLatency, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {useNavigate} from "react-router-dom";
 import ContextMenu from "@/common/components/ContextMenu";
 
@@ -71,15 +71,24 @@ export const NodeContainer = (node) => {
         }
 
         setNodeError(undefined);
+
+        // Trimmed once, to the one decimal every latency in this interface is
+        // shown at, so the figure the card prints and the colour it wears are
+        // read off the same value. Stored raw, the card printed two decimals
+        // beside the one-decimal overview it switches to - and graded raw, a
+        // ping that rounds across a bucket boundary wore a different colour
+        // here than there, getIconBySpeed flooring a percentage as it does.
+        const ping = formatLatency(tests[0]?.ping);
+
         setNodeData({
             // A failed test carries -1 in every column. Printing those as
             // "-1 ms" and "-1 Mbps" presented the placeholders as readings, so
             // the card marks the failure the way the overview does instead.
             failed: isFailedTest(tests[0]),
-            ping: tests[0]?.ping,
+            ping,
             download: Math.round(tests[0]?.download),
             upload: Math.round(tests[0]?.upload),
-            pingIcon: getIconBySpeed(tests[0]?.ping, config.ping, false),
+            pingIcon: getIconBySpeed(ping, config.ping, false),
             downloadIcon: getIconBySpeed(tests[0]?.download, config.download, true),
             uploadIcon: getIconBySpeed(tests[0]?.upload, config.upload, true)
         });
