@@ -30,8 +30,12 @@ export default db.define("speedtests", {
         allowNull: true,
         defaultValue: null
     },
+    // DOUBLE, like every other measurement on the row. As INTEGER this rounded
+    // the latency to whole milliseconds before it was stored - which is most of
+    // the reading on a fibre or local line, and unrecoverable afterwards since
+    // the API, the export and the integrations all read the stored column.
     ping: {
-        type: Sequelize.INTEGER,
+        type: Sequelize.DOUBLE,
         allowNull: false
     },
     jitter: {

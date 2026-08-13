@@ -113,6 +113,29 @@ export const getSpeedUnit = (preferences) => {
     return t("latest.speed_unit");
 };
 
+// The stored latency and the API keep two decimals; the interface shows one.
+// The test row is dense - the latency shares it with the jitter, the download
+// and the upload - and at a glance the second decimal is noise.
+const LATENCY_DECIMALS = 1;
+
+/**
+ * A latency as it is shown, rather than as it is stored.
+ *
+ * The column used to be an INTEGER, so this had nothing to do: every value
+ * arrived whole. Now that the measurement keeps its decimals, the ones on
+ * screen are trimmed to one - and a whole millisecond stays whole rather than
+ * gaining a pointless ".0".
+ *
+ * Anything that is not a number is handed back untouched, as convertSpeed does:
+ * null is the server saying it could not compute one, and -1 is the placeholder
+ * a failed test stores, which the interface recognises a failure by.
+ */
+export const formatLatency = (ms) => {
+    if (typeof ms !== "number" || isNaN(ms) || ms < 0) return ms;
+
+    return parseFloat(ms.toFixed(LATENCY_DECIMALS));
+};
+
 export const convertSpeed = (mbps, preferences) => {
     if (mbps === null || mbps === undefined) return mbps;
     if (typeof mbps !== "number" || isNaN(mbps)) return mbps;

@@ -102,7 +102,10 @@ const buildHourlyAverages = (entries, zone) => {
         hour,
         download: averageOrNull(bucket.download),
         upload: averageOrNull(bucket.upload),
-        ping: averageOrNull(bucket.ping, Math.round),
+        // Two decimals, like every other metric here: the column stopped being
+        // an INTEGER, and rounding the bucket to a whole millisecond would
+        // discard the precision at the last step.
+        ping: averageOrNull(bucket.ping),
         jitter: averageOrNull(bucket.jitter),
         count: bucket.download.length
     }));
@@ -242,7 +245,7 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
         series.labels.push(new Date(midTime).toISOString());
         series.failed.push(bucket.errors.length > 0);
         series.errors.push(bucket.errors.length > 0 ? `${bucket.errors.length} failed in period` : null);
-        series.data.ping.push(Math.round(average(valid.map(entry => entry.ping))));
+        series.data.ping.push(round(average(valid.map(entry => entry.ping))));
         series.data.jitter.push(averageOrNull(measuredOnly("jitter")));
         series.data.download.push(round(average(valid.map(entry => entry.download))));
         series.data.upload.push(round(average(valid.map(entry => entry.upload))));
@@ -292,7 +295,9 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
         packetLoss: averageOrNull(succeeded
             .map(entry => entry.packetLoss)
             .filter(value => value !== null && value !== undefined)),
-        ping: mapRounded(succeeded, "ping"),
+        // mapFixed rather than mapRounded: the latency carries decimals now, and
+        // `time` below is the only column here that is genuinely whole.
+        ping: mapFixed(succeeded, "ping"),
         jitter: mapFixed(withJitter, "jitter"),
         download: mapFixed(succeeded, "download"),
         upload: mapFixed(succeeded, "upload"),

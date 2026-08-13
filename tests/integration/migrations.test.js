@@ -26,6 +26,68 @@ describe("migrations", () => {
         assert.ok(names.includes("0007-widen-speedtest-error.js"));
         assert.ok(names.includes("0008-add-provider-column.js"));
         assert.ok(names.includes("0009-add-transfer-columns.js"));
+        assert.ok(names.includes("0010-widen-speedtest-ping.js"));
+    });
+
+    /**
+     * The latency keeps its decimals.
+     *
+     * The column was declared INTEGER, so the parsers rounded to whole
+     * milliseconds on the way in - and the rounding is not recoverable, since
+     * the API, the CSV export, the Prometheus exporter and every integration all
+     * read what was stored. On a fibre or local line most of the measurement
+     * lives below the millisecond, which is what upstream #1387 and #999 ask
+     * for back.
+     *
+     * The declared type is what this asserts, because it is what actually
+     * differs by dialect and the suite only ever runs sqlite: sqlite's INTEGER
+     * affinity is numeric, so it quietly keeps a REAL and the round trip below
+     * passes either way, while MySQL's INT rounds the value away on write. The
+     * declaration is also what sequelize validates a value against before it
+     * reaches any database at all.
+     */
+    it("declares a latency column that can hold a fraction", () => {
+        assert.doesNotMatch(server.tests.getAttributes().ping.type.key, /^INTEGER$/i,
+            "ping is declared INTEGER, which rounds the measurement away on MySQL");
+    });
+
+    it("stores a latency with its decimals", async () => {
+        const stored = await server.tests.create({
+            ping: 12.64, download: 100, upload: 50, time: 10, serverId: 0, type: "auto",
+            created: new Date().toISOString()
+        });
+
+        const read = await server.tests.findOne({where: {id: stored.id}});
+        assert.equal(read.ping, 12.64);
+
+        await server.tests.destroy({where: {id: stored.id}});
+    });
+
+    it("stores a sub-millisecond latency as more than zero", async () => {
+        const stored = await server.tests.create({
+            ping: 0.42, download: 100, upload: 50, time: 10, serverId: 0, type: "auto",
+            created: new Date().toISOString()
+        });
+
+        const read = await server.tests.findOne({where: {id: stored.id}});
+        assert.equal(read.ping, 0.42);
+
+        await server.tests.destroy({where: {id: stored.id}});
+    });
+
+    // The placeholder a failed row carries in every numeric column, which the
+    // client tells a failure apart by. A widened column must still hold it
+    // exactly - -1.0 and -1 compare equal, but the client compares strictly.
+    it("still stores the failure placeholder exactly", async () => {
+        const stored = await server.tests.create({
+            ping: -1, download: -1, upload: -1, time: null, serverId: 0, type: "auto",
+            error: "no route to host", created: new Date().toISOString()
+        });
+
+        const read = await server.tests.findOne({where: {id: stored.id}});
+        assert.equal(read.ping, -1);
+
+        await server.tests.destroy({where: {id: stored.id}});
     });
 
     it("creates the columns the model expects", async () => {

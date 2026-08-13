@@ -45,6 +45,30 @@ describe("buildStatistics", () => {
             assert.equal(stats.download.avg, 150);
         });
 
+        /**
+         * The latency is aggregated to the same two decimals as everything
+         * beside it.
+         *
+         * Three places rounded it to whole milliseconds - the min/max/avg
+         * tiles, the hourly buckets and the downsampled chart series - because
+         * the column it came from was an INTEGER and there was nothing below
+         * the millisecond to keep. Now that there is, rounding it away in the
+         * aggregate would discard the measurement at the last step: an idle
+         * latency that moves between 0.4 ms and 1.4 ms is exactly the movement
+         * someone watching this number is looking for.
+         */
+        it("averages the latency to two decimals rather than whole milliseconds", () => {
+            const stats = buildStatistics([
+                at("2026-08-07T01:00:00.000Z", {ping: 12.6}),
+                at("2026-08-07T02:00:00.000Z", {ping: 13.1}),
+                at("2026-08-07T03:00:00.000Z", {ping: 12.9})
+            ], DAY);
+
+            assert.equal(stats.ping.avg, 12.87);
+            assert.equal(stats.ping.min, 12.6);
+            assert.equal(stats.ping.max, 13.1);
+        });
+
         // Regression: a range in which every test failed used to serialise as
         // Infinity/NaN, which JSON.stringify turns into null with no warning.
         it("returns null aggregates when every test failed", () => {
@@ -249,6 +273,15 @@ describe("buildStatistics", () => {
             assert.equal(bucket.download, 150);
         });
 
+        it("keeps the latency's decimals in a bucket's average", () => {
+            const stats = buildStatistics([
+                at("2026-08-07T05:10:00.000Z", {ping: 0.4}),
+                at("2026-08-07T05:50:00.000Z", {ping: 1.1})
+            ], DAY, {offsetMinutes: 0});
+
+            assert.equal(stats.hourlyAverages[5].ping, 0.75);
+        });
+
         it("buckets by the client's local hour when an offset is supplied", () => {
             // 23:30Z is 01:30 the next day at UTC+2 (offset -120).
             const stats = buildStatistics(
@@ -326,6 +359,21 @@ describe("buildStatistics", () => {
             assert.deepEqual(stats.data.download, [100, null]);
             assert.deepEqual(stats.failed, [false, true]);
             assert.equal(stats.errors[1], "timeout");
+        });
+
+        // The chart is the main reader of the latency, and a downsampled range
+        // is where a slow drift is easiest to see - rounding each bucket to a
+        // whole millisecond flattens exactly that.
+        it("keeps the latency's decimals in a downsampled bucket", () => {
+            const many = Array.from({length: TARGET_CHART_POINTS * 2}, (_, index) =>
+                at(new Date(Date.UTC(2026, 7, 7, 0, 0, 0) + index * 60_000).toISOString(),
+                    {ping: index % 2 === 0 ? 0.4 : 1.1}));
+            const stats = buildStatistics(many, DAY);
+
+            const measured = stats.data.ping.filter((value) => value !== null);
+            assert.ok(measured.length > 0, "nothing was measured to check");
+            assert.ok(measured.some((value) => !Number.isInteger(value)),
+                `every bucket rounded to a whole millisecond: ${measured.slice(0, 5).join(", ")}`);
         });
 
         it("downsamples above the target point count", () => {

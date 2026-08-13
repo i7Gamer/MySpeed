@@ -70,7 +70,10 @@ const calculateJitter = (latencyMeasurements) => {
 };
 
 export const parseOokla = (test) => {
-    let ping = Math.round(test.ping.latency);
+    // round() to two decimals, not Math.round() to whole milliseconds: the
+    // column holds a double now, and on a fibre or local line the whole reading
+    // lives below the millisecond. Same treatment as the jitter beside it.
+    let ping = round(test.ping.latency);
     // round(), not a truthiness check: a jitter of exactly zero is a
     // measurement - a perfectly steady line - and must not store as null.
     let jitter = round(test.ping.jitter);
@@ -114,7 +117,7 @@ const ispName = (org) => {
 };
 
 export const parseLibre = (test) => ({...test, ...NO_QUALITY_FIGURES, provider: LIBRE,
-    ping: Math.round(test.ping),
+    ping: round(test.ping),
     // round() also normalises the string jitter this CLI reports, and keeps a
     // measured zero rather than nulling it as falsy.
     jitter: round(test.jitter),
@@ -255,7 +258,7 @@ export const parseCloudflare = (test) => {
         const download = directionSpeed(downloadTests);
         const upload = directionSpeed(uploadTests);
 
-        const ping = Math.round(test.latency_measurement.avg_latency_ms || 0);
+        const ping = round(test.latency_measurement.avg_latency_ms) ?? 0;
         const jitter = calculateJitter(test.latency_measurement.latency_measurements);
 
         const time = Math.round((test.elapsed || 30000) / 1000);

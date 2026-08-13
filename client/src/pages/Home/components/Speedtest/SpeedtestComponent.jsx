@@ -14,7 +14,7 @@ import {t} from "i18next";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatShortDay, formatShortTime, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {convertSpeed, formatLatency, formatShortDay, formatShortTime, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {useAlert} from "@/common/contexts/Alert";
 import {downloadInfo, jitterInfo, pingInfo, uploadInfo} from "@/pages/Home/components/Speedtest/utils/dialogs";
 
@@ -158,7 +158,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                                  className={"speedtest-icon icon-" + props.pingLevel}/>
                             </HelpButton>
                             <h2 className="speedtest-text">
-                                {props.ping}
+                                {formatLatency(props.ping)}
                                 <span className="speedtest-unit">{t("latest.ping_unit")}</span>
                                 {props.jitter !== null && props.jitter !== undefined && (
                                     <span className="jitter-suffix">

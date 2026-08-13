@@ -6,7 +6,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatBytes, formatDateTime, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {convertSpeed, formatBytes, formatDateTime, formatLatency, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {
     bufferbloat, bufferbloatColour, connectionChange, getIconBySpeed, jitterColour, packetLossColour
 } from "@/common/utils/TestUtil";
@@ -196,7 +196,7 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
             sub: quality || null,
             icon: faPingPongPaddleBall,
             label: t("latest.ping"),
-            value: test.ping,
+            value: formatLatency(test.ping),
             unit: t("latest.ping_unit"),
             changeUnit: t("latest.ping_unit"),
             level: getIconBySpeed(test.ping, targets.ping, false),

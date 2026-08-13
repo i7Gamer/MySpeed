@@ -23,10 +23,32 @@ describe("parseOokla", () => {
         assert.equal(upload, 50);
     });
 
-    it("rounds the latency and fixes jitter to two decimals", () => {
+    /**
+     * The latency keeps its decimals, as jitter always has.
+     *
+     * It used to be rounded to whole milliseconds on the way in, and the
+     * rounding is not recoverable afterwards - the API, the export and the
+     * integrations all read the stored column. On a line whose idle latency is
+     * a millisecond or two that discards most of the measurement, and it is the
+     * one figure people watch for movement (upstream #1387, #999).
+     *
+     * Two decimals, matching every other measurement on the row: it is what the
+     * providers report and further precision would be noise.
+     */
+    it("keeps the latency's decimals and fixes jitter to two", () => {
         const {ping, jitter} = parseOokla(ooklaResult);
-        assert.equal(ping, 13);
+        assert.equal(ping, 12.6);
         assert.equal(jitter, 3.46);
+    });
+
+    it("holds the latency to two decimals", () => {
+        assert.equal(parseOokla({...ooklaResult, ping: {latency: 12.6789, jitter: 1}}).ping, 12.68);
+    });
+
+    // A sub-millisecond latency is the case the rounding destroyed outright:
+    // every reading on a local or fibre line collapsed onto 0 or 1.
+    it("keeps a sub-millisecond latency", () => {
+        assert.equal(parseOokla({...ooklaResult, ping: {latency: 0.42, jitter: 1}}).ping, 0.42);
     });
 
     it("reports the elapsed time of both directions in seconds", () => {
@@ -191,9 +213,9 @@ describe("parseLibre", () => {
         server: {name: "Berlin", url: "http://berlin.example.net"}
     };
 
-    it("rounds the ping and normalises a string jitter", () => {
+    it("keeps the ping's decimals and normalises a string jitter", () => {
         const {ping, jitter} = parseLibre(libreResult);
-        assert.equal(ping, 13);
+        assert.equal(ping, 12.7);
         assert.equal(jitter, 3.46);
     });
 
@@ -454,8 +476,8 @@ describe("parseCloudflare", () => {
         assert.equal(parsed.jitter, null);
     });
 
-    it("rounds the average latency", () => {
-        assert.equal(parseCloudflare(cloudflareResult).ping, 23);
+    it("keeps the average latency's decimals", () => {
+        assert.equal(parseCloudflare(cloudflareResult).ping, 23.4);
     });
 
     it("defaults the duration to 30s when the CLI omits it", () => {

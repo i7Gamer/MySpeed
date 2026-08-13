@@ -2,7 +2,7 @@ import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import i18n from "i18next";
 import {
-    convertSpeed, formatBytes, formatDateTime, formatDuration, formatLastTest, formatShortDay,
+    convertSpeed, formatBytes, formatDateTime, formatDuration, formatLastTest, formatLatency, formatShortDay,
     formatShortTime, formatTime, formatHour, formatWithUnit, generateRelativeTime, getSpeedUnit, NOT_MEASURED,
     SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H
 } from "@/common/utils/FormatUtil.js";
@@ -141,6 +141,39 @@ before(async () => {
                 never_run: "No test has run yet"
             }
         }}}
+    });
+});
+
+/**
+ * What a latency looks like on screen, now that the column behind it keeps
+ * decimals rather than whole milliseconds.
+ *
+ * One decimal, which is what upstream #1387 asks for: the stored value and the
+ * API keep two, but the test row is dense - the latency shares it with the
+ * jitter, the download and the upload - and the second decimal is noise at a
+ * glance.
+ */
+describe("formatLatency", () => {
+    it("shows one decimal", () => {
+        assert.equal(formatLatency(12.64), 12.6);
+        assert.equal(formatLatency(0.42), 0.4);
+    });
+
+    // A whole millisecond reads as a whole millisecond, not as "13.0".
+    it("leaves a whole value whole", () => {
+        assert.equal(formatLatency(13), 13);
+        assert.equal(formatLatency(13.01), 13);
+    });
+
+    // -1 is the placeholder a failed test stores in every numeric column, and
+    // the interface recognises a failure by it.
+    it("passes the failure placeholder through untouched", () => {
+        assert.equal(formatLatency(-1), -1);
+    });
+
+    it("passes through anything that is not a number", () => {
+        for (const absent of [null, undefined, "N/A", NaN])
+            assert.deepEqual(formatLatency(absent), absent);
     });
 });
 
