@@ -50,8 +50,22 @@ const activeRows = async (where) => {
 
 const getActiveByName = (name) => activeRows({name});
 
-const triggerActivity = async (id, error = false) => {
-    await IntegrationData.update({lastActivity: new Date().toISOString(), activityFailed: error}, {where: {id: id}});
+/**
+ * Records that an integration dealt with an event, and how it went.
+ *
+ * `error` may be left out entirely, which stamps the time and leaves the
+ * failure flag as it stands. Passing false instead would clear a failure the
+ * previous send recorded - and for an integration that only speaks up about
+ * breaches, the next healthy test would turn a broken webhook green and keep it
+ * that way while it went on delivering nothing. That is the one combination in
+ * which a dead integration is invisible: the card reads "last run just now"
+ * with no error, and no message arrives to say otherwise.
+ */
+const triggerActivity = async (id, error) => {
+    const update = {lastActivity: new Date().toISOString()};
+    if (error !== undefined) update.activityFailed = error;
+
+    await IntegrationData.update(update, {where: {id: id}});
 }
 
 export const triggerEvent = async (name, data) => {
@@ -67,8 +81,12 @@ export const triggerEvent = async (name, data) => {
             // and "Never executed", so an integration doing exactly what it was
             // asked - staying quiet through a run of healthy tests - would
             // otherwise present itself as one that has never worked.
+            //
+            // The time only: nothing was attempted, so this says nothing about
+            // whether the integration still delivers, and must not overwrite
+            // what the last actual send found out.
             if (suppressesEvent(name, module.module, integration, data)) {
-                await triggerActivity(integration.id, false).catch(() => undefined);
+                await triggerActivity(integration.id).catch(() => undefined);
                 continue;
             }
 

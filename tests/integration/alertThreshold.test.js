@@ -149,6 +149,62 @@ describe("only notifying when a limit is missed", () => {
     });
 
     /**
+     * Staying quiet must not clear a failure the previous send recorded.
+     *
+     * Both activity columns are written together, so stamping `lastActivity`
+     * for a result the integration was asked to say nothing about also wrote
+     * `activityFailed: false` beside it. An integration whose delivery is
+     * broken therefore went green on the very next healthy test and stayed
+     * there - while, by design, also sending nothing. That is the one
+     * combination in which a dead webhook is invisible: the card says "last run
+     * just now" with no error, and no message arrives to contradict it.
+     */
+    it("does not clear a recorded failure by staying quiet", async () => {
+        const id = await createTelegram({alert_only: true, alert_download_below: 100});
+        try {
+            // A breach that cannot be delivered: everything outbound answers 500.
+            globalThis.fetch = async (url, init = {}) => {
+                if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+                return new Response("nope", {status: 500});
+            };
+
+            await triggerEvent("testFinished", SLOW);
+            assert.ok((await rowOf(id)).activityFailed, "the undeliverable send was not recorded as a failure");
+
+            await triggerEvent("testFinished", GOOD);
+
+            assert.ok((await rowOf(id)).activityFailed,
+                "staying quiet cleared the failure, so a broken integration reads as healthy");
+        } finally {
+            await remove(id);
+        }
+    });
+
+    // The other direction: a send that works clears a previous failure, which
+    // is what makes the flag mean anything at all.
+    it("clears a recorded failure once a send succeeds", async () => {
+        const id = await createTelegram({alert_only: true, alert_download_below: 100});
+        try {
+            globalThis.fetch = async (url, init = {}) => {
+                if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+                return new Response("nope", {status: 500});
+            };
+            await triggerEvent("testFinished", SLOW);
+            assert.ok((await rowOf(id)).activityFailed);
+
+            globalThis.fetch = async (url, init = {}) => {
+                if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+                return new Response("{}", {status: 200, headers: {"content-type": "application/json"}});
+            };
+            await triggerEvent("testFinished", SLOW);
+
+            assert.ok(!(await rowOf(id)).activityFailed, "a successful send left the failure standing");
+        } finally {
+            await remove(id);
+        }
+    });
+
+    /**
      * influxdb registers only testFinished and writes one point per test, so
      * suppressing the good results would leave a gap in the series exactly
      * where the line was healthy. It is not offered the settings at all, and
