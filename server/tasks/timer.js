@@ -4,6 +4,7 @@ import schedule from 'node-schedule';
 import { isValidCron } from "cron-validator";
 import { CronExpressionParser } from "cron-parser";
 import { create as createSpeedtest } from './speedtest.js';
+import { isQuietHour } from '../util/quietHours.js';
 
 let job;
 let currentCron;
@@ -112,9 +113,26 @@ export const nextRun = (cron = currentCron) => {
     }
 };
 
+/**
+ * Whether now falls inside the daily window the operator set aside.
+ *
+ * Read fresh on every run rather than held: the window can be changed between
+ * two tests, and a cached copy would go on silencing the old hours.
+ */
+const withinQuietHours = async () => isQuietHour(new Date(),
+    await config.getValue("quietHoursStart"), await config.getValue("quietHoursEnd"));
+
 export const runTask = async () => {
     if (pauseController.currentState) {
         console.warn("Speedtests currently paused. Trying again later...");
+        return;
+    }
+
+    // Only the scheduled runs are held to the quiet hours. A test started by
+    // hand is someone asking for one now, and create() is reached directly for
+    // those - refusing it here would be a fault rather than a courtesy.
+    if (await withinQuietHours()) {
+        console.warn("Within the configured quiet hours. Skipping this test...");
         return;
     }
 
@@ -136,6 +154,14 @@ export const runTask = async () => {
 
         if (pauseController.currentState) {
             console.warn("Speedtests paused during delay. Skipping this test...");
+            return;
+        }
+
+        // Checked again on the far side for the same reason the pause is: the
+        // offset sleeps for up to five minutes, which is long enough for a run
+        // that started just before the quiet hours to wake up inside them.
+        if (await withinQuietHours()) {
+            console.warn("Quiet hours began during delay. Skipping this test...");
             return;
         }
     }

@@ -113,3 +113,82 @@ describe("runTask with the schedule offset enabled", () => {
         assert.equal(timer.pendingDelayCount(), 0);
     });
 });
+
+/**
+ * The daily quiet window, checked where it has to be checked: inside runTask.
+ *
+ * The predicate has its own unit tests, and every one of them would still pass
+ * if the scheduler never consulted it. The window is computed from the clock at
+ * the moment of the test rather than written out, so the assertions hold
+ * whenever the suite happens to run.
+ */
+describe("runTask during the configured quiet hours", () => {
+    const MINUTES_PER_HOUR = 60;
+
+    const clockAt = (offsetMinutes) => {
+        const moment = new Date(Date.now() + offsetMinutes * 60_000);
+
+        return `${String(moment.getHours()).padStart(2, "0")}:${String(moment.getMinutes()).padStart(2, "0")}`;
+    };
+
+    const setWindow = async (start, end) => {
+        await setConfig(server.config, "quietHoursStart", start);
+        await setConfig(server.config, "quietHoursEnd", end);
+    };
+
+    beforeEach(async () => {
+        await setConfig(server.config, "scheduleOffset", "false");
+        await setWindow("none", "none");
+    });
+
+    after(async () => {
+        await setWindow("none", "none");
+    });
+
+    it("does not test inside the window", async () => {
+        await setWindow(clockAt(-MINUTES_PER_HOUR), clockAt(MINUTES_PER_HOUR));
+        timer.startTimer(DISTANT_CRON);
+
+        await timer.runTask();
+
+        assert.equal(await countTests(), 0, "a test ran during the quiet hours");
+    });
+
+    it("tests outside the window", async () => {
+        await setWindow(clockAt(MINUTES_PER_HOUR), clockAt(2 * MINUTES_PER_HOUR));
+        timer.startTimer(DISTANT_CRON);
+
+        await timer.runTask();
+
+        assert.equal(await countTests(), 1, "a test outside the quiet hours was skipped");
+    });
+
+    // The window everyone actually wants, and the one a naive comparison gets
+    // wrong: its end is a smaller number than its start.
+    it("does not test inside a window that crosses midnight", async () => {
+        await setWindow(clockAt(-MINUTES_PER_HOUR), clockAt(-2 * MINUTES_PER_HOUR));
+        timer.startTimer(DISTANT_CRON);
+
+        await timer.runTask();
+
+        assert.equal(await countTests(), 0, "a window spanning midnight silenced nothing");
+    });
+
+    it("tests when no window is configured", async () => {
+        timer.startTimer(DISTANT_CRON);
+
+        await timer.runTask();
+
+        assert.equal(await countTests(), 1, "an unconfigured window skipped the run");
+    });
+
+    // Only one end set is not a window, and must not be read as one.
+    it("tests when only one end of the window is set", async () => {
+        await setWindow(clockAt(-MINUTES_PER_HOUR), "none");
+        timer.startTimer(DISTANT_CRON);
+
+        await timer.runTask();
+
+        assert.equal(await countTests(), 1, "half a window silenced the run");
+    });
+});

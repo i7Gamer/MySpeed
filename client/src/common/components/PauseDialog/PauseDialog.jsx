@@ -3,9 +3,14 @@ import {Dialog, DialogHeader, DialogBody, DialogFooter} from "@/common/contexts/
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faExclamationTriangle, faInfinity, faClock, faMugHot, faMoon, faChevronDown} from "@fortawesome/free-solid-svg-icons";
 import {t} from "i18next";
-import {assertOk, postRequest, RequestError} from "@/common/utils/RequestUtil";
+import {assertOk, patchRequest, postRequest, RequestError} from "@/common/utils/RequestUtil";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
+import {ConfigContext} from "@/common/contexts/Config";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
+import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
+import {
+    quietHoursUpdates, storedTimeToInput, windowProblem
+} from "@/common/components/PauseDialog/quietHoursWindow";
 import "./styles.sass";
 
 const PRESETS = [
@@ -17,9 +22,46 @@ const PRESETS = [
 
 export const PauseDialog = ({open, onClose, onPause}) => {
     const updateToast = useContext(ToastNotificationContext);
+    const [config, reloadConfig] = useContext(ConfigContext);
     const [selected, setSelected] = useState("manual");
     const [customHours, setCustomHours] = useState("");
     const [showCustom, setShowCustom] = useState(false);
+
+    // A pause is a one-shot; the quiet hours are the standing version of it,
+    // which is what both upstream requests actually asked for - having to set a
+    // pause again every evening is why neither was answered by pausing.
+    const [showQuiet, setShowQuiet] = useState(false);
+    const [quietStart, setQuietStart] = useState("");
+    const [quietEnd, setQuietEnd] = useState("");
+    const [savingQuiet, setSavingQuiet] = useState(false);
+
+    // Read when the dialog opens rather than at mount: the config arrives
+    // asynchronously, and a value read once at mount is whatever was there
+    // before it did.
+    useSyncOnOpen(open, () => {
+        setQuietStart(storedTimeToInput(config.quietHoursStart));
+        setQuietEnd(storedTimeToInput(config.quietHoursEnd));
+    });
+
+    const quietProblem = windowProblem(quietStart, quietEnd);
+
+    const saveQuietHours = async () => {
+        if (quietProblem) return;
+
+        setSavingQuiet(true);
+        try {
+            for (const {key, value} of quietHoursUpdates(quietStart, quietEnd))
+                await assertOk(await patchRequest(`/config/${key}`, {value}), "update quiet hours");
+
+            reloadConfig();
+            updateToast(t("update.quiet_hours_saved"), "green", faMoon);
+        } catch (e) {
+            updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
+                "red", faExclamationTriangle);
+        } finally {
+            setSavingQuiet(false);
+        }
+    };
 
     const handleSave = async (close) => {
         const preset = PRESETS.find(p => p.id === selected);
@@ -90,6 +132,40 @@ export const PauseDialog = ({open, onClose, onPause}) => {
                                            placeholder={t("update.hours")}
                                            min="0.1"
                                            step="0.5"/>
+                                </div>
+                            )}
+
+                            {/* The standing version of a pause: the same hours
+                                every day, without having to set it again. */}
+                            <button
+                                className={`pause-custom-toggle${showQuiet ? " pause-custom-open" : ""}`}
+                                onClick={() => setShowQuiet(!showQuiet)}
+                            >
+                                <span>{t("pause.quiet_hours")}</span>
+                                <FontAwesomeIcon icon={faChevronDown}/>
+                            </button>
+
+                            {showQuiet && (
+                                <div className="pause-custom">
+                                    <p className="pause-quiet-hint">{t("pause.quiet_hours_desc")}</p>
+                                    <div className="pause-quiet-range">
+                                        <label>
+                                            <span>{t("pause.quiet_from")}</span>
+                                            <input type="time" value={quietStart}
+                                                   className={`dialog-input pause-input${quietProblem === "start" ? " input-error" : ""}`}
+                                                   onChange={(e) => setQuietStart(e.target.value)}/>
+                                        </label>
+                                        <label>
+                                            <span>{t("pause.quiet_until")}</span>
+                                            <input type="time" value={quietEnd}
+                                                   className={`dialog-input pause-input${["end", "same"].includes(quietProblem) ? " input-error" : ""}`}
+                                                   onChange={(e) => setQuietEnd(e.target.value)}/>
+                                        </label>
+                                    </div>
+                                    <button className="dialog-btn pause-quiet-save"
+                                            onClick={saveQuietHours} disabled={!!quietProblem || savingQuiet}>
+                                        {t("dialog.save")}
+                                    </button>
                                 </div>
                             )}
                         </div>

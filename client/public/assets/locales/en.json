@@ -127,7 +127,11 @@
     "medium_desc": "Pause for 6 hours",
     "long": "Long Break",
     "long_desc": "Pause for 12 hours",
-    "custom": "Custom Duration"
+    "custom": "Custom Duration",
+    "quiet_hours": "Quiet hours",
+    "quiet_hours_desc": "Scheduled tests are skipped every day between these times. Tests you start yourself always run.",
+    "quiet_from": "From",
+    "quiet_until": "Until"
   },
   "page": {
     "overview": "Overview",
@@ -164,7 +168,8 @@
     "pause_manual_hint": "Leave empty to pause indefinitely",
     "release_manually": "Release manually",
     "language": "Change language",
-    "view_title": "Switch view"
+    "view_title": "Switch view",
+    "quiet_hours_saved": "Quiet hours saved"
   },
   "header": {
     "title": "MySpeed",

@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as interfaces from '../util/loadInterfaces.js';
 import { destroyAllSessions } from '../util/session.js';
+import { isValidTimeOfDay } from '../util/quietHours.js';
 
 const configDefaults = {
     ping: "25",
@@ -26,7 +27,11 @@ const configDefaults = {
     password: "none",
     passwordLevel: "none",
     interface: "none",
-    retentionDays: "365"
+    retentionDays: "365",
+    // The daily window in which no scheduled test runs. Both ends have to be
+    // set before it means anything, so both default to the off sentinel.
+    quietHoursStart: "none",
+    quietHoursEnd: "none"
 }
 
 const MAX_RETENTION_DAYS = 10000;
@@ -221,6 +226,9 @@ export const validateInput = async (key, value) => {
 
     if (key === "cron" && !cron.isValidCron(value.toString()))
         return "Not a valid cron expression";
+
+    if ((key === "quietHoursStart" || key === "quietHoursEnd") && !isValidTimeOfDay(value.toString()))
+        return "You need to provide a time of day as HH:MM, or none to switch the quiet hours off";
 
     // Compared as a string, and then *stored* as one. A boolean true is the
     // obvious thing for anyone driving the API to send, and it used to be

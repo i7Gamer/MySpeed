@@ -127,7 +127,11 @@
     "medium_desc": "6 Stunden pausieren",
     "long": "Lange Pause",
     "long_desc": "12 Stunden pausieren",
-    "custom": "Eigene Dauer"
+    "custom": "Eigene Dauer",
+    "quiet_hours": "Ruhezeiten",
+    "quiet_hours_desc": "Geplante Tests werden täglich zwischen diesen Uhrzeiten übersprungen. Selbst gestartete Tests laufen immer.",
+    "quiet_from": "Von",
+    "quiet_until": "Bis"
   },
   "page": {
     "overview": "Übersicht",
@@ -164,7 +168,8 @@
     "pause_manual_hint": "Leer lassen um unbegrenzt zu pausieren",
     "release_manually": "Manuell freigeben",
     "language": "Sprache ändern",
-    "view_title": "Ansicht wechseln"
+    "view_title": "Ansicht wechseln",
+    "quiet_hours_saved": "Ruhezeiten gespeichert"
   },
   "header": {
     "title": "MySpeed",

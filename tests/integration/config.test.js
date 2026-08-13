@@ -53,6 +53,29 @@ describe("validateInput", () => {
         });
     });
 
+    /**
+     * The daily window in which no scheduled test runs. Both ends are ordinary
+     * configuration values, so both go through here - and a value this refuses
+     * is one the scheduler would silently read as "no window at all".
+     */
+    describe("quiet hours", () => {
+        for (const key of ["quietHoursStart", "quietHoursEnd"]) {
+            it(`accepts a time of day for ${key}`, async () => {
+                assert.equal(await accepts(key, "23:00"), "23:00");
+                assert.equal(await accepts(key, "08:30"), "08:30");
+            });
+
+            it(`accepts the off sentinel for ${key}`, async () => {
+                assert.equal(await accepts(key, "none"), "none");
+            });
+
+            it(`rejects a time that is not one for ${key}`, async () => {
+                for (const bad of ["24:00", "12:60", "noon", "12", "1200", "-1:00"])
+                    await rejects(key, bad);
+            });
+        }
+    });
+
     describe("retentionDays", () => {
         it("keeps a value inside the allowed range", async () => {
             assert.equal(await accepts("retentionDays", "30"), "30");
