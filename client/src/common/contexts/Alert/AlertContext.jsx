@@ -2,6 +2,7 @@ import React, {createContext, useCallback, useContext, useEffect, useMemo, useRe
 import {createPortal} from "react-dom";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faClose} from "@fortawesome/free-solid-svg-icons";
+import {isTopmostOverlay} from "@/common/contexts/Dialog";
 
 const AlertContext = createContext(null);
 
@@ -103,6 +104,15 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
     };
 
     const handleKeyDown = useCallback((e) => {
+        // Already answered by the overlay that heard it first - see the Dialog's
+        // handler for why the backdrop rule needs this alongside it.
+        if (e.defaultPrevented) return;
+
+        // isTop settles which of the stacked alerts listens, but a Dialog is
+        // listening on the same document too and cannot be silenced from here -
+        // so the alert answers only while it is the overlay on top of it.
+        if (!isTopmostOverlay(areaRef.current)) return;
+
         if (e.key === "Escape" && !alert.disableClose) {
             e.preventDefault();
             close();

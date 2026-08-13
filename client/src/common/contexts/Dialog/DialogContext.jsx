@@ -4,6 +4,32 @@ import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faClose} from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
 
+/**
+ * Every overlay in the app - a Dialog, and every alert - paints this same
+ * backdrop at the same z-index, so the one the user sees on top is simply the
+ * last one in the document. One that is fading out has given up its turn.
+ */
+const OVERLAY_AREA_SELECTOR = ".dialog-area:not(.dialog-area-hidden)";
+
+/**
+ * Whether `area` is the backdrop of the overlay currently on top.
+ *
+ * Both overlay systems listen for Escape on the document, and neither
+ * preventDefault nor stopPropagation reaches a sibling listener on the same
+ * node: one key was answered by all of them. That went unnoticed while every
+ * alert was opened over a page, but the "remove password" confirmation is
+ * opened over a Dialog, and escaping out of it faded out the password dialog
+ * underneath as well - discarding the password typed into it.
+ *
+ * Asking the document keeps no bookkeeping that could fall out of sync, and it
+ * answers with what the user actually sees on top rather than with whichever
+ * listener happened to be registered last.
+ */
+export const isTopmostOverlay = (area) => {
+    const areas = document.querySelectorAll(OVERLAY_AREA_SELECTOR);
+    return areas.length > 0 && areas[areas.length - 1] === area;
+};
+
 export const Dialog = ({open, onClose, className, disableClose, children}) => {
     const areaRef = useRef();
     const dialogRef = useRef();
@@ -50,7 +76,16 @@ export const Dialog = ({open, onClose, className, disableClose, children}) => {
     useEffect(() => {
         if (!visible) return;
         const handleKeyDown = (e) => {
-            if (e.key === "Escape" && !disableClose) {
+            // A key another overlay has already answered is not answered twice.
+            // The backdrop rule alone is not enough: an alert hides its own
+            // backdrop from inside the keypress that closes it, so a listener
+            // running later in that same event finds itself on top and closes as
+            // well - which is the bug, back again, whenever the alert's listener
+            // happens to be registered first. preventDefault reaches no sibling
+            // listener, but what it sets is readable by one.
+            if (e.defaultPrevented) return;
+
+            if (e.key === "Escape" && !disableClose && isTopmostOverlay(areaRef.current)) {
                 e.preventDefault();
                 handleClose();
             }
