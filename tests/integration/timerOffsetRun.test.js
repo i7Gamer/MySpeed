@@ -41,6 +41,23 @@ const DISTANT_CRON = "0 3 1 1 *";
 
 const countTests = () => server.tests.count();
 
+const MINUTES_PER_HOUR = 60;
+
+/**
+ * The clock a while from now as "HH:MM", so a quiet window can be described
+ * relative to the moment the test runs rather than written out.
+ */
+const clockAt = (offsetMinutes) => {
+    const moment = new Date(Date.now() + offsetMinutes * 60_000);
+
+    return `${String(moment.getHours()).padStart(2, "0")}:${String(moment.getMinutes()).padStart(2, "0")}`;
+};
+
+const setWindow = async (start, end) => {
+    await setConfig(server.config, "quietHoursStart", start);
+    await setConfig(server.config, "quietHoursEnd", end);
+};
+
 beforeEach(async () => {
     timer.stopTimer();
     await server.tests.destroy({where: {}});
@@ -124,19 +141,6 @@ describe("runTask with the schedule offset enabled", () => {
  * whenever the suite happens to run.
  */
 describe("runTask during the configured quiet hours", () => {
-    const MINUTES_PER_HOUR = 60;
-
-    const clockAt = (offsetMinutes) => {
-        const moment = new Date(Date.now() + offsetMinutes * 60_000);
-
-        return `${String(moment.getHours()).padStart(2, "0")}:${String(moment.getMinutes()).padStart(2, "0")}`;
-    };
-
-    const setWindow = async (start, end) => {
-        await setConfig(server.config, "quietHoursStart", start);
-        await setConfig(server.config, "quietHoursEnd", end);
-    };
-
     beforeEach(async () => {
         await setConfig(server.config, "scheduleOffset", "false");
         await setWindow("none", "none");
@@ -195,6 +199,132 @@ describe("runTask during the configured quiet hours", () => {
 });
 
 /**
+ * The same window, met on the far side of the offset's sleep.
+ *
+ * The offset is on by default, so for a default install the check behind the
+ * delay is the only thing standing between a run that started outside the
+ * window and a test inside it - the delay runs to five minutes, long enough to
+ * sleep straight into the hours the operator set aside. The describe above
+ * never reaches that check: it pins the offset off and so only exercises the
+ * one before the delay.
+ *
+ * The sleep is held rather than shortened: its callback is captured so the
+ * window can be configured while the run is provably asleep, then released by
+ * hand. Shortening it to zero instead would race the configuration writes
+ * against the wake.
+ */
+describe("the quiet hours beginning during the offset delay", () => {
+    // Not a live timer id. The held callback is invoked by hand, so there is
+    // nothing for a clearTimeout on the far side to cancel.
+    const HELD_SLEEP_ID = 0;
+
+    /**
+     * Holds the offset's sleep until the test releases it.
+     *
+     * It steps aside the moment it has seen that timer - recognised by being
+     * at least the offset floor, which nothing else the run creates reaches -
+     * so everything else still runs on real ones.
+     */
+    const holdOffsetSleep = () => {
+        const realSetTimeout = globalThis.setTimeout;
+        const held = {
+            release: null,
+            restore: () => { globalThis.setTimeout = realSetTimeout; }
+        };
+
+        globalThis.setTimeout = (callback, ms, ...args) => {
+            if (ms >= timer.OFFSET_MIN_DELAY_MS) {
+                held.restore();
+                held.release = () => callback(...args);
+                return HELD_SLEEP_ID;
+            }
+
+            return realSetTimeout(callback, ms, ...args);
+        };
+
+        return held;
+    };
+
+    /** Collects console.warn output, so a skip can be pinned to its reason. */
+    const recordWarnings = () => {
+        const realWarn = console.warn;
+        const recorded = {
+            messages: [],
+            restore: () => { console.warn = realWarn; }
+        };
+
+        console.warn = (...args) => { recorded.messages.push(args.join(" ")); };
+
+        return recorded;
+    };
+
+    beforeEach(async () => {
+        await setConfig(server.config, "scheduleOffset", "true");
+        await setWindow(QUIET_HOURS_OFF, QUIET_HOURS_OFF);
+    });
+
+    after(async () => {
+        await setWindow(QUIET_HOURS_OFF, QUIET_HOURS_OFF);
+    });
+
+    it("does not test when the window begins during the delay", async () => {
+        // Armed before the shim, or its own far-future timer would be taken
+        // for the offset's sleep.
+        timer.startTimer(DISTANT_CRON);
+
+        const sleep = holdOffsetSleep();
+        const warnings = recordWarnings();
+
+        try {
+            const run = timer.runTask();
+            assert.ok(await reachedDelay(), "runTask never reached its offset delay");
+
+            // The window opens while the run is asleep, wide enough either
+            // side that the wake falls squarely inside it.
+            await setWindow(clockAt(-MINUTES_PER_HOUR), clockAt(MINUTES_PER_HOUR));
+
+            sleep.release();
+            await run;
+        } finally {
+            sleep.restore();
+            warnings.restore();
+        }
+
+        assert.equal(await countTests(), 0,
+            "a run that slept into the quiet window went ahead and tested anyway");
+        assert.ok(warnings.messages.some((message) => message.includes("Quiet hours began during delay")),
+            "the skip was not announced as a quiet hours skip");
+        assert.notEqual(timer.currentJob(), undefined,
+            "the skip tore the schedule down instead of leaving the next occurrence to it");
+    });
+
+    /**
+     * The control. The undisturbed run above proves nothing here: it pins the
+     * offset off, so a post-delay check that refused every run - inverted,
+     * say - would still pass the skip test while silencing every default
+     * install. This one has to come out the far side of the sleep and test.
+     */
+    it("does test when the window never opens", async () => {
+        timer.startTimer(DISTANT_CRON);
+
+        const sleep = holdOffsetSleep();
+
+        try {
+            const run = timer.runTask();
+            assert.ok(await reachedDelay(), "runTask never reached its offset delay");
+
+            sleep.release();
+            await run;
+        } finally {
+            sleep.restore();
+        }
+
+        assert.equal(await countTests(), 1,
+            "an undisturbed offset run recorded nothing, so the skip above proves nothing");
+    });
+});
+
+/**
  * A reschedule that lands while the run is reading the quiet hours.
  *
  * The generation counter only closes the window between the offset's sleep and
@@ -210,10 +340,6 @@ describe("runTask during the configured quiet hours", () => {
  * run is on its way to it.
  */
 describe("a reschedule landing while the post-delay quiet hours are read", () => {
-    // getRandomDelay never goes below this, so a timer at least this long,
-    // created while nothing else in the run is running, can only be the sleep.
-    const OFFSET_MIN_DELAY_MS = 30 * 1000;
-
     const REPLACEMENT_CRON = "0 4 1 1 *";
 
     let configModel;
@@ -235,7 +361,9 @@ describe("a reschedule landing while the post-delay quiet hours are read", () =>
         const restore = () => { globalThis.setTimeout = realSetTimeout; };
 
         globalThis.setTimeout = (callback, ms, ...args) => {
-            if (ms >= OFFSET_MIN_DELAY_MS) {
+            // The offset floor: a timer at least this long, created while
+            // nothing else in the run is running, can only be the sleep.
+            if (ms >= timer.OFFSET_MIN_DELAY_MS) {
                 restore();
                 onSleepStarted();
                 return realSetTimeout(callback, 0, ...args);

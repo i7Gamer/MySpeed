@@ -77,10 +77,20 @@ const calculateMaxDelay = (cron) => {
     }
 };
 
+/**
+ * The least the schedule offset ever delays a run.
+ *
+ * Half of the tightest interval a five-field cron can express: for a minutely
+ * schedule calculateMaxDelay answers this same value, leaving no random range
+ * at all, and a larger floor would overshoot that cap and turn the range
+ * inside out. Exported so the test harness can recognise the offset's sleep
+ * by its length rather than keep a copy of this number that goes stale.
+ */
+export const OFFSET_MIN_DELAY_MS = 30 * 1000;
+
 const getRandomDelay = (cron) => {
-    const minDelay = 30 * 1000;
     const maxDelay = calculateMaxDelay(cron);
-    return Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+    return Math.floor(Math.random() * (maxDelay - OFFSET_MIN_DELAY_MS + 1)) + OFFSET_MIN_DELAY_MS;
 };
 
 export const startTimer = (cron) => {
