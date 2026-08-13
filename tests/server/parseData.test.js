@@ -338,12 +338,6 @@ describe("parseCloudflare", () => {
         elapsed: 25000
     };
 
-    it("takes the fastest measurement per direction", () => {
-        const {download, upload} = parseCloudflare(cloudflareResult);
-        assert.equal(download, 100.25);
-        assert.equal(upload, 48.5);
-    });
-
     it("reports the quality figures it cannot measure as absent", () => {
         for (const parsed of [parseCloudflare(cloudflareResult), parseCloudflare({})]) {
             assert.equal(parsed.packetLoss, null);
@@ -352,14 +346,99 @@ describe("parseCloudflare", () => {
         }
     });
 
-    it("falls back to the median when a run reports no maximum", () => {
-        const parsed = parseCloudflare({
-            ...cloudflareResult,
-            speed_measurements: [{test_type: "Download", max: 0, median: 80}, {test_type: "Upload", max: 0, median: 30}]
+    /**
+     * How a direction's one figure is chosen out of the CLI's statistics.
+     *
+     * `speed_measurements` holds one entry per payload size per direction, and
+     * each entry's min/median/max describe the individual runs at *that* size.
+     * Taking `Math.max` of every entry's `max` therefore reported the single
+     * fastest run observed anywhere in the test - the extreme upper tail of the
+     * most favourable payload - which is what produced the four- and six-figure
+     * Mbit readings in upstream #1419 and #792 beside a LibreSpeed run
+     * returning a plausible number on the same line.
+     *
+     * The largest payload that actually ran is the only one long enough to have
+     * left TCP slow start behind, and the median of its runs is the figure that
+     * survives one anomalous run. Small payloads are kept out of the answer
+     * entirely rather than averaged in: they systematically *under*-report on a
+     * fast line, which is why maximising across sizes looked defensible.
+     */
+    describe("the speed it reports for a direction", () => {
+        const sizedResult = (measurements) => ({...cloudflareResult, speed_measurements: measurements});
+
+        it("takes the median of the largest payload that ran", () => {
+            const {download, upload} = parseCloudflare(sizedResult([
+                {test_type: "Download", payload_size: 100000, min: 8, median: 22, max: 41, avg: 24, successes: 10},
+                {test_type: "Download", payload_size: 1000000, min: 90, median: 140, max: 210, avg: 145, successes: 8},
+                {test_type: "Download", payload_size: 10000000, min: 180, median: 197, max: 205, avg: 196, successes: 5},
+                {test_type: "Upload", payload_size: 100000, min: 5, median: 12, max: 30, avg: 14, successes: 10},
+                {test_type: "Upload", payload_size: 1000000, min: 34, median: 41, max: 44, avg: 40, successes: 6}
+            ]));
+
+            assert.equal(download, 197);
+            assert.equal(upload, 41);
         });
 
-        assert.equal(parsed.download, 80);
-        assert.equal(parsed.upload, 30);
+        // The reported bug, in the shape it arrives in: a small payload that
+        // completes faster than the line can physically carry it - served from a
+        // buffer, a proxy or a cache - and whose peak run therefore reads as
+        // orders of magnitude more than the connection does.
+        it("ignores the burst peak of a small payload", () => {
+            const {download} = parseCloudflare(sizedResult([
+                {test_type: "Download", payload_size: 100000, min: 40, median: 900, max: 6000, avg: 1500, successes: 10},
+                {test_type: "Download", payload_size: 25000000, min: 180, median: 197, max: 205, avg: 196, successes: 5}
+            ]));
+
+            assert.equal(download, 197);
+        });
+
+        // cfspeedtest emits the entry for a payload size it collected nothing
+        // for with every statistic null, so "largest" has to mean the largest
+        // that produced a figure - not simply the last one listed.
+        it("skips a payload size that produced no measurements", () => {
+            const {download} = parseCloudflare(sizedResult([
+                {test_type: "Download", payload_size: 1000000, min: 90, median: 140, max: 210, avg: 145, successes: 8},
+                {test_type: "Download", payload_size: 100000000, min: null, median: null, max: null, avg: null,
+                    successes: 0, skipped: 4}
+            ]));
+
+            assert.equal(download, 140);
+        });
+
+        it("prefers the median, then the average, then the maximum", () => {
+            const of = (entry) => parseCloudflare(sizedResult([{test_type: "Download", payload_size: 1000000, ...entry}])).download;
+
+            assert.equal(of({median: 80, avg: 70, max: 200}), 80);
+            assert.equal(of({median: null, avg: 70, max: 200}), 70);
+            assert.equal(of({median: null, avg: null, max: 200}), 200);
+        });
+
+        // Every entry a real run emits carries one, but the parser is fed
+        // whatever the CLI printed, and a direction with no size to compare on
+        // must still answer with something rather than NaN.
+        it("falls back to the highest figure when no entry states a payload size", () => {
+            const {download, upload} = parseCloudflare(cloudflareResult);
+
+            assert.equal(download, 92);
+            assert.equal(upload, 45);
+        });
+
+        it("reports zero for a direction whose entries all measured nothing", () => {
+            const {download, upload} = parseCloudflare(sizedResult([
+                {test_type: "Download", payload_size: 100000, median: null, avg: null, max: null, successes: 0}
+            ]));
+
+            assert.equal(download, 0);
+            assert.equal(upload, 0);
+        });
+
+        it("keeps a genuinely measured zero out of the fallback", () => {
+            const {download} = parseCloudflare(sizedResult([
+                {test_type: "Download", payload_size: 100000, median: 0, avg: 0, max: 0, successes: 3}
+            ]));
+
+            assert.equal(download, 0);
+        });
     });
 
     it("derives jitter as the mean absolute difference between latency samples", () => {

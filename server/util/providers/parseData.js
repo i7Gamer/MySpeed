@@ -156,6 +156,75 @@ const transferred = (measurements) => {
     return counted ? total : null;
 };
 
+/**
+ * How one entry's runs are summarised, in order of preference.
+ *
+ * The median first, because it is the figure that survives a single anomalous
+ * run. The CLI emits all of these as null together when it collected nothing at
+ * that payload size, so the fallbacks only matter for output that is not shaped
+ * the way a real run's is.
+ */
+const REPRESENTATIVE_KEYS = ["median", "avg", "max"];
+
+const figureOf = (measurement) => {
+    for (const key of REPRESENTATIVE_KEYS) {
+        const reported = measurement?.[key];
+        // Compared before coercing: Number(null) is 0, so a statistic the CLI
+        // reported as null would otherwise read as a measured zero and stop the
+        // fallback here.
+        if (reported === null || reported === undefined) continue;
+
+        const value = Number(reported);
+        if (Number.isFinite(value)) return value;
+    }
+
+    return null;
+};
+
+const payloadSizeOf = (measurement) => {
+    const size = Number(measurement?.payload_size);
+
+    return Number.isFinite(size) && size >= 0 ? size : 0;
+};
+
+/**
+ * The one figure that stands for a direction, out of the CLI's statistics.
+ *
+ * `speed_measurements` carries one entry per payload size per direction, and
+ * that entry's min/median/max describe the individual runs at *that* size. The
+ * figure taken used to be `Math.max` over every entry's own `max`, i.e. the
+ * single fastest run observed anywhere in the test: the extreme upper tail of
+ * whichever payload happened to flatter the line most. On a connection where a
+ * small payload completes faster than the link can carry it - served out of a
+ * buffer, a proxy or a cache - that reads as orders of magnitude more than the
+ * line does, which is the four- and six-figure Mbit readings people compared
+ * against a sane LibreSpeed run on the same connection.
+ *
+ * The largest payload that actually ran is the only one long enough to have
+ * left TCP slow start behind, so it alone is asked. Smaller payloads are
+ * excluded rather than folded in: they systematically under-report on a fast
+ * line, which is what made maximising across sizes look reasonable in the first
+ * place.
+ */
+const directionSpeed = (measurements) => {
+    let best = null;
+
+    for (const measurement of measurements) {
+        const figure = figureOf(measurement);
+        if (figure === null) continue;
+
+        const size = payloadSizeOf(measurement);
+
+        // A larger payload always wins. Between entries of the same size -
+        // which real output never has, but a payload-less one is all ties - the
+        // higher figure does, so such a run still answers with its best.
+        if (best === null || size > best.size || (size === best.size && figure > best.figure))
+            best = {size, figure};
+    }
+
+    return best === null ? 0 : parseFloat(best.figure.toFixed(2));
+};
+
 export const parseCloudflare = (test) => {
     const metadata = test?.metadata ?? {};
 
@@ -183,19 +252,15 @@ export const parseCloudflare = (test) => {
         const downloadTests = test.speed_measurements.filter(t => t.test_type === "Download");
         const uploadTests = test.speed_measurements.filter(t => t.test_type === "Upload");
 
-        const downloadSpeeds = downloadTests.map(t => t.max || t.median || 0);
-        const download = downloadSpeeds.length > 0 ? Math.max(...downloadSpeeds) : 0;
-
-        const uploadSpeeds = uploadTests.map(t => t.max || t.median || 0);
-        const upload = uploadSpeeds.length > 0 ? Math.max(...uploadSpeeds) : 0;
+        const download = directionSpeed(downloadTests);
+        const upload = directionSpeed(uploadTests);
 
         const ping = Math.round(test.latency_measurement.avg_latency_ms || 0);
         const jitter = calculateJitter(test.latency_measurement.latency_measurements);
 
         const time = Math.round((test.elapsed || 30000) / 1000);
         
-        return {ping, jitter, download: parseFloat(download.toFixed(2)),
-            upload: parseFloat(upload.toFixed(2)), time, resultId: null, ...identity,
+        return {ping, jitter, download, upload, time, resultId: null, ...identity,
             bytesDownloaded: transferred(downloadTests),
             bytesUploaded: transferred(uploadTests)};
     }
