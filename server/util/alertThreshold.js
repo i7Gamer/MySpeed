@@ -31,6 +31,17 @@ export const ALERT_ONLY = "alert_only";
 const FAILED = -1;
 
 /**
+ * The latency of a run that measured nothing.
+ *
+ * No connection answers in under a millisecond, so a stored zero here is never
+ * a reading. parseCloudflare produces exactly that on its success path: its
+ * no-usable-figures fallback answers `{ping: 0, download: 0, upload: 0}`, and
+ * `round(avg_latency_ms) ?? 0` yields the same whenever the latency block
+ * carries no average.
+ */
+const UNMEASURED_LATENCY = 0;
+
+/**
  * The metrics that can raise an alert, each named for the comparison it
  * performs.
  *
@@ -39,9 +50,19 @@ const FAILED = -1;
  * asks to be told "if ping drops below threshold" while plainly meaning the
  * opposite. A field called `min_ping` would have been filled in accordingly and
  * fired on every good result.
+ *
+ * That inverted comparison is also why only latency declares which readings are
+ * real. A zero speed is a genuine and alarming reading - the line delivered
+ * nothing, and `0 < limit` breaches every limit there is - so `measured` is
+ * deliberately absent from the two speeds. Extending it to them would mute the
+ * alert on a dead line, which is the worse fault by far.
  */
 export const ALERT_METRICS = [
-    {key: "ping", field: "alert_ping_above", breaches: (value, limit) => value > limit},
+    {
+        key: "ping", field: "alert_ping_above",
+        breaches: (value, limit) => value > limit,
+        measured: (value) => value !== UNMEASURED_LATENCY
+    },
     {key: "download", field: "alert_download_below", breaches: (value, limit) => value < limit},
     {key: "upload", field: "alert_upload_below", breaches: (value, limit) => value < limit}
 ];
@@ -70,9 +91,17 @@ const limitOf = (raw) => {
  * for a latency its backend did not report, and roundSpeed produces NaN from an
  * absent bandwidth. Compared bare, every one of them reads as a healthy line -
  * `NaN > 50` and `null > 50` are both false.
+ *
+ * Which finite numbers count as readings is the metric's own business, so the
+ * cloudflare zero is judged per metric rather than here: on a speed it is the
+ * line delivering nothing and must keep breaching, on latency it is a figure no
+ * connection produces.
  */
-const measurementOf = (raw) =>
-    typeof raw === "number" && Number.isFinite(raw) && raw !== FAILED ? raw : null;
+const measurementOf = (raw, metric) => {
+    if (typeof raw !== "number" || !Number.isFinite(raw) || raw === FAILED) return null;
+
+    return metric.measured && !metric.measured(raw) ? null : raw;
+};
 
 /** Whether this integration asked to hear only about results that miss a limit. */
 export const wantsOnlyBreaches = (data) => data?.[ALERT_ONLY] === true;
@@ -103,7 +132,7 @@ export const breachesThreshold = (payload, data) => {
 
         armed = true;
 
-        const value = measurementOf(payload?.[metric.key]);
+        const value = measurementOf(payload?.[metric.key], metric);
         if (value === null) return true;
 
         if (metric.breaches(value, limit)) return true;

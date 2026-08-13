@@ -55,6 +55,17 @@ afterEach(() => {
 const GOOD = {ping: 12, jitter: 2, download: 500, upload: 200, time: 14};
 const SLOW = {ping: 12, jitter: 2, download: 40, upload: 200, time: 14};
 
+/**
+ * The payload parseCloudflare answers on its success path when the CLI printed
+ * no usable figures, and the one a dead line answers with.
+ *
+ * They are the same shape and must be judged differently: nothing delivered is
+ * a reading and breaches every speed limit, while a latency of zero is a figure
+ * no connection produces.
+ */
+const UNMEASURED = {ping: 0, jitter: null, download: 0, upload: 0, time: 0};
+const DEAD = {ping: 12, jitter: 2, download: 0, upload: 0, time: 14};
+
 const createTelegram = async (settings) => {
     const {status, body} = await api(server.baseUrl, "/integrations/telegram", {
         method: "PUT",
@@ -94,6 +105,31 @@ describe("only notifying when a limit is missed", () => {
 
             assert.equal(sent.length, 1);
             assert.match(sent[0].url, /api\.telegram\.org/);
+        } finally {
+            await remove(id);
+        }
+    });
+
+    // A latency of zero is what a run that measured nothing carries, and the
+    // one armed metric is judged as "above", so the bare comparison read it as
+    // an excellent line and said nothing.
+    it("announces a run whose latency could not be measured", async () => {
+        const id = await createTelegram({alert_only: true, alert_ping_above: 50});
+        try {
+            await triggerEvent("testFinished", UNMEASURED);
+            assert.equal(sent.length, 1, "the run nobody could measure went unreported");
+        } finally {
+            await remove(id);
+        }
+    });
+
+    // The other direction, and the regression that would be far worse: a line
+    // delivering nothing is measured, and it misses every speed limit there is.
+    it("announces a line that delivered nothing", async () => {
+        const id = await createTelegram({alert_only: true, alert_download_below: 100});
+        try {
+            await triggerEvent("testFinished", DEAD);
+            assert.equal(sent.length, 1, "a dead line was suppressed as if it were healthy");
         } finally {
             await remove(id);
         }

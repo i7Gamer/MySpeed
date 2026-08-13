@@ -137,6 +137,20 @@ describe("suppressesEvent", () => {
         assert.equal(suppressesEvent("testFinished", "telegram", row(armed), bad), false);
     });
 
+    /**
+     * The gate must not read a fabricated zero as a healthy line.
+     *
+     * parseCloudflare answers `{ping: 0, download: 0, upload: 0}` on its success
+     * path when the CLI printed no usable figures. On an armed latency, judged
+     * as `value > limit`, that zero compared bare is the best result imaginable
+     * - so the event was withheld on exactly the run nobody could measure.
+     */
+    it("lets a run whose latency could not be measured through", () => {
+        assert.equal(suppressesEvent("testFinished", "telegram",
+            row({[ALERT_ONLY]: true, alert_ping_above: 50}),
+            {ping: 0, download: 0, upload: 0}), false);
+    });
+
     // Every integration configured before this existed, and every one whose
     // owner has not asked for it, keeps notifying exactly as it did.
     it("suppresses nothing when the gate was never switched on", () => {

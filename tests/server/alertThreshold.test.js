@@ -153,10 +153,40 @@ describe("breachesThreshold", () => {
             });
         }
 
-        // Zero is a real reading - the line delivered nothing - and it is below
-        // every positive limit, so it breaches on the comparison itself.
+        // On a speed, zero is a real reading - the line delivered nothing - and
+        // it is below every positive limit, so it breaches on the comparison
+        // itself. This is the direction that must never change: reading it as
+        // unusable would still breach, but reading it as no reading at all for
+        // every metric would stop the alert on a dead line.
         it("counts a measured zero as the breach it is", () => {
             assert.equal(breachesThreshold(result({download: 0}), {alert_download_below: 100}), true);
+            assert.equal(breachesThreshold(result({upload: 0}), {alert_upload_below: 20}), true);
+        });
+
+        /**
+         * Latency is the one metric where zero is not a reading.
+         *
+         * It is judged the other way round - `0 > 50` is false - so the zero
+         * parseCloudflare fabricates when the CLI printed no usable figures
+         * reads as the best line anyone ever had, and the integration stays
+         * silent on precisely the run that could not be measured. The same
+         * unusable result expressed as null, NaN or -1 fires by design.
+         */
+        it("counts a latency of zero as the non-measurement it is", () => {
+            assert.equal(breachesThreshold(result({ping: 0}), {alert_ping_above: 50}), true);
+        });
+
+        // The whole payload parseCloudflare answers on its success path when
+        // the CLI printed nothing usable.
+        it("counts a run that measured nothing as a breach of an armed latency", () => {
+            assert.equal(breachesThreshold({ping: 0, jitter: null, download: 0, upload: 0, time: 0},
+                {alert_ping_above: 50}), true);
+        });
+
+        // Still only where the user asked to be told: an unmeasured latency is
+        // not evidence about the speeds.
+        it("ignores a latency of zero on a metric with no limit", () => {
+            assert.equal(breachesThreshold(result({ping: 0, download: 400}), {alert_download_below: 100}), false);
         });
 
         // Only where the user asked to be told. An unmeasured metric with no
