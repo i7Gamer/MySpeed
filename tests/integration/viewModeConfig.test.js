@@ -6,6 +6,11 @@ let server;
 
 const PASSWORD = "Viewer1!pass";
 
+// An actually configured window, so what the assertions below are about is the
+// operator's real nightly hours rather than the off sentinel a fresh install
+// carries.
+const QUIET_WINDOW = {start: "23:00", end: "08:00"};
+
 // Sent as if forwarded, so the caller is not treated as local - an
 // unconfigured or loopback caller is waved through and would mask view mode.
 const asVisitor = (pathname) => api(server.baseUrl, pathname, {
@@ -23,6 +28,8 @@ after(async () => {
 beforeEach(async () => {
     await setConfig(server.config, "password", PASSWORD);
     await setConfig(server.config, "passwordLevel", "read");
+    await setConfig(server.config, "quietHoursStart", QUIET_WINDOW.start);
+    await setConfig(server.config, "quietHoursEnd", QUIET_WINDOW.end);
 });
 
 /**
@@ -34,10 +41,17 @@ beforeEach(async () => {
  * "vEthernet (External)", which also says the host is a Hyper-V machine. Its
  * only consumer is the provider dialog, which view mode never opens, so it was
  * disclosed to every visitor of a public dashboard for nothing.
+ *
+ * The quiet hours describe the schedule as plainly as the cron does, and rather
+ * more personally: they are the nightly hours the operator set aside, which on a
+ * publicly exposed instance says when nobody is home. Only the operator's own
+ * dialogs read them - the pause dialog, and the frequency dialog to say when the
+ * next test will actually run - and view mode opens neither, so withholding them
+ * costs the read-only dashboard nothing.
  */
 describe("GET /api/config in view mode", () => {
     const WITHHELD = ["password", "interface", "ooklaId", "libreId", "libreUrl",
-        "cron", "scheduleOffset", "passwordLevel"];
+        "cron", "scheduleOffset", "passwordLevel", "quietHoursStart", "quietHoursEnd"];
 
     it("marks the caller as a viewer", async () => {
         const {status, body} = await asVisitor("/config");
@@ -68,6 +82,8 @@ describe("GET /api/config in view mode", () => {
 
         assert.equal(body.viewMode, false);
         assert.ok(body.interface, "the operator's own config must still carry the interface");
+        assert.equal(body.quietHoursStart, QUIET_WINDOW.start,
+            "the pause dialog reads the quiet hours back from here, so the operator must still get them");
         assert.equal(body.password, undefined, "the password is never disclosed, to anyone");
     });
 });

@@ -12,9 +12,16 @@ const app = express.Router();
  * the host is, "vEthernet (External)" for a Hyper-V machine among them. Only
  * the provider dialog reads it and view mode never opens that, so it was
  * disclosed to every visitor of a public dashboard for nothing.
+ *
+ * The quiet hours joined the list for the same reason as the cron: they
+ * describe the schedule, and rather more personally - they are the nightly
+ * hours the operator set aside, which on a publicly exposed instance says when
+ * nobody is home. The pause dialog reads them, and the frequency dialog reads
+ * them to say when the next test will actually run; view mode opens neither,
+ * and could not save from either.
  */
 const WITHHELD_IN_VIEW_MODE = ["interface", "ooklaId", "libreId", "libreUrl",
-    "cron", "scheduleOffset", "passwordLevel"];
+    "cron", "scheduleOffset", "passwordLevel", "quietHoursStart", "quietHoursEnd"];
 
 app.get("/", password(true), async (req, res) => {
     let configValues = {};
