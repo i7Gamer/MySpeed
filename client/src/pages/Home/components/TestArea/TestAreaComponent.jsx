@@ -11,6 +11,11 @@ import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faArrowUp} from "@fortawesome/free-solid-svg-icons";
 
+// How long the floating date stays up after the last scroll event. Long enough
+// to still be there through the pause in a flick, short enough that it is gone
+// by the time anyone reads what it was covering.
+const STICKY_DATE_LINGER_MS = 1200;
+
 const TestArea = () => {
     const config = useContext(ConfigContext)[0];
     const {speedtests, loadMoreTests, loading, hasMore, range, selectTimeframe} = useContext(SpeedtestContext);
@@ -20,6 +25,7 @@ const TestArea = () => {
     const [initialLoadComplete, setInitialLoadComplete] = useState(false);
     const containerRef = useRef();
     const lastElementRef = useRef();
+    const pillTimer = useRef(null);
 
     useEffect(() => {
         if (!loading && !initialLoadComplete) {
@@ -88,7 +94,23 @@ const TestArea = () => {
     useEffect(() => {
         let ticking = false;
 
+        /**
+         * The date pill is a scrolling indicator, so it leaves with the
+         * scrolling.
+         *
+         * It says which day the rows under it belong to - a question the reader
+         * has while the list is moving and not once it has stopped. Left up it
+         * sits over whatever is at the top of the viewport, which on a phone is
+         * the first line of a panel somebody just opened.
+         */
+        const keepPillUp = () => {
+            clearTimeout(pillTimer.current);
+            pillTimer.current = setTimeout(() => setShowStickyDate(false), STICKY_DATE_LINGER_MS);
+        };
+
         const throttledScrollHandler = () => {
+            keepPillUp();
+
             if (!ticking) {
                 requestAnimationFrame(() => {
                     handleScroll();
@@ -101,9 +123,15 @@ const TestArea = () => {
         window.addEventListener('scroll', throttledScrollHandler, {passive: true});
         document.body.addEventListener('scroll', throttledScrollHandler, {passive: true});
 
-        setTimeout(handleScroll, 100);
+        setTimeout(() => {
+            handleScroll();
+            // Armed here as well: a page restored halfway down its list raises
+            // the pill without a scroll event ever arriving to take it away.
+            keepPillUp();
+        }, 100);
 
         return () => {
+            clearTimeout(pillTimer.current);
             window.removeEventListener('scroll', throttledScrollHandler);
             document.body.removeEventListener('scroll', throttledScrollHandler);
         };

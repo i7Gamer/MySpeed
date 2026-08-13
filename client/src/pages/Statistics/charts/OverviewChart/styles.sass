@@ -67,6 +67,25 @@
   .overview-item:not(.chart-modal-body *) .info-area .text-area p
     display: none
 
+// Wrapped rather than cut. 10rem holds "Average duration" and stops one letter
+// into "Peak-hour slowdown", and a row label that ends in an ellipsis names a
+// measurement the reader has to guess at - on the narrowest screens, where the
+// description under it is hidden too, the label is all there is. A second line
+// costs the card 20px; the ellipsis cost it the row's meaning.
+//
+// The label takes what the value does not, rather than a share of its own: a
+// fixed fraction wraps "Total tests" onto two lines to reserve room the number
+// beside it never wanted.
 @media screen and (max-width: 1000px)
+  .overview-item:not(.chart-modal-body *) .info-area
+    flex: 1 1 auto
+    min-width: 0
+    // The base rule centres it, which reads as centred only while the box is
+    // the width of its text. Given the row to grow into, a label that starts in
+    // the middle of the card reads as a value that lost its number.
+    justify-content: flex-start
   .overview-item:not(.chart-modal-body *) .info-area h2
-    width: 10rem
+    width: auto
+    white-space: normal
+    overflow: visible !important
+    text-overflow: clip
