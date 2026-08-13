@@ -278,15 +278,25 @@ describe("the row's grid makes room for it", () => {
             const tracks = tracksOf(rule);
 
             assert.ok(tracks.length >= 6, `no template found for ${name}`);
-            // The three measurements: equal shares with a zero floor, so one
-            // rhythm reads down the row and no row's content inflates a track.
-            for (const track of [tracks[1], tracks[3], tracks[4]])
+            /*
+             * All four the same share, the badge's included. Each cell's
+             * content starts at its track's left edge, so the distance from one
+             * mark to the next is the width of the track before it - a narrower
+             * badge column is a shorter gap in the middle of the row, which is
+             * exactly what it looked like.
+             *
+             * The zero floor is the other half: a bare fr floors at its own
+             * content, and then the row carrying a jitter and a packet loss
+             * lays out differently from the row below it.
+             */
+            for (const track of tracks.slice(1, 5))
                 assert.match(track, /^minmax\(0, 1fr\)$/,
                     `"${track}" is not an equal share with a zero floor`);
-            // The date and the badge hold no measurement, so they hold a width.
-            for (const track of [tracks[0], tracks[2]])
-                assert.match(track, /^[\d.]+rem$/,
-                    `"${track}" is measured per row, which shifts every column after it`);
+            // The date holds no measurement, so it holds a width. Sized to its
+            // content it would be measured per row, and "At 9:04" is narrower
+            // than "At 13:11".
+            assert.match(tracks[0], /^[\d.]+rem$/,
+                `the date track is "${tracks[0]}", which is measured per row`);
         });
     }
 

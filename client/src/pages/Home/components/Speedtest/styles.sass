@@ -45,29 +45,28 @@ $metric-line-height: 1.2
 // could not be compared down a column - which is the whole point of a list.
 .speedtest
   display: grid
-  // The date, four measurements and the chevron. The fourth track is the
-  // bufferbloat, and it is a track rather than something the ping column
-  // carries because a figure the eye compares down a list needs a column of its
-  // own to be compared in.
+  // The date, four measurements and the chevron. The bufferbloat is a track of
+  // its own rather than something the ping column carries, because a figure the
+  // eye compares down a list needs a column of its own to be compared in.
   //
-  // minmax(0, …) on the measurements, not a bare 1fr: a bare fr floors at its
-  // content, so a row whose ping column carries a jitter and a packet loss took
-  // width from the date and pushed every column after it right - by up to 20px
-  // against the row below, which is exactly the drift the grid replaced
-  // space-between to stop. Every row now has identical tracks whatever it holds.
+  // Four equal shares, the badge's included. Every cell's content starts at its
+  // track's left edge, so the distance from one mark to the next *is* the width
+  // of the track before it - equal spacing between the marks is possible only
+  // with equal tracks, and a narrower badge column bought a shorter row at the
+  // price of a short gap in the middle of it.
   //
-  // Three measurements of equal weight, and a badge. The ping, the download and
-  // the upload each hold an icon, a number and a unit, so they take equal
-  // shares and the eye gets one rhythm down the row rather than three different
-  // gaps. The bufferbloat holds a single letter and is given the width of one.
+  // The badge's share is mostly empty, and that is what makes an absent grade
+  // invisible: no row ever fills it, so a test whose provider measures no
+  // latency under load looks like every other row minus one letter rather than
+  // like a row with a hole in it.
   //
-  // The date and the badge are fixed rather than sized to their content:
-  // max-content is measured per row, and one row reading "At 9:04" against
-  // another reading "At 13:11" was enough to shift every column after it by
-  // 17px.
-  // 4.5rem for the badge: the grades run to "A+", which is two characters at
-  // the size of an icon.
-  grid-template-columns: 12.5rem minmax(0, 1fr) 4.5rem minmax(0, 1fr) minmax(0, 1fr) auto
+  // minmax(0, …) rather than a bare 1fr: a bare fr floors at its own content,
+  // so the row whose ping carried a jitter and a packet loss took width from
+  // the date and pushed every column after it right - 20px against the row
+  // below, which is the drift this grid replaced space-between to stop. The
+  // date is a fixed width for the same reason: sized to its content it is
+  // measured per row, and "At 9:04" is narrower than "At 13:11".
+  grid-template-columns: 12.5rem minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto
   padding: 1.5rem 2rem
   align-items: center
   width: 100%
@@ -187,15 +186,17 @@ $metric-line-height: 1.2
   width: 0.9rem
   height: 0.9rem
 
-// A grade, not a measurement: it takes the width of its letter and no more, so
-// the column it sits in is the width of a badge rather than of a number nobody
-// wrote. A test whose provider measured no latency under load leaves it empty,
-// and an empty column this narrow is a gap rather than a hole.
 .speedtest-bufferbloat
   justify-content: flex-start
 
+// A box the width of the widest grade, with the letter centred in it. The
+// grades are one character or two - "A" and "A+" read down a list as two marks
+// that missed each other when each sat at its own left edge - and the box keeps
+// its left edge where the icons of the columns beside it keep theirs.
 .bufferbloat-button
   border-radius: 0.5rem
+  min-width: 3.7rem
+  justify-content: center
 
 // Sized against the icons rather than against the numbers: in this column the
 // letter is both. .speedtest-icon is 26pt and FontAwesome draws a glyph one em
@@ -264,19 +265,18 @@ $metric-line-height: 1.2
 // line's "2368.74 Mbps" twice over, a ping with its jitter and packet loss
 // stacked beside it, a grade badge and the date.
 //
-// Equal thirds make the binding number the widest one column needs, not what
-// they need together: 249px at 28pt, so the row wants 1121 all told, and 189px
-// at 18pt for 865. The thresholds sit far enough above each to hold a longer
-// number than any line in service today would produce.
+// Equal shares make the binding number the widest one column needs, not what
+// they need together: the download's 249px at 28pt, four times over, is 1299px
+// with the date and the chevron - and 189px at 18pt is 995. The thresholds sit
+// far enough above each to hold a longer number than any line in service today
+// would produce.
 //
 // They were 1400 and 1080 while the bufferbloat was drawn as a number and the
 // quality figures ran side by side. That row wanted 1286px - more than the
 // three-column row it replaced ever did.
-@media (max-width: 1200px)
+@media (max-width: 1400px)
   .speedtest
-    // The badge does not shrink with the numbers - it is sized against the
-    // icons, and those hold 26pt at every width - so its track does not either.
-    grid-template-columns: 10rem minmax(0, 1fr) 4.5rem minmax(0, 1fr) minmax(0, 1fr) auto
+    grid-template-columns: 10rem minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto
     padding: 1.25rem 1.25rem
   .date-text
     font-size: 18pt
@@ -290,10 +290,10 @@ $metric-line-height: 1.2
     font-size: 9pt
 
 // Below this the columns stop fitting at any size worth reading, and the row
-// stacks instead - 890px is what the widest row needs at 18pt once the badge
-// track is wide enough for an "A+", so the grid ends here rather than shrinking
-// into a size where the numbers touch.
-@media (max-width: 950px)
+// stacks instead - 995px is what the widest row needs at 18pt with four equal
+// columns, so the grid ends here rather than shrinking into a size where the
+// numbers touch.
+@media (max-width: 1150px)
   // Back to a stack: the desktop rule is a grid now, and flex-direction on a
   // grid silently does nothing.
   .speedtest
