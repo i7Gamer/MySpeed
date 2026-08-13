@@ -65,7 +65,9 @@ $metric-line-height: 1.2
   // max-content is measured per row, and one row reading "At 9:04" against
   // another reading "At 13:11" was enough to shift every column after it by
   // 17px.
-  grid-template-columns: 12.5rem minmax(0, 1fr) 3.5rem minmax(0, 1fr) minmax(0, 1fr) auto
+  // 4.5rem for the badge: the grades run to "A+", which is two characters at
+  // the size of an icon.
+  grid-template-columns: 12.5rem minmax(0, 1fr) 4.5rem minmax(0, 1fr) minmax(0, 1fr) auto
   padding: 1.5rem 2rem
   align-items: center
   width: 100%
@@ -195,9 +197,14 @@ $metric-line-height: 1.2
 .bufferbloat-button
   border-radius: 0.5rem
 
+// Sized against the icons rather than against the numbers: in this column the
+// letter is both. .speedtest-icon is 26pt and FontAwesome draws a glyph one em
+// tall, so 34.7px of ink - where a capital sits at about 0.72em, which needs
+// 36pt to stand as tall. The same size at every width, because the icons it
+// matches are the same size at every width too.
 .speedtest-bufferbloat .bufferbloat-grade
   font-weight: 700
-  font-size: 20pt
+  font-size: 36pt
   line-height: 1
   letter-spacing: 0.02em
 
@@ -267,7 +274,9 @@ $metric-line-height: 1.2
 // three-column row it replaced ever did.
 @media (max-width: 1200px)
   .speedtest
-    grid-template-columns: 10rem minmax(0, 1fr) 2.75rem minmax(0, 1fr) minmax(0, 1fr) auto
+    // The badge does not shrink with the numbers - it is sized against the
+    // icons, and those hold 26pt at every width - so its track does not either.
+    grid-template-columns: 10rem minmax(0, 1fr) 4.5rem minmax(0, 1fr) minmax(0, 1fr) auto
     padding: 1.25rem 1.25rem
   .date-text
     font-size: 18pt
@@ -279,13 +288,12 @@ $metric-line-height: 1.2
     padding-bottom: 0.25rem
   .quality-suffix
     font-size: 9pt
-  .speedtest-bufferbloat .bufferbloat-grade
-    font-size: 15pt
 
 // Below this the columns stop fitting at any size worth reading, and the row
-// stacks instead - 865px is what the widest row needs at 18pt, so the grid ends
-// here rather than shrinking into a size where the numbers touch.
-@media (max-width: 920px)
+// stacks instead - 890px is what the widest row needs at 18pt once the badge
+// track is wide enough for an "A+", so the grid ends here rather than shrinking
+// into a size where the numbers touch.
+@media (max-width: 950px)
   // Back to a stack: the desktop rule is a grid now, and flex-direction on a
   // grid silently does nothing.
   .speedtest
@@ -303,8 +311,6 @@ $metric-line-height: 1.2
     padding-bottom: 0.45rem
   .quality-suffix
     font-size: 14pt
-  .speedtest-bufferbloat .bufferbloat-grade
-    font-size: 26pt
   .bufferbloat-increase
     display: inline
     font-size: 12pt
