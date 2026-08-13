@@ -306,20 +306,55 @@ describe("the row's grid makes room for it", () => {
         assert.match(bodyOf("\\.speedtest-failure"), /grid-column:\s*2\s*\/\s*6/);
     });
 
-    // Held open in the grid so the columns after it do not shift; hidden once
-    // the row is a stack, where an empty line reads as a missing measurement.
-    it("hides the empty column when the row stacks", () => {
-        assert.match(css, /\.speedtest-bufferbloat:empty\s*\{\s*display:\s*none/);
+    /**
+     * The row gives up its width in steps.
+     *
+     * It used to go from one line of five measurements straight to five lines
+     * of one, which on a tablet turned a screenful of tests into two. A step in
+     * between costs one line instead of four: the date takes the width, the
+     * measurements flow under it two across, and the columns still line up down
+     * the list.
+     */
+    describe("the reflow", () => {
+        const queries = [...css.matchAll(/@media \(max-width: (\d+)px\)\s*\{([\s\S]*?)\n}/g)]
+            .map(([, width, body]) => ({width: Number(width), body}));
+
+        const twoAcross = queries.find(({body}) =>
+            /\.speedtest\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/.test(body));
+        const stacked = queries.find(({body}) => /flex-direction:\s*column/.test(body));
+
+        it("takes two columns before it takes one", () => {
+            assert.notEqual(twoAcross, undefined, "there is no two-across step");
+            assert.notEqual(stacked, undefined, "the row never stacks at all");
+            assert.ok(stacked.width < twoAcross.width,
+                `stacks at ${stacked.width}px, which is not below the two-across step at ${twoAcross.width}px`);
+        });
+
+        it("gives the date the width, being a sentence rather than a figure", () => {
+            assert.match(twoAcross.body, /\.date\s*\{[^}]*grid-column:\s*1\s*\/\s*3/);
+        });
+
+        // Two columns, so the span that covered five tracks has to be re-cut.
+        it("spans a failed test across both", () => {
+            assert.match(twoAcross.body, /\.speedtest-failure\s*\{[^}]*grid-column:\s*1\s*\/\s*3/);
+        });
+
+        /**
+         * Collapsing the empty cell is right in the stack and wrong in the
+         * grid: with the grid still on, the download would be placed into the
+         * space the badge gave up, and the row would lay out differently from
+         * the one above it.
+         */
+        it("only collapses the empty grade once there is no grid to shift", () => {
+            assert.match(stacked.body, /\.speedtest-bufferbloat:empty\s*\{\s*display:\s*none/);
+            assert.doesNotMatch(twoAcross.body, /\.speedtest-bufferbloat:empty/);
+        });
     });
 
     // Four large numbers plus a date need more width than three did, and the
     // answer the row already has for too little width is to stack.
-    it("stacks earlier than it used to", () => {
-        const stacked = [...css.matchAll(/@media \(max-width: (\d+)px\)\s*\{([\s\S]*?)\n}/g)]
-            .find(([, , body]) => /flex-direction:\s*column/.test(body));
-
-        assert.notEqual(stacked, undefined, "the row no longer stacks at any width");
-        assert.ok(Number(stacked[1]) > 605,
-            `still stacking only below ${stacked[1]}px, where four columns do not fit`);
-    });
+    // Where it stops being a grid at all is pinned in "the reflow" below: the
+    // fourth column pushed that threshold up while the row still went straight
+    // from five across to five down, and the two-across step between them is
+    // what lets it come back down.
 });

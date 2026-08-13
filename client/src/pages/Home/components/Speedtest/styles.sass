@@ -293,14 +293,50 @@ $metric-line-height: 1.2
 // stacks instead - 995px is what the widest row needs at 18pt with four equal
 // columns, so the grid ends here rather than shrinking into a size where the
 // numbers touch.
+// Two across, not five down. One line per measurement is what a phone needs and
+// what a tablet does not: at this width the row gives up a single line of five
+// and takes two of two, which costs one line rather than four and keeps a
+// screenful of tests a screenful.
+//
+// The date takes the width, being a sentence rather than a figure, and the
+// measurements flow under it in the order they are written: the ping beside its
+// grade, the download beside the upload. Two columns still line up down the
+// list, so the comparison the grid exists for survives the reflow.
 @media (max-width: 1150px)
-  // Back to a stack: the desktop rule is a grid now, and flex-direction on a
-  // grid silently does nothing.
+  .speedtest
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)
+    row-gap: 1rem
+    padding: 1.25rem 1.5rem
+  .date
+    grid-column: 1 / 3
+  .speedtest-failure
+    grid-column: 1 / 3
+  // There is room beside the badge here, and the letter alone reads as a
+  // heading for a column that is no longer above it.
+  .bufferbloat-increase
+    display: inline
+    font-size: 11pt
+    color: $subtext
+    margin-left: 0.6rem
+  // Out of the flow: the last cell of a two-column grid is a measurement now,
+  // and the chevron would take a row of its own to sit in.
+  .speedtest-chevron
+    position: absolute
+    top: 1.5rem
+    right: 1.5rem
+  .speedtest-details
+    padding: 1.25rem
+
+// One column at last. Two of the widest values do not fit a phone side by side,
+// and the numbers go back up to the size they are worth reading at.
+@media (max-width: 600px)
+  // A stack, not a grid: flex-direction on a grid silently does nothing.
   .speedtest
     display: flex
     flex-direction: column
     align-items: flex-start
     padding: 1.5rem 2rem
+    gap: 0.5rem
   .date-text
     font-size: 32pt
     margin-left: 1rem
@@ -312,17 +348,9 @@ $metric-line-height: 1.2
   .quality-suffix
     font-size: 14pt
   .bufferbloat-increase
-    display: inline
     font-size: 12pt
-    color: $subtext
-    margin-left: 0.6rem
-  // Nothing to hold open once the row is a stack, and an empty line in the
-  // middle of one reads as a missing measurement rather than as an absent one.
+  // Nothing to hold open once the row is a stack - the grid is gone, so no
+  // column shifts into the space - and an empty line in the middle of one reads
+  // as a missing measurement rather than as an absent one.
   .speedtest-bufferbloat:empty
     display: none
-  .speedtest-chevron
-    position: absolute
-    top: 1.5rem
-    right: 1.5rem
-  .speedtest-details
-    padding: 1.25rem
