@@ -61,15 +61,44 @@ export const tooltipTheme = (themeColors) => ({
     boxPadding: 8
 });
 
-/** Whether every label falls on one calendar day, which changes the tick format. */
-export const isSingleDaySeries = (labels) =>
-    new Set(labels.map((label) => new Date(label).toDateString())).size === 1;
-
 const instantOf = (label) => {
     const time = new Date(label).getTime();
 
     return Number.isFinite(time) ? time : null;
 };
+
+/**
+ * The instants a series' labels name, read once.
+ *
+ * Pulling a timestamp out of a string is the expensive half of building a
+ * chart, and everything below used to do it for itself: one recompute of the
+ * ping chart read the same labels eight times over - its three datasets, the
+ * average line, the failure markers, and the axis reading the span twice more
+ * to choose its bounds and its step. At the thousand points the server will
+ * hand over that is eight thousand parses saying what a thousand do.
+ *
+ * Kept against the array it was read from, which the charts replace whenever
+ * the series changes rather than editing in place, and which is dropped with it.
+ */
+const parsedSeries = new WeakMap();
+
+const instantsOf = (labels) => {
+    const parsed = parsedSeries.get(labels);
+    if (parsed) return parsed;
+
+    const instants = labels.map((label) => instantOf(label));
+    parsedSeries.set(labels, instants);
+
+    return instants;
+};
+
+// A label that names no instant belongs to no day - and to the same no day as
+// every other such label, exactly as they all used to read "Invalid Date".
+const dayOf = (instant) => instant === null ? null : new Date(instant).toDateString();
+
+/** Whether every label falls on one calendar day, which changes the tick format. */
+export const isSingleDaySeries = (labels) =>
+    new Set(instantsOf(labels).map(dayOf)).size === 1;
 
 /**
  * A series placed on the clock rather than in a queue.
@@ -88,8 +117,7 @@ const instantOf = (label) => {
  * `failed` up by data index, and removing an entry would shift every reason
  * onto the neighbouring test.
  */
-export const timePoints = (labels, values) => labels.map((label, index) => {
-    const x = instantOf(label);
+export const timePoints = (labels, values) => instantsOf(labels).map((x, index) => {
     const y = values[index];
 
     return x === null
@@ -108,11 +136,16 @@ const DAY = 24 * HOUR;
  * on an axis measured in milliseconds that lands on steps like 5,000,000, an
  * hour and twenty-three minutes apart. These are the durations someone reading
  * a chart expects to see a tick at.
+ *
+ * Half a year is on the list because the gap either side of it was the widest:
+ * a quarter is too fine to divide a year of history into five, so the step
+ * chosen was a whole year, and "All time" on an install a year old was marked
+ * at its two ends and nowhere in between.
  */
 const TIME_STEPS = [
     MINUTE, 2 * MINUTE, 5 * MINUTE, 10 * MINUTE, 15 * MINUTE, 30 * MINUTE,
     HOUR, 2 * HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR,
-    DAY, 2 * DAY, 7 * DAY, 14 * DAY, 30 * DAY, 90 * DAY, 365 * DAY
+    DAY, 2 * DAY, 7 * DAY, 14 * DAY, 30 * DAY, 90 * DAY, 180 * DAY, 365 * DAY
 ];
 
 /**
@@ -127,8 +160,7 @@ const timeSpanOf = (labels) => {
     let latest = -Infinity;
     let counted = 0;
 
-    for (const label of labels) {
-        const instant = instantOf(label);
+    for (const instant of instantsOf(labels)) {
         if (instant === null) continue;
 
         if (instant < earliest) earliest = instant;
@@ -351,6 +383,14 @@ export const lineChartOptions = ({
         // regular interval and the line described a history that never happened.
         x: {
             type: 'linear',
+            // The data's own range, rather than the linear default of widening
+            // the axis onto whole multiples of the tick step counted from the
+            // epoch. A step is real time here, so a year of history stepped in
+            // years drew on a two-year axis - half of it empty, and of the
+            // three ticks there was then room for, only one stood anywhere near
+            // a reading. Chart.js's own time scale overrides the same default
+            // for the same reason.
+            bounds: 'data',
             // Imposed only where there is no span for chart.js to work from -
             // otherwise it would pad a zero-width range by a proportion of the
             // timestamp itself, which is measured in years.

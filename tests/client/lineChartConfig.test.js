@@ -171,6 +171,99 @@ describe("timePoints", () => {
     });
 });
 
+/**
+ * One reading of the labels per chart, not one per thing built from them.
+ *
+ * Pulling an instant out of a timestamp string is the expensive half of
+ * building a series, and the ping chart asked for the same one eight times over
+ * a single recompute: the ping, loaded-latency and jitter datasets, the average
+ * line, the failure markers, and the axis reading the span twice more to choose
+ * its bounds and its step. The server hands over up to a thousand points, so
+ * that is eight thousand parses where a thousand say the same thing.
+ */
+describe("parsing the labels", () => {
+    /**
+     * How many timestamps were read while the work ran.
+     *
+     * The module looks `Date` up on the global at each call, so this counts the
+     * parses it actually performs. Only a string costs anything - an instant is
+     * already a number, and building a Date from one parses nothing.
+     */
+    const parsesDuring = (work) => {
+        const RealDate = globalThis.Date;
+        let parses = 0;
+
+        globalThis.Date = class extends RealDate {
+            constructor(...args) {
+                if (typeof args[0] === "string") parses++;
+                super(...args);
+            }
+        };
+
+        try {
+            work();
+        } finally {
+            globalThis.Date = RealDate;
+        }
+
+        return parses;
+    };
+
+    it("counts what it is watching for", () => {
+        assert.equal(parsesDuring(() => new Date("2026-08-09T10:00:00.000Z")), 1);
+        assert.equal(parsesDuring(() => new Date(0)), 0);
+    });
+
+    // Everything one PingChart recompute builds out of one series.
+    const buildEveryDataset = (labels) => {
+        const values = labels.map((_, index) => index);
+
+        isSingleDaySeries(labels);
+        lineChartOptions({
+            themeColors: chartThemeColors(true), labels, errors: labels.map(() => null),
+            failed: labels.map(() => false), isSingleDay: false,
+            pointStyle: {radius: 3, hoverRadius: 6}, lineTension: 0.35, use12h: false, valueUnit: "ms"
+        });
+        timePoints(labels, values);
+        timePoints(labels, values);
+        timePoints(labels, values);
+        averageLineDataset(labels, 42, 4);
+        failedMarkersDataset(labels, failureMarkers(labels.map(() => false)), false);
+    };
+
+    it("reads each label once, whatever is built from it", () => {
+        // Its own array: a series is read once and the answer kept against the
+        // array it came from, and the shared LABELS have been read already.
+        const labels = [...LABELS];
+
+        assert.equal(parsesDuring(() => buildEveryDataset(labels)), labels.length);
+    });
+
+    it("reads a series it has not seen before", () => {
+        const labels = LABELS.map((label) => new Date(Date.parse(label) + 1000).toISOString());
+
+        assert.equal(parsesDuring(() => buildEveryDataset(labels)), labels.length);
+    });
+
+    // The saving is worthless if a series is answered with another's instants.
+    it("keeps each series' own instants", () => {
+        const first = ["2026-08-09T10:00:00.000Z"];
+        const second = ["2026-08-10T10:00:00.000Z"];
+
+        assert.equal(timePoints(first, [1])[0].x, Date.parse(first[0]));
+        assert.equal(timePoints(second, [1])[0].x, Date.parse(second[0]));
+        // The day between the two of them, in five ticks: six hours.
+        assert.equal(timeAxisStep([...first, ...second], 5), 6 * 60 * 60 * 1000);
+    });
+
+    // A label that names no instant is not a day, exactly as it was never a
+    // readable date before - all of them collapse onto one another.
+    it("still tells a single day from a series it cannot place", () => {
+        assert.equal(isSingleDaySeries(["not a date", "nor this"]), true);
+        assert.equal(isSingleDaySeries(["not a date", LABELS[0]]), false);
+    });
+});
+
 describe("datasets", () => {
     it("draws the average as a dashed, pointless line", () => {
         const dataset = averageLineDataset(LABELS, 42, 4);
@@ -231,6 +324,15 @@ describe("timeAxisStep", () => {
 
     it("steps a short range in minutes", () => {
         assert.equal(timeAxisStep(spanOf(30 * MINUTE), 5), 10 * MINUTE);
+    });
+
+    /**
+     * Nothing on the list stood between a quarter and a year, so a year and a
+     * bit of history - "All time" on an install that has been running that long
+     * - was divided in years: one tick at each end and nothing between them.
+     */
+    it("halves a year rather than stepping a whole one", () => {
+        assert.equal(timeAxisStep(spanOf(400 * DAY), 5), 180 * DAY);
     });
 
     /**

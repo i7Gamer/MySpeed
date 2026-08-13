@@ -10,7 +10,7 @@ import {useContext} from "react";
 import {ConfigContext} from "@/common/contexts/Config";
 import {StatusContext} from "@/common/contexts/Status";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {convertSpeed, formatLatency, getSpeedUnit} from "@/common/utils/FormatUtil";
 import TestDetails from "@/common/components/TestDetails";
 import {t} from "i18next";
 
@@ -53,9 +53,14 @@ export const LatestTestChart = (props) => {
                 <div className="test-container">
                     <div className="test-info">
                         <h2>{t("latest.ping")}</h2>
+                        {/* Trimmed to the one decimal every latency in this
+                            interface is shown at. The measurement is stored
+                            with two, and the card printed both of them while
+                            the pane that opens from clicking it printed one -
+                            the same reading, twice, in two precisions. */}
                         <p className={"icon-" + getIconBySpeed(props.test.ping, config.ping, false)}>
-                            {(props.test.ping === -1 ? "N/A" : props.test.ping) + " " + t("latest.ping_unit")}
-                            {hasJitter && <span className="jitter-value"><FontAwesomeIcon icon={faWaveSquare} className="jitter-icon" />{props.test.jitter}</span>}
+                            {(props.test.ping === -1 ? "N/A" : formatLatency(props.test.ping)) + " " + t("latest.ping_unit")}
+                            {hasJitter && <span className="jitter-value"><FontAwesomeIcon icon={faWaveSquare} className="jitter-icon" />{formatLatency(props.test.jitter)}</span>}
                         </p>
                     </div>
                     <FontAwesomeIcon icon={faPingPongPaddleBall}
@@ -112,7 +117,8 @@ export const LatestTestChart = (props) => {
                             <h2>{t("latest.quality")}</h2>
                             <p className={"icon-" + bufferbloatColour(bloat.grade)}>
                                 {t("latest.loaded_latency", {
-                                    down: props.test.downloadLatency, up: props.test.uploadLatency
+                                    down: formatLatency(props.test.downloadLatency),
+                                    up: formatLatency(props.test.uploadLatency)
                                 })}
                             </p>
                         </div>
