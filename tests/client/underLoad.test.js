@@ -311,32 +311,58 @@ describe("the row's grid makes room for it", () => {
      *
      * It used to go from one line of five measurements straight to five lines
      * of one, which on a tablet turned a screenful of tests into two. A step in
-     * between costs one line instead of four: the date takes the width, the
-     * measurements flow under it two across, and the columns still line up down
-     * the list.
+     * between costs one line instead of four: three columns of two lines, the
+     * date and then a pair of stacks - the latency over its grade, the download
+     * over the upload.
      */
     describe("the reflow", () => {
         const queries = [...css.matchAll(/@media \(max-width: (\d+)px\)\s*\{([\s\S]*?)\n}/g)]
             .map(([, width, body]) => ({width: Number(width), body}));
 
-        const twoAcross = queries.find(({body}) =>
-            /\.speedtest\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/.test(body));
+        // Anchored on the semicolon: the wider step's template starts with the
+        // same three tracks and carries two more, and an unanchored match finds
+        // that one first.
+        const threeUp = queries.find(({body}) =>
+            /\.speedtest\s*\{[^}]*grid-template-columns:\s*[\d.]+rem minmax\(0, 1fr\) minmax\(0, 1fr\);/.test(body));
         const stacked = queries.find(({body}) => /flex-direction:\s*column/.test(body));
 
-        it("takes two columns before it takes one", () => {
-            assert.notEqual(twoAcross, undefined, "there is no two-across step");
+        it("takes three columns before it takes one", () => {
+            assert.notEqual(threeUp, undefined, "there is no three-column step");
             assert.notEqual(stacked, undefined, "the row never stacks at all");
-            assert.ok(stacked.width < twoAcross.width,
-                `stacks at ${stacked.width}px, which is not below the two-across step at ${twoAcross.width}px`);
+            assert.ok(stacked.width < threeUp.width,
+                `stacks at ${stacked.width}px, which is not below the three-column step at ${threeUp.width}px`);
         });
 
-        it("gives the date the width, being a sentence rather than a figure", () => {
-            assert.match(twoAcross.body, /\.date\s*\{[^}]*grid-column:\s*1\s*\/\s*3/);
+        // Each cell placed rather than flowed: auto-placement would put the
+        // grade beside the ping and push the speeds onto a line of their own.
+        it("pairs each figure with the one it belongs under", () => {
+            for (const [cell, column, row] of [[".speedtest-ping", 2, 1], [".speedtest-bufferbloat", 2, 2],
+                [".speedtest-download", 3, 1], [".speedtest-upload", 3, 2]])
+                assert.match(threeUp.body,
+                    new RegExp(`\\${cell}\\s*\\{[^}]*grid-column:\\s*${column}[^}]*grid-row:\\s*${row}`),
+                    `${cell} is not placed at column ${column}, row ${row}`);
         });
 
-        // Two columns, so the span that covered five tracks has to be re-cut.
-        it("spans a failed test across both", () => {
-            assert.match(twoAcross.body, /\.speedtest-failure\s*\{[^}]*grid-column:\s*1\s*\/\s*3/);
+        // One figure against two stacks: level with the top of them it reads as
+        // a label for the ping alone.
+        it("centres the date against both lines", () => {
+            assert.match(threeUp.body, /\.date\s*\{[^}]*grid-row:\s*1\s*\/\s*3/);
+        });
+
+        /**
+         * Every row is two lines whatever it carries. The grade is drawn at the
+         * size of an icon, which is taller than a value's line box, so without a
+         * floor on the rows a test carrying one stood 14px taller than the test
+         * below it that did not - and the list jogged as it scrolled.
+         */
+        it("reserves the same two lines whether or not there is a grade", () => {
+            assert.match(threeUp.body, /grid-template-rows:\s*repeat\(2, minmax\(/);
+        });
+
+        // Beside the date and over both lines: a failed test has one sentence
+        // where the measurements would be.
+        it("spans a failed test across the measurements", () => {
+            assert.match(threeUp.body, /\.speedtest-failure\s*\{[^}]*grid-column:\s*2\s*\/\s*4/);
         });
 
         /**
@@ -347,7 +373,7 @@ describe("the row's grid makes room for it", () => {
          */
         it("only collapses the empty grade once there is no grid to shift", () => {
             assert.match(stacked.body, /\.speedtest-bufferbloat:empty\s*\{\s*display:\s*none/);
-            assert.doesNotMatch(twoAcross.body, /\.speedtest-bufferbloat:empty/);
+            assert.doesNotMatch(threeUp.body, /\.speedtest-bufferbloat:empty/);
         });
     });
 

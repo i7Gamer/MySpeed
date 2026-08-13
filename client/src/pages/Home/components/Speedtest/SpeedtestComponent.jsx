@@ -164,7 +164,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                             keyboard-operable, and these sit inside it, so as
                             bare svgs they were the one thing on the card a
                             keyboard could not reach at all. */}
-                        <div className="speedtest-row">
+                        <div className="speedtest-row speedtest-ping">
                             <HelpButton label={t("info.ping.title")} onOpen={(event) => openInfo(event, pingInfo)}>
                                 <FontAwesomeIcon icon={faPingPongPaddleBall}
                                                  className={"speedtest-icon icon-" + props.pingLevel}/>
@@ -242,7 +242,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                 </HelpButton>
                             )}
                         </div>
-                        <div className="speedtest-row">
+                        <div className="speedtest-row speedtest-download">
                             <HelpButton label={t("info.down.title")} onOpen={(event) => openInfo(event, downloadInfo)}>
                                 <FontAwesomeIcon icon={faArrowDown}
                                                  className={"speedtest-icon icon-" + props.downLevel}/>
@@ -251,7 +251,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                 <span className="speedtest-unit">{speedUnit}</span>
                             </h2>
                         </div>
-                        <div className="speedtest-row">
+                        <div className="speedtest-row speedtest-upload">
                             <HelpButton label={t("info.up.title")} onOpen={(event) => openInfo(event, uploadInfo)}>
                                 <FontAwesomeIcon icon={faArrowUp}
                                                  className={"speedtest-icon icon-" + props.upLevel}/>

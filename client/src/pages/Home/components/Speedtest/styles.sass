@@ -293,24 +293,49 @@ $metric-line-height: 1.2
 // stacks instead - 995px is what the widest row needs at 18pt with four equal
 // columns, so the grid ends here rather than shrinking into a size where the
 // numbers touch.
-// Two across, not five down. One line per measurement is what a phone needs and
-// what a tablet does not: at this width the row gives up a single line of five
-// and takes two of two, which costs one line rather than four and keeps a
-// screenful of tests a screenful.
+// Three columns of two lines, not five lines of one. The row gives up its
+// single line here and takes a second, which costs one line rather than four
+// and keeps a screenful of tests a screenful.
 //
-// The date takes the width, being a sentence rather than a figure, and the
-// measurements flow under it in the order they are written: the ping beside its
-// grade, the download beside the upload. Two columns still line up down the
-// list, so the comparison the grid exists for survives the reflow.
+// Paired by what the figures are: the date, then the latency with its grade
+// under it, then the two speeds. Every row is two lines whatever it carries -
+// the column that would hold a missing grade goes quiet, it does not close, so
+// nothing below it moves and no row is a different height from its neighbour.
+//
+// The date spans both lines rather than sitting on the first: it is one figure
+// against two stacks, and level with the top of them it reads as a label for
+// the ping alone.
 @media (max-width: 1150px)
   .speedtest
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)
-    row-gap: 1rem
+    grid-template-columns: 10rem minmax(0, 1fr) minmax(0, 1fr)
+    // Both lines reserve the badge's height whether or not there is a badge on
+    // them. The grade is drawn at the size of an icon, which is taller than a
+    // value's line box, so without this a row carrying one stood 14px taller
+    // than the row below it that did not - the list jogging as it scrolls is
+    // the thing the fixed line box at the top of this file exists to stop.
+    grid-template-rows: repeat(2, minmax(3rem, auto))
+    row-gap: 0.75rem
     padding: 1.25rem 1.5rem
   .date
-    grid-column: 1 / 3
+    grid-column: 1
+    grid-row: 1 / 3
+  .speedtest-ping
+    grid-column: 2
+    grid-row: 1
+  .speedtest-bufferbloat
+    grid-column: 2
+    grid-row: 2
+  .speedtest-download
+    grid-column: 3
+    grid-row: 1
+  .speedtest-upload
+    grid-column: 3
+    grid-row: 2
+  // Beside the date, over both lines, rather than under it: a failed test has
+  // one sentence where the measurements would be.
   .speedtest-failure
-    grid-column: 1 / 3
+    grid-column: 2 / 4
+    grid-row: 1 / 3
   // There is room beside the badge here, and the letter alone reads as a
   // heading for a column that is no longer above it.
   .bufferbloat-increase
