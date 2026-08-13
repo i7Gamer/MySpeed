@@ -10,6 +10,12 @@ $page-max-width: 1400px
 // Between the rows on the overview and between the cards in the statistics.
 $card-gap: 0.75rem
 
+// The band the header sits in: this much above it, and the same below before
+// the page toolbar starts. The two gaps are drawn by different stylesheets -
+// the header's own top margin and the toolbar's - and were 3rem and 2rem, which
+// left the header sitting visibly low in its own band. Guarded by headerGap.test.js.
+$header-gap: 2rem
+
 // The text on every control in the page toolbar - range picker, start button,
 // export. The start button carries it too, and its padding plus this is what
 // the whole row's height comes out as. Written down here because three

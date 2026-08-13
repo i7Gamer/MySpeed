@@ -1,11 +1,13 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
 
 header
   position: relative
   z-index: 200
 
 .header-main
-  margin-top: 3rem
+  // The same gap the toolbar leaves below the header - see $header-gap.
+  margin-top: $header-gap
   display: grid
   grid-template-columns: 1fr auto 1fr
   align-items: center

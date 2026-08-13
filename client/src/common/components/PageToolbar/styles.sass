@@ -16,8 +16,9 @@
   width: 100%
   box-sizing: border-box
   // The margins the status bar carried while it was a block of its own. They
-  // belong to the row now, or the controls would sit out of line with it.
-  margin-top: 2rem
+  // belong to the row now, or the controls would sit out of line with it. The
+  // top one is also the gap below the header, which is why it is shared.
+  margin-top: $header-gap
   margin-bottom: $card-gap
 
   > .date-range-picker
