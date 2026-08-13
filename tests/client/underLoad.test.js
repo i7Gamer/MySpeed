@@ -227,20 +227,56 @@ describe("the overview row shows the bufferbloat", () => {
 describe("the row's grid makes room for it", () => {
     const bodyOf = (selector) => css.match(new RegExp(`${selector}\\s*\\{([^}]*)}`))?.[1] ?? "";
 
-    it("has a track for every column", () => {
-        const columns = bodyOf("\\.speedtest").match(/grid-template-columns:([^;]*);/)?.[1] ?? "";
+    // Splits on the spaces between tracks, not on the one inside minmax().
+    const tracksOf = (rule) => (bodyOf(rule).match(/grid-template-columns:([^;]*);/)?.[1] ?? "")
+        .trim().split(/\s+(?![^()]*\))/);
 
-        // The date, then four measurements, then the chevron. Written out
-        // rather than counted: the date's own track carries a fraction too, and
-        // counting "1fr" reads it as a measurement.
-        assert.match(columns, /minmax\([^)]*\)\s+1fr\s+1fr\s+1fr\s+1fr\s+auto/,
-            `four metric tracks expected, got "${columns.trim()}"`);
+    it("has a track for every column", () => {
+        const tracks = tracksOf("\\.speedtest");
+
+        // The date, four measurements, the chevron.
+        assert.equal(tracks.length, 6, `six tracks expected, got "${tracks.join(" ")}"`);
+        assert.equal(tracks.at(-1), "auto");
     });
+
+    /**
+     * Both halves of a drift the grid exists to prevent, and both were visible
+     * on screen before they were measured.
+     *
+     * A bare `1fr` floors at its own content, so the row whose ping column
+     * carried a jitter and a packet loss took width from the date and pushed
+     * every column after it right - by 20px against the row below it, where the
+     * provider reported neither. `max-content` on the date did the same thing
+     * from the other end: it is measured per row, and "At 9:04" is narrower
+     * than "At 13:11".
+     *
+     * Every track is either a fixed width or a fraction with a zero floor, so
+     * two rows of the same list cannot lay out differently.
+     */
+    for (const [name, rule] of [["at full width", "\\.speedtest"],
+        ["at the smaller step", "@media \\(max-width: 1400px\\)[^{]*\\{\\s*\\.speedtest"]]) {
+        it(`gives every row identical tracks ${name}`, () => {
+            const tracks = tracksOf(rule);
+
+            assert.ok(tracks.length >= 6, `no template found for ${name}`);
+            for (const track of tracks.slice(1, 5))
+                assert.match(track, /^minmax\(0,/,
+                    `"${track}" grows to fit its own row's content`);
+            assert.match(tracks[0], /^[\d.]+rem$/,
+                `the date track is "${tracks[0]}", which is measured per row`);
+        });
+    }
 
     // A failed test shows a sentence where the measurements would be, and the
     // span has to cover the track that was just added or it stops short.
     it("spans the failure across all of them", () => {
         assert.match(bodyOf("\\.speedtest-failure"), /grid-column:\s*2\s*\/\s*6/);
+    });
+
+    // Held open in the grid so the columns after it do not shift; hidden once
+    // the row is a stack, where an empty line reads as a missing measurement.
+    it("hides the empty column when the row stacks", () => {
+        assert.match(css, /\.speedtest-bufferbloat:empty\s*\{\s*display:\s*none/);
     });
 
     // Four large numbers plus a date need more width than three did, and the

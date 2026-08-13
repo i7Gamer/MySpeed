@@ -49,7 +49,23 @@ $metric-line-height: 1.2
   // bufferbloat, and it is a track rather than something the ping column
   // carries because a figure the eye compares down a list needs a column of its
   // own to be compared in.
-  grid-template-columns: minmax(11rem, 1.2fr) 1fr 1fr 1fr 1fr auto
+  //
+  // minmax(0, …) on the measurements, not a bare 1fr: a bare fr floors at its
+  // content, so a row whose ping column carries a jitter and a packet loss took
+  // width from the date and pushed every column after it right - by up to 20px
+  // against the row below, which is exactly the drift the grid replaced
+  // space-between to stop. Every row now has identical tracks whatever it holds.
+  //
+  // The shares are what the columns hold rather than one each. The ping carries
+  // three figures where the others carry one, the speeds carry a longer number
+  // than the bufferbloat's, and the date carries no measurement at all - so the
+  // date takes a fixed width and the rest is split in the ratio the content
+  // needs. Equal shares put the ping's packet loss through the column beside it.
+  //
+  // The date is fixed rather than sized to its content: max-content is measured
+  // per row, and one row reading "At 9:04" against another reading "At 13:11"
+  // was enough to shift every column after it by 17px.
+  grid-template-columns: 12.5rem minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.2fr) auto
   padding: 1.5rem 2rem
   align-items: center
   width: 100%
@@ -210,9 +226,18 @@ $metric-line-height: 1.2
 // already crowding four tracks below a laptop. One step down buys back roughly
 // what the new column costs; the date gives up its 11rem floor in the same
 // breath, being the one column whose content is not a measurement.
-@media (max-width: 1000px)
+//
+// Measured rather than guessed: at 28pt the widest row - four values the width
+// of a 2.3 Gbit line's "2368.74 Mbps", a ping carrying a jitter and a packet
+// loss, and the date - needs 1286px. At 18pt the same row needs 1016.
+//
+// The threshold is $page-max-width because that is where the row stops growing:
+// above it the page is centred at a fixed width, so every wider viewport lays
+// the row out in the same 1400px and 28pt keeps its 16px of slack. Below it the
+// row shrinks with the window and the big numbers stop fitting immediately.
+@media (max-width: 1400px)
   .speedtest
-    grid-template-columns: minmax(8rem, 1fr) 1fr 1fr 1fr 1fr auto
+    grid-template-columns: 10rem minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.2fr) auto
     padding: 1.25rem 1.25rem
   .date-text
     font-size: 18pt
@@ -227,8 +252,10 @@ $metric-line-height: 1.2
 
 // Below this the columns stop fitting at any size worth reading, and the row
 // stacks instead. It used to give up at 605px, where three tracks still had
-// room; a fourth moves that threshold up with it.
-@media (max-width: 700px)
+// room; a fourth moves that threshold up with it. 1016px is what the widest row
+// needs at 18pt, so the grid ends here rather than shrinking into a size where
+// the numbers touch.
+@media (max-width: 1080px)
   // Back to a stack: the desktop rule is a grid now, and flex-direction on a
   // grid silently does nothing.
   .speedtest
