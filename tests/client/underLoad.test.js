@@ -254,6 +254,13 @@ describe("the row's grid makes room for it", () => {
         assert.equal(tracks.at(-1), "auto");
     });
 
+    // Where the room left over goes. Inside the tracks it pools behind whichever
+    // column holds the shortest figure - which is the grade, always, by a wide
+    // margin.
+    it("shares the spare width out between the columns", () => {
+        assert.match(bodyOf("\\.speedtest"), /justify-content:\s*space-between/);
+    });
+
     /**
      * Both halves of a drift the grid exists to prevent, and both were visible
      * on screen before they were measured.
@@ -279,24 +286,24 @@ describe("the row's grid makes room for it", () => {
 
             assert.ok(tracks.length >= 6, `no template found for ${name}`);
             /*
-             * All four the same share, the badge's included. Each cell's
-             * content starts at its track's left edge, so the distance from one
-             * mark to the next is the width of the track before it - a narrower
-             * badge column is a shorter gap in the middle of the row, which is
-             * exactly what it looked like.
+             * Every track a fixed width, and the room left over shared out
+             * between them by space-between rather than inside them.
              *
-             * The zero floor is the other half: a bare fr floors at its own
-             * content, and then the row carrying a jitter and a packet loss
-             * lays out differently from the row below it.
+             * Equal shares were even at the left edges and uneven everywhere
+             * else: a grade is one letter and a speed is seven, so a quarter of
+             * the row each left a hand's width of air after the badge and
+             * almost none after the download. The eye reads the space between
+             * the figures, not the distance between the cells holding them.
+             *
+             * Fixed rather than sized to content, which is the whole reason
+             * this is a grid: an auto track is measured per row, and the row
+             * whose ping carried a jitter and a packet loss then laid out 20px
+             * wider than the row below it that did not.
              */
-            for (const track of tracks.slice(1, 5))
-                assert.match(track, /^minmax\(0, 1fr\)$/,
-                    `"${track}" is not an equal share with a zero floor`);
-            // The date holds no measurement, so it holds a width. Sized to its
-            // content it would be measured per row, and "At 9:04" is narrower
-            // than "At 13:11".
-            assert.match(tracks[0], /^[\d.]+rem$/,
-                `the date track is "${tracks[0]}", which is measured per row`);
+            for (const track of tracks.slice(0, 5))
+                assert.match(track, /^[\d.]+rem$/,
+                    `"${track}" is not a fixed width, so it is measured per row`);
+            assert.equal(tracks.at(-1), "auto", "the chevron takes what it needs");
         });
     }
 
@@ -319,11 +326,11 @@ describe("the row's grid makes room for it", () => {
         const queries = [...css.matchAll(/@media \(max-width: (\d+)px\)\s*\{([\s\S]*?)\n}/g)]
             .map(([, width, body]) => ({width: Number(width), body}));
 
-        // Anchored on the semicolon: the wider step's template starts with the
-        // same three tracks and carries two more, and an unanchored match finds
-        // that one first.
+        // Three tracks and no more: the wider step's template starts with three
+        // of the same shape and carries two beyond them, so the match has to be
+        // anchored on the semicolon that ends the declaration.
         const threeUp = queries.find(({body}) =>
-            /\.speedtest\s*\{[^}]*grid-template-columns:\s*[\d.]+rem minmax\(0, 1fr\) minmax\(0, 1fr\);/.test(body));
+            /\.speedtest\s*\{[^}]*grid-template-columns:\s*[\d.]+rem [\d.]+rem [\d.]+rem;/.test(body));
         const stacked = queries.find(({body}) => /flex-direction:\s*column/.test(body));
 
         it("takes three columns before it takes one", () => {

@@ -49,24 +49,23 @@ $metric-line-height: 1.2
   // its own rather than something the ping column carries, because a figure the
   // eye compares down a list needs a column of its own to be compared in.
   //
-  // Four equal shares, the badge's included. Every cell's content starts at its
-  // track's left edge, so the distance from one mark to the next *is* the width
-  // of the track before it - equal spacing between the marks is possible only
-  // with equal tracks, and a narrower badge column bought a shorter row at the
-  // price of a short gap in the middle of it.
+  // Each column takes the width its own figures need, and the room left over is
+  // shared out between them rather than inside them.
   //
-  // The badge's share is mostly empty, and that is what makes an absent grade
-  // invisible: no row ever fills it, so a test whose provider measures no
-  // latency under load looks like every other row minus one letter rather than
-  // like a row with a hole in it.
+  // Equal shares looked even at the left edges and uneven everywhere else: a
+  // grade is one letter and a speed is seven, so a quarter of the row each left
+  // 190px of air after the badge and 20px after the download. The eye reads the
+  // space between the figures, not the distance between the cells that hold
+  // them - space-between puts the same air in every one of those.
   //
-  // minmax(0, …) rather than a bare 1fr: a bare fr floors at its own content,
-  // so the row whose ping carried a jitter and a packet loss took width from
-  // the date and pushed every column after it right - 20px against the row
-  // below, which is the drift this grid replaced space-between to stop. The
-  // date is a fixed width for the same reason: sized to its content it is
-  // measured per row, and "At 9:04" is narrower than "At 13:11".
-  grid-template-columns: 12.5rem minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto
+  // Fixed widths, not content-sized ones, and that is the whole reason this is
+  // a grid: sized to their content the tracks are measured per row, and the row
+  // whose ping carried a jitter and a packet loss laid out 20px wider than the
+  // row below it that did not. Each is the widest that column ever needs -
+  // measured, with a digit's slack - so every row lays out identically and the
+  // numbers can be compared down a column.
+  grid-template-columns: 12rem 13rem 5rem 15.75rem 15.5rem auto
+  justify-content: space-between
   padding: 1.5rem 2rem
   align-items: center
   width: 100%
@@ -282,7 +281,7 @@ $metric-line-height: 1.2
 // three-column row it replaced ever did.
 @media (max-width: 1400px)
   .speedtest
-    grid-template-columns: 10rem minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto
+    grid-template-columns: 9.5rem 11rem 5rem 12rem 11.75rem auto
     padding: 1.25rem 1.25rem
   .date-text
     font-size: 18pt
@@ -312,13 +311,13 @@ $metric-line-height: 1.2
 // against two stacks, and level with the top of them it reads as a label for
 // the ping alone.
 //
-// It starts where one line stops fitting and not a pixel earlier: measured
-// against a 2.3 Gbit line's values, all five measurements still sit side by
-// side down to 1050px, so a 1100 window gets to keep them. The threshold is 30
-// above that, which is a digit's worth of slack.
-@media (max-width: 1080px)
+// It starts where one line stops fitting and not a pixel earlier: against a
+// 2.3 Gbit line's values the five measurements sit side by side down to 880px
+// now that each column takes only the width it needs, so a 1000 window gets to
+// keep them. It was 1150 when every column took a quarter of the row.
+@media (max-width: 920px)
   .speedtest
-    grid-template-columns: 10rem minmax(0, 1fr) minmax(0, 1fr)
+    grid-template-columns: 9.5rem 11rem 12rem
     // Both lines reserve the badge's height whether or not there is a badge on
     // them. The grade is drawn at the size of an icon, which is taller than a
     // value's line box, so without this a row carrying one stood 14px taller
