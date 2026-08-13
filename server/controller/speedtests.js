@@ -41,10 +41,17 @@ export const create = async ({
     isp = null, externalIp = null, provider = null,
     bytesDownloaded = null, bytesUploaded = null
 }) => {
-    return (await tests.create({ping, jitter, download, upload, error, serverId, serverName, serverHost, type,
+    // The timestamp travels back out with the id: the integrations are told
+    // when the test was recorded, and reading it off the row here is what makes
+    // the notification's `created` the same instant the row carries rather than
+    // one the caller stamped a moment later.
+    const created = new Date().toISOString();
+
+    const row = await tests.create({ping, jitter, download, upload, error, serverId, serverName, serverHost, type,
         resultId, time, packetLoss, downloadLatency, uploadLatency, isp, externalIp, provider,
-        bytesDownloaded, bytesUploaded,
-        created: new Date().toISOString()})).id;
+        bytesDownloaded, bytesUploaded, created});
+
+    return {id: row.id, created};
 }
 
 export const getOne = async (id) => {

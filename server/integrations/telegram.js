@@ -32,9 +32,9 @@ export default (registerEvent) => {
             replaceVariables(c.finished_message || defaults.finished, stripMarkdown(data)), activity);
     });
 
-    registerEvent('testFailed', async ({data: c}, error, activity) => {
+    registerEvent('testFailed', async ({data: c}, failure, activity) => {
         if (c.send_failed) await send(c.token, c.chat_id,
-            replaceVariables(c.error_message || defaults.failed, stripMarkdown({error})), activity);
+            replaceVariables(c.error_message || defaults.failed, stripMarkdown(failure)), activity);
     });
 
     return {

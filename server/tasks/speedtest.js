@@ -7,6 +7,7 @@ import { setState, sendRunning, sendError, sendFinished } from "./integrations.j
 import * as serverController from "../controller/servers.js";
 import { toErrorMessage } from '../util/helpers.js';
 import { PHASE_START, overallProgress } from '../util/providers/progress.js';
+import { failedPayload, finishedPayload } from '../util/notificationPayload.js';
 
 // The placeholder a failed test stores in every numeric column. The client
 // tells a failure apart by it, so it is not a value anyone should read as one.
@@ -200,14 +201,22 @@ const execute = async (type, retried) => {
             bytesDownloaded, bytesUploaded} = await parseData.parseData(process.env.PREVIEW_MODE === "true" ?
             parseData.OOKLA : mode, test);
 
-        let testResult = await tests.create({ping, download, upload, time, serverId: test.serverId, type,
+        const serverId = test.serverId;
+
+        let testResult = await tests.create({ping, download, upload, time, serverId, type,
             resultId, jitter, serverName, serverHost, packetLoss, downloadLatency, uploadLatency, isp, externalIp,
             provider, bytesDownloaded, bytesUploaded});
-        console.log(`Test #${testResult} was executed successfully in ${time}s. 🏓 ${ping} (±${jitter ?? 'N/A'}) ⬇ ${download}️ ⬆ ${upload}️`);
+        console.log(`Test #${testResult.id} was executed successfully in ${time}s. 🏓 ${ping} (±${jitter ?? 'N/A'}) ⬇ ${download}️ ⬆ ${upload}️`);
         createRecommendations().catch(err =>
             console.error(`Could not update the recommendations: ${toErrorMessage(err)}`));
         setRunning(false);
-        sendFinished({ping, jitter, download, upload, time}).catch(err =>
+        // Everything the row records, not the five figures this used to send:
+        // a webhook is how MySpeed feeds anything else, and a consumer that
+        // cannot tell which provider or server produced a number can do little
+        // with it.
+        sendFinished(finishedPayload({...testResult, provider, ping, jitter, download, upload, time,
+            packetLoss, downloadLatency, uploadLatency, serverId, serverName, serverHost,
+            isp, externalIp, resultId, bytesDownloaded, bytesUploaded})).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
     } catch (e) {
         console.log(e)
@@ -223,9 +232,9 @@ const execute = async (type, retried) => {
         // error wants, and the setting may have changed by the time they look.
         let testResult = await tests.create({ping: FAILED, download: FAILED, upload: FAILED, time: null,
             serverId: 0, type, error: message, provider: mode});
-        await sendError(message);
+        await sendError(failedPayload({...testResult, provider: mode, error: message}));
         setRunning(false, false);
-        console.log(`Test #${testResult} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
+        console.log(`Test #${testResult.id} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
     }
 }
 

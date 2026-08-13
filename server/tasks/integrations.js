@@ -16,8 +16,16 @@ export const sendCurrent = async () => {
     if (currentState === "ping") await sendPing();
 };
 
-export const sendError = async (error = "Unknown error") => {
-    await triggerEvent("testFailed", error);
+/**
+ * @param payload the failure as an object, carrying at least `error`.
+ *
+ * It used to be the bare message string, which every module then had to wrap
+ * back into `{error}` before it could substitute it - so a failure notification
+ * could name the reason and nothing else, not even which provider could not
+ * complete, which is the first thing a reader of the error wants.
+ */
+export const sendError = async (payload = {error: "Unknown error"}) => {
+    await triggerEvent("testFailed", payload);
 };
 
 export const sendRunning = async () => {

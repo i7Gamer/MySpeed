@@ -99,7 +99,7 @@ describe("ntfy integration", () => {
     it("sends the failure notification too", async () => {
         const {events} = load();
 
-        await events.testFailed({data: {url: baseUrl, topic: "alerts", send_failed: true}}, "Network unreachable", () => {});
+        await events.testFailed({data: {url: baseUrl, topic: "alerts", send_failed: true}}, {error: "Network unreachable"}, () => {});
 
         assert.equal(received.length, 1);
         assert.match(received[0].body, /Network unreachable/);

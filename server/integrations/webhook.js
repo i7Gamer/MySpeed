@@ -7,7 +7,7 @@ const events = [
     ['testStarted', 'send_started', "TEST_STARTED"],
     ['minutePassed', 'send_alive', "KEEP_ALIVE"],
     ['testFinished', 'send_finished', "TEST_FINISHED", (d) => d],
-    ['testFailed', 'send_failed', "TEST_FAILED", (e) => ({error: e})],
+    ['testFailed', 'send_failed', "TEST_FAILED", (d) => d],
     ['recommendationsUpdated', 'send_recommendations', "RECOMMENDATIONS_UPDATED", (d) => d],
     ['configUpdated', 'send_config_updates', "CONFIG_UPDATED", (d) => d]
 ];

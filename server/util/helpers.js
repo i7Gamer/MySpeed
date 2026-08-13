@@ -1,5 +1,13 @@
 const pad = (n) => String(n).padStart(2, "0");
 
+/**
+ * The clock names every message may use, whatever the event.
+ *
+ * Exported so the interface can offer them beside the measurement names without
+ * a second list to keep in step.
+ */
+export const DATE_VARIABLES = ["year", "month", "day", "hour", "minute", "second"];
+
 const getDateVariables = () => {
     const now = new Date();
     return {
@@ -12,10 +20,28 @@ const getDateVariables = () => {
     };
 };
 
+/**
+ * What an unmeasured value reads as inside a sentence.
+ *
+ * The payload carries an honest null - right for the webhook's JSON, where the
+ * consumer wants to know the provider reported nothing - but substituted into a
+ * message it renders as the word "null". "Ping: 12 ms (±null ms)" was already
+ * going out for the providers that do not measure jitter, and a payload
+ * carrying every column turns one such case into a dozen.
+ */
+const NOT_MEASURED = "N/A";
+
 export const replaceVariables = (message, variables) => {
     const allVariables = {...getDateVariables(), ...variables};
-    for (const variable in allVariables)
-        message = message.replaceAll(`%${variable}%`, allVariables[variable]);
+
+    for (const variable in allVariables) {
+        const value = allVariables[variable];
+
+        // Nullish rather than falsy: zero is a measurement - a line that lost
+        // no packets - and must not be swept in with what was never measured.
+        message = message.replaceAll(`%${variable}%`, value ?? NOT_MEASURED);
+    }
+
     return message;
 };
 

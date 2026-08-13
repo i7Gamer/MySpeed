@@ -43,6 +43,14 @@ const load = (setup) => {
 };
 
 const RESULT = {ping: 12, jitter: 2, download: 100, upload: 50};
+
+/**
+ * A failure reaches an integration as the same shape a finished test does: an
+ * object carrying the reason alongside which test it was and which provider
+ * could not complete. It used to be the bare message, so a failure
+ * notification could name the reason and nothing else.
+ */
+const failure = (error) => ({error, id: 12, created: "2026-08-13T09:15:00.000Z", provider: "ookla"});
 const fire = (events, name, config, payload) => events[name]({data: config}, payload, () => {});
 
 describe("discord", () => {
@@ -62,7 +70,7 @@ describe("discord", () => {
     it("identifies itself on every request", async () => {
         const {events} = load(setupDiscord);
         await fire(events, "testFinished", config, RESULT);
-        await fire(events, "testFailed", config, "boom");
+        await fire(events, "testFailed", config, failure("boom"));
 
         for (const request of sent) assert.match(request.headers["user-agent"], /^MySpeed/);
     });
@@ -78,7 +86,7 @@ describe("discord", () => {
 
     it("uses the operator's own failure message", async () => {
         const {events} = load(setupDiscord);
-        await fire(events, "testFailed", {...config, error_message: "down: %error%"}, "no route to host");
+        await fire(events, "testFailed", {...config, error_message: "down: %error%"}, failure("no route to host"));
 
         assert.equal(sent[0].body.embeds[0].description, "down: no route to host");
     });
@@ -86,7 +94,7 @@ describe("discord", () => {
     it("sends nothing when the event is switched off", async () => {
         const {events} = load(setupDiscord);
         await fire(events, "testFinished", {...config, send_finished: false}, RESULT);
-        await fire(events, "testFailed", {...config, send_failed: false}, "boom");
+        await fire(events, "testFailed", {...config, send_failed: false}, failure("boom"));
 
         assert.deepEqual(sent, []);
     });
@@ -117,7 +125,7 @@ describe("gotify", () => {
 
     it("raises the priority for a failure", async () => {
         const {events} = load(setupGotify);
-        await fire(events, "testFailed", config, "boom");
+        await fire(events, "testFailed", config, failure("boom"));
 
         assert.equal(sent[0].body.priority, 8);
         assert.match(sent[0].body.message, /boom/);
@@ -151,17 +159,20 @@ describe("webhook", () => {
         const {events} = load(setupWebhook);
 
         await fire(events, "testFinished", {...config, send_finished: true}, RESULT);
-        await fire(events, "testFailed", {...config, send_failed: true}, "boom");
+        await fire(events, "testFailed", {...config, send_failed: true}, failure("boom"));
         await fire(events, "testStarted", {...config, send_started: true}, undefined);
 
         assert.deepEqual(sent.map((request) => request.body.event), ["TEST_FINISHED", "TEST_FAILED", "TEST_STARTED"]);
     });
 
-    it("wraps a failure reason in an object rather than sending a bare string", async () => {
+    // A consumer reading `data.error` off a TEST_FAILED body keeps reading it;
+    // what it gains is the rest of the record beside it.
+    it("forwards the whole failure record, reason included", async () => {
         const {events} = load(setupWebhook);
-        await fire(events, "testFailed", {...config, send_failed: true}, "no route to host");
+        await fire(events, "testFailed", {...config, send_failed: true}, failure("no route to host"));
 
-        assert.deepEqual(sent[0].body.data, {error: "no route to host"});
+        assert.deepEqual(sent[0].body.data, failure("no route to host"));
+        assert.equal(sent[0].body.data.error, "no route to host");
     });
 
     it("identifies itself", async () => {
@@ -193,7 +204,7 @@ describe("health checks", () => {
         const {events} = load(setupHealthChecks);
 
         await fire(events, "testStarted", config, undefined);
-        await fire(events, "testFailed", config, "boom");
+        await fire(events, "testFailed", config, failure("boom"));
 
         assert.deepEqual(sent.map((request) => request.url),
             [`${config.url}/start`, `${config.url}/fail`]);

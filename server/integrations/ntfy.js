@@ -54,9 +54,9 @@ export default (registerEvent) => {
             c.priority || 3, activity);
     });
 
-    registerEvent('testFailed', async ({data: c}, error, activity) => {
+    registerEvent('testFailed', async ({data: c}, failure, activity) => {
         if (c.send_failed) await send(c,
-            replaceVariables(c.error_message || defaults.failed, {error}),
+            replaceVariables(c.error_message || defaults.failed, failure),
             c.error_priority || 5, activity);
     });
 
