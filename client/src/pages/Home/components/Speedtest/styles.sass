@@ -124,7 +124,14 @@ $metric-line-height: 1.2
   align-self: flex-end
   padding-bottom: 0.45rem
 
-.jitter-suffix
+// The jitter and the packet loss, hung off the latency behind one divider. Two
+// suffixes would draw two rules a centimetre apart and read as two columns;
+// they are footnotes to the same number, so they share the bar and are separated
+// from each other by space alone.
+//
+// Named for what it holds rather than for the first figure that went in it -
+// `.jitter-suffix` described half its contents from the day the second arrived.
+.quality-suffix
   font-size: 14pt
   font-weight: 400
   color: $subtext
@@ -134,11 +141,18 @@ $metric-line-height: 1.2
   opacity: 0.7
   display: flex
   align-items: center
+  // Wider between the figures than between an icon and its own number, so the
+  // pair reads as two readings rather than four things in a row.
+  gap: 0.6rem
+
+.quality-suffix-part
+  display: flex
+  align-items: center
   gap: 0.25rem
 
-  .jitter-icon
-    width: 0.9rem
-    height: 0.9rem
+.quality-suffix-icon
+  width: 0.9rem
+  height: 0.9rem
 
 .speedtest-details
   border-top: 1px solid $light-gray
@@ -192,7 +206,7 @@ $metric-line-height: 1.2
     font-size: 32pt
   .speedtest-text
     font-size: 32pt
-  .jitter-suffix
+  .quality-suffix
     font-size: 16pt
   .speedtest-chevron
     position: absolute

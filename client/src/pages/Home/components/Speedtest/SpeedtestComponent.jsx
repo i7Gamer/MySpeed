@@ -2,7 +2,7 @@ import React, {forwardRef, useContext, useRef, useState, useImperativeHandle} fr
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
     faArrowDown, faArrowUp, faChevronDown, faClockRotateLeft, faClose,
-    faExclamationTriangle, faInfo, faPingPongPaddleBall, faTrashCan,
+    faExclamationTriangle, faInfo, faLinkSlash, faPingPongPaddleBall, faTrashCan,
     faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
@@ -15,7 +15,8 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {convertSpeed, formatLatency, formatShortDay, formatShortTime, getSpeedUnit} from "@/common/utils/FormatUtil";
-import {downloadInfo, jitterInfo, pingInfo, uploadInfo} from "@/common/utils/MetricInfo";
+import {downloadInfo, jitterInfo, packetLossInfo, pingInfo, uploadInfo} from "@/common/utils/MetricInfo";
+import {isMeasured} from "@/common/utils/TestUtil";
 import HelpButton from "@/common/components/HelpButton";
 import {useMetricInfo} from "@/common/hooks/useMetricInfo";
 
@@ -51,6 +52,33 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
     const downValue = props.error ? "" : convertSpeed(props.down, preferences);
     const upValue = props.error ? "" : convertSpeed(props.up, preferences);
     const speedUnit = getSpeedUnit(preferences);
+
+    /**
+     * What the line does before anything is asked of it, beside the latency
+     * itself. The same pair the opened panel shows, in the same order and with
+     * the same glyphs - the row used to carry only the jitter, so the other
+     * half of the reading existed only for a row someone had expanded.
+     *
+     * A packet loss of zero is a measurement and the best one there is; only
+     * null and undefined mean the provider never looked. Ookla is the only one
+     * that does, so most histories carry rows of both kinds.
+     */
+    const quality = [
+        isMeasured(props.jitter) && {
+            key: "jitter",
+            icon: faWaveSquare,
+            info: jitterInfo,
+            label: t("info.jitter.title"),
+            text: props.jitter
+        },
+        isMeasured(props.packetLoss) && {
+            key: "packetLoss",
+            icon: faLinkSlash,
+            info: packetLossInfo,
+            label: t("info.packet_loss.title"),
+            text: `${props.packetLoss}%`
+        }
+    ].filter(Boolean);
 
     const fadeOut = () => {
         if (ref.current == null) return;
@@ -135,20 +163,25 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                             <h2 className="speedtest-text">
                                 {formatLatency(props.ping)}
                                 <span className="speedtest-unit">{t("latest.ping_unit")}</span>
-                                {props.jitter !== null && props.jitter !== undefined && (
-                                    <span className="jitter-suffix">
-                                        {/* Only the icon is the button: the help
-                                            cursor is the affordance, and it must
-                                            not promise that the number is
-                                            clickable. Outside the button the
-                                            value also stays ordinary text - as
-                                            button content, the aria-label
-                                            swallowed it. */}
-                                        <HelpButton label={t("info.jitter.title")}
-                                                    onOpen={(event) => openInfo(event, jitterInfo)}>
-                                            <FontAwesomeIcon icon={faWaveSquare} className="jitter-icon" />
-                                        </HelpButton>
-                                        {props.jitter}
+                                {quality.length > 0 && (
+                                    <span className="quality-suffix">
+                                        {quality.map(({key, icon, info, label, text}) => (
+                                            <span key={key} className="quality-suffix-part">
+                                                {/* Only the icon is the button: the
+                                                    help cursor is the affordance,
+                                                    and it must not promise that the
+                                                    number is clickable. Outside the
+                                                    button the value also stays
+                                                    ordinary text - as button
+                                                    content, the aria-label
+                                                    swallowed it. */}
+                                                <HelpButton label={label}
+                                                            onOpen={(event) => openInfo(event, info)}>
+                                                    <FontAwesomeIcon icon={icon} className="quality-suffix-icon"/>
+                                                </HelpButton>
+                                                {text}
+                                            </span>
+                                        ))}
                                     </span>
                                 )}
                             </h2>

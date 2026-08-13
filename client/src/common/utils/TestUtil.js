@@ -117,6 +117,21 @@ export const packetLossColour = (value) => gradeBelow(value, PACKET_LOSS_GOOD, P
 
 export const jitterColour = (value) => gradeBelow(value, JITTER_GOOD, JITTER_FAIR);
 
+/**
+ * Whether a figure was measured at all.
+ *
+ * A packet loss of zero is a measurement, and the best one there is - hiding it
+ * behind a truthiness check hides exactly the result worth showing. Only null
+ * and undefined mean the provider never looked, which is the common case: Ookla
+ * is the only one that reports a loss, and rows recorded before the column
+ * existed carry none either.
+ *
+ * Shared because the row and the panel it opens have to agree about it. They
+ * each had their own copy, one line long, and a blank figure in one view beside
+ * a "0%" in the other is a bug nobody would think to look for.
+ */
+export const isMeasured = (value) => value !== null && value !== undefined;
+
 // Where a consistency score stops being good, then acceptable. Unlike the two
 // above this one reads upwards: it is a percentage of steadiness, so more is
 // better.

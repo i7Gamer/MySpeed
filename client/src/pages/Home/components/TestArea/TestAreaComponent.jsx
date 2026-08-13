@@ -174,6 +174,11 @@ const TestArea = () => {
                             ping={test.ping}
                             pingLevel={getIconBySpeed(test.ping, config.ping, false)}
                             jitter={test.jitter}
+                            // Beside the jitter, the way the opened panel pairs
+                            // them: they are the two things the line does under
+                            // no load, and only one of them was legible without
+                            // opening a row.
+                            packetLoss={test.packetLoss}
                             down={test.download}
                             downLevel={getIconBySpeed(test.download, config.download, true)}
                             up={test.upload}

@@ -8,7 +8,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {convertSpeed, formatBytes, formatDateTime, formatLatency, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {
-    bufferbloat, bufferbloatColour, connectionChange, getIconBySpeed, jitterColour, packetLossColour
+    bufferbloat, bufferbloatColour, connectionChange, getIconBySpeed, isMeasured, jitterColour, packetLossColour
 } from "@/common/utils/TestUtil";
 import {changeFrom, differenceFromTarget, percentOfTarget, providerName} from "./utils/details";
 import {describeError} from "./utils/errors";
@@ -24,10 +24,6 @@ const RESULT_URL = "https://www.speedtest.net/result/c/";
 const MAX_BAR_PERCENT = 100;
 
 const DIRECTION_ICONS = {up: faArrowUp, down: faArrowDown, same: faArrowRight};
-
-// A packet loss of zero is a measurement; only null and undefined mean the
-// provider never reported one.
-const isMeasured = (value) => value !== null && value !== undefined;
 
 /**
  * One measurement, with how it compares to the configured optimum and to the

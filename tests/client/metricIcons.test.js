@@ -28,12 +28,18 @@ const JITTER_ICON = "faWaveSquare";
 
 const PACKET_LOSS_SITES = [
     "pages/Statistics/charts/OverviewChart/OverviewChart.jsx",
-    "pages/Statistics/charts/LatestTestChart/LatestTestChart.jsx"
+    "pages/Statistics/charts/LatestTestChart/LatestTestChart.jsx",
+    // The overview row and the panel it opens draw the figure beside the jitter,
+    // which is the one place the two glyphs stand next to each other - and so
+    // the one place borrowing the wrong one would be unmistakable.
+    "pages/Home/components/Speedtest/SpeedtestComponent.jsx",
+    "common/components/TestDetails/TestDetails.jsx"
 ];
 
-// Every remaining place the wave is drawn. All three are jitter.
+// Every remaining place the wave is drawn. All four are jitter.
 const JITTER_SITES = [
     "pages/Home/components/Speedtest/SpeedtestComponent.jsx",
+    "common/components/TestDetails/TestDetails.jsx",
     "pages/Statistics/charts/LatestTestChart/LatestTestChart.jsx",
     "pages/Statistics/charts/ConsistencyChart/ConsistencyChart.jsx"
 ];
