@@ -19,6 +19,45 @@
   width: min(44rem, 85vw)
   max-width: 100%
 
+// A field and whatever belongs under it. The card body lays its children out
+// with a gap, so the field and its own variable list have to arrive as one
+// child or the list drifts away from the input it belongs to.
+.integration-field
+  display: flex
+  flex-direction: column
+  gap: 0.5rem
+
+.template-variables
+  display: flex
+  flex-direction: column
+  gap: 0.4rem
+
+.template-variables-label
+  font-size: 0.8rem
+  color: $subtext
+
+.template-variables-list
+  display: flex
+  flex-wrap: wrap
+  gap: 0.35rem
+
+// Small enough that two dozen of them do not dominate the card, and plainly a
+// control rather than a label - clicking one writes it into the template.
+.template-variable
+  padding: 0.2rem 0.45rem
+  background-color: $dark-gray
+  border: 1px solid $light-gray
+  border-radius: 0.4rem
+  color: $subtext
+  font-family: inherit
+  font-size: 0.78rem
+  cursor: pointer
+  transition: all 0.15s ease
+
+  &:hover
+    border-color: $accent-primary
+    color: $accent-primary
+
 .preview-warning
   display: flex
   align-items: center

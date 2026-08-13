@@ -1,6 +1,7 @@
 import IntegrationData from '../models/IntegrationData.js';
 import integrationModules from '../integrations/index.js';
 import { ALERT_METRICS, ALERT_ONLY, breachesThreshold, wantsOnlyBreaches } from '../util/alertThreshold.js';
+import { FAILED_VARIABLES, FINISHED_VARIABLES } from '../util/notificationPayload.js';
 
 const integrations = {};
 
@@ -115,6 +116,28 @@ const ALERT_FIELDS = [
 /** Whether a module asked to be offered the threshold settings. */
 const isNotifier = (definition) => definition?.notifier === true;
 
+/**
+ * The variables each message template accepts.
+ *
+ * The templates have always understood %ping% and the rest, and nothing said
+ * so: the only hint was the example in the placeholder, which disappears the
+ * moment anything is typed. The list belongs here because this is the side that
+ * substitutes them - a copy in the interface would drift the first time a field
+ * was added to the payload.
+ *
+ * Keyed per field, because a template for a finished test and one for a failure
+ * do not accept the same names, and offering a variable that will not
+ * substitute leaves a literal "%download%" in the message that arrives.
+ */
+const TEMPLATE_VARIABLES = {
+    finished_message: FINISHED_VARIABLES,
+    error_message: FAILED_VARIABLES
+};
+
+const withVariables = (field) => Object.hasOwn(TEMPLATE_VARIABLES, field.name)
+    ? {...field, variables: TEMPLATE_VARIABLES[field.name]}
+    : field;
+
 export const initialize = async () => {
     for (const { name, setup } of integrationModules) {
         const definition = setup(registerEvent(name));
@@ -123,9 +146,11 @@ export const initialize = async () => {
         // fields: initialize() runs from the server's boot and again from the
         // integration test harness, and the definition is handed out by
         // reference, so appending in place stacks another copy on every pass.
-        integrations[name] = isNotifier(definition)
-            ? {...definition, fields: [...definition.fields, ...ALERT_FIELDS]}
-            : definition;
+        const fields = (isNotifier(definition)
+            ? [...definition.fields, ...ALERT_FIELDS]
+            : definition.fields).map(withVariables);
+
+        integrations[name] = {...definition, fields};
 
         console.log(`Integration "${name}" loaded successfully`);
     }

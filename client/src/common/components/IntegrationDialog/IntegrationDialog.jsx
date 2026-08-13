@@ -14,6 +14,7 @@ import ExpandableCard from "@/common/components/ExpandableCard";
 import DropdownSelect from "@/common/components/DropdownSelect";
 import {renderableIntegrations} from "@/common/components/IntegrationDialog/renderableIntegrations";
 import {integrationPayload, isValidFieldValue} from "@/common/components/IntegrationDialog/integrationPayload";
+import {appendVariable, variableToken} from "@/common/components/IntegrationDialog/templateVariables";
 
 const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, config}) => {
     const [displayName, setDisplayName] = useState(integration.displayName || t(`integrations.${integration.name}.title`));
@@ -152,10 +153,29 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
             <FormField label={t("integrations.display_name")} type="text" value={displayName}
                 onChange={(v) => { setDisplayName(v); setUnsavedChanges(true); }} placeholder={t("integrations.display_name")}/>
             {integrationDef.fields.map((field) => (
-                <FormField key={field.name} label={getLabel(field.name)}
-                    type={field.type} value={fields[field.name]} onChange={(value) => updateField(field.name, value)}
-                    placeholder={getPlaceholder(field.name)} error={!isValidInput(field)}
-                    min={field.min} max={field.max} decimals={field.decimals}/>
+                <div key={field.name} className="integration-field">
+                    <FormField label={getLabel(field.name)}
+                        type={field.type} value={fields[field.name]} onChange={(value) => updateField(field.name, value)}
+                        placeholder={getPlaceholder(field.name)} error={!isValidInput(field)}
+                        min={field.min} max={field.max} decimals={field.decimals}/>
+                    {/* Only a template carries a list, and the list is the
+                        server's - it is the side that substitutes them. */}
+                    {field.variables?.length > 0 && (
+                        <div className="template-variables">
+                            <span className="template-variables-label">{t("integrations.variables")}</span>
+                            <div className="template-variables-list">
+                                {field.variables.map((name) => (
+                                    <button key={name} type="button" className="template-variable"
+                                            title={t("integrations.variables_hint")}
+                                            onClick={() => updateField(field.name,
+                                                appendVariable(fields[field.name], name))}>
+                                        {variableToken(name)}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
             ))}
         </ExpandableCard>
     );

@@ -624,7 +624,9 @@
       "alert_download_below_placeholder": "e.g. 100",
       "alert_upload_below": "Notify when upload is below (Mbps)",
       "alert_upload_below_placeholder": "e.g. 20"
-    }
+    },
+    "variables": "Available variables",
+    "variables_hint": "Click to add it to the message"
   },
   "common": {
     "back_to_top": "Back to top"
