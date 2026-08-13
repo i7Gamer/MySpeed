@@ -31,18 +31,40 @@ const getDateVariables = () => {
  */
 const NOT_MEASURED = "N/A";
 
+/**
+ * A name as a template spells it. `\w` covers every key the payload and the
+ * clock offer, all of which are column names.
+ */
+const VARIABLE_TOKEN = /%(\w+)%/g;
+
+/**
+ * Fills the %names% in a message from the values it is given.
+ *
+ * One pass with a replacer function rather than a replaceAll per name, which
+ * got two things wrong once the payload grew past the five numbers it used to
+ * carry - it now holds the server's name and location, the ISP, the external
+ * address and the failure reason, all of them text a remote provider chose:
+ *
+ * - replaceAll's *string* replacement honours `$&`, `` $` ``, `$'` and `$$`, so
+ *   a server called "ACME $& Co" wrote the placeholder itself back into the
+ *   message that went out. A replacer function is handed the text verbatim.
+ * - Replacing the names one after another meant a value written early that
+ *   happened to spell a later name was replaced again on that name's turn - a
+ *   server named "%isp%" had the ISP written into it. A single pass never
+ *   revisits what it has already written.
+ */
 export const replaceVariables = (message, variables) => {
     const allVariables = {...getDateVariables(), ...variables};
 
-    for (const variable in allVariables) {
-        const value = allVariables[variable];
+    return message.replace(VARIABLE_TOKEN, (token, name) => {
+        // A name nothing was given for is left standing, as it always was: the
+        // failure template may mention a measurement no failure carries.
+        if (!Object.hasOwn(allVariables, name)) return token;
 
         // Nullish rather than falsy: zero is a measurement - a line that lost
         // no packets - and must not be swept in with what was never measured.
-        message = message.replaceAll(`%${variable}%`, value ?? NOT_MEASURED);
-    }
-
-    return message;
+        return String(allVariables[name] ?? NOT_MEASURED);
+    });
 };
 
 /**

@@ -175,6 +175,39 @@ describe("replaceVariables", () => {
         assert.equal(replaceVariables("%unknown%", {ping: 12}), "%unknown%");
     });
 
+    /**
+     * A value is written verbatim, dollars and all.
+     *
+     * `$&`, `` $` ``, `$'` and `$$` all mean something in a string replacement,
+     * and the payload now carries text a remote provider chose - the server's
+     * name, its location, the ISP, the external address, the failure reason.
+     * A server called "ACME $& Co" wrote the placeholder itself back into the
+     * message that was delivered. Before the payload was widened every value
+     * here was a number, so nothing could carry a dollar at all.
+     */
+    it("writes a value containing a dollar sequence verbatim", () => {
+        assert.equal(replaceVariables("Server: %serverName%", {serverName: "ACME $& Co"}),
+            "Server: ACME $& Co");
+        assert.equal(replaceVariables("ISP %isp%", {isp: "X$`Y"}), "ISP X$`Y");
+        assert.equal(replaceVariables("[%error%]", {error: "boom $' tail"}), "[boom $' tail]");
+        assert.equal(replaceVariables("%provider%", {provider: "a$$b"}), "a$$b");
+    });
+
+    /**
+     * A substituted value is the end of the substitution, not more template.
+     *
+     * The names were replaced one after another, so a value written early that
+     * happened to spell a later name was replaced again on that name's turn.
+     * The payload's own key order puts serverName ahead of isp, externalIp,
+     * resultId and both byte counts, and a provider chooses the server's name.
+     */
+    it("does not substitute again inside a value it just wrote", () => {
+        assert.equal(
+            replaceVariables("Server: %serverName% ISP: %isp%",
+                {serverName: "Host %isp% Ltd", isp: "Deutsche Telekom"}),
+            "Server: Host %isp% Ltd ISP: Deutsche Telekom");
+    });
+
     it("offers the clock without being given it", () => {
         const substituted = replaceVariables(DATE_VARIABLES.map((name) => `%${name}%`).join("-"), {});
 
