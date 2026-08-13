@@ -356,6 +356,22 @@ describe("the row's grid makes room for it", () => {
             assert.match(threeUp.body, /\.date\s*\{[^}]*grid-row:\s*1\s*\/\s*3/);
         });
 
+        // A pair reads as a pair when the two share a centre line. Pinned to the
+        // left of their tracks, an upload under a download only looked aligned
+        // at the arrow.
+        it("centres each figure over the one beneath it", () => {
+            assert.match(threeUp.body, /\.speedtest-row\s*\{[^}]*justify-content:\s*center/);
+        });
+
+        // The chevron is out of the flow here, and the last column reaches the
+        // padding edge - centred in its track, the download's unit ran under it.
+        it("keeps the chevron clear of the last column", () => {
+            const padding = threeUp.body.match(/\.speedtest\s*\{[^}]*padding:\s*([^;]*);/)?.[1] ?? "";
+            const [, right] = padding.trim().split(/\s+/);
+
+            assert.ok(parseFloat(right) >= 3, `only ${right} of room on the right for the chevron`);
+        });
+
         /**
          * Every row is two lines whatever it carries. The grade is drawn at the
          * size of an icon, which is taller than a value's line box, so without a
