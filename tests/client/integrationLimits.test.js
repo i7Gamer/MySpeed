@@ -9,7 +9,9 @@ const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), "utf8");
 
 const serverSource = read("server", "controller", "integrations.js");
-const clientSource = read("client", "src", "common", "components", "IntegrationDialog", "IntegrationDialog.jsx");
+// The client's half moved out of IntegrationDialog.jsx when it was extracted so
+// it could be exercised without a renderer; the cross-check follows it.
+const clientSource = read("client", "src", "common", "components", "IntegrationDialog", "integrationPayload.js");
 
 /**
  * The client re-implements the server's field validation so it can mark a bad
@@ -22,9 +24,17 @@ const clientSource = read("client", "src", "common", "components", "IntegrationD
  * change to either side has to move both.
  */
 const limitOf = (source, type) => {
-    const match = source.match(new RegExp(`type === "${type}"[^\\n]*length > (\\d+)`));
+    const match = source.match(new RegExp(`type === "${type}"[^\\n]*length > (\\w+)`));
     assert.ok(match, `no ${type} length check found`);
-    return Number(match[1]);
+
+    // Either side may spell its ceiling as a literal or as a named constant.
+    // Resolving both keeps the comparison honest without dictating which.
+    if (/^\d+$/.test(match[1])) return Number(match[1]);
+
+    const named = source.match(new RegExp(`\\b${match[1]}\\s*=\\s*(\\d+)`));
+    assert.ok(named, `${type} limit is named ${match[1]}, which is defined nowhere`);
+
+    return Number(named[1]);
 };
 
 describe("integration field limits", () => {

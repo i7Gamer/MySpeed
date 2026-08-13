@@ -615,6 +615,15 @@
         "interval": "Keep-Alive interval (minutes)",
         "interval_placeholder": "1"
       }
+    },
+    "fields": {
+      "alert_only": "Only notify when a limit is missed",
+      "alert_ping_above": "Notify when ping is above (ms)",
+      "alert_ping_above_placeholder": "e.g. 50",
+      "alert_download_below": "Notify when download is below (Mbps)",
+      "alert_download_below_placeholder": "e.g. 100",
+      "alert_upload_below": "Notify when upload is below (Mbps)",
+      "alert_upload_below_placeholder": "e.g. 20"
     }
   },
   "common": {

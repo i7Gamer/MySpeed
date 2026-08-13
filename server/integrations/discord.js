@@ -55,6 +55,10 @@ export default (registerEvent) => {
     });
 
     return {
+        // A notifier: it exists to tell a person something, so it is offered the
+        // shared threshold settings that let it stay quiet while the line is fine.
+        // influxdb and healthChecks deliberately do not set this.
+        notifier: true,
         icon: "fa-brands fa-discord",
         fields: [
             {name: "url", type: "text", required: true, secret: true, regex: WEBHOOK_URL},

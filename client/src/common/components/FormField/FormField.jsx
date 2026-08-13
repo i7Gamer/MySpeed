@@ -10,7 +10,8 @@ export const FormField = ({
     error = false,
     disabled = false,
     min,
-    max
+    max,
+    decimals = false
 }) => (
     <div className="form-field">
         <label className={error ? "form-field-error" : ""}>{label}</label>
@@ -36,6 +37,11 @@ export const FormField = ({
                 disabled={disabled}
                 min={min}
                 max={max}
+                // Without this the browser's own validation applies the default
+                // step of 1 and refuses a fraction before the value ever
+                // reaches the field's own check - a threshold of 12.5 Mbit
+                // would simply not be typeable.
+                step={decimals ? "any" : undefined}
             />
         )}
 

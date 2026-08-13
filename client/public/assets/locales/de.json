@@ -615,6 +615,15 @@
         "interval": "Laufendes Intervall (Minuten)",
         "interval_placeholder": "1"
       }
+    },
+    "fields": {
+      "alert_only": "Nur bei verfehltem Grenzwert benachrichtigen",
+      "alert_ping_above": "Benachrichtigen, wenn Ping über (ms)",
+      "alert_ping_above_placeholder": "z. B. 50",
+      "alert_download_below": "Benachrichtigen, wenn Download unter (Mbps)",
+      "alert_download_below_placeholder": "z. B. 100",
+      "alert_upload_below": "Benachrichtigen, wenn Upload unter (Mbps)",
+      "alert_upload_below_placeholder": "z. B. 20"
     }
   },
   "common": {

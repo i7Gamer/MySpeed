@@ -1,5 +1,6 @@
 import IntegrationData from '../models/IntegrationData.js';
 import integrationModules from '../integrations/index.js';
+import { ALERT_METRICS, ALERT_ONLY, breachesThreshold, wantsOnlyBreaches } from '../util/alertThreshold.js';
 
 const integrations = {};
 
@@ -60,6 +61,16 @@ export const triggerEvent = async (name, data) => {
         for (const integration of active) {
             if (shouldThrottlePing(name, integration)) continue;
 
+            // Stamped even though nothing was sent. The activity columns are
+            // the only thing the dialog reads to decide between "last run …"
+            // and "Never executed", so an integration doing exactly what it was
+            // asked - staying quiet through a run of healthy tests - would
+            // otherwise present itself as one that has never worked.
+            if (suppressesEvent(name, module.module, integration, data)) {
+                await triggerActivity(integration.id, false).catch(() => undefined);
+                continue;
+            }
+
             // Contained per integration. One throwing callback used to end the
             // whole fan-out, so every integration registered after it missed
             // the event with nothing said - and the throw could come from a
@@ -78,11 +89,68 @@ export const clearPingState = (id) => {
     delete lastPings[id];
 }
 
+/**
+ * The settings that let an integration stay quiet while the line is fine.
+ *
+ * Declared once here and handed to every module that calls itself a notifier,
+ * rather than copied into each of them: the same six field definitions in six
+ * files is six places for the next change to be made in five.
+ *
+ * They are appended in initialize(), which is the definition validateInput
+ * reads. Adding them to the serialisation getIntegrations() builds instead
+ * would render them in the dialog, accept a value, and have the whitelist at
+ * the end of validateInput drop it on save with nothing said.
+ *
+ * A threshold is a number the measurement is compared against, so it is not
+ * required and carries no maximum - a gigabit line's download limit is a
+ * different order of magnitude from a DSL one's. `decimals` because the figures
+ * it is compared against are stored as doubles, and an upload limit of 12.5
+ * Mbit is an ordinary thing to want.
+ */
+const ALERT_FIELDS = [
+    {name: ALERT_ONLY, type: "boolean", required: false},
+    ...ALERT_METRICS.map(({field}) => ({name: field, type: "number", required: false, min: 0, decimals: true}))
+];
+
+/** Whether a module asked to be offered the threshold settings. */
+const isNotifier = (definition) => definition?.notifier === true;
+
 export const initialize = async () => {
     for (const { name, setup } of integrationModules) {
-        integrations[name] = setup(registerEvent(name));
+        const definition = setup(registerEvent(name));
+
+        // A new object with a new array, never a push into the module's own
+        // fields: initialize() runs from the server's boot and again from the
+        // integration test harness, and the definition is handed out by
+        // reference, so appending in place stacks another copy on every pass.
+        integrations[name] = isNotifier(definition)
+            ? {...definition, fields: [...definition.fields, ...ALERT_FIELDS]}
+            : definition;
+
         console.log(`Integration "${name}" loaded successfully`);
     }
+};
+
+/**
+ * Whether this integration asked not to be told about this particular result.
+ *
+ * Exported for its tests: it is the decision that governs whether a person
+ * hears from MySpeed at all, and triggerEvent below cannot be exercised without
+ * a database behind it.
+ *
+ * Only the finished-test event is ever withheld. A failure is the notification
+ * people most want, the keep-alive ping is how an integration says it is still
+ * there, and nothing else carries a measurement to judge. Only modules that
+ * call themselves notifiers are gated at all - influxdb is a time series whose
+ * gaps read as an outage, and healthChecks' finished ping is what closes the
+ * run its started ping opened.
+ */
+export const suppressesEvent = (eventName, moduleName, integration, payload) => {
+    if (eventName !== "testFinished") return false;
+    if (!isNotifier(getIntegration(moduleName))) return false;
+    if (!wantsOnlyBreaches(integration?.data)) return false;
+
+    return !breachesThreshold(payload, integration.data);
 };
 
 export const getActive = () => activeRows();
@@ -239,8 +307,18 @@ export const validateInput = (module, data, isPatch = false) => {
             if (field.type === "textarea" && data[field.name].length > 2000) return false;
             if (field.type === "boolean" && typeof data[field.name] !== "boolean") return false;
             if (field.type === "number") {
-                const num = Number(data[field.name]);
-                if (!Number.isInteger(num)) return false;
+                // Checked before coercing, for the same reason the text branch
+                // above checks its own type: Number([]) is 0 and Number(true) is
+                // 1, so an array or a boolean passed every numeric test and was
+                // whitelisted into the stored data column as a plausible number.
+                const raw = data[field.name];
+                if (typeof raw !== "number" && typeof raw !== "string") return false;
+
+                const num = Number(raw);
+                // A field that declares `decimals` is compared against a stored
+                // measurement rather than counted, so a fraction is a legitimate
+                // value for it. Everything else stays whole, as it was.
+                if (field.decimals ? !Number.isFinite(num) : !Number.isInteger(num)) return false;
                 if (field.min !== undefined && num < field.min) return false;
                 if (field.max !== undefined && num > field.max) return false;
                 data[field.name] = num;

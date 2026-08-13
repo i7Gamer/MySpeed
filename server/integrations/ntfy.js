@@ -61,6 +61,10 @@ export default (registerEvent) => {
     });
 
     return {
+        // A notifier: it exists to tell a person something, so it is offered the
+        // shared threshold settings that let it stay quiet while the line is fine.
+        // influxdb and healthChecks deliberately do not set this.
+        notifier: true,
         icon: "fa-solid fa-bell-concierge",
         fields: [
             {name: "url", type: "text", required: true, regex: /^https?:\/\/.+/},

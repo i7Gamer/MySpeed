@@ -13,6 +13,7 @@ import FormField from "@/common/components/FormField";
 import ExpandableCard from "@/common/components/ExpandableCard";
 import DropdownSelect from "@/common/components/DropdownSelect";
 import {renderableIntegrations} from "@/common/components/IntegrationDialog/renderableIntegrations";
+import {integrationPayload, isValidFieldValue} from "@/common/components/IntegrationDialog/integrationPayload";
 
 const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, config}) => {
     const [displayName, setDisplayName] = useState(integration.displayName || t(`integrations.${integration.name}.title`));
@@ -50,40 +51,36 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
         setUnsavedChanges(true);
     };
 
-    const isValidInput = (field) => {
-        const value = fields[field.name];
-        const isEmpty = value === undefined || value === null || value === "";
-        if (field.required && isEmpty) return false;
-        if (!isEmpty) {
-            if (field.regex && !new RegExp(field.regex).test(value)) return false;
-            // The same ceilings the server's validateInput holds these to: a
-            // laxer copy here let a value through unmarked that the save then
-            // bounced with nothing but a generic error state.
-            if (field.type === "text" && value.length > 250) return false;
-            if (field.type === "textarea" && value.length > 2000) return false;
-            if (field.type === "number") {
-                if (!Number.isInteger(Number(value))) return false;
-                if (field.min !== undefined && Number(value) < field.min) return false;
-                if (field.max !== undefined && Number(value) > field.max) return false;
-            }
-        }
-        return true;
+    const isValidInput = (field) => isValidFieldValue(field, fields[field.name]);
+
+    /**
+     * The label for a field, falling back to the shared namespace.
+     *
+     * Most fields are an integration's own and are named under it. The
+     * threshold settings are declared once and handed to every notifier, so
+     * naming them per integration would mean the same six sentences written out
+     * six times in each locale - and the lookup here is built from a template
+     * literal, which the i18n key scanner cannot see, so every one of those
+     * copies would be a string that ships as a raw key the moment it is
+     * forgotten.
+     */
+    const fieldKeys = (fieldName, suffix = "") => [
+        `integrations.${integration.name}.fields.${fieldName}${suffix}`,
+        `integrations.fields.${fieldName}${suffix}`
+    ];
+
+    const getLabel = (fieldName) => {
+        const key = fieldKeys(fieldName).find((candidate) => i18n.exists(candidate));
+        return key ? t(key) : fieldName;
     };
 
     const getPlaceholder = (fieldName) => {
-        const placeholderKey = `integrations.${integration.name}.fields.${fieldName}_placeholder`;
-        const baseKey = `integrations.${integration.name}.fields.${fieldName}`;
-        return i18n.exists(placeholderKey) ? t(placeholderKey) : t(baseKey);
+        const key = fieldKeys(fieldName, "_placeholder").find((candidate) => i18n.exists(candidate));
+        return key ? t(key) : getLabel(fieldName);
     };
 
     const handleSave = async () => {
-        const cleanedFields = {};
-        integrationDef.fields.forEach(field => {
-            const v = fields[field.name];
-            if (field.type === "number" && (v === "" || v === null || v === undefined)) return;
-            cleanedFields[field.name] = v;
-        });
-        const data = {...cleanedFields, integration_name: displayName};
+        const data = integrationPayload(integrationDef, fields, displayName);
         try {
             if (!integration.id) {
                 const response = await putRequest(`/integrations/${integration.name}`, data);
@@ -155,10 +152,10 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
             <FormField label={t("integrations.display_name")} type="text" value={displayName}
                 onChange={(v) => { setDisplayName(v); setUnsavedChanges(true); }} placeholder={t("integrations.display_name")}/>
             {integrationDef.fields.map((field) => (
-                <FormField key={field.name} label={t(`integrations.${integration.name}.fields.${field.name}`)}
+                <FormField key={field.name} label={getLabel(field.name)}
                     type={field.type} value={fields[field.name]} onChange={(value) => updateField(field.name, value)}
                     placeholder={getPlaceholder(field.name)} error={!isValidInput(field)}
-                    min={field.min} max={field.max}/>
+                    min={field.min} max={field.max} decimals={field.decimals}/>
             ))}
         </ExpandableCard>
     );
