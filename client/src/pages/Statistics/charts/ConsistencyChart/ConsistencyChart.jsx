@@ -11,7 +11,8 @@ import { formatDateTime } from "@/common/utils/FormatUtil";
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import {
-    convertSpeed, formatLatency, formatLatencyWithUnit, formatWithUnit, getSpeedUnit, NOT_MEASURED
+    convertSpeed, formatLatency, formatLatencyWithUnit, formatWithUnit, getSpeedUnit, LATENCY_STEP,
+    NOT_MEASURED, roundsToZeroLatency
 } from "@/common/utils/FormatUtil";
 import "./styles.sass";
 
@@ -72,6 +73,24 @@ export const ConsistencyChart = (props) => {
     // the same measurement for as long as the icon was a constant.
     const pingGrade = "icon-" + pingDeviationColour(formatLatency(data.ping.deviation));
 
+    /**
+     * The spread, or the statement that it is smaller than can be shown.
+     *
+     * The server sends this at two decimals and the row prints one, so anything
+     * under 0.05 rounded to a bare "0" - indistinguishable from a line whose
+     * latency did not move at all, which on this row is the strongest claim
+     * there is. Both readings occur on one instance: a history of whole-
+     * millisecond pings really does deviate by exactly nothing, because more
+     * than half the tests land on the median, while its newer rows sit a few
+     * hundredths apart.
+     *
+     * The bound rather than a second decimal, so the row keeps the one
+     * precision every latency on this card is printed at.
+     */
+    const pingDeviationText = roundsToZeroLatency(data.ping.deviation)
+        ? `±<${LATENCY_STEP} ${t("latest.ping_unit")}`
+        : deviation(formatLatency(data.ping.deviation), t("latest.ping_unit"));
+
     const spreads = {
         download: spread(ranges.download, speed),
         upload: spread(ranges.upload, speed),
@@ -113,9 +132,7 @@ export const ConsistencyChart = (props) => {
                 <div className="consistency-item">
                     <div className="consistency-info">
                         <h2>{t("latest.ping")}</h2>
-                        <p className={pingGrade}>
-                            {deviation(formatLatency(data.ping.deviation), t("latest.ping_unit"))}
-                        </p>
+                        <p className={pingGrade}>{pingDeviationText}</p>
                         <span className="consistency-detail">{t("statistics.consistency.ping_deviation")}</span>
                         {spreads.ping && <span className="consistency-detail">{spreads.ping}</span>}
                     </div>

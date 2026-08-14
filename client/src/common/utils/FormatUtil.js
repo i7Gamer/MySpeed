@@ -136,6 +136,28 @@ export const formatLatency = (ms) => {
     return parseFloat(ms.toFixed(LATENCY_DECIMALS));
 };
 
+/** The smallest latency the one decimal above can express. */
+export const LATENCY_STEP = 0.1;
+
+/**
+ * Whether a latency is real but too small for the interface to print.
+ *
+ * The trim above is a rounding, and parseFloat then drops the trailing zero,
+ * so everything under 0.05 comes out as the bare "0" a genuine zero does. For
+ * most latencies that is harmless - nobody reads a 0.03 ms ping as a claim -
+ * but the stability card's spread is different: "±0 ms" there is the strongest
+ * statement the figure can make, that the line's latency did not move at all
+ * between two tests, and a spread merely below the display's resolution must
+ * not borrow it.
+ *
+ * Both readings are real. A history of whole-millisecond pings has a median
+ * absolute deviation of exactly zero, because more than half the tests land on
+ * the median; the same instance's newer rows, measured to two decimals, sit a
+ * few hundredths apart instead.
+ */
+export const roundsToZeroLatency = (ms) =>
+    typeof ms === "number" && Number.isFinite(ms) && ms > 0 && formatLatency(ms) === 0;
+
 export const convertSpeed = (mbps, preferences) => {
     if (mbps === null || mbps === undefined) return mbps;
     if (typeof mbps !== "number" || isNaN(mbps)) return mbps;
