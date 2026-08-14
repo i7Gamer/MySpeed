@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mapFixed, mapRounded, toErrorMessage, stripTrailingSlashes } from "../../server/util/helpers.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {
+    mapFixed, mapRounded, toErrorMessage, stripTrailingSlashes, writeAtomically
+} from "../../server/util/helpers.js";
 
 const entries = [
     {download: 100.123, ping: 10},
@@ -99,6 +104,55 @@ describe("a value that was never measured", () => {
     // test that did not happen.
     it("still counts a measured zero", () => {
         assert.deepEqual(mapRounded([{time: 0}, {time: 10}], "time"), {min: 0, max: 10, avg: 5});
+    });
+});
+
+/**
+ * The server lists are downloaded during boot and written straight over the
+ * previous copy, so a container restarted mid-write left a truncated file - and
+ * controller/servers.js answered the metrics scrape, the provider dialog and
+ * librespeed's server selection out of whatever was there.
+ */
+describe("writeAtomically", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-atomic-"));
+    const target = path.join(dir, "servers.json");
+
+    it("writes the contents", () => {
+        writeAtomically(target, '{"1":"Frankfurt"}');
+
+        assert.equal(fs.readFileSync(target, "utf8"), '{"1":"Frankfurt"}');
+    });
+
+    it("replaces what was there", () => {
+        writeAtomically(target, '{"1":"Frankfurt"}');
+        writeAtomically(target, '{"2":"Zurich"}');
+
+        assert.equal(fs.readFileSync(target, "utf8"), '{"2":"Zurich"}');
+    });
+
+    // The rename is the whole point: nothing may be readable at the target
+    // until the contents are complete.
+    it("leaves no working file beside the target", () => {
+        writeAtomically(target, '{"1":"Frankfurt"}');
+
+        assert.deepEqual(fs.readdirSync(dir).filter((name) => name.endsWith(".tmp")), [],
+            "a temporary file is left behind for every write");
+    });
+
+    it("clears up after a write it could not finish", () => {
+        assert.throws(() => writeAtomically(path.join(dir, "missing", "servers.json"), "{}"));
+
+        assert.deepEqual(fs.readdirSync(dir).filter((name) => name.endsWith(".tmp")), []);
+    });
+
+    // The previous list survives a failed replacement, which is the property
+    // that makes this worth doing at all.
+    it("leaves the old file intact when the write fails", () => {
+        writeAtomically(target, '{"1":"Frankfurt"}');
+
+        assert.throws(() => writeAtomically(target, {toString: () => { throw new Error("boom"); }}));
+
+        assert.equal(fs.readFileSync(target, "utf8"), '{"1":"Frankfurt"}');
     });
 });
 

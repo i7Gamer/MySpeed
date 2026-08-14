@@ -1,4 +1,31 @@
+import fs from 'node:fs';
+
 const pad = (n) => String(n).padStart(2, "0");
+
+/**
+ * Writes beside the target and renames into place, which is atomic on the same
+ * filesystem.
+ *
+ * A plain write leaves a truncated file behind when the process is stopped part
+ * way through it, and a reader is then holding something it cannot parse. The
+ * server lists are the case: they are downloaded during boot, which is exactly
+ * when a container is most likely to be restarted, and controller/servers.js
+ * answered three request paths out of whatever was left. Renaming means a
+ * reader sees either the previous file or the new one and never half of one.
+ */
+export const writeAtomically = (file, contents) => {
+    const temporary = `${file}.${process.pid}.tmp`;
+
+    try {
+        fs.writeFileSync(temporary, contents);
+        fs.renameSync(temporary, file);
+    } catch (error) {
+        // The half-written temporary is this function's to clear up: left
+        // behind it is never read, but it is never removed either.
+        fs.rmSync(temporary, {force: true});
+        throw error;
+    }
+};
 
 /**
  * The clock names every message may use, whatever the event.

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { getJson } from './http.js';
 import { serverListFrom } from './serverList.js';
+import { writeAtomically } from './helpers.js';
 
 /**
  * These lists are fetched once at startup, off any request, and are a far
@@ -58,7 +59,7 @@ for (const {file, url, format, isCurrent} of sources) {
             if (servers === null)
                 return console.error(`Could not load servers from ${url}: the response was not a list`);
 
-            fs.writeFileSync(file, JSON.stringify(servers, null, 4));
+            writeAtomically(file, JSON.stringify(servers, null, 4));
         })
         .catch(() => console.error("Could not load servers"));
 }
