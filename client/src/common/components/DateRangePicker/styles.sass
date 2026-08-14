@@ -66,6 +66,20 @@ $dialog-secondary-text: 0.85rem
     opacity: 1
     transform: translateY(0)
 
+// The same opening, for the popover that is centred in the viewport rather than
+// hung under its trigger. It needs its own because an animation outranks a
+// normal author declaration for as long as it runs: sharing the keyframes above
+// meant their translateY replaced the centring `translate(-50%, -50%)` for the
+// whole 0.2s, and the sheet was painted from the middle of the screen outwards -
+// a third of it past the right edge on a phone - and then snapped into place.
+@keyframes popoverFadeInCentred
+  from
+    opacity: 0
+    transform: translate(-50%, calc(-50% - 8px))
+  to
+    opacity: 1
+    transform: translate(-50%, -50%)
+
 .timeframe-presets
   display: flex
   flex-wrap: wrap
@@ -240,6 +254,9 @@ $dialog-secondary-text: 0.85rem
     top: 50%
     left: 50%
     transform: translate(-50%, -50%)
+    // Carries the centring through the opening, which the shared keyframes
+    // above would otherwise overwrite for as long as they ran.
+    animation: popoverFadeInCentred 0.2s ease-out
     // The width is the whole sheet, padding and border included. Without this
     // the reset - which only covers `main > *` - left them added on top:
     // 343 + 32 + 2 = 377px inside a 375px viewport, a pixel past both edges
