@@ -1,5 +1,9 @@
 @use "colors" as *
+@use "grades" as *
 @use "layout" as *
+// The grade palette and the icon-* utilities that carry it, emitted here
+// because this is the one stylesheet App.jsx loads.
+@use "grade-palette"
 
 body, html
   margin: 0
@@ -47,15 +51,19 @@ body::before
 ::-webkit-scrollbar-thumb:active
   background: $white
 
+// The overview row's glyphs. Both read the grade their column publishes rather
+// than taking an icon-* class over a colour of their own: the two weigh the
+// same, so which won came down to which rule the bundler emitted last - see
+// graded-glyph.
 .speedtest-icon
   font-size: 26pt
-  color: $white
+  +graded-glyph($white)
   margin-right: 10px
 
 .container-icon
   width: 35px
   height: 35px
-  color: $white
+  +graded-glyph($white)
   font-size: 26pt
 
 .help-icon
@@ -80,22 +88,6 @@ body::before
     outline: 2px solid var(--accent-primary)
     outline-offset: 3px
     border-radius: 0.25rem
-
-.icon-red
-  color: $accent-danger
-
-.icon-error
-  color: $accent-danger
-  filter: brightness(0.9)
-
-.icon-green
-  color: $accent-primary
-
-.icon-orange
-  color: $accent-warning
-
-.icon-blue
-  color: $blue
 
 // One content box for every page. The overview used to be an unstyled
 // shrink-to-fit container and the statistics were full width with a large inset

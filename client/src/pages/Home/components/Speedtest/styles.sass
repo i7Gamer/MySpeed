@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/grades" as *
 @use "@/common/styles/layout" as *
 
 // The measurements are what give a row its height. Their size is stated here
@@ -145,6 +146,9 @@ $row-min-height: 3rem
   color: $subtext
   display: flex
   align-items: center
+  // Quiet by default and graded only on request: a list of a hundred tests is
+  // scanned by icon colour, which is what the row's fixed columns are for.
+  +graded-value
 
 // The old latest-test panel carried the units as column headers; with it gone
 // the list was bare numbers, readable only by icon colour. Small and muted so

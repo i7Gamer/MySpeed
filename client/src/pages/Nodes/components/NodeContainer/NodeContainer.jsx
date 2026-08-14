@@ -267,19 +267,24 @@ export const NodeContainer = (node) => {
 
                     {nodeData && !nodeData.failed && !nodeData.pending && !nodeError && (
                         <>
-                            <div className="speed-item">
+                            {/* Each measurement publishes its grade on its own
+                                item, so any part of it can be opted into showing
+                                the colour - the glyph does today, and the figure
+                                follows when the app is set to state it twice.
+                                See the graded-value mixin. */}
+                            <div className="speed-item" data-grade={nodeData.pingIcon}>
                                 <FontAwesomeIcon icon={faTableTennisPaddleBall}
                                                  className={"icon-" + nodeData.pingIcon}/>
                                 <h1>{formatWithUnit(nodeData.ping, t("latest.ping_unit"))}</h1>
                             </div>
 
-                            <div className="speed-item">
+                            <div className="speed-item" data-grade={nodeData.downloadIcon}>
                                 <FontAwesomeIcon icon={faArrowDown}
                                                  className={"icon-" + nodeData.downloadIcon}/>
                                 <h1>{speedText(nodeData.download)}</h1>
                             </div>
 
-                            <div className="speed-item">
+                            <div className="speed-item" data-grade={nodeData.uploadIcon}>
                                 <FontAwesomeIcon icon={faArrowUp}
                                                  className={"icon-" + nodeData.uploadIcon}/>
                                 <h1>{speedText(nodeData.upload)}</h1>

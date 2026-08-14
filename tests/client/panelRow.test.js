@@ -86,28 +86,52 @@ describe("the shared panel row", () => {
     });
 
     /**
-     * The grade goes on the icon and on the value together. Three of the four
-     * panels colour a reading by what it earns - a stability percentage, a
-     * bufferbloat grade, a ping against its target - and the overview card
-     * colours none of its own, having no thresholds to grade against. A row
-     * that only ever wore the overview's colours would have thrown the other
-     * three cards' gradings away.
+     * The glyph wears the grade; the figure does not.
+     *
+     * That is how a verdict is stated in every other view - the overview rows,
+     * the node cards, the detail pane - and a value that was itself coloured was
+     * the one thing these four panels did differently.
      */
-    it("dresses the icon and the value in the same grade", () => {
-        const graded = row.match(/const graded = ([^\n]*)/);
-        assert.notEqual(graded, null, "the row no longer derives a grade class");
-
-        const apply = (className) => new RegExp(`"${className}" \\+ graded`).test(row);
-
-        assert.ok(apply("panel-row-icon"), "the icon does not wear the grade");
-        assert.ok(apply("panel-row-value"), "the value does not wear the grade");
+    it("dresses the glyph in the grade and leaves the figure alone", () => {
+        assert.match(row, /"panel-row-icon" \+ \(level \? " icon-" \+ level : ""\)/,
+            "the glyph does not wear the grade");
+        assert.match(row, /className="panel-row-value"/,
+            "the figure carries a grade class of its own again");
     });
 
-    it("leaves a row with no grade to the card's own colours", () => {
-        const graded = new Function("level", `return ${row.match(/const graded = ([^;]*)/)[1]};`);
+    /**
+     * And the row publishes it, so a part that does not show the grade today can
+     * be opted in without the component being touched - which is the whole
+     * point of putting it on the row rather than handing it to each part.
+     */
+    it("publishes the grade on the row for anything else to read", () => {
+        assert.match(row, /data-grade=\{level \|\| undefined}/,
+            "the row states its grade nowhere a stylesheet can reach it");
+    });
 
-        assert.equal(graded(undefined), "");
-        assert.equal(graded("orange"), " icon-orange");
+    // An absent attribute rather than an empty one: [data-grade] with no value
+    // still matches the selector that publishes --grade, which would leave an
+    // ungraded row resolving the property to nothing at all.
+    it("states no grade at all on a row that earned none", () => {
+        const attribute = new Function("level", "return level || undefined;");
+
+        assert.equal(attribute(undefined), undefined);
+        assert.equal(attribute(null), undefined);
+        assert.equal(attribute("orange"), "orange");
+    });
+
+    /**
+     * The figure's own colour is not a verdict either.
+     *
+     * It was the accent green, which is the colour a good reading earns - so a
+     * stability of 45%, which its own icon calls red, would have read as good
+     * news the moment the grade came off the figure.
+     */
+    it("states the figure in a colour that is not a grade", () => {
+        const value = bodyOf(".panel-row-value");
+
+        assert.match(value, /color:\s*var\(--white\)/,
+            "the figure is stated in a colour that says something about the reading");
     });
 
     // A description is what qualifies a reading, and plenty of rows have none.

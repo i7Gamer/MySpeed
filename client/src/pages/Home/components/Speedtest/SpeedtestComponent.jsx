@@ -176,7 +176,10 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                          setExpanded(!expanded);
                      }
                  }}>
-                <div className="date">
+                {/* Not a measurement, so not a verdict either - but the glyph
+                    reads the grade its container publishes like every other one
+                    on the row, so the row has to publish one. */}
+                <div className="date" data-grade={props.error ? "error" : "blue"}>
                     <FontAwesomeIcon icon={props.error ? faInfo : faClockRotateLeft}
                                      className={"container-icon icon-" + (props.error ? "error" : "blue")}/>
                     <h2 className="date-text">{(t("time." + (isAverage ? "on" : "at"))) + " " + timeString}</h2>
@@ -185,7 +188,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                     columns that have to be expanded to mean anything. The
                     reason is one line; the unabridged output is in the panel. */}
                 {props.error ? (
-                    <div className="speedtest-failure">
+                    <div className="speedtest-failure" data-grade="error">
                         <FontAwesomeIcon icon={faClose} className="speedtest-icon icon-error"/>
                         <h2 className="speedtest-failure-text" title={reason ?? props.error}>
                             {reason ?? t("test.unknown_error")}
@@ -202,8 +205,14 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                             the narrower layouts can give the ping both lines of
                             its column and centre it - level with the date,
                             rather than hanging above an empty half. */}
+                        {/* Each measurement publishes its grade on its own
+                            column, so any part of that column can be opted into
+                            showing it - the glyph does today, and the figure
+                            follows when the app is set to state it twice. See
+                            the graded-value mixin. */}
                         <div className={"speedtest-row speedtest-ping"
-                            + (props.bufferbloat ? "" : " speedtest-ping-alone")}>
+                            + (props.bufferbloat ? "" : " speedtest-ping-alone")}
+                             data-grade={props.pingLevel}>
                             <HelpButton label={t("info.ping.title")} onOpen={(event) => openInfo(event, pingInfo)}>
                                 <FontAwesomeIcon icon={faPingPongPaddleBall}
                                                  className={"speedtest-icon icon-" + props.pingLevel}/>
@@ -281,7 +290,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                 </HelpButton>
                             )}
                         </div>
-                        <div className="speedtest-row speedtest-download">
+                        <div className="speedtest-row speedtest-download" data-grade={props.downLevel}>
                             <HelpButton label={t("info.down.title")} onOpen={(event) => openInfo(event, downloadInfo)}>
                                 <FontAwesomeIcon icon={faArrowDown}
                                                  className={"speedtest-icon icon-" + props.downLevel}/>
@@ -290,7 +299,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                 <span className="speedtest-unit">{speedUnit}</span>
                             </h2>
                         </div>
-                        <div className="speedtest-row speedtest-upload">
+                        <div className="speedtest-row speedtest-upload" data-grade={props.upLevel}>
                             <HelpButton label={t("info.up.title")} onOpen={(event) => openInfo(event, uploadInfo)}>
                                 <FontAwesomeIcon icon={faArrowUp}
                                                  className={"speedtest-icon icon-" + props.upLevel}/>

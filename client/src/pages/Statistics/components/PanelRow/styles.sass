@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/grades" as *
 @use "variables" as *
 
 .panel-row
@@ -22,7 +23,7 @@
 .panel-row-icon
   width: 2.25rem
   height: 2.25rem
-  color: $subtext
+  +graded-glyph($subtext)
   flex-shrink: 0
 
 // Grows into whatever room its container has. On most cards the container is
@@ -75,12 +76,19 @@
 // Nothing here shrinks or wraps: a figure broken across two lines stops being
 // one figure, and the label beside it has min-width: 0 precisely so it can give
 // up the room instead.
+//
+// One colour, whatever the row is graded. It was the accent green, which is a
+// verdict colour - so a stability of 45%, which its own icon calls red, would
+// have read as good news the moment the grade came off the figure. White is
+// what the detail pane's readings wear, and they are the same thing: a figure
+// at size with a graded glyph beside it.
 .panel-row-value
   display: flex
   align-items: center
   flex-shrink: 0
-  color: $accent-primary
+  color: $white
   font-size: $panel-value-size
   font-weight: 700
   line-height: 1.1
   white-space: nowrap
+  +graded-value

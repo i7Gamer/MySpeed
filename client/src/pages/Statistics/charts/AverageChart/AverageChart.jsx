@@ -81,7 +81,16 @@ export const AverageChart = (props) => {
                 <PanelRow icon={faPlusCircle} title={t("statistics.values.max")}
                           value={speed(props.data.max)}/>
 
-                <PanelRow icon={faGauge} title={t("statistics.values.avg")}
+                {/* The only one of the three that is graded. A minimum and a
+                    maximum are single tests, and a verdict on the slowest one
+                    reads as a verdict on the connection rather than on one bad
+                    afternoon - which is why neither carries a percentage or a
+                    delta either.
+
+                    The grade used to be worn by the "% of target" line alone,
+                    which made this the one row on the page whose icon said
+                    nothing. */}
+                <PanelRow icon={faGauge} title={t("statistics.values.avg")} level={reached === null ? null : level}
                           /* The delta sits under the figure rather than beside
                              it. Both are the same column of the row, so it costs
                              the card no width at all - where on the value line it
@@ -101,15 +110,17 @@ export const AverageChart = (props) => {
                                      higherIsBetter={true}/>
                           </>}
                           description={<>
-                              {/* Graded by the same three buckets every other
-                                  speed on the page is coloured by, so "86%" here
-                                  and a green arrow on the overview cannot
-                                  disagree about whether the line is meeting its
-                                  target. */}
+                              {/* The figure the row's own grade is read from -
+                                  by the same three buckets every other speed on
+                                  the page is coloured by, so "86%" here and a
+                                  green arrow on the overview cannot disagree
+                                  about whether the line is meeting its target.
+                                  It says so in words; the glyph above says so in
+                                  colour, the way the detail pane's own
+                                  "1 ms under your target" is left plain beside a
+                                  graded icon. */}
                               {reached !== null && (
-                                  <span className={"icon-" + level}>
-                                      {t("test.details.of_target", {percent: reached})}
-                                  </span>
+                                  <span>{t("test.details.of_target", {percent: reached})}</span>
                               )}
 
                               {/* Opened, the percentage gets the bar the expanded

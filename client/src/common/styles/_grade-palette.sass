@@ -1,0 +1,58 @@
+// What a grade looks like.
+//
+// The vocabulary is the one every grader in TestUtil returns - green, orange,
+// red, blue, error. Those names are historical and describe the default palette
+// rather than the meaning; the properties below are where the meaning lives, so
+// a palette in which "good" is not green is a change to this file alone.
+//
+// Emitted once, through default.sass, which is the one stylesheet App.jsx
+// loads. The mixin that reads these lives in _grades.sass and emits nothing, so
+// a component can reach for it without copying any of this into its own sheet.
+
+// Separate properties rather than the accent palette used directly: a theme
+// that wants a different green for "a good line" than for "the primary accent"
+// can say so without redefining the accent everywhere else it is used.
+//
+// On :root, so a theme block - the [data-theme] rules in _colors.sass, or any
+// future one - overrides them exactly the way it overrides a colour.
+:root
+  --grade-good: var(--accent-primary)
+  --grade-fair: var(--accent-warning)
+  --grade-poor: var(--accent-danger)
+  // Not a verdict: a figure nobody measured. Blue and not red, because "not
+  // measured" and "bad" are different claims - see gradeBelow in TestUtil.
+  --grade-none: var(--blue)
+  --grade-failed: var(--accent-danger)
+
+// The colour utilities every glyph in the app already wears, pointed at the
+// properties above. Nothing under components/ names a colour for a grade.
+.icon-green
+  color: var(--grade-good)
+
+.icon-orange
+  color: var(--grade-fair)
+
+.icon-red
+  color: var(--grade-poor)
+
+.icon-blue
+  color: var(--grade-none)
+
+.icon-error
+  color: var(--grade-failed)
+  filter: brightness(0.9)
+
+// A row states its grade once, on itself, and its parts read it from there.
+// This is what lets a part that does not wear the grade today start wearing it
+// without the component being touched: the value is the case that exists, but a
+// bar, a border or a label could be opted in the same way.
+[data-grade="green"]
+  --grade: var(--grade-good)
+[data-grade="orange"]
+  --grade: var(--grade-fair)
+[data-grade="red"]
+  --grade: var(--grade-poor)
+[data-grade="blue"]
+  --grade: var(--grade-none)
+[data-grade="error"]
+  --grade: var(--grade-failed)

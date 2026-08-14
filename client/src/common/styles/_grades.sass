@@ -1,0 +1,41 @@
+// Which parts of a row say its grade.
+//
+// A partial that emits nothing, so a component can reach for the mixin without
+// copying the palette into its own stylesheet - see _grade-palette.sass, which
+// is where the colours and the [data-grade] tokens live and is loaded once
+// through default.sass.
+
+/// A glyph that wears its row's grade, falling back to $neutral on a row that
+/// earned none.
+///
+/// Reading the property rather than relying on an icon-* class beating the
+/// component's own colour: those weigh the same, so which one won came down to
+/// which stylesheet the bundler happened to emit last. Moving the utilities to
+/// the top of default.sass was enough to silently un-grade every glyph on the
+/// overview row - and .panel-row-icon had been losing that race from the day it
+/// was written, so the statistics panels had been stating their grade on the
+/// figure alone the whole time.
+///
+/// Which is also why the value opt-in below is written the same way. One
+/// property, published once on the row, read by whichever parts are meant to
+/// show it - no ordering, no specificity, and a theme changes both at once.
+@mixin graded-glyph($neutral)
+  color: var(--grade, #{$neutral})
+
+/// A value that wears its row's grade, when the app is set to state it twice.
+///
+/// Off by default, because the glyph is what carries a verdict everywhere in
+/// this interface - the overview rows, the node cards and the detail pane all
+/// read that way, and a number that was itself a verdict was the one thing the
+/// statistics panels did differently. A switch rather than a decision, so
+/// turning it back on is a preference and not a revert.
+///
+/// The attribute goes on the document, so one setting answers for every view at
+/// once - PreferencesProvider stamps it. The `--grade` it reads is published by
+/// whichever ancestor carries `data-grade`, which is the row.
+///
+/// Anything else a row might state its grade with - a border, a bar, a label -
+/// is the same three lines against a different property.
+@mixin graded-value
+  :root[data-grade-values="on"] &
+    color: var(--grade)

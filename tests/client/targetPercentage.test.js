@@ -54,7 +54,21 @@ describe("the target percentage on the value cards", () => {
     });
 
     it("renders nothing rather than a bare percentage sign when there is nothing to compare", () => {
-        assert.match(average, /\{reached !== null && \(\s*<span className=\{"icon-" \+ level}>/);
+        assert.match(average, /\{reached !== null && \(\s*<span>\{t\("test\.details\.of_target"/);
+    });
+
+    /**
+     * The row's glyph is what states the verdict, which it did not: the grade
+     * was worn by this sub-line alone, so the Average row was the one row on the
+     * page whose icon said nothing. The percentage still says it in words - the
+     * way the detail pane leaves "1 ms under your target" plain beside a graded
+     * icon.
+     */
+    it("is worn by the row's glyph rather than by the sentence", () => {
+        assert.match(average, /<PanelRow icon=\{faGauge}[^>]*level=\{reached === null \? null : level}/,
+            "the average row's glyph still carries no grade");
+        assert.doesNotMatch(average, /<span className=\{"icon-" \+ level}>/,
+            "the sentence is coloured again, so the row states its grade twice");
     });
 
     /**

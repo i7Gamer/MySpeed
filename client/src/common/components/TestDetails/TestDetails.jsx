@@ -50,7 +50,10 @@ const DetailMetric = ({icon, label, value, unit, level, percent, targetLabel, ch
         && (change.direction === "up") === higherIsBetter;
 
     return (
-        <div className="detail-metric">
+        // The card publishes its grade, so any part of it can be opted into
+        // showing the colour - the glyph does today, and the figure follows when
+        // the app is set to state it twice. See the graded-value mixin.
+        <div className="detail-metric" data-grade={level}>
             <div className="detail-metric-head">
                 <HelpButton label={label} onOpen={(event) => openInfo(event, info)}>
                     <FontAwesomeIcon icon={icon} className={"detail-metric-icon icon-" + level}/>
