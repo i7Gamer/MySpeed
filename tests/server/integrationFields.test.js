@@ -90,8 +90,31 @@ describe("credential patterns describe the whole value", () => {
     }
 
     describe("telegram", () => {
+        /**
+         * Assembled rather than written out, and deliberately nonsense.
+         *
+         * BotFather's shape - eight to ten digits, a colon, thirty-five token
+         * characters - is exactly what every secret scanner looks for, so a
+         * literal in that shape is reported as a leaked credential wherever it
+         * lands. This one was: GitHub raised a Telegram Bot Token alert against
+         * this file, on a value that was invented here and never authenticated
+         * anything. The cost of that is somebody's afternoon proving a fake was
+         * fake.
+         *
+         * What the pattern has to accept is the shape, so the shape is what is
+         * built: the parts are joined at run time and no line here is a token.
+         */
+        const SECRET_LENGTH = 35;
+        const botFatherToken = ["123456789", "A".repeat(SECRET_LENGTH)].join(":");
+
         it("accepts a token as BotFather issues it", () => {
-            assert.equal(accepts(setupTelegram, "token", "123456789:AAF-dEfGhIjKlMnOpQrStUvWxYz_1234567"), true);
+            assert.equal(accepts(setupTelegram, "token", botFatherToken), true);
+        });
+
+        // The token half is not length-limited, and must not become so: the
+        // pattern's job is the shape, and Telegram is free to change the rest.
+        it("accepts a longer token half", () => {
+            assert.equal(accepts(setupTelegram, "token", `123456789:${"b".repeat(60)}`), true);
         });
 
         /**
@@ -101,13 +124,13 @@ describe("credential patterns describe the whole value", () => {
          * then answered 404 by Telegram for as long as it stayed configured.
          */
         it("rejects a token pasted with its bot prefix", () => {
-            assert.equal(accepts(setupTelegram, "token", "bot123456789:AAF-dEfGhIjKlMnOpQrStUvWxYz_1234"), false);
+            assert.equal(accepts(setupTelegram, "token", `bot${botFatherToken}`), false);
         });
 
         // Interpolated into the path, so a value that walks out of it is a
         // request to somewhere else on the host.
         it("rejects a token that walks out of its path segment", () => {
-            assert.equal(accepts(setupTelegram, "token", "123456789:AAF-dEf/../../getUpdates"), false);
+            assert.equal(accepts(setupTelegram, "token", `${botFatherToken}/../../getUpdates`), false);
         });
 
         it("accepts a chat id", () => {
