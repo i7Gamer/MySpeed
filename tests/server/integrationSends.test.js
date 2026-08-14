@@ -116,6 +116,25 @@ describe("gotify", () => {
         assert.equal(sent[0].headers.Authorization, "Bearer 123456789012345");
     });
 
+    /**
+     * The base URL as it is pasted, which is out of the browser's address bar
+     * and therefore with a trailing slash about as often as not.
+     *
+     * The field's regex is unanchored and accepts it, and validateInput stores
+     * what it is given, so the slash survives to here - where `${url}/message`
+     * made it `//message`. That is a distinct path, not a tidier spelling of
+     * the same one, and Gotify answers it with a 404. Every other integration
+     * that composes a path strips first; healthChecks documents this exact
+     * hazard.
+     */
+    it("posts to one slash however the url was pasted", async () => {
+        const {events} = load(setupGotify);
+        await fire(events, "testFinished", {...config, url: "https://gotify.example.net/"}, RESULT);
+
+        assert.equal(sent[0].url, "https://gotify.example.net/message",
+            "a base url pasted with its trailing slash posts to an empty path segment");
+    });
+
     it("sends the configured priority as a number", async () => {
         const {events} = load(setupGotify);
         await fire(events, "testFinished", config, RESULT);

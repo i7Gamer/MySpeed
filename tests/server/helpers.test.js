@@ -53,6 +53,55 @@ describe("mapRounded", () => {
     });
 });
 
+/**
+ * A measurement that is absent is not a measurement of nought.
+ *
+ * `time` is nullable in the model and is the one column handed here unfiltered,
+ * so a row without it reaches this loop - and a null used to take the range
+ * apart in two directions at once. It latched into `min`, because `null <
+ * Infinity` is true and no later value ever displaces it: every comparison
+ * against null coerces it to 0, so nothing is smaller. And it added nothing to
+ * the total while still counting toward the divisor, dragging the average down
+ * by however many were missing.
+ *
+ * Such a row needs a hand-edited or third-party history file to import - a
+ * MySpeed export cannot produce one - which is what keeps this from being
+ * urgent, not what keeps it from happening.
+ */
+describe("a value that was never measured", () => {
+    const withNulls = [{time: null}, {time: 12}, {time: 14}];
+
+    it("does not become the minimum", () => {
+        assert.equal(mapRounded(withNulls, "time").min, 12,
+            "an absent measurement is reported as the fastest one on record");
+    });
+
+    it("does not count as a zero in the average", () => {
+        assert.equal(mapRounded(withNulls, "time").avg, 13,
+            "the average is divided by rows that contributed nothing to it");
+    });
+
+    it("leaves the maximum alone", () => {
+        assert.equal(mapRounded(withNulls, "time").max, 14);
+    });
+
+    it("is skipped the same way when it is undefined", () => {
+        assert.deepEqual(mapRounded([{}, {time: 20}], "time"), {min: 20, max: 20, avg: 20});
+    });
+
+    // Nothing measured at all is the empty case, not a range of nulls.
+    it("gives the empty answer when nothing was measured", () => {
+        assert.deepEqual(mapRounded([{time: null}, {time: null}], "time"),
+            {min: null, max: null, avg: null});
+    });
+
+    // A real zero is a real reading: a test that completed instantly is not a
+    // test that did not happen.
+    it("still counts a measured zero", () => {
+        assert.deepEqual(mapRounded([{time: 0}, {time: 10}], "time"), {min: 0, max: 10, avg: 5});
+    });
+});
+
 describe("stripTrailingSlashes", () => {
     it("leaves a url without a trailing slash alone", () => {
         assert.equal(stripTrailingSlashes("http://10.0.0.2:5216"), "http://10.0.0.2:5216");

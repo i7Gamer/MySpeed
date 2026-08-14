@@ -1,13 +1,17 @@
 import { postJson } from "../util/http.js";
-import { replaceVariables } from "../util/helpers.js";
+import { replaceVariables, stripTrailingSlashes } from "../util/helpers.js";
 
 const defaults = {
     finished: "A speedtest is finished:\nPing: %ping% ms (±%jitter% ms)\nUpload: %upload% Mbps\nDownload: %download% Mbps",
     failed: "A speedtest has failed. Reason: %error%"
 };
 
+// Stripped first, as every other integration that composes a path does: the
+// url field's regex is unanchored and its value is stored as pasted, so a base
+// url copied out of the address bar arrives with a trailing slash and made
+// `//message` - an empty path segment, which Gotify answers with a 404.
 const send = ({url, key}, message, priority, activity) =>
-    postJson(`${url}/message`, {message, priority: parseInt(priority)},
+    postJson(`${stripTrailingSlashes(url)}/message`, {message, priority: parseInt(priority)},
         {headers: {"Authorization": "Bearer " + key}, activity});
 
 export default (registerEvent) => {

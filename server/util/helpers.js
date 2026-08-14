@@ -116,20 +116,34 @@ const EMPTY_RANGE = {min: null, max: null, avg: null};
 // ~125k values - a range holding a year of five-minute tests - and took the
 // whole statistics endpoint down with it.
 const mapRange = (entries, type, averageOf) => {
-    if (entries.length === 0) return {...EMPTY_RANGE};
-
     let min = Infinity;
     let max = -Infinity;
     let total = 0;
+    let counted = 0;
 
     for (const entry of entries) {
         const value = entry[type];
+
+        // A measurement that is absent is not a measurement of nought. `time`
+        // is nullable in the model and is the one column handed here
+        // unfiltered, and a null took the range apart in both directions: it
+        // latched into `min`, since `null < Infinity` holds and nothing later
+        // displaces it - every comparison against null coerces it to 0, so no
+        // real value is ever smaller - while adding nothing to the total and
+        // still counting toward the divisor. A measured 0 is a real reading and
+        // is not what this skips.
+        if (value === null || value === undefined) continue;
+
         if (value < min) min = value;
         if (value > max) max = value;
         total += value;
+        counted++;
     }
 
-    return {min, max, avg: averageOf(total / entries.length)};
+    // Nothing measured at all, whether the set was empty or held only absences.
+    if (counted === 0) return {...EMPTY_RANGE};
+
+    return {min, max, avg: averageOf(total / counted)};
 };
 
 export const mapFixed = (entries, type) =>
