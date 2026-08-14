@@ -54,7 +54,21 @@ describe("the target percentage on the value cards", () => {
     });
 
     it("renders nothing rather than a bare percentage sign when there is nothing to compare", () => {
-        assert.match(average, /description=\{reached !== null && </);
+        assert.match(average, /\{reached !== null && \(\s*<span className=\{"icon-" \+ level}>/);
+    });
+
+    /**
+     * Both qualifiers of the average sit under it rather than beside it: this is
+     * the narrowest card on the page, 293px inside its padding, and a delta on
+     * the value line wanted 70 of them - which pushed the label out from under
+     * its own row and truncated "Average" to "A…".
+     */
+    it("keeps the delta off the value line on this card", () => {
+        const valueLine = average.match(/value=\{speed\(props\.data\.avg\)}/);
+
+        assert.notEqual(valueLine, null, "the average no longer states a bare figure");
+        assert.match(average, /description=\{<>[\s\S]*<Delta current=\{props\.data\.avg}/,
+            "the delta is back on the value line, where it does not fit");
     });
 });
 
@@ -119,10 +133,9 @@ describe("the arithmetic behind it", () => {
  * same number and not the same claim.
  */
 describe("the expanded value panes", () => {
-    // The bar hangs inside the description the percentage above it already
-    // gates on `reached`, so the expanded gate no longer restates it.
+    // Under the percentage it fills to, inside the same description.
     it("draw the bar the expanded test row draws for the same ratio", () => {
-        assert.match(average, /description=\{reached !== null && <>[\s\S]*\{props\.expanded && \(/);
+        assert.match(average, /\{props\.expanded && reached !== null && \(/);
         assert.match(average, /Math\.min\(reached, MAX_BAR_PERCENT\)/);
     });
 

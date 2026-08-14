@@ -117,6 +117,91 @@ describe("the shared panel row", () => {
         assert.match(row, /\{description && /,
             "the description wrapper is drawn whether or not there is one");
     });
+
+    /**
+     * Whatever has to give, the label gives.
+     *
+     * A figure broken across two lines stops being one figure, so the value
+     * neither wraps nor shrinks - which means a row too narrow for both has to
+     * take the room out of the label. Without a truncation there the label
+     * simply overflowed its box and was drawn underneath the number: the
+     * download card is 293px wide inside its padding, and "957.97 Mbps" at the
+     * shared size wants 180 of them.
+     */
+    it("truncates the label rather than letting it run under the value", () => {
+        const title = bodyOf(".panel-row-title");
+
+        assert.match(title, /overflow:\s*hidden/);
+        assert.match(title, /text-overflow:\s*ellipsis/);
+        assert.match(title, /white-space:\s*nowrap/);
+    });
+
+    it("neither wraps nor shrinks the value", () => {
+        const value = bodyOf(".panel-row-value");
+
+        assert.match(value, /flex-shrink:\s*0/);
+        assert.match(value, /white-space:\s*nowrap/);
+    });
+});
+
+/**
+ * The value cards, which state three speeds each.
+ *
+ * A speed is the longest kind of figure the app prints. They were `small` -
+ * a size chosen for a stacked row, where the label sat on one line and the
+ * figure on the next and so had the whole card to itself. Side by side the two
+ * compete, and at the 340px that size gave them the label lost outright: it was
+ * drawn underneath the number.
+ *
+ * At `normal` they are 456px, which also squares the bottom row of the page with
+ * the three equal columns above it - and there the label column holds "84% of
+ * your target" as long as the figure takes one step down from the shared size.
+ *
+ * Opened, the same card has the width of the dialog and takes the full size back.
+ */
+describe("the value cards, which state the longest figures", () => {
+    const css = compile("pages/Statistics/charts/AverageChart/styles.sass");
+    const card = read("pages/Statistics/charts/AverageChart/AverageChart.jsx");
+
+    it("ask for the room three speeds need", () => {
+        assert.match(card, /<StatisticContainer[^>]*size="normal"/,
+            "the value cards are back to the size that was drawn for a stacked row");
+    });
+
+    const stepped = [...css.matchAll(/([^{}]*\.panel-row-value[^{}]*)\{([^}]*)}/g)]
+        .map(([, selector, body]) => ({selector: selector.trim(), body}))
+        .filter(({body}) => /font-size/.test(body));
+
+    it("state their figures one step down from the shared size", () => {
+        assert.equal(stepped.length, 1, `expected one size override, found ${stepped.length}`);
+        assert.match(stepped[0].body, /font-size:\s*1\.4rem/);
+    });
+
+    it("take the full size back inside the dialog, which has the room", () => {
+        assert.ok(stepped[0].selector.includes(":not(.chart-modal-body *)"),
+            `"${stepped[0].selector}" shrinks the figure in the enlarged view too`);
+    });
+});
+
+/**
+ * The overview card's rows used to be spaced by an accident: its value was a
+ * bare <h2> whose default margin - 0.83em top and bottom - pushed the rows
+ * apart. The shared row states its value in a div, as it should, and the five
+ * rows collapsed into one another the moment that margin went.
+ */
+describe("the overview card spaces its rows", () => {
+    const css = compile("pages/Statistics/charts/OverviewChart/styles.sass");
+    const container = css.match(/\.overview-items\s*\{([^}]*)}/)?.[1] ?? "";
+
+    it("puts room between them rather than relying on a default margin", () => {
+        assert.match(container, /gap:\s*[\d.]+rem/,
+            "nothing separates one row from the next");
+    });
+
+    it("spreads them down the card the way the panel beside it does", () => {
+        assert.match(container, /justify-content:\s*space-between/);
+        assert.match(container, /flex:\s*1/);
+    });
 });
 
 describe("the panels that state readings", () => {

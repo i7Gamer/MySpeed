@@ -34,11 +34,18 @@
   flex: 1
   min-width: 0
 
+// Whatever has to give, gives here. The value neither wraps nor shrinks - a
+// figure broken across two lines stops being one figure - so a row too narrow
+// for both takes the room out of the label. Without this the label overflowed
+// its box and was simply drawn underneath the number.
 .panel-row-title
   margin: 0
   color: $white
   font-size: $panel-title-size
   font-weight: 600
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
 
 // A column, because some rows hang two of these under one title - a spread and
 // the range it summarises - and one draws a bar below them.

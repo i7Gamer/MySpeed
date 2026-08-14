@@ -52,8 +52,13 @@ export const AverageChart = (props) => {
 
     const speed = (mbps) => formatWithUnit(convertSpeed(mbps, preferences), speedUnit);
 
+    // Not `small` any more. That size was chosen for a stacked row - the label
+    // on one line and the figure on the next - which left the figure the whole
+    // card to itself; side by side the two compete, and at the 340px `small`
+    // gives, the label lost outright. It also left the bottom row of the page at
+    // 456, 340, 340 against the three equal 456s above it.
     return (
-        <StatisticContainer title={props.title} size="small" center={true} onClick={props.onClick}>
+        <StatisticContainer title={props.title} size="normal" center={true} onClick={props.onClick}>
             <div className="value-container">
                 {/* Formatted rather than interpolated: the server returns an
                     explicit null for a range in which nothing succeeded, and
@@ -66,24 +71,40 @@ export const AverageChart = (props) => {
                           value={speed(props.data.max)}/>
 
                 <PanelRow icon={faGauge} title={t("statistics.values.avg")}
-                          /* The delta compares the raw averages, before the unit
-                             conversion: a percentage is the same in either unit,
-                             and converting first would round twice. Only the
-                             average carries one - the min and max of two windows
-                             are single outliers, and their difference reads as
-                             noise. */
-                          value={<>
-                              {speed(props.data.avg)}
-                              <Delta current={props.data.avg} previous={props.previous?.avg} higherIsBetter={true}/>
-                          </>}
-                          description={reached !== null && <>
-                              {/* Graded by the same three buckets every other
-                                  speed on the page is coloured by, so "86%" here
-                                  and a green arrow on the overview cannot
-                                  disagree about whether the line is meeting its
-                                  target. */}
-                              <span className={"icon-" + level}>
-                                  {t("test.details.of_target", {percent: reached})}
+                          value={speed(props.data.avg)}
+                          description={<>
+                              {/* The two things that qualify the average: how it
+                                  stands against the optimum, and how it moved
+                                  since the window before.
+
+                                  Under the figure rather than beside it, which
+                                  is where the overview card's deltas still sit.
+                                  This is the narrowest card on the page - 293px
+                                  inside its padding - and a delta on the value
+                                  line wanted 70 of them, so the label was pushed
+                                  out from under its own row and truncated to
+                                  "A…". The overview card is half again as wide
+                                  and states counts, not speeds.
+
+                                  The percentage is graded by the same three
+                                  buckets every other speed on the page is
+                                  coloured by, so "86%" here and a green arrow on
+                                  the overview cannot disagree about whether the
+                                  line is meeting its target. The delta compares
+                                  the raw averages, before the unit conversion: a
+                                  percentage is the same in either unit, and
+                                  converting first would round twice. Only the
+                                  average carries one - the min and max of two
+                                  windows are single outliers, and their
+                                  difference reads as noise. */}
+                              <span>
+                                  {reached !== null && (
+                                      <span className={"icon-" + level}>
+                                          {t("test.details.of_target", {percent: reached})}
+                                      </span>
+                                  )}
+                                  <Delta current={props.data.avg} previous={props.previous?.avg}
+                                         higherIsBetter={true}/>
                               </span>
 
                               {/* Opened, the percentage gets the bar the expanded
@@ -91,7 +112,7 @@ export const AverageChart = (props) => {
                                   optimum it is measured against gets named - it
                                   lives in a settings dialog nobody has open
                                   while reading this. */}
-                              {props.expanded && (
+                              {props.expanded && reached !== null && (
                                   <>
                                       <span className="value-bar">
                                           <span className={"value-bar-fill icon-" + level}

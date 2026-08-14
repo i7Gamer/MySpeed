@@ -2,10 +2,18 @@
 // The sizes only, not the row's rules - see that partial for why.
 @use "@/pages/Statistics/components/PanelRow/variables" as row
 
+// Spread down the card, the way the stability panel beside it spreads its own.
+//
+// The rows used to be held apart by an accident: the value was a bare <h2>, and
+// its default 0.83em margin was the whole of what separated one row from the
+// next. The shared row states its value in a div, as it should, and the five
+// rows collapsed into each other the moment that margin went.
 .overview-items
   display: flex
-  justify-content: center
   flex-direction: column
+  justify-content: space-between
+  gap: 0.5rem
+  flex: 1
   width: 100%
   overflow-y: clip
 
