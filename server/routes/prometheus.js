@@ -104,6 +104,20 @@ const uploadLatencyGauge = new promClient.Gauge({
 });
 const currentServerGauge = new promClient.Gauge({name: 'myspeed_server', help: 'Current server ID'});
 const timeGauge = new promClient.Gauge({name: 'myspeed_time', help: 'Time of the test', labelNames: speedLabels});
+/**
+ * Whether the newest test failed, as a figure rather than as a broken scrape.
+ *
+ * This route used to answer 500 for a failed test. Prometheus reads that as the
+ * target being down - no sample is recorded, every myspeed_* series goes stale,
+ * and the alert it raises says the exporter is unreachable. So the monitoring
+ * went blind at the moment the connection had a problem worth seeing, and
+ * blamed the wrong thing for it.
+ */
+const testFailedGauge = new promClient.Gauge({
+    name: 'myspeed_test_failed',
+    help: 'Whether the most recent speedtest failed (1) or succeeded (0)',
+    labelNames: speedLabels
+});
 const serverInfoGauge = new promClient.Gauge({
     name: 'myspeed_server_info',
     help: 'Static info about the speedtest server (always 1). Join via group_left to add server metadata to other metrics.',
@@ -135,39 +149,62 @@ const resolveServerLabels = (latest) => {
     };
 };
 
+// Every column of a failed test holds -1, and some providers record why as well.
+const hasFailed = (latest) => Boolean(latest.error) || latest.ping === -1;
+
+const ALL_GAUGES = [pingGauge, jitterGauge, downloadGauge, uploadGauge, timeGauge, serverInfoGauge,
+    packetLossGauge, downloadLatencyGauge, uploadLatencyGauge, testFailedGauge, currentServerGauge];
+
 app.get('/metrics', async (req, res) => {
     if (!await authorizeMetrics(req, res)) return;
 
-    const latest = await testController.getLatest();
-    if (!latest) return res.status(500).end('No test found');
+    const serve = async () => {
+        res.set('Content-Type', promClient.register.contentType);
+        res.end(await promClient.register.metrics());
+    };
 
-    if (latest.error || latest.ping === -1)
-        return res.status(500).end('Error in the latest test');
+    // Cleared before anything is decided, so a branch that sets fewer series
+    // than the last scrape cannot leave the previous values standing as though
+    // they were current.
+    ALL_GAUGES.forEach(gauge => gauge.reset());
+
+    const latest = await testController.getLatest();
+
+    // Nothing measured yet is not a broken exporter - it is an instance that
+    // was installed five minutes ago. The families are simply empty, which is
+    // what an absent series already means everywhere else here.
+    if (!latest) return serve();
 
     const labels = resolveServerLabels(latest);
 
-    pingGauge.reset();
-    jitterGauge.reset();
-    downloadGauge.reset();
-    uploadGauge.reset();
-    timeGauge.reset();
-    serverInfoGauge.reset();
-    packetLossGauge.reset();
-    downloadLatencyGauge.reset();
-    uploadLatencyGauge.reset();
-
-    pingGauge.set(labels, latest.ping);
-    if (latest.jitter !== null && latest.jitter !== undefined)
-        jitterGauge.set(labels, latest.jitter);
-    downloadGauge.set(labels, latest.download);
-    uploadGauge.set(labels, latest.upload);
+    // The attempt happened, against a server, whether or not it succeeded -
+    // and which server it was is most of the diagnosis when one server is what
+    // keeps failing.
+    serverInfoGauge.set(labels, 1);
     // Defended the same way resolveServerLabels defends the same field:
     // prom-client throws "Value is not a valid number" for null, and an
     // imported row - PUT /storage/tests/history validates only ping, download,
     // upload and time - can carry one. That took down the whole scrape for as
     // long as the row stayed the newest.
     currentServerGauge.set(latest.serverId ?? 0);
-    serverInfoGauge.set(labels, 1);
+
+    // Positive, not merely truthy: a failed test's duration is -1 like the rest
+    // of its row, and exporting that would be the placeholder this branch
+    // exists to keep out.
+    if (latest.time > 0) timeGauge.set(labels, latest.time);
+
+    if (hasFailed(latest)) {
+        testFailedGauge.set(labels, 1);
+        return serve();
+    }
+
+    testFailedGauge.set(labels, 0);
+
+    pingGauge.set(labels, latest.ping);
+    if (latest.jitter !== null && latest.jitter !== undefined)
+        jitterGauge.set(labels, latest.jitter);
+    downloadGauge.set(labels, latest.download);
+    uploadGauge.set(labels, latest.upload);
 
     // Left unset rather than zeroed when the provider did not measure them: an
     // absent series is a gap in a graph, while a zero is a claim that the line
@@ -176,11 +213,7 @@ app.get('/metrics', async (req, res) => {
     if (isMeasured(latest.downloadLatency)) downloadLatencyGauge.set(labels, latest.downloadLatency);
     if (isMeasured(latest.uploadLatency)) uploadLatencyGauge.set(labels, latest.uploadLatency);
 
-    if (latest.time)
-        timeGauge.set(labels, latest.time);
-
-    res.set('Content-Type', promClient.register.contentType);
-    res.end(await promClient.register.metrics());
+    return serve();
 });
 
 export default app;

@@ -160,14 +160,98 @@ describe("what the metrics endpoint reports", () => {
         assert.equal(valueOf(text, "myspeed_ping"), 10);
     });
 
-    // A failed test carries -1 in every column, and exporting that would put a
-    // measurement of minus one metre per second into someone's dashboard.
-    it("refuses to export a failed test as a measurement", async () => {
-        await seedLatest({ping: -1, download: -1, upload: -1, error: "Cannot open socket"});
+    it("reports a test that succeeded as not having failed", async () => {
+        await seedLatest({ping: 10, download: 100, upload: 50});
+
+        assert.equal(valueOf((await metrics()).text, "myspeed_test_failed"), 0);
+    });
+});
+
+/**
+ * A failed test is reported as one, rather than reported by failing.
+ *
+ * The scrape used to answer 500 whenever the newest test had failed. Prometheus
+ * reads that as the target being down: it records no sample, every myspeed_*
+ * series goes stale, and the alert that fires is "the exporter is unreachable" -
+ * so the monitoring goes blind at exactly the moment the connection has a
+ * problem worth seeing, and says the wrong thing about why.
+ *
+ * A failure is data. It is exported as myspeed_test_failed, and the measurement
+ * series are left absent rather than carrying the -1 that every column of a
+ * failed test holds - the same rule the quality figures above already follow,
+ * since a gap in a graph is honest and a number is not.
+ */
+describe("a latest test that failed", () => {
+    const valueOf = (text, metric) => {
+        const line = text.split("\n").find((row) =>
+            row.startsWith(`${metric}{`) || row.startsWith(`${metric} `) || row === metric);
+        return line === undefined ? null : parseFloat(line.slice(line.lastIndexOf(" ") + 1));
+    };
+
+    const seedFailure = async () => await seedTests(server.tests, [{
+        created: new Date().toISOString(), ping: -1, download: -1, upload: -1, jitter: -1,
+        time: -1, serverId: 49631, serverName: "Arcade Solutions AG", error: "Cannot open socket"
+    }]);
+
+    it("still answers the scrape", async () => {
+        await seedFailure();
+
+        assert.equal((await metrics()).status, 200,
+            "the exporter reports itself down when it is the line that is down");
+    });
+
+    it("says that it failed", async () => {
+        await seedFailure();
+
+        assert.equal(valueOf((await metrics()).text, "myspeed_test_failed"), 1);
+    });
+
+    // The whole reason the old branch refused: -1 metres per second is not a
+    // reading, and a dashboard cannot tell it from one.
+    it("exports no measurement for it", async () => {
+        await seedFailure();
+
+        const {text} = await metrics();
+
+        for (const metric of ["myspeed_ping", "myspeed_download", "myspeed_upload", "myspeed_jitter"])
+            assert.equal(valueOf(text, metric), null, `${metric} carries a placeholder from a failed test`);
+        assert.doesNotMatch(text, /-1$/m, "a -1 placeholder reached the scrape");
+    });
+
+    // The attempt still happened, against a server, and knowing which one is
+    // most of the diagnosis when a particular server is what is failing.
+    it("still carries the server it tried", async () => {
+        await seedFailure();
+
+        const {text} = await metrics();
+
+        assert.equal(valueOf(text, "myspeed_server_info"), 1);
+        assert.match(text, /server_name="Arcade Solutions AG"/);
+    });
+
+    // A failure's duration column holds the same -1 as the rest of the row.
+    it("does not export the failure's duration", async () => {
+        await seedFailure();
+
+        assert.equal(valueOf((await metrics()).text, "myspeed_time"), null,
+            "the failed test's -1 duration is exported as a time");
+    });
+
+    /**
+     * And an instance that has never run a test answers too. There is no
+     * failure to report there - only nothing yet - so the series are simply
+     * absent, which is what an empty metric family is for. Answering 500 said
+     * the exporter was broken when it was working perfectly and had been
+     * installed five minutes ago.
+     */
+    it("answers a scrape from an instance that has never tested", async () => {
+        await seedTests(server.tests, []);
 
         const {status, text} = await metrics();
 
-        assert.equal(status, 500);
-        assert.doesNotMatch(text, /myspeed_download/);
+        assert.equal(status, 200, "a fresh install reports its exporter as broken");
+        assert.equal(valueOf(text, "myspeed_ping"), null);
+        assert.equal(valueOf(text, "myspeed_test_failed"), null,
+            "an instance that never tested is reported as having failed a test");
     });
 });
