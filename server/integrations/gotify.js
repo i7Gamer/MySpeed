@@ -31,7 +31,10 @@ export default (registerEvent) => {
         notifier: true,
         icon: "fa-solid fa-bell",
         fields: [
-            {name: "url", type: "text", required: true, regex: /https?:\/\/.+/},
+            // Anchored at both ends and whitespace-free: `test` is unanchored,
+            // so the old pattern matched a url *inside* the value. See
+            // tests/server/integrationFields.test.js for what that let through.
+            {name: "url", type: "text", required: true, regex: /^https?:\/\/\S+$/},
             {name: "key", type: "text", required: true, secret: true, regex: /^.{15}$/},
             {name: "priority", type: "text", required: true, regex: /^[0-9]$/},
             {name: "send_finished", type: "boolean", required: false},

@@ -28,7 +28,7 @@ export default (registerEvent) => {
     return {
         icon: "fa-solid fa-heart-pulse",
         fields: [
-            {name: "url", type: "text", required: true, secret: true, regex: /https?:\/\/.+/},
+            {name: "url", type: "text", required: true, secret: true, regex: /^https?:\/\/\S+$/},
             {name: "interval", type: "number", required: false, min: 1, max: 1440}
         ]
     };

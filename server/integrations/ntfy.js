@@ -66,7 +66,11 @@ export default (registerEvent) => {
         notifier: true,
         icon: "fa-solid fa-bell-concierge",
         fields: [
-            {name: "url", type: "text", required: true, regex: /^https?:\/\/.+/},
+            // `.+` stops at a newline without an end anchor to refuse it, and
+            // WHATWG url parsing strips that newline out before it resolves the
+            // host - so "https://good\n@evil.com" read as one host and reached
+            // another. \S+$ leaves no room for either.
+            {name: "url", type: "text", required: true, regex: /^https?:\/\/\S+$/},
             {name: "topic", type: "text", required: true, regex: /^[A-Za-z0-9_\-]{1,64}$/},
             {name: "token", type: "text", required: false, secret: true},
             {name: "title", type: "text", required: false},

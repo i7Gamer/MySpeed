@@ -43,8 +43,16 @@ export default (registerEvent) => {
         notifier: true,
         icon: "fa-brands fa-telegram",
         fields: [
-            {name: "token", type: "text", required: true, secret: true, regex: /(\d+):[a-zA-Z0-9_-]+/},
-            {name: "chat_id", type: "text", required: true, regex: /\d+/},
+            // Anchored: the token is interpolated into the request path as
+            // `/bot${token}/sendMessage`, and `test` is unanchored - so a token
+            // pasted with its "bot" prefix already on it, or one carrying a
+            // ../ out of its own segment, was accepted by the form and then
+            // answered 404 for as long as it stayed configured.
+            {name: "token", type: "text", required: true, secret: true, regex: /^(\d+):[a-zA-Z0-9_-]+$/},
+            // Negative on purpose: a group or channel id is, and that is the
+            // common case for an alert. Anchoring this to digits alone would
+            // have refused every one of them.
+            {name: "chat_id", type: "text", required: true, regex: /^-?\d+$/},
             {name: "send_finished", type: "boolean", required: false},
             {name: "finished_message", type: "textarea", required: false},
             {name: "send_failed", type: "boolean", required: false},

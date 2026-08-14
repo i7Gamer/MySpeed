@@ -5,6 +5,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import setupDiscord from "../../server/integrations/discord.js";
 import setupPushover from "../../server/integrations/pushover.js";
+import setupGotify from "../../server/integrations/gotify.js";
+import setupHealthChecks from "../../server/integrations/healthChecks.js";
+import setupWebhook from "../../server/integrations/webhook.js";
+import setupTelegram from "../../server/integrations/telegram.js";
+import setupNtfy from "../../server/integrations/ntfy.js";
+import setupInfluxdb from "../../server/integrations/influxdb.js";
 
 const INTEGRATIONS_DIR = path.resolve(fileURLToPath(import.meta.url),
     "..", "..", "..", "server", "integrations");
@@ -34,6 +40,96 @@ const fieldOf = (setup, name) => {
 
 const accepts = (setup, name, value) =>
     new RegExp(fieldOf(setup, name).regex.source).test(value);
+
+/**
+ * A pattern that does not anchor itself is describing a substring, and every one
+ * of these fields is a whole value.
+ *
+ * The comment above already named the hazard; five fields were still living with
+ * it. `test` is unanchored, so `/https?:\/\/.+/` accepted "not a url
+ * https://example.com" and `/\d+/` accepted "abc123def" - each stored verbatim
+ * and each failing later, at send time, as a silent or half-explained delivery
+ * error rather than as a form that would not save.
+ *
+ * The url fields matter most, because a URL is parsed by rules that are not the
+ * ones a reader assumes. WHATWG parsing strips tabs and newlines out of the
+ * input before it resolves anything, so "https://good.example\n@evil.com" - which
+ * a pattern ending in `.+` and no `$` accepts, since `.` never matches the
+ * newline it stops at - resolves to the host evil.com with "good.example" read
+ * as a username. Only an operator can set these, so this is a foot-gun rather
+ * than a hole; it is still a value the field claimed to have checked.
+ */
+describe("credential patterns describe the whole value", () => {
+    const URL_FIELDS = [
+        {module: "gotify", setup: setupGotify},
+        {module: "healthChecks", setup: setupHealthChecks},
+        {module: "webhook", setup: setupWebhook},
+        {module: "ntfy", setup: setupNtfy},
+        {module: "influxdb", setup: setupInfluxdb}
+    ];
+
+    for (const {module, setup} of URL_FIELDS) {
+        it(`${module} still accepts an ordinary url`, () => {
+            assert.equal(accepts(setup, "url", "https://example.com/hook"), true);
+            assert.equal(accepts(setup, "url", "http://192.168.1.5:8080"), true);
+        });
+
+        it(`${module} rejects a url with something in front of it`, () => {
+            assert.equal(accepts(setup, "url", "not a url https://example.com"), false,
+                "the pattern matches the url inside the value rather than the value");
+        });
+
+        it(`${module} rejects a url carrying a newline`, () => {
+            assert.equal(accepts(setup, "url", "https://good.example\n@evil.com"), false,
+                "url parsing strips the newline, so this reaches a different host than it reads as");
+        });
+
+        it(`${module} rejects a url with a space in it`, () => {
+            assert.equal(accepts(setup, "url", "https://example.com/a b"), false);
+        });
+    }
+
+    describe("telegram", () => {
+        it("accepts a token as BotFather issues it", () => {
+            assert.equal(accepts(setupTelegram, "token", "123456789:AAF-dEfGhIjKlMnOpQrStUvWxYz_1234567"), true);
+        });
+
+        /**
+         * The prefix is the mistake worth catching. The URL is built as
+         * `/bot${token}/sendMessage`, so a token pasted with the "bot" already
+         * on it produced `/botbot123.../sendMessage` - accepted by the form,
+         * then answered 404 by Telegram for as long as it stayed configured.
+         */
+        it("rejects a token pasted with its bot prefix", () => {
+            assert.equal(accepts(setupTelegram, "token", "bot123456789:AAF-dEfGhIjKlMnOpQrStUvWxYz_1234"), false);
+        });
+
+        // Interpolated into the path, so a value that walks out of it is a
+        // request to somewhere else on the host.
+        it("rejects a token that walks out of its path segment", () => {
+            assert.equal(accepts(setupTelegram, "token", "123456789:AAF-dEf/../../getUpdates"), false);
+        });
+
+        it("accepts a chat id", () => {
+            assert.equal(accepts(setupTelegram, "chat_id", "123456789"), true);
+        });
+
+        /**
+         * Groups and channels are negative, and that is the common case for a
+         * MySpeed alert - nobody sends their line's speedtests to themselves in
+         * a private chat and then complains about it. Anchoring this to digits
+         * alone would have rejected every group.
+         */
+        it("accepts the negative id a group or channel has", () => {
+            assert.equal(accepts(setupTelegram, "chat_id", "-1001234567890"), true);
+        });
+
+        it("rejects a chat id with anything else in it", () => {
+            for (const value of ["abc123def", "123 456", "@mychannel"])
+                assert.equal(accepts(setupTelegram, "chat_id", value), false, `${value} was accepted`);
+        });
+    });
+});
 
 describe("pushover credentials", () => {
     // Pushover issues 30-character keys from a case-sensitive alphanumeric

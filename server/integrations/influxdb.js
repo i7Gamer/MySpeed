@@ -94,7 +94,7 @@ export default (registerEvent) => {
     return {
         icon: "fa-solid fa-database",
         fields: [
-            {name: "url", type: "text", required: true, regex: /^https?:\/\/.+/},
+            {name: "url", type: "text", required: true, regex: /^https?:\/\/\S+$/},
             {name: "org", type: "text", required: true},
             {name: "bucket", type: "text", required: true},
             {name: "token", type: "text", required: true, secret: true},

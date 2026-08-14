@@ -25,7 +25,7 @@ export default (registerEvent) => {
         notifier: true,
         icon: "fa-solid fa-globe",
         fields: [
-            {name: "url", type: "text", required: true, secret: true, regex: /https?:\/\/.+/},
+            {name: "url", type: "text", required: true, secret: true, regex: /^https?:\/\/\S+$/},
             {name: "send_started", type: "boolean", required: false},
             {name: "send_finished", type: "boolean", required: false},
             {name: "send_alive", type: "boolean", required: false},
