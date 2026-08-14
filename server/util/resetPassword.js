@@ -11,10 +11,13 @@ import { NO_PASSWORD } from '../controller/config.js';
  * a backup. Until this existed the only remedy was editing the config table by
  * hand, which is not a thing to ask of someone reading a log at midnight.
  *
- * It is a flag on the server binary rather than a script beside it because both
- * supported deployments ship one compiled binary and no runtime to run a script
- * with: `MySpeed --reset-password` on Windows, `docker exec <container>
- * ./MySpeed --reset-password` under Docker.
+ * It is a flag on the entry point rather than a script beside it so that each
+ * deployment can reach it with whatever it already has, which is not the same
+ * thing in both. Windows installs a compiled binary and no runtime, so there it
+ * is `MySpeed --reset-password`. The image is the other way round - it ships the
+ * bun runtime and the server sources, and never builds a binary at all - so
+ * there it is `docker exec <container> bun server/index.js --reset-password`,
+ * against the same entry point the image's own CMD runs.
  */
 export const RESET_PASSWORD_FLAG = "--reset-password";
 
@@ -79,7 +82,7 @@ export const isMissingConfigTable = (error) =>
  * is the honest version of it.
  *
  * The outcome is returned rather than printed so this can be tested against a
- * real table; index.js owns the wording and the exit code.
+ * real table; index.js owns the exit code, and the wording below it.
  */
 export const resetPassword = async () => {
     let stored;
@@ -105,4 +108,85 @@ export const resetPassword = async () => {
     await config.update({value: NO_PASSWORD}, {where: {key: "password"}});
 
     return RESET_CLEARED;
+};
+
+/**
+ * Where to look when the database held no configuration to reset.
+ *
+ * This is the whole content of the nothing-to-do exit: the code says the data is
+ * somewhere other than where the command looked, and this line is what says
+ * where to go. Pointed at the wrong thing it is worse than saying nothing, since
+ * it is specific enough to be believed and spent on.
+ *
+ * Which means it cannot be the same line for both backends. A file database is
+ * chosen by the working directory, so that is what to check. A MySQL connection
+ * is named entirely by environment variables and has no data directory at all -
+ * sending that operator to inspect a path costs them the one thing this exit
+ * code was for. The start-up handler in index.js already splits on the same
+ * variable for the same reason.
+ */
+export const noConfigReport = (env = process.env) => [
+    "This database holds no MySpeed configuration, so there is no password to reset.",
+    env.DB_TYPE === "mysql"
+        ? "Check that DB_NAME, DB_HOST and DB_USER name the database the server actually runs against."
+        : "Check that the data directory is the one the server actually runs against."
+];
+
+/**
+ * What the command says once it has finished, which is all the operator gets.
+ *
+ * It exits immediately afterwards, so these lines are not a summary of a state
+ * that can then be inspected - as far as someone reading them at midnight is
+ * concerned, they are the state.
+ *
+ * Built as values rather than printed from inside the handler so the branch
+ * below can be exercised directly. Scanning index.js for it instead would mean
+ * asserting on the shape of a source file, because importing that file starts a
+ * server.
+ */
+export const clearedReport = (outcome, env = process.env) => {
+    const lines = [
+        "",
+        outcome === RESET_ALREADY_CLEAR
+            ? "  This instance already had no password set."
+            : "  The password has been removed.",
+        ""
+    ];
+
+    /**
+     * ALLOW_NO_PASSWORD is only ever consulted while the stored value is the
+     * unconfigured sentinel - which is precisely what this command restores. So
+     * a variable that has been a no-op for as long as a password was set comes
+     * back to life at the moment the password goes, and the instance this
+     * returns is not the guarded one the other branch describes: it is reachable
+     * by anyone who can route to it, with no credential and no token. Telling
+     * that operator their instance now asks other machines for a setup token
+     * would be the exact opposite of what happened.
+     *
+     * The boot-time warning that covers this state never runs here, because the
+     * reset returns before the server is started.
+     *
+     * Read from this process's environment, which is the same one the server
+     * sees under Docker but need not be on Windows, where a service carries its
+     * own. It can therefore miss a variable set only for the service - it cannot
+     * invent one - so the quiet branch stays the honest default.
+     */
+    if (env.ALLOW_NO_PASSWORD === "true")
+        lines.push(
+            "  WARNING: ALLOW_NO_PASSWORD is set for this process, and it applies again as",
+            "  soon as the password is gone. Anyone who can reach this instance now has full",
+            "  control of it, with no credential and no token. Set a new password from the",
+            "  settings menu, or unset the variable and restart the server.",
+            ""
+        );
+    else
+        lines.push(
+            "  The instance is now open to the machine it runs on, and asks every other",
+            "  machine for a setup token. Open the interface: the server prints that token",
+            "  to its log as it turns the request away. Then set a new password from the",
+            "  settings menu - no restart is needed.",
+            ""
+        );
+
+    return lines;
 };

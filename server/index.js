@@ -16,7 +16,7 @@ import { load as loadCli } from './util/loadCli.js';
 import { removeOld } from './tasks/speedtest.js';
 import { createShutdown } from './util/shutdown.js';
 import {
-    RESET_ALREADY_CLEAR, RESET_NO_CONFIG, resetPassword, wantsPasswordReset
+    clearedReport, noConfigReport, RESET_NO_CONFIG, resetPassword, wantsPasswordReset
 } from './util/resetPassword.js';
 
 const INTERFACE_REFRESH_INTERVAL = 3600000;
@@ -81,21 +81,11 @@ const runPasswordReset = async () => {
     const outcome = await resetPassword();
 
     if (outcome === RESET_NO_CONFIG) {
-        console.error("This database holds no MySpeed configuration, so there is no password to reset.");
-        console.error("Check that the data directory is the one the server actually runs against.");
+        noConfigReport().forEach(line => console.error(line));
         return process.exit(RESET_NOTHING_TO_DO_EXIT);
     }
 
-    console.log("");
-    console.log(outcome === RESET_ALREADY_CLEAR
-        ? "  This instance already had no password set."
-        : "  The password has been removed.");
-    console.log("");
-    console.log("  The instance is now open to the machine it runs on, and asks every other");
-    console.log("  machine for a setup token. Open the interface: the server prints that token");
-    console.log("  to its log as it turns the request away. Then set a new password from the");
-    console.log("  settings menu - no restart is needed.");
-    console.log("");
+    clearedReport(outcome).forEach(line => console.log(line));
 
     // Explicit: the database handle and whatever the top-level imports left open
     // would otherwise hold a command that has finished its work.

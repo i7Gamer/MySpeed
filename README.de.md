@@ -130,10 +130,16 @@ Kommandozeile gelöscht:
 MySpeed --reset-password
 ```
 
-Unter Docker im Container ausführen: `docker exec <container> ./MySpeed
---reset-password`. Der Befehl muss im selben Verzeichnis laufen wie der Server –
-er löst `data/storage.db` relativ zum Arbeitsverzeichnis auf und sagt es, wenn er
-dort keine Konfiguration findet.
+Das Docker-Image enthält die Laufzeitumgebung und den Servercode, aber keine
+kompilierte Binärdatei – dort wird deshalb der Einstiegspunkt direkt ausgeführt:
+
+```bash
+docker exec <container> bun server/index.js --reset-password
+```
+
+Der Befehl muss im selben Verzeichnis laufen wie der Server – er löst
+`data/storage.db` relativ zum Arbeitsverzeichnis auf und sagt es, wenn er dort
+keine Konfiguration findet. Im Container ist das bereits das richtige.
 
 Danach ist die Instanz wieder im oben beschriebenen Zustand des ersten Starts:
 offen für den Rechner, auf dem sie läuft, und für alle anderen mit Setup-Token,

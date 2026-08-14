@@ -126,10 +126,16 @@ A password that is set but not known is cleared from the command line:
 MySpeed --reset-password
 ```
 
-Under Docker, run it in the container: `docker exec <container> ./MySpeed
---reset-password`. Run it from the same directory the server runs in — it
-resolves `data/storage.db` relative to the working directory, and will say so if
-it finds no configuration there.
+The Docker image ships the runtime and the server sources rather than a compiled
+binary, so run the entry point there instead:
+
+```bash
+docker exec <container> bun server/index.js --reset-password
+```
+
+Run it from the same directory the server runs in — it resolves
+`data/storage.db` relative to the working directory, and will say so if it finds
+no configuration there. In the container that is already the working directory.
 
 The instance is then back to the first-run state above: open on the machine it
 runs on, asking every other machine for a setup token, which it prints to its log

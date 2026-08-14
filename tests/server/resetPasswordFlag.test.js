@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isMissingConfigTable, RESET_PASSWORD_FLAG, wantsPasswordReset } from "../../server/util/resetPassword.js";
+import {
+    clearedReport, isMissingConfigTable, noConfigReport, RESET_ALREADY_CLEAR, RESET_CLEARED,
+    RESET_PASSWORD_FLAG, wantsPasswordReset
+} from "../../server/util/resetPassword.js";
 
 /**
  * The one recovery path there is, and why it lives on the binary.
@@ -11,9 +14,10 @@ import { isMissingConfigTable, RESET_PASSWORD_FLAG, wantsPasswordReset } from ".
  * A password that is set but not known has no way back through the interface:
  * the setup token and loopback access both only apply to an instance with *no*
  * password, so every remaining route is refused by the very credential that was
- * lost. Both supported deployments ship one compiled binary and no node, so a
- * separate script would not be runnable on the machine that needs it - the flag
- * has to be on the thing the operator already has.
+ * lost. It is a flag on the entry point rather than a script beside it so that
+ * each deployment can reach it with what it already has - a compiled binary on
+ * Windows, the bun runtime and the server sources under Docker - since a
+ * separate script would not be runnable on both.
  */
 describe("wantsPasswordReset", () => {
     // argv[0] is the runtime and argv[1] the script; a real invocation carries
@@ -89,6 +93,19 @@ describe("isMissingConfigTable", () => {
 
 const ENTRY = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "server", "index.js");
 const entry = fs.readFileSync(ENTRY, "utf8");
+
+/**
+ * Both translations, wherever the documentation is asserted against the code.
+ *
+ * An operator reading the German one is no less likely to be scripting the
+ * recovery, or to be the one locked out - and a claim that is corrected in one
+ * file and left standing in the other is the same wrong instruction, given to
+ * half as many people.
+ */
+const readmes = () => ["README.md", "README.de.md"].map((name) => ({
+    name,
+    text: fs.readFileSync(path.resolve(ENTRY, "..", "..", name), "utf8")
+}));
 
 /**
  * Where the flag is handled, which matters as much as that it is.
@@ -193,13 +210,184 @@ describe("the reset's exit codes", () => {
      * so changing a code here fails until the documentation follows it.
      */
     it("is documented with the same numbers it exits with", () => {
-        const readmes = ["README.md", "README.de.md"].map((name) => ({
-            name,
-            text: fs.readFileSync(path.resolve(ENTRY, "..", "..", name), "utf8")
-        }));
-
-        for (const {name, text} of readmes)
+        for (const {name, text} of readmes())
             for (const code of [nothingToDo(), failed()])
                 assert.ok(text.includes(String(code)), `${name} documents no exit code ${code}`);
+    });
+
+    /**
+     * And the nothing-to-do code has to stay in the branch that means it.
+     *
+     * The assertion above reads the handler wrapped around runPasswordReset,
+     * which is where the failure code is spent - and that slice begins below
+     * runPasswordReset itself, so the one place RESET_NOTHING_TO_DO_EXIT is
+     * actually used sits outside everything this describe block had been
+     * reading. Collapsing the two codes at their real site left the pair above
+     * passing, which is the shape of gap that lets a distinction be documented
+     * and then quietly stop existing.
+     */
+    it("spends the two codes in the two places that mean them", () => {
+        const reset = entry.slice(entry.indexOf("const runPasswordReset"),
+            entry.indexOf("process.on('uncaughtException'"));
+
+        assert.match(reset, /RESET_NOTHING_TO_DO_EXIT/,
+            "the branch that found no configuration no longer exits with the nothing-to-do code");
+        assert.doesNotMatch(reset, /RESET_FAILED_EXIT/,
+            "the reset spends the failure code itself, which belongs to the caller that catches it");
+    });
+});
+
+/**
+ * The documented Docker invocation, read against the image that has to run it.
+ *
+ * Windows installs a compiled binary, so `MySpeed --reset-password` is the whole
+ * command there. The image is the other way round: its final stage copies the
+ * server sources and the bun runtime, and the docker workflow never runs
+ * `build:binary`, so there is no `MySpeed` in the container at all - a
+ * documented `./MySpeed` is a file that does not exist, and the operator reading
+ * it has by then run out of other ways in.
+ *
+ * Taken from the Dockerfile's own CMD rather than pinned to a string here, so
+ * that moving the entry point fails this until the documentation follows it.
+ */
+describe("the documented Docker reset runs what the image actually ships", () => {
+    const dockerfile = fs.readFileSync(path.resolve(ENTRY, "..", "..", "Dockerfile"), "utf8");
+
+    const entryScript = () => {
+        const cmd = dockerfile.match(/^CMD \[(.+)]$/m);
+        assert.notEqual(cmd, null, "the Dockerfile no longer declares its CMD as an array");
+
+        const script = JSON.parse(`[${cmd[1]}]`).find((argument) => argument.endsWith(".js"));
+        assert.notEqual(script, undefined, "the image's CMD runs no script");
+
+        return script;
+    };
+
+    /**
+     * The passage that tells the operator what to type, not the whole file: the
+     * READMEs name the Windows binary a few lines above, and that mention is
+     * correct.
+     *
+     * Ended on a blank line matched by regex rather than on "\n\n", because
+     * these files are stored with CRLF endings - searching for the bare pair
+     * finds nothing, and the slice then runs to the end of the document and
+     * takes every later mention of the binary with it.
+     */
+    const dockerParagraph = (text) => {
+        const start = text.indexOf("docker exec");
+        assert.notEqual(start, -1, "this README documents no Docker invocation of the reset");
+
+        const blank = text.slice(start).search(/\r?\n[ \t]*\r?\n/);
+        assert.notEqual(blank, -1, "the Docker invocation runs to the end of the file");
+
+        return text.slice(start, start + blank);
+    };
+
+    it("names the entry point the image runs", () => {
+        for (const {name, text} of readmes())
+            assert.ok(dockerParagraph(text).includes(entryScript()),
+                `${name} documents a Docker reset that does not run ${entryScript()}`);
+    });
+
+    it("does not send the operator after a binary the image never builds", () => {
+        for (const {name, text} of readmes())
+            assert.doesNotMatch(dockerParagraph(text), /MySpeed/,
+                `${name} tells a Docker operator to run a compiled binary, which the image has none of`);
+    });
+
+    // The same claim is made a third time, in the module's own doc comment,
+    // which is where anyone changing this command reads it first.
+    it("is described the same way where the flag is defined", () => {
+        const source = fs.readFileSync(path.resolve(ENTRY, "..", "util", "resetPassword.js"), "utf8");
+        const comment = source.slice(0, source.indexOf("export const RESET_PASSWORD_FLAG"));
+
+        assert.ok(comment.includes("docker exec"), "the doc comment no longer says how to reach this under Docker");
+        assert.ok(comment.includes(entryScript()),
+            `the doc comment documents a Docker reset that does not run ${entryScript()}`);
+    });
+});
+
+/**
+ * What the command prints, which is the whole of what the operator gets.
+ *
+ * It exits immediately afterwards, so these lines are not a summary of a state
+ * they can go and inspect - they are the state, as far as anyone running this at
+ * midnight is concerned. Built as values rather than printed from inside the
+ * handler so that the branches can be read here rather than scanned for in the
+ * source of a file that starts a server when imported.
+ */
+describe("what the reset tells the operator afterwards", () => {
+    const report = (outcome, env) => clearedReport(outcome, env).join("\n");
+
+    it("distinguishes a password it removed from one that was never set", () => {
+        assert.match(report(RESET_CLEARED, {}), /password has been removed/);
+        assert.match(report(RESET_ALREADY_CLEAR, {}), /already had no password/);
+    });
+
+    it("describes the setup-token state the instance is actually left in", () => {
+        assert.match(report(RESET_CLEARED, {}), /setup token/);
+    });
+
+    /**
+     * Unless it is not left in that state at all.
+     *
+     * ALLOW_NO_PASSWORD is consulted only while the stored value is the
+     * unconfigured sentinel - which is exactly what this command restores - so
+     * a variable that was a no-op for as long as a password was set becomes
+     * live again the moment the password goes. The instance is then reachable
+     * by anyone who can route to it, and the banner was telling the operator
+     * the opposite: that every other machine is now being asked for a token.
+     * The boot-time warning that covers this case never runs here, because the
+     * reset returns before the server starts.
+     */
+    it("says so when ALLOW_NO_PASSWORD leaves the instance open instead", () => {
+        const open = report(RESET_CLEARED, {ALLOW_NO_PASSWORD: "true"});
+
+        assert.match(open, /ALLOW_NO_PASSWORD/,
+            "the operator is not told the variable that is now letting everyone in");
+        assert.doesNotMatch(open, /asks every other|setup token/,
+            "the banner still claims a setup token protects an instance that is wide open");
+    });
+
+    // Only the exact value, as everywhere else this variable is read: the
+    // instance is only open when the middleware agrees it is.
+    it("does not warn for a value that does not enable it", () => {
+        for (const value of ["false", "1", "TRUE", "yes", ""])
+            assert.doesNotMatch(report(RESET_CLEARED, {ALLOW_NO_PASSWORD: value}), /ALLOW_NO_PASSWORD/,
+                `${value} does not open the instance, so it must not be reported as though it had`);
+    });
+});
+
+/**
+ * And where to look when it found no configuration to reset.
+ *
+ * The remedy is the whole content of exit 113: the code says "the data is
+ * somewhere else", and this line is what says where to go and look. Pointed at
+ * the wrong thing it is worse than nothing, because it is specific enough to be
+ * believed.
+ */
+describe("where the reset sends an operator who has no configuration", () => {
+    it("names the data directory for a file database", () => {
+        assert.match(noConfigReport({}).join("\n"), /data directory/);
+    });
+
+    /**
+     * A MySQL install has no data directory to check, and its working directory
+     * has nothing to do with which database it opened - the connection is named
+     * entirely by environment variables. Sending that operator to look at a path
+     * costs them the one thing the exit code was for. The start-up handler
+     * already draws this distinction for the same reason.
+     */
+    it("names the connection for a mysql one", () => {
+        const mysql = noConfigReport({DB_TYPE: "mysql"}).join("\n");
+
+        assert.doesNotMatch(mysql, /data directory/,
+            "a mysql install is sent to check a directory that has nothing to do with its database");
+        assert.match(mysql, /DB_NAME/, "the operator is not told which setting actually chose this database");
+    });
+
+    it("says there is nothing to reset either way", () => {
+        for (const env of [{}, {DB_TYPE: "mysql"}])
+            assert.match(noConfigReport(env).join("\n"), /no MySpeed configuration/);
     });
 });
