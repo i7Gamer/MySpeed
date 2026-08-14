@@ -27,9 +27,13 @@ import "./styles.sass";
  *                    thing the statistics panels did differently. The row
  *                    publishes it as well, so any part of the row can be opted
  *                    into showing it; see the graded-value mixin
+ * @param className   appended to the row, for a card that needs to dress one of
+ *                    its rows differently. A colour reached this way is the
+ *                    card's own and not a verdict - which is the point: the two
+ *                    ends of a range are painted, and neither is a grade
  */
-export const PanelRow = ({icon, title, description, value, level}) => (
-    <div className="panel-row" data-grade={level || undefined}>
+export const PanelRow = ({icon, title, description, value, level, className = ""}) => (
+    <div className={`panel-row ${className}`.trim()} data-grade={level || undefined}>
         <div className="panel-row-info">
             <FontAwesomeIcon icon={icon} className={"panel-row-icon" + (level ? " icon-" + level : "")}/>
             <div className="panel-row-text">

@@ -19,6 +19,20 @@
 .value-container .panel-row-value:not(.chart-modal-body *)
   font-size: row.$panel-value-size-narrow
 
+// The two ends of the range, so every glyph on the card says something. The
+// same two colours a grade uses, and deliberately not the grade itself: a
+// minimum is the slowest test in the range, not a bad one - which is why
+// neither end carries a percentage or a delta either. Painted through `level`
+// they would publish a grade on the row, and a reader who turns gradeValues on
+// would then find "523 Mbps" in the colour of a bad reading.
+//
+// They read the accent palette, so a theme moves them with everything else.
+.value-low .panel-row-icon
+  color: var(--accent-danger)
+
+.value-high .panel-row-icon
+  color: var(--accent-primary)
+
 // The label column takes the row's free space so the target bar below it spans
 // the card rather than stopping at the width of the longest word above.
 // space-between already puts the value at the far edge, so the text keeps the
