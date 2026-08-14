@@ -42,10 +42,16 @@ export const StartTestButton = () => {
     // from the same snapshot - passing it on only invited the two to disagree.
     const start = () => startSpeedtest({updateStatus, setRunning, updateTests, alert});
 
+    // Named once, and read both by the eye and by a screen reader. Below 366px
+    // the row cannot hold three labelled controls and the span is hidden, which
+    // left the button as a bare gauge glyph with no accessible name at all -
+    // the aria-label is what keeps the control announced at every width.
+    const label = t(blocked === START_BLOCKED_RUNNING ? "status.running_button" : "status.start");
+
     return (
-        <button className="start-test" onClick={start} disabled={blocked !== null}>
+        <button className="start-test" onClick={start} disabled={blocked !== null} aria-label={label}>
             <FontAwesomeIcon icon={faGaugeHigh}/>
-            <span>{t(blocked === START_BLOCKED_RUNNING ? "status.running_button" : "status.start")}</span>
+            <span>{label}</span>
         </button>
     );
 };

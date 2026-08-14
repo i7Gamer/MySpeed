@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as sass from "sass";
@@ -14,6 +15,8 @@ const aliasImporter = {
 };
 
 const compile = (file) => sass.compile(path.join(CLIENT_SRC, file), {importers: [aliasImporter]}).css;
+
+const readSource = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
 
 const header = compile("common/components/Header/styles.sass");
 const exportButton = compile("common/components/ExportButton/styles.sass");
@@ -127,11 +130,39 @@ describe("the toolbar controls keep their labels until they do not fit", () => {
             "the start button still has its old 600px rule");
     });
 
-    // It is the page's primary action and a bare gauge glyph does not say
-    // "start a test", so this one keeps its word at every width.
-    it("never reduces the start button to its icon", () => {
-        assert.doesNotMatch(startTest, /\.start-test[^{}]*span[^{}]*\{[^}]*display:\s*none/,
-            "the start button's label is hidden at some width");
+    /**
+     * The start button keeps its word for as long as there is room for it - it
+     * is the page's primary action and a bare gauge does not say "start a
+     * test" - and gives it up only where keeping it costs the toolbar a row.
+     *
+     * By 366px the date picker is at its own minimum and the row cannot hold
+     * three labelled controls: the export was pushed onto a line of its own,
+     * which is both a third row and that control sitting at the left-hand end,
+     * the one place in the app it never is. The word is ~90px, which is the
+     * whole difference between those two layouts.
+     */
+    it("keeps the start button's label down to where the row runs out", () => {
+        // 368, not a round number: measured, 369px still holds all three
+        // labelled and 368 is the first width that wraps.
+        const collapse = queriesMentioning(startTest, "368px");
+        const earlier = queriesMentioning(startTest, "480px");
+
+        assert.ok(collapse.some((body) => /span\s*\{[^}]*display:\s*none/.test(body)),
+            "the start button never drops its label, so the export keeps its own row");
+        assert.ok(!earlier.some((body) => /span\s*\{[^}]*display:\s*none/.test(body)),
+            "the label goes at 480px, a hundred pixels before it has to");
+    });
+
+    // Hiding the only text in a button leaves it with no accessible name at
+    // all. Both controls in this row collapse, so both carry their name.
+    it("keeps both collapsing controls named for a screen reader", () => {
+        const start = readSource("common/components/StartTestButton/StartTestButton.jsx");
+        const exportSource = readSource("common/components/ExportButton/ExportButton.jsx");
+
+        assert.match(start, /aria-label=\{label}/,
+            "the start button is a bare gauge glyph with no name once collapsed");
+        assert.match(exportSource, /aria-label=\{t\("statistics\.export\.button"\)}/,
+            "the export button is a bare download glyph with no name once collapsed");
     });
 });
 

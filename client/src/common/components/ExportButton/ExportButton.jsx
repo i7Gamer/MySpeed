@@ -46,11 +46,17 @@ export const ExportButton = ({ dateRange, allTime = false }) => {
 
     return (
         <div className="export-button-container">
-            <button 
-                className="export-button" 
+            {/* Named for a screen reader as well as for the eye: below 480px
+                the label span is hidden and the button was left as a bare
+                download glyph with no accessible name - the same collapse the
+                start button beside it makes, and the same fix. */}
+            <button
+                className="export-button"
                 ref={buttonRef}
                 onClick={() => setIsOpen(!isOpen)}
                 disabled={exporting}
+                aria-label={t("statistics.export.button")}
+                aria-expanded={isOpen}
             >
                 <FontAwesomeIcon icon={faDownload} className="export-icon" />
                 <span className="export-text">{t("statistics.export.button")}</span>
