@@ -96,12 +96,37 @@ const router = createBrowserRouter([
 ]);
 
 const App = () => {
-    const [translationsLoaded, setTranslationsLoaded] = useState(false);
+    /**
+     * Seeded from what i18next has already done, rather than from false.
+     *
+     * `initialized` is emitted once and never replayed, and this component
+     * cannot subscribe to it until index.jsx has awaited migrateStoredPassword()
+     * - so on the upgrade path that migration exists for, the locale finishes
+     * loading while the session request is still doing its bcrypt compare, the
+     * event is emitted with nobody listening, and the app holds on the loading
+     * screen with nothing left to wake it.
+     */
+    const [translationsLoaded, setTranslationsLoaded] = useState(i18n.isInitialized);
     const [translationError, setTranslationError] = useState(false);
 
     useEffect(() => {
-        i18n.on("initialized", () => setTranslationsLoaded(true));
-        i18n.on("failedLoading", () => setTranslationError(true));
+        // Asked again here, not only at first render: the two are a paint apart,
+        // and that is long enough for a promise callback to have run.
+        if (i18n.isInitialized) {
+            setTranslationsLoaded(true);
+            return;
+        }
+
+        const loaded = () => setTranslationsLoaded(true);
+        const failed = () => setTranslationError(true);
+
+        i18n.on("initialized", loaded);
+        i18n.on("failedLoading", failed);
+
+        return () => {
+            i18n.off("initialized", loaded);
+            i18n.off("failedLoading", failed);
+        };
     }, []);
 
     if (!translationsLoaded && !translationError) {

@@ -11,7 +11,7 @@ import {
     Tooltip,
     Filler
 } from "chart.js";
-import {useEffect, useState, useCallback, useContext, useMemo, startTransition, useDeferredValue} from "react";
+import {useEffect, useState, useCallback, useContext, useMemo, useRef, startTransition, useDeferredValue} from "react";
 import {useSearchParams} from "react-router-dom";
 import {jsonRequest} from "@/common/utils/RequestUtil";
 import {PreferencesContext} from "@/common/contexts/Preferences";
@@ -130,6 +130,10 @@ export const Statistics = () => {
     const [mountPhase, setMountPhase] = useState(0);
     const [detailStatistics, setDetailStatistics] = useState(null);
     const [detailLoading, setDetailLoading] = useState(false);
+    // Which load is the current one. A ref rather than state: it is read inside
+    // the callbacks of requests already in flight, and changing it must not
+    // itself render.
+    const requestGeneration = useRef(0);
 
     const [searchParams, setSearchParams] = useSearchParams();
     const [preferences, updatePreferences] = useContext(PreferencesContext);
@@ -175,6 +179,20 @@ export const Statistics = () => {
         // precedes all time, so it is asked for only when the range is bounded.
         if (dateRange) query.set("compare", "previous");
 
+        /**
+         * Only the newest request may write to the page.
+         *
+         * Choosing a wide range and then a narrow one leaves the slow query in
+         * flight, and it used to land regardless: the page then showed the
+         * abandoned range's series and totals under the toolbar, URL and
+         * heading of the range actually chosen. The failure path was worse - an
+         * abandoned request that timed out set loadError after the newer one
+         * had cleared it, replacing a page that had rendered correctly with the
+         * full-screen error.
+         */
+        const generation = ++requestGeneration.current;
+        const isCurrent = () => generation === requestGeneration.current;
+
         startTransition(() => {
             setLoadError(null);
             setLoading(true);
@@ -183,12 +201,16 @@ export const Statistics = () => {
             jsonRequest(`/speedtests/statistics/?${query}`),
             jsonRequest(`/speedtests?limit=${RECENT_TESTS}`)
         ]).then(([stats, tests]) => {
+            if (!isCurrent()) return;
+
             startTransition(() => {
                 setStatistics(stats);
                 setRecentTests(Array.isArray(tests) ? tests : []);
                 setLoading(false);
             });
         }).catch(error => {
+            if (!isCurrent()) return;
+
             console.error("Failed to load statistics:", error);
             startTransition(() => {
                 setLoadError(error);
