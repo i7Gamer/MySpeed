@@ -77,19 +77,35 @@ const announceAccess = async () => {
  * and enough. Nothing needs restarting either: the stored password is read from
  * the database on every request.
  */
+/**
+ * The one way this command stops, whatever it found.
+ *
+ * The exit is explicit because the database handle and whatever the top-level
+ * imports left open would otherwise hold a command that has finished its work.
+ * The close before it is what makes that exit safe: sqlite runs in WAL mode, so
+ * a live connection has a -wal and a -shm beside the database file, and leaving
+ * them uncheckpointed is not merely untidy under Docker. `docker exec` skips the
+ * entrypoint and with it the privilege drop, so this runs as root and creates
+ * those two files root-owned inside a volume the server reads as another user -
+ * which then cannot write them, and stays broken until the container restarts
+ * and the entrypoint chowns the directory again.
+ */
+const stopAfterReset = async (code) => {
+    await db.close().catch(() => undefined);
+    process.exit(code);
+};
+
 const runPasswordReset = async () => {
     const outcome = await resetPassword();
 
     if (outcome === RESET_NO_CONFIG) {
         noConfigReport().forEach(line => console.error(line));
-        return process.exit(RESET_NOTHING_TO_DO_EXIT);
+        return await stopAfterReset(RESET_NOTHING_TO_DO_EXIT);
     }
 
     clearedReport(outcome).forEach(line => console.log(line));
 
-    // Explicit: the database handle and whatever the top-level imports left open
-    // would otherwise hold a command that has finished its work.
-    return process.exit(0);
+    return await stopAfterReset(0);
 };
 
 process.on('uncaughtException', err => errorHandler(err));
@@ -193,7 +209,7 @@ db.authenticate().then(() => {
             console.error("The password could not be reset: " + (err?.message ?? err));
             console.error("The stored password is unchanged. This database is the right one - check that it");
             console.error("is not locked by another process and that the data directory is writable.");
-            process.exit(RESET_FAILED_EXIT);
+            return stopAfterReset(RESET_FAILED_EXIT);
         });
     }
 

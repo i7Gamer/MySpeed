@@ -238,6 +238,59 @@ describe("the reset's exit codes", () => {
 });
 
 /**
+ * The database is closed before the command stops, on every way out of it.
+ *
+ * sqlite is opened in WAL mode, so a live handle has a -wal and a -shm beside
+ * the database file, and exiting without closing leaves them behind
+ * uncheckpointed. Under `docker exec` that is not merely untidy: exec skips the
+ * entrypoint, and with it the privilege drop, so this command runs as root and
+ * those two files are created root-owned inside a volume the server reads as
+ * another user. It then cannot write them, and stays broken until the container
+ * is restarted and the entrypoint chowns the directory again - a recovery
+ * command that costs the operator the instance it just recovered.
+ *
+ * Asserted structurally: every stop goes through one place, and that place
+ * closes first. Running it is not an option - it ends in process.exit.
+ */
+describe("the reset closes the database it opened", () => {
+    const blockFrom = (marker) => {
+        const at = entry.indexOf(marker);
+        assert.notEqual(at, -1, `${marker} is not in index.js`);
+
+        const ends = entry.slice(at).search(/\r?\n\r?\n/);
+        return ends === -1 ? entry.slice(at) : entry.slice(at, at + ends);
+    };
+
+    const resetBody = () => entry.slice(entry.indexOf("const runPasswordReset"),
+        entry.indexOf("process.on('uncaughtException'"));
+
+    const failureHandler = () => {
+        const start = entry.indexOf("if (wantsPasswordReset())");
+        return entry.slice(start, entry.indexOf("run().catch", start));
+    };
+
+    it("closes the connection on the way out", () => {
+        assert.match(blockFrom("const stopAfterReset"), /await db\.close\(\)/,
+            "the command exits with the database still open, leaving its WAL files behind");
+    });
+
+    it("leaves no other way to stop", () => {
+        assert.doesNotMatch(resetBody(), /process\.exit/,
+            "the reset exits directly, without closing the database first");
+        assert.match(resetBody(), /stopAfterReset/, "the reset never stops at all");
+    });
+
+    // Including the branch where the write failed. That one has most likely
+    // just touched the database, so it is the last place to walk away from an
+    // open handle.
+    it("closes on the failed path as well", () => {
+        assert.doesNotMatch(failureHandler(), /process\.exit/,
+            "a failed reset exits with the database still open");
+        assert.match(failureHandler(), /stopAfterReset\(RESET_FAILED_EXIT\)/);
+    });
+});
+
+/**
  * The documented Docker invocation, read against the image that has to run it.
  *
  * Windows installs a compiled binary, so `MySpeed --reset-password` is the whole
