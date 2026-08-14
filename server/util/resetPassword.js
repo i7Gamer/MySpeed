@@ -61,10 +61,22 @@ export const isMissingConfigTable = (error) =>
  * and the operator sets a real password from the interface, where the policy
  * and the confirmation box apply.
  *
- * Written through the model rather than through updateValue: that fires the
- * `configUpdated` integration event, and a recovery command must not be able to
- * hang on an unreachable webhook. It would also be firing from a second process
- * that no integration belongs to.
+ * Written through the model rather than through updateValue, which does two
+ * things besides the write and neither of them survives the process boundary:
+ *
+ * It fires the `configUpdated` integration event, and a recovery command must
+ * not be able to hang on an unreachable webhook - it would also be firing from
+ * a second process that no integration belongs to.
+ *
+ * And it calls destroyAllSessions, which is a real guarantee where it is made:
+ * a password change inside the server takes access back, and a session left
+ * alive would undo that. Here it would guarantee nothing. Sessions are an
+ * in-memory Map per process, so this command would clear its own - empty, it
+ * has never issued one - while every session the running server holds carries
+ * on untouched. Calling it anyway would only read as though the sessions had
+ * been dealt with. They have not: they stay valid until they expire or the
+ * server is restarted, which is what the README tells the operator to do, and
+ * is the honest version of it.
  *
  * The outcome is returned rather than printed so this can be tested against a
  * real table; index.js owns the wording and the exit code.

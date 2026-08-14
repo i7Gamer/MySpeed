@@ -124,3 +124,59 @@ describe("the reset runs instead of the server, not before it", () => {
             "the reset prints a setup token minted by the wrong process");
     });
 });
+
+/**
+ * The three ways this command can stop, as a script driving it reads them.
+ *
+ * "There is no configuration in this database" and "the reset itself failed"
+ * are opposite instructions - the first says the path is wrong and the data is
+ * elsewhere, the second says the path is right and the data is in trouble - and
+ * a recovery command answering both with one number tells the second operator
+ * to go looking in the wrong place. isMissingConfigTable is deliberately narrow
+ * so that a corrupt or locked database keeps travelling rather than being
+ * reported as an empty one; these codes are where it travels to, and collapsing
+ * them here would undo that narrowness at the last step.
+ *
+ * Scanned from the source rather than run, for the same reason as the block
+ * above: importing the entry point starts a server.
+ */
+describe("the reset's exit codes", () => {
+    const codeOf = (name) => {
+        const declared = entry.match(new RegExp(`const ${name} = (\\d+);`));
+        assert.notEqual(declared, null, `index.js declares no ${name}`);
+
+        return Number(declared[1]);
+    };
+
+    const nothingToDo = () => codeOf("RESET_NOTHING_TO_DO_EXIT");
+    const failed = () => codeOf("RESET_FAILED_EXIT");
+
+    it("says 'nothing to do' and 'it did not work' with different numbers", () => {
+        assert.notEqual(nothingToDo(), failed(),
+            "a failed reset is reported with the code that means nothing was wrong");
+    });
+
+    /**
+     * And neither may borrow a start-up code. 111 is a database that would not
+     * open and 112 a start-up that did not finish; both can happen on the way
+     * to a reset, and a script that saw one of them would report the wrong
+     * thing entirely.
+     */
+    it("does not reuse the codes an ordinary start already spends", () => {
+        for (const code of [nothingToDo(), failed()])
+            assert.ok(![111, 112, 0].includes(code), `${code} already means something else`);
+    });
+
+    // The catch is the whole point: it is the branch that was answering a real
+    // failure - a locked database, a read-only data directory - with the code
+    // that means the command found nothing to do and nothing was wrong.
+    it("uses the failure code where the reset actually fails", () => {
+        const start = entry.indexOf("if (wantsPasswordReset())");
+        const handler = entry.slice(start, entry.indexOf("run().catch", start));
+
+        assert.match(handler, /RESET_FAILED_EXIT/,
+            "a reset that threw does not exit with the failure code");
+        assert.doesNotMatch(handler, /RESET_NOTHING_TO_DO_EXIT/,
+            "a reset that threw still exits with the code that means nothing was wrong");
+    });
+});

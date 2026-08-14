@@ -22,10 +22,27 @@ import {
 const INTERFACE_REFRESH_INTERVAL = 3600000;
 const RETENTION_SWEEP_INTERVAL = 60000;
 
-// Nothing was wrong and nothing was done - the database opened, it simply held
-// no configuration to reset. Distinct from the failures below so a script can
-// tell "recovered" from "you pointed me at the wrong file".
+// How the reset command stops when it has not cleared a password. Two codes
+// rather than one, because they ask the operator for opposite things:
+//
+//   113  The database opened and held no MySpeed configuration. Nothing was
+//        wrong and nothing was done - the data is somewhere else, and the
+//        working directory is what to change.
+//   114  The configuration is there and the write did not go through: a locked
+//        database, a read-only data directory, a connection lost mid-command.
+//        The path is right and the database is what needs attention.
+//
+// Under one number the second reading disappears into the first, and an
+// operator whose database is in trouble is sent off to check a path that was
+// never wrong. isMissingConfigTable is written narrow for exactly that reason -
+// it lets an unwell database keep travelling rather than answering it with
+// "there is no configuration here" - and these are where it travels to.
+//
+// Distinct from the start-up codes further down as well: 111 is a database that
+// would not open and 112 a start-up that did not finish, and either can happen
+// on the way to a reset.
 const RESET_NOTHING_TO_DO_EXIT = 113;
+const RESET_FAILED_EXIT = 114;
 
 const port = process.env.SERVER_PORT || 5216;
 
@@ -179,8 +196,14 @@ db.authenticate().then(() => {
     // instance is usually still running on it while this is being used.
     if (wantsPasswordReset()) {
         return runPasswordReset().catch(err => {
+            // That the password is unchanged is the thing to say here. This is
+            // the branch where the configuration was found and the write did
+            // not go through, so the operator is still locked out - and the
+            // database, not the working directory, is what to look at.
             console.error("The password could not be reset: " + (err?.message ?? err));
-            process.exit(RESET_NOTHING_TO_DO_EXIT);
+            console.error("The stored password is unchanged. This database is the right one - check that it");
+            console.error("is not locked by another process and that the data directory is writable.");
+            process.exit(RESET_FAILED_EXIT);
         });
     }
 
