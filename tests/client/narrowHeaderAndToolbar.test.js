@@ -123,6 +123,44 @@ describe("the toolbar controls keep their labels until they do not fit", () => {
             "the export still collapses at 600px as well");
     });
 
+    /**
+     * And only where there is a start button to make room for.
+     *
+     * A read-only visitor cannot start a test, so that control renders nothing
+     * at all and the row is two controls wide. Measured in read-only mode: the
+     * picker and the *labelled* export hold one line together at every width
+     * down to 320px, status bar on its own row as before - so there is nothing
+     * to buy there and nothing is spent.
+     *
+     * An adjacent sibling rather than :has(): the export follows the start
+     * button directly in the toolbar's markup, so this is a plain sibling match
+     * with no support caveat behind it.
+     */
+    it("keeps the export's label when no start button shares its row", () => {
+        const collapse = queriesMentioning(exportButton, "480px");
+        const hiding = collapse.filter((body) => /\.export-text[^{]*\{[^}]*display:\s*none/.test(body));
+
+        assert.ok(hiding.length > 0, "nothing hides the label at all");
+
+        for (const body of hiding)
+            assert.match(body, /\.start-test\s*\+\s*\.export-button-container[^{]*\.export-text/,
+                "the label is dropped whether or not a start button stands beside it");
+    });
+
+    // The square, the missing chevron and the menu's own anchor all answer to
+    // the collapse, so they have to be scoped with it - a labelled button in
+    // read-only mode lends the menu its 141px and needs none of them.
+    it("scopes the whole collapsed shape, not only the label", () => {
+        const collapse = queriesMentioning(exportButton, "480px");
+
+        for (const property of [/aspect-ratio/, /\.chevron-icon/, /\.export-dropdown/]) {
+            const owner = collapse.find((body) => property.test(body));
+            assert.ok(owner, `nothing in the narrow query mentions ${property}`);
+            assert.match(owner, /\.start-test\s*\+\s*\.export-button-container/,
+                `${property} applies even with no start button beside the export`);
+        }
+    });
+
     it("tightens the start button at the same width, so the two agree", () => {
         assert.ok(queriesMentioning(startTest, "480px").length > 0,
             "the start button still tightens at a different width from the export beside it");
