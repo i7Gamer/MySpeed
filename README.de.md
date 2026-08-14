@@ -142,6 +142,20 @@ nicht nötig; lege im Menü ein neues Passwort fest. Bereits angemeldete Sitzung
 bleiben bis zu ihrem Ablauf gültig – für ein sofortiges Ende den Server neu
 starten.
 
+Der Befehl sagt im Klartext, was passiert ist, und liefert einen Exit-Code für
+den Fall, dass etwas anderes mitliest:
+
+| Code | Bedeutung | Was zu tun ist |
+| --- | --- | --- |
+| `0` | Das Passwort wurde gelöscht, oder es war keines gesetzt. | Im Interface ein neues festlegen. |
+| `111` | Die Datenbank ließ sich überhaupt nicht öffnen. | Prüfen, ob das Datenverzeichnis existiert und für den Benutzer des Servers beschreibbar ist. |
+| `113` | Die Datenbank wurde geöffnet und enthält keine MySpeed-Konfiguration. | Es wurde nichts geändert. Die Daten liegen woanders – den Befehl im Verzeichnis des Servers ausführen. |
+| `114` | Die Konfiguration ist da, der Schreibvorgang ging nicht durch. | **Das Passwort ist unverändert, der Zugang bleibt gesperrt.** Der Pfad stimmt; prüfen, ob die Datenbank von einem anderen Prozess gesperrt und das Verzeichnis beschreibbar ist. |
+
+`113` und `114` sind das Paar, das ein Skript auseinanderhalten sollte: Der erste
+sagt, der Pfad ist falsch und den Daten fehlt nichts, der zweite sagt, der Pfad
+stimmt und die Datenbank braucht Aufmerksamkeit.
+
 #### Einen Reverse Proxy davorsetzen
 
 Das ist der unterstützte Weg. Der Proxy übernimmt TLS und idealerweise auch die

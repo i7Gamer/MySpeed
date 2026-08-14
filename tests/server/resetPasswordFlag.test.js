@@ -179,4 +179,27 @@ describe("the reset's exit codes", () => {
         assert.doesNotMatch(handler, /RESET_NOTHING_TO_DO_EXIT/,
             "a reset that threw still exits with the code that means nothing was wrong");
     });
+
+    /**
+     * And the operator has to be able to look them up.
+     *
+     * Two codes exist so that something reading them can tell the cases apart,
+     * which is worth nothing while the numbers live only in this file - the
+     * README is where anyone driving the command actually looks. Both
+     * translations, because an operator reading the German one is no less
+     * likely to be scripting the recovery.
+     *
+     * Asserted against the constants rather than against a copy of the numbers,
+     * so changing a code here fails until the documentation follows it.
+     */
+    it("is documented with the same numbers it exits with", () => {
+        const readmes = ["README.md", "README.de.md"].map((name) => ({
+            name,
+            text: fs.readFileSync(path.resolve(ENTRY, "..", "..", name), "utf8")
+        }));
+
+        for (const {name, text} of readmes)
+            for (const code of [nothingToDo(), failed()])
+                assert.ok(text.includes(String(code)), `${name} documents no exit code ${code}`);
+    });
 });

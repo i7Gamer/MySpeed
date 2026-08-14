@@ -137,6 +137,20 @@ as it turns the next request away. Nothing needs restarting; set a new password
 from the dropdown menu. Sessions already signed in stay valid until they expire —
 restart the server to end them.
 
+The command says what happened in words, and exits with a code for when something
+else is reading:
+
+| Code | Meaning | What to do |
+| --- | --- | --- |
+| `0` | The password was cleared, or there was none to clear. | Set a new one from the interface. |
+| `111` | The database could not be opened at all. | Check that the data directory exists and is writable by the user the server runs as. |
+| `113` | The database opened and holds no MySpeed configuration. | Nothing was changed. The data is elsewhere — run the command from the directory the server runs in. |
+| `114` | The configuration is there and the write did not go through. | **The password is unchanged and you are still locked out.** The path is right; check that the database is not locked by another process and that the directory is writable. |
+
+`113` and `114` are the pair worth keeping apart in a script: the first says the
+path is wrong and the data is fine, the second says the path is fine and the
+database needs attention.
+
 #### Put a reverse proxy in front
 
 This is the supported way to expose MySpeed. The proxy terminates TLS and, ideally,
