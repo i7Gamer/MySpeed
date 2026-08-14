@@ -211,12 +211,17 @@ const TestArea = () => {
                             ref={isLast ? lastElementRef : null}
                             time={date}
                             ping={test.ping}
-                            // Graded from the one-decimal figure the row
-                            // prints, not the stored two: the pane this row
-                            // expands into grades what it prints, and
-                            // getIconBySpeed floors a percentage - graded raw,
-                            // a ping that rounds across a bucket boundary is
-                            // green here and orange once opened.
+                            // Graded at one decimal: not at the two the column
+                            // stores, and not at the whole number the row now
+                            // prints. The pane this row expands into both prints
+                            // and grades the ping at one decimal, and
+                            // getIconBySpeed floors a percentage - so graded
+                            // anywhere else, a ping that crosses a bucket
+                            // boundary on the way is green here and orange once
+                            // opened. One measurement changing colour between
+                            // two views of it is the worse fault; a row that
+                            // shows a rounder figure than it grades is the same
+                            // trade the jitter already makes in that pane.
                             pingLevel={getIconBySpeed(formatLatency(test.ping), config.ping, false)}
                             jitter={test.jitter}
                             // Beside the jitter, the way the opened panel pairs

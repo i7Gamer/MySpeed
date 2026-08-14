@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import i18n from "i18next";
 import {
     convertSpeed, formatBytes, formatDateTime, formatDuration, formatLastTest, formatLatency,
-    formatLatencyWithUnit, formatShortDay, formatShortTime, formatTime, formatHour, formatWithUnit,
-    generateRelativeTime, getSpeedUnit, NOT_MEASURED, SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H,
-    TIME_FORMAT_24H
+    formatLatencyWithUnit, formatShortDay, formatShortTime, formatTime, formatHour, formatWhole,
+    formatWithUnit, generateRelativeTime, getSpeedUnit, NOT_MEASURED, SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES,
+    TIME_FORMAT_12H, TIME_FORMAT_24H
 } from "@/common/utils/FormatUtil.js";
 
 // Moved here from the latest-test panel when the status bar replaced it, and
@@ -207,6 +207,50 @@ describe("formatLatencyWithUnit", () => {
     it("says nothing was measured rather than showing a lone unit", () => {
         for (const absent of [null, undefined, NaN])
             assert.equal(formatLatencyWithUnit(absent, "ms"), NOT_MEASURED, `failed for ${String(absent)}`);
+    });
+});
+
+/**
+ * What the overview rows print, now that a latency carries decimals.
+ *
+ * The list is read down its columns, and a column reads as one when its figures
+ * are the same width - so the three measurements a row shows are whole numbers.
+ * The panel a row opens onto still prints every figure at full precision, which
+ * is where the tenths are worth reading.
+ */
+describe("formatWhole", () => {
+    it("rounds to the nearest whole number", () => {
+        assert.equal(formatWhole(12.64), 13);
+        assert.equal(formatWhole(93.72), 94);
+        assert.equal(formatWhole(0.4), 0);
+    });
+
+    it("rounds a half up", () => {
+        assert.equal(formatWhole(12.5), 13);
+    });
+
+    it("leaves a whole value whole", () => {
+        assert.equal(formatWhole(13), 13);
+    });
+
+    /**
+     * The guard is the point of the helper. Math.round(null) is 0 and
+     * Math.round(undefined) is NaN, so a figure the provider never measured
+     * would print as a reading of zero or as the word "NaN" - and -1 is the
+     * placeholder a failed test stores in every numeric column, which the
+     * interface recognises a failure by.
+     */
+    it("passes the failure placeholder through untouched", () => {
+        assert.equal(formatWhole(-1), -1);
+    });
+
+    it("passes through anything that is not a number", () => {
+        for (const absent of [null, undefined, "N/A", NaN])
+            assert.deepEqual(formatWhole(absent), absent, `failed for ${String(absent)}`);
+    });
+
+    it("keeps a genuine zero", () => {
+        assert.equal(formatWhole(0), 0);
     });
 });
 

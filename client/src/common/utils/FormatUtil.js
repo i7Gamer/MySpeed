@@ -169,6 +169,32 @@ export const convertSpeed = (mbps, preferences) => {
     return mbps;
 };
 
+/**
+ * A measurement as a whole number, for the rows of the overview list.
+ *
+ * That list is read down its columns rather than across its rows, which is what
+ * the fixed grid behind it exists for - and a column reads as a column when its
+ * figures are the same width. The latency column stopped being that when the
+ * ping started keeping decimals: an "8.4 ms" under a "132.7 ms" under a "9 ms"
+ * is three widths in three consecutive rows, with two speed columns beside it
+ * carrying up to four digits and a fraction of their own.
+ *
+ * Nothing is lost by it. The panel a row opens onto prints every figure at the
+ * precision it was measured at, and that is where a tenth of a millisecond is
+ * worth reading - not at a glance down a hundred tests.
+ *
+ * Guarded the way formatLatency and convertSpeed are, and for a sharper reason
+ * than either: Math.round(null) is 0 and Math.round(undefined) is NaN, so an
+ * unguarded rounding would present a figure nobody measured as a reading of
+ * zero. -1 is the placeholder a failed test stores in every numeric column,
+ * which the interface recognises a failure by.
+ */
+export const formatWhole = (value) => {
+    if (typeof value !== "number" || isNaN(value) || value < 0) return value;
+
+    return Math.round(value);
+};
+
 // What a value the server could not compute is shown as. The statistics return
 // an explicit null - for an average over a range in which nothing succeeded, for
 // instance - and concatenating a unit onto that renders the word "null".

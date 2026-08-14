@@ -77,23 +77,44 @@ describe("the overview row carries both quality figures", () => {
     });
 
     /**
-     * The jitter is a latency, and a card prints a latency to one decimal -
-     * the test rows, the detail pane, the latest-test card and the stability
-     * card all trim through the same formatter. The boundary runs at the
-     * overview pane's latency row and the chart tooltips, which still print
-     * the stored two decimals, and at the bufferbloat increase, which keeps
-     * two deliberately, pinned to the server's arithmetic. This one went out
-     * at the two decimals it is stored with, on
-     * the same line as a ping trimmed to one - the same measurement in the
-     * same unit, printed two ways a centimetre apart. The packet loss beside
-     * it is a percentage and keeps the shape it has.
+     * The jitter is a latency, and a card prints a latency to one decimal - the
+     * detail pane, the latest-test card and the stability card all trim through
+     * the same formatter. The boundary runs at the overview pane's latency row
+     * and the chart tooltips, which still print the stored two decimals, and at
+     * the bufferbloat increase, which keeps two deliberately, pinned to the
+     * server's arithmetic. This one went out at the two decimals it is stored
+     * with, beside a ping trimmed to one - the same measurement in the same
+     * unit, printed two ways a centimetre apart.
+     *
+     * The ping beside it is a whole number now and this one is not, which is not
+     * that fault coming back. Rounding the ping is a decision about the column
+     * it sits in - a list is read down its columns, and those only line up when
+     * the figures are one width - and this figure is in no column: it is a 12pt
+     * footnote hung off the ping behind a divider. Rounded to match, most of the
+     * jitters a good line produces would print "0", and "0 ms" of jitter is the
+     * strongest claim the figure can make - see roundsToZeroLatency, which
+     * exists for exactly that reading.
+     *
+     * The packet loss beside it is a percentage and keeps the shape it has.
      */
-    it("prints the jitter to the precision the ping beside it uses", () => {
+    it("prints the jitter at the one decimal every latency is trimmed to", () => {
         assert.match(figures, /text:\s*formatLatency\(props\.jitter\)/,
-            "the jitter goes out raw, at two decimals next to a ping at one");
-        assert.match(row, /formatLatency\(props\.ping\)/, "the ping it is printed beside is no longer formatted");
+            "the jitter goes out raw, at the two decimals the column stores");
         assert.doesNotMatch(figures, /formatLatency\(props\.packetLoss\)/,
             "packet loss is a percentage, not a latency");
+    });
+
+    /**
+     * Different formatters, but neither figure reaches the reader raw. The ping
+     * is rounded whole for its column and the jitter trimmed to one decimal for
+     * its footnote; what must not come back is either of them printed at the two
+     * decimals the columns store.
+     */
+    it("lets no raw latency reach the row", () => {
+        assert.doesNotMatch(row, /\{props\.(ping|jitter)}/,
+            "a latency is printed at the two decimals the column stores");
+        assert.match(row, /const pingValue = formatWhole\(props\.ping\)/,
+            "the ping is no longer put through a formatter at all");
     });
 
     it("explains both figures the way the detail pane does", () => {

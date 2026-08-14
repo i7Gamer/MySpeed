@@ -4,15 +4,19 @@ import fs from "node:fs";
 import path from "node:path";
 import * as sass from "sass";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { convertSpeed, formatLatency, formatWhole, SPEED_UNIT_MBYTES } from "@/common/utils/FormatUtil.js";
+import { getIconBySpeed } from "@/common/utils/TestUtil.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
 const ROW = "pages/Home/components/Speedtest/SpeedtestComponent.jsx";
+const AREA = "pages/Home/components/TestArea/TestAreaComponent.jsx";
 const STYLES = "pages/Home/components/Speedtest/styles.sass";
 
 const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
 
 const row = read(ROW);
+const area = read(AREA);
 const styles = read(STYLES);
 
 const aliasImporter = {
@@ -181,5 +185,124 @@ describe("the floor a row stands on", () => {
             "the floor is a literal, so the next change to it has two places to remember");
         assert.equal(sourceFloorOf(".speedtest-failure"), shared,
             "the failure line reserves a height of its own, which is how the two drifted apart");
+    });
+});
+
+/**
+ * The three measurements a row prints are whole numbers.
+ *
+ * The list is read down its columns - that is what the fixed grid above exists
+ * for - and a column reads as a column when its figures are the same width. The
+ * latency column stopped being that when the ping started keeping decimals: an
+ * "8.4 ms" under a "132.7 ms" under a "9 ms" is three different widths in three
+ * consecutive rows, and the two speed columns beside it carry up to four digits
+ * and a fraction of their own.
+ *
+ * The tenths are not lost, they are one click away: the panel this row opens
+ * onto prints every figure at the precision it was measured at, which is where a
+ * tenth of a millisecond is worth reading.
+ *
+ * The three consts are plain JavaScript above the JSX, so they are lifted out
+ * and run rather than pattern-matched - what matters is which figure comes out,
+ * and a spelling assertion passes for any wording that happens to contain the
+ * right words.
+ */
+describe("the figures a row prints", () => {
+    const VALUES_START = "const pingValue";
+    const VALUES_END = "const speedUnit";
+
+    const printed = (props, preferences = {}) => {
+        const start = row.indexOf(VALUES_START);
+        assert.notEqual(start, -1, "the row no longer derives its printed figures in one place");
+
+        const end = row.indexOf(VALUES_END, start);
+        assert.notEqual(end, -1, `${VALUES_END} no longer follows them`);
+
+        return new Function("props", "preferences", "formatWhole", "convertSpeed",
+            `${row.slice(start, end)}\nreturn {pingValue, downValue, upValue};`)(
+            props, preferences, formatWhole, convertSpeed);
+    };
+
+    it("rounds all three measurements to whole numbers", () => {
+        assert.deepEqual(printed({ping: 12.64, down: 93.72, up: 41.38}),
+            {pingValue: 13, downValue: 94, upValue: 41});
+    });
+
+    it("leaves a whole figure whole rather than printing a trailing zero", () => {
+        assert.deepEqual(printed({ping: 13, down: 94, up: 41}),
+            {pingValue: 13, downValue: 94, upValue: 41});
+    });
+
+    /**
+     * The rounding comes after the unit conversion, not before it: MB/s is an
+     * eighth of the figure the column stores, so a download rounded first and
+     * divided second would be a different number entirely.
+     */
+    it("rounds the speed it prints, not the one it stores", () => {
+        assert.equal(printed({ping: 12, down: 100, up: 100}, {speedUnit: SPEED_UNIT_MBYTES}).downValue, 13,
+            "100 Mbps is 12.5 MB/s, which prints as 13");
+    });
+
+    /**
+     * Math.round(null) is 0 and Math.round(undefined) is NaN. A row is drawn
+     * from whatever the API returns, and an imported row's columns are barely
+     * validated - so an unrounded guard would present a figure nobody measured
+     * as a reading of zero.
+     */
+    it("does not turn an absent figure into a reading of zero", () => {
+        for (const absent of [null, undefined])
+            assert.equal(printed({ping: absent, down: absent, up: absent}).pingValue, absent,
+                `failed for ${String(absent)}`);
+    });
+
+    // The interface recognises a failed test by the -1 its numeric columns
+    // carry, and a row that failed shows its reason instead of three columns.
+    it("keeps the failure placeholder recognisable", () => {
+        assert.equal(printed({ping: -1, down: -1, up: -1}).pingValue, -1);
+    });
+
+    it("still empties the speeds on a row that failed", () => {
+        const {downValue, upValue} = printed({ping: -1, down: -1, up: -1, error: "timeout"});
+
+        assert.equal(downValue, "");
+        assert.equal(upValue, "");
+    });
+
+    // The tripwire for a fourth figure wired straight to a prop, or for one of
+    // these three quietly going back to full precision in the markup.
+    it("draws the derived figures rather than deriving them again in the markup", () => {
+        for (const name of ["pingValue", "downValue", "upValue"])
+            assert.ok(row.includes(`{${name}}`), `the markup no longer draws ${name}`);
+
+        assert.doesNotMatch(row, /\{formatLatency\(props\.ping\)}/,
+            "the ping is printed at the panel's precision again");
+    });
+});
+
+/**
+ * What the row prints and what it wears are two different figures now.
+ *
+ * The rule this interface holds to is that one measurement never changes colour
+ * between two views of it: the panel this row opens grades the ping at the one
+ * decimal it prints, and the row has to agree with the panel. Grading the whole
+ * number instead would break that at every bucket boundary - getIconBySpeed
+ * floors a percentage, so a ping that rounds across one is green collapsed and
+ * orange expanded.
+ *
+ * That the row now shows a rounder figure than it grades is the smaller fault of
+ * the two, and it is the same trade the jitter already makes in the panel.
+ */
+describe("the colour a row's ping wears", () => {
+    const level = (ping, target) => new Function("test", "config", "getIconBySpeed", "formatLatency",
+        `return (${propValue(area, "pingLevel")});`)(
+        {ping}, {ping: target}, getIconBySpeed, formatLatency);
+
+    it("is read off the figure the panel it opens grades, not the one it prints", () => {
+        assert.equal(level(12.5, "10"), "green");
+    });
+
+    it("would read differently off the printed figure", () => {
+        assert.equal(getIconBySpeed(formatWhole(12.5), "10", false), "orange",
+            "a fixture both gradings agree on proves nothing here");
     });
 });

@@ -14,7 +14,9 @@ import {t} from "i18next";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatLatency, formatShortDay, formatShortTime, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {
+    convertSpeed, formatLatency, formatShortDay, formatShortTime, formatWhole, getSpeedUnit
+} from "@/common/utils/FormatUtil";
 import {
     bufferbloatInfo, downloadInfo, jitterInfo, packetLossInfo, pingInfo, uploadInfo
 } from "@/common/utils/MetricInfo";
@@ -51,8 +53,24 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
         ? formatShortDay(props.time)
         : formatShortTime(props.time, preferences);
 
-    const downValue = props.error ? "" : convertSpeed(props.down, preferences);
-    const upValue = props.error ? "" : convertSpeed(props.up, preferences);
+    /**
+     * The three figures the row prints, all of them whole.
+     *
+     * This list is read down its columns and not across its rows - that is what
+     * the fixed grid in the stylesheet is for - and a column reads as one when
+     * its figures are the same width. The latency column stopped being that when
+     * the ping started keeping decimals; see formatWhole.
+     *
+     * Rounded after the conversion, not before it: MB/s is an eighth of what the
+     * column stores, so rounding first would print a different measurement.
+     *
+     * The ping is rounder here than the figure its icon is graded from, which is
+     * deliberate - see the pingLevel comment in TestArea for why the colour has
+     * to stay where it is.
+     */
+    const pingValue = formatWhole(props.ping);
+    const downValue = props.error ? "" : formatWhole(convertSpeed(props.down, preferences));
+    const upValue = props.error ? "" : formatWhole(convertSpeed(props.up, preferences));
     const speedUnit = getSpeedUnit(preferences);
 
     /**
@@ -191,7 +209,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                                  className={"speedtest-icon icon-" + props.pingLevel}/>
                             </HelpButton>
                             <h2 className="speedtest-text">
-                                {formatLatency(props.ping)}
+                                {pingValue}
                                 <span className="speedtest-unit">{t("latest.ping_unit")}</span>
                                 {quality.length > 0 && (
                                     <span className="quality-suffix">
