@@ -169,6 +169,14 @@ const withVariables = (field) => Object.hasOwn(TEMPLATE_VARIABLES, field.name)
     : field;
 
 export const initialize = async () => {
+    // Emptied first, for the same reason the fields array below is rebuilt
+    // rather than appended to: this runs from the server's boot and again from
+    // the integration test harness, and every pass registers each module's
+    // callbacks afresh. Left to accumulate, the Nth load sends N copies of
+    // every notification and writes N activity rows per event - the half of
+    // this hazard that the comment below already described but did not cover.
+    for (const name of Object.keys(events)) delete events[name];
+
     for (const { name, setup } of integrationModules) {
         const definition = setup(registerEvent(name));
 
