@@ -26,11 +26,18 @@
     border-radius: 0.5rem
     position: relative
     z-index: 1
+    // These items are buttons so that a keyboard can reach them, which means
+    // undoing what a button draws for itself: the highlight is
+    // .pagination-active-background sliding underneath, and a button's own
+    // background would sit on top of it.
+    background: none
+    border: none
+    font-family: inherit
 
     &:hover
       color: $white
 
-    p
+    span
       margin: 0
       font-weight: 500
       font-size: 16pt
@@ -59,7 +66,7 @@
   .pagination-item
     gap: 0.5rem
 
-    p
+    span
       display: none
 
 

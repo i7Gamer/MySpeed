@@ -53,6 +53,14 @@
   color: $subtext
   cursor: pointer
   transition: all 0.15s ease
+  // An option is a button so that the keyboard can activate it, which brings a
+  // background, a border, a centred label and a font of its own - none of which
+  // belong on a menu row.
+  background: none
+  border: none
+  width: 100%
+  text-align: left
+  font-family: inherit
 
   &:hover
     background-color: $light-gray

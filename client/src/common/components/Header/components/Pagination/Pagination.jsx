@@ -46,23 +46,31 @@ export const Pagination = memo(() => {
     }, [navigate]);
 
     return (
+        // Buttons rather than divs with an onClick: this is the whole of the
+        // navigation between the two pages, and as divs it was skipped by Tab
+        // and deaf to Enter and Space - the only other way to /statistics is
+        // the status bar's failure link, which is not there on a healthy
+        // instance. Labelled with a span, since a button may not contain a
+        // paragraph.
         <div className="pagination" ref={paginationRef}>
-            <div
+            <button
+                type="button"
                 className={`pagination-item${activeIndex === 0 ? " page-active" : ""}`}
                 onClick={() => handleNavigation("/", 0)}
                 ref={el => itemRefs.current[0] = el}
             >
                 <FontAwesomeIcon icon={faListUl}/>
-                <p>{t("page.overview")}</p>
-            </div>
-            <div
+                <span>{t("page.overview")}</span>
+            </button>
+            <button
+                type="button"
                 className={`pagination-item${activeIndex === 1 ? " page-active" : ""}`}
                 onClick={() => handleNavigation("/statistics", 1)}
                 ref={el => itemRefs.current[1] = el}
             >
                 <FontAwesomeIcon icon={faChartArea}/>
-                <p>{t("page.statistics")}</p>
-            </div>
+                <span>{t("page.statistics")}</span>
+            </button>
             <div className="pagination-active-background"></div>
         </div>
     );

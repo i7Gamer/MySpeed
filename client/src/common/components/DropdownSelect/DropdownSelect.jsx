@@ -60,11 +60,32 @@ export const DropdownSelect = ({
         setIsOpen(!isOpen);
     };
 
+    /**
+     * Escape closes the menu and hands focus back to the button that opened it.
+     *
+     * Without the second half, focus is left on an option that is about to be
+     * unmounted and the operator is dropped back to the top of the document -
+     * which is a worse place to be than the menu they were trying to leave.
+     *
+     * Held on the container rather than on the menu: the menu is portalled to
+     * the body, but a React portal still bubbles its events through the tree it
+     * was declared in, so this sees keys pressed on the button and on the
+     * options alike.
+     */
+    const handleMenuKey = (e) => {
+        if (e.key !== "Escape") return;
+
+        e.preventDefault();
+        setIsOpen(false);
+        containerRef.current?.querySelector(".dropdown-select-btn")?.focus();
+    };
+
     if (disabled) return null;
 
     return (
-        <div className="dropdown-select-container" ref={containerRef} onBlur={handleBlur} tabIndex={-1}>
-            <button className="dropdown-select-btn" onClick={switchOpen}>
+        <div className="dropdown-select-container" ref={containerRef} onBlur={handleBlur}
+             onKeyDown={handleMenuKey} tabIndex={-1}>
+            <button type="button" className="dropdown-select-btn" onClick={switchOpen}>
                 <FontAwesomeIcon icon={buttonIcon}/>
                 <span>{buttonText}</span>
                 <FontAwesomeIcon icon={faChevronDown} className={`dropdown-select-chevron ${isOpen ? "rotated" : ""}`}/>
@@ -72,11 +93,16 @@ export const DropdownSelect = ({
 
             {isOpen && createPortal(
                 <div className="dropdown-select-menu" ref={menuRef} style={position}>
+                    {/* Buttons, not focusable divs: tabIndex={0} put focus on
+                        an option and then nothing answered Enter or Space
+                        there, and this menu is the only way to add an
+                        integration at all. */}
                     {items.map((item, index) => (
-                        <div key={item.key || index} className="dropdown-select-item" onClick={() => handleSelect(item)} tabIndex={0}>
+                        <button type="button" key={item.key || index} className="dropdown-select-item"
+                                onClick={() => handleSelect(item)}>
                             {item.icon && <FontAwesomeIcon icon={item.icon}/>}
                             <span>{item.label}</span>
-                        </div>
+                        </button>
                     ))}
                 </div>, document.body)}
         </div>
