@@ -12,7 +12,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {StatusContext} from "@/common/contexts/Status";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {
-    convertSpeed, formatLatency, formatLatencyWithUnit, getSpeedUnit, NOT_MEASURED
+    convertSpeed, formatLatency, formatLatencyWithUnit, formatWhole, getSpeedUnit, NOT_MEASURED
 } from "@/common/utils/FormatUtil";
 import TestDetails from "@/common/components/TestDetails";
 import {t} from "i18next";
@@ -62,12 +62,27 @@ export const LatestTestChart = (props) => {
     // measurement. One place for it, because the three rows had a copy each.
     const measured = (value, text) => value === -1 ? NOT_MEASURED : text;
 
+    /**
+     * Whole, the way this card's three figures are stated.
+     *
+     * The card is read at a glance and the pane it opens - TestDetails, above -
+     * prints every figure at the precision it was measured at. So the decimals
+     * are one click away rather than gone, and the column of readings here is
+     * one width rather than five.
+     */
+    const speedText = (mbps) => `${formatWhole(convertSpeed(mbps, preferences))} ${speedUnit}`;
+
     return (
         <StatisticContainer title={t("latest.latest")} onClick={props.onClick} running={status.running}>
             <div className="info-container">
                 <PanelRow icon={faPingPongPaddleBall} title={t("latest.ping")}
                           level={getIconBySpeed(ping, config.ping, false)}
-                          value={measured(props.test.ping, `${ping} ${t("latest.ping_unit")}`)}
+                          /* Whole, while the colour beside it is graded on the
+                             one decimal above - which is what the pane grades
+                             and prints, so the two views cannot disagree about
+                             a ping that rounds across a bucket boundary. */
+                          value={measured(props.test.ping,
+                              `${formatWhole(props.test.ping)} ${t("latest.ping_unit")}`)}
                           /* Under the latency rather than hung off it. It is the
                              other half of what the line does at rest, and beside
                              the figure it was a second number in the same unit
@@ -83,13 +98,11 @@ export const LatestTestChart = (props) => {
 
                 <PanelRow icon={faArrowUp} title={t("latest.up")}
                           level={getIconBySpeed(props.test.upload, config.upload, true)}
-                          value={measured(props.test.upload,
-                              `${convertSpeed(props.test.upload, preferences)} ${speedUnit}`)}/>
+                          value={measured(props.test.upload, speedText(props.test.upload))}/>
 
                 <PanelRow icon={faArrowDown} title={t("latest.down")}
                           level={getIconBySpeed(props.test.download, config.download, true)}
-                          value={measured(props.test.download,
-                              `${convertSpeed(props.test.download, preferences)} ${speedUnit}`)}/>
+                          value={measured(props.test.download, speedText(props.test.download))}/>
 
                 {/* The share of packets that never arrived, which none of the
                     three figures above can show: a line can be fast in both

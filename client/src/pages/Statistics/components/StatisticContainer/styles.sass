@@ -47,7 +47,15 @@
   // tallest line-mate, so this only sets the resting height. The old fixed
   // height with overflow: hidden silently clipped any tile that grew a row -
   // which is exactly what happened when a fourth stat was added.
-  min-height: 16rem
+  //
+  // The same floor a chart body reserves, and for the same reason. It was 16rem,
+  // which nothing on the page needed: the three cards of the top row are held
+  // open by their own five rows, well past either figure, while the two value
+  // cards have three rows and were padded out to 16 - and being the tallest
+  // thing in the bottom row, they held the hourly chart beside them open too. So
+  // the last row stood 32px taller than the row of charts above it for the sake
+  // of air inside two cards.
+  min-height: 14rem
   flex: 1
   padding-right: 1.5rem
 

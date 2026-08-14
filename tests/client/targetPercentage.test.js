@@ -58,17 +58,19 @@ describe("the target percentage on the value cards", () => {
     });
 
     /**
-     * Both qualifiers of the average sit under it rather than beside it: this is
-     * the narrowest card on the page, 293px inside its padding, and a delta on
-     * the value line wanted 70 of them - which pushed the label out from under
-     * its own row and truncated "Average" to "A…".
+     * The percentage is the label column's, the delta is the figure's. This is
+     * the narrowest card on the page, 293px inside its padding, and the two
+     * side by side wanted 70 of them from whichever column they shared -
+     * always at the label's expense, since it is the only thing here that can
+     * give. Stacked under the figure the delta costs nothing: that column is as
+     * wide as the longest figure regardless. panelRow.test.js holds the column
+     * to actually stacking.
      */
-    it("keeps the delta off the value line on this card", () => {
-        const valueLine = average.match(/value=\{speed\(props\.data\.avg\)}/);
-
-        assert.notEqual(valueLine, null, "the average no longer states a bare figure");
-        assert.match(average, /description=\{<>[\s\S]*<Delta current=\{props\.data\.avg}/,
-            "the delta is back on the value line, where it does not fit");
+    it("keeps the delta out of the label column", () => {
+        assert.match(average, /value=\{<>\s*\{speed\(props\.data\.avg\)}\s*<Delta current=\{props\.data\.avg}/,
+            "the delta is not stacked with the figure it annotates");
+        assert.doesNotMatch(average, /description=\{<>[\s\S]*<Delta /,
+            "the delta is back in the label column, where the sentence needs the room");
     });
 });
 
@@ -146,11 +148,16 @@ describe("the expanded value panes", () => {
 
     // The target is stored in Mbps whatever the reader has chosen to see, so
     // naming it has to convert where the ratio above deliberately did not.
-    // Through the same formatter every other figure on the card goes through -
-    // it was the fourth hand-written convert-and-label on a card with four
-    // speeds on it.
+    /**
+     * Through the same formatter every other figure on the card goes through -
+     * it was the fourth hand-written convert-and-label on a card with four
+     * speeds on it. That formatter also decides the precision: whole on the
+     * card, exact in this pane.
+     */
     it("convert that optimum into the unit being read", () => {
-        assert.match(average, /const speed = \(mbps\) => formatWithUnit\(convertSpeed\(mbps, preferences\), speedUnit\)/);
+        assert.match(average, /const converted = convertSpeed\(mbps, preferences\)/);
+        assert.match(average, /props\.expanded \? converted : formatWhole\(converted\)/,
+            "the card and the pane it opens no longer state a speed to different precisions");
         assert.match(average, /target: speed\(Number\(props\.target\)\)/);
     });
 

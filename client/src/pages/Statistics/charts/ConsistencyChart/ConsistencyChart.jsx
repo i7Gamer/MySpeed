@@ -11,8 +11,8 @@ import StatisticContainer from "@/pages/Statistics/components/StatisticContainer
 import PanelRow from "@/pages/Statistics/components/PanelRow";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import {
-    convertSpeed, formatLatency, formatLatencyWithUnit, formatWithUnit, getSpeedUnit, LATENCY_STEP,
-    NOT_MEASURED, roundsToZeroLatency
+    convertSpeed, formatLatency, formatLatencyWithUnit, formatWhole, formatWithUnit, getSpeedUnit,
+    LATENCY_STEP, NOT_MEASURED, roundsToZeroLatency
 } from "@/common/utils/FormatUtil";
 import "./styles.sass";
 
@@ -56,6 +56,22 @@ export const ConsistencyChart = (props) => {
 
     const ranges = props.ranges ?? {};
     const speed = (value) => formatWithUnit(convertSpeed(value, preferences), speedUnit);
+
+    /**
+     * The spread of a throughput, as this view states it: whole on the card,
+     * exact in the pane the card opens.
+     *
+     * A hundredth of a megabit of spread is noise at a glance, and the sub-line
+     * carrying it shares a narrow column with the reading beside it. The pane is
+     * where someone has gone looking for the figure itself - and the ranges it
+     * adds below already go through `speed`, unrounded, because they only ever
+     * render there.
+     */
+    const stdDev = (value) => {
+        const converted = convertSpeed(value, preferences);
+
+        return deviation(props.expanded ? converted : formatWhole(converted), speedUnit);
+    };
     // Trimmed to the one decimal a card prints a latency at: the server sends
     // the two it stores, and this card read "5.23 ms" one panel away from a
     // latest-test card reading "5.2 ms" for the same measurement. The same
@@ -104,7 +120,7 @@ export const ConsistencyChart = (props) => {
                           level={consistencyColour(data.download.consistency)}
                           value={percentage(data.download.consistency)}
                           description={<>
-                              <span>{deviation(convertSpeed(data.download.stdDev, preferences), speedUnit)}</span>
+                              <span>{stdDev(data.download.stdDev)}</span>
                               {spreads.download && <span>{spreads.download}</span>}
                           </>}/>
 
@@ -112,7 +128,7 @@ export const ConsistencyChart = (props) => {
                           level={consistencyColour(data.upload.consistency)}
                           value={percentage(data.upload.consistency)}
                           description={<>
-                              <span>{deviation(convertSpeed(data.upload.stdDev, preferences), speedUnit)}</span>
+                              <span>{stdDev(data.upload.stdDev)}</span>
                               {spreads.upload && <span>{spreads.upload}</span>}
                           </>}/>
 

@@ -6,7 +6,7 @@ import {
 import {useContext} from "react";
 import {t} from "i18next";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatWithUnit, getSpeedUnit, NOT_MEASURED} from "@/common/utils/FormatUtil";
+import {convertSpeed, formatWhole, formatWithUnit, getSpeedUnit, NOT_MEASURED} from "@/common/utils/FormatUtil";
 import {consistencyColour, getIconBySpeed} from "@/common/utils/TestUtil";
 import {percentOfTarget} from "@/common/components/TestDetails/utils/details";
 import Delta from "@/common/components/Delta";
@@ -50,15 +50,26 @@ export const AverageChart = (props) => {
     const steadiness = props.consistency ?? {};
     const measured = props.tests ? props.tests.total - props.tests.failed : null;
 
-    const speed = (mbps) => formatWithUnit(convertSpeed(mbps, preferences), speedUnit);
+    /**
+     * A speed as this view states it: whole on the card, exact in the pane the
+     * card opens.
+     *
+     * A card is read at a glance down its figures, and a column of them reads as
+     * a column when they are one width - the same reason the overview rows round.
+     * Someone who has opened the enlarged view has gone looking for the number
+     * itself, and that is where the decimals belong.
+     *
+     * Rounded after the conversion, never before: MB/s is an eighth of what the
+     * column stores.
+     */
+    const speed = (mbps) => {
+        const converted = convertSpeed(mbps, preferences);
 
-    // Not `small` any more. That size was chosen for a stacked row - the label
-    // on one line and the figure on the next - which left the figure the whole
-    // card to itself; side by side the two compete, and at the 340px `small`
-    // gives, the label lost outright. It also left the bottom row of the page at
-    // 456, 340, 340 against the three equal 456s above it.
+        return formatWithUnit(props.expanded ? converted : formatWhole(converted), speedUnit);
+    };
+
     return (
-        <StatisticContainer title={props.title} size="normal" center={true} onClick={props.onClick}>
+        <StatisticContainer title={props.title} size="small" center={true} onClick={props.onClick}>
             <div className="value-container">
                 {/* Formatted rather than interpolated: the server returns an
                     explicit null for a range in which nothing succeeded, and
@@ -71,41 +82,35 @@ export const AverageChart = (props) => {
                           value={speed(props.data.max)}/>
 
                 <PanelRow icon={faGauge} title={t("statistics.values.avg")}
-                          value={speed(props.data.avg)}
+                          /* The delta sits under the figure rather than beside
+                             it. Both are the same column of the row, so it costs
+                             the card no width at all - where on the value line it
+                             wanted 70px, and in the label column beside the
+                             target percentage it wanted the same 70 from the half
+                             of the row that has a sentence to fit.
+
+                             The delta compares the raw averages, before the unit
+                             conversion: a percentage is the same in either unit,
+                             and converting first would round twice. Only the
+                             average carries one - the min and max of two windows
+                             are single outliers, and their difference reads as
+                             noise. */
+                          value={<>
+                              {speed(props.data.avg)}
+                              <Delta current={props.data.avg} previous={props.previous?.avg}
+                                     higherIsBetter={true}/>
+                          </>}
                           description={<>
-                              {/* The two things that qualify the average: how it
-                                  stands against the optimum, and how it moved
-                                  since the window before.
-
-                                  Under the figure rather than beside it, which
-                                  is where the overview card's deltas still sit.
-                                  This is the narrowest card on the page - 293px
-                                  inside its padding - and a delta on the value
-                                  line wanted 70 of them, so the label was pushed
-                                  out from under its own row and truncated to
-                                  "A…". The overview card is half again as wide
-                                  and states counts, not speeds.
-
-                                  The percentage is graded by the same three
-                                  buckets every other speed on the page is
-                                  coloured by, so "86%" here and a green arrow on
-                                  the overview cannot disagree about whether the
-                                  line is meeting its target. The delta compares
-                                  the raw averages, before the unit conversion: a
-                                  percentage is the same in either unit, and
-                                  converting first would round twice. Only the
-                                  average carries one - the min and max of two
-                                  windows are single outliers, and their
-                                  difference reads as noise. */}
-                              <span>
-                                  {reached !== null && (
-                                      <span className={"icon-" + level}>
-                                          {t("test.details.of_target", {percent: reached})}
-                                      </span>
-                                  )}
-                                  <Delta current={props.data.avg} previous={props.previous?.avg}
-                                         higherIsBetter={true}/>
-                              </span>
+                              {/* Graded by the same three buckets every other
+                                  speed on the page is coloured by, so "86%" here
+                                  and a green arrow on the overview cannot
+                                  disagree about whether the line is meeting its
+                                  target. */}
+                              {reached !== null && (
+                                  <span className={"icon-" + level}>
+                                      {t("test.details.of_target", {percent: reached})}
+                                  </span>
+                              )}
 
                               {/* Opened, the percentage gets the bar the expanded
                                   test row draws for the same figure, and the

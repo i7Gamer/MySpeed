@@ -27,14 +27,37 @@
 .value-container .panel-row-info
   flex: 1
 
-// A delta is drawn as an annotation hung off a figure - a thin rule, then the
-// change - so with nothing in front of it the rule is a divider between the
-// margin and the number. It leads the line whenever no optimum is configured to
-// state a percentage against.
-.value-container .panel-row-description .stat-delta:first-child
+// The change since the window before, stacked under the figure it annotates
+// rather than set beside it.
+//
+// It costs the card no width that way - it is in the figure's own column, which
+// is as wide as the longest figure regardless - where beside the value it wanted
+// 70px of the row, and beside the target percentage it wanted the same 70 from
+// the half of the row that has a sentence to fit. Both were taken from the
+// label, which is the only thing here that can give.
+//
+// Right-aligned under the figure, because that is the edge the figures line up
+// on. The thin rule a delta is hung off belongs to a value on its left; with the
+// value above it instead, the rule is a divider between the delta and the margin.
+.value-container .panel-row-value
+  flex-direction: column
+  align-items: flex-end
+  gap: 0.1rem
+
+.value-container .panel-row-value .stat-delta
   margin-left: 0
   padding-left: 0
   border-left: none
+
+// A translated sentence in a 116px column, which is what a card this narrow can
+// spare beside a gigabit line's figure. It wraps rather than truncating: the
+// value beside it is already two lines on this row - the figure over its delta -
+// so a second line costs the row nothing, and an ellipsis on a label is the
+// fault the overview card's own narrow rules exist to avoid, since it names a
+// measurement the reader is then left to guess at. English wants 130 of those
+// 116px; the fifteen translations want their own numbers.
+.value-container .panel-row-description > *
+  white-space: normal
 
 // The same bar the expanded test row draws, at the same height: this is the
 // enlarged view of a card, and a second visual idiom for one ratio would read

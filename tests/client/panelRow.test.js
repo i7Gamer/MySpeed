@@ -147,15 +147,15 @@ describe("the shared panel row", () => {
 /**
  * The value cards, which state three speeds each.
  *
- * A speed is the longest kind of figure the app prints. They were `small` -
- * a size chosen for a stacked row, where the label sat on one line and the
- * figure on the next and so had the whole card to itself. Side by side the two
- * compete, and at the 340px that size gave them the label lost outright: it was
- * drawn underneath the number.
+ * A speed is the longest kind of figure the app prints, and these are the
+ * narrowest cards on the page - `small`, which the grid gives 340px, 293 of them
+ * inside the padding. Everything they ask of the shared row is a consequence of
+ * that: the figures are rounded whole, the delta stacks under the value instead
+ * of sitting beside anything, and the figure itself takes one step down from the
+ * shared size.
  *
- * At `normal` they are 456px, which also squares the bottom row of the page with
- * the three equal columns above it - and there the label column holds "84% of
- * your target" as long as the figure takes one step down from the shared size.
+ * Their width is the page's to spend, not this card's: the row they sit in also
+ * holds the hourly chart, and every pixel they take is one the chart loses.
  *
  * Opened, the same card has the width of the dialog and takes the full size back.
  */
@@ -163,14 +163,15 @@ describe("the value cards, which state the longest figures", () => {
     const css = compile("pages/Statistics/charts/AverageChart/styles.sass");
     const card = read("pages/Statistics/charts/AverageChart/AverageChart.jsx");
 
-    it("ask for the room three speeds need", () => {
-        assert.match(card, /<StatisticContainer[^>]*size="normal"/,
-            "the value cards are back to the size that was drawn for a stacked row");
+    it("leave the row's width to the chart beside them", () => {
+        assert.match(card, /<StatisticContainer[^>]*size="small"/,
+            "the value cards grew, and the hourly chart beside them paid for it");
     });
 
-    const stepped = [...css.matchAll(/([^{}]*\.panel-row-value[^{}]*)\{([^}]*)}/g)]
-        .map(([, selector, body]) => ({selector: selector.trim(), body}))
-        .filter(({body}) => /font-size/.test(body));
+    const rules = [...css.matchAll(/([^{}]*\.panel-row-value[^{}]*)\{([^}]*)}/g)]
+        .map(([, selector, body]) => ({selector: selector.trim(), body}));
+
+    const stepped = rules.filter(({body}) => /font-size/.test(body));
 
     it("state their figures one step down from the shared size", () => {
         assert.equal(stepped.length, 1, `expected one size override, found ${stepped.length}`);
@@ -180,6 +181,35 @@ describe("the value cards, which state the longest figures", () => {
     it("take the full size back inside the dialog, which has the room", () => {
         assert.ok(stepped[0].selector.includes(":not(.chart-modal-body *)"),
             `"${stepped[0].selector}" shrinks the figure in the enlarged view too`);
+    });
+
+    /**
+     * The delta stacks under the figure, in the figure's own column - which is
+     * as wide as the longest figure whatever else goes in it, so the annotation
+     * costs the card nothing. Beside the value it wanted 70px of the row; in the
+     * label column beside the target percentage it wanted the same 70 from the
+     * half of the row that has a sentence to fit.
+     */
+    it("stack the delta under the figure rather than beside anything", () => {
+        const stacked = rules.find(({body}) => /flex-direction:\s*column/.test(body));
+
+        assert.notEqual(stacked, undefined, "the value column is a row again, so the delta sits beside the figure");
+        assert.match(stacked.body, /align-items:\s*flex-end/,
+            "the delta is not aligned to the edge the figures line up on");
+    });
+
+    /**
+     * "86% of your target" wants 130px of the 116 this card can spare beside a
+     * gigabit line's figure, and it is translated into fifteen languages that
+     * each want their own number. So it wraps: a label that ends in an ellipsis
+     * names a measurement the reader is left to guess at, which is the fault the
+     * overview card's own narrow rules exist to avoid.
+     */
+    it("wrap that sentence rather than cutting it short", () => {
+        const description = css.match(/\.value-container \.panel-row-description > \*\s*\{([^}]*)}/)?.[1];
+
+        assert.notEqual(description, undefined, "the sub-line takes the shared row's truncation again");
+        assert.match(description, /white-space:\s*normal/);
     });
 });
 
