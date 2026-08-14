@@ -83,7 +83,13 @@ describe("i18n keys", () => {
             "test.details.hide",
             "test.details.show",
             "storage.export_redacted_desc",
-            "storage.export_with_secrets_desc"
+            "storage.export_with_secrets_desc",
+            // Returned by passwordConfirmationProblem and rendered as
+            // `t(mismatch)`, so the scanner sees a variable rather than a key.
+            // Dropping it from the locales printed the key itself, in red,
+            // under the confirmation box - in every language, since the en/de
+            // parity check cannot see a key that is missing from both.
+            "update.password_mismatch"
         ];
 
         for (const key of required) {

@@ -70,12 +70,30 @@ describe("the password dialog asks before it saves", () => {
             "the dialog never consults the confirmation check");
     });
 
+    /**
+     * Read inside save(), between its opening and the PATCH, rather than as two
+     * indexOf positions in the file.
+     *
+     * The file-wide version of this could not fail. The live hint below calls
+     * passwordConfirmationProblem too, on a line that sits above save() and
+     * therefore above the PATCH no matter what save() does - so the first match
+     * in the file was always the hint, and the comparison always held. Moving
+     * the real guard to after the awaited PATCH left the whole suite green,
+     * which is the one regression this test exists to catch.
+     */
     it("refuses before the password is sent, not after", () => {
-        const checked = source.indexOf("passwordConfirmationProblem(password");
-        const sent = source.indexOf('patchRequest("/config/password"');
+        const opens = source.indexOf("const save = async");
+        const sends = source.indexOf('patchRequest("/config/password"');
 
-        assert.notEqual(checked, -1, "the check is never run against the typed password");
-        assert.ok(checked < sent, "the password is sent before the confirmation is checked");
+        assert.notEqual(opens, -1, "the dialog no longer has a save function to read");
+        assert.ok(opens < sends, "the password is sent from outside save()");
+
+        const beforeSending = source.slice(opens, sends);
+
+        assert.match(beforeSending, /passwordConfirmationProblem\(password, confirmation\)/,
+            "the password is sent before the two boxes are compared");
+        assert.match(beforeSending, /if \(problem\) return/,
+            "a mismatch is noticed and then carries on into the save anyway");
     });
 
     it("clears the second box when the dialog opens, as it does the first", () => {
