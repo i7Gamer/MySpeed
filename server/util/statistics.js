@@ -56,13 +56,14 @@ const averageOrNull = (values, transform = round) =>
 // through rather than handed to it.
 const roundOrNull = (value, decimals) => value === null ? null : round(value, decimals);
 
-// Null when there is nothing to measure a spread of, 0 for a single value: one
-// test genuinely deviates from itself by nothing, but no tests do not deviate by
-// nothing - they say nothing at all.
+// Two values or more, which consistencyScore below is what guarantees - it is
+// the only caller, and it answers anything shorter with nulls before reaching
+// here. This used to carry its own guards for an empty list and a single value,
+// and they were right up until that gate moved: a lone reading was answered
+// with 0, which the score then read as a flawlessly steady line. Left in place
+// afterwards they were unreachable, and worse, they described a policy the
+// caller had already overruled.
 const standardDeviation = (values) => {
-    if (values.length === 0) return null;
-    if (values.length < 2) return 0;
-
     const mean = average(values);
     return Math.sqrt(average(values.map(value => Math.pow(value - mean, 2))));
 };
@@ -84,12 +85,18 @@ const median = (values) => {
  * no single test speak for the range: half the tests sit within this
  * distance of the middle one.
  *
- * Unlike standardDeviation above, one value is *not* answered with 0 here. That
- * figure feeds a consistency percentage; this one is printed to a person as
- * "±0 ms", which is the strongest claim the card can make - a line that never
- * wavered - and a single test cannot support it. Nor is one test a rare shape:
- * a day on which the connection dropped and every test but one failed lands
- * here, and that is precisely the day someone opens the card.
+ * Fewer than two values is refused *here*, where standardDeviation above leaves
+ * the same refusal to its caller. Both end at the same answer for one reading -
+ * nothing measured, rather than a perfect zero - and the gate sits in a
+ * different place because the two figures are read differently. That one is
+ * only ever an input to a percentage, so the decision belongs where the
+ * percentage is shaped; this one is printed to a person as "±0 ms", the
+ * strongest claim the card can make - a line that never wavered - so it has to
+ * refuse on its own behalf, wherever it is called from.
+ *
+ * Nor is one test a rare shape: a day on which the connection dropped and every
+ * test but one failed lands here, and that is precisely the day someone opens
+ * the card.
  */
 const medianAbsoluteDeviation = (values) => {
     if (values.length < 2) return null;
