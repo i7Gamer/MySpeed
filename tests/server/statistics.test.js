@@ -151,6 +151,32 @@ describe("buildStatistics", () => {
             assert.equal(stats.consistency.ping.deviation, 1);
         });
 
+        /**
+         * And it keeps its decimals, which every other assertion here happened
+         * not to ask for.
+         *
+         * All of them used whole-millisecond pings and so read back whole
+         * millisecond deviations, which left the precision of this figure
+         * untested: rounding it to integers on the way out passed the entire
+         * suite. That is the regression the card was fixed for. A deviation of
+         * 0.4 ms sent as 0 is drawn as "±0 ms" - the claim that latency did not
+         * move at all between two tests - and the sub-resolution branch that
+         * exists to say "under 1 ms" instead becomes unreachable. It also moves
+         * the grade: anything from 1.5 upwards rounds to 2 and turns the row
+         * orange at a value that should still read green.
+         */
+        it("keeps a deviation smaller than a millisecond", () => {
+            const stats = buildStatistics([
+                at("2026-08-07T01:00:00.000Z", {ping: 10}),
+                at("2026-08-07T02:00:00.000Z", {ping: 10.5}),
+                at("2026-08-07T03:00:00.000Z", {ping: 11}),
+                at("2026-08-07T04:00:00.000Z", {ping: 12})
+            ], DAY);
+
+            // Median 10.75; distances 0.75, 0.25, 0.25, 1.25; their median 0.5.
+            assert.equal(stats.consistency.ping.deviation, 0.5);
+        });
+
         // An even count has no middle test; the two nearest split the
         // difference, as every median does.
         it("splits the median between an even count of tests", () => {
