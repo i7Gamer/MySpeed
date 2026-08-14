@@ -106,6 +106,53 @@ describe("the header title survives the width above the reflow", () => {
 });
 
 /**
+ * The order the header's breakpoints are written in, which decides them.
+ *
+ * Media queries carry no specificity of their own, so two max-width blocks that
+ * both match a width are settled by which comes last in the file. Written from
+ * wide to narrow that is the useful way round - the narrower block is the more
+ * specific case and wins - and every rule here was authored on that assumption.
+ *
+ * One out-of-place block breaks it silently and only for the rules it shares
+ * with another: a 570px block sitting after the 480px one keeps its own rules
+ * at every width it matches, so it reads as working right up until someone adds
+ * a property the 480px block also sets, which then loses on the narrowest
+ * screens - the widths it was written for. Nothing in the compiled output says
+ * so, and no rendering test would catch it until that second rule exists.
+ */
+describe("the header's breakpoints run wide to narrow", () => {
+    /**
+     * Only the blocks bounded from above alone. The squeeze zone states a
+     * min-width and a max-width together, which places it by neither end, and
+     * ordering it against the rest would be a rule about nothing.
+     */
+    const ceilings = [...header.matchAll(/@media([^{]*)\{/g)]
+        .map(([, condition]) => condition)
+        .filter((condition) => !condition.includes("min-width"))
+        .map((condition) => Number(condition.match(/max-width:\s*(\d+)px/)?.[1]))
+        .filter((width) => Number.isFinite(width));
+
+    it("has breakpoints to order at all", () => {
+        assert.ok(ceilings.length > 2, "the header no longer has max-width breakpoints to order");
+    });
+
+    it("declares each one below the one above it", () => {
+        const descending = [...ceilings].sort((a, b) => b - a);
+
+        assert.deepEqual(ceilings, descending,
+            `breakpoints are declared ${ceilings.join(" -> ")}; a block out of order wins`
+            + " over the narrower ones below it for every rule they share");
+    });
+
+    // Two blocks with the same ceiling are the same case written twice, and
+    // which of them wins is then a question about line numbers.
+    it("states each width once", () => {
+        assert.equal(new Set(ceilings).size, ceilings.length,
+            `two blocks share a ceiling: ${ceilings.join(" -> ")}`);
+    });
+});
+
+/**
  * The toolbar's labels, and the width they are given up at.
  *
  * Measured with the labels forced on across the range: the date picker beside

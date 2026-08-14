@@ -200,6 +200,34 @@ header
   .header-about-heading
     max-width: 100%
 
+// Below this the column is narrower than the title box even aligned to its
+// start, so the box gives up its own size rather than the name giving up
+// letters: 24pt of text behind a 30px logo, a 1rem gap and 1rem of padding
+// wants 227px, and the two-column header gives it 224 at 560px and 135 at 338.
+// Trimmed to these it wants 134, and the logo and the whole name both fit at
+// every width down to 330.
+//
+// 570 is where that shortfall starts, measured rather than picked: at 580 the
+// column is 232px and the full-size box fits with room to spare.
+//
+// Placed by its width rather than by when it was written. These blocks carry no
+// specificity over one another, so two that match the same screen are settled
+// by which comes last - and every rule in this file assumes that is the
+// narrower one. Written after the 480px block, as this was, it kept its own
+// rules at every width it matched and so looked right; the cost would have
+// landed on whoever next set a property here that 530 or 480 also sets, and
+// found it losing on precisely the screens those blocks exist for.
+@media (max-width: 570px)
+  .header-main
+    padding: 0 4%
+
+  .header-main h2
+    font-size: 15pt
+
+  .header-about
+    gap: 0.5rem
+    padding: 0.35rem 0.5rem
+
 @media (max-width: 530px)
   .header-left div
     margin-right: 0
@@ -211,26 +239,6 @@ header
   .header-icon
     width: 20px
     height: 20px
-
-// Below this the column is narrower than the title box even aligned to its
-// start, so the box gives up its own size rather than the name giving up
-// letters: 24pt of text behind a 30px logo, a 1rem gap and 1rem of padding
-// wants 227px, and the two-column header gives it 224 at 560px and 135 at 338.
-// Trimmed to these it wants 134, and the logo and the whole name both fit at
-// every width down to 330.
-//
-// 570 is where that shortfall starts, measured rather than picked: at 580 the
-// column is 232px and the full-size box fits with room to spare.
-@media (max-width: 570px)
-  .header-main
-    padding: 0 4%
-
-  .header-main h2
-    font-size: 15pt
-
-  .header-about
-    gap: 0.5rem
-    padding: 0.35rem 0.5rem
 
 @media screen and (max-width: 365px)
   .header-main .demo-info
