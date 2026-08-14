@@ -14,14 +14,23 @@ const DEFAULT_TEST_LIMIT = 10;
 // Callers that want everything have the export endpoints.
 const MAX_TEST_LIMIT = 1000;
 
-// Columns an import has to supply as numbers. `jitter` is absent on providers
-// that do not measure it, and a failed row carries -1 placeholders, so null and
-// negative values are both legitimate.
+// Columns an import has to supply as numbers. `jitter` and the three quality
+// figures are absent on providers that do not measure them, and a failed row
+// carries -1 placeholders, so null and negative values are both legitimate.
 //
 // The byte counts are in here for the same reason the speeds are: sqlite stores
 // whatever it is handed, so an imported "fast" survives the write and then sits
 // in the row looking like a measurement that cannot be rendered.
-const NUMERIC_COLUMNS = ["ping", "download", "upload", "time", "bytesDownloaded", "bytesUploaded"];
+//
+// Every measurement column belongs here, which took a second pass to hold. The
+// four added last measure exactly the same kind of thing as the six that were
+// listed and reach the statistics by the same route - and jitter is the worst
+// of them, because the jitter series is filtered on null rather than on being a
+// number, so a text value was summed and returned the whole range's average as
+// NaN. There is no model-level validator behind this: the columns are DOUBLE,
+// and sqlite does not care.
+const NUMERIC_COLUMNS = ["ping", "download", "upload", "time", "bytesDownloaded", "bytesUploaded",
+    "jitter", "packetLoss", "downloadLatency", "uploadLatency"];
 
 const isImportableNumber = (value) =>
     value === null || value === undefined || (typeof value === "number" && Number.isFinite(value));

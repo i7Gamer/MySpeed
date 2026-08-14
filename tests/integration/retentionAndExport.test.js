@@ -147,6 +147,62 @@ describe("PUT /api/storage/tests/history", () => {
         assert.equal((await importTests({rows: []})).status, 500);
     });
 
+    /**
+     * Every measurement column, not only the six that were listed.
+     *
+     * The guard's own comment says why it exists: sqlite stores whatever it is
+     * handed, so an imported "fast" survives the write and poisons the averages
+     * and charts built on it. Four columns measuring exactly the same kind of
+     * thing were left out of the list - jitter, and the three quality figures -
+     * and each of them reaches the statistics by the same route. A string in
+     * jitter is not filtered out by the null check the jitter series applies, so
+     * it is summed, and the average for the whole range comes back NaN.
+     */
+    for (const column of ["jitter", "packetLoss", "downloadLatency", "uploadLatency"]) {
+        it(`skips a row whose ${column} is not a number`, async () => {
+            await seedTests(server.tests, []);
+
+            const {status} = await importTests([
+                {ping: 10, download: 100, upload: 50, time: 30, type: "auto",
+                    created: daysAgo(1), [column]: "fast"}
+            ]);
+
+            assert.equal(status, 500, `a row with a text ${column} was imported`);
+            assert.equal(await server.tests.count(), 0);
+        });
+
+        // Absent and null stay ordinary: only Ookla measures the quality
+        // figures at all, and jitter is nullable for the same reason.
+        it(`still imports a row whose ${column} is absent or null`, async () => {
+            await seedTests(server.tests, []);
+
+            const {status} = await importTests([
+                {ping: 10, download: 100, upload: 50, time: 30, type: "auto",
+                    created: daysAgo(1), [column]: null}
+            ]);
+
+            assert.equal(status, 200);
+            assert.equal(await server.tests.count(), 1);
+        });
+    }
+
+    // The statistics are what the guard is protecting, so the damage is asserted
+    // where it would land rather than only at the door.
+    it("keeps a text jitter out of the averages", async () => {
+        await seedTests(server.tests, []);
+
+        await importTests([
+            {ping: 10, download: 100, upload: 50, time: 30, jitter: 2, type: "auto", created: daysAgo(1)},
+            {ping: 10, download: 100, upload: 50, time: 30, jitter: "fast", type: "auto", created: daysAgo(1)}
+        ]);
+
+        const {body} = await api(server.baseUrl,
+            `/speedtests/statistics?from=${daysAgo(2).slice(0, 10)}&to=${daysAgo(0).slice(0, 10)}&tzOffset=0`);
+
+        assert.equal(Number.isFinite(body.jitter.avg), true,
+            `the jitter average came back as ${body.jitter.avg}`);
+    });
+
     it("accepts an empty list as a no-op", async () => {
         assert.equal((await importTests([])).status, 200);
     });
