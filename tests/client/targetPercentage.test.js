@@ -54,7 +54,7 @@ describe("the target percentage on the value cards", () => {
     });
 
     it("renders nothing rather than a bare percentage sign when there is nothing to compare", () => {
-        assert.match(average, /\{reached !== null && \(/);
+        assert.match(average, /description=\{reached !== null && </);
     });
 });
 
@@ -119,8 +119,10 @@ describe("the arithmetic behind it", () => {
  * same number and not the same claim.
  */
 describe("the expanded value panes", () => {
+    // The bar hangs inside the description the percentage above it already
+    // gates on `reached`, so the expanded gate no longer restates it.
     it("draw the bar the expanded test row draws for the same ratio", () => {
-        assert.match(average, /\{props\.expanded && reached !== null && \(/);
+        assert.match(average, /description=\{reached !== null && <>[\s\S]*\{props\.expanded && \(/);
         assert.match(average, /Math\.min\(reached, MAX_BAR_PERCENT\)/);
     });
 
@@ -131,8 +133,12 @@ describe("the expanded value panes", () => {
 
     // The target is stored in Mbps whatever the reader has chosen to see, so
     // naming it has to convert where the ratio above deliberately did not.
+    // Through the same formatter every other figure on the card goes through -
+    // it was the fourth hand-written convert-and-label on a card with four
+    // speeds on it.
     it("convert that optimum into the unit being read", () => {
-        assert.match(average, /convertSpeed\(Number\(props\.target\), preferences\)/);
+        assert.match(average, /const speed = \(mbps\) => formatWithUnit\(convertSpeed\(mbps, preferences\), speedUnit\)/);
+        assert.match(average, /target: speed\(Number\(props\.target\)\)/);
     });
 
     it("score how steady the metric was, beside the average it qualifies", () => {
@@ -171,7 +177,12 @@ describe("the consistency grading", () => {
     it("is shared rather than reimplemented per card", () => {
         const stability = read("pages/Statistics/charts/ConsistencyChart/ConsistencyChart.jsx");
 
-        assert.match(stability, /consistencyColour\(value\)/);
-        assert.doesNotMatch(stability, /value >= 90/);
+        assert.match(stability, /consistencyColour\(data\.(down|up)load\.consistency\)/,
+            "the stability card no longer grades its speeds through the shared grader");
+        assert.match(average, /consistencyColour\(steadiness\.consistency\)/,
+            "the value cards no longer grade their steadiness through it either");
+
+        for (const card of [stability, average])
+            assert.doesNotMatch(card, /value >= 90/, "a card carries its own copy of the thresholds again");
     });
 });

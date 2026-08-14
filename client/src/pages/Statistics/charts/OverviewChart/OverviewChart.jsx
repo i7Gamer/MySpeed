@@ -1,7 +1,7 @@
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
+import PanelRow from "@/pages/Statistics/components/PanelRow";
 import {t} from "i18next";
 import {useContext} from "react";
-import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
     faCalendarDay, faCircleExclamation, faClockRotateLeft, faGaugeHigh, faHourglassHalf,
     faLinkSlash, faPingPongPaddleBall, faStopwatch
@@ -198,16 +198,8 @@ export const OverviewChart = (props) => {
         <StatisticContainer title={title} size="large" onClick={props.onClick}>
             <div className="overview-items">
                 {items.map((item, index) => (
-                    <div className="overview-item" key={index}>
-                        <div className="info-area">
-                            <FontAwesomeIcon icon={item.icon} />
-                            <div className="text-area">
-                                <h2>{item.title}</h2>
-                                <p>{item.description}</p>
-                            </div>
-                        </div>
-                        <h2>{item.value}{item.delta && <Delta {...item.delta}/>}</h2>
-                    </div>
+                    <PanelRow key={index} icon={item.icon} title={item.title} description={item.description}
+                              value={<>{item.value}{item.delta && <Delta {...item.delta}/>}</>}/>
                 ))}
             </div>
         </StatisticContainer>

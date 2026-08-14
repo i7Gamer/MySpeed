@@ -57,7 +57,35 @@ describe("the overview chart stylesheet", () => {
 
     it("still trims the card itself on narrow viewports", () => {
         assert.match(compiled, /@media[^{]*max-width:\s*1400px/);
-        assert.match(compiled, /\.overview-item:not\(\.chart-modal-body \*\) \.info-area svg\s*\{[^}]*display:\s*none/);
-        assert.match(compiled, /\.overview-item:not\(\.chart-modal-body \*\) \.info-area \.text-area p\s*\{[^}]*display:\s*none/);
+        assert.match(compiled,
+            /\.overview-items \.panel-row:not\(\.chart-modal-body \*\) \.panel-row-icon\s*\{[^}]*display:\s*none/);
+        assert.match(compiled,
+            /\.overview-items \.panel-row:not\(\.chart-modal-body \*\) \.panel-row-description\s*\{[^}]*display:\s*none/);
+    });
+
+    /**
+     * The trimming is this card's alone.
+     *
+     * The row it draws is shared with three other panels now, and theirs name a
+     * single measurement in a word where these carry a sentence - so a rule
+     * written against the bare row would strip the stability card of the
+     * sub-lines it is read for, on every laptop under 1400px.
+     */
+    it("scopes every row rule to this card rather than to the shared row", () => {
+        for (const {selector} of blocks.filter(({selector}) => selector.includes(".panel-row")))
+            assert.ok(selector.includes(".overview-items"),
+                `"${selector}" dresses the shared row on every panel that uses it`);
+    });
+
+    /**
+     * And it takes the sizes from the shared row without taking its rules: the
+     * variables live in a partial that emits nothing, so a card reaching for the
+     * value's size does not copy the whole layout into its own sheet.
+     */
+    it("copies none of the shared row's own declarations", () => {
+        const own = blocks.filter(({selector}) => /^\.panel-row/.test(selector));
+
+        assert.deepEqual(own.map(({selector}) => selector), [],
+            "the shared row's rules are compiled into this card's stylesheet as well");
     });
 });

@@ -1,4 +1,6 @@
 @use "@/common/styles/colors" as *
+// The sizes only, not the row's rules - see that partial for why.
+@use "@/pages/Statistics/components/PanelRow/variables" as row
 
 .overview-items
   display: flex
@@ -7,67 +9,39 @@
   width: 100%
   overflow-y: clip
 
-.overview-item
-  display: flex
-  justify-content: space-between
-  // space-between spreads label and value when there is room; this is the
-  // floor for when there is not, so the value never touches the label.
-  // column-gap only - these rows wrap at narrow widths, and the wrapped
-  // stack keeps its spacing as it is.
-  column-gap: 0.75rem
-
-.overview-item .info-area
-  display: flex
-  justify-content: center
-  align-content: center
-  align-items: center
-  gap: 1rem
-
-  & svg
-    width: 2.25rem
-    height: 2.25rem
-    color: $subtext
-
-.overview-item .info-area .text-area
-  & h2
-    margin: 0
-    color: $white
-    font-size: 1rem
-    font-weight: 600
-  & p
-    margin: 0
-    font-weight: 500
-    color: $subtext
-    font-size: 0.9rem
-
-.overview-item h2
-  color: $accent-primary
-  font-weight: 700
-
 @media screen and (max-width: 1500px)
-  .overview-item
+  .overview-items .panel-row
     flex-wrap: wrap
     flex-direction: row
 
-// Card-only trimming. These queries key on the viewport because the page grid
-// gives the card less room as it narrows - but the modal renders the same
-// markup with the whole viewport to spend, and used to lose the icons and
-// descriptions its enlarged view exists to show. The modal is a DOM child of
-// the same .statistic-area as the cards, so the modal body is the only
-// ancestor that can tell the two apart.
+// Card-only trimming, and only this card's. Its labels are the page's longest -
+// "Peak-hour slowdown" over "Between the fastest and slowest hour of the day" -
+// where the other panels name a single measurement in a word. So the row that
+// gives up its icon and its description on a narrow screen is this one, and the
+// stability figures beside it keep the sub-lines they are read for.
+//
+// These queries key on the viewport because the page grid gives the card less
+// room as it narrows - but the modal renders the same markup with the whole
+// viewport to spend, and used to lose the icons and descriptions its enlarged
+// view exists to show. The modal is a DOM child of the same .statistic-area as
+// the cards, so the modal body is the only ancestor that can tell the two apart.
 @media screen and (max-width: 1400px)
-  .overview-item:not(.chart-modal-body *) .info-area svg
+  .overview-items .panel-row:not(.chart-modal-body *) .panel-row-icon
     display: none
-  .overview-item:not(.chart-modal-body *) .info-area h2
+  .overview-items .panel-row:not(.chart-modal-body *) .panel-row-title
     display: inline-block
     width: 15rem
     white-space: nowrap
     overflow: hidden !important
     text-overflow: ellipsis
-  .overview-item:not(.chart-modal-body *) .info-area .text-area p
+  .overview-items .panel-row:not(.chart-modal-body *) .panel-row-description
     display: none
+  // One step down with them: the card is carrying five rows in the room a
+  // narrowing grid leaves it, and the figure was sized for the room it had.
+  .overview-items .panel-row:not(.chart-modal-body *) .panel-row-value
+    font-size: row.$panel-value-size-narrow
 
-// Wrapped rather than cut. 10rem holds "Average duration" and stops one letter
+// Wrapped rather than cut. 15rem holds "Average duration" and stops one letter
 // into "Peak-hour slowdown", and a row label that ends in an ellipsis names a
 // measurement the reader has to guess at - on the narrowest screens, where the
 // description under it is hidden too, the label is all there is. A second line
@@ -77,14 +51,14 @@
 // fixed fraction wraps "Total tests" onto two lines to reserve room the number
 // beside it never wanted.
 @media screen and (max-width: 1000px)
-  .overview-item:not(.chart-modal-body *) .info-area
+  .overview-items .panel-row:not(.chart-modal-body *) .panel-row-info
     flex: 1 1 auto
     min-width: 0
     // The base rule centres it, which reads as centred only while the box is
     // the width of its text. Given the row to grow into, a label that starts in
     // the middle of the card reads as a value that lost its number.
     justify-content: flex-start
-  .overview-item:not(.chart-modal-body *) .info-area h2
+  .overview-items .panel-row:not(.chart-modal-body *) .panel-row-title
     width: auto
     white-space: normal
     overflow: visible !important

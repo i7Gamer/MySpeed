@@ -9,54 +9,16 @@
   flex: 1
   min-height: 0
 
-.consistency-item
-  display: flex
-  justify-content: space-between
-  align-items: center
-  gap: 0.75rem
-
-.consistency-item svg
-  width: 2.25rem
-  height: 2.25rem
-  flex-shrink: 0
-
-.consistency-item .consistency-info
-  min-width: 0
-
-.consistency-item .consistency-info h2
-  color: $white
-  margin: 0
-  font-size: 1rem
-  font-weight: 600
-  word-break: break-word
-  overflow-wrap: anywhere
-
-.consistency-item .consistency-info p
-  margin: 0
-  font-weight: 600
-  font-size: 1.1rem
-
-.consistency-item .consistency-info .consistency-detail
-  color: $subtext
-  font-size: 0.9rem
-  font-weight: 500
-  display: block
-  margin-top: 0.125rem
-  overflow: hidden
-  text-overflow: ellipsis
-  white-space: nowrap
-
-// Oldest to newest, the way time reads - the detail line under the grade.
+// Oldest to newest, the way time reads - one of the sub-lines under the grade.
 //
-// Selector matched to the `.consistency-detail` rule above rather than written
-// short: that one sets `display: block` from three classes, so a two-class rule
-// here lost, the row never became a flex container, and the gap it asks for did
-// nothing - the grades ran together into what read as one word.
-.consistency-item .consistency-info .consistency-detail.bufferbloat-trend
+// The shared row stacks its description as a column; this line is the one that
+// runs across, so it says so for itself.
+.consistency-container .bufferbloat-trend
   display: flex
   align-items: center
   gap: 0.4rem
-  // The dots are the content here, not a sentence to be cut short.
+  // The dots are the content here, not a sentence to be cut short - the shared
+  // description ellipsizes its lines, and the last dot is the newest reading.
   overflow: visible
   // They carry no text, so the row has no line box to stand on - without this
   // the panel shrinks by a line the moment a trend appears.

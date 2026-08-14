@@ -1,5 +1,5 @@
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
-import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
+import PanelRow from "@/pages/Statistics/components/PanelRow";
 import {
     faCompress, faGauge, faGaugeHigh, faMinusCircle, faPlusCircle
 } from "@fortawesome/free-solid-svg-icons";
@@ -50,6 +50,8 @@ export const AverageChart = (props) => {
     const steadiness = props.consistency ?? {};
     const measured = props.tests ? props.tests.total - props.tests.failed : null;
 
+    const speed = (mbps) => formatWithUnit(convertSpeed(mbps, preferences), speedUnit);
+
     return (
         <StatisticContainer title={props.title} size="small" center={true} onClick={props.onClick}>
             <div className="value-container">
@@ -57,98 +59,72 @@ export const AverageChart = (props) => {
                     explicit null for a range in which nothing succeeded, and
                     `{value} {unit}` around that left a bare "Mbps" standing on
                     its own. */}
-                <div className="value-item">
-                    <div className="value-info">
-                        <h2>{t("statistics.values.min")}</h2>
-                        <p>{formatWithUnit(convertSpeed(props.data.min, preferences), speedUnit)}</p>
-                    </div>
-                    <FontAwesomeIcon icon={faMinusCircle}/>
-                </div>
-                <div className="value-item">
-                    <div className="value-info">
-                        <h2>{t("statistics.values.max")}</h2>
-                        <p>{formatWithUnit(convertSpeed(props.data.max, preferences), speedUnit)}</p>
-                    </div>
-                    <FontAwesomeIcon icon={faPlusCircle}/>
-                </div>
-                <div className="value-item">
-                    <div className="value-info">
-                        <h2>{t("statistics.values.avg")}</h2>
-                        {/* The delta compares the raw averages, before the
-                            unit conversion: a percentage is the same in
-                            either unit, and converting first would round
-                            twice. Only the average carries one - the min and
-                            max of two windows are single outliers, and their
-                            difference reads as noise. */}
-                        <p>
-                            {formatWithUnit(convertSpeed(props.data.avg, preferences), speedUnit)}
-                            <Delta current={props.data.avg} previous={props.previous?.avg} higherIsBetter={true}/>
-                        </p>
-                        {/* Graded by the same three buckets every other speed on
-                            the page is coloured by, so "86%" here and a green
-                            arrow on the overview cannot disagree about whether
-                            the line is meeting its target. */}
-                        {reached !== null && (
-                            <span className={"value-target icon-" + level}>
-                                {t("test.details.of_target", {percent: reached})}
-                            </span>
-                        )}
+                <PanelRow icon={faMinusCircle} title={t("statistics.values.min")}
+                          value={speed(props.data.min)}/>
 
-                        {/* Opened, the percentage gets the bar the expanded test
-                            row draws for the same figure, and the optimum it is
-                            measured against gets named - it lives in a settings
-                            dialog nobody has open while reading this. */}
-                        {props.expanded && reached !== null && (
-                            <>
-                                <span className="value-bar">
-                                    <span className={"value-bar-fill icon-" + level}
-                                          style={{width: `${Math.min(reached, MAX_BAR_PERCENT)}%`}}/>
-                                </span>
-                                <span className="value-target value-target-muted">
-                                    {t("statistics.values.target",
-                                        {target: formatWithUnit(convertSpeed(Number(props.target), preferences), speedUnit)})}
-                                </span>
-                            </>
-                        )}
-                    </div>
-                    <FontAwesomeIcon icon={faGauge}/>
-                </div>
+                <PanelRow icon={faPlusCircle} title={t("statistics.values.max")}
+                          value={speed(props.data.max)}/>
+
+                <PanelRow icon={faGauge} title={t("statistics.values.avg")}
+                          /* The delta compares the raw averages, before the unit
+                             conversion: a percentage is the same in either unit,
+                             and converting first would round twice. Only the
+                             average carries one - the min and max of two windows
+                             are single outliers, and their difference reads as
+                             noise. */
+                          value={<>
+                              {speed(props.data.avg)}
+                              <Delta current={props.data.avg} previous={props.previous?.avg} higherIsBetter={true}/>
+                          </>}
+                          description={reached !== null && <>
+                              {/* Graded by the same three buckets every other
+                                  speed on the page is coloured by, so "86%" here
+                                  and a green arrow on the overview cannot
+                                  disagree about whether the line is meeting its
+                                  target. */}
+                              <span className={"icon-" + level}>
+                                  {t("test.details.of_target", {percent: reached})}
+                              </span>
+
+                              {/* Opened, the percentage gets the bar the expanded
+                                  test row draws for the same figure, and the
+                                  optimum it is measured against gets named - it
+                                  lives in a settings dialog nobody has open
+                                  while reading this. */}
+                              {props.expanded && (
+                                  <>
+                                      <span className="value-bar">
+                                          <span className={"value-bar-fill icon-" + level}
+                                                style={{width: `${Math.min(reached, MAX_BAR_PERCENT)}%`}}/>
+                                      </span>
+                                      <span>
+                                          {t("statistics.values.target",
+                                              {target: speed(Number(props.target))})}
+                                      </span>
+                                  </>
+                              )}
+                          </>}/>
 
                 {/* An average says nothing on its own about whether the line
                     held there or swung either side of it, and the stability
-                    card scores that a page away from the numbers it is about. */}
+                    card scores that a page away from the numbers it is about.
+
+                    A tight range for the glyph, not the square wave. Both are
+                    about variation, but the wave is jitter's - latency moving
+                    within a single test - and this is how far throughput swung
+                    across every test in the range. The two sit on the same page,
+                    so they cannot share a glyph. */}
                 {props.expanded && (
-                    <div className="value-item">
-                        <div className="value-info">
-                            <h2>{t("statistics.values.consistency")}</h2>
-                            <p className={"icon-" + consistencyColour(steadiness.consistency)}>
-                                {steadiness.consistency === null || steadiness.consistency === undefined
-                                    ? NOT_MEASURED : `${steadiness.consistency}%`}
-                            </p>
-                            {steadiness.stdDev !== null && steadiness.stdDev !== undefined && (
-                                <span className="value-target value-target-muted">
-                                    {"±" + formatWithUnit(convertSpeed(steadiness.stdDev, preferences), speedUnit)}
-                                </span>
-                            )}
-                        </div>
-                        {/* A tight range, not the square wave. Both are about
-                            variation, but the wave is jitter's - latency moving
-                            within a single test - and this is how far throughput
-                            swung across every test in the range. The two sit on
-                            the same page, so they cannot share a glyph. */}
-                        <FontAwesomeIcon icon={faCompress}
-                                         className={"icon-" + consistencyColour(steadiness.consistency)}/>
-                    </div>
+                    <PanelRow icon={faCompress} title={t("statistics.values.consistency")}
+                              level={consistencyColour(steadiness.consistency)}
+                              value={steadiness.consistency === null || steadiness.consistency === undefined
+                                  ? NOT_MEASURED : `${steadiness.consistency}%`}
+                              description={steadiness.stdDev !== null && steadiness.stdDev !== undefined
+                                  && <span>{"±" + speed(steadiness.stdDev)}</span>}/>
                 )}
 
                 {props.expanded && measured !== null && (
-                    <div className="value-item">
-                        <div className="value-info">
-                            <h2>{t("statistics.values.samples")}</h2>
-                            <p>{measured}</p>
-                        </div>
-                        <FontAwesomeIcon icon={faGaugeHigh}/>
-                    </div>
+                    <PanelRow icon={faGaugeHigh} title={t("statistics.values.samples")} value={measured}/>
                 )}
             </div>
         </StatisticContainer>

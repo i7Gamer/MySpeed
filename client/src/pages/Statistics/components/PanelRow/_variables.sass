@@ -1,0 +1,24 @@
+// The type scale of a panel row, apart from the rules that use it.
+//
+// A partial that emits nothing, because the cards need these numbers without
+// wanting the row's rules: `@use`-ing the stylesheet itself would copy every
+// .panel-row declaration into each card's compiled sheet, which is the same
+// layout written four times over - the exact thing the shared row exists to
+// stop.
+
+// The one size every panel states a reading at. It was 1.1rem on three cards
+// and an unstated h2 default - 1.5rem - on the fourth, so the same kind of
+// figure came out a third larger on one card than on the card beside it.
+//
+// Larger than any of them were, which is the point of the row: the label says
+// what was measured, and the reader already knows that much from the card's own
+// heading, so the figure is what the eye should land on.
+$panel-value-size: 1.75rem
+
+// One step down, for where the page grid squeezes the cards. Applied by the
+// cards that ask for it rather than by the row - see the overview card's
+// stylesheet, the only one whose labels and descriptions are sentences.
+$panel-value-size-narrow: 1.4rem
+
+$panel-title-size: 1rem
+$panel-description-size: 0.9rem

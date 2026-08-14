@@ -71,15 +71,19 @@ describe("the overview card's row labels", () => {
 
     const narrow = [...css.matchAll(/@media screen and \(max-width: (\d+)px\)\s*\{([\s\S]*?)\n}/g)]
         .map(([, width, body]) => ({width: Number(width), body}))
-        .filter(({body}) => /\.info-area h2/.test(body))
+        .filter(({body}) => /\.panel-row-title/.test(body))
         .sort((a, b) => a.width - b.width)[0];
+
+    // The row itself is shared with three other panels now; these rules are the
+    // overview card's own, which is why they are read out of its stylesheet.
+    const ruleFor = (part) => narrow.body.match(new RegExp(`\\.panel-row-${part}\\s*\\{([^}]*)}`))?.[1] ?? "";
 
     it("finds the narrowest rule for them", () => {
         assert.notEqual(narrow, undefined, "no width-specific rule for the labels any more");
     });
 
     it("wraps rather than truncating", () => {
-        const rule = narrow.body.match(/\.info-area h2\s*\{([^}]*)}/)?.[1] ?? "";
+        const rule = ruleFor("title");
 
         assert.match(rule, /white-space:\s*normal/);
         assert.doesNotMatch(rule, /text-overflow:\s*ellipsis/);
@@ -91,7 +95,7 @@ describe("the overview card's row labels", () => {
      * "Total tests" then wraps onto two lines to hold space open for a "14s".
      */
     it("gives the label the room the value leaves", () => {
-        const area = narrow.body.match(/\.info-area\s*\{([^}]*)}/)?.[1] ?? "";
+        const area = ruleFor("info");
 
         assert.match(area, /flex:\s*1 1 auto/);
         // Without it a flex item refuses to go below its content's minimum,
@@ -102,7 +106,6 @@ describe("the overview card's row labels", () => {
     // The base rule centres the label, which only reads as centred while the
     // box is the width of its text.
     it("keeps the label at the start of the row once it can grow", () => {
-        assert.match(narrow.body.match(/\.info-area\s*\{([^}]*)}/)?.[1] ?? "",
-            /justify-content:\s*flex-start/);
+        assert.match(ruleFor("info"), /justify-content:\s*flex-start/);
     });
 });

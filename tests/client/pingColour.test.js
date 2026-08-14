@@ -85,14 +85,21 @@ describe("every view grades the ping from the figure it prints", () => {
             "a raw ping still reaches the grader somewhere in the row");
     });
 
-    // The statistics card grades the same ping twice - once on the value,
-    // once on the icon beside it - and both must trim, or the number and its
-    // own icon could disagree.
-    it("the latest-test card, in both places it grades the same ping", () => {
-        const graded = card.match(/getIconBySpeed\(formatLatency\(props\.test\.ping\), config\.ping, false\)/g) ?? [];
-
-        assert.equal(graded.length, 2,
-            "the value and the icon beside it no longer grade the same trimmed figure");
+    /**
+     * The statistics card used to grade the same ping twice - once for the
+     * value, once for the icon beside it - and both had to trim, or the number
+     * and its own icon could disagree.
+     *
+     * There is one grading now, and the shared row dresses the glyph and the
+     * figure from it, so the two cannot disagree by construction. What is left
+     * to check here is that the one grading trims: panelRow.test.js holds the
+     * row to putting it on both.
+     */
+    it("the latest-test card, which grades the ping it prints", () => {
+        assert.match(card, /const ping = formatLatency\(props\.test\.ping\)/,
+            "the ping is not trimmed where the card's figures are built");
+        assert.match(card, /level=\{getIconBySpeed\(ping, config\.ping, false\)}/,
+            "the row's colour is not graded from that trimmed figure");
         assert.doesNotMatch(card, /getIconBySpeed\(props\.test\.ping/,
             "a raw ping still reaches the grader somewhere on the card");
     });

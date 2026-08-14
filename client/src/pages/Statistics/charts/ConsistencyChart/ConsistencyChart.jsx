@@ -1,6 +1,5 @@
 import { useContext, useMemo } from "react";
 import { t } from "i18next";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
     faArrowDown, faArrowUp, faGaugeHigh, faPingPongPaddleBall, faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
@@ -9,6 +8,7 @@ import {
 } from "@/common/utils/TestUtil";
 import { formatDateTime } from "@/common/utils/FormatUtil";
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
+import PanelRow from "@/pages/Statistics/components/PanelRow";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import {
     convertSpeed, formatLatency, formatLatencyWithUnit, formatWithUnit, getSpeedUnit, LATENCY_STEP,
@@ -33,10 +33,6 @@ export const ConsistencyChart = (props) => {
     const loaded = data.loadedLatency;
     const loadedGrade = gradeForIncrease(loaded?.increase);
     const trend = loaded?.trend ?? [];
-
-    // The thresholds live beside the app's other colour graders, so the value
-    // cards can score their own steadiness by the same rule this card does.
-    const getConsistencyColor = (value) => "icon-" + consistencyColour(value);
 
     const percentage = (value) => value === null || value === undefined ? NOT_MEASURED : `${value}%`;
 
@@ -70,8 +66,9 @@ export const ConsistencyChart = (props) => {
     // below is: the row prints one decimal and the thresholds are exact, so
     // grading 1.96 would put a green beside a value reading "±2 ms". One
     // expression for the value and the icon - they said different things about
-    // the same measurement for as long as the icon was a constant.
-    const pingGrade = "icon-" + pingDeviationColour(formatLatency(data.ping.deviation));
+    // the same measurement for as long as the icon was a constant, and the
+    // shared row now dresses both from this one grade.
+    const pingGrade = pingDeviationColour(formatLatency(data.ping.deviation));
 
     /**
      * The spread, or the statement that it is smaller than can be shown.
@@ -98,113 +95,87 @@ export const ConsistencyChart = (props) => {
         jitter: spread(ranges.jitter, latency)
     };
 
+    const jitterGrade = jitterColour(formatLatency(data.ping.jitter));
+
     return (
         <StatisticContainer title={t("statistics.consistency.title")} onClick={props.onClick}>
             <div className="consistency-container">
-                <div className="consistency-item">
-                    <div className="consistency-info">
-                        <h2>{t("latest.down")}</h2>
-                        <p className={getConsistencyColor(data.download.consistency)}>
-                            {percentage(data.download.consistency)}
-                        </p>
-                        <span className="consistency-detail">
-                            {deviation(convertSpeed(data.download.stdDev, preferences), speedUnit)}
-                        </span>
-                        {spreads.download && <span className="consistency-detail">{spreads.download}</span>}
-                    </div>
-                    <FontAwesomeIcon icon={faArrowDown} className={getConsistencyColor(data.download.consistency)} />
-                </div>
+                <PanelRow icon={faArrowDown} title={t("latest.down")}
+                          level={consistencyColour(data.download.consistency)}
+                          value={percentage(data.download.consistency)}
+                          description={<>
+                              <span>{deviation(convertSpeed(data.download.stdDev, preferences), speedUnit)}</span>
+                              {spreads.download && <span>{spreads.download}</span>}
+                          </>}/>
 
-                <div className="consistency-item">
-                    <div className="consistency-info">
-                        <h2>{t("latest.up")}</h2>
-                        <p className={getConsistencyColor(data.upload.consistency)}>
-                            {percentage(data.upload.consistency)}
-                        </p>
-                        <span className="consistency-detail">
-                            {deviation(convertSpeed(data.upload.stdDev, preferences), speedUnit)}
-                        </span>
-                        {spreads.upload && <span className="consistency-detail">{spreads.upload}</span>}
-                    </div>
-                    <FontAwesomeIcon icon={faArrowUp} className={getConsistencyColor(data.upload.consistency)} />
-                </div>
+                <PanelRow icon={faArrowUp} title={t("latest.up")}
+                          level={consistencyColour(data.upload.consistency)}
+                          value={percentage(data.upload.consistency)}
+                          description={<>
+                              <span>{deviation(convertSpeed(data.upload.stdDev, preferences), speedUnit)}</span>
+                              {spreads.upload && <span>{spreads.upload}</span>}
+                          </>}/>
 
-                <div className="consistency-item">
-                    <div className="consistency-info">
-                        <h2>{t("latest.ping")}</h2>
-                        <p className={pingGrade}>{pingDeviationText}</p>
-                        <span className="consistency-detail">{t("statistics.consistency.ping_deviation")}</span>
-                        {spreads.ping && <span className="consistency-detail">{spreads.ping}</span>}
-                    </div>
-                    <FontAwesomeIcon icon={faPingPongPaddleBall} className={pingGrade} />
-                </div>
+                <PanelRow icon={faPingPongPaddleBall} title={t("latest.ping")} level={pingGrade}
+                          value={pingDeviationText}
+                          description={<>
+                              <span>{t("statistics.consistency.ping_deviation")}</span>
+                              {spreads.ping && <span>{spreads.ping}</span>}
+                          </>}/>
 
                 {/* The ping row above says how far apart two tests' latencies
                     were; this one says how far apart the packets of a single
                     test were, which is the figure a call actually stutters on.
                     The server has averaged it over the range since the
                     consistency block existed and nothing has ever shown it. */}
-                <div className="consistency-item">
-                    <div className="consistency-info">
-                        <h2>{t("latest.jitter")}</h2>
-                        <p className={"icon-" + jitterColour(formatLatency(data.ping.jitter))}>
-                            {formatLatencyWithUnit(data.ping.jitter, t("latest.jitter_unit"))}
-                        </p>
-                        <span className="consistency-detail">{t("statistics.consistency.jitter_detail")}</span>
-                        {spreads.jitter && <span className="consistency-detail">{spreads.jitter}</span>}
-                    </div>
-                    <FontAwesomeIcon icon={faWaveSquare}
-                                     className={"icon-" + jitterColour(formatLatency(data.ping.jitter))} />
-                </div>
+                <PanelRow icon={faWaveSquare} title={t("latest.jitter")} level={jitterGrade}
+                          value={formatLatencyWithUnit(data.ping.jitter, t("latest.jitter_unit"))}
+                          description={<>
+                              <span>{t("statistics.consistency.jitter_detail")}</span>
+                              {spreads.jitter && <span>{spreads.jitter}</span>}
+                          </>}/>
 
                 {/* Bufferbloat is stability under load, so it sits with the
                     other steadiness figures - and like them it is the average
                     over the range, not the last reading. The dots are the
                     recent gradings within that same range. */}
                 {loadedGrade !== null && (
-                    <div className="consistency-item">
-                        <div className="consistency-info">
-                            <h2>{t("latest.quality")}</h2>
-                            <p className={"icon-" + bufferbloatColour(loadedGrade)}
-                               title={t("statistics.consistency.loaded_latency_average",
-                                   {increase: loaded.increase, tests: loaded.tests})}>
-                                {loadedGrade}
-                            </p>
-                            {/* One dot per recent test rather than the letters.
-                                Grades run together as text - "A+A" splits two
-                                ways - where dots read as a history at a glance.
-                                role="img" with the grades spelled out in the
-                                label, because colour alone is not a reading a
-                                screen reader can take. */}
-                            <span className="consistency-detail bufferbloat-trend"
-                                  role="img"
-                                  title={t("latest.bufferbloat_trend")}
-                                  aria-label={t("latest.bufferbloat_trend") + ": " +
-                                      trend.map((entry) => gradeForIncrease(entry.increase)).join(", ")}>
-                                {trend.map((entry) => (
-                                    <span key={entry.created}
-                                          className={"bufferbloat-trend-dot icon-"
-                                              + bufferbloatColour(gradeForIncrease(entry.increase))}
-                                          // The grade leads: it is no longer
-                                          // written anywhere the pointer is.
-                                          title={gradeForIncrease(entry.increase) + " · " +
-                                              formatDateTime(entry.created, preferences) + " · " +
-                                              t("latest.bufferbloat", {increase: entry.increase})}/>
-                                ))}
-                            </span>
-                            {/* How many tests the average is over. It has only
-                                ever been in the title above, where a grade of
-                                "A" from three tests and one from three hundred
-                                look exactly alike. */}
-                            {props.expanded && (
-                                <span className="consistency-detail">
-                                    {t("statistics.consistency.sample_count", {tests: loaded.tests})}
-                                </span>
-                            )}
-                        </div>
-                        <FontAwesomeIcon icon={faGaugeHigh}
-                                         className={"icon-" + bufferbloatColour(loadedGrade)} />
-                    </div>
+                    <PanelRow icon={faGaugeHigh} title={t("latest.quality")}
+                              level={bufferbloatColour(loadedGrade)}
+                              value={<span title={t("statistics.consistency.loaded_latency_average",
+                                  {increase: loaded.increase, tests: loaded.tests})}>{loadedGrade}</span>}
+                              description={<>
+                                  {/* One dot per recent test rather than the
+                                      letters. Grades run together as text -
+                                      "A+A" splits two ways - where dots read as
+                                      a history at a glance. role="img" with the
+                                      grades spelled out in the label, because
+                                      colour alone is not a reading a screen
+                                      reader can take. */}
+                                  <span className="bufferbloat-trend"
+                                        role="img"
+                                        title={t("latest.bufferbloat_trend")}
+                                        aria-label={t("latest.bufferbloat_trend") + ": " +
+                                            trend.map((entry) => gradeForIncrease(entry.increase)).join(", ")}>
+                                      {trend.map((entry) => (
+                                          <span key={entry.created}
+                                                className={"bufferbloat-trend-dot icon-"
+                                                    + bufferbloatColour(gradeForIncrease(entry.increase))}
+                                                // The grade leads: it is no longer
+                                                // written anywhere the pointer is.
+                                                title={gradeForIncrease(entry.increase) + " · " +
+                                                    formatDateTime(entry.created, preferences) + " · " +
+                                                    t("latest.bufferbloat", {increase: entry.increase})}/>
+                                      ))}
+                                  </span>
+                                  {/* How many tests the average is over. It has
+                                      only ever been in the title above, where a
+                                      grade of "A" from three tests and one from
+                                      three hundred look exactly alike. */}
+                                  {props.expanded && (
+                                      <span>{t("statistics.consistency.sample_count", {tests: loaded.tests})}</span>
+                                  )}
+                              </>}/>
                 )}
             </div>
         </StatisticContainer>

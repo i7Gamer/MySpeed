@@ -54,9 +54,20 @@ const JITTER_SITES = [
 
 const CONSISTENCY_SITE = "pages/Statistics/charts/AverageChart/AverageChart.jsx";
 
-// Both spellings: the overview card lists its rows as objects, the others
-// render <FontAwesomeIcon icon={...}/>.
-const ICON_REFERENCE = /icon(?:=\{|:\s*)(fa[A-Za-z]+)/g;
+// Both spellings: a card may list its rows as objects or pass the glyph to the
+// shared row as a prop.
+const ICON_REFERENCE = /icon(?:=\{|:\s*)(fa[A-Za-z]+)/;
+
+/**
+ * A fresh matcher per search.
+ *
+ * The pattern needs the `g` flag, and a global regex is stateful: `exec` leaves
+ * `lastIndex` where it stopped, and `matchAll` starts its own scan from that
+ * same `lastIndex`. Held in one shared object, an iconAfter therefore left the
+ * next iconBefore starting halfway down the file - which answered null for a
+ * glyph sitting directly above the label it was asked about.
+ */
+const references = () => new RegExp(ICON_REFERENCE.source, "g");
 
 const at = (source, anchor) => {
     const index = source.indexOf(anchor);
@@ -72,17 +83,16 @@ const at = (source, anchor) => {
  * prose rather than on the thing it guards.
  */
 const iconAfter = (source, anchor) => {
-    const from = at(source, anchor);
-    ICON_REFERENCE.lastIndex = from;
+    const matcher = references();
+    matcher.lastIndex = at(source, anchor);
 
-    return ICON_REFERENCE.exec(source)?.[1] ?? null;
+    return matcher.exec(source)?.[1] ?? null;
 };
 
 const iconBefore = (source, anchor) => {
-    const until = at(source, anchor);
-    const head = source.slice(0, until);
+    const head = source.slice(0, at(source, anchor));
 
-    return [...head.matchAll(ICON_REFERENCE)].at(-1)?.[1] ?? null;
+    return [...head.matchAll(references())].at(-1)?.[1] ?? null;
 };
 
 describe("packet loss is drawn the same way everywhere", () => {
@@ -96,14 +106,15 @@ describe("packet loss is drawn the same way everywhere", () => {
         });
     }
 
-    // The overview card names the icon above the title, the last-test card below.
+    // Both cards name the icon before the title now: they draw the same shared
+    // row, which takes the glyph first and what it is called second.
     it("the overview card uses it on the packet loss row", () => {
         assert.equal(iconBefore(read(PACKET_LOSS_SITES[0]), "overview.packet_loss_title"),
             PACKET_LOSS_ICON);
     });
 
     it("the last-test card uses it on the packet loss row", () => {
-        assert.equal(iconAfter(read(PACKET_LOSS_SITES[1]), "latest.packet_loss"), PACKET_LOSS_ICON);
+        assert.equal(iconBefore(read(PACKET_LOSS_SITES[1]), "latest.packet_loss"), PACKET_LOSS_ICON);
     });
 
     // The dish said "receiving a signal", which is not what packet loss is.
@@ -189,7 +200,7 @@ describe("consistency has a glyph of its own", () => {
     const source = read(CONSISTENCY_SITE);
 
     it("the expanded values pane uses it", () => {
-        assert.equal(iconAfter(source, "statistics.values.consistency"), CONSISTENCY_ICON,
+        assert.equal(iconBefore(source, "statistics.values.consistency"), CONSISTENCY_ICON,
             "the Consistency row is not on the consistency glyph");
     });
 

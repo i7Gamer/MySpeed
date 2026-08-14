@@ -31,18 +31,31 @@ describe("the latest-test card prints its latencies to one decimal", () => {
     });
 
     it("prints the ping the pane behind it prints", () => {
-        assert.match(card, /formatLatency\(props\.test\.ping\)/,
+        assert.match(card, /const ping = formatLatency\(props\.test\.ping\)/,
             "the ping still goes out at the two decimals it is stored with");
     });
 
-    // The failure placeholder is not a measurement, and the card says so in
-    // words rather than printing the -1 the row stores.
+    /**
+     * The failure placeholder is not a measurement, and the card says so in
+     * words rather than printing the -1 the row stores.
+     *
+     * One helper for the three rows that can carry one, lifted out and run: it
+     * was written out at each of them, which is three chances for the next row
+     * to be added without it. A failed run stores -1 in every numeric column, so
+     * every one of the three would print "-1 Mbps" as though it were a reading.
+     */
     it("still names a failed test rather than printing its placeholder", () => {
-        assert.match(card, /props\.test\.ping === -1 \? "N\/A"/);
+        const source = card.match(/const measured = [^;]*;/);
+        assert.notEqual(source, null, "the card no longer guards the failure placeholder at all");
+
+        const measured = new Function("NOT_MEASURED", `${source[0]}\nreturn measured;`)("N/A");
+
+        assert.equal(measured(-1, "-1 ms"), "N/A");
+        assert.equal(measured(12.6, "12.6 ms"), "12.6 ms");
     });
 
     it("prints the jitter beside it at the same precision", () => {
-        assert.match(card, /formatLatency\(props\.test\.jitter\)/,
+        assert.match(card, /formatLatencyWithUnit\(props\.test\.jitter, /,
             "the jitter goes out raw, two decimals beside a ping at one");
         assert.doesNotMatch(card, /\{props\.test\.jitter}/,
             "the jitter still reaches the markup unformatted");

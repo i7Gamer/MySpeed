@@ -45,21 +45,26 @@ describe("the stability card grades the ping deviation it shows", () => {
      * belongs to - so the row said "warning" twice over a reading that had not
      * earned it once.
      *
-     * Matched on the icon element rather than on the file. Swept file-wide this
+     * Matched on the row element rather than on the file. Swept file-wide this
      * read as a stronger check and was a vaguer one: it stood guard over four
      * other rows it says nothing about, so a legitimately orange element added
      * anywhere on this card would fail a test named for the ping deviation, and
      * whoever hit it would have no way to tell a real regression from the
      * assertion simply being too wide.
+     *
+     * The icon is drawn by the shared row now, which dresses the glyph and the
+     * figure from the single `level` it is handed - so one grade for the row is
+     * what there is to check here, and panelRow.test.js holds that row to
+     * putting it on both.
      */
-    it("leaves no fixed orange on the ping icon", () => {
-        const icon = card.match(/<FontAwesomeIcon[^>]*faPingPongPaddleBall[^>]*>/);
+    it("leaves no fixed orange on the ping row", () => {
+        const row = card.match(/<PanelRow[^>]*faPingPongPaddleBall[\s\S]*?\/>/);
 
-        assert.notEqual(icon, null, "the ping row no longer draws its icon at all");
-        assert.doesNotMatch(icon[0], /icon-orange/,
-            "the ping icon is still painted orange regardless of the value beside it");
-        assert.match(icon[0], /className=\{pingGrade}/,
-            "the icon no longer takes the grade the value it sits beside is given");
+        assert.notEqual(row, null, "the ping row is no longer drawn at all");
+        assert.doesNotMatch(row[0], /icon-orange/,
+            "the ping row is still painted orange regardless of the value in it");
+        assert.match(row[0], /level=\{pingGrade}/,
+            "the row no longer takes the grade its own figure is given");
     });
 
     /**

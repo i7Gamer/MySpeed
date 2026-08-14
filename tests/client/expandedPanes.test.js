@@ -125,7 +125,8 @@ describe("the stability pane", () => {
     // A grade of "A" from three tests and one from three hundred look exactly
     // alike, and the count has only ever been in a title attribute.
     it("brings the bufferbloat sample count out of its tooltip", () => {
-        assert.match(consistency, /props\.expanded && \(\s*<span className="consistency-detail">\s*\{t\("statistics\.consistency\.sample_count"/);
+        assert.match(consistency,
+            /props\.expanded && \(\s*<span>\{t\("statistics\.consistency\.sample_count"/);
     });
 
     it("has both of its strings", () => {

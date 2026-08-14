@@ -1,7 +1,8 @@
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
+import PanelRow from "@/pages/Statistics/components/PanelRow";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
-    faArrowDown, faArrowUp, faLinkSlash, faPingPongPaddleBall, faWaveSquare
+    faArrowDown, faArrowUp, faGaugeHigh, faLinkSlash, faPingPongPaddleBall, faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
 import {bufferbloat, bufferbloatColour, packetLossColour} from "@/common/utils/TestUtil";
 import "./styles.sass";
@@ -10,7 +11,9 @@ import {useContext} from "react";
 import {ConfigContext} from "@/common/contexts/Config";
 import {StatusContext} from "@/common/contexts/Status";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatLatency, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {
+    convertSpeed, formatLatency, formatLatencyWithUnit, getSpeedUnit, NOT_MEASURED
+} from "@/common/utils/FormatUtil";
 import TestDetails from "@/common/components/TestDetails";
 import {t} from "i18next";
 
@@ -47,91 +50,79 @@ export const LatestTestChart = (props) => {
     const hasPacketLoss = typeof props.test.packetLoss === "number"
         && Number.isFinite(props.test.packetLoss);
 
+    // Trimmed to the one decimal every latency in this interface is shown at.
+    // The measurement is stored with two, and the card printed both of them
+    // while the pane that opens from clicking it printed one - the same reading,
+    // twice, in two precisions. The colour is graded from that same trimmed
+    // figure: the pane grades what it prints, and a raw ping that rounds across
+    // a bucket boundary would wear a different colour there.
+    const ping = formatLatency(props.test.ping);
+
+    // A failed run stores -1 in every numeric column, and "-1 Mbps" reads as a
+    // measurement. One place for it, because the three rows had a copy each.
+    const measured = (value, text) => value === -1 ? NOT_MEASURED : text;
+
     return (
         <StatisticContainer title={t("latest.latest")} onClick={props.onClick} running={status.running}>
             <div className="info-container">
-                <div className="test-container">
-                    <div className="test-info">
-                        <h2>{t("latest.ping")}</h2>
-                        {/* Trimmed to the one decimal every latency in this
-                            interface is shown at. The measurement is stored
-                            with two, and the card printed both of them while
-                            the pane that opens from clicking it printed one -
-                            the same reading, twice, in two precisions. The
-                            colour is graded from that same trimmed figure,
-                            here and on the icon beside it: the pane grades
-                            what it prints, and a raw ping that rounds across
-                            a bucket boundary would wear a different colour
-                            there. */}
-                        <p className={"icon-" + getIconBySpeed(formatLatency(props.test.ping), config.ping, false)}>
-                            {(props.test.ping === -1 ? "N/A" : formatLatency(props.test.ping)) + " " + t("latest.ping_unit")}
-                            {hasJitter && <span className="jitter-value"><FontAwesomeIcon icon={faWaveSquare} className="jitter-icon" />{formatLatency(props.test.jitter)}</span>}
-                        </p>
-                    </div>
-                    <FontAwesomeIcon icon={faPingPongPaddleBall}
-                                     className={"icon-" + getIconBySpeed(formatLatency(props.test.ping), config.ping, false)}/>
-                </div>
-                <div className="test-container">
-                    <div className="test-info">
-                        <h2>{t("latest.up")}</h2>
-                        <p className={"icon-" + getIconBySpeed(props.test.upload, config.upload, true)}>
-                            {(props.test.upload === -1 ? "N/A" : convertSpeed(props.test.upload, preferences)) + " " + speedUnit}</p>
-                    </div>
-                    <FontAwesomeIcon icon={faArrowUp}
-                                     className={"icon-" + getIconBySpeed(props.test.upload, config.upload, true)}/>
-                </div>
-                <div className="test-container">
-                    <div className="test-info">
-                        <h2>{t("latest.down")}</h2>
-                        <p className={"icon-" + getIconBySpeed(props.test.download, config.download, true)}>
-                            {(props.test.download === -1 ? "N/A" : convertSpeed(props.test.download, preferences)) + " " + speedUnit}</p>
-                    </div>
-                    <FontAwesomeIcon icon={faArrowDown}
-                                     className={"icon-" + getIconBySpeed(props.test.download, config.download, true)}/>
-                </div>
+                <PanelRow icon={faPingPongPaddleBall} title={t("latest.ping")}
+                          level={getIconBySpeed(ping, config.ping, false)}
+                          value={measured(props.test.ping, `${ping} ${t("latest.ping_unit")}`)}
+                          /* Under the latency rather than hung off it. It is the
+                             other half of what the line does at rest, and beside
+                             the figure it was a second number in the same unit
+                             with no room to say which unit or which measurement
+                             it was. */
+                          description={hasJitter && (
+                              <span>
+                                  <FontAwesomeIcon icon={faWaveSquare} className="jitter-icon"/>
+                                  {t("latest.jitter")}
+                                  {" " + formatLatencyWithUnit(props.test.jitter, t("latest.jitter_unit"))}
+                              </span>
+                          )}/>
+
+                <PanelRow icon={faArrowUp} title={t("latest.up")}
+                          level={getIconBySpeed(props.test.upload, config.upload, true)}
+                          value={measured(props.test.upload,
+                              `${convertSpeed(props.test.upload, preferences)} ${speedUnit}`)}/>
+
+                <PanelRow icon={faArrowDown} title={t("latest.down")}
+                          level={getIconBySpeed(props.test.download, config.download, true)}
+                          value={measured(props.test.download,
+                              `${convertSpeed(props.test.download, preferences)} ${speedUnit}`)}/>
 
                 {/* The share of packets that never arrived, which none of the
                     three figures above can show: a line can be fast in both
                     directions and drop one packet in fifty, and that is what a
                     call breaking into fragments actually is. Graded against
                     what a call needs rather than against a configured optimum -
-                    there is no setting for it anywhere. */}
+                    there is no setting for it anywhere.
+
+                    The glyph is the same broken link the overview card uses. A
+                    dish says "receiving a signal", which is not what this
+                    measures, and it left packet loss drawn two different ways on
+                    two cards of the same page. */}
                 {hasPacketLoss && (
-                    <div className="test-container">
-                        <div className="test-info">
-                            <h2>{t("latest.packet_loss")}</h2>
-                            <p className={"icon-" + packetLossColour(props.test.packetLoss)}>
-                                {props.test.packetLoss}%
-                            </p>
-                        </div>
-                        {/* The same broken link the overview card uses. A dish
-                            says "receiving a signal", which is not what this
-                            measures, and it left packet loss drawn two
-                            different ways on two cards of the same page. */}
-                        <FontAwesomeIcon icon={faLinkSlash}
-                                         className={"icon-" + packetLossColour(props.test.packetLoss)}/>
-                    </div>
+                    <PanelRow icon={faLinkSlash} title={t("latest.packet_loss")}
+                              level={packetLossColour(props.test.packetLoss)}
+                              value={`${props.test.packetLoss}%`}/>
                 )}
 
-                {/* The value carries the grade's colour, exactly as the rows
-                    above colour theirs by their level, and the grade badge sits
-                    where their icons sit. */}
+                {/* The grade is the reading here, so it is what the row states -
+                    it used to be a badge off to the side while the two latencies
+                    it is derived from took the value's place. Those move under
+                    the title, which is where a figure that explains another one
+                    belongs. */}
                 {bloat && (
-                    <div className="test-container">
-                        <div className="test-info">
-                            <h2>{t("latest.quality")}</h2>
-                            <p className={"icon-" + bufferbloatColour(bloat.grade)}>
-                                {t("latest.loaded_latency", {
-                                    down: formatLatency(props.test.downloadLatency),
-                                    up: formatLatency(props.test.uploadLatency)
-                                })}
-                            </p>
-                        </div>
-                        <span className={"bufferbloat-grade icon-" + bufferbloatColour(bloat.grade)}
-                              title={t("latest.bufferbloat", {increase: bloat.increase})}>
-                            {bloat.grade}
-                        </span>
-                    </div>
+                    <PanelRow icon={faGaugeHigh} title={t("latest.quality")}
+                              level={bufferbloatColour(bloat.grade)}
+                              value={<span title={t("latest.bufferbloat", {increase: bloat.increase})}>
+                                  {bloat.grade}
+                              </span>}
+                              description={<span>{t("latest.loaded_latency", {
+                                  down: formatLatency(props.test.downloadLatency),
+                                  up: formatLatency(props.test.uploadLatency)
+                              })}</span>}/>
                 )}
             </div>
         </StatisticContainer>
