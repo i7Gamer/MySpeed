@@ -40,11 +40,26 @@ describe("the stability card grades the ping deviation it shows", () => {
             "the hardcoded blue-or-orange is still there");
     });
 
-    // The icon carried the same fixed orange, one line below the value it
-    // belongs to.
-    it("leaves no fixed orange behind on the row", () => {
-        assert.doesNotMatch(card, /"icon-orange"/,
-            "something on this card is still painted orange regardless of its value");
+    /**
+     * The icon carried the same fixed orange, one line below the value it
+     * belongs to - so the row said "warning" twice over a reading that had not
+     * earned it once.
+     *
+     * Matched on the icon element rather than on the file. Swept file-wide this
+     * read as a stronger check and was a vaguer one: it stood guard over four
+     * other rows it says nothing about, so a legitimately orange element added
+     * anywhere on this card would fail a test named for the ping deviation, and
+     * whoever hit it would have no way to tell a real regression from the
+     * assertion simply being too wide.
+     */
+    it("leaves no fixed orange on the ping icon", () => {
+        const icon = card.match(/<FontAwesomeIcon[^>]*faPingPongPaddleBall[^>]*>/);
+
+        assert.notEqual(icon, null, "the ping row no longer draws its icon at all");
+        assert.doesNotMatch(icon[0], /icon-orange/,
+            "the ping icon is still painted orange regardless of the value beside it");
+        assert.match(icon[0], /className=\{pingGrade}/,
+            "the icon no longer takes the grade the value it sits beside is given");
     });
 
     /**
