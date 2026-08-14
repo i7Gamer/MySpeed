@@ -158,12 +158,31 @@ app.post("/run", password(false), async (req, res) => {
 app.get("/status", password(true), async (req, res) => {
     const latest = await tests.getLatest();
     const progress = testTask.getProgress();
-    // The quiet window too, or the countdown names a test the scheduler will
-    // refuse and then resets to the next one it will also refuse.
-    const nextTest = timer.nextRun(await config.getValue("cron"), {
-        start: await config.getValue("quietHoursStart"),
-        end: await config.getValue("quietHoursEnd")
-    });
+
+    /**
+     * Not worked out at all for a read-only visitor, rather than worked out and
+     * then dropped.
+     *
+     * /api/config withholds `cron`, `scheduleOffset` and both quiet-hours edges
+     * from exactly this caller, on the grounds that a schedule says when the
+     * operator's line is busy and when their evening begins. This is the
+     * conclusion drawn from all four, and it gives them up about as readily:
+     * one poll recovers the cron's minute field, and polling across an evening
+     * walks out both edges of the quiet window, since the countdown steps over
+     * it.
+     *
+     * Null is the answer this route already gives when nothing is scheduled, so
+     * the status bar's existing branch for that covers the visitor too.
+     */
+    const nextTest = req.viewMode ? null : timer.nextRun(
+        await config.getValue("cron"),
+        {
+            // The quiet window too, or the countdown names a test the scheduler
+            // will refuse and then resets to the next one it will also refuse.
+            start: await config.getValue("quietHoursStart"),
+            end: await config.getValue("quietHoursEnd")
+        }
+    );
 
     // getLatest strips a null error rather than reporting it, and answers
     // with undefined on an install that has never run a test - so absence is

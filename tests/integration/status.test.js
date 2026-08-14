@@ -145,6 +145,70 @@ describe("GET /api/speedtests/status", () => {
     });
 });
 
+/**
+ * What a read-only visitor is told about the schedule, which is nothing.
+ *
+ * /api/config already withholds `cron`, `scheduleOffset` and both quiet-hours
+ * edges from this same caller, and says why: a schedule describes when the
+ * operator's connection is busy and when their evening starts, which on a
+ * publicly shared dashboard says rather more about the household than about the
+ * line. This route was handing back the conclusion drawn from all four. One poll
+ * gives the cron's minute field outright, and polling across an evening walks
+ * out both edges of the quiet window, since the countdown deliberately skips
+ * over it.
+ *
+ * Withheld as null rather than omitted, which is the same shape the route
+ * already answers with when nothing is scheduled - so the status bar's existing
+ * "no next test" branch covers it and a visitor's dashboard simply drops the
+ * countdown line.
+ */
+describe("the schedule in view mode", () => {
+    const AS_OPERATOR = {headers: {"x-password": "Hunter2!"}};
+
+    const shareReadOnly = async () => {
+        await setConfig(server.config, "cron", "13 * * * *");
+        await setConfig(server.config, "scheduleOffset", "true");
+        await setConfig(server.config, "password", "Hunter2!");
+        await setConfig(server.config, "passwordLevel", "read");
+    };
+
+    after(async () => {
+        await setConfig(server.config, "passwordLevel", "none");
+        await setConfig(server.config, "password", "none");
+    });
+
+    it("withholds the next test from a visitor who did not authenticate", async () => {
+        await shareReadOnly();
+
+        const {status, body} = await api(server.baseUrl, "/speedtests/status");
+
+        assert.equal(status, 200, "the visitor was refused the status entirely");
+        assert.equal(body.nextTest, null, "a read-only visitor is told when the next test runs");
+        assert.equal(body.nextTestApproximate, false,
+            "the offset is disclosed even though the time it applies to is not");
+    });
+
+    it("keeps it for the operator who authenticated", async () => {
+        await shareReadOnly();
+
+        const {body} = await api(server.baseUrl, "/speedtests/status", AS_OPERATOR);
+
+        assert.ok(body.nextTest, "the operator is no longer told when the next test runs");
+        assert.equal(body.nextTestApproximate, true, "the operator is no longer told the time is approximate");
+    });
+
+    // The two keys the client has always read are a contract, and a shared
+    // dashboard is exactly where they are still needed.
+    it("still answers a visitor with what the dashboard runs on", async () => {
+        await shareReadOnly();
+
+        const {body} = await api(server.baseUrl, "/speedtests/status");
+
+        assert.equal(body.paused, false);
+        assert.equal(body.running, false);
+    });
+});
+
 // seedTests stores exactly what it is given, so the row is read back rather than
 // the input reformatted - sqlite and mysql do not agree on the stored shape.
 const hoursAgoStored = (rows) => rows[0].created;
