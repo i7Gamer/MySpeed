@@ -24,7 +24,7 @@ import {Trans} from "react-i18next";
 import {getIconBySpeed, isFailedTest} from "@/common/utils/TestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatLatency, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {convertSpeed, formatLatency, formatWhole, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
 import {useNavigate} from "react-router-dom";
 import ContextMenu from "@/common/components/ContextMenu";
 
@@ -34,6 +34,13 @@ export const NodeContainer = (node) => {
     const reloadConfig = useContext(ConfigContext)[1];
     const [preferences] = useContext(PreferencesContext);
     const speedUnit = getSpeedUnit(preferences);
+    // One place, so the two speeds cannot drift apart: converted to the unit the
+    // reader chose, then rounded the way every list row rounds, then labelled.
+    //
+    // In that order. The card used to round what it stored and convert
+    // afterwards, which on MB/s prints an eighth of a rounded figure - decimals
+    // and all - where the overview beside it prints a rounded eighth.
+    const speedText = (mbps) => formatWithUnit(formatWhole(convertSpeed(mbps, preferences)), speedUnit);
     const updateToast = useContext(ToastNotificationContext);
     const alert = useAlert();
     const [nodeData, setNodeData] = useState(null);
@@ -72,12 +79,13 @@ export const NodeContainer = (node) => {
 
         setNodeError(undefined);
 
-        // Trimmed once, to the one decimal every latency in this interface is
-        // shown at, so the figure the card prints and the colour it wears are
-        // read off the same value. Stored raw, the card printed two decimals
-        // beside the one-decimal overview it switches to - and graded raw, a
-        // ping that rounds across a bucket boundary wore a different colour
-        // here than there, getIconBySpeed flooring a percentage as it does.
+        // The figure the colour is read off, which is not the figure the card
+        // prints. The overview grades a ping at one decimal, and this card has
+        // to agree with the page it switches to: getIconBySpeed floors a
+        // percentage, so a ping graded on its way to a whole number would wear
+        // one colour here and another there. One measurement changing colour
+        // between two views of it is the worse of the two faults - the same
+        // trade the overview row makes for the same reason.
         const ping = formatLatency(tests[0]?.ping);
 
         setNodeData({
@@ -85,9 +93,13 @@ export const NodeContainer = (node) => {
             // "-1 ms" and "-1 Mbps" presented the placeholders as readings, so
             // the card marks the failure the way the overview does instead.
             failed: isFailedTest(tests[0]),
-            ping,
-            download: Math.round(tests[0]?.download),
-            upload: Math.round(tests[0]?.upload),
+            // Whole, like every other list row - see formatWhole.
+            ping: formatWhole(tests[0]?.ping),
+            // The speeds are stored as they were measured and rounded by
+            // speedText at render: the conversion to MB/s has to come first,
+            // and the unit is a preference this function never reads.
+            download: tests[0]?.download,
+            upload: tests[0]?.upload,
             pingIcon: getIconBySpeed(ping, config.ping, false),
             downloadIcon: getIconBySpeed(tests[0]?.download, config.download, true),
             uploadIcon: getIconBySpeed(tests[0]?.upload, config.upload, true)
@@ -264,13 +276,13 @@ export const NodeContainer = (node) => {
                             <div className="speed-item">
                                 <FontAwesomeIcon icon={faArrowDown}
                                                  className={"icon-" + nodeData.downloadIcon}/>
-                                <h1>{formatWithUnit(convertSpeed(nodeData.download, preferences), speedUnit)}</h1>
+                                <h1>{speedText(nodeData.download)}</h1>
                             </div>
 
                             <div className="speed-item">
                                 <FontAwesomeIcon icon={faArrowUp}
                                                  className={"icon-" + nodeData.uploadIcon}/>
-                                <h1>{formatWithUnit(convertSpeed(nodeData.upload, preferences), speedUnit)}</h1>
+                                <h1>{speedText(nodeData.upload)}</h1>
                             </div>
                         </>
                     )}
