@@ -6,6 +6,7 @@ import * as serverController from '../controller/servers.js';
 import bcrypt from 'bcryptjs';
 import { allowsPasswordlessAccess, clearFailedAttempts, isThrottled, recordFailedAttempt } from '../middlewares/password.js';
 import { matchesSetupToken } from '../util/setupToken.js';
+import { isFailedTest } from '../util/testOutcome.js';
 
 const app = express.Router();
 
@@ -149,8 +150,6 @@ const resolveServerLabels = (latest) => {
     };
 };
 
-// Every column of a failed test holds -1, and some providers record why as well.
-const hasFailed = (latest) => Boolean(latest.error) || latest.ping === -1;
 
 const ALL_GAUGES = [pingGauge, jitterGauge, downloadGauge, uploadGauge, timeGauge, serverInfoGauge,
     packetLossGauge, downloadLatencyGauge, uploadLatencyGauge, testFailedGauge];
@@ -202,7 +201,7 @@ app.get('/metrics', async (req, res) => {
     // exists to keep out.
     if (latest.time > 0) timeGauge.set(labels, latest.time);
 
-    if (hasFailed(latest)) {
+    if (isFailedTest(latest)) {
         testFailedGauge.set(labels, 1);
         return serve();
     }

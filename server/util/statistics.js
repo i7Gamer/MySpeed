@@ -1,5 +1,6 @@
 import { mapFixed, mapRounded } from './helpers.js';
 import { localHourAt, serverZone, zoneFromOffset } from './timezone.js';
+import { isFailedTest, isSuccessfulTest } from './testOutcome.js';
 
 export const TARGET_CHART_POINTS = 300;
 
@@ -231,18 +232,18 @@ const isPlaceable = (entry) => !Number.isNaN(new Date(entry.created).getTime());
 
 const fullSeries = (sorted) => ({
     labels: sorted.map(entry => new Date(entry.created).toISOString()),
-    failed: sorted.map(entry => entry.error !== null),
+    failed: sorted.map(isFailedTest),
     errors: sorted.map(entry => entry.error),
     data: {
-        ping: sorted.map(entry => entry.error === null ? entry.ping : null),
-        jitter: sorted.map(entry => entry.error === null ? entry.jitter : null),
-        download: sorted.map(entry => entry.error === null ? entry.download : null),
-        upload: sorted.map(entry => entry.error === null ? entry.upload : null),
-        time: sorted.map(entry => entry.error === null ? entry.time : null),
+        ping: sorted.map(entry => isSuccessfulTest(entry) ? entry.ping : null),
+        jitter: sorted.map(entry => isSuccessfulTest(entry) ? entry.jitter : null),
+        download: sorted.map(entry => isSuccessfulTest(entry) ? entry.download : null),
+        upload: sorted.map(entry => isSuccessfulTest(entry) ? entry.upload : null),
+        time: sorted.map(entry => isSuccessfulTest(entry) ? entry.time : null),
         // Null where unmeasured - a gap in the line, like jitter. The ?? guards
         // rows from before the columns existed, which have no key at all.
-        downloadLatency: sorted.map(entry => entry.error === null ? entry.downloadLatency ?? null : null),
-        uploadLatency: sorted.map(entry => entry.error === null ? entry.uploadLatency ?? null : null)
+        downloadLatency: sorted.map(entry => isSuccessfulTest(entry) ? entry.downloadLatency ?? null : null),
+        uploadLatency: sorted.map(entry => isSuccessfulTest(entry) ? entry.uploadLatency ?? null : null)
     }
 });
 
@@ -263,14 +264,14 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
         if (index < 0 || index >= targetPoints) return;
 
         buckets[index].entries.push(entry);
-        if (entry.error !== null) buckets[index].errors.push(entry.error);
+        if (isFailedTest(entry)) buckets[index].errors.push(entry.error);
     });
 
     const series = emptySeries();
 
     buckets.forEach((bucket, index) => {
         const midTime = from.getTime() + index * bucketSize + bucketSize / 2;
-        const valid = bucket.entries.filter(entry => entry.error === null);
+        const valid = bucket.entries.filter(isSuccessfulTest);
 
         if (valid.length === 0) {
             if (bucket.errors.length === 0) return;
@@ -321,7 +322,7 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
     // through is where a nonsense parameter earns its 400.
     const bucketZone = zone ?? zoneFromOffset(offsetMinutes).zone ?? serverZone;
     const targetPoints = clampPoints(maxPoints);
-    const succeeded = entries.filter(entry => entry.error === null);
+    const succeeded = entries.filter(isSuccessfulTest);
     const sorted = entries.filter(isPlaceable).sort((a, b) => new Date(a.created) - new Date(b.created));
 
     const series = sorted.length <= targetPoints

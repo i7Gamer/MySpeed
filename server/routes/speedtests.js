@@ -8,6 +8,7 @@ import { ALL_TIME_RANGE, parseDateRange } from '../util/dateRange.js';
 import { resolveTimezone } from '../util/timezone.js';
 import { stripConnectionIdentity } from '../util/connectionIdentity.js';
 import { toCsv } from '../util/csv.js';
+import { isFailedTest } from '../util/testOutcome.js';
 import * as timer from '../tasks/timer.js';
 
 const app = express.Router();
@@ -187,7 +188,7 @@ app.get("/status", password(true), async (req, res) => {
     // getLatest strips a null error rather than reporting it, and answers
     // with undefined on an install that has never run a test - so absence is
     // normalised here and a failure is told apart by the key being present.
-    const lastTest = latest ? {...latest, failed: latest.error !== null && latest.error !== undefined} : null;
+    const lastTest = latest ? {...latest, failed: isFailedTest(latest)} : null;
 
     if (req.viewMode) stripConnectionIdentity(lastTest);
 

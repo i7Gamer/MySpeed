@@ -266,6 +266,16 @@ export function failureRate(total, failed) {
  * The error message is the primary signal, but the -1 placeholders are checked
  * too: a failure that could not be described still must not be presented as a
  * reading of minus one.
+ *
+ * An empty error string is not one: it carries no message, and with real
+ * measurements beside it the readings are what decide. The measurements are the
+ * ground truth here, and inferring a failure from the absence of information
+ * would throw three of them away.
+ *
+ * The server answers this question in server/util/testOutcome.js, and the two
+ * are pinned to the same fixtures by tests/server/failedTestAgreement.test.js -
+ * neither side can import the other, and four copies of this judgement had
+ * already drifted apart once.
  */
 export function isFailedTest(test) {
     if (!test) return false;

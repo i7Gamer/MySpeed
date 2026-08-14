@@ -3,6 +3,7 @@ import { Resvg } from '@resvg/resvg-js';
 import moment from 'moment-timezone';
 import * as tests from './speedtests.js';
 import { parseDateRange } from '../util/dateRange.js';
+import { isFailedTest } from '../util/testOutcome.js';
 import htm from 'htm';
 import satori from 'satori';
 
@@ -22,7 +23,8 @@ const readStatistics = async () => {
   if (hasValues(stats)) return stats;
 
   const latest = await tests.getLatest();
-  if (!latest || latest.error || latest.ping === -1) return null;
+  if (isFailedTest(latest)) return null;
+  if (!latest) return null;
 
   return {ping: {avg: latest.ping}, download: {avg: latest.download}, upload: {avg: latest.upload}};
 };
