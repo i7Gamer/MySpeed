@@ -47,8 +47,16 @@ jobs:
           VERSION="${{ inputs.version }}"
           VERSION="${VERSION#v}"
 
-          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$'; then
-            echo "::error::'$VERSION' is not a valid semver version."
+          # Three numeric parts and nothing after them, which is narrower than
+          # semver allows and exactly what this pipeline can deliver. build-msi
+          # splices the version into WiX's Product/@Version as "<version>.0",
+          # which must be numeric dotted fields, so a prerelease suffix or a
+          # fourth part reached candle and failed it - by which point the tag is
+          # pushed, all six binaries are uploaded, and Docker Hub's :latest has
+          # already been replaced, none of which the failure path undoes.
+          # Refused here instead, before anything has been published.
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$VERSION' is not a release version. Use three numbers, as in 1.4.0 - prereleases and four-part versions cannot be built into the MSI."
             exit 1
           fi
 
