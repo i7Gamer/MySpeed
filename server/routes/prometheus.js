@@ -153,7 +153,16 @@ const resolveServerLabels = (latest) => {
 const hasFailed = (latest) => Boolean(latest.error) || latest.ping === -1;
 
 const ALL_GAUGES = [pingGauge, jitterGauge, downloadGauge, uploadGauge, timeGauge, serverInfoGauge,
-    packetLossGauge, downloadLatencyGauge, uploadLatencyGauge, testFailedGauge, currentServerGauge];
+    packetLossGauge, downloadLatencyGauge, uploadLatencyGauge, testFailedGauge];
+
+// Removed rather than reset, because this one carries no labels: reset() gives
+// an unlabelled gauge the value 0 and exports it, and 0 is a server id a real
+// instance can be pinned to - so an instance that has never tested would be
+// indistinguishable from one testing against server 0. set() brings it back.
+const clearGauges = () => {
+    ALL_GAUGES.forEach(gauge => gauge.reset());
+    currentServerGauge.remove();
+};
 
 app.get('/metrics', async (req, res) => {
     if (!await authorizeMetrics(req, res)) return;
@@ -166,7 +175,7 @@ app.get('/metrics', async (req, res) => {
     // Cleared before anything is decided, so a branch that sets fewer series
     // than the last scrape cannot leave the previous values standing as though
     // they were current.
-    ALL_GAUGES.forEach(gauge => gauge.reset());
+    clearGauges();
 
     const latest = await testController.getLatest();
 

@@ -253,5 +253,22 @@ describe("a latest test that failed", () => {
         assert.equal(valueOf(text, "myspeed_ping"), null);
         assert.equal(valueOf(text, "myspeed_test_failed"), null,
             "an instance that never tested is reported as having failed a test");
+
+        // Not zero: 0 is a server id a real instance can be pinned to, and an
+        // unlabelled gauge that is reset rather than removed exports exactly
+        // that - so this would read as "currently testing against server 0".
+        assert.equal(valueOf(text, "myspeed_server"), null,
+            "an instance that never tested reports a current server anyway");
+    });
+
+    // And it comes back once there is a test to report one for.
+    it("reports the current server again after a test arrives", async () => {
+        await seedTests(server.tests, []);
+        await metrics();
+
+        await seedTests(server.tests, [{created: new Date().toISOString(), serverId: 49631}]);
+
+        assert.equal(valueOf((await metrics()).text, "myspeed_server"), 49631,
+            "removing the series left it removed");
     });
 });
