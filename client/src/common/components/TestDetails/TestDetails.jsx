@@ -414,9 +414,9 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                             </DetailFact>
                         )}
 
-                        {/* Third, and the last of the three facts that carry a
-                            second line under their value - the duration, the
-                            result link, the host below. A grid row is as tall as
+                        {/* Third of the four facts that carry a second line
+                            under their value - the duration, the result link,
+                            the host, the address below. A grid row is as tall as
                             its tallest cell, so with these scattered through the
                             grid every row had one of them in it and every row
                             was two lines tall, each with a one-line fact beside
@@ -436,6 +436,57 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                                 {serverPrimary}
                                 {serverDetail && (
                                     <span className="detail-address detail-secondary">{serverDetail}</span>
+                                )}
+                            </DetailFact>
+                        )}
+
+                        {/* Fourth and last of the two-line facts, and the
+                            tallest of them - the address below is a whole line
+                            where the others' second lines are smaller type.
+
+                            It used to trail the short facts instead, on the
+                            reasoning that three columns hold only three of the
+                            four. Measured, the grid is four columns wide from
+                            1366px up - `auto-fit` over an 18rem minimum - which
+                            is the common desktop case rather than a rare one,
+                            and there all four share a row: a 75px row over a
+                            37px one, where trailing gave a 55px row over a 75px
+                            one. Two columns improve as well, and three come out
+                            the same height either way, so nothing pays for it.
+
+                            Who the line is on the internet, and what address it
+                            went out from. One fact, not two: connectionChange
+                            reads them as a pair, and a reassigned lease or a
+                            failover - which is usually why a run of results
+                            steps - moves both at once. Two rows made one event
+                            read as two coincidences.
+
+                            Either half may be missing. Only Ookla reports both;
+                            the other two report what their backend happens to
+                            know. */}
+                        {(test.isp || test.externalIp) && (
+                            <DetailFact label={t("test.details.connection")}>
+                                {test.isp && (
+                                    <>
+                                        {test.isp}
+                                        {/* Below the value, not trailing it -
+                                            see .detail-changed. A block element
+                                            breaks the reading too, so the space
+                                            that used to keep this from being
+                                            read as "Salt MobileCHANGED" is no
+                                            longer carrying anything. */}
+                                        {change?.isp &&
+                                            <span className="detail-changed">{t("test.details.changed")}</span>}
+                                    </>
+                                )}
+                                {/* A marker each: one for the pair would report
+                                    a changed address as a changed provider. */}
+                                {test.externalIp && (
+                                    <span className="detail-address detail-secondary">
+                                        {test.externalIp}
+                                        {change?.externalIp &&
+                                            <span className="detail-changed">{t("test.details.changed")}</span>}
+                                    </span>
                                 )}
                             </DetailFact>
                         )}
@@ -486,43 +537,6 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                                     create no word break, so the accessible text
                                     read "Aadds 19 ms". */}
                                 {" " + t("test.details.bufferbloat_value", {increase: bloat.increase})}
-                            </DetailFact>
-                        )}
-
-                        {/* Who the line is on the internet, and what address it
-                            went out from. One fact, not two: connectionChange
-                            reads them as a pair, and a reassigned lease or a
-                            failover - which is usually why a run of results
-                            steps - moves both at once. Two rows made one event
-                            read as two coincidences.
-
-                            Either half may be missing. Only Ookla reports both;
-                            the other two report what their backend happens to
-                            know. */}
-                        {(test.isp || test.externalIp) && (
-                            <DetailFact label={t("test.details.connection")}>
-                                {test.isp && (
-                                    <>
-                                        {test.isp}
-                                        {/* Below the value, not trailing it -
-                                            see .detail-changed. A block element
-                                            breaks the reading too, so the space
-                                            that used to keep this from being
-                                            read as "Salt MobileCHANGED" is no
-                                            longer carrying anything. */}
-                                        {change?.isp &&
-                                            <span className="detail-changed">{t("test.details.changed")}</span>}
-                                    </>
-                                )}
-                                {/* A marker each: one for the pair would report
-                                    a changed address as a changed provider. */}
-                                {test.externalIp && (
-                                    <span className="detail-address detail-secondary">
-                                        {test.externalIp}
-                                        {change?.externalIp &&
-                                            <span className="detail-changed">{t("test.details.changed")}</span>}
-                                    </span>
-                                )}
                             </DetailFact>
                         )}
 
