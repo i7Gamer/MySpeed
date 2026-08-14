@@ -126,3 +126,83 @@ describe("uninstall.sh --keep-data", () => {
         assert.deepEqual(unquoted, [], "these lines interpolate a path without quoting it");
     });
 });
+
+/**
+ * Where the uninstaller looks, which was always /opt/myspeed.
+ *
+ * install.sh takes `-d <path>` and writes the chosen path into the systemd
+ * unit's WorkingDirectory, so an installation can perfectly well be somewhere
+ * else. The uninstaller hardcoded the default and parsed no options at all: it
+ * stopped the service and deleted the unit file - the only record of where the
+ * installation was - then ran `rm -R /opt/myspeed` against a path that had never
+ * existed. With no `set -e` the failure went to stderr and was discarded, and
+ * the script printed "MySpeed has been uninstalled" over an installation still
+ * sitting on disk, password hash and full history included.
+ *
+ * The unit file is read rather than the flag merely being accepted, because the
+ * operator uninstalling months later is not necessarily the one who chose the
+ * path, and the system already knows the answer.
+ */
+describe("uninstall.sh finds the installation it is removing", () => {
+    const source = read("uninstall.sh");
+
+    it("reads the path back out of the systemd unit", () => {
+        assert.match(source, /WorkingDirectory/,
+            "the uninstaller never consults the unit file, which is where the real path is recorded");
+        assert.match(source, /INSTALLATION_PATH="?\$/,
+            "the installation path is never reassigned from what was discovered");
+    });
+
+    // Read before the systemd block deletes it, or there is nothing left to
+    // read it from.
+    it("reads it before deleting the unit file", () => {
+        const recovered = source.indexOf("WorkingDirectory");
+        const deleted = source.search(/rm\s+"?\/etc\/systemd/);
+
+        assert.ok(recovered !== -1 && deleted !== -1, "the script no longer does both");
+        assert.ok(recovered < deleted,
+            "the unit file is deleted before its path is read, so the default is all that is left");
+    });
+
+    it("still accepts an explicit -d, as install.sh does", () => {
+        assert.match(source, /-d\)/, "the uninstaller takes no -d, so a scripted install cannot be scripted away");
+    });
+
+    /**
+     * And --keep-data has to survive the option parsing that -d arrives with.
+     * It was read as a bare positional, so anything that consumes arguments in
+     * front of it can silently turn the flag that preserves the database into
+     * one that is never seen.
+     */
+    it("still recognises --keep-data alongside it", () => {
+        assert.match(source, /--keep-data\)/,
+            "--keep-data is no longer matched where the arguments are parsed");
+        assert.doesNotMatch(source, /\[\s*"\$1"\s*[=!]=\s*"--keep-data"\s*\]/,
+            "--keep-data is still read as the first positional, which -d displaces");
+    });
+
+    /**
+     * The removal is the step that cannot be undone, and it was the one step
+     * whose failure was ignored. Reporting success over a directory that is
+     * still there is worse than the failure itself: it is what stops anyone
+     * going to look.
+     */
+    it("does not report success when the removal failed", () => {
+        // The plain branch, not the --keep-data one above it: that removal is
+        // already guarded, by the staging move that has to succeed before it.
+        //
+        // Matched as a line of its own rather than as the substring "else",
+        // which also occurs inside the very message this branch prints.
+        const branches = [...source.matchAll(/^[ \t]*else[ \t]*$/gm)];
+        assert.notEqual(branches.length, 0, "the uninstaller no longer branches on --keep-data");
+
+        const plain = source.slice(branches[branches.length - 1].index, source.indexOf("Completed"));
+
+        assert.match(plain, /rm\s+-R\s+"\$\{?INSTALLATION_PATH/,
+            "the uninstaller no longer removes the installation directory");
+        assert.match(plain, /if\s+!\s*rm|\|\||&&/,
+            "the removal is unchecked, so a path that was never there fails silently");
+        assert.match(plain, /exit\s+1/,
+            "the script carries on to its success banner after a removal that did not happen");
+    });
+});

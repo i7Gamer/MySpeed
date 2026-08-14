@@ -9,6 +9,40 @@ NORMAL='\033[0;39m'
 
 INSTALLATION_PATH="/opt/myspeed"
 DOCKER_INSTALLATION_PATH="/opt/myspeed-dockerized"
+SERVICE_FILES=("/etc/systemd/system/myspeed.service" "/usr/lib/systemd/system/myspeed.service")
+
+# Parsed by hand rather than with getopts, which stops at the first argument
+# beginning with "--" and would leave --keep-data unseen the moment -d is also
+# passed. Both flags are read wherever they appear.
+KEEP_DATA=""
+CHOSEN_PATH=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --keep-data) KEEP_DATA="--keep-data" ;;
+    -d) shift; CHOSEN_PATH="$1" ;;
+  esac
+  shift
+done
+
+# Where the installation actually is, which is not always the default:
+# install.sh takes -d and records the chosen path in the unit's
+# WorkingDirectory. Read back here because the operator uninstalling months
+# later need not be the one who chose it, and the system already knows.
+#
+# It has to happen before the systemd block below, which deletes the unit file -
+# and with it the only record of where anything was put.
+if [ -n "$CHOSEN_PATH" ]; then
+  INSTALLATION_PATH="$CHOSEN_PATH"
+else
+  for unit in "${SERVICE_FILES[@]}"; do
+    [ -f "$unit" ] || continue
+
+    RECORDED="$(sed -n 's/^WorkingDirectory=//p' "$unit" | head -n 1)"
+    [ -n "$RECORDED" ] && INSTALLATION_PATH="$RECORDED"
+    break
+  done
+fi
 
 if [ $EUID -ne 0 ]; then
   echo -e "$RED✗ Uninstallation Error:$NORMAL You need root privileges to initiate the uninstallation."
@@ -32,7 +66,7 @@ if docker ps -a --format '{{.Names}}' | grep -q "MySpeed"; then
   echo -e "$YELLOW Removing Docker container..."
   docker rm MySpeed
   echo -e "$YELLOW Removing MySpeed Docker folder..."
-  if [ "$1" != "--keep-data" ]; then
+  if [ "$KEEP_DATA" != "--keep-data" ]; then
     docker volume rm myspeed-dockerized_myspeed
   fi
   rm -rf "$DOCKER_INSTALLATION_PATH"
@@ -51,7 +85,7 @@ else
   sleep 3
 
   # Remove folder
-  if [ "$1" == "--keep-data" ]; then
+  if [ "$KEEP_DATA" == "--keep-data" ]; then
     # A fresh staging directory every run, rather than a fixed /tmp path.
     #
     # mv renames into an empty destination but moves *into* an existing
@@ -79,7 +113,16 @@ else
     mv "$STAGING/data" "$INSTALLATION_PATH/data"
     rmdir "$STAGING"
   else
-    rm -R "$INSTALLATION_PATH"
+    # Checked, because this is the step that cannot be undone and it was the one
+    # whose failure was discarded. There is no `set -e`, so a path that was
+    # never there failed to stderr and the success banner printed anyway - which
+    # is worse than the failure, because it is what stops anyone going to look.
+    if ! rm -R "$INSTALLATION_PATH"; then
+      echo -e "$RED✗ Could not remove $INSTALLATION_PATH.$NORMAL"
+      echo -e "$NORMAL The service has been stopped and removed, but the installation is still on disk."
+      echo -e "$NORMAL If it was installed elsewhere, re-run with$YELLOW -d /your/path$NORMAL."
+      exit 1
+    fi
   fi
 fi
 
