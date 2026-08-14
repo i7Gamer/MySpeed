@@ -1,8 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    bufferbloat, bufferbloatTrend, connectionChange, failureRate, getIconBySpeed, gradeForIncrease, isFailedTest,
-    jitterColour, packetLossColour, pingDeviationColour, previousConnection, TREND_LENGTH
+    bufferbloat, bufferbloatColour, bufferbloatTrend, connectionChange, failureRate, getIconBySpeed,
+    gradeForIncrease, isFailedTest, jitterColour, latencyIncrease, packetLossColour, pingDeviationColour,
+    previousConnection, TREND_LENGTH
 } from "../../client/src/common/utils/TestUtil.js";
 
 /**
@@ -377,6 +378,90 @@ describe("gradeForIncrease", () => {
         const {increase, grade} = bufferbloat(test);
 
         assert.equal(gradeForIncrease(increase), grade);
+    });
+});
+
+/**
+ * How much latency one transfer added.
+ *
+ * Lifted out of bufferbloat() because the detail pane grades each direction on
+ * its own: the single grade beside those two figures is deliberately the worse
+ * of them, so it cannot say which direction is the bad one - and a line that is
+ * clean downstream and badly buffered upstream is the usual asymmetry.
+ */
+describe("latencyIncrease", () => {
+    it("is what the transfer added over the idle ping", () => {
+        assert.equal(latencyIncrease(50, 10), 40);
+    });
+
+    // Under the idle ping is measurement noise, not an improvement.
+    it("floors at zero rather than reporting a negative", () => {
+        assert.equal(latencyIncrease(8, 10), 0);
+    });
+
+    it("keeps the two decimals the grade thresholds are read at", () => {
+        assert.equal(latencyIncrease(28.13, 10.01), 18.12);
+    });
+
+    // A failed run stores -1 in both columns; a provider that measures no loaded
+    // latency stores nothing at all. Neither is an increase of zero.
+    it("has no answer for anything that is not a pair of measurements", () => {
+        for (const value of [null, undefined, NaN, Infinity, -1, "30", {}]) {
+            assert.equal(latencyIncrease(value, 10), null, `loaded ${String(value)}`);
+            assert.equal(latencyIncrease(50, value), null, `ping ${String(value)}`);
+        }
+    });
+
+    // One expression for the quantity, so a per-direction icon and the grade it
+    // sits under cannot be computed differently.
+    it("is the quantity the single grade is built from", () => {
+        const test = {ping: 10, downloadLatency: 50, uploadLatency: 22, error: null};
+
+        assert.equal(bufferbloat(test).increase,
+            latencyIncrease(Math.max(test.downloadLatency, test.uploadLatency), test.ping));
+    });
+
+    /**
+     * Both directions have to be present before the worse of them means
+     * anything. Math.max(null, 22) is 22, not "no reading", so a test that
+     * measured one direction only would otherwise be graded as though that one
+     * were the whole story.
+     */
+    it("leaves a test that measured only one direction ungraded", () => {
+        for (const absent of [null, undefined]) {
+            assert.equal(bufferbloat({ping: 10, downloadLatency: absent, uploadLatency: 22}), null,
+                `download ${String(absent)}`);
+            assert.equal(bufferbloat({ping: 10, downloadLatency: 50, uploadLatency: absent}), null,
+                `upload ${String(absent)}`);
+        }
+    });
+});
+
+/**
+ * The colour a bufferbloat grade wears.
+ *
+ * Blue for the absence of one, the way every other grader here answers for a
+ * figure nobody measured: "F" is what a bad line earns, and red for a provider
+ * that reported no loaded latency would say the same thing about it. It fell
+ * through to red until the detail pane started grading each direction on its
+ * own, which is the first call site that can be handed a null.
+ */
+describe("bufferbloatColour", () => {
+    it("colours each band the way the thresholds read", () => {
+        assert.equal(bufferbloatColour("A+"), "green");
+        assert.equal(bufferbloatColour("A"), "green");
+        assert.equal(bufferbloatColour("B"), "orange");
+        assert.equal(bufferbloatColour("C"), "orange");
+        assert.equal(bufferbloatColour("D"), "red");
+        assert.equal(bufferbloatColour("F"), "red");
+    });
+
+    it("has no verdict on a figure that was never measured", () => {
+        for (const absent of [null, undefined])
+            assert.equal(bufferbloatColour(absent), "blue", `failed for ${String(absent)}`);
+
+        assert.equal(bufferbloatColour(gradeForIncrease(null)), "blue",
+            "a provider that measured no loaded latency is called a bad line");
     });
 });
 

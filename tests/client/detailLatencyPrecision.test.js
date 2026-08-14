@@ -329,10 +329,22 @@ describe("what the extraction cannot run, read from the source", () => {
         assert.doesNotMatch(loaded, /formatWithUnit\(/);
     });
 
-    // The one assertion that catches a figure added later and wired to the raw
-    // column: nowhere in the pane is a ping read without being trimmed first.
+    /**
+     * The one assertion that catches a figure added later and wired to the raw
+     * column: nowhere in the pane is a ping read without being trimmed first.
+     *
+     * With one exception, and it is not a displayed figure. The grade on the
+     * loaded latency's glyph is worked out from what that direction added over
+     * the idle ping, and that arithmetic is shared three ways - with
+     * bufferbloat(), which the facts row's grade comes from, and with the
+     * server's average of the same quantity across a range. All three read the
+     * stored value; trimming it here alone would let this icon disagree with the
+     * grade printed under it.
+     */
     it("lets no raw latency reach anything the reader sees", () => {
-        assert.doesNotMatch(pane, /(?<!formatLatency\()\b(test|targets|earlier)\.ping\b/,
+        const displayed = pane.replaceAll("latencyIncrease(value, test.ping)", "");
+
+        assert.doesNotMatch(displayed, /(?<!formatLatency\()\b(test|targets|earlier)\.ping\b/,
             "a ping is still read at the two decimals the column stores");
     });
 });

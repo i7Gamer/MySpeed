@@ -85,6 +85,57 @@ describe("the loaded latency sits on the card it was measured on", () => {
         assert.equal(typeof english.info.loaded_latency?.title, "string");
         assert.equal(typeof english.info.loaded_latency?.description, "string");
     });
+
+    /**
+     * And it is graded, which it was not: every other figure on the pane wears a
+     * verdict and this one was drawn in the sub-line's plain grey.
+     *
+     * On what this direction alone added over the idle ping, by the table the
+     * grade in the facts below is read from. That one is deliberately the worse
+     * of the two directions, so it cannot say which direction is the bad one -
+     * and a line that is clean downstream and badly buffered upstream is the
+     * usual asymmetry, which is the whole reason these two figures sit on
+     * separate cards.
+     */
+    it("wears the grade its own direction earned", () => {
+        const helper = beforeFacts.slice(beforeFacts.indexOf("const loadedLatency"));
+        const own = helper.slice(0, helper.indexOf("\n    const"));
+
+        assert.match(own, /bufferbloatColour\(gradeForIncrease\(latencyIncrease\(value, test\.ping\)\)\)/,
+            "the latency under load is still the one figure here with no verdict on it");
+    });
+});
+
+/**
+ * The grade a figure earns goes on its glyph.
+ *
+ * That is how the three cards read - the value is one colour and the icon does
+ * the grading - and how the overview row it opens from reads. The jitter and the
+ * packet loss beside the ping wore theirs on the whole part instead, so those
+ * two were the only numbers on the pane carrying a verdict of their own, a few
+ * centimetres from three that do not.
+ */
+describe("a graded figure colours its glyph, not itself", () => {
+    const subParts = beforeFacts.match(/className="detail-metric-sub-part"/g) ?? [];
+
+    it("leaves the sub-figures' text the colour of the group", () => {
+        assert.doesNotMatch(beforeFacts, /detail-metric-sub-part\$\{level/,
+            "the grade is worn by the whole part again, so it colours the number too");
+        assert.ok(subParts.length >= 2, "the sub-figures no longer carry a bare part class");
+    });
+
+    it("puts it on the glyph instead", () => {
+        assert.match(beforeFacts, /"detail-metric-sub-icon" \+ \(level \? " icon-" \+ level : ""\)/,
+            "the quality glyphs take no grade at all now");
+    });
+
+    // The three cards above them have always read this way; the assertion is
+    // here so the two cannot drift apart again.
+    it("the way the cards beside them already did", () => {
+        assert.match(pane, /"detail-metric-icon icon-" \+ level/);
+        assert.doesNotMatch(pane, /detail-metric-value[^"]*icon-/,
+            "a card's value carries a grade colour of its own");
+    });
 });
 
 /**

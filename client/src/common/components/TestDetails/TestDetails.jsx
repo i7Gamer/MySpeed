@@ -11,7 +11,8 @@ import {
     convertSpeed, formatBytes, formatDateTime, formatLatency, formatLatencyWithUnit, getSpeedUnit
 } from "@/common/utils/FormatUtil";
 import {
-    bufferbloat, bufferbloatColour, connectionChange, getIconBySpeed, isMeasured, jitterColour, packetLossColour
+    bufferbloat, bufferbloatColour, connectionChange, getIconBySpeed, gradeForIncrease, isMeasured,
+    jitterColour, latencyIncrease, packetLossColour
 } from "@/common/utils/TestUtil";
 import {changeFrom, differenceFromTarget, percentOfTarget, providerName} from "./utils/details";
 import {describeError} from "./utils/errors";
@@ -247,9 +248,16 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
     const quality = qualityFigures.length > 0 && (
         <span className="detail-metric-sub">
             {qualityFigures.map(({key, icon, info, text, level, label}) => (
-                <span key={key} className={`detail-metric-sub-part${level ? " icon-" + level : ""}`}>
+                <span key={key} className="detail-metric-sub-part">
                     <HelpButton label={label} onOpen={(event) => openInfo(event, info)}>
-                        <FontAwesomeIcon icon={icon} className="detail-metric-sub-icon"/>
+                        {/* The grade goes on the glyph, not on the group around
+                            it. Worn by the whole part it coloured the figure
+                            too - and these were then the only numbers on the
+                            pane that carried a verdict, beside three cards
+                            whose values are all one colour and whose icons do
+                            the grading. The row above reads the same way. */}
+                        <FontAwesomeIcon icon={icon}
+                                         className={"detail-metric-sub-icon" + (level ? " icon-" + level : "")}/>
                     </HelpButton>
                     {text}
                 </span>
@@ -274,7 +282,16 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
             <span className="detail-metric-sub-part">
                 <HelpButton label={`${t("info.loaded_latency.title")} ${formatLatencyWithUnit(value, t("latest.ping_unit"))}`}
                             onOpen={(event) => openInfo(event, loadedLatencyInfo)}>
-                    <FontAwesomeIcon icon={faStopwatch} className="detail-metric-sub-icon"/>
+                    {/* Graded on what this direction alone added over the idle
+                        ping, by the same table the grade in the facts below is
+                        read from. That one is deliberately the worse of the two
+                        directions, so it cannot say which direction is the bad
+                        one - and a line that is clean downstream and badly
+                        buffered upstream is the usual asymmetry. It was the only
+                        figure on the pane with no verdict on it at all. */}
+                    <FontAwesomeIcon icon={faStopwatch}
+                                     className={"detail-metric-sub-icon icon-"
+                                         + bufferbloatColour(gradeForIncrease(latencyIncrease(value, test.ping)))}/>
                 </HelpButton>
                 {formatLatencyWithUnit(value, t("latest.ping_unit"))}
             </span>

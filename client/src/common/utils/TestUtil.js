@@ -181,8 +181,14 @@ export const consistencyColour = (value) => {
 /**
  * The colour a grade is shown in. Kept beside the thresholds so the two cannot
  * drift into disagreeing about what counts as a good line.
+ *
+ * Blue for the absence of a grade, the way every other grader here answers for
+ * a figure nobody measured - see gradeBelow. "F" is what a bad line earns, and
+ * red for a provider that reported no loaded latency would say the same thing
+ * about it.
  */
 export function bufferbloatColour(grade) {
+    if (grade === null || grade === undefined) return "blue";
     if (grade === "A+" || grade === "A") return "green";
     if (grade === "B" || grade === "C") return "orange";
 
@@ -231,6 +237,32 @@ export function gradeForIncrease(increase) {
     return BUFFERBLOAT_GRADES.find((entry) => increase < entry.upTo)?.grade ?? WORST_GRADE;
 }
 
+/**
+ * How much latency one transfer added, which is what the grades are read
+ * against.
+ *
+ * Under the idle ping is measurement noise rather than an improvement, so it
+ * floors at zero. Null for anything that is not a pair of measurements: a failed
+ * run stores -1 in both columns, and a provider that measured no loaded latency
+ * stores nothing at all.
+ *
+ * Lifted out of bufferbloat() because the detail pane grades each direction on
+ * its own. A line can be clean downstream and badly buffered upstream - the
+ * usual asymmetry - and the single grade beside those two figures is
+ * deliberately the worse of them, so it cannot say which one is which. One
+ * expression for the quantity, so a per-direction icon and the grade it sits
+ * under cannot be computed differently.
+ *
+ * server/util/statistics.js works the same quantity out across a range, and
+ * tests/server/loadedLatencyAgreement.test.js pins the two to each other.
+ */
+export function latencyIncrease(loaded, ping) {
+    for (const value of [loaded, ping])
+        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+
+    return Math.max(0, parseFloat((loaded - ping).toFixed(INCREASE_DECIMALS)));
+}
+
 export function bufferbloat(test) {
     if (!test || isFailedTest(test)) return null;
 
@@ -238,11 +270,15 @@ export function bufferbloat(test) {
 
     // Negative rejected as well as absent: a failed test stores -1 in its
     // columns, and a latency of minus one millisecond is not a reading to grade.
-    for (const value of [ping, downloadLatency, uploadLatency])
+    //
+    // Both directions, before the worse of them is taken: Math.max(null, 5) is
+    // 5, so a single unmeasured direction would otherwise be graded as though
+    // the other one were the whole story. The ping is guarded below.
+    for (const value of [downloadLatency, uploadLatency])
         if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
 
-    // Under the idle ping is measurement noise, not an improvement.
-    const increase = Math.max(0, parseFloat((Math.max(downloadLatency, uploadLatency) - ping).toFixed(INCREASE_DECIMALS)));
+    const increase = latencyIncrease(Math.max(downloadLatency, uploadLatency), ping);
+    if (increase === null) return null;
 
     return {increase, grade: gradeForIncrease(increase)};
 }
