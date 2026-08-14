@@ -241,3 +241,42 @@ describe("proxy revalidation", () => {
         assert.equal(status, 502);
     });
 });
+
+/**
+ * What the node list actually hands back, which nothing asserted.
+ *
+ * The dashboard reads `id`, `name` and `url` off every entry, and the password
+ * is meant to arrive as a boolean - the interface needs to know that one is set,
+ * and the value is a credential for a third host.
+ */
+describe("GET /api/nodes", () => {
+    it("names each node", async () => {
+        const {status, body} = await api(server.baseUrl, "/nodes");
+
+        assert.equal(status, 200);
+        assert.ok(Array.isArray(body), "the list is not an array");
+
+        const child = body.find((node) => node.id === nodeId);
+        assert.notEqual(child, undefined, "the created node is not in the list under its own id");
+        assert.equal(child.name, "child");
+        assert.equal(child.url, upstreamUrl);
+    });
+
+    it("says whether a password is set without disclosing it", async () => {
+        const {body, text} = await api(server.baseUrl, "/nodes");
+
+        assert.equal(body.find((node) => node.id === nodeId)?.password, true);
+        assert.equal(text.includes("childsecret"), false,
+            "the node's stored password is handed to every caller of the list");
+    });
+
+    // Sequelize keeps its values in dataValues and its attribute getters on the
+    // prototype, so spreading an instance copies the bookkeeping and none of the
+    // columns.
+    it("answers with the row rather than the model instance", async () => {
+        const {body} = await api(server.baseUrl, "/nodes");
+
+        for (const internal of ["dataValues", "_previousDataValues", "_options", "isNewRecord"])
+            assert.equal(internal in body[0], false, `the list exposes Sequelize's ${internal}`);
+    });
+});
