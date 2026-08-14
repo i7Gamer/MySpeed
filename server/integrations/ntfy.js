@@ -71,7 +71,9 @@ export default (registerEvent) => {
             // host - so "https://good\n@evil.com" read as one host and reached
             // another. \S+$ leaves no room for either.
             {name: "url", type: "text", required: true, regex: /^https?:\/\/\S+$/},
-            {name: "topic", type: "text", required: true, regex: /^[A-Za-z0-9_\-]{1,64}$/},
+            // The hyphen is last in the class, where it is a literal already -
+            // escaping it there reads as a range that got away.
+            {name: "topic", type: "text", required: true, regex: /^[A-Za-z0-9_-]{1,64}$/},
             {name: "token", type: "text", required: false, secret: true},
             {name: "title", type: "text", required: false},
             {name: "tags", type: "text", required: false},

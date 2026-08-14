@@ -35,7 +35,8 @@ beforeEach(() => {
         try {
             body = JSON.parse(init.body);
         } catch {
-
+            // Not every integration sends JSON - the form-encoded ones are kept
+            // as the raw string they were sent as.
         }
 
         sent.push({url: String(url), body});

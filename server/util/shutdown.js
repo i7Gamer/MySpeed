@@ -61,7 +61,9 @@ export const createShutdown = ({
             try {
                 listener.closeIdleConnections?.();
             } catch {
-
+                // Best effort, on a listener that may already be closing. This
+                // only shortens the grace period; the timeout below still ends
+                // the process either way.
             }
 
             // Closing a listener that is already closed throws, and one that

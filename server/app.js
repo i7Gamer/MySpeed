@@ -57,7 +57,9 @@ let embeddedClient = null;
 try {
     embeddedClient = await import('./clientEmbed.js');
 } catch {
-
+    // Generated only for the compiled binary, so running from source is the
+    // ordinary case rather than a failure - the static handler falls back to
+    // serving ./build from the working directory.
 }
 
 const app = express();

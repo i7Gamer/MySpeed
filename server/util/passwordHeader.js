@@ -24,6 +24,9 @@ export const writePasswordHeaders = (password) => {
     if (!password || password === "none") return {};
 
     const headers = {"x-password": encodeURIComponent(password)};
+    // The control characters are the point: this asks whether every code point
+    // fits in a byte, which is what a raw HTTP header can carry.
+    // eslint-disable-next-line no-control-regex
     if (/^[\x00-\xFF]*$/.test(password)) headers.password = password;
 
     return headers;

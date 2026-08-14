@@ -52,6 +52,17 @@ jobs:
           bun run generate-migrations
           bun run generate-integrations
 
+      # Before the tests, because it is the cheap tier and it sees what they
+      # cannot: the suite reads the client's modules as text rather than
+      # evaluating them, so a name that is re-exported and then used - which
+      # binds nothing, and throws at render - passes 2300 tests and a build.
+      #
+      # Errors fail the job; warnings do not. The 28 open warnings are unused
+      # variables and deliberately narrowed effect dependencies, each of which
+      # wants reading rather than a sweep.
+      - name: Lint
+        run: npm run lint
+
       # test:all rather than test: `npm test` is the fast tier for the edit-run
       # loop, and running only that here would publish without the integration
       # suite ever having executed.

@@ -35,7 +35,8 @@ let embeddedClient = null;
 try {
   embeddedClient = await import('../clientEmbed.js');
 } catch {
-
+  // Generated only for the compiled binary; running from source is the ordinary
+  // case, and the caller reads the index from ./build instead.
 }
 
 /**

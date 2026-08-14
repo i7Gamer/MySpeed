@@ -77,7 +77,9 @@ export const api = async (baseUrl, pathname, options = {}) => {
     const response = await fetch(`${baseUrl}/api${pathname}`, options);
     const text = await response.text();
 
-    let body = null;
+    // The raw text when it is not JSON: an error page, or an endpoint that
+    // answers with a plain string.
+    let body;
     try {
         body = JSON.parse(text);
     } catch {

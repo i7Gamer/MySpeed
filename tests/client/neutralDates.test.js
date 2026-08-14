@@ -45,7 +45,7 @@ const sourceFiles = (dir) => fs.readdirSync(dir, {withFileTypes: true}).flatMap(
  * separator - `getDate() + "." + getMonth()`, in any order and with or without
  * the padStart in between.
  */
-const HAND_BUILT_DATE = /get(?:Date|Month|FullYear)\(\)[^\n]{0,80}?["'`][.\/-]["'`]/;
+const HAND_BUILT_DATE = /get(?:Date|Month|FullYear)\(\)[^\n]{0,80}?["'`][./-]["'`]/;
 
 describe("dates on screen", () => {
     it("are never assembled from raw calendar fields", () => {

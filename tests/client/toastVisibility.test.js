@@ -140,7 +140,10 @@ describe("the toast provider", () => {
      * one's remaining time, which is what a stale handle caused.
      */
     it("clears the previous timer before scheduling the next", () => {
-        const update = provider.match(/const updateToast[\s\S]*?\n    \};/);
+        // The four spaces are the provider's indentation, counted rather than
+        // typed out - which is what tells the closing brace of updateToast from
+        // the closing brace of anything nested inside it.
+        const update = provider.match(/const updateToast[\s\S]*?\n {4}\};/);
 
         assert.notEqual(update, null, "updateToast is no longer recognisable");
         const cleared = update[0].search(/clear\w*\(/i);

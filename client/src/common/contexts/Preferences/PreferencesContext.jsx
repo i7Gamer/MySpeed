@@ -41,7 +41,11 @@ const loadPreferences = () => {
 const persistPreferences = (preferences) => {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
-    } catch {}
+    } catch {
+        // Full, or blocked entirely in a private window. A preference that
+        // cannot be written down is not worth failing a render over - it simply
+        // lasts as long as the tab does.
+    }
 };
 
 export const PreferencesContext = createContext({});
