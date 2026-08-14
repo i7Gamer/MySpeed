@@ -83,7 +83,12 @@ const TestArea = () => {
                 }
             }
         }
-    }, [speedtests, stickyDate, hasMore, loading, loadMoreTests]);
+        // `stickyDate` is deliberately not a dependency. This reads none of it -
+        // it only ever calls setStickyDate - and listing it rebuilt the handler
+        // on every date the pill showed, which tears down and re-registers the
+        // scroll listeners below on each one. That is once per day boundary
+        // crossed, in the middle of the scroll that is crossing them.
+    }, [speedtests, hasMore, loading, loadMoreTests]);
 
     const scrollToTop = useCallback(() => {
         window.scrollTo({top: 0, behavior: 'smooth'});
@@ -123,7 +128,12 @@ const TestArea = () => {
         window.addEventListener('scroll', throttledScrollHandler, {passive: true});
         document.body.addEventListener('scroll', throttledScrollHandler, {passive: true});
 
-        setTimeout(() => {
+        // Held so the cleanup can drop it. Left loose it outlived the effect
+        // that armed it: on unmount within its 100ms it ran against listeners
+        // that were already gone, and re-armed the pill timer the cleanup had
+        // just cleared - so a timer survived the component by more than a
+        // second, every time.
+        const initialCheck = setTimeout(() => {
             handleScroll();
             // Armed here as well: a page restored halfway down its list raises
             // the pill without a scroll event ever arriving to take it away.
@@ -131,6 +141,7 @@ const TestArea = () => {
         }, 100);
 
         return () => {
+            clearTimeout(initialCheck);
             clearTimeout(pillTimer.current);
             window.removeEventListener('scroll', throttledScrollHandler);
             document.body.removeEventListener('scroll', throttledScrollHandler);
