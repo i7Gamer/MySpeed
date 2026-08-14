@@ -10,6 +10,7 @@ const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
 
 const dialogSource = read("common/contexts/Dialog/DialogContext.jsx");
 const alertSource = read("common/contexts/Alert/AlertContext.jsx");
+const chartSource = read("common/components/ChartModal/ChartModal.jsx");
 
 const SELECTOR = "const OVERLAY_AREA_SELECTOR";
 const RULE = "export const isTopmostOverlay";
@@ -39,8 +40,8 @@ const bodyOfArrowAt = (source, start) =>
  * is what two handlers did with one event, and that is only observable by
  * handing them one. Same approach as overviewRow.test.js.
  */
-const handlerIn = (source, closure) => {
-    const start = source.indexOf("const handleKeyDown");
+const handlerIn = (source, closure, named = "const handleKeyDown") => {
+    const start = source.indexOf(named);
     assert.notEqual(start, -1, "the overlay no longer answers the keyboard at all");
 
     const body = bodyOfArrowAt(source, start);
@@ -50,18 +51,28 @@ const handlerIn = (source, closure) => {
         ...names.map((name) => closure[name]));
 };
 
-const overlayRule = (document) => {
+/**
+ * Every rule the overlays share, taken as one region of the file: from the
+ * selector they are all written against down to the Dialog component itself.
+ *
+ * Sliced as a region rather than function by function so that a rule added
+ * beside the others is evaluated with them, without the extraction here having
+ * an opinion about whether it was written with a braced body.
+ */
+const overlayModule = (document) => {
     const from = dialogSource.indexOf(SELECTOR);
-    const rule = dialogSource.indexOf(RULE);
+    const until = dialogSource.indexOf("export const Dialog");
 
     assert.notEqual(from, -1, "there is no named selector for the overlay backdrops");
-    assert.ok(rule > from, "the dialog publishes no rule for which overlay owns a keypress");
+    assert.ok(until > from, "the shared overlay rules no longer sit above the Dialog component");
+    assert.ok(dialogSource.indexOf(RULE) > from, "the dialog publishes no rule for which overlay owns a keypress");
 
-    const body = bodyOfArrowAt(dialogSource, rule);
-    const block = dialogSource.slice(from, dialogSource.indexOf(body) + blockEnd(body, 0) + 1);
+    const block = dialogSource.slice(from, until).replace(/export /g, "");
 
-    return new Function("document", `${block.replace("export ", "")};\nreturn isTopmostOverlay;`)(document);
+    return new Function("document", `${block}\nreturn {isTopmostOverlay, hasOpenOverlay};`)(document);
 };
+
+const overlayRule = (document) => overlayModule(document).isTopmostOverlay;
 
 /**
  * Stands in for the document the overlays share: the .dialog-area backdrops in
@@ -203,6 +214,90 @@ describe("Escape with a single overlay", () => {
         press.alert(keyPress("Enter"));
 
         assert.deepEqual(closed, ["submitted"]);
+    });
+});
+
+/**
+ * The expanded chart answered Escape as well, and answered it always.
+ *
+ * With a chart expanded on the statistics page, a metric's help button opens an
+ * alert over it - and one Escape was taken by both, closing the alert and the
+ * chart underneath it. Nothing typed is lost, unlike the password dialog the
+ * rule above was written for, but the reader is dropped out of the view they
+ * were reading and has to find their way back into it.
+ *
+ * It cannot use isTopmostOverlay as the alerts and dialogs do. That rule reads
+ * document order, which is only the paint order because every overlay it was
+ * written for shares one z-index and one portal; this backdrop is rendered
+ * inline on the page and sits at a higher z-index than either. What is true of
+ * it instead is structural: it is opened from the page, from its single call
+ * site, so nothing can ever be underneath it. Any other overlay that is open is
+ * therefore above it, and the key belongs to that one.
+ */
+describe("Escape with an alert stacked over an expanded chart", () => {
+    const expand = (overlayOpen) => {
+        const closed = [];
+        const press = handlerIn(chartSource, {
+            onClose: () => closed.push("chart"),
+            hasOpenOverlay: () => overlayOpen
+        }, "const handleEscape");
+
+        return {press, closed};
+    };
+
+    it("leaves the key to an alert opened over it", () => {
+        const {press, closed} = expand(true);
+
+        press(keyPress("Escape"));
+
+        assert.deepEqual(closed, [],
+            "the expanded chart closed along with the alert that was sitting on top of it");
+    });
+
+    it("closes when nothing is stacked over it", () => {
+        const {press, closed} = expand(false);
+        const event = keyPress("Escape");
+
+        press(event);
+
+        assert.deepEqual(closed, ["chart"]);
+        assert.equal(event.defaultPrevented, true, "the key has to be claimed, as the other overlays claim it");
+    });
+
+    it("leaves every other key alone", () => {
+        const {press, closed} = expand(false);
+
+        for (const key of ["Enter", "Tab", " ", "Esc"]) press(keyPress(key));
+
+        assert.deepEqual(closed, []);
+    });
+
+    it("asks the shared rule rather than one of its own", () => {
+        assert.match(chartSource, /hasOpenOverlay.*from "@\/common\/contexts\/Dialog"/,
+            "the expanded chart decides for itself what counts as an overlay above it");
+    });
+});
+
+/**
+ * The rule that answers it: whether there is any overlay of the stacking kind
+ * open at all, rather than which of them is on top.
+ */
+describe("hasOpenOverlay", () => {
+    const presence = (...areas) => overlayModule(documentShowing(...areas)).hasOpenOverlay;
+
+    it("is false when nothing is open", () => {
+        assert.equal(presence()(), false);
+    });
+
+    it("is true while an overlay is open", () => {
+        assert.equal(presence({closing: false})(), true);
+    });
+
+    // The same 300ms fade the rule above already steps over: an overlay on its
+    // way out has given up its claim on the key.
+    it("is false again once the only overlay is fading out", () => {
+        assert.equal(presence({closing: true})(), false,
+            "a chart stays open behind an alert that has already been dismissed");
     });
 });
 

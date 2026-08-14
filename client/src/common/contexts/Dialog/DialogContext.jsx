@@ -30,6 +30,22 @@ export const isTopmostOverlay = (area) => {
     return areas.length > 0 && areas[areas.length - 1] === area;
 };
 
+/**
+ * Whether any overlay of the stacking kind is open at all.
+ *
+ * For an overlay that cannot ask the question above. isTopmostOverlay compares
+ * document order, which stands in for paint order only because every overlay it
+ * was written for shares one z-index and one portal - so an overlay rendered
+ * inline on the page, at a z-index of its own, would be judged by where it
+ * happens to sit in the markup rather than by what the user sees.
+ *
+ * The expanded chart is the case, and it can answer a weaker question instead:
+ * it is opened from the page, so nothing is ever underneath it, and anything
+ * else that is open is therefore on top. A backdrop that is fading out is
+ * excluded here as it is above - it has given up its turn.
+ */
+export const hasOpenOverlay = () => document.querySelectorAll(OVERLAY_AREA_SELECTOR).length > 0;
+
 export const Dialog = ({open, onClose, className, disableClose, children}) => {
     const areaRef = useRef();
     const dialogRef = useRef();

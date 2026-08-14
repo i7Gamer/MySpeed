@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faXmark } from "@fortawesome/free-solid-svg-icons";
+import { hasOpenOverlay } from "@/common/contexts/Dialog";
 import "./styles.sass";
 
 /**
@@ -10,10 +11,27 @@ import "./styles.sass";
  *                a shrink-to-fit dialog for the width it needs
  */
 export const ChartModal = ({ isOpen, onClose, isChart = false, wide = false, toolbar, children }) => {
+    /**
+     * Only while this is the overlay the key belongs to.
+     *
+     * A metric's help button opens an alert over the expanded chart, and both
+     * listeners sit on the document - where neither preventDefault nor
+     * stopPropagation reaches a sibling - so one Escape was answered by both,
+     * dismissing the alert and dropping the reader out of the chart underneath
+     * it.
+     *
+     * Asked as "is anything else open" rather than "am I on top", which is the
+     * question the dialogs and alerts ask each other: that rule reads document
+     * order, and this backdrop is rendered inline on the page rather than
+     * through their portal, so document order would not describe it. It has a
+     * simpler answer available - it is opened from the page, so anything else
+     * that is open is above it.
+     */
     const handleEscape = useCallback((e) => {
-        if (e.key === "Escape") {
-            onClose();
-        }
+        if (e.key !== "Escape" || hasOpenOverlay()) return;
+
+        e.preventDefault();
+        onClose();
     }, [onClose]);
 
     useEffect(() => {
