@@ -11,14 +11,16 @@ import {
     faSliders,
     faHardDrive,
     faGauge,
-    faUserGear
+    faUserGear,
+    faExclamationTriangle
 } from "@fortawesome/free-solid-svg-icons";
 import {ConfigContext} from "@/common/contexts/Config";
 import {takePasswordUnsetMark} from "@/common/utils/PasswordSetup";
 import {useClickOutside} from "@/common/hooks/useClickOutside";
 import {StatusContext} from "@/common/contexts/Status";
+import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {useAlert} from "@/common/contexts/Alert";
-import {postRequest} from "@/common/utils/RequestUtil";
+import {assertOk, postRequest} from "@/common/utils/RequestUtil";
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {IntegrationDialog} from "@/common/components/IntegrationDialog";
@@ -34,6 +36,7 @@ import PreferencesDialog from "@/common/components/PreferencesDialog";
 const DropdownComponent = ({isOpen, switchDropdown}) => {
     const [config] = useContext(ConfigContext);
     const [status, updateStatus] = useContext(StatusContext);
+    const updateToast = useContext(ToastNotificationContext);
     const alert = useAlert();
     const [showIntegrationDialog, setShowIntegrationDialog] = useState(false);
     const [showLanguageDialog, setShowLanguageDialog] = useState(false);
@@ -82,12 +85,21 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
     }, [isOpen, switchDropdown]);
     
     const togglePause = async () => {
-        if (!status.paused) {
-            setShowPauseDialog(true);
-        } else {
-            await postRequest("/speedtests/continue");
-            updateStatus();
+        if (!status.paused) return setShowPauseDialog(true);
+
+        // Checked, not assumed - the same reason PauseDialog gives for its own
+        // half of this pair. postRequest hands back the raw Response, so a
+        // refusal (a 403 on a demo, a 401 on an expired session, a 500) was
+        // discarded and the menu re-rendered still offering "Resume tests",
+        // with nothing on screen to say the request had failed.
+        try {
+            assertOk(await postRequest("/speedtests/continue"), "continue");
+        } catch (e) {
+            updateToast(e.message || t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
+            return;
         }
+
+        updateStatus();
     };
 
     const showProviderDetails = () => alert.openAlert(
@@ -96,14 +108,33 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
         { buttonText: t("dialog.close") }
     );
 
+    /**
+     * Why a setting is not open on a demo, rather than a red toast saying the
+     * save failed.
+     *
+     * The server refuses every one of these with a 403 in preview mode, so the
+     * dialogs behind them could be filled in and then never saved - the demo
+     * presented a working-looking form that always errored. Explaining beats
+     * hiding here: seeing which settings exist is half of what a demo is for,
+     * and it matches what the node page and the integration dialog already do.
+     */
+    const explainPreview = () => alert.openAlert(
+        t("preview.title"),
+        t("preview.description"),
+        { buttonText: t("dialog.close") }
+    );
+
     const options = [
-        {run: () => setShowOptimalValuesDialog(true), icon: faGauge, text: t("dropdown.optimal_values")},
+        {run: () => setShowOptimalValuesDialog(true), icon: faGauge, text: t("dropdown.optimal_values"), previewDisabled: true},
         {hr: true, key: 1},
-        {run: () => setShowProviderDialog(true), icon: faSliders, text: t("dropdown.change_provider")},
+        {run: () => setShowProviderDialog(true), icon: faSliders, text: t("dropdown.change_provider"), previewDisabled: true},
+        // Not disabled: the exports underneath are GETs and still work on a
+        // demo. Only its import and clear buttons are refused, and the dialog
+        // reports those itself.
         {run: () => setShowStorageDialog(true), icon: faHardDrive, text: t("dropdown.storage")},
         {run: () => setShowPasswordDialog(true), icon: faKey, text: t("dropdown.password"), previewHidden: true},
-        {run: () => setShowFrequencyDialog(true), icon: faClock, text: t("dropdown.cron")},
-        {run: togglePause, icon: status.paused ? faPlay : faPause, text: t("dropdown." + (status.paused ? "resume_tests" : "pause_tests"))},
+        {run: () => setShowFrequencyDialog(true), icon: faClock, text: t("dropdown.cron"), previewDisabled: true},
+        {run: togglePause, icon: status.paused ? faPlay : faPause, text: t("dropdown." + (status.paused ? "resume_tests" : "pause_tests")), previewDisabled: true},
         {run: () => setShowIntegrationDialog(true), icon: faCircleNodes, text: t("dropdown.integrations")},
         {hr: true, key: 2},
         {run: () => setShowLanguageDialog(true), icon: faGlobeEurope, text: t("dropdown.language"), allowView: true},
@@ -131,9 +162,14 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
                             if (entry.previewShown && !config.previewMode) return;
                             if (!config.viewMode || (config.viewMode && entry.allowView)) {
                                 if (!entry.hr) {
-                                    return (<div className="dropdown-item" onClick={() => {
+                                    const blocked = entry.previewDisabled && config.previewMode;
+
+                                    return (<div className={"dropdown-item" + (blocked ? " dropdown-item-disabled" : "")}
+                                                 onClick={() => {
                                         switchDropdown();
-                                        entry.run();
+                                        // The explanation instead of the dialog:
+                                        // the save behind it would be refused.
+                                        (blocked ? explainPreview : entry.run)();
                                     }} key={entry.run}>
                                         <FontAwesomeIcon icon={entry.icon}/>
                                         <h3>{entry.text}</h3>

@@ -66,33 +66,49 @@ const note = (activity, failed) => {
 };
 
 /**
- * Lets go of a response nobody is going to read.
+ * Finishes with a response body nobody is going to read.
  *
- * Neither helper's return value is read by any of the eight integrations - the
- * status has already been turned into `activity` and a log line by the time it
- * gets back - but the body was left neither consumed nor cancelled. On undici
- * that keeps the transport checked out of the pool with the bytes buffered
- * until the Response is collected, and three of the providers answer with the
- * message they created while healthChecks fires every minute.
+ * Read to the end rather than cancelled. Cancelling aborts the fetch, and an
+ * HTTP client that has not received the whole message cannot reuse the
+ * connection - it has to destroy the socket - so the next notification in the
+ * same burst pays a fresh handshake. Worse, whether that happens is a matter of
+ * timing rather than size: the abort is a no-op only if the whole response
+ * already arrived in one pass, so a chunked reply or a slow hop loses the
+ * socket even for a two-byte body. Draining completes the message and leaves
+ * the connection reusable.
  *
- * Cancelled rather than buffered: nothing wants the bytes, and a body that has
- * been cancelled fails loudly if a future caller tries to read one.
+ * Un-awaited, so an integration's reply never delays the run that triggered it,
+ * and bounded by the same deadline the request carries - a hostile endpoint
+ * cannot make this read forever.
  */
-const release = (res) => {
+const drain = (res) => {
     try {
-        res?.body?.cancel?.()?.catch?.(() => undefined);
+        Promise.resolve(res?.arrayBuffer?.()).catch(() => undefined);
     } catch {
-        // A response with no body, or a runtime that gives no stream for one.
+        // A response object that offers no body at all.
     }
 };
+
+/**
+ * What an outbound send reports back.
+ *
+ * The Response itself is deliberately not returned. Its body has been drained
+ * by the time the caller sees it, so a Response is exactly the wrong shape to
+ * hand over: the one thing that makes it useful is already spent, and a future
+ * caller reaching for `res.json()` would get "body is unusable" from a file
+ * they were not looking at. None of the eight integrations reads it - the
+ * status has already become `activity` and a log line - so what is left is the
+ * outcome, and that is what goes back. `null` on a thrown request, as before.
+ */
+const outcome = (res) => ({ok: res.ok, status: res.status});
 
 export const postJson = async (url, json, {headers, activity} = {}) => {
     try {
         const res = await fetch(url, jsonInit("POST", json, headers));
         note(activity, res.ok ? undefined : true);
         if (!res.ok) report(url, `HTTP ${res.status}`);
-        release(res);
-        return res;
+        drain(res);
+        return outcome(res);
     } catch (e) {
         note(activity, true);
         report(url, e);
@@ -110,8 +126,8 @@ export const postText = async (url, body, {headers, activity} = {}) => {
         });
         note(activity, res.ok ? undefined : true);
         if (!res.ok) report(url, `HTTP ${res.status}`);
-        release(res);
-        return res;
+        drain(res);
+        return outcome(res);
     } catch (e) {
         note(activity, true);
         report(url, e);
@@ -128,6 +144,15 @@ export const postText = async (url, body, {headers, activity} = {}) => {
 export const getJson = async (url, {headers, signal, timeout = OUTBOUND_TIMEOUT} = {}) => {
     const deadline = AbortSignal.timeout(timeout);
     const res = await fetch(url, {headers, signal: signal ? AbortSignal.any([signal, deadline]) : deadline});
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    if (!res.ok) {
+        // The refusal's body still has to be finished with. This threw with it
+        // unread, which is the leak the drain above exists to close - one
+        // function down, on the path a rate-limited GitHub release check takes
+        // every time an unauthenticated caller asks for the version.
+        drain(res);
+        throw new Error(`HTTP ${res.status}`);
+    }
+
     return res.json();
 };

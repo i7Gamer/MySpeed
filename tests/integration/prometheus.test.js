@@ -4,11 +4,12 @@ import { bootServer, api, seedTests, setConfig } from "./helpers/boot.js";
 
 let server;
 let resetFailedAttempts;
-let chargeAttempt;
+let reserveAttempt;
+let settleAttempt;
 
 before(async () => {
     server = await bootServer();
-    ({resetFailedAttempts, chargeAttempt} = await import("../../server/middlewares/password.js"));
+    ({resetFailedAttempts, reserveAttempt, settleAttempt} = await import("../../server/middlewares/password.js"));
 });
 
 after(async () => {
@@ -61,10 +62,11 @@ describe("GET /api/prometheus/metrics", () => {
      * whether simultaneous guesses race it, and only the second needs
      * concurrency - that one is pinned in passwordThrottle.test.js, once,
      * against the one function all three entry points spend the counter
-     * through. So these are sequential, and the lockout is built through
-     * chargeAttempt rather than twenty HTTP requests: this route sits behind
-     * its own 60-per-minute rate limiter, and five tests of twenty scrapes
-     * each tripped it, failing everything after them for the wrong reason.
+     * through. So these are sequential, and the lockout is built through the
+     * throttle helpers rather than twenty HTTP requests: this route sits
+     * behind its own 60-per-minute rate limiter, and five tests of twenty
+     * scrapes each tripped it, failing everything after them for the wrong
+     * reason.
      * The one real wrong scrape in the first test is what proves the route
      * charges the shared counter; the 429s prove it checks it.
      */
@@ -75,7 +77,10 @@ describe("GET /api/prometheus/metrics", () => {
         // the scrapes land on one counter.
         const sameCaller = {headers: {}, socket: {remoteAddress: "127.0.0.1"}};
         const spend = (attempts) => {
-            for (let i = 0; i < attempts; i++) chargeAttempt(sameCaller);
+            for (let i = 0; i < attempts; i++) {
+                reserveAttempt(sameCaller);
+                settleAttempt(sameCaller, {failed: 1});
+            }
         };
 
         it("refuses to keep comparing after too many wrong passwords", async () => {

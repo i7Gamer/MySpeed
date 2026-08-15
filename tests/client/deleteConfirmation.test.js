@@ -70,11 +70,22 @@ describe("deleting a test", () => {
             "the confirming button says OK, which says nothing about what it does");
     });
 
-    // The toast and the fade are the report that it happened, and they must not
-    // run for a deletion the reader declined.
+    /**
+     * The toast and the fade are the report that it happened, and they must not
+     * run for a deletion the reader declined.
+     *
+     * The needle is asserted present before its position is compared: indexOf
+     * answers -1 for a string that is not there, and -1 is less than every real
+     * index - so deleting the guard entirely, which is the regression this
+     * exists to catch, satisfied the comparison and left the test green.
+     */
     it("says nothing when the answer is no", () => {
-        assert.ok(removeTest.indexOf("if (!confirmed) return") < removeTest.indexOf("fadeOut("),
-            "the row fades out before the answer is known");
+        const guard = removeTest.indexOf("if (!confirmed) return");
+        const fade = removeTest.indexOf("fadeOut(");
+
+        assert.notEqual(guard, -1, "the confirmation gate is gone from removeTest");
+        assert.notEqual(fade, -1, "removeTest no longer fades the row out");
+        assert.ok(guard < fade, "the row fades out before the answer is known");
     });
 });
 

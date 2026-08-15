@@ -76,7 +76,7 @@ describe("the discord embed", () => {
         const dirty = "Configuration - Couldn't connect to server `fra-01` **now** ~~gone~~ ||spoiler||";
         const {error} = stripFor({error: dirty}, DISCORD_MARKDOWN);
 
-        for (const character of ["*", "_", "`", "~", "|", "[", "]", "\\"])
+        for (const character of ["*", "_", "`", "~", "|", "[", "]"])
             assert.ok(!error.includes(character), `"${character}" survived in "${error}"`);
     });
 
@@ -103,6 +103,47 @@ describe("the discord embed", () => {
     it("leaves non-string values and an absent payload alone", () => {
         assert.deepEqual(stripFor({ping: 12, jitter: null}, DISCORD_MARKDOWN), {ping: 12, jitter: null});
         assert.deepEqual(stripFor(undefined, DISCORD_MARKDOWN), {});
+    });
+
+
+    /**
+     * A backslash is only stripped where Discord would read it as an escape.
+     *
+     * Taking every one of them destroyed the text the notification exists to
+     * deliver: the live installer runs the server as a Windows service, and a
+     * failure reason naming a path arrived with its separators gone. Discord
+     * renders a backslash before a letter as both characters, so it is not
+     * formatting there and removing it is a change for nothing.
+     */
+    describe("a backslash", () => {
+        const cleaned = (error) => stripFor({error}, DISCORD_MARKDOWN).error;
+
+        // String.raw throughout: these are about backslashes, and writing them
+        // as escapes is how the first version of this test ended up asserting
+        // on octal escape sequences instead.
+        it("survives inside a Windows path", () => {
+            const path = String.raw`ENOENT: open 'C:\ProgramData\MySpeed\data\servers.json'`;
+
+            assert.equal(cleaned(path), path);
+        });
+
+        it("survives before a digit or a space", () => {
+            const text = String.raw`path\2nd and a\ space`;
+
+            assert.equal(cleaned(text), text);
+        });
+
+        // The cases where it really would escape something.
+        it("goes where it could escape the template's own delimiter", () => {
+            // Not String.raw: a template literal cannot end in a backslash,
+            // raw or not - it escapes the closing backtick either way.
+            assert.equal(cleaned("trailing\\"), "trailing");
+            // Only the one that escapes goes. The second precedes a letter, so
+            // Discord renders it verbatim and it stays - and what the reader
+            // sees is unchanged either way.
+            assert.equal(cleaned(String.raw`a\\b`), String.raw`a\b`);
+            assert.equal(cleaned(String.raw`open\(paren`), "open(paren");
+        });
     });
 
     // Telegram's set is unchanged by the move: a pipe or a tilde is not

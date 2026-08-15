@@ -1,6 +1,7 @@
 import express from 'express';
 import * as nodes from '../controller/node.js';
 import password from '../middlewares/password.js';
+import previewReadOnly from '../middlewares/previewReadOnly.js';
 import { passwordHeaderNames, writePasswordHeaders } from '../util/passwordHeader.js';
 import { stripTrailingSlashes } from '../util/helpers.js';
 import { checkNodeTarget } from '../util/safeUrl.js';
@@ -12,10 +13,9 @@ app.get("/", password(false), async (req, res) => {
     return res.json(await nodes.listAll());
 });
 
-app.put("/", password(false), async (req, res) => {
-    if (process.env.PREVIEW_MODE === "true")
-        return res.status(403).json({message: "For security reasons, you can't create nodes in preview mode"});
-
+app.put("/", password(false),
+    previewReadOnly.saying("For security reasons, you can't create nodes in preview mode"),
+    async (req, res) => {
     // Optional chaining because body-parser 2.x leaves req.body undefined on a
     // request it did not parse - 1.x defaulted it to {} - so the guard itself
     // threw and Express answered its generic 500 where this 400 was owed.
@@ -45,10 +45,9 @@ app.put("/", password(false), async (req, res) => {
     res.json({id: (await nodes.create(req.body.name, url, req.body.password)).id, type: "NODE_CREATED"});
 });
 
-app.delete("/:nodeId", password(false), async (req, res) => {
-    if (process.env.PREVIEW_MODE === "true")
-        return res.status(403).json({message: "For security reasons, you can't delete nodes in preview mode"});
-
+app.delete("/:nodeId", password(false),
+    previewReadOnly.saying("For security reasons, you can't delete nodes in preview mode"),
+    async (req, res) => {
     const node = await nodes.getOne(req.params.nodeId);
     if (node === null) return res.status(404).json({message: "Node not found"});
 
@@ -56,10 +55,9 @@ app.delete("/:nodeId", password(false), async (req, res) => {
     res.json({message: "Node successfully deleted"});
 });
 
-app.patch("/:nodeId/name", password(false), async (req, res) => {
-    if (process.env.PREVIEW_MODE === "true")
-        return res.status(403).json({message: "For security reasons, you can't update nodes in preview mode"});
-
+app.patch("/:nodeId/name", password(false),
+    previewReadOnly.saying("For security reasons, you can't update nodes in preview mode"),
+    async (req, res) => {
     if (!req.body?.name) return res.status(400).json({message: "Missing parameters", type: "MISSING_PARAMETERS"});
 
     const node = await nodes.getOne(req.params.nodeId);
@@ -69,10 +67,9 @@ app.patch("/:nodeId/name", password(false), async (req, res) => {
     res.json({message: "Node name successfully updated"});
 });
 
-app.patch("/:nodeId/password", password(false), async (req, res) => {
-    if (process.env.PREVIEW_MODE === "true")
-        return res.status(403).json({message: "For security reasons, you can't update nodes in preview mode"});
-
+app.patch("/:nodeId/password", password(false),
+    previewReadOnly.saying("For security reasons, you can't update nodes in preview mode"),
+    async (req, res) => {
     if (!req.body?.password) return res.status(400).json({message: "Missing parameters", type: "MISSING_PARAMETERS"});
 
     const node = await nodes.getOne(req.params.nodeId);
@@ -94,7 +91,15 @@ app.patch("/:nodeId/password", password(false), async (req, res) => {
 // deliberately skipped its 100kb parser; everywhere else the body has already
 // been read and this is a no-op. Mounted after password(false), so the large
 // limit stays behind authentication.
-app.all("/:nodeId/*route", password(false), importBody, async (req, res) => {
+//
+// previewReadOnly matters more here than on any route it guards directly: this
+// one reaches a *different machine*, and it substitutes that machine's stored
+// password on the way, so an unguarded mutating verb would hand an anonymous
+// demo visitor administrative access to a node the operator owns. It was the
+// only mutating route in the app with no preview check of any kind - the four
+// above it each had one, and it was missed because `app.all` looks like
+// nothing in particular. Reads still proxy: the guard passes GET/HEAD/OPTIONS.
+app.all("/:nodeId/*route", password(false), previewReadOnly, importBody, async (req, res) => {
     const node = await nodes.getOne(req.params.nodeId);
     if (node === null) return res.status(404).json({message: "Node not found"});
 

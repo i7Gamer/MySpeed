@@ -1,6 +1,7 @@
 import express from 'express';
 import * as integrations from '../controller/integrations.js';
 import password from '../middlewares/password.js';
+import previewReadOnly from '../middlewares/previewReadOnly.js';
 import { validateInput } from '../controller/integrations.js';
 
 const app = express.Router();
@@ -9,12 +10,13 @@ app.get("/", password(false), (req, res) => res.json(integrations.getIntegration
 
 app.get("/active", password(false), async (req, res) => res.json(await integrations.getActive()));
 
-app.put("/:integrationName", password(false), async (req, res) => {
+// Guarded before the lookup, not after it: a refusal that first reports
+// whether an integration name exists tells a demo visitor the registry.
+app.put("/:integrationName", password(false),
+    previewReadOnly.saying("For security reasons, you can't create integrations in preview mode"),
+    async (req, res) => {
     const integration = integrations.getIntegration(req.params.integrationName);
     if (!integration) return res.status(404).json({message: "Integration not found"});
-
-    if (process.env.PREVIEW_MODE === "true")
-        return res.status(403).json({message: "For security reasons, you can't create integrations in preview mode"});
 
     if (!req.body) return res.status(400).json({message: "Missing data"});
 
@@ -25,11 +27,10 @@ app.put("/:integrationName", password(false), async (req, res) => {
     return res.json({message: "Integration created", id});
 });
 
-app.patch("/:id", password(false), async (req, res) => {
+app.patch("/:id", password(false),
+    previewReadOnly.saying("For security reasons, you can't update integrations in preview mode"),
+    async (req, res) => {
     if (!req.body) return res.status(400).json({message: "Missing data"});
-
-    if (process.env.PREVIEW_MODE === "true")
-        return res.status(403).json({message: "For security reasons, you can't update integrations in preview mode"});
 
     const integration = await integrations.getIntegrationById(req.params.id);
     if (!integration) return res.status(404).json({message: "Integration not found"});
@@ -41,10 +42,9 @@ app.patch("/:id", password(false), async (req, res) => {
     return res.json({message: "Integration updated"});
 });
 
-app.delete("/:id", password(false), async (req, res) => {
-    if (process.env.PREVIEW_MODE === "true")
-        return res.status(403).json({message: "For security reasons, you can't delete integrations in preview mode"});
-
+app.delete("/:id", password(false),
+    previewReadOnly.saying("For security reasons, you can't delete integrations in preview mode"),
+    async (req, res) => {
     const result = await integrations.deleteIntegration(req.params.id);
     if (result === null) return res.status(404).json({message: "Integration not found"});
     return res.json({message: "Integration deleted"});

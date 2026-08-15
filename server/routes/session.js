@@ -4,7 +4,9 @@ import * as config from '../controller/config.js';
 import { matchesSetupToken } from '../util/setupToken.js';
 import { createSession, destroySession, isValidSession, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from '../util/session.js';
 import { readCookie, serialiseCookie } from '../util/cookies.js';
-import { chargeAttempt, clearFailedAttempts } from '../middlewares/password.js';
+import {
+    ATTEMPT_BUSY, ATTEMPT_LOCKED_OUT, clearFailedAttempts, reserveAttempt, settleAttempt
+} from '../middlewares/password.js';
 import { PASSWORD_REQUIRED, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS } from '../util/authOutcome.js';
 
 const app = express.Router();
@@ -23,24 +25,42 @@ app.post("/", async (req, res) => {
     if (typeof supplied !== "string" || supplied === "")
         return res.status(400).json({message: "You need to provide a password"});
 
-    // Refused or charged in one atomic call, and refunded below if the guess
-    // turns out to be right - see chargeAttempt for why the check and the
-    // write must not be separable. After the body validation, not before it:
-    // only a request carrying a guess costs bcrypt work, so only one spends
-    // the budget, and a locked-out caller with no usable body is told about
-    // the body - the answer they can act on.
-    if (!chargeAttempt(req))
+    // Refused or reserved in one atomic call - see reserveAttempt for why the
+    // check and the write must not be separable. After the body validation, not
+    // before it: only a request carrying a guess costs bcrypt work, so only one
+    // spends the budget, and a locked-out caller with no usable body is told
+    // about the body - the answer they can act on.
+    const admission = reserveAttempt(req);
+
+    if (admission === ATTEMPT_LOCKED_OUT)
         return res.status(429).json({
             message: "Too many failed password attempts. Please try again later",
             type: TOO_MANY_ATTEMPTS
         });
 
-    const passwordHash = await config.getValue("password");
-    const unconfigured = passwordHash === config.NO_PASSWORD;
+    // Busy is not a refused credential: the caller's own correct sign-ins can
+    // briefly fill the in-flight slots, and telling them the password was wrong
+    // would send them looking for a problem that does not exist.
+    if (admission === ATTEMPT_BUSY)
+        return res.status(503).set("Retry-After", "1")
+            .json({message: "The server is busy checking passwords. Please try again"});
 
-    const valid = unconfigured
-        ? matchesSetupToken(supplied)
-        : await bcrypt.compare(supplied, passwordHash);
+    let valid = false;
+    let unconfigured;
+
+    try {
+        const passwordHash = await config.getValue("password");
+        unconfigured = passwordHash === config.NO_PASSWORD;
+
+        valid = unconfigured
+            ? matchesSetupToken(supplied)
+            : await bcrypt.compare(supplied, passwordHash);
+    } finally {
+        // Released whatever happened, and counted as a failure only if the
+        // guess was actually wrong - a correct password never spends the
+        // failure budget.
+        settleAttempt(req, {failed: valid ? 0 : 1});
+    }
 
     if (!valid) {
         // Which credential was wrong, not merely that one was: an instance with

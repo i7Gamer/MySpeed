@@ -65,13 +65,26 @@ describe("openGraphWindow", () => {
         }
     });
 
-    // Two days rather than one, so an instance that has tested only since
-    // midnight still has something to average.
-    it("reaches back a day", () => {
-        const now = at("2026-08-15T12:00:00.000Z");
-        const range = parseDateRange(...Object.values(openGraphWindow(now)));
+    /**
+     * Two days rather than one, so an instance that has tested only since
+     * midnight still has something to average.
+     *
+     * Destructured rather than spread with Object.values: that made the
+     * argument order depend on the order of keys in a returned object literal,
+     * so swapping `{from, to}` to `{to, from}` - a formatting-level edit - would
+     * have handed parseDateRange its bounds backwards. The span is bounded at
+     * both ends for the same reason; "more than a day" was satisfied by an
+     * inverted or arbitrarily wide range too. The upper bound is 49 hours, not
+     * 48, because a window containing a fall-back transition is an hour longer.
+     */
+    it("reaches back a day, and only one", () => {
+        const {from, to} = openGraphWindow(at("2026-08-15T12:00:00.000Z"));
+        const range = parseDateRange(from, to);
 
-        const MS_PER_DAY = 86400000;
-        assert.ok(range.to - range.from > MS_PER_DAY, "the window is shorter than the two days it names");
+        const MS_PER_HOUR = 3600000;
+        const hours = (range.to - range.from) / MS_PER_HOUR;
+
+        assert.ok(hours > 24, `the window is ${hours} hours, shorter than the two days it names`);
+        assert.ok(hours <= 49, `the window is ${hours} hours, wider than the two days it names`);
     });
 });

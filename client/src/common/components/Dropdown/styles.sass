@@ -54,6 +54,16 @@
 .dropdown-item:hover
   color: $accent-primary
 
+// A setting the demo will not save. Still listed, and still pressable - it
+// answers with the reason rather than a red toast about a failed save - so it
+// is dimmed rather than struck out, and keeps a pointer cursor because it does
+// respond. See explainPreview.
+.dropdown-item-disabled
+  color: $subtext
+
+.dropdown-item-disabled:hover
+  color: $subtext
+
 .dropdown-item svg
   width: 25px
   height: 25px

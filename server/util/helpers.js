@@ -114,7 +114,7 @@ export const stripTrailingSlashes = (value) => {
  * The mark a cut message ends in, so that a trimmed one is visibly incomplete
  * rather than reading as the whole of what was said.
  */
-export const TRUNCATION_MARK = "…";
+const TRUNCATION_MARK = "…";
 
 /**
  * Cuts text to a limit, and says that it did.
@@ -130,9 +130,14 @@ export const TRUNCATION_MARK = "…";
 export const truncate = (text, limit) => {
     const value = String(text);
 
-    return value.length <= limit
-        ? value
-        : value.slice(0, limit - TRUNCATION_MARK.length) + TRUNCATION_MARK;
+    if (value.length <= limit) return value;
+
+    // Floored at zero: `limit - mark.length` underflows for a limit shorter
+    // than the mark, and a negative end index slices from the *end* of the
+    // string - so truncate(text, 0) returned six characters for a limit of
+    // none. Both live callers pass thousands, but a bound that can be exceeded
+    // by asking for less is not a bound.
+    return value.slice(0, Math.max(0, limit - TRUNCATION_MARK.length)) + TRUNCATION_MARK;
 };
 
 const UNKNOWN_ERROR = "Unknown error";

@@ -71,45 +71,67 @@ describe("what an outbound call leaves behind", () => {
         globalThis.fetch = realFetch;
     });
 
-    /**
-     * Neither helper consumed or cancelled the body it got back, and no caller
-     * in any of the eight integrations reads the return value - so on undici the
-     * transport stayed checked out of the pool with the bytes buffered until the
-     * Response was garbage collected. Discord, Telegram and Gotify all answer
-     * with the created message, and healthChecks fires every minute.
-     */
-    it("releases the response body", async () => {
-        let cancelled = false;
-
-        globalThis.fetch = async () => ({
-            ok: true,
-            status: 200,
-            body: {cancel: async () => { cancelled = true; }}
-        });
-
-        await postJson("https://example.test/hook", {});
-        assert.equal(cancelled, true, "the body was left unread, holding the connection until GC");
+    const answering = (props, onRead) => async () => ({
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => { onRead?.(); return new ArrayBuffer(0); },
+        ...props
     });
 
-    it("releases it on a refusal too", async () => {
-        let cancelled = false;
+    /**
+     * The body is read to the end rather than left, and rather than cancelled.
+     *
+     * Left unread it holds the message open; cancelled it aborts the fetch, and
+     * a client that never received the whole message has to destroy the socket -
+     * so the next notification in the same burst pays a fresh handshake, and
+     * whether that happens turns on timing rather than size. Draining completes
+     * the message and leaves the connection reusable.
+     */
+    it("reads the response body to the end", async () => {
+        let read = false;
+        globalThis.fetch = answering({}, () => { read = true; });
 
-        globalThis.fetch = async () => ({
-            ok: false,
-            status: 429,
-            body: {cancel: async () => { cancelled = true; }}
-        });
+        await postJson("https://example.test/hook", {});
+        assert.equal(read, true, "the body was left unread, holding the message open");
+    });
+
+    it("reads it on a refusal too", async () => {
+        let read = false;
+        globalThis.fetch = answering({ok: false, status: 429}, () => { read = true; });
 
         await postText("https://example.test/hook", "hello");
-        assert.equal(cancelled, true);
+        assert.equal(read, true);
+    });
+
+    /**
+     * And the helpers do not hand back the Response itself.
+     *
+     * Its body is spent by the time the caller sees it, so returning one offers
+     * a shape whose whole point is already gone - the next person to write
+     * `res.json()` would get "body is unusable" thrown from a file they were
+     * not looking at. The outcome is what callers actually use.
+     */
+    it("answers with the outcome rather than a spent Response", async () => {
+        globalThis.fetch = answering({});
+
+        const result = await postJson("https://example.test/hook", {});
+
+        assert.deepEqual(result, {ok: true, status: 200});
+        assert.equal(result.json, undefined, "a Response with a drained body was handed back");
+    });
+
+    it("still reports a refusal by status", async () => {
+        globalThis.fetch = answering({ok: false, status: 429});
+
+        assert.deepEqual(await postText("https://example.test/hook", "hi"), {ok: false, status: 429});
     });
 
     // A 204 has no body at all, and neither does a response some runtimes
-    // build for a HEAD - so the release has to tolerate its absence.
+    // build for a HEAD - so the drain has to tolerate its absence.
     it("copes with a response that has no body", async () => {
-        globalThis.fetch = async () => ({ok: true, status: 204, body: null});
+        globalThis.fetch = async () => ({ok: true, status: 204});
 
-        assert.notEqual(await postJson("https://example.test/hook", {}), null);
+        assert.deepEqual(await postJson("https://example.test/hook", {}), {ok: true, status: 204});
     });
 
     /**
@@ -120,7 +142,7 @@ describe("what an outbound call leaves behind", () => {
      * path did not.
      */
     it("does not let a failing activity note escape", async () => {
-        globalThis.fetch = async () => ({ok: true, status: 200, body: null});
+        globalThis.fetch = answering({});
 
         const rejects = () => Promise.reject(new Error("SQLITE_BUSY"));
 
@@ -129,7 +151,7 @@ describe("what an outbound call leaves behind", () => {
     });
 
     it("does not let a throwing activity note fail the send", async () => {
-        globalThis.fetch = async () => ({ok: true, status: 200, body: null});
+        globalThis.fetch = answering({});
 
         const throws = () => { throw new Error("no such integration"); };
 

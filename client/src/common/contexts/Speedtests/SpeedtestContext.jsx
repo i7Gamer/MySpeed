@@ -188,18 +188,23 @@ export const SpeedtestProvider = (props) => {
              * This was a bare setTimeout, never cleared and never re-checking
              * the generation - the discipline every other path in this file is
              * built around. Its `if (cursor)` guard reads as one and is not:
-             * line 145 returns early unless the cursor is truthy, so the closure
+             * the guard at the top of this function returns early unless the
+             * cursor is truthy, so the closure
              * always has one and the timer re-enabled paging unconditionally
              * three seconds later. Pick a narrower range in that window and the
              * new list - correctly finished, hasMore already false - was told it
              * had more pages, so TestArea swapped "no more tests" for a spinner
              * and asked for a page of the query that no longer exists.
              */
-            const retry = setTimeout(() => {
+            // Cleared before it is replaced. Assigning over the ref dropped the
+            // previous handle on the floor, so only the newest timer could be
+            // cancelled - and an orphan still passes the generation check when
+            // a refresh re-enabled paging without bumping it, firing early and
+            // shortening the very backoff this is here to provide.
+            clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = setTimeout(() => {
                 if (generation === requestGeneration.current) setHasMore(true);
             }, RETRY_AFTER_ERROR_MS);
-
-            retryTimerRef.current = retry;
         } finally {
             // A fresh query took the flags over while this page was in flight,
             // and clearing them here would stop its spinner on its behalf.

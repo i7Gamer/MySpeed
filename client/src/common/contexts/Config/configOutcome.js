@@ -1,3 +1,5 @@
+import { isLocalNode } from "@/common/contexts/Node/nodeSelection";
+
 /**
  * What the config provider should do with an answer from the server.
  *
@@ -14,11 +16,13 @@
  * both.
  */
 
-/** The stored node id that means "this instance", as localStorage holds it. */
-const LOCAL_NODE = "0";
-
-/** Whether the stored selection points at another instance. */
-export const isRemoteNode = (storedNode) => storedNode !== null && storedNode !== LOCAL_NODE;
+/**
+ * Whether the stored selection points at another instance.
+ *
+ * The sentinel and the comparison live in nodeSelection, which is the module
+ * that owns which node is selected; this used to keep its own `"0"`.
+ */
+export const isRemoteNode = (storedNode) => !isLocalNode(storedNode);
 
 export const configOutcome = (config, storedNode) => ({
     config,

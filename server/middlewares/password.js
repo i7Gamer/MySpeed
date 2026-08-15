@@ -19,7 +19,30 @@ const ATTEMPT_WINDOW_MS = 60000;
 const MAX_FAILED_ATTEMPTS = 20;
 const MAX_TRACKED_CLIENTS = 10000;
 
+/**
+ * How many comparisons one client may have in flight at once.
+ *
+ * Equal to the failure budget, and it has to be: this is what bounds a burst.
+ * Confirmed failures (below) are recorded only *after* a comparison comes back
+ * wrong, so a batch of requests arriving together are all still under the
+ * failure limit when they are admitted - the failure count cannot stop them,
+ * because none of them has failed yet. This cap is what does: at most this many
+ * comparisons run before the batch resolves and the failures it earns lock the
+ * window. Set higher than the budget and a single burst could run more wrong
+ * comparisons than the budget allows; that is the race this whole thing closes.
+ */
+const MAX_ATTEMPTS_IN_FLIGHT = MAX_FAILED_ATTEMPTS;
+
+// Confirmed wrong guesses per client in the current window. Only a comparison
+// that came back wrong lands here, which is the whole point of splitting it from
+// the reservation below: a correct password never touches this, so a burst of
+// correct logins can never lock a client out of their own instance.
 const failedAttempts = new Map();
+
+// Comparisons currently running per client. A reservation, taken before the
+// comparison and released after it whatever the outcome - so it bounds the work
+// in flight without being the thing that decides a lockout.
+const attemptsInFlight = new Map();
 
 const isLockedOut = (key) => {
     const entry = failedAttempts.get(key);
@@ -27,7 +50,7 @@ const isLockedOut = (key) => {
 };
 
 /**
- * Charges a caller for guesses they are about to make.
+ * Records guesses that have been compared and come back wrong.
  *
  * `attempts` because a request can carry more than one: `x-password` and
  * `password` are independent headers and asUtf8 gives a second reading of the
@@ -56,42 +79,88 @@ const recordFailure = (key, attempts = 1) => {
 };
 
 /** Clears the throttle. Exists so tests do not have to wait out the window. */
-export const resetFailedAttempts = () => failedAttempts.clear();
+export const resetFailedAttempts = () => {
+    failedAttempts.clear();
+    attemptsInFlight.clear();
+};
 
 /**
- * Charges the caller for guesses they are about to make, or refuses them.
+ * Reserves the right to run comparisons for a request, or refuses it.
  *
- * The check and the charge in one synchronous body - the atomicity is the
+ * The check and the reservation in one synchronous body - the atomicity is the
  * point, not a convenience. This used to be two functions, isThrottled and
  * recordFailedAttempt, and every entry point separated them with awaits:
- * bcrypt.compare deliberately yields the event loop, so a batch of requests
- * arriving together all read the count before any of them had raised it, all
- * passed the limit, and all ran their comparisons. MAX_FAILED_ATTEMPTS bounded
- * only the guesses that queued. With both halves in one function and no await
- * between them, each caller's check sees every earlier caller's charge,
- * however many are in flight.
+ * bcrypt.compare yields the event loop, so a batch of requests arriving
+ * together all read the count before any of them had written to it, all passed
+ * the limit, and all ran their comparisons. With both halves in one function
+ * and no await between them, each caller's check sees every earlier caller's
+ * reservation, however many are in flight.
  *
- * Charged before the verify rather than after it, and refunded through
- * clearFailedAttempts when the guess turns out to be right - the discipline
- * every caller shares. `attempts` is per readPasswords: a request can carry up
- * to three attacker-chosen candidates across the two headers, and charging one
- * for the list handed out free guesses.
+ * Two counters, because one was being asked to bound two different things and
+ * could not do both. It has to bound the comparisons a client can have running
+ * at once - otherwise a burst runs unbounded bcrypt work - and it has to bound
+ * the wrong guesses a client may make in a window. Conflating them meant a
+ * *correct* password spent the failure budget: twenty simultaneous correct
+ * logins (a parent instance proxying a child re-authenticates by header on
+ * every request, holding no session) locked the client out of its own instance
+ * with "Too many failed password attempts", and on the node path that 429
+ * surfaced as INVALID_URL - a healthy node reported as a bad address.
  *
- * The separable halves are deliberately not exported any more. A route that
- * could import a bare check and a bare record is a route that can put an await
- * between them; this surface refuses the mistake instead of testing for it.
+ * So: `settleAttempt` releases the reservation whatever the outcome, and only a
+ * comparison that came back wrong is recorded as a failure. A caller who gets
+ * it right is charged nothing and leaves no trace.
  *
- * /api/session and /api/prometheus/metrics authenticate outside this
- * middleware but spend this same counter, so an attacker cannot win a fresh
- * budget by switching between the three ways in.
+ * The two refusals are told apart because they mean different things to the
+ * caller. Out of failure budget is about *them* and lasts the window; at the
+ * in-flight cap is about the server being busy comparing right now, clears as
+ * soon as a slot frees, and must not be reported as a failed password - a
+ * legitimate client that briefly overlapped its own correct logins would
+ * otherwise be told its credentials were wrong.
+ *
+ * `attempts` is per readPasswords: a request can carry up to three
+ * attacker-chosen candidates across the two headers, and counting one for the
+ * list handed out free guesses.
+ *
+ * The separable halves are deliberately not exported. A route that could import
+ * a bare check and a bare record is a route that can put an await between them;
+ * this surface refuses the mistake instead of testing for it.
+ *
+ * /api/session and /api/prometheus/metrics authenticate outside this middleware
+ * but spend these same counters, so an attacker cannot win a fresh budget by
+ * switching between the three ways in.
  */
-export const chargeAttempt = (req, attempts = 1) => {
+export const ATTEMPT_ADMITTED = "admitted";
+export const ATTEMPT_LOCKED_OUT = "locked_out";
+export const ATTEMPT_BUSY = "busy";
+
+export const reserveAttempt = (req, attempts = 1) => {
     const key = clientKey(req);
 
-    if (isLockedOut(key)) return false;
+    if (isLockedOut(key)) return ATTEMPT_LOCKED_OUT;
 
-    recordFailure(key, attempts);
-    return true;
+    const running = attemptsInFlight.get(key) ?? 0;
+    if (running + attempts > MAX_ATTEMPTS_IN_FLIGHT) return ATTEMPT_BUSY;
+
+    attemptsInFlight.set(key, running + attempts);
+    return ATTEMPT_ADMITTED;
+};
+
+/**
+ * Releases a reservation and records the failures it turned out to be.
+ *
+ * Called on every path out of a comparison - match, mismatch or throw - so a
+ * reservation cannot leak and wedge a client at the in-flight cap. `failed` is
+ * how many of the reserved comparisons came back wrong: 0 for a caller who got
+ * it right, which is what keeps a correct password off the failure budget.
+ */
+export const settleAttempt = (req, {reserved = 1, failed = 0} = {}) => {
+    const key = clientKey(req);
+    const running = (attemptsInFlight.get(key) ?? 0) - reserved;
+
+    if (running > 0) attemptsInFlight.set(key, running);
+    else attemptsInFlight.delete(key);
+
+    if (failed > 0) recordFailure(key, failed);
 };
 
 export const clearFailedAttempts = (req) => failedAttempts.delete(clientKey(req));
@@ -112,6 +181,18 @@ const tooManyAttempts = (res) =>
     });
 
 /**
+ * The server is already comparing as many passwords for this caller as it will
+ * run at once. Transient and nothing to do with the credentials, so it says so
+ * and invites an immediate retry rather than spending the caller's budget.
+ */
+const RETRY_AFTER_SECONDS = 1;
+
+const busyComparing = (res) =>
+    res.status(503)
+        .set("Retry-After", String(RETRY_AFTER_SECONDS))
+        .json({message: "The server is busy checking passwords. Please try again"});
+
+/**
  * Handles a request against an instance that has no password configured.
  *
  * Waving these through unconditionally is what made a fresh install on a public
@@ -127,12 +208,23 @@ const handleUnconfigured = (req, res, next) => {
 
     const candidates = readPasswords(req);
 
-    // Refused or charged in the one call, once per candidate: the list is
-    // whatever the caller chose to put in the two headers. Refunded below on a
-    // match, the same discipline as the password path.
-    if (candidates.length > 0 && !chargeAttempt(req, candidates.length)) return tooManyAttempts(res);
+    // Reserved once per candidate: the list is whatever the caller chose to put
+    // in the two headers. matchesSetupToken is synchronous, so nothing can
+    // interleave here - but the reservation is still taken and settled, because
+    // this path shares the counters with the two that do await.
+    const admission = candidates.length > 0
+        ? reserveAttempt(req, candidates.length)
+        : ATTEMPT_ADMITTED;
 
-    if (candidates.some(matchesSetupToken)) {
+    if (admission === ATTEMPT_LOCKED_OUT) return tooManyAttempts(res);
+    if (admission === ATTEMPT_BUSY) return busyComparing(res);
+
+    const matched = candidates.some(matchesSetupToken);
+
+    if (candidates.length > 0)
+        settleAttempt(req, {reserved: candidates.length, failed: matched ? 0 : candidates.length});
+
+    if (matched) {
         clearFailedAttempts(req);
         req.viewMode = false;
         return next();
@@ -167,22 +259,41 @@ export default (allowViewAccess) => async (req, res, next) => {
 
     const candidates = readPasswords(req);
 
-    // Refused or charged in the one atomic call - see chargeAttempt for why the
-    // check and the write must not be separable. A throttled caller is not
-    // refused here: read access may still be on offer below, and the 429 waits
-    // for that to be settled.
-    const throttled = candidates.length > 0 && !chargeAttempt(req, candidates.length);
+    // Refused or reserved in the one atomic call - see reserveAttempt for why
+    // the check and the write must not be separable. Neither refusal answers
+    // here: read access may still be on offer below, and both wait for that to
+    // be settled.
+    const admission = candidates.length > 0
+        ? reserveAttempt(req, candidates.length)
+        : ATTEMPT_ADMITTED;
 
-    if (candidates.length > 0 && !throttled) {
-        // Asynchronous on purpose: bcrypt.compareSync holds the only thread for
-        // the entire cost of the hash, so a handful of wrong passwords stalled
-        // every other request on the server, /api/health included.
-        for (const candidate of candidates) {
-            if (await bcrypt.compare(candidate, passwordHash)) {
-                clearFailedAttempts(req);
-                req.viewMode = false;
-                return next();
+    if (admission === ATTEMPT_ADMITTED && candidates.length > 0) {
+        // The reservation is released however this ends, including on a throw
+        // from bcrypt - a malformed hash would otherwise leak it and wedge the
+        // caller at the in-flight cap for the rest of the window.
+        let matched = false;
+
+        try {
+            // Asynchronous on purpose: bcrypt.compareSync holds the only thread
+            // for the entire cost of the hash, so a handful of wrong passwords
+            // stalled every other request on the server, /api/health included.
+            for (const candidate of candidates) {
+                if (await bcrypt.compare(candidate, passwordHash)) {
+                    matched = true;
+                    break;
+                }
             }
+        } finally {
+            // Only what was actually compared and found wrong is a failure. A
+            // correct password leaves the failure budget untouched, so a burst
+            // of legitimate logins can never lock a client out.
+            settleAttempt(req, {reserved: candidates.length, failed: matched ? 0 : candidates.length});
+        }
+
+        if (matched) {
+            clearFailedAttempts(req);
+            req.viewMode = false;
+            return next();
         }
     }
 
@@ -191,7 +302,8 @@ export default (allowViewAccess) => async (req, res, next) => {
         return next();
     }
 
-    if (throttled) return tooManyAttempts(res);
+    if (admission === ATTEMPT_LOCKED_OUT) return tooManyAttempts(res);
+    if (admission === ATTEMPT_BUSY) return busyComparing(res);
 
     return res.status(401).json({
         message: "Please provide the correct password in the header",

@@ -194,32 +194,37 @@ const loadedIncrease = (entry) => {
  * carried no date range at all - which put a figure about one moment beside
  * three aggregates about the range, and left it unchanged when the range moved.
  */
-const loadedLatencyOver = (succeeded) => {
-    const measured = succeeded
+/**
+ * The added latency across the range, and the newest few readings behind it.
+ *
+ * Two inputs, because the two answers want different rows. The average is over
+ * every success that measured it - a row whose `created` does not parse still
+ * measured a real latency, and every other aggregate here counts it, so
+ * dropping it would quietly change the figure. The trend is a timeline, and a
+ * row with no placeable instant has no place on one.
+ *
+ * `placeable` arrives already sorted, from the copy buildStatistics builds for
+ * everything that reads a timestamp. Sorting locally instead - which is what
+ * this did - was wrong twice over: it repeated a sort the caller had already
+ * paid for, and it sorted rows that had not been filtered by isPlaceable, so a
+ * single unparseable `created` made the comparator return NaN. A NaN compares
+ * as equal to everything, which makes the ordering non-transitive and lets V8
+ * return an arbitrary permutation - defeating, on exactly the input it was
+ * added to defend against, the guarantee it was added to make.
+ */
+const loadedLatencyOver = (succeeded, placeable) => {
+    const measuredIn = (rows) => rows
         .map(entry => ({created: entry.created, increase: loadedIncrease(entry)}))
         .filter(point => point.increase !== null);
 
-    /*
-     * Sorted here rather than trusted to arrive that way.
-     *
-     * buildStatistics documents its input as being in any order, and everything
-     * else that reads a timestamp works from a sorted copy - this was the one
-     * field taken straight off the unsorted rows and then sliced from the end as
-     * though it were chronological. It was correct only because the single
-     * caller happens to query with ORDER BY created ASC; a change to that
-     * clause, or a second caller, would have drawn an arbitrary ten of the range
-     * in an arbitrary order - possibly without the newest test - while every
-     * other figure in the payload stayed right, which is the hardest kind of
-     * wrong to notice.
-     */
-    const chronological = [...measured].sort((a, b) => new Date(a.created) - new Date(b.created));
+    const measured = measuredIn(succeeded);
 
     return {
         increase: averageOrNull(measured.map(point => point.increase),
             (value) => round(value, INCREASE_DECIMALS)),
         tests: measured.length,
         // Oldest first, so time reads left to right the way the dots are drawn.
-        trend: chronological.slice(-TREND_POINTS)
+        trend: measuredIn(placeable).slice(-TREND_POINTS)
     };
 };
 
@@ -386,10 +391,16 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
                 deviation: roundOrNull(medianAbsoluteDeviation(succeeded.map(entry => entry.ping))),
                 jitter: averageOrNull(withJitter.map(entry => entry.jitter))
             },
-            loadedLatency: loadedLatencyOver(succeeded)
+            // The aggregate over every success, the trend over the ones that
+            // can be placed on a timeline - already sorted, above.
+            loadedLatency: loadedLatencyOver(succeeded, sorted.filter(isSuccessfulTest))
         },
         dataPoints: series.labels.length,
-        rawDataPoints: entries.length,
+        // The rows the chart could actually draw, which is the same count the
+        // branch above is chosen on. `entries.length` counted rows that never
+        // reached a bucket, so the note read "showing 287 of 1,000" for a range
+        // whose undateable rows were never on the chart to begin with.
+        rawDataPoints: sorted.length,
         // From the same count the branch above is chosen on. Computed from
         // `entries` it disagreed with the branch whenever a row in range could
         // not be placed on a timeline: with 301 rows of which one has an

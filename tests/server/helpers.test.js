@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-    mapFixed, mapRounded, toErrorMessage, stripTrailingSlashes, writeAtomically
+    mapFixed, mapRounded, toErrorMessage, stripTrailingSlashes, truncate, writeAtomically
 } from "../../server/util/helpers.js";
 
 const entries = [
@@ -231,5 +231,53 @@ describe("toErrorMessage", () => {
     it("names the failure rather than storing an empty string", () => {
         assert.equal(toErrorMessage(undefined), "Unknown error");
         assert.equal(toErrorMessage(new Error()), "Unknown error");
+    });
+});
+
+/**
+ * Two things bound this text and neither trusts the other: what the database
+ * column will hold, and what a provider will accept - cliOutput caps a failure
+ * reason at 2000 characters, pushover refuses a message over 1024. Different
+ * limits at different points, one rule for the cut.
+ */
+describe("truncate", () => {
+    it("leaves text that already fits", () => {
+        assert.equal(truncate("short", 20), "short");
+    });
+
+    it("leaves text of exactly the limit", () => {
+        assert.equal(truncate("12345", 5), "12345");
+    });
+
+    it("cuts what is over, and says so", () => {
+        const cut = truncate("abcdefghij", 5);
+
+        assert.equal(cut.length, 5);
+        assert.match(cut, /…$/);
+        assert.equal(cut, "abcd…");
+    });
+
+    it("keeps the beginning, which is where the reason is", () => {
+        assert.match(truncate("Cannot open socket to host".repeat(50), 30), /^Cannot open socket/);
+    });
+
+    /**
+     * `limit - mark.length` underflows below the mark's own width, and a
+     * negative end index slices from the end of the string - so this returned
+     * six characters for a limit of nought, which is the one thing a bound must
+     * never do. Unreachable through today's callers, which pass thousands.
+     */
+    it("never returns more than the limit, however small", () => {
+        for (const limit of [0, 1, 2, 3]) {
+            const cut = truncate("abcdefghij", limit);
+
+            assert.ok(cut.length <= Math.max(limit, 1),
+                `limit ${limit} produced ${cut.length} characters: ${JSON.stringify(cut)}`);
+        }
+    });
+
+    it("stringifies whatever it is handed", () => {
+        assert.equal(truncate(12345, 20), "12345");
+        assert.equal(truncate(null, 20), "null");
     });
 });

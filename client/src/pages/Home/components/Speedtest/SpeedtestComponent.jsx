@@ -171,7 +171,14 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
         <TestDetails test={props.test} previous={props.previous}
                      previousConnection={props.previousConnection}
                      className="speedtest-details">
-            {!config.viewMode && (
+            {/* previewMode as well as viewMode: the server refuses this delete
+                on a demo, and `viewMode` does not stand in for it - the
+                password middleware short-circuits before setting it, so it
+                arrives undefined and every `!config.viewMode` gate is open.
+                Without this the demo offered the button, asked the reader to
+                confirm a deletion that cannot be undone, and then reported that
+                it failed. */}
+            {!config.viewMode && !config.previewMode && (
                 <div className="detail-actions">
                     <button className="detail-delete" onClick={removeTest}>
                         <FontAwesomeIcon icon={faTrashCan}/> {t("test.delete")}

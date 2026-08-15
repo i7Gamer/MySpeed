@@ -17,8 +17,27 @@
  * list rather than a line in the delete handler.
  */
 
-/** The id that means "this instance", which is always there to fall back to. */
+/**
+ * The id that means "this instance", which is always there to fall back to.
+ *
+ * A number, because that is what the node list holds and what the provider
+ * keeps. It reaches this module as a string too - localStorage stores text -
+ * so the comparison below normalises rather than trusting either side, and it
+ * lives here so the two other readers can stop keeping their own `"0"`. Three
+ * declarations in two type systems is how a change to the sentinel would have
+ * fixed one of them and silently broken the rest: the header would lose its
+ * title and configOutcome would call the local instance remote, with nothing
+ * failing to compile.
+ */
 export const LOCAL_NODE = 0;
+
+/**
+ * Whether a stored or in-memory selection points at this instance.
+ *
+ * Absent counts: a browser that has never chosen a node is looking at this one.
+ */
+export const isLocalNode = (node) =>
+    node === null || node === undefined || node === "" || String(node) === String(LOCAL_NODE);
 
 /**
  * The node the app should be pointed at, given the list the server just

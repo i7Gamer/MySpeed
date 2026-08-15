@@ -4,7 +4,11 @@ import { bootServer, api, setConfig } from "./helpers/boot.js";
 
 let server;
 let resetFailedAttempts;
-let chargeAttempt;
+let reserveAttempt;
+let settleAttempt;
+let ATTEMPT_ADMITTED;
+let ATTEMPT_LOCKED_OUT;
+let ATTEMPT_BUSY;
 let clearFailedAttempts;
 let passwordMiddleware;
 
@@ -15,7 +19,8 @@ before(async () => {
 
     const module = await import("../../server/middlewares/password.js");
 
-    ({resetFailedAttempts, chargeAttempt, clearFailedAttempts} = module);
+    ({resetFailedAttempts, reserveAttempt, settleAttempt, clearFailedAttempts,
+        ATTEMPT_ADMITTED, ATTEMPT_LOCKED_OUT, ATTEMPT_BUSY} = module);
     // The same middleware the routes mount, for the assertions that need calls
     // to genuinely overlap - see "attempts made at the same time".
     passwordMiddleware = module.default(false);
@@ -147,6 +152,9 @@ describe("password attempt throttling", () => {
             const req = {headers: {"x-password": password}, socket: {remoteAddress: "203.0.113.9"}};
             const res = {
                 status(code) { this.statusCode = code; return this; },
+                // The busy refusal sets Retry-After, so the stand-in has to
+                // offer the same chainable shape Express does.
+                set() { return this; },
                 json() { resolve(this.statusCode); return this; }
             };
 
@@ -158,10 +166,14 @@ describe("password attempt throttling", () => {
 
         it("counts guesses that overlap, not just guesses that queue", async () => {
             const statuses = await guessInParallel(MAX_FAILED_ATTEMPTS * 3);
-            const refused = statuses.filter((status) => status === 429).length;
+            const compared = statuses.filter((status) => status === 401).length;
 
-            assert.ok(refused > 0,
-                `all ${statuses.length} simultaneous guesses were compared; the limit only bounds sequential ones`);
+            // 401 is the answer a guess that was actually compared gets. The
+            // rest were shed before any bcrypt work - which is the whole point.
+            assert.ok(compared <= MAX_FAILED_ATTEMPTS,
+                `${compared} of ${statuses.length} simultaneous guesses were compared;`
+                + " the limit only bounds sequential ones");
+            assert.ok(compared > 0, "nothing was compared at all");
         });
 
         it("refuses everything past the limit once they have all landed", async () => {
@@ -181,52 +193,164 @@ describe("password attempt throttling", () => {
     });
 
     /**
-     * The check and the charge are one call, and that call is atomic.
+     * A correct password costs nothing, however many arrive at once.
      *
-     * The counter used to be a two-function API - isThrottled read it,
-     * recordFailedAttempt wrote it - and the two were separated by awaits at
-     * every entry point, so simultaneous guesses all read the count before any
-     * of them raised it. chargeAttempt is both halves in one synchronous body:
-     * however many callers are in flight, each one's check sees every earlier
-     * caller's charge, because nothing can run between the two lines.
+     * The regression this exists for: the counter was charged *before* the
+     * comparison and refunded only once a match came back, so a batch of
+     * requests all carrying the RIGHT password each raised it before any of
+     * them resolved. Twenty simultaneous correct logins locked the client out
+     * of its own instance with "Too many failed password attempts" - and this
+     * is not a contrived burst. A parent instance proxying a child
+     * re-authenticates by header on every single request (it holds no session
+     * with the child, and never can - the proxy strips cookies both ways), so
+     * every dashboard poll is another concurrent correct password on one key.
+     * On that path the 429 mapped to INVALID_URL, so a perfectly healthy node
+     * reported as a bad address.
+     */
+    describe("correct passwords arriving together", () => {
+        const rightPassword = () => guarded({"x-password": "Hunter2!"});
+
+        /*
+         * One burst, shared by every assertion below.
+         *
+         * Each of these requests is real HTTP, and the whole file runs against
+         * one server behind the /api rate limiter's 300-a-minute budget - which
+         * also answers 429. Firing a fresh burst per assertion spent that
+         * budget and produced 429s that had nothing to do with the password
+         * throttle, which is exactly the confusion these tests exist to
+         * prevent. So the burst runs once and the assertions read it.
+         */
+        let statuses;
+        let afterwards;
+
+        before(async () => {
+            resetFailedAttempts();
+            statuses = await Promise.all(
+                Array.from({length: MAX_FAILED_ATTEMPTS * 2}, () => rightPassword().then((r) => r.status)));
+
+            // The batch has drained by now, so this is the state it left behind.
+            afterwards = (await rightPassword()).status;
+        });
+
+        it("never locks a client out of its own instance", () => {
+            assert.equal(statuses.filter((status) => status === 429).length, 0,
+                "correct passwords were answered with 'too many failed password attempts'");
+        });
+
+        it("serves the ones it had room for", () => {
+            assert.ok(statuses.filter((status) => status === 200).length >= MAX_FAILED_ATTEMPTS,
+                `only ${statuses.filter((s) => s === 200).length} of the burst were served`);
+        });
+
+        /**
+         * Past the in-flight cap the server is busy rather than suspicious, and
+         * it says so: 503 with Retry-After, which is transient and clears as
+         * soon as a slot frees. That is the honest answer, and crucially it is
+         * not the one that spends the caller's budget.
+         */
+        it("says it is busy rather than blaming the credentials", () => {
+            assert.deepEqual([...new Set(statuses)].sort(), [200, 503]);
+        });
+
+        // The refusal is momentary: once the batch drains, the next correct
+        // password is served as normal.
+        it("recovers the moment the comparisons finish", () => {
+            assert.equal(afterwards, 200);
+        });
+
+        it("leaves the failure budget untouched", async () => {
+            // The whole budget is still there: a further MAX-1 wrong guesses
+            // are needed before the next one is refused.
+            await failRepeatedly(MAX_FAILED_ATTEMPTS - 1);
+
+            assert.equal((await wrongPassword()).status, 401,
+                "correct logins had spent part of the failed-attempt budget");
+        });
+    });
+
+    /**
+     * Two counters, because one was being asked to bound two different things.
+     *
+     * `reserveAttempt` bounds the comparisons a client may have running at once
+     * - the check and the write in one synchronous body, so simultaneous
+     * callers each see every earlier reservation. `settleAttempt` releases it
+     * and records only what actually came back wrong. Conflating the two is
+     * what made a correct password spend the failure budget.
      *
      * This is the one place the race is pinned. The three entry points - the
-     * middleware, the session exchange, the Prometheus scrape - all spend the
-     * counter through this function now; their own tests only have to show the
-     * wiring, which sequential requests do fine.
+     * middleware, the session exchange, the Prometheus scrape - all spend these
+     * counters through this pair; their own tests only have to show the wiring.
      */
-    describe("chargeAttempt", () => {
+    describe("reserveAttempt", () => {
         const CALLER = {headers: {}, socket: {remoteAddress: "203.0.113.77"}};
 
         it("admits exactly the budget, however simultaneous the calls are", async () => {
             const outcomes = await Promise.all(
                 Array.from({length: MAX_FAILED_ATTEMPTS * 3}, async () => {
-                    if (!chargeAttempt(CALLER)) return "throttled";
+                    if (reserveAttempt(CALLER) !== ATTEMPT_ADMITTED) return "refused";
 
-                    // A stand-in for the bcrypt compare: the yield to the event
-                    // loop is the window the old shape raced in.
-                    await new Promise((resolve) => setTimeout(resolve, 5));
-                    return "compared";
+                    try {
+                        // A stand-in for the bcrypt compare: the yield to the
+                        // event loop is the window the old shape raced in.
+                        await new Promise((resolve) => setTimeout(resolve, 5));
+                        return "compared";
+                    } finally {
+                        settleAttempt(CALLER, {failed: 1});
+                    }
                 }));
 
             assert.equal(outcomes.filter((outcome) => outcome === "compared").length, MAX_FAILED_ATTEMPTS,
                 "more comparisons ran than the budget allows");
-            assert.equal(outcomes.filter((outcome) => outcome === "throttled").length, MAX_FAILED_ATTEMPTS * 2);
+            assert.equal(outcomes.filter((outcome) => outcome === "refused").length, MAX_FAILED_ATTEMPTS * 2);
         });
 
-        it("charges what it is told the request carries", async () => {
+        it("counts what it is told the request carried", async () => {
             const HALF = MAX_FAILED_ATTEMPTS / 2;
 
-            for (let i = 0; i < HALF; i++) assert.equal(chargeAttempt(CALLER, 2), true);
+            for (let i = 0; i < HALF; i++) {
+                assert.equal(reserveAttempt(CALLER, 2), ATTEMPT_ADMITTED);
+                settleAttempt(CALLER, {reserved: 2, failed: 2});
+            }
 
-            assert.equal(chargeAttempt(CALLER), false, "two guesses a request were charged as one");
+            assert.equal(reserveAttempt(CALLER), ATTEMPT_LOCKED_OUT,
+                "two guesses a request were counted as one");
+        });
+
+        // Released whatever the outcome, or a client that made a burst of
+        // correct guesses would sit at the in-flight cap for the whole window.
+        it("frees the reservation on a guess that was right", async () => {
+            for (let i = 0; i < MAX_FAILED_ATTEMPTS * 3; i++) {
+                assert.equal(reserveAttempt(CALLER), ATTEMPT_ADMITTED, `reservation ${i} was refused`);
+                settleAttempt(CALLER, {failed: 0});
+            }
+        });
+
+        /**
+         * The two refusals are different answers. Out of budget is about the
+         * caller and lasts the window; at the cap is about the server and
+         * clears as soon as a comparison finishes - reporting the second as the
+         * first is what told a legitimate client its password was wrong.
+         */
+        it("tells a busy server apart from a locked-out caller", async () => {
+            for (let i = 0; i < MAX_FAILED_ATTEMPTS; i++)
+                assert.equal(reserveAttempt(CALLER), ATTEMPT_ADMITTED);
+
+            // Reservations still held, no failures recorded yet.
+            assert.equal(reserveAttempt(CALLER), ATTEMPT_BUSY);
+
+            for (let i = 0; i < MAX_FAILED_ATTEMPTS; i++) settleAttempt(CALLER, {failed: 1});
+
+            assert.equal(reserveAttempt(CALLER), ATTEMPT_LOCKED_OUT);
         });
 
         it("is refunded by the same module", async () => {
-            for (let i = 0; i < MAX_FAILED_ATTEMPTS - 1; i++) chargeAttempt(CALLER);
+            for (let i = 0; i < MAX_FAILED_ATTEMPTS - 1; i++) {
+                reserveAttempt(CALLER);
+                settleAttempt(CALLER, {failed: 1});
+            }
             clearFailedAttempts(CALLER);
 
-            assert.equal(chargeAttempt(CALLER), true, "the refund did not reach the counter");
+            assert.equal(reserveAttempt(CALLER), ATTEMPT_ADMITTED, "the refund did not reach the counter");
         });
 
         /**

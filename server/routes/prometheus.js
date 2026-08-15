@@ -4,7 +4,9 @@ import promClient from 'prom-client';
 import * as config from '../controller/config.js';
 import * as serverController from '../controller/servers.js';
 import bcrypt from 'bcryptjs';
-import { allowsPasswordlessAccess, chargeAttempt, clearFailedAttempts } from '../middlewares/password.js';
+import {
+    ATTEMPT_BUSY, ATTEMPT_LOCKED_OUT, allowsPasswordlessAccess, clearFailedAttempts, reserveAttempt, settleAttempt
+} from '../middlewares/password.js';
 import { matchesSetupToken } from '../util/setupToken.js';
 import { isFailedTest } from '../util/testOutcome.js';
 
@@ -57,20 +59,38 @@ const authorizeMetrics = async (req, res) => {
         return false;
     }
 
-    // Refused or charged in one atomic call, and refunded below if the guess
-    // turns out to be right - see chargeAttempt for why the check and the
-    // write must not be separable. After the credentials parse, not before it:
-    // only a request carrying a guess costs bcrypt work, so only one spends
-    // the budget, and a locked-out scraper that sent no credentials still gets
-    // the WWW-Authenticate challenge that says what is missing.
-    if (!chargeAttempt(req)) {
+    // Refused or reserved in one atomic call - see reserveAttempt for why the
+    // check and the write must not be separable. After the credentials parse,
+    // not before it: only a request carrying a guess costs bcrypt work, so only
+    // one spends the budget, and a locked-out scraper that sent no credentials
+    // still gets the WWW-Authenticate challenge that says what is missing.
+    const admission = reserveAttempt(req);
+
+    if (admission === ATTEMPT_LOCKED_OUT) {
         res.status(429).end('Too many failed attempts');
         return false;
     }
 
-    const valid = unconfigured
-        ? matchesSetupToken(credentials.password)
-        : await bcrypt.compare(credentials.password, passwordHash);
+    // Busy is transient and not about the credentials, so a scraper that
+    // briefly overlapped its own correct polls is told to retry rather than
+    // that its password was refused.
+    if (admission === ATTEMPT_BUSY) {
+        res.status(503).set('Retry-After', '1').end('Busy checking passwords');
+        return false;
+    }
+
+    let valid = false;
+
+    try {
+        valid = unconfigured
+            ? matchesSetupToken(credentials.password)
+            : await bcrypt.compare(credentials.password, passwordHash);
+    } finally {
+        // Released whatever happened, and counted as a failure only if the
+        // guess was actually wrong - a scraper polling with the right password
+        // never spends the failure budget.
+        settleAttempt(req, {failed: valid ? 0 : 1});
+    }
 
     if (!valid) {
         unauthorized(res);

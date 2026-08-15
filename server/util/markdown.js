@@ -26,8 +26,19 @@ export const TELEGRAM_MARKDOWN = /[*_`[\]]/g;
  * The same for Discord, which adds strikethrough, spoilers and its own escape
  * character - and renders masked links inside an embed description, which is
  * why the brackets matter here for more than balance.
+ *
+ * The backslash is stripped only where it can act as an escape: before a
+ * character that is not a letter, a digit or whitespace. Taking every backslash
+ * mangled the text this exists to deliver - a Windows path in a failure reason
+ * arrived as `C:Program FilesMySpeedbinspeedtest.exe`, and the live installer
+ * runs the server as a Windows service, so those paths are the ordinary case.
+ * Discord renders a backslash before a letter as both characters, so removing
+ * one there is a change to the operator's text for nothing - which is exactly
+ * the over-stripping this module's own header warns against. What still goes:
+ * `\\`, and a backslash sitting against punctuation or at the very end of a
+ * value, where it could escape the template's own delimiter.
  */
-export const DISCORD_MARKDOWN = /[*_`~|[\]\\]/g;
+export const DISCORD_MARKDOWN = /[*_`~|[\]]|\\(?![0-9A-Za-z\s])/g;
 
 /**
  * Every string value with the given characters removed, the rest untouched.

@@ -119,20 +119,55 @@ describe("nothing destructive is left open on a demo", () => {
     const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
     const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-    const GUARDED = [
-        {file: "server/routes/storage.js", route: 'app.delete("/tests/history"'},
-        {file: "server/routes/storage.js", route: 'app.delete("/config"'},
-        {file: "server/routes/storage.js", route: 'app.put("/tests/history"'},
-        {file: "server/routes/storage.js", route: 'app.put("/config"'},
-        {file: "server/routes/speedtests.js", route: 'app.delete("/:id"'},
-        {file: "server/routes/config.js", route: 'app.patch("/:key"'},
-        {file: "server/routes/config.js", route: 'app.delete("/password"'},
-        // The schedule is shared by everyone looking at the demo, so one visitor
-        // pausing it stops the tests for every other visitor - and leaves it
-        // stopped, since nothing resumes it on their behalf.
-        {file: "server/routes/speedtests.js", route: 'app.post("/pause"'},
-        {file: "server/routes/speedtests.js", route: 'app.post("/continue"'}
+    /**
+     * Every route that can change something, found rather than listed.
+     *
+     * This used to enumerate the routes that had been fixed, which is the same
+     * failure mode as the hand-written `if` it replaced: it could only ever
+     * re-assert what somebody had already remembered. It could not have caught
+     * the two DELETEs the guard was written for, and it did not catch the node
+     * proxy - `app.all`, which looks like nothing in particular and reaches
+     * another machine with that machine's password attached.
+     *
+     * So the list is derived from the source: every mutating verb mounted in
+     * server/routes, minus the one deliberate exemption below.
+     */
+    const MUTATING_ROUTE = /^app\.(post|put|patch|delete|all)\((?:\s*)(["'`])(.*?)\2/gm;
+
+    /**
+     * The deliberate exemptions, each for a stated reason.
+     *
+     * Running a test is what a demo exists to demonstrate - preview mode has a
+     * whole branch in tasks/speedtest.js that answers it with a plausible
+     * generated result. The session routes authenticate a caller rather than
+     * change the instance: they add and remove an entry in a bounded in-memory
+     * map and touch nothing a visitor could destroy, and preview mode waves
+     * authentication through regardless, so refusing them would be theatre.
+     */
+    const ALLOWED = [
+        {file: "server/routes/speedtests.js", route: "/run"},
+        {file: "server/routes/session.js", route: "/"}
     ];
+
+    const routeFiles = fs.readdirSync(path.join(root, "server", "routes"))
+        .filter((name) => name.endsWith(".js"))
+        .map((name) => `server/routes/${name}`);
+
+    const GUARDED = routeFiles.flatMap((file) => {
+        const source = read(file);
+
+        return [...source.matchAll(MUTATING_ROUTE)]
+            .map(([match, , , route]) => ({file, route, at: source.indexOf(match)}))
+            .filter(({route}) => !ALLOWED.some((allowed) => allowed.file === file && allowed.route === route));
+    });
+
+    it("finds the mutating routes to check", () => {
+        // A guard against the scan itself silently matching nothing - which
+        // would make every assertion below vacuous.
+        assert.ok(GUARDED.length >= 12, `only ${GUARDED.length} mutating routes were found`);
+        assert.ok(GUARDED.some(({file}) => file.endsWith("nodes.js")),
+            "the node routes were not scanned");
+    });
 
     /**
      * The one mutation a demo is meant to allow.
@@ -150,15 +185,13 @@ describe("nothing destructive is left open on a demo", () => {
             "running a test is what preview mode exists to demonstrate");
     });
 
-    for (const {file, route} of GUARDED) {
-        it(`${route.replace(/app\.|\("|"$/g, " ").trim()} in ${path.basename(file)} is guarded`, () => {
+    for (const {file, route, at} of GUARDED) {
+        it(`${route} in ${path.basename(file)} is guarded`, () => {
             const source = read(file);
-            const at = source.indexOf(route);
-
-            assert.notEqual(at, -1, `${route} is no longer a route in ${file}`);
 
             // The middleware list, up to the handler - a guard placed after the
-            // work has been done is not a guard.
+            // work has been done is not a guard. Handlers here are arrow
+            // functions, so the first `=>` after the mount ends the list.
             const declaration = source.slice(at, source.indexOf("=>", at));
 
             assert.match(declaration, /previewReadOnly/,

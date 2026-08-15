@@ -9,13 +9,15 @@
  * right title anyway, which is why this went unnoticed: a type error with no
  * symptom, one findNode call away from having one.
  *
- * Compared as a string here, so it holds for both the number the context keeps
- * and the string localStorage hands back.
+ * The comparison itself lives with the sentinel in nodeSelection, so it holds
+ * for both the number the context keeps and the string localStorage hands back
+ * - and so that changing what "this instance" means is one edit rather than
+ * three in two type systems.
  */
-const LOCAL_NODE = "0";
+import { isLocalNode } from "@/common/contexts/Node/nodeSelection";
 
-export const isLocalNode = (currentNode) =>
-    currentNode === null || currentNode === undefined || String(currentNode) === LOCAL_NODE;
+// Re-exported because this is where the header's own tests reach for it.
+export { isLocalNode };
 
 export const nodeTitle = (currentNode, findNode, fallback) => {
     if (isLocalNode(currentNode)) return fallback;
