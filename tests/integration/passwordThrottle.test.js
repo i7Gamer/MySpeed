@@ -386,6 +386,44 @@ describe("password attempt throttling", () => {
             }
         });
 
+        /**
+         * And traffic does not keep the leak alive.
+         *
+         * The entry's deadline dates from when it was created. Refreshing it on
+         * every reservation and release - which is what the first version of
+         * this did - meant any steady stream of requests pushed the deadline
+         * out again, so the sweep never fired and the leak was carried for the
+         * life of the process. That is exactly the permanent wedge it exists to
+         * prevent, so the backstop has to survive a busy client.
+         */
+        it("sweeps a leaked reservation even under continuous traffic", async () => {
+            const BUSY_CALLER = {headers: {}, socket: {remoteAddress: "203.0.113.91"}};
+            const realNow = Date.now;
+
+            try {
+                let offset = 0;
+                Date.now = () => realNow() + offset;
+
+                // One reservation that is never released...
+                assert.equal(reserveAttempt(BUSY_CALLER), ATTEMPT_ADMITTED);
+
+                // ...then a request a second, well past the window.
+                for (let i = 0; i < 120; i++) {
+                    offset += 1000;
+                    if (reserveAttempt(BUSY_CALLER) === ATTEMPT_ADMITTED)
+                        settleAttempt(BUSY_CALLER, {failed: 0});
+                }
+
+                // The leak is gone rather than carried forward, so the whole cap
+                // is available again.
+                for (let i = 0; i < MAX_FAILED_ATTEMPTS; i++)
+                    assert.equal(reserveAttempt(BUSY_CALLER), ATTEMPT_ADMITTED,
+                        `slot ${i} was still held by a leak the traffic kept alive`);
+            } finally {
+                Date.now = realNow;
+            }
+        });
+
         it("is refunded by the same module", async () => {
             for (let i = 0; i < MAX_FAILED_ATTEMPTS - 1; i++) {
                 reserveAttempt(CALLER);

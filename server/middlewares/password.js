@@ -150,6 +150,24 @@ export const ATTEMPT_BUSY = "busy";
  */
 const IN_FLIGHT_MAX_AGE_MS = ATTEMPT_WINDOW_MS;
 
+/*
+ * The sweep is approximate, deliberately, and only in the safe direction.
+ *
+ * A reservation carries no identity, so a settle arriving after its own
+ * reservation was swept decrements whatever entry it finds - which may belong
+ * to a later request. The effect is under-counting: a slot is freed while its
+ * comparison is still running, so the cap can be briefly exceeded. It cannot
+ * over-count, and so cannot refuse anyone who should be admitted, which is the
+ * failure that would matter.
+ *
+ * Reaching it requires a reservation to outlive the window, and every path
+ * settles in a `finally` - so it needs a bcrypt comparison hung for a full
+ * minute, by which point the instance has a larger problem than its throttle.
+ * Giving each reservation a token to settle against would make this exact, at
+ * the cost of threading that token through three call sites and two routes to
+ * fix a case that resolves itself on the next request.
+ */
+
 const runningFor = (key, now) => {
     const entry = attemptsInFlight.get(key);
 
@@ -162,6 +180,24 @@ const runningFor = (key, now) => {
     return entry.count;
 };
 
+/**
+ * Keeps the entry's own deadline rather than starting a new one.
+ *
+ * `staleAt` dates from when the entry was created, and every later write
+ * preserves it. Refreshing it on each reservation and release looked tidier and
+ * disabled the sweep entirely: under any steady traffic each settle pushed the
+ * deadline out again, so a leaked reservation was carried forward for the life
+ * of the process - which is the permanent wedge the sweep exists to prevent.
+ *
+ * Entries are created and deleted within milliseconds in normal use, so the
+ * fixed lifetime is never reached by a healthy burst.
+ */
+const holding = (key, count, now) => {
+    const existing = attemptsInFlight.get(key);
+
+    attemptsInFlight.set(key, {count, staleAt: existing?.staleAt ?? now + IN_FLIGHT_MAX_AGE_MS});
+};
+
 export const reserveAttempt = (req, attempts = 1) => {
     const key = clientKey(req);
     const now = Date.now();
@@ -171,7 +207,7 @@ export const reserveAttempt = (req, attempts = 1) => {
     const running = runningFor(key, now);
     if (running + attempts > MAX_ATTEMPTS_IN_FLIGHT) return ATTEMPT_BUSY;
 
-    attemptsInFlight.set(key, {count: running + attempts, staleAt: now + IN_FLIGHT_MAX_AGE_MS});
+    holding(key, running + attempts, now);
     return ATTEMPT_ADMITTED;
 };
 
@@ -191,7 +227,7 @@ export const settleAttempt = (req, {reserved = 1, failed = 0} = {}) => {
     // Floored at zero rather than trusted: a reservation the sweep above has
     // already discarded would otherwise take the count negative and hand the
     // next caller free slots.
-    if (running > 0) attemptsInFlight.set(key, {count: running, staleAt: now + IN_FLIGHT_MAX_AGE_MS});
+    if (running > 0) holding(key, running, now);
     else attemptsInFlight.delete(key);
 
     if (failed > 0) recordFailure(key, failed);
