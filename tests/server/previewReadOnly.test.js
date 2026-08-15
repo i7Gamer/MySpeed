@@ -126,8 +126,29 @@ describe("nothing destructive is left open on a demo", () => {
         {file: "server/routes/storage.js", route: 'app.put("/config"'},
         {file: "server/routes/speedtests.js", route: 'app.delete("/:id"'},
         {file: "server/routes/config.js", route: 'app.patch("/:key"'},
-        {file: "server/routes/config.js", route: 'app.delete("/password"'}
+        {file: "server/routes/config.js", route: 'app.delete("/password"'},
+        // The schedule is shared by everyone looking at the demo, so one visitor
+        // pausing it stops the tests for every other visitor - and leaves it
+        // stopped, since nothing resumes it on their behalf.
+        {file: "server/routes/speedtests.js", route: 'app.post("/pause"'},
+        {file: "server/routes/speedtests.js", route: 'app.post("/continue"'}
     ];
+
+    /**
+     * The one mutation a demo is meant to allow.
+     *
+     * Preview mode has a whole branch in tasks/speedtest.js that answers a run
+     * with a plausible generated result, so pressing the button is the thing
+     * visitors come for. Read-only would be the simpler rule and the wrong one.
+     */
+    it("still lets a visitor run a test", () => {
+        const source = read("server/routes/speedtests.js");
+        const at = source.indexOf('app.post("/run"');
+
+        assert.notEqual(at, -1, "the run route is gone");
+        assert.doesNotMatch(source.slice(at, source.indexOf("=>", at)), /previewReadOnly/,
+            "running a test is what preview mode exists to demonstrate");
+    });
 
     for (const {file, route} of GUARDED) {
         it(`${route.replace(/app\.|\("|"$/g, " ").trim()} in ${path.basename(file)} is guarded`, () => {

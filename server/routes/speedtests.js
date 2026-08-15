@@ -209,7 +209,11 @@ app.get("/status", password(true), async (req, res) => {
     });
 });
 
-app.post("/pause", password(false), (req, res) => {
+// Guarded, unlike /run above: the schedule belongs to the instance rather than
+// to the visitor looking at it, so one anonymous caller pausing a public demo
+// stops the tests for everyone else - and leaves them stopped, since nobody
+// resumes it on their behalf.
+app.post("/pause", password(false), previewReadOnly, (req, res) => {
     // Both 0 and -1 mean "until manually resumed": the pause dialog sends 0,
     // older clients send -1. The reading lives in the controller so that it can
     // be tested, and so that "0" is read the same as 0 - this was an
@@ -226,7 +230,7 @@ app.post("/pause", password(false), (req, res) => {
     res.json({message: "Successfully paused the speedtests"});
 });
 
-app.post("/continue", password(false), (req, res) => {
+app.post("/continue", password(false), previewReadOnly, (req, res) => {
     pauseController.updateState(false);
     res.json({message: "Successfully resumed the speedtests"});
 });

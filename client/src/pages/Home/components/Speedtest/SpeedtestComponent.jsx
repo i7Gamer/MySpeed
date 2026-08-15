@@ -11,11 +11,13 @@ import "./styles.sass";
 import {describeError} from "@/common/components/TestDetails/utils/errors";
 import TestDetails from "@/common/components/TestDetails";
 import {t} from "i18next";
+import {Trans} from "react-i18next";
+import {useAlert} from "@/common/contexts/Alert";
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {
-    convertSpeed, formatLatency, formatShortDay, formatShortTime, formatWhole, getSpeedUnit
+    convertSpeed, formatDateTime, formatLatency, formatShortDay, formatShortTime, formatWhole, getSpeedUnit
 } from "@/common/utils/FormatUtil";
 import {
     bufferbloatInfo, downloadInfo, jitterInfo, packetLossInfo, pingInfo, uploadInfo
@@ -27,6 +29,7 @@ import {useMetricInfo} from "@/common/hooks/useMetricInfo";
 
 const SpeedtestComponent = forwardRef((props, forwardedRef) => {
     const updateToast = useContext(ToastNotificationContext);
+    const alert = useAlert();
     const [config] = useContext(ConfigContext);
     const {deleteTest} = useContext(SpeedtestContext);
     const [preferences] = useContext(PreferencesContext);
@@ -121,10 +124,36 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
         setTimeout(() => deleteTest(props.id), 300);
     }
 
-    // The row only disappears once the server has actually deleted it.
-    // deleteRequest hands back the raw response, so a refused delete used to
-    // fade the test out and report success - it came back on the next refresh.
+    /**
+     * The row only disappears once the server has actually deleted it.
+     * deleteRequest hands back the raw response, so a refused delete used to
+     * fade the test out and report success - it came back on the next refresh.
+     *
+     * And it asks first. This deleted on the click, and a measurement is of a
+     * moment that does not come round again - there is no undo and no way to
+     * restore one short of importing a backup of the whole history. The button
+     * sits in the pane that opens directly beneath the row being read, which is
+     * exactly where a misdirected click lands. Every other irreversible action
+     * in the app already asks: removing a node and removing the password both
+     * go through this same confirmation, and clearing the whole history makes
+     * its button ask twice.
+     */
     const removeTest = async () => {
+        const confirmed = await alert.openConfirm(
+            t("test.delete_confirm.title"),
+            // Named by when it was taken, because the question is worth nothing
+            // if the reader cannot tell which row it is about - and the row that
+            // opened this pane is not necessarily the one they meant to open.
+            <Trans components={{Bold: <span className="dialog-value"/>}}
+                   values={{date: formatDateTime(props.time, preferences)}}>test.delete_confirm.description</Trans>,
+            {
+                buttonText: t("test.delete_confirm.yes"),
+                danger: true
+            }
+        );
+
+        if (!confirmed) return;
+
         try {
             await assertOk(await deleteRequest(`/speedtests/${props.id}`), "delete speedtest");
         } catch (e) {

@@ -320,6 +320,11 @@
     "failed": "Test failed",
     "recheck": "Please check as far as possible if this happens often.",
     "delete": "Delete Test",
+    "delete_confirm": {
+      "title": "Delete test?",
+      "description": "The test from <Bold>{{date}}</Bold> will be deleted. This action cannot be undone. Do you want to continue?",
+      "yes": "Yes, delete"
+    },
     "deleted": "The test has been deleted",
     "average": {
       "title": "Average Speed",

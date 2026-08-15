@@ -320,6 +320,11 @@
     "failed": "Test fehlgeschlagen",
     "recheck": "Bitte überprüfe weitestgehend, ob das öfter passiert.",
     "delete": "Test löschen",
+    "delete_confirm": {
+      "title": "Test löschen?",
+      "description": "Der Test vom <Bold>{{date}}</Bold> wird gelöscht. Diese Aktion kann nicht rückgängig gemacht werden. Möchtest du fortfahren?",
+      "yes": "Ja, löschen"
+    },
     "deleted": "Der Test wurde gelöscht",
     "average": {
       "title": "Durchschnittsgeschwindigkeit",
