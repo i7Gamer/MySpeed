@@ -6,7 +6,7 @@ import { isLoopbackRequest } from '../util/clientAddress.js';
 import { clientKey } from '../util/clientKey.js';
 import { isValidSession, SESSION_COOKIE } from '../util/session.js';
 import { readCookie } from '../util/cookies.js';
-import { PASSWORD_REQUIRED, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS } from '../util/authOutcome.js';
+import { PASSWORD_REQUIRED, SERVER_BUSY, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS } from '../util/authOutcome.js';
 
 /**
  * Every wrong password costs a full bcrypt comparison, so an unauthenticated
@@ -22,14 +22,18 @@ const MAX_TRACKED_CLIENTS = 10000;
 /**
  * How many comparisons one client may have in flight at once.
  *
- * Equal to the failure budget, and it has to be: this is what bounds a burst.
- * Confirmed failures (below) are recorded only *after* a comparison comes back
- * wrong, so a batch of requests arriving together are all still under the
- * failure limit when they are admitted - the failure count cannot stop them,
- * because none of them has failed yet. This cap is what does: at most this many
- * comparisons run before the batch resolves and the failures it earns lock the
- * window. Set higher than the budget and a single burst could run more wrong
- * comparisons than the budget allows; that is the race this whole thing closes.
+ * This is what bounds a burst. Confirmed failures are recorded only *after* a
+ * comparison comes back wrong, so a batch arriving together is still under the
+ * failure limit when it is admitted - the failure count cannot stop it, because
+ * none of it has failed yet. This cap is what does.
+ *
+ * Being precise about the bound, because the obvious reading is too generous:
+ * it caps *concurrency*, not the total for the window. A caller who refills
+ * each slot as it frees gets roughly twice the failure budget's worth of
+ * comparisons before the lockout bites - the last full set is already reserved
+ * when the count reaches the limit. So the honest guarantee is "on the order of
+ * the budget", not "at most the budget", and either way it is bounded work that
+ * ends in a locked window rather than the unbounded run the old shape allowed.
  */
 const MAX_ATTEMPTS_IN_FLIGHT = MAX_FAILED_ATTEMPTS;
 
@@ -133,15 +137,41 @@ export const ATTEMPT_ADMITTED = "admitted";
 export const ATTEMPT_LOCKED_OUT = "locked_out";
 export const ATTEMPT_BUSY = "busy";
 
+/**
+ * A reservation cannot outlive this.
+ *
+ * Every path that reserves also settles in a `finally`, so in principle this
+ * never fires. It exists because the cost of being wrong is asymmetric: the
+ * failure count expires on its own, but an in-flight count has nothing to
+ * decay it, so one missed release would wedge that caller at the cap for the
+ * life of the process - a permanent lockout, which is a worse fault than the
+ * one this whole counter was split in two to fix. A stale reservation is
+ * discarded instead, which at worst lets a burst through a window late.
+ */
+const IN_FLIGHT_MAX_AGE_MS = ATTEMPT_WINDOW_MS;
+
+const runningFor = (key, now) => {
+    const entry = attemptsInFlight.get(key);
+
+    if (entry === undefined) return 0;
+    if (now >= entry.staleAt) {
+        attemptsInFlight.delete(key);
+        return 0;
+    }
+
+    return entry.count;
+};
+
 export const reserveAttempt = (req, attempts = 1) => {
     const key = clientKey(req);
+    const now = Date.now();
 
     if (isLockedOut(key)) return ATTEMPT_LOCKED_OUT;
 
-    const running = attemptsInFlight.get(key) ?? 0;
+    const running = runningFor(key, now);
     if (running + attempts > MAX_ATTEMPTS_IN_FLIGHT) return ATTEMPT_BUSY;
 
-    attemptsInFlight.set(key, running + attempts);
+    attemptsInFlight.set(key, {count: running + attempts, staleAt: now + IN_FLIGHT_MAX_AGE_MS});
     return ATTEMPT_ADMITTED;
 };
 
@@ -155,9 +185,13 @@ export const reserveAttempt = (req, attempts = 1) => {
  */
 export const settleAttempt = (req, {reserved = 1, failed = 0} = {}) => {
     const key = clientKey(req);
-    const running = (attemptsInFlight.get(key) ?? 0) - reserved;
+    const now = Date.now();
+    const running = runningFor(key, now) - reserved;
 
-    if (running > 0) attemptsInFlight.set(key, running);
+    // Floored at zero rather than trusted: a reservation the sweep above has
+    // already discarded would otherwise take the count negative and hand the
+    // next caller free slots.
+    if (running > 0) attemptsInFlight.set(key, {count: running, staleAt: now + IN_FLIGHT_MAX_AGE_MS});
     else attemptsInFlight.delete(key);
 
     if (failed > 0) recordFailure(key, failed);
@@ -190,7 +224,7 @@ const RETRY_AFTER_SECONDS = 1;
 const busyComparing = (res) =>
     res.status(503)
         .set("Retry-After", String(RETRY_AFTER_SECONDS))
-        .json({message: "The server is busy checking passwords. Please try again"});
+        .json({message: "The server is busy checking passwords. Please try again", type: SERVER_BUSY});
 
 /**
  * Handles a request against an instance that has no password configured.
@@ -219,10 +253,19 @@ const handleUnconfigured = (req, res, next) => {
     if (admission === ATTEMPT_LOCKED_OUT) return tooManyAttempts(res);
     if (admission === ATTEMPT_BUSY) return busyComparing(res);
 
-    const matched = candidates.some(matchesSetupToken);
+    let matched = false;
 
-    if (candidates.length > 0)
-        settleAttempt(req, {reserved: candidates.length, failed: matched ? 0 : candidates.length});
+    try {
+        matched = candidates.some(matchesSetupToken);
+    } finally {
+        // In a finally like the other two paths, so a throw from the comparison
+        // cannot leave the reservation held. Nothing here awaits, so this is
+        // symmetry rather than a race - but an unreleased reservation has no
+        // expiry short of the sweep above, and the three paths sharing one
+        // counter should not each release it differently.
+        if (candidates.length > 0)
+            settleAttempt(req, {reserved: candidates.length, failed: matched ? 0 : candidates.length});
+    }
 
     if (matched) {
         clearFailedAttempts(req);

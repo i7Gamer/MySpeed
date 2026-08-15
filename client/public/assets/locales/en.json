@@ -37,6 +37,10 @@
       "placeholder": "Setup token from the server log",
       "wrong": "That is not the setup token in the server log"
     },
+    "busy": {
+      "title": "Server busy",
+      "description": "The server is already checking other passwords. Wait a moment, then try again."
+    },
     "throttled": {
       "title": "Too many attempts",
       "description": "Too many attempts were rejected. Wait a minute, then try again."

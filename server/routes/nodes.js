@@ -42,6 +42,10 @@ app.put("/", password(false),
     if (result === "PASSWORD_REQUIRED")
         return res.status(400).json({message: "Invalid password", type: "PASSWORD_REQUIRED"});
 
+    if (result === "NODE_BUSY")
+        return res.status(503).set("Retry-After", "1")
+            .json({message: "The node is busy right now. Please try again", type: "NODE_BUSY"});
+
     res.json({id: (await nodes.create(req.body.name, url, req.body.password)).id, type: "NODE_CREATED"});
 });
 
@@ -82,6 +86,10 @@ app.patch("/:nodeId/password", password(false),
 
     if (result === "PASSWORD_REQUIRED")
         return res.status(400).json({message: "Invalid password", type: "PASSWORD_REQUIRED"});
+
+    if (result === "NODE_BUSY")
+        return res.status(503).set("Retry-After", "1")
+            .json({message: "The node is busy right now. Please try again", type: "NODE_BUSY"});
 
     await nodes.updatePassword(req.params.nodeId, req.body.password === "none" ? null : req.body.password);
     res.json({message: "Node password successfully updated", type: "PASSWORD_UPDATED"});

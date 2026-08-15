@@ -132,12 +132,13 @@ export const truncate = (text, limit) => {
 
     if (value.length <= limit) return value;
 
-    // Floored at zero: `limit - mark.length` underflows for a limit shorter
-    // than the mark, and a negative end index slices from the *end* of the
-    // string - so truncate(text, 0) returned six characters for a limit of
-    // none. Both live callers pass thousands, but a bound that can be exceeded
-    // by asking for less is not a bound.
-    return value.slice(0, Math.max(0, limit - TRUNCATION_MARK.length)) + TRUNCATION_MARK;
+    // No room for the mark itself, so there is nothing honest to return but
+    // nothing. Flooring the slice at zero was not enough: it still appended the
+    // mark, so a limit of none produced one character. A bound that can be
+    // exceeded by asking for less is not a bound.
+    if (limit < TRUNCATION_MARK.length) return "";
+
+    return value.slice(0, limit - TRUNCATION_MARK.length) + TRUNCATION_MARK;
 };
 
 const UNKNOWN_ERROR = "Unknown error";

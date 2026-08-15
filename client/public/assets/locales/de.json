@@ -37,6 +37,10 @@
       "placeholder": "Setup-Token aus dem Server-Log",
       "wrong": "Das ist nicht der Setup-Token aus dem Server-Log"
     },
+    "busy": {
+      "title": "Server ausgelastet",
+      "description": "Der Server prüft bereits andere Passwörter. Warte einen Moment und versuche es erneut."
+    },
     "throttled": {
       "title": "Zu viele Versuche",
       "description": "Zu viele Versuche wurden abgelehnt. Warte eine Minute und versuche es erneut."

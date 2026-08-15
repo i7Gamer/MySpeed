@@ -52,6 +52,14 @@ const startUpstream = () => new Promise((resolve) => {
             return res.end(JSON.stringify({paused: false, running: false}));
         }
 
+        // The shape a child answers with while it already has as many password
+        // comparisons running for this caller as it will run at once.
+        if (req.url.startsWith("/api/busy")) {
+            res.writeHead(503, {"content-type": "application/json", "retry-after": "1"});
+            return res.end(JSON.stringify({message: "The server is busy checking passwords. Please try again",
+                type: "SERVER_BUSY"}));
+        }
+
         // Accepts and then says nothing, so a disconnecting caller is the only
         // thing that can end the exchange.
         if (req.url.startsWith("/api/hang")) {
@@ -190,6 +198,32 @@ describe("node proxy", () => {
 
         assert.equal(received.at(-1).headers["accept-encoding"], undefined,
             "the child was invited to compress a response the parent forwards verbatim");
+    });
+
+    /**
+     * A child that is momentarily busy is not a child that has failed.
+     *
+     * Every proxied request re-authenticates on the child by header - the
+     * parent holds no session there and cannot, since the proxy strips cookies
+     * both ways - so a dashboard's own polling can fill the child's in-flight
+     * comparison slots. Flattening the 503 into "Internal server error" threw
+     * away the reason and the retry and reported a healthy node as broken.
+     */
+    describe("a node that is busy", () => {
+        it("says so rather than reporting the node as broken", async () => {
+            const {status, body} = await api(server.baseUrl, `/nodes/${nodeId}/busy`);
+
+            assert.equal(status, 503);
+            assert.equal(body.type, "SERVER_BUSY");
+            assert.doesNotMatch(body.message, /internal server error/i);
+        });
+
+        // So a client knows this is worth retrying, and when.
+        it("passes the retry hint through", async () => {
+            const {headers} = await api(server.baseUrl, `/nodes/${nodeId}/busy`);
+
+            assert.equal(headers.get("retry-after"), "1");
+        });
     });
 
     it("preserves the upstream status code", async () => {

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LOCAL_NODE, selectedNode } from "@/common/contexts/Node/nodeSelection.js";
+import { LOCAL_NODE, isLocalNode, selectedNode } from "@/common/contexts/Node/nodeSelection.js";
 
 /**
  * Deleting the node you are looking at used to leave the whole app pointed at
@@ -85,5 +85,37 @@ describe("the node provider", () => {
     it("reloads the config for the node it moved to", () => {
         assert.match(source, /reloadConfig\(/,
             "the app keeps the deleted node's config after falling back to this instance");
+    });
+});
+
+/**
+ * What "this instance" means, now that one predicate answers for all three
+ * readers.
+ *
+ * The sentinel used to be declared three times in two type systems - the
+ * provider kept the number 0, while the header and configOutcome each kept the
+ * string "0" and compared against it. They agreed only because localStorage
+ * hands back exactly the text the provider wrote. Pinning the absent cases
+ * matters most: they are the ones the three copies disagreed about, and the
+ * ones no test covered.
+ */
+describe("isLocalNode", () => {
+    it("recognises the sentinel as either type", () => {
+        assert.equal(isLocalNode(LOCAL_NODE), true);
+        assert.equal(isLocalNode(0), true);
+        assert.equal(isLocalNode("0"), true);
+    });
+
+    // A browser that has never chosen a node is looking at this one. null is
+    // what localStorage.getItem answers for a key it does not hold.
+    it("treats an absent selection as this instance", () => {
+        assert.equal(isLocalNode(null), true);
+        assert.equal(isLocalNode(undefined), true);
+        assert.equal(isLocalNode(""), true);
+    });
+
+    it("recognises a remote node as either type", () => {
+        assert.equal(isLocalNode(3), false);
+        assert.equal(isLocalNode("3"), false);
     });
 });

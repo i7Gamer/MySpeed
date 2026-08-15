@@ -27,6 +27,18 @@ export const NodeProvider = (props) => {
      */
     const requestGeneration = useRef(0);
 
+    /*
+     * The newest answer *applied*, not the newest request issued.
+     *
+     * Comparing against the issued counter made a failing request destructive:
+     * a later fetch that came back 401 or 500 returned without applying
+     * anything, but had already claimed the newest generation - so an earlier
+     * successful response arriving behind it was discarded and the list stayed
+     * empty. Recording what was applied lets a good answer through whenever
+     * nothing newer has superseded it, while a stale one is still dropped.
+     */
+    const appliedGeneration = useRef(0);
+
     const updateNodes = async () => {
         const generation = ++requestGeneration.current;
 
@@ -34,8 +46,9 @@ export const NodeProvider = (props) => {
             if (!nodes.ok) return;
 
             const fetched = await nodes.json();
-            if (generation !== requestGeneration.current) return;
+            if (generation <= appliedGeneration.current) return;
 
+            appliedGeneration.current = generation;
             setNodes(fetched);
             setNodesLoaded(true);
         });

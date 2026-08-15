@@ -16,3 +16,15 @@
 export const SETUP_TOKEN_REQUIRED = "SETUP_TOKEN_REQUIRED";
 export const PASSWORD_REQUIRED = "PASSWORD_REQUIRED";
 export const TOO_MANY_ATTEMPTS = "TOO_MANY_ATTEMPTS";
+
+/**
+ * Not a refusal of the credential at all: the server is already running as many
+ * password comparisons for this caller as it will run at once, and this one
+ * arrived while they were in flight. It clears the moment a slot frees.
+ *
+ * It carries a type for the same reason the three above do. Without one the
+ * client falls through to its default and says "the password you entered is
+ * incorrect" - which is exactly the misreport that splitting the throttle into
+ * two counters was meant to end, reintroduced one layer further out.
+ */
+export const SERVER_BUSY = "SERVER_BUSY";

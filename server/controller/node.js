@@ -2,6 +2,11 @@ import nodes from '../models/Node.js';
 import { writePasswordHeaders } from '../util/passwordHeader.js';
 import { checkNodeTarget } from '../util/safeUrl.js';
 import { safeRequest } from '../util/safeRequest.js';
+import { SERVER_BUSY } from '../util/authOutcome.js';
+
+// The child answers this while it already has as many password comparisons
+// running for this caller as it will run at once. Transient by construction.
+const SERVICE_UNAVAILABLE = 503;
 
 const STATUS_TIMEOUT = 8000;
 
@@ -40,6 +45,11 @@ export const checkStatus = async (url, password) => {
 
         if (isRedirect(res)) return "INVALID_URL";
         if (res.status === 401) return "PASSWORD_REQUIRED";
+        // A node that is momentarily busy comparing passwords has a perfectly
+        // good address, and calling it invalid sends the operator to check a
+        // URL that was never wrong. Reported as unreachable instead, which is
+        // what it is for the moment and what a retry answers.
+        if (res.status === SERVICE_UNAVAILABLE) return "NODE_BUSY";
         if (res.status < 200 || res.status >= 300) return "INVALID_URL";
 
         const data = JSON.parse(res.body.toString("utf8"));
@@ -64,8 +74,7 @@ export const checkStatus = async (url, password) => {
  * dashboard shipped a fresh copy of a seven-day full-access token to a third
  * host every few seconds for as long as a node stayed selected - usually over
  * plain http on the LAN.
- */
-/*
+ *
  * `accept-encoding` is here because this proxy cannot honour the answer.
  * safeRequest is raw node:http and never decodes a response, and only the two
  * headers below are copied back - so a browser's "gzip, deflate, br, zstd",
@@ -112,6 +121,25 @@ export const proxyRequest = async (url, req, res) => {
 
         if (isRedirect(response))
             return res.status(502).json({message: "The node redirected the request", type: "INVALID_URL"});
+
+        /*
+         * A busy child is not a broken one.
+         *
+         * Every proxied request re-authenticates on the child by header - the
+         * parent holds no session there and never can, since the proxy strips
+         * cookies both ways - so a dashboard's own polling can briefly fill the
+         * child's in-flight comparison slots. The child says so with a 503 and
+         * a Retry-After, and flattening that into "Internal server error" threw
+         * away both the reason and the retry, telling the operator their node
+         * had failed when it was answering perfectly.
+         */
+        if (response.status === SERVICE_UNAVAILABLE) {
+            const retryAfter = response.headers["retry-after"];
+            if (retryAfter) res.setHeader("Retry-After", retryAfter);
+
+            return res.status(SERVICE_UNAVAILABLE)
+                .json({message: "The node is busy. Please try again", type: SERVER_BUSY});
+        }
 
         if (response.status >= 500) return serverError(res);
 

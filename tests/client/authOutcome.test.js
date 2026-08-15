@@ -1,8 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    PASSWORD_REQUIRED, PROMPT_PASSWORD, PROMPT_SETUP_TOKEN, PROMPT_THROTTLED,
-    SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS, promptFor, refusalDescriptionKey
+    PASSWORD_REQUIRED, PROMPT_BUSY, PROMPT_PASSWORD, PROMPT_SETUP_TOKEN, PROMPT_THROTTLED,
+    SERVER_BUSY, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS, lockedNoticeKeys, promptFor, refusalDescriptionKey
 } from "../../client/src/common/utils/AuthOutcome.js";
 
 /**
@@ -80,5 +80,37 @@ describe("refusalDescriptionKey", () => {
     it("falls back to the wrong-password line for anything unrecognised", () => {
         assert.equal(refusalDescriptionKey(undefined), "dialog.password.wrong");
         assert.equal(refusalDescriptionKey("SOMETHING_ADDED_LATER"), "dialog.password.wrong");
+    });
+});
+
+/**
+ * A busy server is not a wrong password.
+ *
+ * The throttle keeps two counters: one for wrong guesses, which locks the
+ * caller out for a window, and one for comparisons already running, which
+ * clears the moment a slot frees. The second refuses with a 503 - and without
+ * a type of its own the client fell through to its default and told the
+ * operator "the password you entered is incorrect", which is precisely the
+ * misreport the two counters were separated to end.
+ */
+describe("a refusal because the server is busy", () => {
+    it("is its own question, not the password one", () => {
+        assert.equal(promptFor(SERVER_BUSY), PROMPT_BUSY);
+        assert.notEqual(promptFor(SERVER_BUSY), PROMPT_PASSWORD);
+    });
+
+    it("never says the password was wrong", () => {
+        assert.equal(refusalDescriptionKey(SERVER_BUSY), "dialog.busy.description");
+    });
+
+    // Distinct from the lockout: both ask for patience, but only one of them
+    // is about attempts that were rejected.
+    it("is told apart from being locked out", () => {
+        assert.notEqual(refusalDescriptionKey(SERVER_BUSY), refusalDescriptionKey(TOO_MANY_ATTEMPTS));
+        assert.notEqual(lockedNoticeKeys(SERVER_BUSY).title, lockedNoticeKeys(TOO_MANY_ATTEMPTS).title);
+    });
+
+    it("offers a retry rather than a box to type into", () => {
+        assert.equal(lockedNoticeKeys(SERVER_BUSY).action, "dialog.retry");
     });
 });

@@ -10,10 +10,12 @@
 export const SETUP_TOKEN_REQUIRED = "SETUP_TOKEN_REQUIRED";
 export const PASSWORD_REQUIRED = "PASSWORD_REQUIRED";
 export const TOO_MANY_ATTEMPTS = "TOO_MANY_ATTEMPTS";
+export const SERVER_BUSY = "SERVER_BUSY";
 
 export const PROMPT_SETUP_TOKEN = "setup-token";
 export const PROMPT_PASSWORD = "password";
 export const PROMPT_THROTTLED = "throttled";
+export const PROMPT_BUSY = "busy";
 
 /**
  * Which question a given refusal calls for.
@@ -29,6 +31,11 @@ export const promptFor = (type) => {
             return PROMPT_SETUP_TOKEN;
         case TOO_MANY_ATTEMPTS:
             return PROMPT_THROTTLED;
+        // Its own prompt rather than the throttle's: both say "wait", but one
+        // of them also says the attempts were rejected, and this caller's
+        // credentials were never judged at all.
+        case SERVER_BUSY:
+            return PROMPT_BUSY;
         default:
             return PROMPT_PASSWORD;
     }
@@ -48,6 +55,8 @@ export const promptFor = (type) => {
  */
 export const refusalDescriptionKey = (type) => {
     switch (promptFor(type)) {
+        case PROMPT_BUSY:
+            return "dialog.busy.description";
         case PROMPT_THROTTLED:
             return "dialog.throttled.description";
         case PROMPT_SETUP_TOKEN:
@@ -82,6 +91,12 @@ export const lockedNoticeKeys = (type) => {
                 // of it". Nothing else in the interface says so.
                 hint: "locked.token_hint",
                 action: "locked.enter_token"
+            };
+        case PROMPT_BUSY:
+            return {
+                title: "dialog.busy.title",
+                description: "dialog.busy.description",
+                action: "dialog.retry"
             };
         case PROMPT_THROTTLED:
             return {

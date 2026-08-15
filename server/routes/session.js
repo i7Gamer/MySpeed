@@ -7,7 +7,7 @@ import { readCookie, serialiseCookie } from '../util/cookies.js';
 import {
     ATTEMPT_BUSY, ATTEMPT_LOCKED_OUT, clearFailedAttempts, reserveAttempt, settleAttempt
 } from '../middlewares/password.js';
-import { PASSWORD_REQUIRED, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS } from '../util/authOutcome.js';
+import { PASSWORD_REQUIRED, SERVER_BUSY, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS } from '../util/authOutcome.js';
 
 const app = express.Router();
 
@@ -43,7 +43,7 @@ app.post("/", async (req, res) => {
     // would send them looking for a problem that does not exist.
     if (admission === ATTEMPT_BUSY)
         return res.status(503).set("Retry-After", "1")
-            .json({message: "The server is busy checking passwords. Please try again"});
+            .json({message: "The server is busy checking passwords. Please try again", type: SERVER_BUSY});
 
     let valid = false;
     let unconfigured;

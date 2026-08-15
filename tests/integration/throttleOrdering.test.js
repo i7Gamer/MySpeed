@@ -76,7 +76,10 @@ const call = (routes, req) => new Promise((resolve) => {
         end() { resolve(this.statusCode); return this; }
     };
 
-    routes(req, res, () => resolve(this?.statusCode ?? 404));
+    // Reached only if the router matched nothing, which would mean the request
+    // shapes below have drifted from the routes - so it resolves to a status no
+    // assertion expects rather than to something that looks like an answer.
+    routes(req, res, () => resolve(404));
 });
 
 const ATTACKER = {socket: {remoteAddress: "203.0.113.42"}};
@@ -126,6 +129,10 @@ describe("the work a burst of guesses can buy", () => {
 
         assert.ok(compares.count <= MAX_FAILED_ATTEMPTS,
             `${compares.count} comparisons ran across the two routes`);
+        // Its two siblings carry this and this one did not: without it, a mock
+        // that stopped intercepting - or route shapes that drifted so nothing
+        // is handled - reads as a perfect score.
+        assert.ok(compares.count > 0, "nothing was compared at all");
     });
 
     /**

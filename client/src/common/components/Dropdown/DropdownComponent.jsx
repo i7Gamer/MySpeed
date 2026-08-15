@@ -22,6 +22,8 @@ import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {useAlert} from "@/common/contexts/Alert";
 import {assertOk, postRequest} from "@/common/utils/RequestUtil";
 import {t} from "i18next";
+import {Trans} from "react-i18next";
+import {INSTALL_URL} from "@/index";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {IntegrationDialog} from "@/common/components/IntegrationDialog";
 import LanguageDialog from "@/common/components/LanguageDialog";
@@ -120,7 +122,14 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
      */
     const explainPreview = () => alert.openAlert(
         t("preview.title"),
-        t("preview.description"),
+        // Through Trans, not t(): this string carries a <Link> placeholder for
+        // the install page, and openAlert renders its description as a React
+        // child - so `t()` put the literal angle brackets on screen in all
+        // sixteen locales. The header's demo dialog does the same thing with
+        // the same string.
+        <Trans components={{ Link: <a href={INSTALL_URL} target="_blank" rel="noreferrer" /> }}>
+            preview.description
+        </Trans>,
         { buttonText: t("dialog.close") }
     );
 

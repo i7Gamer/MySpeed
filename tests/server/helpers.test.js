@@ -268,12 +268,23 @@ describe("truncate", () => {
      * never do. Unreachable through today's callers, which pass thousands.
      */
     it("never returns more than the limit, however small", () => {
-        for (const limit of [0, 1, 2, 3]) {
+        // No Math.max on the expectation: the first version of this test wrote
+        // `<= Math.max(limit, 1)`, which is exactly the exemption that let a
+        // limit of nought return one character and pass.
+        for (const limit of [-3, 0, 1, 2, 3]) {
             const cut = truncate("abcdefghij", limit);
 
-            assert.ok(cut.length <= Math.max(limit, 1),
+            assert.ok(cut.length <= Math.max(limit, 0),
                 `limit ${limit} produced ${cut.length} characters: ${JSON.stringify(cut)}`);
         }
+    });
+
+    // Below the width of the mark there is no room to say "there was more", so
+    // the honest answer is nothing rather than a mark that is itself over
+    // budget.
+    it("returns nothing when there is no room even for the mark", () => {
+        assert.equal(truncate("abcdefghij", 0), "");
+        assert.equal(truncate("abcdefghij", -1), "");
     });
 
     it("stringifies whatever it is handed", () => {

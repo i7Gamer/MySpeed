@@ -49,6 +49,23 @@ describe("controls a demo instance cannot honour", () => {
         });
     }
 
+    /**
+     * The explanation carries markup, so it has to be rendered as markup.
+     *
+     * `preview.description` embeds a <Link> placeholder pointing at the install
+     * page, and openAlert renders its description as a React child - so passing
+     * it through t() put the literal angle brackets on screen in every locale.
+     * The header's copy of this dialog already had it right.
+     */
+    it("renders the demo explanation rather than printing its markup", () => {
+        const body = dropdown.slice(dropdown.indexOf("const explainPreview"),
+            dropdown.indexOf("const options"));
+
+        assert.match(body, /<Trans/, "the <Link> placeholder is shown to the user as text");
+        assert.doesNotMatch(body, /t\("preview\.description"\)/,
+            "the description is still fetched as a plain string");
+    });
+
     it("explains the refusal rather than letting the save fail", () => {
         assert.match(dropdown, /explainPreview/,
             "a blocked entry opens its dialog anyway");
