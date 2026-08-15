@@ -42,14 +42,59 @@ const hostOf = (url) => {
 const report = (url, error) =>
     console.error(`Integration request to ${hostOf(url)} failed: ${error?.message ?? error}`);
 
+/**
+ * Notes the outcome against the integration without letting that note matter.
+ *
+ * `activity` is triggerEvent's callback and it awaits an IntegrationData
+ * update, so it returns a promise that can reject - a transient SQLITE_BUSY
+ * while the speedtest row is being written to the same file is the realistic
+ * case. It was invoked bare, so the rejection had no handler at all and escaped
+ * to the process-level unhandledRejection hook; the two sibling calls in
+ * controller/integrations.js carry a deliberate catch that this path did not.
+ *
+ * Whether the note was written is not something the send depends on, either
+ * way round: a throw from the callback must not turn a delivered notification
+ * into a reported failure.
+ */
+const note = (activity, failed) => {
+    try {
+        Promise.resolve(activity?.(failed)).catch(() => undefined);
+    } catch {
+        // A synchronous throw from the callback, which is no more the send's
+        // business than a rejected one.
+    }
+};
+
+/**
+ * Lets go of a response nobody is going to read.
+ *
+ * Neither helper's return value is read by any of the eight integrations - the
+ * status has already been turned into `activity` and a log line by the time it
+ * gets back - but the body was left neither consumed nor cancelled. On undici
+ * that keeps the transport checked out of the pool with the bytes buffered
+ * until the Response is collected, and three of the providers answer with the
+ * message they created while healthChecks fires every minute.
+ *
+ * Cancelled rather than buffered: nothing wants the bytes, and a body that has
+ * been cancelled fails loudly if a future caller tries to read one.
+ */
+const release = (res) => {
+    try {
+        res?.body?.cancel?.()?.catch?.(() => undefined);
+    } catch {
+        // A response with no body, or a runtime that gives no stream for one.
+    }
+};
+
 export const postJson = async (url, json, {headers, activity} = {}) => {
     try {
         const res = await fetch(url, jsonInit("POST", json, headers));
-        activity?.(res.ok ? undefined : true);
+        note(activity, res.ok ? undefined : true);
         if (!res.ok) report(url, `HTTP ${res.status}`);
+        release(res);
         return res;
     } catch (e) {
-        activity?.(true);
+        note(activity, true);
         report(url, e);
         return null;
     }
@@ -63,11 +108,12 @@ export const postText = async (url, body, {headers, activity} = {}) => {
             body,
             signal: AbortSignal.timeout(OUTBOUND_TIMEOUT)
         });
-        activity?.(res.ok ? undefined : true);
+        note(activity, res.ok ? undefined : true);
         if (!res.ok) report(url, `HTTP ${res.status}`);
+        release(res);
         return res;
     } catch (e) {
-        activity?.(true);
+        note(activity, true);
         report(url, e);
         return null;
     }

@@ -6,6 +6,7 @@ import * as sass from "sass";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { convertSpeed, formatLatency, formatWhole, SPEED_UNIT_MBYTES } from "@/common/utils/FormatUtil.js";
 import { getIconBySpeed } from "@/common/utils/TestUtil.js";
+import { clickable } from "@/common/utils/Clickable.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -58,11 +59,17 @@ const propValue = (source, prop) => {
  * `expanded` is false throughout: what the handler asks for is the state it
  * wants to move to, so a recorded `true` is a row that expanded and an empty
  * list is a row that stayed put.
+ *
+ * The handler used to be written out in the JSX and was lifted out of the source
+ * to be run. It is `clickable` now - the same shape, shared with the statistics
+ * tiles and the node cards, which had no keyboard handling at all while this row
+ * had all of it - so the real function is called instead. What is asserted below
+ * is unchanged: what matters is what it does with the event it is handed.
  */
 const pressKey = (key, {fromNestedControl = false} = {}) => {
     const toggles = [];
-    const handler = new Function("expanded", "setExpanded", `return (\n${propValue(row, "onKeyDown")}\n);`)(
-        false, (value) => toggles.push(value));
+    const expanded = false;
+    const {onKeyDown: handler} = clickable(() => toggles.push(!expanded));
 
     // The row div: what the handler is attached to, and what the keydown targets
     // when the row itself has focus. A press inside one of the help buttons

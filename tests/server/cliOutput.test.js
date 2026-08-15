@@ -136,6 +136,51 @@ describe("parseCliOutput", () => {
             assert.equal(parsed.error, undefined);
             assert.equal(parsed.download.bandwidth, 291995750);
         });
+
+        /**
+         * JSON that parses to nothing usable, which is not the same as JSON
+         * that does not parse.
+         *
+         * The array unwrap happened inside the try and the `data.error` read
+         * outside it, so `[]` - which librespeed prints when its backend is
+         * down, and which is perfectly valid JSON - dereferenced undefined and
+         * threw a TypeError the parse handler never saw. The only caller runs
+         * this from a child process's 'close' listener, so it escaped as an
+         * uncaughtException rather than as a rejected promise: the whole server
+         * went down because one speedtest found no server.
+         */
+        describe("a line that parses to nothing usable", () => {
+            const UNUSABLE = {
+                "an empty array": "[]",
+                "an array whose first element is null": "[null]",
+                "an array of scalars": "[1,2,3]",
+                "a bare null": "{}".replace("{}", "null")
+            };
+
+            for (const [name, line] of Object.entries(UNUSABLE)) {
+                it(`skips ${name} instead of throwing`, () => {
+                    assert.doesNotThrow(() => parseCliOutput("libre", line, ""));
+                });
+            }
+
+            it("reports the stderr reason rather than dying on the empty array", () => {
+                const parsed = parseCliOutput("libre", "[]", "no server found");
+
+                assert.equal(parsed.error, "no server found");
+            });
+
+            // And the line is skipped, not accepted: an empty array is not a
+            // measurement of nought.
+            it("does not take it as a result", () => {
+                assert.deepEqual(parseCliOutput("libre", "[]", ""), {});
+            });
+
+            it("still unwraps a real single-element array beside it", () => {
+                const parsed = parseCliOutput("libre", '[]\n[{"ping":12,"download":940}]', "");
+
+                assert.equal(parsed.ping, 12);
+            });
+        });
     });
 
     describe("the other providers", () => {

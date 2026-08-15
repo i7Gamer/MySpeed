@@ -20,6 +20,8 @@
  * integration whenever someone edited an unrelated screen.
  */
 
+import { FAILED_TEST } from './testOutcome.js';
+
 /** The switch that turns the whole gate on, off by default and for every existing row. */
 export const ALERT_ONLY = "alert_only";
 
@@ -27,8 +29,13 @@ export const ALERT_ONLY = "alert_only";
  * The placeholder a failed test stores in every numeric column. It is not a
  * measurement, and on a metric the user is watching it is the strongest
  * possible evidence that something is wrong.
+ *
+ * Taken from the module that owns the judgement rather than declared again:
+ * this gate's correctness is precisely that it recognises what tasks/speedtest
+ * writes, and a second copy is a way for the two to stop agreeing without
+ * anything failing to compile.
  */
-const FAILED = -1;
+const FAILED = FAILED_TEST;
 
 /**
  * The latency of a run that measured nothing.

@@ -5,6 +5,7 @@ import { ThemeContext } from "@/common/contexts/Theme";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { convertSpeed, formatHour, getSpeedUnit } from "@/common/utils/FormatUtil";
 import { chartMotion, chartThemeColors, tooltipTheme } from "@/pages/Statistics/charts/lineChartConfig";
+import { clickable } from "@/common/utils/Clickable";
 import "./SpeedChart/styles.sass";
 
 const HourlyChart = memo((props) => {
@@ -108,7 +109,7 @@ const HourlyChart = memo((props) => {
     }), [themeColors, props.hourlyAverages, speedUnit]);
 
     return (
-        <div className="chart-container" onClick={props.onClick}>
+        <div className="chart-container" {...clickable(props.onClick)}>
             <div className="chart-header">
                 <h3 className="chart-title">{t("statistics.hourly.title")}</h3>
             </div>

@@ -7,6 +7,25 @@ export const RUNNING_POLL_MS = 1000;
 export const pollIntervalFor = (status) => status?.running ? RUNNING_POLL_MS : IDLE_POLL_MS;
 
 /**
+ * Whether a polled status says anything the last one did not.
+ *
+ * The provider stored every response it parsed, and `response.json()` is a new
+ * object each time - so an idle instance re-rendered the whole tree every five
+ * seconds saying exactly what it had said before, and every second while a test
+ * ran. SpeedtestProvider consumes this context and rebuilds its own value on
+ * that render, which reaches TestArea and every un-memoised row; each row calls
+ * previousConnection, which walks the list. Three hundred rows on a history
+ * from before the isp column is quadratic work to redraw an unchanged screen.
+ *
+ * Compared as serialised text rather than field by field. The payload is small,
+ * flat except for `lastTest`, and both sides of the comparison come from the
+ * same server serialising the same object, so the key order is stable - and a
+ * field-by-field list is the kind that stops covering a field the day one is
+ * added to the route.
+ */
+export const sameStatus = (previous, next) => JSON.stringify(previous) === JSON.stringify(next);
+
+/**
  * Whether a run ended between two polled statuses.
  *
  * The tests list used to be refetched on a flat five-second interval, mostly

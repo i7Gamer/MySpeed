@@ -102,8 +102,42 @@ describe("a grade is worn by a glyph, not by a figure", () => {
         it(`${name} can be set to state it twice`, () => {
             const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-            assert.match(css, new RegExp(`:root${attribute("data-grade-values", "on")} ${escaped}\\s*\\{[^}]*color:\\s*var\\(--grade\\)`),
+            assert.match(css, new RegExp(`:root${attribute("data-grade-values", "on")} ${escaped}\\s*\\{[^}]*color:\\s*var\\(--grade,`),
                 `${value} cannot follow the setting - the mixin is not applied to it`);
+        });
+
+        /**
+         * And a row that earned no grade keeps the colour it had.
+         *
+         * `--grade` is published by the [data-grade] rules, and a row with no
+         * verdict deliberately omits the attribute - PanelRow renders
+         * `data-grade={level || undefined}`. A bare var(--grade) is then invalid
+         * at computed-value time, which for an inherited property means the
+         * declaration is thrown away *and* the rule's own `color` with it, so
+         * the figure inherits - and nothing up to body sets a colour, so every
+         * ungraded row rendered black on the dark ground the moment the setting
+         * was turned on. The glyph mixin beside it always took a fallback; this
+         * one has to as well, and it has to be the row's own colour rather than
+         * an arbitrary one, or turning the setting on restyles rows that have
+         * nothing to state.
+         */
+        it(`${name} keeps its own colour on a row that earned no grade`, () => {
+            const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+            const base = css.match(new RegExp(`(?<![\\w-])${escaped}\\s*\\{([^}]*)}`));
+            const ownColour = base?.[1].match(/color:\s*([^;\n}]+)/)?.[1].trim();
+
+            assert.notEqual(ownColour, undefined, `${value} states no colour of its own`);
+
+            // Lazily to the paren that closes the var(), not to the first one:
+            // every one of these falls back to a custom property, so the
+            // fallback has a nested pair of its own.
+            const optIn = css.match(new RegExp(
+                `:root${attribute("data-grade-values", "on")} ${escaped}\\s*\\{[^}]*color:\\s*var\\(--grade,\\s*(.+?)\\)\\s*[;}]`));
+
+            assert.notEqual(optIn, null, `${value} falls back to nothing when the row published no grade`);
+            assert.equal(optIn[1].trim(), ownColour,
+                `${value} changes colour on an ungraded row when the setting is turned on`);
         });
     }
 });
@@ -178,6 +212,48 @@ describe("what a grade looks like is stated in one place", () => {
 
         assert.notEqual(none, undefined);
         assert.notEqual(none, poor, "a figure nobody measured is painted like a bad one");
+    });
+
+    /**
+     * Including the two progress bars, which were the one part of the interface
+     * a retheme did not reach.
+     *
+     * `.value-bar-fill` and `.detail-target-fill` each carried their own
+     * icon-* -> $accent-* table, so editing --grade-good moved every glyph and
+     * every graded figure while both bars kept the old accent - a green bar
+     * under an orange-graded icon.
+     */
+    it("paints the graded fills from those properties too", () => {
+        for (const [file, selector] of [
+            ["pages/Statistics/charts/AverageChart/styles.sass", ".value-bar-fill"],
+            ["common/components/TestDetails/styles.sass", ".detail-target-fill"]
+        ]) {
+            const css = compile(file);
+
+            for (const [utility, property] of [
+                ["icon-green", "--grade-good"], ["icon-orange", "--grade-fair"],
+                ["icon-red", "--grade-poor"], ["icon-blue", "--grade-none"],
+                ["icon-error", "--grade-failed"]
+            ]) {
+                const rule = css.match(new RegExp(
+                    `\\${selector}\\.${utility}\\s*\\{([^}]*)}`));
+
+                assert.notEqual(rule, null, `${selector}.${utility} is not a rule in ${file}`);
+                assert.match(rule[1], new RegExp(`background-color:\\s*var\\(${property}\\)`),
+                    `${selector}.${utility} names a colour instead of reading ${property}`);
+            }
+        }
+    });
+
+    // Written out per stylesheet is how the two came to differ from the palette
+    // in the first place.
+    it("keeps the table in one place", () => {
+        for (const file of [
+            "pages/Statistics/charts/AverageChart/styles.sass",
+            "common/components/TestDetails/styles.sass"
+        ])
+            assert.match(read(file), /\+graded-fill/,
+                `${file} carries its own grade-to-colour table again`);
     });
 
     it("resolves a row's grade from the same properties", () => {

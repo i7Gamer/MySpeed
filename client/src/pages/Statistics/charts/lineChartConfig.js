@@ -1,4 +1,5 @@
-import i18n, {t} from "i18next";
+import {t} from "i18next";
+import {appLocale} from "@/common/utils/FormatUtil";
 
 /**
  * The configuration the statistics charts share.
@@ -14,7 +15,8 @@ import i18n, {t} from "i18next";
  * ticks and tooltip titles were the last place still asking the browser, the
  * exact mismatch the overview's shared formatter was adopted to end.
  */
-const appLocale = () => i18n.language || undefined;
+// Taken from FormatUtil rather than written out again here: this was the second
+// copy, and while the two agreed, the three surfaces that had neither did not.
 
 export const chartThemeColors = (isDarkMode) => ({
     gridColor: isDarkMode ? 'rgba(42, 52, 65, 0.6)' : 'rgba(203, 213, 225, 0.8)',

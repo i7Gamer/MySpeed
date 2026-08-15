@@ -171,6 +171,27 @@ describe("node proxy", () => {
         assert.doesNotMatch(JSON.stringify(proxied.headers), /parents-own-session-token/);
     });
 
+    /**
+     * The parent cannot decompress, so it must not ask the child to compress.
+     *
+     * `accept-encoding` was passed straight through from the browser, while
+     * safeRequest is raw node:http and never decodes a response and only
+     * content-type and content-disposition are copied back. A child sitting
+     * behind a reverse proxy with compression on - `encode gzip` in a Caddyfile
+     * is a one-liner self-hosters add without thinking about it - would then
+     * hand the parent gzip bytes, and the parent would hand the browser those
+     * bytes labelled application/json with no Content-Encoding to explain them.
+     */
+    it("does not ask the node for a body it cannot decode", async () => {
+        received = [];
+        await api(server.baseUrl, `/nodes/${nodeId}/speedtests/status`, {
+            headers: {"accept-encoding": "gzip, deflate, br, zstd"}
+        });
+
+        assert.equal(received.at(-1).headers["accept-encoding"], undefined,
+            "the child was invited to compress a response the parent forwards verbatim");
+    });
+
     it("preserves the upstream status code", async () => {
         const {status} = await api(server.baseUrl, `/nodes/${nodeId}/does-not-exist`);
         assert.equal(status, 404);

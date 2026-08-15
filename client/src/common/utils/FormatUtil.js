@@ -4,10 +4,22 @@ import i18n, {t} from "i18next";
 // only wanted to know what "mbps" is called.
 import {SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H} from "@/common/contexts/Preferences/constants";
 
-// Passing undefined means "whatever locale the browser is set to", which
-// ignores the language the user picked in the app - a German UI rendered
-// English month names and a 12-hour clock on an en-US browser.
-const locale = () => i18n.language || undefined;
+/**
+ * The language the app is set to, for anything Intl formats.
+ *
+ * Passing undefined means "whatever locale the browser is set to", which
+ * ignores the language the user picked in the app - a German UI rendered
+ * English month names and a 12-hour clock on an en-US browser.
+ *
+ * Exported because it was copied instead: lineChartConfig grew an `appLocale`
+ * of its own, and three surfaces that had neither - the range picker's trigger,
+ * the calendar's month heading and the overview's sticky date pill - went on
+ * asking the browser. A calendar headed "August 2026" in English above weekday
+ * names that were translated is what one copy too few looks like.
+ */
+export const appLocale = () => i18n.language || undefined;
+
+const locale = appLocale;
 
 const toDate = (value) => {
     if (value instanceof Date) return value;
@@ -48,6 +60,41 @@ export const formatShortDay = (value) => {
 
     return date.toLocaleDateString(locale(), {day: "2-digit", month: "short"});
 };
+
+/**
+ * A month and its year, for the calendar's heading.
+ *
+ * Sits directly above weekday names that come from the translations, so a
+ * heading in the browser's language was the one English word in a German
+ * calendar.
+ */
+export const formatMonth = (value) => {
+    const date = toDate(value);
+    if (isNaN(date.getTime())) return "";
+
+    return date.toLocaleDateString(locale(), {month: "long", year: "numeric"});
+};
+
+/**
+ * A whole date with its weekday spelled out, for the date pill that floats over
+ * the test list. The rows beneath it are formatted by formatShortDay, so the two
+ * have to be in the same language.
+ */
+export const formatFullDay = (value) => {
+    const date = toDate(value);
+    if (isNaN(date.getTime())) return "";
+
+    return date.toLocaleDateString(locale(), {weekday: "long", year: "numeric", month: "long", day: "numeric"});
+};
+
+/**
+ * A count, grouped the way the app's language groups digits.
+ *
+ * The downsample note prints two of these in one sentence. A bare
+ * toLocaleString() takes the browser's separator, so a German instance read
+ * "1,234 of 5,678" among numbers written 1.234 everywhere else on the page.
+ */
+export const formatCount = (value) => Number(value).toLocaleString(locale());
 
 export const formatTime = (value, preferences) => {
     const date = toDate(value);

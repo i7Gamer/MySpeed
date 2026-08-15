@@ -2,6 +2,7 @@ import tests from '../models/Speedtests.js';
 import { Op } from 'sequelize';
 import { buildStatistics, STATISTICS_COLUMNS } from '../util/statistics.js';
 import { previousRange } from '../util/dateRange.js';
+import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER } from '../util/testOutcome.js';
 import { getValue } from './config.js';
 import db from '../config/database.js';
 
@@ -159,7 +160,7 @@ export const listTests = async (afterId, limit, range = null, after = null) => {
  * and the recommendations silently stopped updating until the failure aged out.
  */
 export const listSuccessful = async (limit) => tests.findAll({
-    where: {error: null},
+    where: SUCCESSFUL_TEST_FILTER,
     order: LIST_ORDER,
     limit
 });
@@ -169,9 +170,13 @@ export const listSuccessful = async (limit) => tests.findAll({
  *
  * A count rather than the rows: this is polled while a test runs, and the only
  * thing asked of it is a number.
+ *
+ * Both halves are joined explicitly, for the reason listFilter is: the shared
+ * filter is keyed by Op.or, and a second Op-keyed clause written into the same
+ * object would replace it.
  */
 export const countFailuresSince = async (since) => tests.count({
-    where: {created: {[Op.gte]: since.toISOString()}, error: {[Op.ne]: null}}
+    where: {[Op.and]: [{created: {[Op.gte]: since.toISOString()}}, FAILED_TEST_FILTER]}
 });
 
 export const deleteTests = async () => {

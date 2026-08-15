@@ -8,10 +8,14 @@ import * as serverController from "../controller/servers.js";
 import { toErrorMessage } from '../util/helpers.js';
 import { PHASE_START, overallProgress } from '../util/providers/progress.js';
 import { failedPayload, finishedPayload } from '../util/notificationPayload.js';
+import { FAILED_TEST } from '../util/testOutcome.js';
 
 // The placeholder a failed test stores in every numeric column. The client
 // tells a failure apart by it, so it is not a value anyone should read as one.
-const FAILED = -1;
+// Taken from the module that owns the judgement rather than declared again:
+// this is the writer, and the alert gate is a reader whose correctness depends
+// on the two matching.
+const FAILED = FAILED_TEST;
 
 let _isRunning = false;
 
@@ -227,14 +231,30 @@ const execute = async (type, retried) => {
         // its -1 placeholder values poison every average.
         const message = toErrorMessage(e);
 
-        // The provider is recorded on a failure too: nothing was parsed, but
-        // which provider could not complete is the first thing a reader of the
-        // error wants, and the setting may have changed by the time they look.
-        let testResult = await tests.create({ping: FAILED, download: FAILED, upload: FAILED, time: null,
-            serverId: 0, type, error: message, provider: mode});
-        await sendError(failedPayload({...testResult, provider: mode, error: message}));
-        setRunning(false, false);
-        console.log(`Test #${testResult.id} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
+        /*
+         * The run is over however the rest of this goes.
+         *
+         * setRunning(false, false) sat at the end, behind the awaited write and
+         * the awaited notification, so a rejection from either - a database
+         * that has gone away is the realistic one - skipped it. `setState("ping")`
+         * then never ran, and tasks/integrations.js was left at
+         * `currentState === "running"` for the life of the process: the
+         * minutePassed keep-alive that webhook's send_alive and healthChecks
+         * depend on stopped firing, silently and permanently, and the progress
+         * bar kept a stale phase and startedAt. The success path already clears
+         * the flag before its un-awaited notification; this is the same order.
+         */
+        try {
+            // The provider is recorded on a failure too: nothing was parsed, but
+            // which provider could not complete is the first thing a reader of the
+            // error wants, and the setting may have changed by the time they look.
+            let testResult = await tests.create({ping: FAILED, download: FAILED, upload: FAILED, time: null,
+                serverId: 0, type, error: message, provider: mode});
+            await sendError(failedPayload({...testResult, provider: mode, error: message}));
+            console.log(`Test #${testResult.id} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
+        } finally {
+            setRunning(false, false);
+        }
     }
 }
 

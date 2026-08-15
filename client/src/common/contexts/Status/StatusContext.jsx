@@ -1,6 +1,6 @@
 import React, {useState, createContext, useEffect} from "react";
 import {jsonRequest} from "@/common/utils/RequestUtil";
-import {pollIntervalFor} from "@/common/utils/StatusUtil";
+import {pollIntervalFor, sameStatus} from "@/common/utils/StatusUtil";
 
 export const StatusContext = createContext({});
 
@@ -10,8 +10,15 @@ export const StatusProvider = (props) => {
 
     // Polled every few seconds, so a transient failure must not reject: keep the
     // last known status rather than tearing down the interval.
+    //
+    // The previous object is kept when the answer has not changed, the way
+    // mergeNewTests keeps its list. Storing every parsed response re-rendered
+    // this provider on every poll - and SpeedtestProvider with it, since that
+    // one consumes this context and rebuilds its own value - so TestArea and
+    // every row were redrawn every five seconds at idle and every second during
+    // a run, to show exactly what was already on screen.
     const updateStatus = () => jsonRequest("/speedtests/status")
-        .then(status => setStatus(status))
+        .then(next => setStatus(prev => sameStatus(prev, next) ? prev : next))
         .catch(() => undefined);
 
     const setRunning = (running) => setStatus(prev => ({...prev, running}));

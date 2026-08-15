@@ -1,3 +1,5 @@
+import { Op } from 'sequelize';
+
 /**
  * Whether a stored test is the record of a failure rather than a measurement.
  *
@@ -35,3 +37,45 @@ export const isFailedTest = (test) => {
 
 /** The other side of the same question, for the filters that read it that way. */
 export const isSuccessfulTest = (test) => !isFailedTest(test);
+
+/**
+ * The same two answers as where clauses, for the queries that ask the database
+ * rather than a row.
+ *
+ * The predicate above cannot be handed to sequelize, so the counts in the tests
+ * controller spelled the rule out in SQL themselves - and kept spelling the
+ * *old* one, `error IS NOT NULL`, after every reader of the predicate had been
+ * moved off it. The status route then reported a failure count by one rule
+ * beside a lastTest.failed by the other, in the same response body.
+ *
+ * Both spellings live here, next to the predicate they have to agree with, and
+ * both are built from the sentinel rather than a literal -1.
+ */
+const ALL_THREE_PLACEHOLDERS = {
+    [Op.and]: [{ping: FAILED_TEST}, {download: FAILED_TEST}, {upload: FAILED_TEST}]
+};
+
+export const FAILED_TEST_FILTER = {
+    [Op.or]: [
+        // A recorded message, and an empty string is not one - the half the old
+        // clause got wrong, since `error IS NOT NULL` matches "".
+        {[Op.and]: [{error: {[Op.ne]: null}}, {error: {[Op.ne]: ""}}]},
+        ALL_THREE_PLACEHOLDERS
+    ]
+};
+
+export const SUCCESSFUL_TEST_FILTER = {
+    [Op.and]: [
+        {[Op.or]: [{error: null}, {error: ""}]},
+        // De Morgan rather than a NOT around the conjunction: in SQL a
+        // comparison against NULL is NULL, so `NOT (ping = -1 AND ...)` throws
+        // the row away the moment any of the three columns is null instead of
+        // keeping it. Negated column by column, one real reading is enough to
+        // keep the row - which is what the predicate says too.
+        {[Op.or]: [
+            {ping: {[Op.ne]: FAILED_TEST}},
+            {download: {[Op.ne]: FAILED_TEST}},
+            {upload: {[Op.ne]: FAILED_TEST}}
+        ]}
+    ]
+};

@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
     IDLE_POLL_MS, RUNNING_POLL_MS, START_BLOCKED_PAUSED, START_BLOCKED_RUNNING, START_BLOCKED_VIEW_MODE,
-    pollIntervalFor, progressPercent, runJustFinished, startBlockedReason
+    pollIntervalFor, progressPercent, runJustFinished, sameStatus, startBlockedReason
 } from "@/common/utils/StatusUtil.js";
 
 // showsStatusBar is gone with the header's own start button: every page with
@@ -137,5 +137,56 @@ describe("startBlockedReason", () => {
 
     it("does not throw before the status or config have loaded", () => {
         assert.equal(startBlockedReason(undefined, undefined), null);
+    });
+});
+
+/**
+ * Whether a polled status is worth storing.
+ *
+ * The provider stored every response it parsed, and response.json() is a new
+ * object each time - so an idle instance re-rendered the whole tree every five
+ * seconds, and every second while a test ran, to show what was already on
+ * screen. SpeedtestProvider consumes this context and rebuilds its own value on
+ * that render, which reaches TestArea and every un-memoised row, and each row
+ * calls previousConnection, which walks the list: three hundred rows on a
+ * history predating the isp column is quadratic work for an unchanged screen.
+ */
+describe("sameStatus", () => {
+    const IDLE = {paused: false, running: false, phase: null, progress: null,
+        lastTest: {created: "2026-08-15T09:00:00.000Z", failed: false}, recentFailures: 0};
+
+    it("recognises two readings of an unchanged instance", () => {
+        assert.equal(sameStatus(IDLE, {...IDLE, lastTest: {...IDLE.lastTest}}), true,
+            "two polls of an idle instance were treated as a change");
+    });
+
+    it("notices a test starting", () => {
+        assert.equal(sameStatus(IDLE, {...IDLE, running: true}), false);
+    });
+
+    it("notices the progress moving", () => {
+        assert.equal(sameStatus({...IDLE, progress: 0.4}, {...IDLE, progress: 0.5}), false);
+    });
+
+    // The nested object is the one a shallow comparison would get wrong, and it
+    // is the field that changes when a run finishes.
+    it("notices a new last test inside the nested record", () => {
+        assert.equal(sameStatus(IDLE, {...IDLE, lastTest: {...IDLE.lastTest, failed: true}}), false);
+        assert.equal(sameStatus(IDLE, {...IDLE, lastTest: {...IDLE.lastTest, created: "2026-08-15T10:00:00.000Z"}}),
+            false);
+    });
+
+    it("notices the failure count changing", () => {
+        assert.equal(sameStatus(IDLE, {...IDLE, recentFailures: 1}), false);
+    });
+
+    // The first poll lands against the seed the provider starts with, and has
+    // to be stored.
+    it("treats the initial seed as different", () => {
+        assert.equal(sameStatus({paused: false, running: false}, IDLE), false);
+    });
+
+    it("notices a last test appearing on an instance that had none", () => {
+        assert.equal(sameStatus({...IDLE, lastTest: null}, IDLE), false);
     });
 });

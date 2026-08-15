@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { downloadAndExtract, downloadToFile } from "../../server/util/providers/downloadHelper.js";
+import { downloadAndExtract, downloadToFile, extractBinary } from "../../server/util/providers/downloadHelper.js";
 
 /**
  * What the CLI downloads leave behind.
@@ -109,6 +109,39 @@ describe("downloadAndExtract", () => {
             client: clientFor({statusCode: 404, headers: {}, resume() {}, on() {}}),
             extract: () => assert.fail("extraction was attempted on a failed download")
         })), /404/);
+    });
+});
+
+/**
+ * Extraction that extracts nothing is a failure, not a success.
+ *
+ * decompress resolves with an empty array rather than rejecting when no plugin
+ * recognises the archive, and Promise.all([]) resolves too - so an unhandled
+ * format (a FreeBSD .pkg is tar+xz, and only targz and unzip are registered), a
+ * binaryRegex that matches no member, and a 200 HTML error page saved as an
+ * archive were all indistinguishable from a binary successfully unpacked.
+ * Nothing downstream noticed: downloadAndExtract only unlinks the archive, and
+ * both downloadFile() and loadCli.load() reported success while ./bin/<cli> did
+ * not exist - so the first run failed with whatever the shell says about a
+ * missing file rather than with the download that never worked.
+ */
+describe("extractBinary", () => {
+    const archive = () => {
+        const file = path.join(directory, `empty-${Math.floor(Math.random() * 1e9)}.tgz`);
+        fs.writeFileSync(file, "not an archive any registered plugin knows");
+        return file;
+    };
+
+    it("refuses an archive nothing could be taken out of", async () => {
+        await assert.rejects(() => extractBinary(archive(), directory, /binary/, "binary"),
+            /nothing|no file|empty/i);
+    });
+
+    it("names the archive it could not unpack", async () => {
+        const file = archive();
+
+        await assert.rejects(() => extractBinary(file, directory, /binary/, "binary"),
+            (error) => error.message.includes(file));
     });
 });
 

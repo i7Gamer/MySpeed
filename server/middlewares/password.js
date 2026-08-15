@@ -26,7 +26,18 @@ const isLockedOut = (key) => {
     return entry !== undefined && Date.now() < entry.resetAt && entry.count >= MAX_FAILED_ATTEMPTS;
 };
 
-const recordFailure = (key) => {
+/**
+ * Charges a caller for guesses they are about to make.
+ *
+ * `attempts` because a request can carry more than one: `x-password` and
+ * `password` are independent headers and asUtf8 gives a second reading of the
+ * latter, so readPasswords can return three candidates - all attacker-chosen,
+ * all compared. Charging one for the list gave a caller who splits guesses
+ * across both headers two or three tries per counted attempt. A cooperating
+ * client is unaffected: writePasswordHeaders puts the same password in both, and
+ * readPasswords deduplicates, so the ordinary request still costs one.
+ */
+const recordFailure = (key, attempts = 1) => {
     const now = Date.now();
     const entry = failedAttempts.get(key);
 
@@ -37,11 +48,11 @@ const recordFailure = (key) => {
         if (failedAttempts.size >= MAX_TRACKED_CLIENTS)
             failedAttempts.delete(failedAttempts.keys().next().value);
 
-        failedAttempts.set(key, {count: 1, resetAt: now + ATTEMPT_WINDOW_MS});
+        failedAttempts.set(key, {count: attempts, resetAt: now + ATTEMPT_WINDOW_MS});
         return;
     }
 
-    entry.count += 1;
+    entry.count += attempts;
 };
 
 /** Clears the throttle. Exists so tests do not have to wait out the window. */
@@ -92,13 +103,16 @@ const handleUnconfigured = (req, res, next) => {
 
     if (candidates.length > 0 && isLockedOut(key)) return tooManyAttempts(res);
 
+    // Charged up front and refunded on a match, the same discipline as the
+    // password path, and once per candidate for the same reason: the list is
+    // whatever the caller chose to put in the two headers.
+    if (candidates.length > 0) recordFailure(key, candidates.length);
+
     if (candidates.some(matchesSetupToken)) {
         failedAttempts.delete(key);
         req.viewMode = false;
         return next();
     }
-
-    if (candidates.length > 0) recordFailure(key);
 
     // Printed here, not only at boot: an instance whose password is removed
     // while it runs never saw the startup banner, so the token this message
@@ -127,13 +141,28 @@ export default (allowViewAccess) => async (req, res, next) => {
 
     if (passwordHash === config.NO_PASSWORD) return handleUnconfigured(req, res, next);
 
-    // The candidates are encoding variants of the one password the caller sent,
-    // not separate guesses, so they count as a single attempt.
     const candidates = readPasswords(req);
     const key = clientKey(req);
     const throttled = candidates.length > 0 && isLockedOut(key);
 
     if (candidates.length > 0 && !throttled) {
+        /*
+         * Charged before the comparisons, and refunded below if one of them
+         * matches.
+         *
+         * Recorded afterwards, the counter was read at the top of every request
+         * and written only once bcrypt had finished - and bcrypt.compare
+         * deliberately yields the event loop, in chunks, which is the whole
+         * reason it is the async one. So a batch of requests arriving together
+         * all read the count before any of them had raised it, all passed the
+         * limit, and all ran their comparisons: twenty guesses a minute became
+         * as many as the outer rate limiter would carry, at the matching cost in
+         * bcrypt work - the exact thing this throttle exists to bound. The write
+         * is synchronous, so moving it in front of the first await is enough for
+         * the whole batch to see it.
+         */
+        recordFailure(key, candidates.length);
+
         // Asynchronous on purpose: bcrypt.compareSync holds the only thread for
         // the entire cost of the hash, so a handful of wrong passwords stalled
         // every other request on the server, /api/health included.
@@ -144,8 +173,6 @@ export default (allowViewAccess) => async (req, res, next) => {
                 return next();
             }
         }
-
-        recordFailure(key);
     }
 
     if (passwordLevel === "read" && allowViewAccess) {

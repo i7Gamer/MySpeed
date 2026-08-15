@@ -4,7 +4,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
 import Speedtest from "../Speedtest";
 import {bufferbloat, getIconBySpeed, previousConnection} from "@/common/utils/TestUtil";
-import {formatDay, formatLatency} from "@/common/utils/FormatUtil";
+import {formatDay, formatFullDay, formatLatency} from "@/common/utils/FormatUtil";
 import {TIMEFRAME_ALL} from "@/common/utils/TimeframeUtil";
 import "./styles.sass";
 import {t} from "i18next";
@@ -40,10 +40,11 @@ const TestArea = () => {
         }
     }, [speedtests]);
 
-    const getDateFromTest = (test) => {
-        const date = new Date(Date.parse(test.created));
-        return date.toLocaleDateString("default", {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'});
-    };
+    // The pill floats above rows the shared formatter renders, so it has to be
+    // in the same language they are: "default" is the browser's, which on a
+    // German instance in an en-US browser put an English sentence over German
+    // dates.
+    const getDateFromTest = (test) => formatFullDay(Date.parse(test.created));
 
     const handleScroll = useCallback(() => {
         const scrollTop = Math.max(window.scrollY, document.documentElement.scrollTop, document.body.scrollTop);

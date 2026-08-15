@@ -1,5 +1,6 @@
 import { postJson } from "../util/http.js";
 import { replaceVariables } from "../util/helpers.js";
+import { TELEGRAM_MARKDOWN, stripMarkdown as strip } from "../util/markdown.js";
 
 const defaults = {
     finished: "✨ *A speedtest is finished*\n🏓 `Ping`: %ping% ms (±%jitter% ms)\n🔼 `Upload`: %upload% Mbps\n🔽 `Download`: %download% Mbps",
@@ -14,13 +15,12 @@ const defaults = {
  * routinely contain a stray backtick or asterisk, so the failure notification
  * was dropped exactly when it mattered most. Only the interpolated values are
  * cleaned - the operator's own template keeps its formatting.
+ *
+ * The cleaning itself lives in util/markdown.js, which discord.js - the other
+ * module that renders these values as markdown, and did not clean them - now
+ * reads too.
  */
-const MARKDOWN_CHARS = /[*_`[\]]/g;
-
-export const stripMarkdown = (variables) => Object.fromEntries(
-    Object.entries(variables ?? {}).map(([key, value]) =>
-        [key, typeof value === "string" ? value.replace(MARKDOWN_CHARS, "") : value])
-);
+export const stripMarkdown = (variables) => strip(variables, TELEGRAM_MARKDOWN);
 
 const send = (token, chat_id, text, activity) =>
     postJson(`https://api.telegram.org/bot${token}/sendMessage`,

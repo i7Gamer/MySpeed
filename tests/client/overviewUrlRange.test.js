@@ -1,9 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
     TIMEFRAME_ALL,
     TIMEFRAME_CUSTOM,
     formatDateParam,
+    rangeKey,
     rangeToParams,
     selectionFromParams
 } from "../../client/src/common/utils/TimeframeUtil.js";
@@ -90,5 +94,64 @@ describe("rangeToParams", () => {
             assert.equal(selectionFromParams(written, NOW).timeframe, timeframe,
                 `${timeframe} did not survive the round trip`);
         }
+    });
+});
+
+/**
+ * Which part of the URL the overview's list actually depends on.
+ *
+ * SpeedtestProvider is mounted in the layout route, above the outlet, so it is
+ * alive on every page - and it derived its query from `searchParams.toString()`,
+ * the whole search string. The statistics page writes the same range keys to the
+ * URL, so every timeframe click there rebuilt the provider's query and refetched
+ * a page of overview rows; anything else that ever puts a parameter in the URL
+ * would do the same. The list depends on three keys, and this is those three.
+ */
+describe("rangeKey", () => {
+    it("is the range keys and nothing else", () => {
+        const before = rangeKey(params("range=30d"));
+        const after = rangeKey(params("range=30d&tab=integrations&highlight=42"));
+
+        assert.equal(after, before, "an unrelated parameter changed the list's query");
+    });
+
+    it("changes when the preset changes", () => {
+        assert.notEqual(rangeKey(params("range=30d")), rangeKey(params("range=7d")));
+    });
+
+    it("changes when an explicit range changes", () => {
+        assert.notEqual(rangeKey(params("from=2026-08-01&to=2026-08-07")),
+            rangeKey(params("from=2026-08-01&to=2026-08-08")));
+    });
+
+    it("does not depend on the order they appear in", () => {
+        assert.equal(rangeKey(params("to=2026-08-07&from=2026-08-01")),
+            rangeKey(params("from=2026-08-01&to=2026-08-07")));
+    });
+
+    // A key that is absent and a key that is empty are different URLs and have
+    // to read back as they were written, or the selection they describe changes.
+    it("keeps an absent key absent", () => {
+        assert.equal(selectionFromParams(params(rangeKey(params(""))), NOW).timeframe, TIMEFRAME_ALL);
+        assert.equal(selectionFromParams(params(rangeKey(params("range=30d"))), NOW).timeframe, "30d");
+    });
+
+    it("carries an explicit range through unchanged", () => {
+        const selection = selectionFromParams(params(rangeKey(params("from=2026-08-01&to=2026-08-07"))), NOW);
+
+        assert.equal(formatDateParam(selection.from), "2026-08-01");
+        assert.equal(formatDateParam(selection.to), "2026-08-07");
+    });
+});
+
+describe("the speedtest provider's query", () => {
+    const source = fs.readFileSync(path.resolve(fileURLToPath(import.meta.url),
+        "..", "..", "..", "client", "src", "common", "contexts", "Speedtests", "SpeedtestContext.jsx"), "utf8");
+
+    it("is keyed on the range rather than on the whole search string", () => {
+        assert.match(source, /rangeKey\(/,
+            "the provider keys off every parameter in the URL, so unrelated pages refetch the list");
+        assert.doesNotMatch(source, /searchParams\.toString\(\)/,
+            "the whole search string is still what the query is derived from");
     });
 });

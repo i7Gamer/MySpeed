@@ -22,6 +22,7 @@ import {promptUntilAccepted} from "@/common/utils/PasswordPrompt";
 import {t} from "i18next";
 import {Trans} from "react-i18next";
 import {getIconBySpeed, isFailedTest} from "@/common/utils/TestUtil";
+import {clickable} from "@/common/utils/Clickable";
 import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {convertSpeed, formatLatency, formatWhole, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
@@ -232,7 +233,7 @@ export const NodeContainer = (node) => {
                 />
             )}
             <div className={"node-item hover-" + (nodeError ? "red" : (nodeData ? "green" : "orange"))} key={node.id}
-                 onClick={switchNode} onContextMenu={onContext}>
+                 {...clickable(switchNode)} onContextMenu={onContext}>
                 <div className="node-info-area">
                     <FontAwesomeIcon icon={faServer}
                                      className={"icon-" + (nodeError ? "red" : (nodeData ? "green" : "orange"))}/>

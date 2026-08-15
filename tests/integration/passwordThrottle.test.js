@@ -4,12 +4,19 @@ import { bootServer, api, setConfig } from "./helpers/boot.js";
 
 let server;
 let resetFailedAttempts;
+let passwordMiddleware;
 
 const MAX_FAILED_ATTEMPTS = 20;
 
 before(async () => {
     server = await bootServer();
-    ({resetFailedAttempts} = await import("../../server/middlewares/password.js"));
+
+    const module = await import("../../server/middlewares/password.js");
+
+    ({resetFailedAttempts} = module);
+    // The same middleware the routes mount, for the assertions that need calls
+    // to genuinely overlap - see "attempts made at the same time".
+    passwordMiddleware = module.default(false);
 });
 
 after(async () => {
@@ -108,5 +115,100 @@ describe("password attempt throttling", () => {
 
         assert.equal(status, 200);
         assert.equal(body.status, "ok");
+    });
+
+    /**
+     * And the limit counts attempts, not turns.
+     *
+     * The check was read at the top of the request and the failure recorded
+     * after the awaited bcrypt.compare - and that compare deliberately yields
+     * the event loop, in chunks, precisely so it does not block. So every
+     * request in a batch read the counter before any of them had written to it,
+     * every one of them was found to be under the limit, and twenty guesses a
+     * minute became as many as the outer rate limiter would carry. The one test
+     * that fired requests in parallel asserted only on /api/health beside them
+     * and never looked at their statuses, so it passed either way.
+     */
+    describe("attempts made at the same time", () => {
+        /**
+         * Driven straight at the middleware rather than over HTTP.
+         *
+         * Through fetch the requests do not actually overlap: undici holds a
+         * small per-origin connection pool, so the batch is largely serialised
+         * and enough failures are recorded to hide the race whichever way the
+         * middleware is written. A test that passes on the broken code is worse
+         * than no test. Calling the middleware directly puts every call at its
+         * first await simultaneously, which is exactly the state a real
+         * attacker's parallel sockets produce.
+         */
+        const attempt = (password) => new Promise((resolve) => {
+            const req = {headers: {"x-password": password}, socket: {remoteAddress: "203.0.113.9"}};
+            const res = {
+                status(code) { this.statusCode = code; return this; },
+                json() { resolve(this.statusCode); return this; }
+            };
+
+            passwordMiddleware(req, res, () => resolve(200));
+        });
+
+        const guessInParallel = (times) =>
+            Promise.all(Array.from({length: times}, () => attempt("not-the-password")));
+
+        it("counts guesses that overlap, not just guesses that queue", async () => {
+            const statuses = await guessInParallel(MAX_FAILED_ATTEMPTS * 3);
+            const refused = statuses.filter((status) => status === 429).length;
+
+            assert.ok(refused > 0,
+                `all ${statuses.length} simultaneous guesses were compared; the limit only bounds sequential ones`);
+        });
+
+        it("refuses everything past the limit once they have all landed", async () => {
+            await guessInParallel(MAX_FAILED_ATTEMPTS * 3);
+
+            assert.equal(await attempt("not-the-password"), 429);
+        });
+
+        // The refund on success is what keeps an operator who mistypes twice
+        // and then gets it right from being charged for the mistypes.
+        it("still clears the counter when one of them is right", async () => {
+            await guessInParallel(MAX_FAILED_ATTEMPTS - 5);
+
+            assert.equal(await attempt("Hunter2!"), 200);
+            assert.equal(await attempt("not-the-password"), 401);
+        });
+    });
+
+    /**
+     * One request, one guess.
+     *
+     * `x-password` and `password` are independent headers, and asUtf8 gives a
+     * second reading of the latter, so readPasswords returns up to three
+     * candidates - all of them attacker-chosen and all of them compared. The
+     * comment above the loop said they were "encoding variants of the one
+     * password the caller sent, not separate guesses", which is true only of a
+     * caller that cooperates: one that does not got three tries per counted
+     * attempt, and the real client sends one distinct candidate anyway because
+     * writePasswordHeaders puts the same password in both.
+     */
+    describe("a request carrying more than one guess", () => {
+        const twoGuesses = () => guarded({"x-password": "guess-one", "password": "guess-two"});
+
+        it("charges for each of them", async () => {
+            // Ten requests, two distinct guesses each, spends the whole budget.
+            for (let i = 0; i < MAX_FAILED_ATTEMPTS / 2; i++) await twoGuesses();
+
+            assert.equal((await wrongPassword()).status, 429,
+                "a caller who splits guesses across both headers gets twice as many of them");
+        });
+
+        // The same ten requests carrying one password in both headers - which is
+        // what writePasswordHeaders produces - must leave the budget half spent.
+        it("still costs one attempt when both headers carry the same password", async () => {
+            for (let i = 0; i < MAX_FAILED_ATTEMPTS / 2; i++)
+                await guarded({"x-password": "not-the-password", "password": "not-the-password"});
+
+            assert.equal((await wrongPassword()).status, 401,
+                "a client sending its password the way the app does was charged twice for it");
+        });
     });
 });

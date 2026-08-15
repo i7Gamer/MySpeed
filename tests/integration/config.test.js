@@ -244,6 +244,46 @@ describe("validateInput", () => {
                 assert.match(await accepts("password", "Pa ss Wörd"), /^\$2[aby]\$/);
             });
         });
+
+        /**
+         * A body value that is not a string at all.
+         *
+         * The policy was checked against `value.toString()` while the hash was
+         * taken of the raw value, so anything whose string form happens to
+         * satisfy the rules reached bcrypt - and bcryptjs refuses a non-string
+         * outright. `{"value": {}}` stringifies to "[object Object]": fifteen
+         * characters, both cases, a special character, every rule cleared. The
+         * throw escaped the controller instead of returning the 400 that every
+         * other malformed key earns.
+         */
+        describe("a value that is not a string", () => {
+            const REFUSED = {
+                "an object": {},
+                "an array": ["Password1!"],
+                "a number": 12345678,
+                "a boolean": true
+            };
+
+            for (const [name, value] of Object.entries(REFUSED)) {
+                it(`refuses ${name} rather than throwing`, async () => {
+                    const result = await validate("password", value);
+
+                    assert.equal(typeof result, "string",
+                        `${name} was accepted as a password`);
+                });
+            }
+
+            // The refusal says what is wrong with it, rather than reporting a
+            // policy failure for a value that never had a chance to meet one.
+            it("says the password has to be text", async () => {
+                assert.match(await validate("password", {}), /text|string/i);
+            });
+
+            // And an ordinary string still goes through, hashed.
+            it("still hashes a password that is a string", async () => {
+                assert.match(await accepts("password", "Hunter2!"), /^\$2[aby]\$/);
+            });
+        });
     });
 });
 

@@ -2,6 +2,7 @@ import express from 'express';
 import * as config from '../controller/config.js';
 import * as timer from '../tasks/timer.js';
 import password from '../middlewares/password.js';
+import previewReadOnly from '../middlewares/previewReadOnly.js';
 
 const app = express.Router();
 
@@ -47,15 +48,17 @@ app.get("/", password(true), async (req, res) => {
 // Clearing the password is its own operation. It used to be a PATCH carrying
 // the sentinel "none", which meant a user who chose that as their password
 // silently unprotected the instance instead.
-app.delete("/password", password(false), async (req, res) => {
-    if (process.env.PREVIEW_MODE === "true")
-        return res.status(400).json({message: "You can't change the password in preview mode"});
-
+app.delete("/password", password(false), previewReadOnly, async (req, res) => {
     await config.clearPassword();
     res.json({message: "The password has been successfully removed"});
 });
 
-app.patch("/:key", password(false), async (req, res) => {
+// Guarded for the reason the password beside it was: in preview mode the
+// password middleware waves every request through, so without this any visitor
+// to the public demo could rewrite the schedule, the provider or the retention
+// period. validateInput refuses `password` and `passwordLevel` on a preview
+// instance already, which left every other key open.
+app.patch("/:key", password(false), previewReadOnly, async (req, res) => {
     const value = await config.validateInput(req.params.key, req.body?.value);
     if (typeof value === "string") return res.status(400).json({message: value});
 

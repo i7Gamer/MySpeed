@@ -61,7 +61,7 @@
   font-size: 1.75rem
   font-weight: 600
   color: $white
-  +graded-value
+  +graded-value($white)
   line-height: 1.1
   // The row is free to break between the value and the figures beside it, and
   // must never break inside the value itself.
@@ -111,16 +111,7 @@
   border-radius: 0.25rem
   transition: width 0.3s ease
 
-  &.icon-green
-    background-color: $accent-primary
-  &.icon-orange
-    background-color: $accent-warning
-  &.icon-red
-    background-color: $accent-danger
-  &.icon-blue
-    background-color: var(--blue)
-  &.icon-error
-    background-color: $accent-danger
+  +graded-fill
 
 // One line for both comparisons: how far this reading is from the target, and
 // how far it moved since the last test. They were a line each, under a bar that

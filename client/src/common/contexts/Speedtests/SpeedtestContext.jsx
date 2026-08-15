@@ -5,7 +5,7 @@ import {runJustFinished} from "@/common/utils/StatusUtil";
 import {StatusContext} from "@/common/contexts/Status";
 import {NodeContext} from "@/common/contexts/Node";
 import {
-    formatDateParam, rangeToParams, selectionFromParams, timeframeFromRange, timezoneParams
+    formatDateParam, rangeKey, rangeToParams, selectionFromParams, timeframeFromRange, timezoneParams
 } from "@/common/utils/TimeframeUtil";
 import {applyRefresh, mergeNewTests} from "./merge";
 import {applyPage, cursorOf, removeTest} from "./paging";
@@ -16,6 +16,11 @@ export const SpeedtestContext = createContext({});
 // short page is the last one. Written down once because the fetch and that
 // judgement have to agree.
 const PAGE_SIZE = 30;
+
+// How long a page that failed to load waits before the list offers to try
+// again. Long enough that a node which has gone quiet is not hammered, short
+// enough that a scroll to the bottom does not look stuck.
+const RETRY_AFTER_ERROR_MS = 3000;
 
 export const SpeedtestProvider = (props) => {
     const [speedtests, setSpeedtests] = useState([]);
@@ -31,6 +36,9 @@ export const SpeedtestProvider = (props) => {
     // from can tell that it is no longer wanted. See loadInitialTests.
     const requestGeneration = useRef(0);
     const lastLoadTimeRef = useRef(0);
+    // The pending "try that page again" timer, so it can be cancelled when the
+    // provider goes away rather than firing into an unmounted tree.
+    const retryTimerRef = useRef(null);
     const [status] = useContext(StatusContext);
     const [, , currentNode] = useContext(NodeContext);
     const wasRunningRef = useRef(status.running);
@@ -48,7 +56,11 @@ export const SpeedtestProvider = (props) => {
      * exactly as it did until a range is chosen.
      */
     const [searchParams, setSearchParams] = useSearchParams();
-    const search = searchParams.toString();
+    // The range keys only. This provider sits above the router outlet, so it is
+    // alive on every page: keyed on the whole search string, every timeframe
+    // click on the statistics page - which writes these same keys - rebuilt this
+    // query and fetched a page of overview rows that page does not render.
+    const search = rangeKey(searchParams);
 
     const selection = useMemo(() => selectionFromParams(new URLSearchParams(search)), [search]);
     const timeframe = selection.timeframe;
@@ -169,9 +181,25 @@ export const SpeedtestProvider = (props) => {
 
             console.error("Failed to load more tests:", error);
             setHasMore(false);
-            setTimeout(() => {
-                if (cursor) setHasMore(true);
-            }, 3000);
+
+            /*
+             * The retry belongs to the query that failed, and to nothing else.
+             *
+             * This was a bare setTimeout, never cleared and never re-checking
+             * the generation - the discipline every other path in this file is
+             * built around. Its `if (cursor)` guard reads as one and is not:
+             * line 145 returns early unless the cursor is truthy, so the closure
+             * always has one and the timer re-enabled paging unconditionally
+             * three seconds later. Pick a narrower range in that window and the
+             * new list - correctly finished, hasMore already false - was told it
+             * had more pages, so TestArea swapped "no more tests" for a spinner
+             * and asked for a page of the query that no longer exists.
+             */
+            const retry = setTimeout(() => {
+                if (generation === requestGeneration.current) setHasMore(true);
+            }, RETRY_AFTER_ERROR_MS);
+
+            retryTimerRef.current = retry;
         } finally {
             // A fresh query took the flags over while this page was in flight,
             // and clearing them here would stop its spinner on its behalf.
@@ -261,6 +289,11 @@ export const SpeedtestProvider = (props) => {
         document.addEventListener("visibilitychange", onVisibilityChange);
         return () => document.removeEventListener("visibilitychange", onVisibilityChange);
     }, [refreshTests]);
+
+    // The one timer in here that outlives the call that armed it - the retry a
+    // failed page schedules. Everything else is a request that checks its own
+    // generation on the way back.
+    useEffect(() => () => clearTimeout(retryTimerRef.current), []);
 
     return (
         // reloadTests is for the actions that replace the history wholesale -

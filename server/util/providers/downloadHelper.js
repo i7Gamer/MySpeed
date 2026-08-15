@@ -89,8 +89,22 @@ export const downloadAndExtract = async (url, {outputDir, binaryRegex, outputNam
     }
 };
 
-export const extractBinary = (archivePath, outputDir, binaryRegex, outputName) =>
-    decompress(archivePath, outputDir, {
+/**
+ * Takes the binary out of a release archive, and says so when it could not.
+ *
+ * decompress resolves with an empty array rather than rejecting when no plugin
+ * recognises the archive - both registered plugins return [] for an
+ * unrecognised magic, and Promise.all([]) resolves - so an unhandled format (a
+ * FreeBSD .pkg is tar+xz, and only targz and unzip are registered here), a
+ * binaryRegex matching no member, and a 200 HTML error page saved as an archive
+ * all looked exactly like a successful extraction. No caller checked:
+ * downloadAndExtract only unlinks the archive, and both downloadFile() and
+ * loadCli.load() went on to report success while ./bin/<cli> did not exist, so
+ * the first run failed with a missing-file message instead of the download that
+ * never worked.
+ */
+export const extractBinary = async (archivePath, outputDir, binaryRegex, outputName) => {
+    const extracted = await decompress(archivePath, outputDir, {
         plugins: [decompressTarGz(), decompressUnzip()],
         filter: file => binaryRegex.test(file.path),
         map: file => {
@@ -98,3 +112,10 @@ export const extractBinary = (archivePath, outputDir, binaryRegex, outputName) =
             return file;
         }
     });
+
+    if (extracted.length === 0)
+        throw new Error(`Extraction failed: nothing matching ${binaryRegex} was found in ${archivePath}`
+            + " - the archive may be in a format this build cannot unpack, or the download may not be an archive at all");
+
+    return extracted;
+};

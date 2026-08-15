@@ -21,6 +21,7 @@ import {
     bufferbloatInfo, downloadInfo, jitterInfo, packetLossInfo, pingInfo, uploadInfo
 } from "@/common/utils/MetricInfo";
 import {bufferbloatColour, isMeasured, jitterColour, packetLossColour} from "@/common/utils/TestUtil";
+import {clickable} from "@/common/utils/Clickable";
 import HelpButton from "@/common/components/HelpButton";
 import {useMetricInfo} from "@/common/hooks/useMetricInfo";
 
@@ -158,24 +159,14 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                 querySelectorAll('.speedtest') onto the test list by index to
                 drive the floating date header, and a second match per row
                 silently shifts every date after it. */}
-            <div className="speedtest" onClick={() => setExpanded(!expanded)}
-                 role="button" tabIndex={0} aria-expanded={expanded}
-                 onKeyDown={(event) => {
-                     // Only the keys aimed at the row itself. The help buttons
-                     // inside it are controls of their own, and Enter and Space
-                     // on one bubble up here: preventDefault on a keydown
-                     // cancels the click the browser would have synthesised from
-                     // that key, so the button's own handler never ran and the
-                     // row expanded instead of explaining the measurement. The
-                     // shared hook stops the click, which by then is an event
-                     // that no longer happens.
-                     if (event.target !== event.currentTarget) return;
-
-                     if (event.key === "Enter" || event.key === " ") {
-                         event.preventDefault();
-                         setExpanded(!expanded);
-                     }
-                 }}>
+            {/* This row was the only clickable card in the app that answered a
+                keyboard, with the whole shape - role, tab stop, key handler and
+                the nested-control guard - written out here. The nine cards on
+                the statistics page and every node card had none of it. That is
+                the same shape in `clickable` now; aria-expanded stays, because
+                only this card has something to say about its own state. */}
+            <div className="speedtest" aria-expanded={expanded}
+                 {...clickable(() => setExpanded(!expanded))}>
                 {/* Not a measurement, so not a verdict either - but the glyph
                     reads the grade its container publishes like every other one
                     on the row, so the row has to publish one. */}

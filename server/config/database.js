@@ -1,7 +1,19 @@
 import { Sequelize } from 'sequelize';
 import sqlite3Shim from '../util/bun-sqlite-shim.js';
 
-const STORAGE_PATH = `data/storage${process.env.PREVIEW_MODE === "true" ? "_preview" : ""}.db`;
+/**
+ * Where the sqlite database lives, relative to the working directory the
+ * process was started in.
+ *
+ * Exported because it was copied instead: getUsedStorage rebuilt the same
+ * filename from process.cwd() to stat it, so the file the size dialog reported
+ * on and the file sequelize actually opened were two independent derivations
+ * that happened to agree. A divergence would not raise - fileBytes swallows
+ * ENOENT and answers 0 - so moving the database, for a data-directory setting
+ * or a different installer layout, would silently report an empty one.
+ */
+export const SQLITE_STORAGE_PATH =
+    `data/storage${process.env.PREVIEW_MODE === "true" ? "_preview" : ""}.db`;
 
 /**
  * DATE columns are stored as ISO-8601 UTC strings rather than in whatever
@@ -55,7 +67,7 @@ if (process.env.DB_TYPE === "mysql") {
     db = new Sequelize({
         dialect: 'sqlite',
         dialectModule: sqlite3Shim,
-        storage: STORAGE_PATH,
+        storage: SQLITE_STORAGE_PATH,
         logging: false,
         query: {raw: true}
     });

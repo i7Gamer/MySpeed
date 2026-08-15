@@ -102,6 +102,49 @@ describe("GET /api/speedtests/status", () => {
 
             assert.equal((await status()).recentFailures, 0);
         });
+
+        /**
+         * The count and the flag beside it in the same response body are one
+         * question asked twice, so they have to be asked the same way.
+         *
+         * The count used to go to the database with `error IS NOT NULL` - the
+         * rule every other reader was moved off in da12aeae - while `lastTest`
+         * was already built from isFailedTest. Both shapes below are the ones
+         * the two rules disagree about, and both arrive through a history
+         * import, which validates neither.
+         */
+        describe("counted by the same rule the last test is judged by", () => {
+            it("does not count an empty error beside real readings", async () => {
+                await seedTests(server.tests, [{created: hoursAgo(1), error: ""}]);
+
+                const body = await status();
+
+                assert.equal(body.lastTest.failed, false, "the flag calls the row a success");
+                assert.equal(body.recentFailures, 0, "the count calls the same row a failure");
+            });
+
+            it("counts a failure whose reason went missing", async () => {
+                await seedTests(server.tests, [
+                    {created: hoursAgo(1), ping: -1, download: -1, upload: -1, error: null}
+                ]);
+
+                const body = await status();
+
+                assert.equal(body.lastTest.failed, true, "the flag calls the row a failure");
+                assert.equal(body.recentFailures, 1, "the count calls the same row a success");
+            });
+
+            // A real failure writes -1 in every column at once, so two real
+            // readings must not be condemned by the third.
+            it("does not count one placeholder among two readings", async () => {
+                await seedTests(server.tests, [{created: hoursAgo(1), ping: -1}]);
+
+                const body = await status();
+
+                assert.equal(body.lastTest.failed, false);
+                assert.equal(body.recentFailures, 0);
+            });
+        });
     });
 
     describe("the next scheduled test", () => {

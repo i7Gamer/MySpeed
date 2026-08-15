@@ -7,7 +7,7 @@ import {
     faLinkSlash, faPingPongPaddleBall, faStopwatch
 } from "@fortawesome/free-solid-svg-icons";
 import {
-    formatDay, formatDuration, formatHour, formatWithUnit, NOT_MEASURED
+    formatDay, formatDuration, formatHour, formatLatencyWithUnit, NOT_MEASURED
 } from "@/common/utils/FormatUtil";
 import {failureRate} from "@/common/utils/TestUtil";
 import {PreferencesContext} from "@/common/contexts/Preferences";
@@ -69,12 +69,17 @@ const expandedItems = (props) => {
     // that does not render rather than "Average latency, between N/A and N/A".
     const ping = props.ping?.avg === null || props.ping?.avg === undefined ? null : props.ping;
 
+    // Trimmed to one decimal, like every other latency in the app. The server
+    // stores these through mapFixed at two, and this pane was the last reader
+    // still printing them raw - "23.47 ms" beside a stability card and a detail
+    // pane saying 23.5 for the same measurement, which is the fault
+    // ConsistencyChart was changed to fix without the twin being applied here.
     if (ping) items.push({
         icon: faPingPongPaddleBall,
         title: t("latest.ping"),
         description: t("statistics.overview.ping_description",
-            {min: formatWithUnit(ping.min, ms), max: formatWithUnit(ping.max, ms)}),
-        value: formatWithUnit(ping.avg, ms),
+            {min: formatLatencyWithUnit(ping.min, ms), max: formatLatencyWithUnit(ping.max, ms)}),
+        value: formatLatencyWithUnit(ping.avg, ms),
         delta: {current: ping.avg, previous: props.previous?.ping?.avg, higherIsBetter: false}
     });
 

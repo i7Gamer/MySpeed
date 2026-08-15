@@ -2,7 +2,7 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import setupDiscord from "../../server/integrations/discord.js";
 import setupGotify from "../../server/integrations/gotify.js";
-import setupPushover from "../../server/integrations/pushover.js";
+import setupPushover, { PUSHOVER_MESSAGE_LIMIT } from "../../server/integrations/pushover.js";
 import setupWebhook from "../../server/integrations/webhook.js";
 import setupHealthChecks from "../../server/integrations/healthChecks.js";
 
@@ -169,6 +169,58 @@ describe("pushover", () => {
         const secrets = definition.fields.filter((field) => field.secret).map((field) => field.name);
 
         assert.deepEqual(secrets.sort(), ["token", "user_key"]);
+    });
+
+    /**
+     * Pushover refuses a message over 1024 characters with a 400, and the error
+     * a failure notification interpolates is stored at up to MAX_ERROR_LENGTH -
+     * 2000. So the failures with the most to say were exactly the ones that
+     * never arrived: a run whose CLI exits after logging one line per candidate
+     * server it could not reach produces a message several times the limit, and
+     * the whole notification was lost with it.
+     */
+    describe("a message longer than pushover accepts", () => {
+        const LONG = "Error: [0] Cannot open socket to 2001:db8::1 port 8080. ".repeat(40);
+
+        it("trims it to something the api will take", async () => {
+            const {events} = load(setupPushover);
+            await fire(events, "testFailed", config, failure(LONG));
+
+            assert.ok(sent[0].body.message.length <= PUSHOVER_MESSAGE_LIMIT,
+                `sent ${sent[0].body.message.length} characters, which pushover refuses with a 400`);
+        });
+
+        it("keeps the beginning, which is where the reason is", async () => {
+            const {events} = load(setupPushover);
+            await fire(events, "testFailed", config, failure(LONG));
+
+            assert.match(sent[0].body.message, /^A speedtest has failed\. Reason: Error: \[0\] Cannot open socket/);
+        });
+
+        // A trimmed message that does not say it was trimmed reads as the whole
+        // of what the CLI said.
+        it("says that it trimmed", async () => {
+            const {events} = load(setupPushover);
+            await fire(events, "testFailed", config, failure(LONG));
+
+            assert.match(sent[0].body.message, /…$/);
+        });
+
+        it("leaves a message that already fits exactly as it was written", async () => {
+            const {events} = load(setupPushover);
+            await fire(events, "testFailed", config, failure("no route to host"));
+
+            assert.equal(sent[0].body.message, "A speedtest has failed. Reason: no route to host");
+        });
+
+        // The limit is on the message, not on the reason, so a long custom
+        // template is trimmed too rather than only the variable inside it.
+        it("trims a finished message that a template made too long", async () => {
+            const {events} = load(setupPushover);
+            await fire(events, "testFinished", {...config, finished_message: "x".repeat(1500)}, RESULT);
+
+            assert.ok(sent[0].body.message.length <= PUSHOVER_MESSAGE_LIMIT);
+        });
     });
 });
 

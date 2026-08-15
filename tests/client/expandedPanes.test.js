@@ -51,8 +51,30 @@ describe("every first-row card opens into more than itself", () => {
 describe("the overview pane", () => {
     it("states the latency the page never put a number on", () => {
         assert.match(overview, /icon: faPingPongPaddleBall/);
-        assert.match(overview, /value: formatWithUnit\(ping\.avg, ms\)/);
+        assert.match(overview, /value: formatLatencyWithUnit\(ping\.avg, ms\)/);
         assert.match(statistics, /ping=\{deferredStatistics\.ping}/);
+    });
+
+    /**
+     * At one decimal, like every other latency in the app.
+     *
+     * buildStatistics returns the ping through mapFixed at two, and this pane
+     * was the last reader still printing them raw: "23.47 ms" and "between
+     * 8.91 ms and 132.76 ms", where the stability card one panel away and the
+     * detail pane one click away both say 23.5. ConsistencyChart was changed to
+     * fix exactly this; the twin was never applied here.
+     *
+     * The assertion above used to pin the two-decimal spelling verbatim, which
+     * meant the test had to move with the fix - so it is written out here as
+     * what it is rather than left as an incidental match.
+     */
+    it("trims that latency the way every other panel does", () => {
+        for (const figure of ["ping.avg", "ping.min", "ping.max"])
+            assert.match(overview, new RegExp(`formatLatencyWithUnit\\(${figure.replace(".", "\\.")}, ms\\)`),
+                `${figure} is printed at the two decimals the server stores`);
+
+        assert.doesNotMatch(overview, /formatWithUnit\(ping\./,
+            "a latency on this pane is still printed raw");
     });
 
     it("compares that latency with the previous window, the right way up", () => {

@@ -9,6 +9,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {useAlert} from "@/common/contexts/Alert";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faPlus} from "@fortawesome/free-solid-svg-icons";
+import {clickable} from "@/common/utils/Clickable";
 
 export const Nodes = () => {
     const [config] = useContext(ConfigContext);
@@ -37,8 +38,9 @@ export const Nodes = () => {
 
                 {nodes.map(node => <NodeContainer {...node} key={node.id} />)}
 
-                <div className={"node-add" + (config.previewMode ? " node-disabled" : "")} onClick={() => config.previewMode
-                    ? openPreviewInfoDialog() : setCreateDialogOpen(true)}>
+                <div className={"node-add" + (config.previewMode ? " node-disabled" : "")}
+                     {...clickable(() => config.previewMode
+                         ? openPreviewInfoDialog() : setCreateDialogOpen(true))}>
                     <FontAwesomeIcon icon={faPlus}/>
                     <h1>{t("nodes.add")}</h1>
                 </div>

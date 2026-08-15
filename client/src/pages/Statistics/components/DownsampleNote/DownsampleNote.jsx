@@ -1,5 +1,6 @@
 import "./styles.sass";
 import { t } from "i18next";
+import { formatCount } from "@/common/utils/FormatUtil";
 
 /**
  * Tells the reader that a chart is showing bucket averages rather than one
@@ -15,8 +16,10 @@ export const DownsampleNote = ({downsampled, shown, total}) => {
     return (
         <p className="chart-downsample-note">
             {t("statistics.downsampled", {
-                shown: shown.toLocaleString(),
-                total: total.toLocaleString()
+                // Grouped in the app's language, like every other figure on the
+                // page - a bare toLocaleString takes the browser's separator.
+                shown: formatCount(shown),
+                total: formatCount(total)
             })}
         </p>
     );

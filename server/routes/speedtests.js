@@ -4,6 +4,7 @@ import * as pauseController from '../controller/pause.js';
 import * as config from '../controller/config.js';
 import * as testTask from '../tasks/speedtest.js';
 import password from '../middlewares/password.js';
+import previewReadOnly from '../middlewares/previewReadOnly.js';
 import { ALL_TIME_RANGE, parseDateRange } from '../util/dateRange.js';
 import { resolveTimezone } from '../util/timezone.js';
 import { stripConnectionIdentity } from '../util/connectionIdentity.js';
@@ -239,7 +240,10 @@ app.get("/:id", password(true), async (req, res) => {
     res.json(test);
 });
 
-app.delete("/:id", password(false), async (req, res) => {
+// Running a test on a demo is deliberate - preview mode has a branch in
+// tasks/speedtest.js that answers with a plausible result - but deleting the
+// history a visitor arrived to look at is not.
+app.delete("/:id", password(false), previewReadOnly, async (req, res) => {
     let test = await tests.deleteOne(req.params.id);
     if (!test) return res.status(404).json({message: "Speedtest not found"});
     res.json({message: "Successfully deleted the provided speedtest"});

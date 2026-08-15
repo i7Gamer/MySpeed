@@ -110,6 +110,31 @@ export const stripTrailingSlashes = (value) => {
     return text.slice(0, end);
 };
 
+/**
+ * The mark a cut message ends in, so that a trimmed one is visibly incomplete
+ * rather than reading as the whole of what was said.
+ */
+export const TRUNCATION_MARK = "…";
+
+/**
+ * Cuts text to a limit, and says that it did.
+ *
+ * Two things bound this text and neither trusts the other: what the database
+ * column will hold (cliOutput caps a failure reason at MAX_ERROR_LENGTH) and
+ * what a provider will accept (pushover refuses a message over 1024 characters
+ * with a 400, so the failures with the most to say were the ones that never
+ * arrived). They are different limits applied at different points, which is why
+ * this is a parameter rather than a constant - but the cut itself is one rule
+ * and was written out twice.
+ */
+export const truncate = (text, limit) => {
+    const value = String(text);
+
+    return value.length <= limit
+        ? value
+        : value.slice(0, limit - TRUNCATION_MARK.length) + TRUNCATION_MARK;
+};
+
 const UNKNOWN_ERROR = "Unknown error";
 
 /**

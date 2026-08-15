@@ -22,7 +22,18 @@
 @mixin graded-glyph($neutral)
   color: var(--grade, #{$neutral})
 
-/// A value that wears its row's grade, when the app is set to state it twice.
+/// A value that wears its row's grade, when the app is set to state it twice,
+/// falling back to $neutral on a row that earned none.
+///
+/// The fallback is not optional and it is not decoration. `--grade` is
+/// published by the [data-grade] rules, and a row with no verdict deliberately
+/// carries no attribute - PanelRow renders `data-grade={level || undefined}`.
+/// A bare var(--grade) is then invalid at computed-value time, and for an
+/// inherited property that discards the rule's own `color` along with it and
+/// inherits instead; nothing up to body states one, so every ungraded row went
+/// black on the dark ground the moment the setting was turned on. Pass the
+/// colour the figure already has, so turning the setting on states a grade
+/// where there is one and changes nothing where there is not.
 ///
 /// Off by default, because the glyph is what carries a verdict everywhere in
 /// this interface - the overview rows, the node cards and the detail pane all
@@ -36,6 +47,30 @@
 ///
 /// Anything else a row might state its grade with - a border, a bar, a label -
 /// is the same three lines against a different property.
-@mixin graded-value
+@mixin graded-value($neutral)
   :root[data-grade-values="on"] &
-    color: var(--grade)
+    color: var(--grade, #{$neutral})
+
+/// A bar filled in its own grade, for the two progress bars that wear one.
+///
+/// The bars carry an icon-* class rather than reading the row's `--grade`,
+/// because the target a bar is measured against is not always the row's own
+/// verdict - so this maps the utility to the palette the way _grade-palette
+/// does for colour, rather than reading the property.
+///
+/// A mixin because the table was written out twice, in AverageChart's stylesheet
+/// and in TestDetails', and both painted from $accent-* - so the two progress
+/// bars were the one part of the interface a grade retheme did not reach. A
+/// palette in which "good" is not green is meant to be a change to
+/// _grade-palette.sass alone, and these two were quietly exempt from it.
+@mixin graded-fill
+  &.icon-green
+    background-color: var(--grade-good)
+  &.icon-orange
+    background-color: var(--grade-fair)
+  &.icon-red
+    background-color: var(--grade-poor)
+  &.icon-blue
+    background-color: var(--grade-none)
+  &.icon-error
+    background-color: var(--grade-failed)

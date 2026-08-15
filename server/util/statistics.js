@@ -199,12 +199,27 @@ const loadedLatencyOver = (succeeded) => {
         .map(entry => ({created: entry.created, increase: loadedIncrease(entry)}))
         .filter(point => point.increase !== null);
 
+    /*
+     * Sorted here rather than trusted to arrive that way.
+     *
+     * buildStatistics documents its input as being in any order, and everything
+     * else that reads a timestamp works from a sorted copy - this was the one
+     * field taken straight off the unsorted rows and then sliced from the end as
+     * though it were chronological. It was correct only because the single
+     * caller happens to query with ORDER BY created ASC; a change to that
+     * clause, or a second caller, would have drawn an arbitrary ten of the range
+     * in an arbitrary order - possibly without the newest test - while every
+     * other figure in the payload stayed right, which is the hardest kind of
+     * wrong to notice.
+     */
+    const chronological = [...measured].sort((a, b) => new Date(a.created) - new Date(b.created));
+
     return {
         increase: averageOrNull(measured.map(point => point.increase),
             (value) => round(value, INCREASE_DECIMALS)),
         tests: measured.length,
         // Oldest first, so time reads left to right the way the dots are drawn.
-        trend: measured.slice(-TREND_POINTS)
+        trend: chronological.slice(-TREND_POINTS)
     };
 };
 
@@ -296,7 +311,13 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
         series.data.jitter.push(averageOrNull(measuredOnly("jitter")));
         series.data.download.push(round(average(valid.map(entry => entry.download))));
         series.data.upload.push(round(average(valid.map(entry => entry.upload))));
-        series.data.time.push(Math.round(average(valid.map(entry => entry.time))));
+        // Measured-only like jitter and the two latencies above, not raw: `time`
+        // is the one measurement column in this block that is nullable, and
+        // average() folds a null in as nought while still counting it in the
+        // divisor - so one absent duration deflated the whole bucket, and the
+        // chart then disagreed with the summary figure printed above it, which
+        // has skipped nulls since mapRange was written.
+        series.data.time.push(averageOrNull(measuredOnly("time"), Math.round));
         series.data.downloadLatency.push(averageOrNull(measuredOnly("downloadLatency")));
         series.data.uploadLatency.push(averageOrNull(measuredOnly("uploadLatency")));
     });
@@ -369,7 +390,14 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
         },
         dataPoints: series.labels.length,
         rawDataPoints: entries.length,
-        downsampled: entries.length > targetPoints,
+        // From the same count the branch above is chosen on. Computed from
+        // `entries` it disagreed with the branch whenever a row in range could
+        // not be placed on a timeline: with 301 rows of which one has an
+        // unparseable timestamp, the full series is returned - every point
+        // drawn, nothing averaged - beneath a note reading "Averaged · showing
+        // 300 of 301", which invites the reader to ask for a detail they are
+        // already looking at.
+        downsampled: sorted.length > targetPoints,
         // Echoed so the client can tell "you are already seeing every test"
         // apart from "there is more detail available if you ask for it".
         maxDataPoints: targetPoints

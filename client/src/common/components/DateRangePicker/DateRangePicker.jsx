@@ -5,6 +5,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { t } from "i18next";
 import { PICKER_TIMEFRAMES, timeframeLabelKey } from "@/common/utils/TimeframeUtil";
+import { formatDay, formatMonth } from "@/common/utils/FormatUtil";
 import { useClickOutside } from "@/common/hooks/useClickOutside";
 import { isCurrentMonth, monthBack, monthForward, monthToShow, yearBack, yearForward } from "./calendarNav";
 import "./styles.sass";
@@ -62,13 +63,11 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
         setCurrentMonth(monthToShow(to));
     }, [from, to]);
 
+    // The shared formatter, which already spelled a date exactly this way in the
+    // app's language rather than the browser's.
     const formatDisplayDate = (date) => {
         if (!date) return "";
-        return date.toLocaleDateString(undefined, { 
-            day: "2-digit", 
-            month: "short", 
-            year: "numeric" 
-        });
+        return formatDay(date);
     };
 
     const getDaysInMonth = (year, month) => {
@@ -274,7 +273,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                             </button>
                         </div>
                         <span className="current-month">
-                            {currentMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+                            {formatMonth(currentMonth)}
                         </span>
                         <div className="calendar-nav-group">
                             <button

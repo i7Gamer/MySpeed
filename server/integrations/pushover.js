@@ -1,15 +1,32 @@
 import { postJson } from "../util/http.js";
-import { replaceVariables } from "../util/helpers.js";
+import { replaceVariables, truncate } from "../util/helpers.js";
 
 const URL = "https://api.pushover.net/1/messages.json";
+
+/**
+ * What the pushover API will accept in one message.
+ *
+ * It answers anything longer with a 400 and sends nothing, and the reason a
+ * failure notification interpolates is stored at up to MAX_ERROR_LENGTH - 2000,
+ * near twice this. So the failures with the most to say were precisely the ones
+ * that never reached anybody: a run whose CLI gives up after logging one line
+ * per candidate server it could not reach writes a message several times this
+ * limit, and the whole notification was lost rather than shortened.
+ *
+ * Applied to the finished message too, since a custom template can be any
+ * length whatever the measurements in it are.
+ */
+export const PUSHOVER_MESSAGE_LIMIT = 1024;
 
 const defaults = {
     finished: "A speedtest is finished:\nPing: %ping% ms (±%jitter% ms)\nUpload: %upload% Mbps\nDownload: %download% Mbps",
     failed: "A speedtest has failed. Reason: %error%"
 };
 
+// Trimmed here rather than at each call site, so a message added later cannot
+// be the one that is sent whole and refused.
 const send = ({token, user_key}, message, activity) =>
-    postJson(URL, {token, user: user_key, message}, {activity});
+    postJson(URL, {token, user: user_key, message: truncate(message, PUSHOVER_MESSAGE_LIMIT)}, {activity});
 
 /**
  * A pushover application token or user key.

@@ -65,7 +65,16 @@ export const checkStatus = async (url, password) => {
  * host every few seconds for as long as a node stayed selected - usually over
  * plain http on the LAN.
  */
-const SKIP_HEADERS = new Set(["host", "content-length", "connection", "cookie", "authorization"]);
+/*
+ * `accept-encoding` is here because this proxy cannot honour the answer.
+ * safeRequest is raw node:http and never decodes a response, and only the two
+ * headers below are copied back - so a browser's "gzip, deflate, br, zstd",
+ * passed through to a child that sits behind a reverse proxy with compression
+ * on, came back as compressed bytes that the parent then handed on labelled
+ * application/json with nothing to say they were encoded.
+ */
+const SKIP_HEADERS = new Set(["host", "content-length", "connection", "cookie", "authorization",
+    "accept-encoding"]);
 
 // Enough for the caller to interpret the body it is handed. Everything else the
 // child sends is the child's business and is dropped.

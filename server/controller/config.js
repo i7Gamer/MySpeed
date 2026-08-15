@@ -7,7 +7,8 @@ import { triggerEvent, withoutSecrets } from './integrations.js';
 import bcrypt from 'bcryptjs';
 import * as timer from '../tasks/timer.js';
 import cron from 'cron-validator';
-import db from '../config/database.js';
+import db, { SQLITE_STORAGE_PATH } from '../config/database.js';
+import { toErrorMessage } from '../util/helpers.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import * as interfaces from '../util/loadInterfaces.js';
@@ -126,15 +127,35 @@ export const getValue = async (key) => {
 export const updateValue = async (key, newValue) => {
     if ((await getValue(key)) === undefined) return undefined;
 
+    /*
+     * The write first, then the two things that describe it.
+     *
+     * Both used to run ahead of it. A write the database refuses - a locked
+     * sqlite file, a MySQL connection dropped between the read above and the
+     * write below - had already told every subscribed webhook that the value
+     * changed, and for a password change had already logged the operator out of
+     * an instance whose password was never altered. The caller then gets a 500
+     * for an operation whose side effects have all happened.
+     *
+     * This is the ordering d499ad30 fixed in controller/recommendations.js,
+     * which explains it at the call site there too.
+     */
+    const result = await config.update({value: newValue}, {where: {key: key}});
+
     // Changing or clearing the password takes access back, and a session left
     // alive would quietly undo that: the browser holding it would keep working
     // against a password that no longer exists.
     if (key === "password") destroyAllSessions();
 
+    // Not awaited - an integration is allowed to be slow, and a caller waiting
+    // on a config save should not wait on a webhook - but its rejection is
+    // caught rather than dropped. triggerEvent already contains a failing
+    // module; this covers a failure of the dispatch itself, which floated free
+    // to the process-level unhandledRejection hook.
     triggerEvent("configUpdated", {key: key, value: key === "password" ? "protected" : newValue})
-        .then(undefined);
+        .catch((error) => console.error(`Could not announce the change to '${key}': ${toErrorMessage(error)}`));
 
-    return await config.update({value: newValue}, {where: {key: key}});
+    return result;
 }
 
 /**
@@ -176,9 +197,10 @@ export const getUsedStorage = async () => {
             size += parseFloat(sizes[i].size);
         }
     } else {
-        const STORAGE_PATH = path.join(process.cwd(), 'data', `storage${process.env.PREVIEW_MODE === "true" ? "_preview" : ""}.db`);
-
-        size = sqliteBytes(STORAGE_PATH);
+        // The path the database is actually opened with, rather than a second
+        // derivation of it. Resolved against the working directory because the
+        // exported value is relative, exactly as sequelize receives it.
+        size = sqliteBytes(path.resolve(process.cwd(), SQLITE_STORAGE_PATH));
     }
 
     return {size, testCount: await test.count()};
@@ -215,10 +237,20 @@ export const validateInput = async (key, value) => {
     // password.js reads as "unprotected" - the instance was left open while
     // the API answered "successfully updated".
     if (key === "password") {
+        // Checked before the policy, not stringified into it. The policy ran
+        // against value.toString() while the hash was taken of the raw value,
+        // so anything whose string form happened to satisfy the rules reached
+        // bcrypt - and bcryptjs refuses a non-string outright. `{"value": {}}`
+        // stringifies to "[object Object]": fifteen characters, both cases, a
+        // special character, every rule cleared. The throw left the controller
+        // instead of earning the 400 every other malformed key gets.
+        if (typeof value !== "string")
+            return "The password has to be text";
+
         if (value === NO_PASSWORD)
             return "This password cannot be used. Use the remove button to clear the password instead";
 
-        const problem = passwordPolicyProblem(value.toString());
+        const problem = passwordPolicyProblem(value);
         if (problem) return problem;
 
         value = await bcrypt.hash(value, PASSWORD_HASH_ROUNDS);

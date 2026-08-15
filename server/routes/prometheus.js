@@ -62,12 +62,17 @@ const authorizeMetrics = async (req, res) => {
         return false;
     }
 
+    // Charged before the comparison, and refunded below if it turns out to be
+    // right. Recorded afterwards it sat behind the awaited compare, so a batch
+    // of scrapes arriving together all read the count before any of them raised
+    // it and the shared limit bounded only the guesses that queued.
+    recordFailedAttempt(req);
+
     const valid = unconfigured
         ? matchesSetupToken(credentials.password)
         : await bcrypt.compare(credentials.password, passwordHash);
 
     if (!valid) {
-        recordFailedAttempt(req);
         unauthorized(res);
         return false;
     }

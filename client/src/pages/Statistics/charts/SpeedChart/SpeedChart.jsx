@@ -6,6 +6,7 @@ import { PreferencesContext } from "@/common/contexts/Preferences";
 import { convertSpeed, getSpeedUnit, TIME_FORMAT_12H } from "@/common/utils/FormatUtil";
 import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
 import { lineTensionFor, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
+import { clickable } from "@/common/utils/Clickable";
 import {
     averageLineDataset, chartThemeColors, failedMarkersDataset, failureMarkers,
     isSingleDaySeries, lineChartOptions, seriesAverage, timePoints, verticalGradientFill
@@ -92,7 +93,7 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClic
     }), [filteredData, color, titleKey, compact, pointStyle, hasFailedTests, failedMarkerData]);
 
     return (
-        <div className="chart-container" onClick={onClick}>
+        <div className="chart-container" {...clickable(onClick)}>
             <div className="chart-header">
                 <h3 className="chart-title">{t(titleKey)} ({speedUnit})</h3>
             </div>

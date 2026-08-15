@@ -11,12 +11,36 @@ const html = htm.bind((type, props, ...children) => ({type, props: {...props, ch
 
 const hasValues = (test) => Boolean(test?.download.avg && test?.upload.avg && test?.ping.avg);
 
-const readStatistics = async () => {
-  const formatDate = (d) => d.toISOString().split('T')[0];
-  const yesterday = new Date();
+/**
+ * The two calendar days the image averages over, named on the server's own
+ * clock.
+ *
+ * Both ends have to be read off the same calendar as the one they are then
+ * anchored on. `formatDate` took the UTC date while `yesterday` was stepped
+ * back with local-calendar arithmetic, and parseDateRange - called with no zone
+ * - resolves to the server's local one. East of UTC the two disagree for the
+ * first hours of every local day: at 01:30 in Berlin the UTC date is still
+ * yesterday's, so the window was named for the day before that and ended at
+ * local end-of-yesterday, an hour and a half in the past. The whole of the
+ * current local day was left out of the averages the image renders.
+ *
+ * Exported for its test, which is the only way to see a window that is merely
+ * the wrong two days rather than an error.
+ */
+export const openGraphWindow = (now = new Date()) => {
+  // The local calendar date, matching the clock parseDateRange anchors on.
+  const day = (date) => moment(date).format("YYYY-MM-DD");
+
+  const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
 
-  const range = parseDateRange(formatDate(yesterday), formatDate(new Date()));
+  return {from: day(yesterday), to: day(now)};
+};
+
+const readStatistics = async () => {
+  const {from, to} = openGraphWindow();
+
+  const range = parseDateRange(from, to);
   if (!range.valid) return null;
 
   const stats = await tests.listStatistics(range);

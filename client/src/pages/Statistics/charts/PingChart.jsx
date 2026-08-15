@@ -6,6 +6,7 @@ import { PreferencesContext } from "@/common/contexts/Preferences";
 import { TIME_FORMAT_12H } from "@/common/utils/FormatUtil";
 import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
 import { lineTensionFor, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
+import { clickable } from "@/common/utils/Clickable";
 import {
     averageLineDataset, chartThemeColors, failedMarkersDataset, failureMarkers,
     isSingleDaySeries, lineChartOptions, seriesAverage, timePoints, verticalGradientFill
@@ -141,7 +142,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
     }), [filteredData, compact, pointStyle, hasJitterData, hasLoadedData, hasFailedTests, failedMarkerData]);
 
     return (
-        <div className="chart-container ping-chart" onClick={props.onClick}>
+        <div className="chart-container ping-chart" {...clickable(props.onClick)}>
             <div className="chart-header">
                 <h3 className="chart-title">{t("latest.ping")} ({t("latest.ping_unit")})</h3>
             </div>

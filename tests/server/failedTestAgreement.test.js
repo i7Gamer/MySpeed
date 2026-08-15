@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { isFailedTest, isSuccessfulTest } from "../../server/util/testOutcome.js";
+import { Op } from "sequelize";
+import { FAILED_TEST, FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER, isFailedTest, isSuccessfulTest } from "../../server/util/testOutcome.js";
 import { isFailedTest as clientIsFailedTest } from "../../client/src/common/utils/TestUtil.js";
 
 /**
@@ -70,7 +71,13 @@ describe("nothing judges a failure for itself", () => {
         "server/util/statistics.js",
         "server/routes/prometheus.js",
         "server/routes/speedtests.js",
-        "server/controller/opengraph.js"
+        "server/controller/opengraph.js",
+        // The two queries that ask the database rather than a row. They kept the
+        // pre-da12aeae `error IS NOT NULL` while every reader above moved, so
+        // the status route reported a failure count by one rule beside a
+        // lastTest.failed by the other - and this list, which exists to catch
+        // exactly that, did not scan the file it happened in.
+        "server/controller/speedtests.js"
     ];
 
     for (const file of READERS) {
@@ -82,9 +89,61 @@ describe("nothing judges a failure for itself", () => {
             const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
             const source = fs.readFileSync(path.join(root, file), "utf8");
 
-            assert.match(source, /isFailedTest|isSuccessfulTest/, `${file} no longer consults the shared rule`);
+            assert.match(source, /isFailedTest|isSuccessfulTest|FAILED_TEST_FILTER|SUCCESSFUL_TEST_FILTER/,
+                `${file} no longer consults the shared rule`);
             assert.doesNotMatch(source, /error\s*[!=]==\s*null\s*\?|\.error\s*\|\|\s*\w+\.ping\s*===\s*-1/,
                 `${file} carries its own copy of the judgement again`);
+            // The SQL spelling of the same judgement, which is how the two
+            // queries in the controller kept the old rule while every reader
+            // beside them moved off it.
+            assert.doesNotMatch(source, /error:\s*\{\s*\[Op\.ne]:\s*null\s*}|where:\s*\{error:\s*null}/,
+                `${file} asks the database whether the error column is null again`);
         });
     }
+});
+
+/**
+ * The same question as a where clause, for the counts that ask the database
+ * instead of a row.
+ *
+ * Shape rather than behaviour: what matters is that both spellings are built
+ * from the one sentinel and that neither reduces to "the error column is not
+ * null". Whether they select the right rows is settled against a real database
+ * in tests/integration/status.test.js.
+ */
+describe("the same rule as a where clause", () => {
+    const placeholders = (clause) => clause[Op.and][1];
+
+    it("calls a row failed for a message or three placeholders, not for a null error", () => {
+        const [message, allThree] = FAILED_TEST_FILTER[Op.or];
+
+        assert.deepEqual(message, {[Op.and]: [{error: {[Op.ne]: null}}, {error: {[Op.ne]: ""}}]});
+        assert.deepEqual(allThree, {
+            [Op.and]: [{ping: FAILED_TEST}, {download: FAILED_TEST}, {upload: FAILED_TEST}]
+        });
+    });
+
+    it("reads the same question the other way round", () => {
+        assert.deepEqual(SUCCESSFUL_TEST_FILTER[Op.and][0], {[Op.or]: [{error: null}, {error: ""}]});
+    });
+
+    /**
+     * De Morgan rather than a NOT around the conjunction: `NOT (ping = -1 AND
+     * ...)` is NULL - and so excludes the row - the moment any column in it is
+     * NULL, which would drop a successful row from the recommendations sample
+     * on a restored history.
+     */
+    it("negates the placeholders column by column so a null cannot swallow a row", () => {
+        assert.deepEqual(placeholders(SUCCESSFUL_TEST_FILTER), {
+            [Op.or]: [
+                {ping: {[Op.ne]: FAILED_TEST}},
+                {download: {[Op.ne]: FAILED_TEST}},
+                {upload: {[Op.ne]: FAILED_TEST}}
+            ]
+        });
+    });
+
+    it("spells the placeholder with the exported sentinel", () => {
+        assert.equal(FAILED_TEST, -1);
+    });
 });

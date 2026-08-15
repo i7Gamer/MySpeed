@@ -1,5 +1,6 @@
 import { postJson } from "../util/http.js";
 import { replaceVariables } from "../util/helpers.js";
+import { DISCORD_MARKDOWN, stripMarkdown } from "../util/markdown.js";
 
 const defaults = {
     finished: ":sparkles: **A speedtest is finished**\n > :ping_pong: `Ping`: %ping% ms (±%jitter% ms)\n > :arrow_up: `Upload`: %upload% Mbps\n > :arrow_down: `Download`: %download% Mbps",
@@ -43,15 +44,29 @@ const send = (url, username, color, description, activity) =>
  */
 const WEBHOOK_URL = /^https:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api(?:\/v\d+)?\/webhooks\/\d+\/[\w-]+(?:\?\S*)?$/;
 
+/**
+ * Discord renders an embed description as markdown, and the values interpolated
+ * into it are provider-supplied text: Ookla quotes server names in backticks,
+ * and those re-pair with the ones the default template puts around `Ping` -
+ * so part of the sentence arrived as a code span with the delimiters no longer
+ * on screen. Masked links are live in a description too, so `[text](url)` in a
+ * CLI error became a link nobody wrote.
+ *
+ * Telegram has cleaned its own values since 49154de1 and this did not, which is
+ * the whole of the fault. Only the values: the operator's template keeps its
+ * formatting, which is what the backticks in the default are.
+ */
+const clean = (variables) => stripMarkdown(variables, DISCORD_MARKDOWN);
+
 export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {
         if (c.send_finished) await send(c.url, c.display_name || "MySpeed", 4572762,
-            replaceVariables(c.finished_message || defaults.finished, data), activity);
+            replaceVariables(c.finished_message || defaults.finished, clean(data)), activity);
     });
 
     registerEvent('testFailed', async ({data: c}, failure, activity) => {
         if (c.send_failed) await send(c.url, c.display_name || "MySpeed", 12993861,
-            replaceVariables(c.error_message || defaults.failed, failure), activity);
+            replaceVariables(c.error_message || defaults.failed, clean(failure)), activity);
     });
 
     return {

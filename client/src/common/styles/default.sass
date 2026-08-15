@@ -89,6 +89,16 @@ body::before
     outline-offset: 3px
     border-radius: 0.25rem
 
+// Where focus is, on anything that had to be made into a control rather than
+// born one - the statistics tiles, the charts, the node cards, the overview row.
+// Stated once against the role instead of per card: the role and the ring are
+// one decision, and fourteen copies of it is fourteen chances to leave one out.
+// Only :focus-visible, so a pointer click does not draw a ring - the same rule
+// the header's icons follow.
+[role="button"]:focus-visible
+  outline: 2px solid var(--accent-primary)
+  outline-offset: 3px
+
 // One content box for every page. The overview used to be an unstyled
 // shrink-to-fit container and the statistics were full width with a large inset
 // of their own, so the two never lined up; sizing them here rather than in each

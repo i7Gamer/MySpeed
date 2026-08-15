@@ -29,6 +29,12 @@ app.post("/", async (req, res) => {
     if (typeof supplied !== "string" || supplied === "")
         return res.status(400).json({message: "You need to provide a password"});
 
+    // Charged before the comparison, and refunded below if it turns out to be
+    // right. Recorded afterwards it sat behind two awaits, so a batch of
+    // requests arriving together all read the count before any of them raised
+    // it and the shared limit bounded only the guesses that queued.
+    recordFailedAttempt(req);
+
     const passwordHash = await config.getValue("password");
     const unconfigured = passwordHash === config.NO_PASSWORD;
 
@@ -37,8 +43,6 @@ app.post("/", async (req, res) => {
         : await bcrypt.compare(supplied, passwordHash);
 
     if (!valid) {
-        recordFailedAttempt(req);
-
         // Which credential was wrong, not merely that one was: an instance with
         // no password rejects a mistyped setup token, and telling its operator
         // the password was incorrect would send them looking for one that does

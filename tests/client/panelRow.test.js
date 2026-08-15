@@ -27,16 +27,36 @@ const css = compile(`${ROW_DIR}/styles.sass`);
 
 // The four panels that state readings as rows. The charts are excluded: a plot
 // has no row to share.
+/*
+ * The name each panel's own row used to carry, without a leading dot.
+ *
+ * It was written as a CSS selector - ".consistency-item" - and checked against
+ * both the stylesheet and the JSX with String.includes. JSX writes a class name
+ * bare, `className="consistency-item"`, so the dotted spelling never appeared in
+ * any of the four components: not after the refactor, and not before it either.
+ * Half of this guard could not fail, and the OverviewChart entry carried a
+ * trailing colon as well, which no stylesheet rule would have matched.
+ *
+ * The dot belongs to the selector and not to the name, so it is added where the
+ * stylesheet is searched. The lookahead is what the colon was reaching for:
+ * "overview-item" must not match the ".overview-items" container that is still
+ * there and still doing its job.
+ */
 const PANELS = [
     {name: "OverviewChart", file: "pages/Statistics/charts/OverviewChart/OverviewChart.jsx",
-        styles: "pages/Statistics/charts/OverviewChart/styles.sass", retired: ".overview-item:"},
+        styles: "pages/Statistics/charts/OverviewChart/styles.sass", retired: "overview-item"},
     {name: "LatestTestChart", file: "pages/Statistics/charts/LatestTestChart/LatestTestChart.jsx",
-        styles: "pages/Statistics/charts/LatestTestChart/styles.sass", retired: ".test-container"},
+        styles: "pages/Statistics/charts/LatestTestChart/styles.sass", retired: "test-container"},
     {name: "ConsistencyChart", file: "pages/Statistics/charts/ConsistencyChart/ConsistencyChart.jsx",
-        styles: "pages/Statistics/charts/ConsistencyChart/styles.sass", retired: ".consistency-item"},
+        styles: "pages/Statistics/charts/ConsistencyChart/styles.sass", retired: "consistency-item"},
     {name: "AverageChart", file: "pages/Statistics/charts/AverageChart/AverageChart.jsx",
-        styles: "pages/Statistics/charts/AverageChart/styles.sass", retired: ".value-item"}
+        styles: "pages/Statistics/charts/AverageChart/styles.sass", retired: "value-item"}
 ];
+
+// The name as the markup writes it, and as a stylesheet selects it. `(?![-\w])`
+// keeps "overview-item" off "overview-items" in both.
+const asClassName = (name) => new RegExp(`["'\\s]${name}(?![-\\w])`);
+const asSelector = (name) => new RegExp(`\\.${name}(?![-\\w])`);
 
 const bodyOf = (selector) => {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -297,10 +317,33 @@ describe("the panels that state readings", () => {
         });
 
         it(`${name} keeps no row layout of its own`, () => {
-            assert.ok(!source.includes(retired),
+            assert.doesNotMatch(source, asClassName(retired),
                 `${name} still draws ${retired} by hand`);
-            assert.ok(!read(styles).includes(retired),
-                `${name}'s stylesheet still dresses ${retired}`);
+            assert.doesNotMatch(read(styles), asSelector(retired),
+                `${name}'s stylesheet still dresses .${retired}`);
         });
     }
+
+    /**
+     * And the guard above can actually fail.
+     *
+     * It was written as a CSS selector and checked against the JSX with
+     * String.includes, so the JSX half matched nothing in any of the four
+     * components - before the refactor or after it. A regression guard that
+     * cannot fail reads as coverage and is not.
+     */
+    it("recognises a hand-drawn row if one comes back", () => {
+        for (const {retired} of PANELS) {
+            assert.match(`<div className="${retired}">`, asClassName(retired),
+                `a reintroduced ${retired} in the markup would not be noticed`);
+            assert.match(`.${retired}\n  display: flex`, asSelector(retired),
+                `a reintroduced .${retired} rule would not be noticed`);
+        }
+    });
+
+    // ...without mistaking the container that legitimately survived for one.
+    it("does not mistake the overview's row container for a retired row", () => {
+        assert.doesNotMatch('<div className="overview-items">', asClassName("overview-item"));
+        assert.doesNotMatch(".overview-items\n  display: flex", asSelector("overview-item"));
+    });
 });

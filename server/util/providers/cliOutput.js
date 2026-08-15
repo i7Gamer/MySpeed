@@ -1,3 +1,5 @@
+import { truncate } from '../helpers.js';
+
 const RATE_LIMIT_MESSAGE = "Too many requests. Please try again later";
 
 /**
@@ -16,15 +18,7 @@ const RATE_LIMIT_MESSAGE = "Too many requests. Please try again later";
  */
 export const MAX_ERROR_LENGTH = 2000;
 
-const TRUNCATION_MARK = "…";
-
-const capError = (message) => {
-    const text = String(message);
-
-    return text.length <= MAX_ERROR_LENGTH
-        ? text
-        : text.slice(0, MAX_ERROR_LENGTH - TRUNCATION_MARK.length) + TRUNCATION_MARK;
-};
+const capError = (message) => truncate(message, MAX_ERROR_LENGTH);
 
 /**
  * Whether a parsed line is the measurement itself rather than progress chatter.
@@ -75,6 +69,16 @@ export const parseCliOutput = (mode, stdout, stderr) => {
                 console.error("JSON parse error:", e.message, "Line:", line);
                 continue;
             }
+
+            // The unwrap above can leave nothing behind, and this read used to
+            // sit outside the try that would have caught it. `[]` is valid JSON
+            // and is what librespeed prints when its backend is down, so
+            // `data[0]` was undefined and `data.error` threw a TypeError - from
+            // inside a child process's 'close' listener, which makes it an
+            // uncaughtException rather than a rejected promise. A line that
+            // parsed to no object is chatter, the same as one that did not
+            // parse at all.
+            if (data === null || typeof data !== "object") continue;
 
             if (data.error) result.error = data.error;
 

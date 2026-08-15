@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/grades" as *
 // The sizes only, not the row's rules - see that partial for why.
 @use "@/pages/Statistics/components/PanelRow/variables" as row
 
@@ -80,13 +81,4 @@
   border-radius: 0.25rem
   transition: width 0.3s ease
 
-  &.icon-green
-    background-color: $accent-primary
-  &.icon-orange
-    background-color: $accent-warning
-  &.icon-red
-    background-color: $accent-danger
-  &.icon-blue
-    background-color: var(--blue)
-  &.icon-error
-    background-color: $accent-danger
+  +graded-fill

@@ -59,3 +59,80 @@ describe("an outbound call to an unparseable URL", () => {
         assert.equal(failed, true);
     });
 });
+
+/**
+ * The response body is finished with, and the activity note cannot take the
+ * process down.
+ */
+describe("what an outbound call leaves behind", () => {
+    const realFetch = globalThis.fetch;
+
+    afterEach(() => {
+        globalThis.fetch = realFetch;
+    });
+
+    /**
+     * Neither helper consumed or cancelled the body it got back, and no caller
+     * in any of the eight integrations reads the return value - so on undici the
+     * transport stayed checked out of the pool with the bytes buffered until the
+     * Response was garbage collected. Discord, Telegram and Gotify all answer
+     * with the created message, and healthChecks fires every minute.
+     */
+    it("releases the response body", async () => {
+        let cancelled = false;
+
+        globalThis.fetch = async () => ({
+            ok: true,
+            status: 200,
+            body: {cancel: async () => { cancelled = true; }}
+        });
+
+        await postJson("https://example.test/hook", {});
+        assert.equal(cancelled, true, "the body was left unread, holding the connection until GC");
+    });
+
+    it("releases it on a refusal too", async () => {
+        let cancelled = false;
+
+        globalThis.fetch = async () => ({
+            ok: false,
+            status: 429,
+            body: {cancel: async () => { cancelled = true; }}
+        });
+
+        await postText("https://example.test/hook", "hello");
+        assert.equal(cancelled, true);
+    });
+
+    // A 204 has no body at all, and neither does a response some runtimes
+    // build for a HEAD - so the release has to tolerate its absence.
+    it("copes with a response that has no body", async () => {
+        globalThis.fetch = async () => ({ok: true, status: 204, body: null});
+
+        assert.notEqual(await postJson("https://example.test/hook", {}), null);
+    });
+
+    /**
+     * `activity` writes a row - triggerEvent hands it a callback that awaits an
+     * IntegrationData.update - and it was invoked bare, so a rejected write had
+     * no handler and escaped to the process-level unhandledRejection hook. The
+     * two sibling calls in the same controller carry a deliberate catch; this
+     * path did not.
+     */
+    it("does not let a failing activity note escape", async () => {
+        globalThis.fetch = async () => ({ok: true, status: 200, body: null});
+
+        const rejects = () => Promise.reject(new Error("SQLITE_BUSY"));
+
+        await assert.doesNotReject(() => postJson("https://example.test/hook", {}, {activity: rejects}));
+        await assert.doesNotReject(() => postText("https://example.test/hook", "hi", {activity: rejects}));
+    });
+
+    it("does not let a throwing activity note fail the send", async () => {
+        globalThis.fetch = async () => ({ok: true, status: 200, body: null});
+
+        const throws = () => { throw new Error("no such integration"); };
+
+        await assert.doesNotReject(() => postJson("https://example.test/hook", {}, {activity: throws}));
+    });
+});

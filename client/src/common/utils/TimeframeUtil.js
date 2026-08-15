@@ -174,6 +174,36 @@ export const parseRangeParams = (searchParams, now = new Date()) => {
     return {timeframe: timeframeFromRange(start, end, now), from: start, to: end};
 };
 
+/**
+ * The URL parameters a selection is made of. Nothing else in the address bar
+ * changes which tests are being asked for.
+ */
+const RANGE_PARAMS = ["range", "from", "to"];
+
+/**
+ * Just those, in a fixed order, as a string to memoise a query on.
+ *
+ * SpeedtestProvider used `searchParams.toString()` for this. It is mounted
+ * above the router outlet, so it is alive on every page, and the statistics
+ * write the same range keys to the URL - which meant every timeframe click
+ * there rebuilt the overview's query and fetched a page of rows for a list that
+ * page does not show. Any other parameter anyone ever puts in the URL would
+ * have done the same.
+ *
+ * An absent key stays absent rather than becoming an empty one: `?range=` and a
+ * URL with no range at all are different selections.
+ */
+export const rangeKey = (searchParams) => {
+    const selected = new URLSearchParams();
+
+    for (const name of RANGE_PARAMS) {
+        const value = searchParams.get(name);
+        if (value !== null) selected.set(name, value);
+    }
+
+    return selected.toString();
+};
+
 /** Builds the query parameters describing the current selection. */
 export const serializeRange = (timeframe, from, to) => {
     // Named rather than written as dates it does not have. The statistics need

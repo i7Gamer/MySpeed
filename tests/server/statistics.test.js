@@ -509,6 +509,41 @@ describe("buildStatistics", () => {
                 `every bucket rounded to a whole millisecond: ${measured.slice(0, 5).join(", ")}`);
         });
 
+        /**
+         * `time` is the one measurement column in the bucket that is nullable,
+         * and it was the one averaged without the measured-only filter its
+         * neighbours use. A null folds into the sum as nothing while still
+         * counting toward the divisor, so a single absent duration deflated the
+         * whole bucket - and the summary figure above it, which goes through
+         * mapRounded and does skip nulls, then disagreed with the chart.
+         */
+        it("leaves an unmeasured duration out of a bucket's average", () => {
+            const many = Array.from({length: TARGET_CHART_POINTS * 2}, (unused, index) =>
+                at(new Date(Date.UTC(2026, 7, 7, 0, 0, 0) + index * 60_000).toISOString(),
+                    // One row in every hundred never recorded how long it took.
+                    {time: index % 100 === 0 ? null : 30}));
+
+            const stats = buildStatistics(many, DAY);
+            const measured = stats.data.time.filter((value) => value !== null);
+
+            assert.ok(measured.length > 0, "nothing was measured to check");
+            assert.deepEqual([...new Set(measured)], [30],
+                "a bucket holding an unmeasured duration averaged it as nought");
+        });
+
+        // And the chart agrees with the figure printed above it, which has
+        // skipped nulls since mapRange was written.
+        it("averages the duration the way the summary above it does", () => {
+            const many = Array.from({length: TARGET_CHART_POINTS * 2}, (unused, index) =>
+                at(new Date(Date.UTC(2026, 7, 7, 0, 0, 0) + index * 60_000).toISOString(),
+                    {time: index % 100 === 0 ? null : 30}));
+
+            const stats = buildStatistics(many, DAY);
+
+            assert.equal(stats.time.avg, 30);
+            assert.deepEqual([...new Set(stats.data.time.filter((value) => value !== null))], [stats.time.avg]);
+        });
+
         it("downsamples above the target point count", () => {
             const many = Array.from({length: TARGET_CHART_POINTS * 2}, (_, index) =>
                 at(new Date(Date.UTC(2026, 7, 7, 0, 0, 0) + index * 60_000).toISOString()));
@@ -637,6 +672,34 @@ describe("buildStatistics", () => {
 
                 assert.equal(stats.tests.total, 2);
                 assert.equal(stats.download.avg, 150);
+            });
+
+            /**
+             * And it does not make the chart claim to be averaged.
+             *
+             * The branch is chosen on the rows that can be placed on a timeline;
+             * the flag was computed from every row there is. One undateable row
+             * astride the threshold made the two disagree, so the full series
+             * was returned - every point drawn, nothing averaged - under a note
+             * reading "Averaged · showing 300 of 301", inviting the reader to
+             * ask for a detail that was already on screen.
+             */
+            it("does not report a whole series as averaged", () => {
+                const placeable = Array.from({length: TARGET_CHART_POINTS}, (unused, index) =>
+                    at(new Date(Date.UTC(2026, 7, 7, 0, 0, 0) + index * 1000).toISOString()));
+
+                const stats = buildStatistics([...placeable, at("not a timestamp")], DAY);
+
+                assert.equal(stats.labels.length, TARGET_CHART_POINTS, "the series was not returned whole");
+                assert.equal(stats.downsampled, false,
+                    "a series with every point drawn is reported to the reader as bucket averages");
+            });
+
+            it("still reports an averaged series as averaged", () => {
+                const placeable = Array.from({length: TARGET_CHART_POINTS + 1}, (unused, index) =>
+                    at(new Date(Date.UTC(2026, 7, 7, 0, 0, 0) + index * 1000).toISOString()));
+
+                assert.equal(buildStatistics([...placeable, at("not a timestamp")], DAY).downsampled, true);
             });
         });
     });
@@ -818,6 +881,35 @@ describe("loaded latency over the range", () => {
             assert.ok(trend[0].created < trend.at(-1).created, "time has to read left to right");
             // The last of the fourteen: 20 + 13 worse direction, idle 10.
             assert.equal(trend.at(-1).increase, 23);
+        });
+
+        /**
+         * Whatever order the rows arrive in.
+         *
+         * buildStatistics says in its own signature that `entries` may be in any
+         * order, and everything that reads a timestamp works from a sorted copy
+         * - except this, which was taken off the unfiltered input and then had
+         * `slice(-10)` applied to it as though it were chronological. It was
+         * only ever right because the one caller happens to query with ORDER BY
+         * created ASC: a change to that clause, or a second caller, would have
+         * plotted an arbitrary ten of the range in an arbitrary order, with the
+         * newest test possibly absent, while every other figure stayed correct.
+         */
+        it("reads the same whatever order the rows arrive in", () => {
+            const inOrder = buildStatistics(many, DAY).consistency.loadedLatency.trend;
+            const reversed = buildStatistics([...many].reverse(), DAY).consistency.loadedLatency.trend;
+            const shuffled = buildStatistics([...many.slice(7), ...many.slice(0, 7)], DAY)
+                .consistency.loadedLatency.trend;
+
+            assert.deepEqual(reversed, inOrder, "the trend followed the input order rather than the clock");
+            assert.deepEqual(shuffled, inOrder);
+        });
+
+        it("still ends on the newest test when the rows arrive newest first", () => {
+            const {trend} = buildStatistics([...many].reverse(), DAY).consistency.loadedLatency;
+
+            assert.equal(trend.at(-1).increase, 23, "the newest test is not the rightmost dot");
+            assert.ok(trend[0].created < trend.at(-1).created);
         });
 
         it("carries only the tests that measured it", () => {
