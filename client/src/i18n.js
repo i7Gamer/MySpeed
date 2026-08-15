@@ -44,6 +44,20 @@ export const languages = [
 i18n.use(initReactI18next).use(LanguageDetector).use(HttpApi).init({
     supportedLngs: languages.map(lang => lang.code),
     fallbackLng: 'en',
+    // Values are printed, not injected as markup. i18next escapes them by
+    // default - it is written for templating engines that build HTML strings -
+    // and its escaper turns a slash into `&#x2F;`, which React then renders as
+    // that literal text because React escapes on its own. The delete
+    // confirmation read "The test from 8&#x2F;15&#x2F;2026 will be deleted";
+    // any name carrying an ampersand had the same fault, and a German date -
+    // 15.08.2026 - hid it, which is why it survived this long.
+    //
+    // Safe because nothing here renders a translation as markup: there is no
+    // dangerouslySetInnerHTML in the client, and <Trans> is given real React
+    // children rather than a string of HTML.
+    interpolation: {
+        escapeValue: false
+    },
     backend: {
         loadPath: '/assets/locales/{{lng}}.json'
     },
