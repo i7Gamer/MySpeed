@@ -1,3 +1,5 @@
+import { SERVER_BUSY } from "@/common/utils/AuthOutcome";
+
 const REQUEST_TIMEOUT = 10000;
 
 // How long a download's blob url is kept alive after the click that uses it.
@@ -41,6 +43,14 @@ export const login = async (password) => {
     // first two want a different question. An unparseable body leaves `type`
     // absent, which asks for the password - what it did before any of this.
     const body = await response.json().catch(() => ({}));
+
+    // Except when the server is not answering at all. A reverse proxy in front
+    // of a stopped container answers 503 with no body of ours, and asking for
+    // the password again - then calling it wrong when the retry fails
+    // identically - is the loop this reports instead. ConfigContext makes the
+    // same check on the config load; this is the half the operator types into.
+    if (response.status === 503 && body?.type !== SERVER_BUSY)
+        return {ok: false, unreachable: true};
 
     return {ok: false, type: body?.type};
 }

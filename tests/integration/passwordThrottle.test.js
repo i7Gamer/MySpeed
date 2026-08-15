@@ -441,6 +441,30 @@ describe("password attempt throttling", () => {
         });
 
         /**
+         * Releasing twice is releasing once.
+         *
+         * Removing the reservations is idempotent by construction - they are
+         * gone the second time - but recording the failures was not, so a
+         * second call charged the budget twice and halved it. No path does that
+         * today; the guard is what keeps that true of a path added later.
+         */
+        it("cannot be released twice", async () => {
+            const TWICE = {headers: {}, socket: {remoteAddress: "203.0.113.92"}};
+            const HALF = MAX_FAILED_ATTEMPTS / 2;
+
+            for (let i = 0; i < HALF; i++) {
+                const admission = reserveAttempt(TWICE);
+                admission.settle({failed: 1});
+                admission.settle({failed: 1});
+            }
+
+            // Ten requests, charged ten - not twenty, which would have spent
+            // the whole budget.
+            assert.equal(reserveAttempt(TWICE).outcome, ATTEMPT_ADMITTED,
+                "a doubled release spent the budget twice over");
+        });
+
+        /**
          * And the map of who is holding what is bounded, like its sibling.
          *
          * Expiry is lazy - a deadline is only noticed when that client comes

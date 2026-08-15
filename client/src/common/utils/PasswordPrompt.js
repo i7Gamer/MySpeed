@@ -15,7 +15,13 @@
  * and count against the password throttle for a value nobody typed.
  *
  * @param {(previous: {type?: string}|null) => Promise<string|undefined>} prompt
- * @param {(value: string) => Promise<{ok: boolean, type?: string}>} authenticate
+ * A refusal no credential can answer ends the loop rather than re-asking:
+ * `unreachable` says the server is not in a position to judge anything, and
+ * asking again would call the password wrong for as long as the outage lasts.
+ * The throttle's own refusal ends it the same way, by opening a notice rather
+ * than a box.
+ *
+ * @param {(value: string) => Promise<{ok: boolean, type?: string, unreachable?: boolean}>} authenticate
  * @returns {Promise<boolean>} whether the caller is now authenticated
  */
 export const promptUntilAccepted = async (prompt, authenticate) => {
@@ -28,6 +34,7 @@ export const promptUntilAccepted = async (prompt, authenticate) => {
 
         const outcome = await authenticate(value);
         if (outcome.ok) return true;
+        if (outcome.unreachable) return false;
 
         previous = outcome;
     }

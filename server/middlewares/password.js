@@ -207,17 +207,30 @@ const liveReservations = (key, now) => {
  * right, which is what keeps a correct password off the failure budget, and 0
  * again when the comparison never ran, so an internal error cannot spend it.
  */
-const releaseWith = (key, ticket) => ({failed = 0} = {}) => {
-    const live = liveReservations(key, Date.now());
+const releaseWith = (key, ticket) => {
+    // Released once, whatever the caller does. Removing the reservations is
+    // naturally idempotent - they are gone the second time - but recording the
+    // failures is not, so a second call would charge the budget twice and halve
+    // it. No path calls this more than once today; the guard is here so that
+    // stays true of a path someone adds later, rather than being a property
+    // this file has to be re-read to confirm.
+    let settled = false;
 
-    if (live !== null) {
-        const remaining = live.filter((reservation) => reservation.ticket !== ticket);
+    return ({failed = 0} = {}) => {
+        if (settled) return;
+        settled = true;
 
-        if (remaining.length > 0) attemptsInFlight.set(key, remaining);
-        else attemptsInFlight.delete(key);
-    }
+        const live = liveReservations(key, Date.now());
 
-    if (failed > 0) recordFailure(key, failed);
+        if (live !== null) {
+            const remaining = live.filter((reservation) => reservation.ticket !== ticket);
+
+            if (remaining.length > 0) attemptsInFlight.set(key, remaining);
+            else attemptsInFlight.delete(key);
+        }
+
+        if (failed > 0) recordFailure(key, failed);
+    };
 };
 
 /** Releases nothing, for the refusals and for a request that carried no guess. */
@@ -260,7 +273,7 @@ export const reserveAttempt = (req, attempts = 1) => {
 };
 
 /** A request that carried no guess: nothing reserved, nothing to release. */
-export const NOTHING_RESERVED = {outcome: ATTEMPT_ADMITTED, settle: releaseNothing};
+export const NOTHING_RESERVED = Object.freeze({outcome: ATTEMPT_ADMITTED, settle: releaseNothing});
 
 export const clearFailedAttempts = (req) => failedAttempts.delete(clientKey(req));
 
