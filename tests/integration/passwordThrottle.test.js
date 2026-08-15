@@ -283,9 +283,10 @@ describe("password attempt throttling", () => {
      *
      * `reserveAttempt` bounds the comparisons a client may have running at once
      * - the check and the write in one synchronous body, so simultaneous
-     * callers each see every earlier reservation. `settleAttempt` releases it
-     * and records only what actually came back wrong. Conflating the two is
-     * what made a correct password spend the failure budget.
+     * callers each see every earlier reservation. The `settle` it hands back
+     * releases exactly the reservations it took and records only what actually
+     * came back wrong. Conflating the two counters is what made a correct
+     * password spend the failure budget.
      *
      * This is the one place the race is pinned. The three entry points - the
      * middleware, the session exchange, the Prometheus scrape - all spend these
@@ -437,6 +438,27 @@ describe("password attempt throttling", () => {
 
             assert.equal(reserveAttempt(CALLER).outcome, ATTEMPT_ADMITTED,
                 "the refund did not reach the counter");
+        });
+
+        /**
+         * And the map of who is holding what is bounded, like its sibling.
+         *
+         * Expiry is lazy - a deadline is only noticed when that client comes
+         * back - so a reservation whose release never arrived, from a client
+         * who never returns, would otherwise sit there for good. Nothing can
+         * produce one today, which is the reason to bound it rather than to
+         * argue it cannot happen.
+         */
+        it("does not grow a key per client for ever", async () => {
+            const MAX_TRACKED_CLIENTS = 10000;
+
+            // Well past the bound, each from a different address, each holding
+            // a reservation that is never released.
+            for (let i = 0; i < MAX_TRACKED_CLIENTS + 500; i++)
+                reserveAttempt({headers: {}, socket: {remoteAddress: `10.${i >> 16 & 255}.${i >> 8 & 255}.${i & 255}`}});
+
+            // Still serving: the eviction frees a slot rather than refusing.
+            assert.equal(reserveAttempt(CALLER).outcome, ATTEMPT_ADMITTED);
         });
 
         /**

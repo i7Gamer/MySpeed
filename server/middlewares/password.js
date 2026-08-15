@@ -233,6 +233,21 @@ export const reserveAttempt = (req, attempts = 1) => {
     if (live.length + attempts > MAX_ATTEMPTS_IN_FLIGHT)
         return {outcome: ATTEMPT_BUSY, settle: releaseNothing};
 
+    /*
+     * Bounded like failedAttempts, for the same reason and by the same rule.
+     *
+     * Expiry here is lazy: a deadline is only noticed when that same client
+     * comes back, so a reservation whose release never arrived from a client
+     * who never returns would sit in the map for good. No path can produce one
+     * today - every one releases in a `finally` - which is exactly why the
+     * bound belongs here rather than in a comment promising it cannot happen.
+     * Evicting a live entry only under-counts, which is the safe direction, and
+     * reaching this at all means ten thousand clients with comparisons running
+     * at once.
+     */
+    if (!attemptsInFlight.has(key) && attemptsInFlight.size >= MAX_TRACKED_CLIENTS)
+        attemptsInFlight.delete(attemptsInFlight.keys().next().value);
+
     // One token per request, shared by the reservations it took, so the release
     // finds exactly its own however the list has changed since.
     const ticket = Symbol("attempt");
