@@ -75,14 +75,14 @@ export const AverageChart = (props) => {
                     explicit null for a range in which nothing succeeded, and
                     `{value} {unit}` around that left a bare "Mbps" standing on
                     its own. */}
-                {/* The two ends of the range, marked so the card can colour
-                    their glyphs - and marked rather than graded, because a
-                    minimum is the slowest test in the range and not a bad one.
-                    See the stylesheet. */}
-                <PanelRow className="value-low" icon={faMinusCircle} title={t("statistics.values.min")}
+                {/* Ungraded, both of them, so their glyphs take the neutral. A
+                    minimum is the slowest test in the range and not a bad one -
+                    which is why neither carries a percentage or a delta either,
+                    and why they were red and green for all of one afternoon. */}
+                <PanelRow icon={faMinusCircle} title={t("statistics.values.min")}
                           value={speed(props.data.min)}/>
 
-                <PanelRow className="value-high" icon={faPlusCircle} title={t("statistics.values.max")}
+                <PanelRow icon={faPlusCircle} title={t("statistics.values.max")}
                           value={speed(props.data.max)}/>
 
                 {/* The only one of the three that is graded. A minimum and a

@@ -4,6 +4,13 @@ $dark-dark-gray: #1a2029
 $dark-darker-gray: #151b23
 $dark-white: #e7edf4
 $dark-subtext: #8b99ab
+// What a glyph wears when its row has no verdict to give - a minimum, a test
+// count, the number of tests in a range. Blue, because that is what this
+// interface already says "no judgement here" in, and muted, because five of
+// them on one card must not compete with the graded glyph on the card beside
+// it. Between $subtext, which is already a blue-grey, and the saturated $blue
+// that means "nobody measured this".
+$dark-icon-neutral: #6f93bd
 
 $light-background: #f8fafc
 $light-light-gray: #e2e8f0
@@ -11,6 +18,7 @@ $light-dark-gray: #ffffff
 $light-darker-gray: #f1f5f9
 $light-white: #1e293b
 $light-subtext: #64748b
+$light-icon-neutral: #5478a3
 
 $blue: #3b82f6
 $orange: #f59e0b
@@ -29,6 +37,7 @@ $amber: #f59e0b
   --darker-gray: #{$dark-darker-gray}
   --white: #{$dark-white}
   --subtext: #{$dark-subtext}
+  --icon-neutral: #{$dark-icon-neutral}
   --blue: #{$blue}
 
   --accent-primary: #{$green}
@@ -54,6 +63,7 @@ $amber: #f59e0b
   --darker-gray: #{$light-darker-gray}
   --white: #{$light-white}
   --subtext: #{$light-subtext}
+  --icon-neutral: #{$light-icon-neutral}
 
   --glass-bg: rgba(255, 255, 255, 0.85)
 
@@ -67,6 +77,7 @@ $dark-gray: var(--dark-gray)
 $darker-gray: var(--darker-gray)
 $white: var(--white)
 $subtext: var(--subtext)
+$icon-neutral: var(--icon-neutral)
 
 $accent-primary: var(--accent-primary)
 $accent-secondary: var(--accent-secondary)

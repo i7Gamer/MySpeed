@@ -237,37 +237,31 @@ describe("the value cards, which state the longest figures", () => {
     });
 
     /**
-     * The two ends of the range are coloured, and it is not a grade that does it.
+     * The two ends of the range are not graded, so their glyphs take the
+     * neutral.
      *
      * A minimum is the slowest test in the range, not a bad one - which is
-     * exactly why neither end carries a percentage or a delta, and why grading
-     * them red and green would be the card contradicting itself. Painted through
-     * `level` they would also publish a grade on the row, so a reader who turns
-     * `gradeValues` on would find "523 Mbps" in the colour of a bad reading.
-     *
-     * So the glyphs are painted directly and the rows stay ungraded: the same
-     * two colours, saying which end of the range this is rather than what the
-     * line is worth. The minus and plus already say it in shape.
+     * exactly why neither end carries a percentage or a delta. They were red and
+     * green for one afternoon, and a red alarm beside a perfectly good 523 Mbps
+     * was all it bought; graded through `level` they would also publish a grade
+     * on the row, so a reader who turns `gradeValues` on would find the figure
+     * itself in the colour of a bad reading. The average is the only graded
+     * figure on the card, so it wears the only verdict.
      */
-    it("colour the two ends of the range without grading them", () => {
-        assert.match(card, /<PanelRow className="value-low"[^>]*faMinusCircle/s,
-            "the minimum is not marked as the low end of the range");
-        assert.match(card, /<PanelRow className="value-high"[^>]*faPlusCircle/s,
-            "the maximum is not marked as the high end");
+    it("grade neither end of the range", () => {
+        const rows = [...card.matchAll(/<PanelRow[\s\S]*?\/>/g)].map(([row]) => row);
+        const endOfRange = rows.filter((row) => /faMinusCircle|faPlusCircle/.test(row));
 
-        for (const end of ["low", "high"])
-            assert.doesNotMatch(card, new RegExp(`className="value-${end}"[^>]*level=`),
-                `the ${end} end of the range is dressed as a verdict`);
+        assert.equal(endOfRange.length, 2, "the minimum and maximum rows are no longer recognisable");
+        for (const row of endOfRange)
+            assert.doesNotMatch(row, /level=/, "an end of the range is dressed as a verdict");
     });
 
-    it("paint those two glyphs from the palette rather than from a literal", () => {
-        for (const [end, property] of [["low", "--accent-danger"], ["high", "--accent-primary"]]) {
-            const rule = css.match(new RegExp(`\\.value-${end} \\.panel-row-icon\\s*\\{([^}]*)}`));
-
-            assert.notEqual(rule, null, `the ${end} end's glyph takes no colour`);
-            assert.match(rule[1], new RegExp(`color:\\s*var\\(${property}\\)`),
-                `the ${end} end's glyph names a colour of its own`);
-        }
+    // The neutral, not the quiet grey the panels started with: these glyphs name
+    // a measurement and should look chosen rather than left over.
+    it("state that neutral as a colour of its own", () => {
+        assert.match(bodyOf(".panel-row-icon"), /color:\s*var\(--grade,\s*var\(--icon-neutral\)\)/,
+            "an ungraded glyph falls back to something other than the shared neutral");
     });
 });
 
