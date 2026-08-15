@@ -8,6 +8,22 @@ import { SERVER_BUSY } from '../util/authOutcome.js';
 // running for this caller as it will run at once. Transient by construction.
 const SERVICE_UNAVAILABLE = 503;
 
+/**
+ * Whether a 503 came from MySpeed's own throttle rather than from whatever
+ * sits in front of it.
+ *
+ * A reverse proxy fronting a stopped container answers 503 as well, and that
+ * address will never start working - so telling the operator to retry would be
+ * a lie with no end to it. Ours names itself.
+ */
+const isBusyResponse = (res) => {
+    try {
+        return JSON.parse(res.body.toString("utf8"))?.type === SERVER_BUSY;
+    } catch {
+        return false;
+    }
+};
+
 const STATUS_TIMEOUT = 8000;
 
 /**
@@ -45,11 +61,18 @@ export const checkStatus = async (url, password) => {
 
         if (isRedirect(res)) return "INVALID_URL";
         if (res.status === 401) return "PASSWORD_REQUIRED";
-        // A node that is momentarily busy comparing passwords has a perfectly
-        // good address, and calling it invalid sends the operator to check a
-        // URL that was never wrong. Reported as unreachable instead, which is
-        // what it is for the moment and what a retry answers.
-        if (res.status === SERVICE_UNAVAILABLE) return "NODE_BUSY";
+        /*
+         * A node that is momentarily busy comparing passwords has a perfectly
+         * good address, and calling it invalid sends the operator to check a
+         * URL that was never wrong.
+         *
+         * The body has to say so, not just the status. A gateway in front of a
+         * container that is down answers 503 too, and that URL will not start
+         * working however long anyone retries - reporting it as busy would
+         * invite exactly that. MySpeed names itself in the refusal, so the
+         * discriminator is there to use.
+         */
+        if (res.status === SERVICE_UNAVAILABLE && isBusyResponse(res)) return "NODE_BUSY";
         if (res.status < 200 || res.status >= 300) return "INVALID_URL";
 
         const data = JSON.parse(res.body.toString("utf8"));
@@ -132,8 +155,13 @@ export const proxyRequest = async (url, req, res) => {
          * a Retry-After, and flattening that into "Internal server error" threw
          * away both the reason and the retry, telling the operator their node
          * had failed when it was answering perfectly.
+         *
+         * The body has to say it is ours, for the reason checkStatus checks the
+         * same thing: a gateway in front of a stopped container answers 503 as
+         * well, and inviting a retry against an address that will never work is
+         * worse than calling it the server error it is.
          */
-        if (response.status === SERVICE_UNAVAILABLE) {
+        if (response.status === SERVICE_UNAVAILABLE && isBusyResponse(response)) {
             const retryAfter = response.headers["retry-after"];
             if (retryAfter) res.setHeader("Retry-After", retryAfter);
 

@@ -120,6 +120,16 @@ export const NodeContainer = (node) => {
         }),
         async (password) => {
             const res = await (await baseRequest(`/nodes/${node.id}/password`, "PATCH", {password})).json();
+
+            // A node too busy to check the password has not rejected it, and
+            // re-asking would tell the operator a correct password is wrong for
+            // as long as the child stays busy. Reported as what it is, and the
+            // prompt closes rather than looping.
+            if (res.type === "NODE_BUSY") {
+                updateToast(res.message, "red", faExclamationTriangle);
+                return {ok: true};
+            }
+
             if (res.type !== "PASSWORD_UPDATED") return {ok: false};
 
             updateData().catch(() => setNodeError("SERVER_NOT_REACHABLE"));

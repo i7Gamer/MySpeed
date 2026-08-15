@@ -80,16 +80,19 @@ const authorizeMetrics = async (req, res) => {
     }
 
     let valid = false;
+    let compared = false;
 
     try {
         valid = unconfigured
             ? matchesSetupToken(credentials.password)
             : await bcrypt.compare(credentials.password, passwordHash);
+        compared = true;
     } finally {
-        // Released whatever happened, and counted as a failure only if the
-        // guess was actually wrong - a scraper polling with the right password
-        // never spends the failure budget.
-        settleAttempt(req, {failed: valid ? 0 : 1});
+        // Released whatever happened, and counted as a failure only if a
+        // comparison actually ran and the guess was wrong - a scraper polling
+        // with the right password never spends the failure budget, and neither
+        // does an error on the way to checking one.
+        settleAttempt(req, {failed: compared && !valid ? 1 : 0});
     }
 
     if (!valid) {

@@ -2,10 +2,10 @@ import React, {createContext, useEffect, useState} from "react";
 import {useAlert} from "../Alert";
 import {login, request} from "@/common/utils/RequestUtil";
 import {promptUntilAccepted} from "@/common/utils/PasswordPrompt";
-import {promptFor, PROMPT_SETUP_TOKEN, PROMPT_THROTTLED} from "@/common/utils/AuthOutcome";
+import {promptFor, PROMPT_BUSY, PROMPT_SETUP_TOKEN, PROMPT_THROTTLED} from "@/common/utils/AuthOutcome";
 import {markPasswordUnset} from "@/common/utils/PasswordSetup";
 import {
-    apiErrorDialog, passwordRequiredDialog, setupTokenDialog, throttledDialog
+    apiErrorDialog, busyDialog, passwordRequiredDialog, setupTokenDialog, throttledDialog
 } from "@/common/contexts/Config/dialog";
 import WelcomeDialog from "@/common/components/WelcomeDialog";
 import LockedNotice from "@/common/components/LockedNotice";
@@ -32,7 +32,11 @@ export const ConfigProvider = (props) => {
             // discarded it one line before it was needed, so every refusal -
             // including one from an instance with no password at all - asked
             // for "your password".
-            if (res.status === 401 || res.status === 429) {
+            // 503 joins them: a busy instance is refusing this caller for a
+            // reason it can name, and treating it as unreachable put an
+            // unclosable "could not reach the API" dialog over a server that
+            // was answering perfectly well.
+            if (res.status === 401 || res.status === 429 || res.status === 503) {
                 const body = await res.json().catch(() => ({}));
                 throw {credential: true, type: body?.type};
             }
@@ -91,6 +95,10 @@ export const ConfigProvider = (props) => {
             const kind = promptFor(type);
 
             if (kind === PROMPT_THROTTLED) return openAlertDialog(throttledDialog());
+            // Its own dialog, not the password box with a red line above it:
+            // this refusal is about the server being busy, and the primary
+            // prompt is where an operator meets it first.
+            if (kind === PROMPT_BUSY) return openAlertDialog(busyDialog());
 
             const dialogConfig = kind === PROMPT_SETUP_TOKEN
                 ? setupTokenDialog(failed)

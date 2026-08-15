@@ -290,17 +290,25 @@ const handleUnconfigured = (req, res, next) => {
     if (admission === ATTEMPT_BUSY) return busyComparing(res);
 
     let matched = false;
+    let compared = false;
 
     try {
         matched = candidates.some(matchesSetupToken);
+        compared = true;
     } finally {
-        // In a finally like the other two paths, so a throw from the comparison
-        // cannot leave the reservation held. Nothing here awaits, so this is
-        // symmetry rather than a race - but an unreleased reservation has no
-        // expiry short of the sweep above, and the three paths sharing one
-        // counter should not each release it differently.
+        // In a finally like the other two paths, so a throw cannot leave the
+        // reservation held - an unreleased one has no expiry short of the sweep
+        // above, and the three paths sharing these counters should not each
+        // release them differently.
+        //
+        // The release is unconditional; the charge is not. A throw here is the
+        // server's fault, and charging the caller's failure budget for it would
+        // let an internal error lock them out for the window.
         if (candidates.length > 0)
-            settleAttempt(req, {reserved: candidates.length, failed: matched ? 0 : candidates.length});
+            settleAttempt(req, {
+                reserved: candidates.length,
+                failed: compared && !matched ? candidates.length : 0
+            });
     }
 
     if (matched) {
@@ -351,6 +359,7 @@ export default (allowViewAccess) => async (req, res, next) => {
         // from bcrypt - a malformed hash would otherwise leak it and wedge the
         // caller at the in-flight cap for the rest of the window.
         let matched = false;
+        let compared = false;
 
         try {
             // Asynchronous on purpose: bcrypt.compareSync holds the only thread
@@ -362,11 +371,18 @@ export default (allowViewAccess) => async (req, res, next) => {
                     break;
                 }
             }
+
+            compared = true;
         } finally {
             // Only what was actually compared and found wrong is a failure. A
             // correct password leaves the failure budget untouched, so a burst
-            // of legitimate logins can never lock a client out.
-            settleAttempt(req, {reserved: candidates.length, failed: matched ? 0 : candidates.length});
+            // of legitimate logins can never lock a client out - and a throw
+            // from bcrypt is the server's fault, so it releases the reservation
+            // without spending the caller's budget either.
+            settleAttempt(req, {
+                reserved: candidates.length,
+                failed: compared && !matched ? candidates.length : 0
+            });
         }
 
         if (matched) {

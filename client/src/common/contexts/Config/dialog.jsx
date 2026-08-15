@@ -53,6 +53,21 @@ export const throttledDialog = () => ({
     onSuccess: () => window.location.reload()
 });
 
+/**
+ * The server is already comparing as many passwords for this caller as it will
+ * at once. Not an input, for the same reason the throttle's is not - nothing
+ * typed now can be accepted - but a different claim: no attempt was rejected,
+ * and saying "the password you entered is incorrect" here sends the operator
+ * looking for a fault in a credential that was never judged.
+ */
+export const busyDialog = () => ({
+    title: t("dialog.busy.title"),
+    description: <span className="icon-red">{t("dialog.busy.description")}</span>,
+    buttonText: t("dialog.retry"),
+    disableCloseButton: true,
+    onSuccess: () => window.location.reload()
+});
+
 export const apiErrorDialog = () => ({
     title: t("dialog.api.title"),
     description: <span className="icon-red">{t("dialog.api.description")}</span>,

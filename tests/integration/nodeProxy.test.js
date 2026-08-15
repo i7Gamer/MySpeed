@@ -60,6 +60,13 @@ const startUpstream = () => new Promise((resolve) => {
                 type: "SERVER_BUSY"}));
         }
 
+        // What a reverse proxy in front of a stopped container answers. Same
+        // status, no MySpeed body - and that address will never start working.
+        if (req.url.startsWith("/api/gateway-down")) {
+            res.writeHead(503, {"content-type": "text/html"});
+            return res.end("<html><body>503 Service Temporarily Unavailable</body></html>");
+        }
+
         // Accepts and then says nothing, so a disconnecting caller is the only
         // thing that can end the exchange.
         if (req.url.startsWith("/api/hang")) {
@@ -224,6 +231,21 @@ describe("node proxy", () => {
 
             assert.equal(headers.get("retry-after"), "1");
         });
+    });
+
+    /**
+     * A gateway's 503 is not a busy MySpeed.
+     *
+     * A reverse proxy in front of a stopped container answers 503 too, and that
+     * address will never start working - so reporting it as "busy, try again"
+     * invites retries with no end. Ours names itself in the body; the proxy
+     * forwards anything else as the server error it is.
+     */
+    it("does not call a gateway's 503 a busy node", async () => {
+        const {status, body} = await api(server.baseUrl, `/nodes/${nodeId}/gateway-down`);
+
+        assert.equal(status, 500);
+        assert.notEqual(body.type, "SERVER_BUSY");
     });
 
     it("preserves the upstream status code", async () => {

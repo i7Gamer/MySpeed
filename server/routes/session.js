@@ -46,6 +46,7 @@ app.post("/", async (req, res) => {
             .json({message: "The server is busy checking passwords. Please try again", type: SERVER_BUSY});
 
     let valid = false;
+    let compared = false;
     let unconfigured;
 
     try {
@@ -55,11 +56,13 @@ app.post("/", async (req, res) => {
         valid = unconfigured
             ? matchesSetupToken(supplied)
             : await bcrypt.compare(supplied, passwordHash);
+        compared = true;
     } finally {
-        // Released whatever happened, and counted as a failure only if the
-        // guess was actually wrong - a correct password never spends the
-        // failure budget.
-        settleAttempt(req, {failed: valid ? 0 : 1});
+        // Released whatever happened, and counted as a failure only if a
+        // comparison actually ran and the guess was wrong. A correct password
+        // never spends the failure budget, and neither does a database error
+        // on the way to checking one.
+        settleAttempt(req, {failed: compared && !valid ? 1 : 0});
     }
 
     if (!valid) {

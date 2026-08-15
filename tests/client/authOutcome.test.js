@@ -1,4 +1,7 @@
 import { describe, it } from "node:test";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import {
     PASSWORD_REQUIRED, PROMPT_BUSY, PROMPT_PASSWORD, PROMPT_SETUP_TOKEN, PROMPT_THROTTLED,
@@ -112,5 +115,38 @@ describe("a refusal because the server is busy", () => {
 
     it("offers a retry rather than a box to type into", () => {
         assert.equal(lockedNoticeKeys(SERVER_BUSY).action, "dialog.retry");
+    });
+});
+
+/**
+ * And the primary prompt honours it, not just the header's.
+ *
+ * The refusal dispatcher naming a case is only half of it: ConfigContext's
+ * credential loop compared the prompt kind against PROMPT_THROTTLED alone and
+ * fell through to the password box, whose description is a hardcoded "the
+ * password you entered is incorrect". So the one place an operator meets this
+ * first still blamed their credentials.
+ */
+describe("the credential prompt's own branches", () => {
+    const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+    const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+
+    it("has a dialog for a busy server", () => {
+        assert.match(read("client/src/common/contexts/Config/dialog.jsx"), /export const busyDialog/,
+            "there is no busy dialog for the prompt to open");
+    });
+
+    it("opens it rather than the password box", () => {
+        assert.match(read("client/src/common/contexts/Config/ConfigContext.jsx"),
+            /kind === PROMPT_BUSY.*busyDialog\(\)/s,
+            "a busy refusal still falls through to the wrong-password prompt");
+    });
+
+    // Otherwise the unclosable "could not reach the API" dialog covers a server
+    // that is answering perfectly well.
+    it("treats a busy refusal as a refusal, not an unreachable API", () => {
+        assert.match(read("client/src/common/contexts/Config/ConfigContext.jsx"),
+            /res\.status === 401 \|\| res\.status === 429 \|\| res\.status === 503/,
+            "a 503 is classified as the API being unreachable");
     });
 });
