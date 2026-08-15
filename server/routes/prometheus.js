@@ -4,7 +4,7 @@ import promClient from 'prom-client';
 import * as config from '../controller/config.js';
 import * as serverController from '../controller/servers.js';
 import bcrypt from 'bcryptjs';
-import { allowsPasswordlessAccess, clearFailedAttempts, isThrottled, recordFailedAttempt } from '../middlewares/password.js';
+import { allowsPasswordlessAccess, chargeAttempt, clearFailedAttempts } from '../middlewares/password.js';
 import { matchesSetupToken } from '../util/setupToken.js';
 import { isFailedTest } from '../util/testOutcome.js';
 
@@ -51,22 +51,22 @@ const authorizeMetrics = async (req, res) => {
 
     if (unconfigured && allowsPasswordlessAccess(req)) return true;
 
-    if (isThrottled(req)) {
-        res.status(429).end('Too many failed attempts');
-        return false;
-    }
-
     const credentials = readBasicAuth(req);
     if (credentials === null || credentials.username !== METRICS_USERNAME) {
         unauthorized(res);
         return false;
     }
 
-    // Charged before the comparison, and refunded below if it turns out to be
-    // right. Recorded afterwards it sat behind the awaited compare, so a batch
-    // of scrapes arriving together all read the count before any of them raised
-    // it and the shared limit bounded only the guesses that queued.
-    recordFailedAttempt(req);
+    // Refused or charged in one atomic call, and refunded below if the guess
+    // turns out to be right - see chargeAttempt for why the check and the
+    // write must not be separable. After the credentials parse, not before it:
+    // only a request carrying a guess costs bcrypt work, so only one spends
+    // the budget, and a locked-out scraper that sent no credentials still gets
+    // the WWW-Authenticate challenge that says what is missing.
+    if (!chargeAttempt(req)) {
+        res.status(429).end('Too many failed attempts');
+        return false;
+    }
 
     const valid = unconfigured
         ? matchesSetupToken(credentials.password)

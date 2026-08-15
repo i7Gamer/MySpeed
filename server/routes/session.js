@@ -4,7 +4,7 @@ import * as config from '../controller/config.js';
 import { matchesSetupToken } from '../util/setupToken.js';
 import { createSession, destroySession, isValidSession, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from '../util/session.js';
 import { readCookie, serialiseCookie } from '../util/cookies.js';
-import { clearFailedAttempts, isThrottled, recordFailedAttempt } from '../middlewares/password.js';
+import { chargeAttempt, clearFailedAttempts } from '../middlewares/password.js';
 import { PASSWORD_REQUIRED, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS } from '../util/authOutcome.js';
 
 const app = express.Router();
@@ -19,21 +19,21 @@ const app = express.Router();
  * switching between the two.
  */
 app.post("/", async (req, res) => {
-    if (isThrottled(req))
-        return res.status(429).json({
-            message: "Too many failed password attempts. Please try again later",
-            type: TOO_MANY_ATTEMPTS
-        });
-
     const supplied = req.body?.password;
     if (typeof supplied !== "string" || supplied === "")
         return res.status(400).json({message: "You need to provide a password"});
 
-    // Charged before the comparison, and refunded below if it turns out to be
-    // right. Recorded afterwards it sat behind two awaits, so a batch of
-    // requests arriving together all read the count before any of them raised
-    // it and the shared limit bounded only the guesses that queued.
-    recordFailedAttempt(req);
+    // Refused or charged in one atomic call, and refunded below if the guess
+    // turns out to be right - see chargeAttempt for why the check and the
+    // write must not be separable. After the body validation, not before it:
+    // only a request carrying a guess costs bcrypt work, so only one spends
+    // the budget, and a locked-out caller with no usable body is told about
+    // the body - the answer they can act on.
+    if (!chargeAttempt(req))
+        return res.status(429).json({
+            message: "Too many failed password attempts. Please try again later",
+            type: TOO_MANY_ATTEMPTS
+        });
 
     const passwordHash = await config.getValue("password");
     const unconfigured = passwordHash === config.NO_PASSWORD;

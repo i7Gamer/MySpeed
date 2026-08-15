@@ -59,14 +59,41 @@ const recordFailure = (key, attempts = 1) => {
 export const resetFailedAttempts = () => failedAttempts.clear();
 
 /**
- * The throttle, for routes that authenticate outside this middleware.
+ * Charges the caller for guesses they are about to make, or refuses them.
  *
- * /api/prometheus/metrics runs its own bcrypt comparison against the same hash;
- * without these it was an unlimited online password oracle and, at one bcrypt
- * per request, a way to saturate the event loop.
+ * The check and the charge in one synchronous body - the atomicity is the
+ * point, not a convenience. This used to be two functions, isThrottled and
+ * recordFailedAttempt, and every entry point separated them with awaits:
+ * bcrypt.compare deliberately yields the event loop, so a batch of requests
+ * arriving together all read the count before any of them had raised it, all
+ * passed the limit, and all ran their comparisons. MAX_FAILED_ATTEMPTS bounded
+ * only the guesses that queued. With both halves in one function and no await
+ * between them, each caller's check sees every earlier caller's charge,
+ * however many are in flight.
+ *
+ * Charged before the verify rather than after it, and refunded through
+ * clearFailedAttempts when the guess turns out to be right - the discipline
+ * every caller shares. `attempts` is per readPasswords: a request can carry up
+ * to three attacker-chosen candidates across the two headers, and charging one
+ * for the list handed out free guesses.
+ *
+ * The separable halves are deliberately not exported any more. A route that
+ * could import a bare check and a bare record is a route that can put an await
+ * between them; this surface refuses the mistake instead of testing for it.
+ *
+ * /api/session and /api/prometheus/metrics authenticate outside this
+ * middleware but spend this same counter, so an attacker cannot win a fresh
+ * budget by switching between the three ways in.
  */
-export const isThrottled = (req) => isLockedOut(clientKey(req));
-export const recordFailedAttempt = (req) => recordFailure(clientKey(req));
+export const chargeAttempt = (req, attempts = 1) => {
+    const key = clientKey(req);
+
+    if (isLockedOut(key)) return false;
+
+    recordFailure(key, attempts);
+    return true;
+};
+
 export const clearFailedAttempts = (req) => failedAttempts.delete(clientKey(req));
 
 /**
@@ -99,17 +126,14 @@ const handleUnconfigured = (req, res, next) => {
     }
 
     const candidates = readPasswords(req);
-    const key = clientKey(req);
 
-    if (candidates.length > 0 && isLockedOut(key)) return tooManyAttempts(res);
-
-    // Charged up front and refunded on a match, the same discipline as the
-    // password path, and once per candidate for the same reason: the list is
-    // whatever the caller chose to put in the two headers.
-    if (candidates.length > 0) recordFailure(key, candidates.length);
+    // Refused or charged in the one call, once per candidate: the list is
+    // whatever the caller chose to put in the two headers. Refunded below on a
+    // match, the same discipline as the password path.
+    if (candidates.length > 0 && !chargeAttempt(req, candidates.length)) return tooManyAttempts(res);
 
     if (candidates.some(matchesSetupToken)) {
-        failedAttempts.delete(key);
+        clearFailedAttempts(req);
         req.viewMode = false;
         return next();
     }
@@ -142,33 +166,20 @@ export default (allowViewAccess) => async (req, res, next) => {
     if (passwordHash === config.NO_PASSWORD) return handleUnconfigured(req, res, next);
 
     const candidates = readPasswords(req);
-    const key = clientKey(req);
-    const throttled = candidates.length > 0 && isLockedOut(key);
+
+    // Refused or charged in the one atomic call - see chargeAttempt for why the
+    // check and the write must not be separable. A throttled caller is not
+    // refused here: read access may still be on offer below, and the 429 waits
+    // for that to be settled.
+    const throttled = candidates.length > 0 && !chargeAttempt(req, candidates.length);
 
     if (candidates.length > 0 && !throttled) {
-        /*
-         * Charged before the comparisons, and refunded below if one of them
-         * matches.
-         *
-         * Recorded afterwards, the counter was read at the top of every request
-         * and written only once bcrypt had finished - and bcrypt.compare
-         * deliberately yields the event loop, in chunks, which is the whole
-         * reason it is the async one. So a batch of requests arriving together
-         * all read the count before any of them had raised it, all passed the
-         * limit, and all ran their comparisons: twenty guesses a minute became
-         * as many as the outer rate limiter would carry, at the matching cost in
-         * bcrypt work - the exact thing this throttle exists to bound. The write
-         * is synchronous, so moving it in front of the first await is enough for
-         * the whole batch to see it.
-         */
-        recordFailure(key, candidates.length);
-
         // Asynchronous on purpose: bcrypt.compareSync holds the only thread for
         // the entire cost of the hash, so a handful of wrong passwords stalled
         // every other request on the server, /api/health included.
         for (const candidate of candidates) {
             if (await bcrypt.compare(candidate, passwordHash)) {
-                failedAttempts.delete(key);
+                clearFailedAttempts(req);
                 req.viewMode = false;
                 return next();
             }

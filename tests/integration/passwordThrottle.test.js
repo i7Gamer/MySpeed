@@ -4,6 +4,8 @@ import { bootServer, api, setConfig } from "./helpers/boot.js";
 
 let server;
 let resetFailedAttempts;
+let chargeAttempt;
+let clearFailedAttempts;
 let passwordMiddleware;
 
 const MAX_FAILED_ATTEMPTS = 20;
@@ -13,7 +15,7 @@ before(async () => {
 
     const module = await import("../../server/middlewares/password.js");
 
-    ({resetFailedAttempts} = module);
+    ({resetFailedAttempts, chargeAttempt, clearFailedAttempts} = module);
     // The same middleware the routes mount, for the assertions that need calls
     // to genuinely overlap - see "attempts made at the same time".
     passwordMiddleware = module.default(false);
@@ -175,6 +177,68 @@ describe("password attempt throttling", () => {
 
             assert.equal(await attempt("Hunter2!"), 200);
             assert.equal(await attempt("not-the-password"), 401);
+        });
+    });
+
+    /**
+     * The check and the charge are one call, and that call is atomic.
+     *
+     * The counter used to be a two-function API - isThrottled read it,
+     * recordFailedAttempt wrote it - and the two were separated by awaits at
+     * every entry point, so simultaneous guesses all read the count before any
+     * of them raised it. chargeAttempt is both halves in one synchronous body:
+     * however many callers are in flight, each one's check sees every earlier
+     * caller's charge, because nothing can run between the two lines.
+     *
+     * This is the one place the race is pinned. The three entry points - the
+     * middleware, the session exchange, the Prometheus scrape - all spend the
+     * counter through this function now; their own tests only have to show the
+     * wiring, which sequential requests do fine.
+     */
+    describe("chargeAttempt", () => {
+        const CALLER = {headers: {}, socket: {remoteAddress: "203.0.113.77"}};
+
+        it("admits exactly the budget, however simultaneous the calls are", async () => {
+            const outcomes = await Promise.all(
+                Array.from({length: MAX_FAILED_ATTEMPTS * 3}, async () => {
+                    if (!chargeAttempt(CALLER)) return "throttled";
+
+                    // A stand-in for the bcrypt compare: the yield to the event
+                    // loop is the window the old shape raced in.
+                    await new Promise((resolve) => setTimeout(resolve, 5));
+                    return "compared";
+                }));
+
+            assert.equal(outcomes.filter((outcome) => outcome === "compared").length, MAX_FAILED_ATTEMPTS,
+                "more comparisons ran than the budget allows");
+            assert.equal(outcomes.filter((outcome) => outcome === "throttled").length, MAX_FAILED_ATTEMPTS * 2);
+        });
+
+        it("charges what it is told the request carries", async () => {
+            const HALF = MAX_FAILED_ATTEMPTS / 2;
+
+            for (let i = 0; i < HALF; i++) assert.equal(chargeAttempt(CALLER, 2), true);
+
+            assert.equal(chargeAttempt(CALLER), false, "two guesses a request were charged as one");
+        });
+
+        it("is refunded by the same module", async () => {
+            for (let i = 0; i < MAX_FAILED_ATTEMPTS - 1; i++) chargeAttempt(CALLER);
+            clearFailedAttempts(CALLER);
+
+            assert.equal(chargeAttempt(CALLER), true, "the refund did not reach the counter");
+        });
+
+        /**
+         * The separable halves are gone, not merely unused. As long as a route
+         * could import a bare check and a bare record, the next entry point
+         * could reintroduce the race; now the module surface refuses it.
+         */
+        it("cannot be taken apart again", async () => {
+            const module = await import("../../server/middlewares/password.js");
+
+            assert.equal(module.isThrottled, undefined, "the bare check is importable again");
+            assert.equal(module.recordFailedAttempt, undefined, "the bare charge is importable again");
         });
     });
 

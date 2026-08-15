@@ -3,9 +3,12 @@ import assert from "node:assert/strict";
 import { bootServer, api, seedTests, setConfig } from "./helpers/boot.js";
 
 let server;
+let resetFailedAttempts;
+let chargeAttempt;
 
 before(async () => {
     server = await bootServer();
+    ({resetFailedAttempts, chargeAttempt} = await import("../../server/middlewares/password.js"));
 });
 
 after(async () => {
@@ -13,6 +16,7 @@ after(async () => {
 });
 
 beforeEach(async () => {
+    resetFailedAttempts();
     await setConfig(server.config, "password", "none");
     await seedTests(server.tests, [{created: new Date().toISOString()}]);
 });
@@ -46,6 +50,86 @@ describe("GET /api/prometheus/metrics", () => {
     it("rejects a different username", async () => {
         await setConfig(server.config, "password", "Hunter2!");
         assert.equal((await metrics(basic("grafana:Hunter2!"))).status, 401);
+    });
+
+    /**
+     * The scrape shares the failed-attempt counter with the password
+     * middleware - the comment on authorizeMetrics says so, and until now no
+     * test held it to that.
+     *
+     * Whether the counter is wired up at all is a different question from
+     * whether simultaneous guesses race it, and only the second needs
+     * concurrency - that one is pinned in passwordThrottle.test.js, once,
+     * against the one function all three entry points spend the counter
+     * through. So these are sequential, and the lockout is built through
+     * chargeAttempt rather than twenty HTTP requests: this route sits behind
+     * its own 60-per-minute rate limiter, and five tests of twenty scrapes
+     * each tripped it, failing everything after them for the wrong reason.
+     * The one real wrong scrape in the first test is what proves the route
+     * charges the shared counter; the 429s prove it checks it.
+     */
+    describe("the failed-attempt counter", () => {
+        const MAX_FAILED_ATTEMPTS = 20;
+
+        // The same identity the HTTP requests arrive as, so the charges and
+        // the scrapes land on one counter.
+        const sameCaller = {headers: {}, socket: {remoteAddress: "127.0.0.1"}};
+        const spend = (attempts) => {
+            for (let i = 0; i < attempts; i++) chargeAttempt(sameCaller);
+        };
+
+        it("refuses to keep comparing after too many wrong passwords", async () => {
+            await setConfig(server.config, "password", "Hunter2!");
+
+            // One short of the limit, then one genuine wrong scrape: the 429
+            // that follows proves the scrape recorded the twentieth.
+            spend(MAX_FAILED_ATTEMPTS - 1);
+            assert.equal((await metrics(basic("prometheus:nope"))).status, 401);
+
+            assert.equal((await metrics(basic("prometheus:nope"))).status, 429,
+                "the scrape either did not charge the counter or does not check it");
+        });
+
+        it("refuses even the correct password while locked out", async () => {
+            await setConfig(server.config, "password", "Hunter2!");
+
+            spend(MAX_FAILED_ATTEMPTS);
+            assert.equal((await metrics(basic("prometheus:Hunter2!"))).status, 429);
+        });
+
+        it("clears the counter on a successful scrape", async () => {
+            await setConfig(server.config, "password", "Hunter2!");
+
+            spend(MAX_FAILED_ATTEMPTS - 1);
+            assert.equal((await metrics(basic("prometheus:Hunter2!"))).status, 200);
+
+            assert.equal((await metrics(basic("prometheus:nope"))).status, 401, "the counter was not reset");
+        });
+
+        // One counter for all three ways in, so an attacker cannot win a fresh
+        // budget by switching to the scrape - the charges above came from the
+        // middleware's own function, and here the header path is refused too.
+        it("is the same counter the password header spends", async () => {
+            await setConfig(server.config, "password", "Hunter2!");
+
+            spend(MAX_FAILED_ATTEMPTS);
+            const {status} = await api(server.baseUrl, "/speedtests?limit=1",
+                {headers: {"x-password": "nope"}});
+            assert.equal(status, 429);
+        });
+
+        /**
+         * A request carrying no guess costs no bcrypt work, so it is never
+         * throttled - the principle the middleware has always stated. A
+         * locked-out caller with no credentials gets the 401 challenge that
+         * tells them what is missing, not a 429 about guesses they did not make.
+         */
+        it("still challenges a locked-out caller who sent no credentials", async () => {
+            await setConfig(server.config, "password", "Hunter2!");
+
+            spend(MAX_FAILED_ATTEMPTS);
+            assert.equal((await metrics()).status, 401);
+        });
     });
 
     /**
