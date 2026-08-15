@@ -73,7 +73,21 @@ $row-min-height: 3rem
   // row below it that did not. Each is the widest that column ever needs -
   // measured, with a digit's slack - so every row lays out identically and the
   // numbers can be compared down a column.
-  grid-template-columns: 12rem 13rem 5rem 15.75rem 15.5rem auto
+  //
+  // Re-measured against whole speeds. The figures lost their decimals and the
+  // speed tracks were never resized, so each carried some 35px of air it no
+  // longer needed - while the ping had quietly become the widest column in the
+  // row and was 26px short of its own contents. A grid item does not clip, so
+  // the surplus was drawn over the grade badge beside it: measured, the two
+  // touched from 960px down and overlapped by 9px just above the breakpoint,
+  // and at every width the ping-to-badge gap was the tightest on the row.
+  //
+  // The total is deliberately unchanged, which is why the breakpoints below
+  // are: what the speeds gave back is very nearly what the ping needed, so
+  // there is no width here to win, only slack to put where it is used. The
+  // widest row is a 10 Gbit line - "10000 Mbps" twice - with a three-digit ping
+  // carrying a jitter and a two-decimal packet loss stacked beside it.
+  grid-template-columns: 11.75rem 16rem 5rem 14.25rem 14.25rem auto
   justify-content: space-between
   padding: 1.5rem 2rem
   align-items: center
@@ -278,9 +292,9 @@ $row-min-height: 3rem
 // what the new column costs; the date gives up its 11rem floor in the same
 // breath, being the one column whose content is not a measurement.
 //
-// Measured rather than guessed, and against the widest row there is: a 2.3 Gbit
-// line's "2368.74 Mbps" twice over, a ping with its jitter and packet loss
-// stacked beside it, a grade badge and the date.
+// Measured rather than guessed, and against the widest row there is: a 10 Gbit
+// line's "10000 Mbps" twice over, a three-digit ping with its jitter and packet
+// loss stacked beside it, a grade badge and the date.
 //
 // Equal shares make the binding number the widest one column needs, not what
 // they need together: the download's 249px at 28pt, four times over, is 1299px
@@ -291,9 +305,13 @@ $row-min-height: 3rem
 // They were 1400 and 1080 while the bufferbloat was drawn as a number and the
 // quality figures ran side by side. That row wanted 1286px - more than the
 // three-column row it replaced ever did.
+//
+// The tracks here were re-measured with the speeds whole; the sum is what it
+// was, so this threshold is too. What moved is which column holds the slack -
+// see the note above the base grid.
 @media (max-width: 1400px)
   .speedtest
-    grid-template-columns: 9.5rem 11rem 5rem 12rem 11.75rem auto
+    grid-template-columns: 9.25rem 13rem 5rem 11rem 11rem auto
     padding: 1.25rem 1.25rem
   .date-text
     font-size: 18pt
@@ -329,7 +347,11 @@ $row-min-height: 3rem
 // keep them. It was 1150 when every column took a quarter of the row.
 @media (max-width: 920px)
   .speedtest
-    grid-template-columns: 9.5rem 11rem 12rem
+    // The same three widths the six-column row uses, minus the two tracks that
+    // fold away: the ping and the badge share a column here, one above the
+    // other, so that column is sized by whichever is wider - which is the ping
+    // with its two quality figures, not the badge with its milliseconds.
+    grid-template-columns: 9.25rem 13rem 11rem
     // Both lines reserve the badge's height whether or not there is a badge on
     // them. The grade is drawn at the size of an icon, which is taller than a
     // value's line box, so without this a row carrying one stood 14px taller
