@@ -5,7 +5,7 @@ import { matchesSetupToken } from '../util/setupToken.js';
 import { createSession, destroySession, isValidSession, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from '../util/session.js';
 import { readCookie, serialiseCookie } from '../util/cookies.js';
 import {
-    ATTEMPT_BUSY, ATTEMPT_LOCKED_OUT, clearFailedAttempts, reserveAttempt, settleAttempt
+    ATTEMPT_BUSY, ATTEMPT_LOCKED_OUT, clearFailedAttempts, reserveAttempt
 } from '../middlewares/password.js';
 import { PASSWORD_REQUIRED, SERVER_BUSY, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS } from '../util/authOutcome.js';
 
@@ -32,7 +32,7 @@ app.post("/", async (req, res) => {
     // about the body - the answer they can act on.
     const admission = reserveAttempt(req);
 
-    if (admission === ATTEMPT_LOCKED_OUT)
+    if (admission.outcome === ATTEMPT_LOCKED_OUT)
         return res.status(429).json({
             message: "Too many failed password attempts. Please try again later",
             type: TOO_MANY_ATTEMPTS
@@ -41,7 +41,7 @@ app.post("/", async (req, res) => {
     // Busy is not a refused credential: the caller's own correct sign-ins can
     // briefly fill the in-flight slots, and telling them the password was wrong
     // would send them looking for a problem that does not exist.
-    if (admission === ATTEMPT_BUSY)
+    if (admission.outcome === ATTEMPT_BUSY)
         return res.status(503).set("Retry-After", "1")
             .json({message: "The server is busy checking passwords. Please try again", type: SERVER_BUSY});
 
@@ -62,7 +62,7 @@ app.post("/", async (req, res) => {
         // comparison actually ran and the guess was wrong. A correct password
         // never spends the failure budget, and neither does a database error
         // on the way to checking one.
-        settleAttempt(req, {failed: compared && !valid ? 1 : 0});
+        admission.settle({failed: compared && !valid ? 1 : 0});
     }
 
     if (!valid) {

@@ -34,6 +34,11 @@ const MAX_TRACKED_CLIENTS = 10000;
  * when the count reaches the limit. So the honest guarantee is "on the order of
  * the budget", not "at most the budget", and either way it is bounded work that
  * ends in a locked window rather than the unbounded run the old shape allowed.
+ *
+ * Only wrong guesses end in that lockout, so a caller whose comparisons succeed
+ * is bounded by this cap alone - which is why the count it keeps has to track
+ * reality exactly rather than approximately. Two earlier shapes did not; see
+ * liveReservations.
  */
 const MAX_ATTEMPTS_IN_FLIGHT = MAX_FAILED_ATTEMPTS;
 
@@ -110,9 +115,10 @@ export const resetFailedAttempts = () => {
  * with "Too many failed password attempts", and on the node path that 429
  * surfaced as INVALID_URL - a healthy node reported as a bad address.
  *
- * So: `settleAttempt` releases the reservation whatever the outcome, and only a
- * comparison that came back wrong is recorded as a failure. A caller who gets
- * it right is charged nothing and leaves no trace.
+ * So: the `settle` handed back with the admission releases the reservation
+ * whatever the outcome, and only a comparison that came back wrong is recorded
+ * as a failure. A caller who gets it right is charged nothing and leaves no
+ * trace.
  *
  * The two refusals are told apart because they mean different things to the
  * caller. Out of failure budget is about *them* and lasts the window; at the
@@ -140,98 +146,106 @@ export const ATTEMPT_BUSY = "busy";
 /**
  * A reservation cannot outlive this.
  *
- * Every path that reserves also settles in a `finally`, so in principle this
+ * Every path that reserves also releases in a `finally`, so in principle this
  * never fires. It exists because the cost of being wrong is asymmetric: the
- * failure count expires on its own, but an in-flight count has nothing to
- * decay it, so one missed release would wedge that caller at the cap for the
+ * failure count expires on its own, but a held reservation has nothing else to
+ * clear it, so one missed release would wedge that caller at the cap for the
  * life of the process - a permanent lockout, which is a worse fault than the
- * one this whole counter was split in two to fix. A stale reservation is
- * discarded instead, which at worst lets a burst through a window late.
+ * one this counter was split in two to fix. A stale reservation is discarded
+ * instead, which at worst lets a burst through a window late.
  */
 const IN_FLIGHT_MAX_AGE_MS = ATTEMPT_WINDOW_MS;
 
-/*
- * The sweep is approximate, deliberately, and only in the safe direction.
+/**
+ * The reservations a client currently holds, each owned by the request that
+ * took it.
  *
- * A reservation carries no identity, so a settle arriving after its own
- * reservation was swept decrements whatever entry it finds - which may belong
- * to a later request. The effect is under-counting: a slot is freed while its
- * comparison is still running, so the cap can be briefly exceeded. It cannot
- * over-count, and so cannot refuse anyone who should be admitted, which is the
- * failure that would matter.
+ * Identity is the point. Two simpler shapes were tried and both drifted,
+ * because a release that cannot say which reservation is its own has to guess:
  *
- * Reaching it requires a reservation to outlive the window, and every path
- * settles in a `finally` - so it needs a bcrypt comparison hung for a full
- * minute, by which point the instance has a larger problem than its throttle.
- * Giving each reservation a token to settle against would make this exact, at
- * the cost of threading that token through three call sites and two routes to
- * fix a case that resolves itself on the next request.
+ * - Release the oldest, and a leaked reservation is quietly consumed by the
+ *   next caller's release while its orphan takes the leak's place. The deficit
+ *   never clears and the backstop never gets to expire anything.
+ * - Release the newest, and under sustained load the oldest is never released
+ *   at all: it ages past the window and is swept while its comparison is still
+ *   running, so true concurrency climbs by a capful every window while the
+ *   counter reads twenty.
+ *
+ * Neither is a rounding error - both compound - and no ordering rule fixes it,
+ * because the information needed is which reservation belongs to the caller.
+ * So `reserveAttempt` hands back the release for exactly the reservations it
+ * took. A leak expires on its own deadline whatever the traffic, a busy
+ * client's live reservations are never touched by someone else's release, and
+ * a release arriving after its own reservation was swept finds nothing of its
+ * own and does nothing.
+ *
+ * The list is bounded by the cap, so it holds at most twenty entries.
  */
+const liveReservations = (key, now) => {
+    const held = attemptsInFlight.get(key);
+    if (held === undefined) return null;
 
-const runningFor = (key, now) => {
-    const entry = attemptsInFlight.get(key);
+    // Anything past its deadline is a reservation whose release never arrived;
+    // every path releases in a `finally`, so this is a backstop.
+    const live = held.filter((reservation) => now < reservation.staleAt);
 
-    if (entry === undefined) return 0;
-    if (now >= entry.staleAt) {
+    if (live.length === 0) {
         attemptsInFlight.delete(key);
-        return 0;
+        return null;
     }
 
-    return entry.count;
+    if (live.length !== held.length) attemptsInFlight.set(key, live);
+
+    return live;
 };
 
 /**
- * Keeps the entry's own deadline rather than starting a new one.
+ * Releases the reservations one request took, and records the failures they
+ * turned out to be.
  *
- * `staleAt` dates from when the entry was created, and every later write
- * preserves it. Refreshing it on each reservation and release looked tidier and
- * disabled the sweep entirely: under any steady traffic each settle pushed the
- * deadline out again, so a leaked reservation was carried forward for the life
- * of the process - which is the permanent wedge the sweep exists to prevent.
- *
- * Entries are created and deleted within milliseconds in normal use, so the
- * fixed lifetime is never reached by a healthy burst.
+ * `failed` is how many of them came back wrong: 0 for a caller who got it
+ * right, which is what keeps a correct password off the failure budget, and 0
+ * again when the comparison never ran, so an internal error cannot spend it.
  */
-const holding = (key, count, now) => {
-    const existing = attemptsInFlight.get(key);
+const releaseWith = (key, ticket) => ({failed = 0} = {}) => {
+    const live = liveReservations(key, Date.now());
 
-    attemptsInFlight.set(key, {count, staleAt: existing?.staleAt ?? now + IN_FLIGHT_MAX_AGE_MS});
+    if (live !== null) {
+        const remaining = live.filter((reservation) => reservation.ticket !== ticket);
+
+        if (remaining.length > 0) attemptsInFlight.set(key, remaining);
+        else attemptsInFlight.delete(key);
+    }
+
+    if (failed > 0) recordFailure(key, failed);
 };
+
+/** Releases nothing, for the refusals and for a request that carried no guess. */
+const releaseNothing = () => undefined;
 
 export const reserveAttempt = (req, attempts = 1) => {
     const key = clientKey(req);
     const now = Date.now();
 
-    if (isLockedOut(key)) return ATTEMPT_LOCKED_OUT;
+    if (isLockedOut(key)) return {outcome: ATTEMPT_LOCKED_OUT, settle: releaseNothing};
 
-    const running = runningFor(key, now);
-    if (running + attempts > MAX_ATTEMPTS_IN_FLIGHT) return ATTEMPT_BUSY;
+    const live = liveReservations(key, now) ?? [];
+    if (live.length + attempts > MAX_ATTEMPTS_IN_FLIGHT)
+        return {outcome: ATTEMPT_BUSY, settle: releaseNothing};
 
-    holding(key, running + attempts, now);
-    return ATTEMPT_ADMITTED;
+    // One token per request, shared by the reservations it took, so the release
+    // finds exactly its own however the list has changed since.
+    const ticket = Symbol("attempt");
+    const staleAt = now + IN_FLIGHT_MAX_AGE_MS;
+
+    attemptsInFlight.set(key,
+        live.concat(Array.from({length: attempts}, () => ({ticket, staleAt}))));
+
+    return {outcome: ATTEMPT_ADMITTED, settle: releaseWith(key, ticket)};
 };
 
-/**
- * Releases a reservation and records the failures it turned out to be.
- *
- * Called on every path out of a comparison - match, mismatch or throw - so a
- * reservation cannot leak and wedge a client at the in-flight cap. `failed` is
- * how many of the reserved comparisons came back wrong: 0 for a caller who got
- * it right, which is what keeps a correct password off the failure budget.
- */
-export const settleAttempt = (req, {reserved = 1, failed = 0} = {}) => {
-    const key = clientKey(req);
-    const now = Date.now();
-    const running = runningFor(key, now) - reserved;
-
-    // Floored at zero rather than trusted: a reservation the sweep above has
-    // already discarded would otherwise take the count negative and hand the
-    // next caller free slots.
-    if (running > 0) holding(key, running, now);
-    else attemptsInFlight.delete(key);
-
-    if (failed > 0) recordFailure(key, failed);
-};
+/** A request that carried no guess: nothing reserved, nothing to release. */
+export const NOTHING_RESERVED = {outcome: ATTEMPT_ADMITTED, settle: releaseNothing};
 
 export const clearFailedAttempts = (req) => failedAttempts.delete(clientKey(req));
 
@@ -284,10 +298,10 @@ const handleUnconfigured = (req, res, next) => {
     // this path shares the counters with the two that do await.
     const admission = candidates.length > 0
         ? reserveAttempt(req, candidates.length)
-        : ATTEMPT_ADMITTED;
+        : NOTHING_RESERVED;
 
-    if (admission === ATTEMPT_LOCKED_OUT) return tooManyAttempts(res);
-    if (admission === ATTEMPT_BUSY) return busyComparing(res);
+    if (admission.outcome === ATTEMPT_LOCKED_OUT) return tooManyAttempts(res);
+    if (admission.outcome === ATTEMPT_BUSY) return busyComparing(res);
 
     let matched = false;
     let compared = false;
@@ -304,11 +318,7 @@ const handleUnconfigured = (req, res, next) => {
         // The release is unconditional; the charge is not. A throw here is the
         // server's fault, and charging the caller's failure budget for it would
         // let an internal error lock them out for the window.
-        if (candidates.length > 0)
-            settleAttempt(req, {
-                reserved: candidates.length,
-                failed: compared && !matched ? candidates.length : 0
-            });
+        admission.settle({failed: compared && !matched ? candidates.length : 0});
     }
 
     if (matched) {
@@ -352,9 +362,9 @@ export default (allowViewAccess) => async (req, res, next) => {
     // be settled.
     const admission = candidates.length > 0
         ? reserveAttempt(req, candidates.length)
-        : ATTEMPT_ADMITTED;
+        : NOTHING_RESERVED;
 
-    if (admission === ATTEMPT_ADMITTED && candidates.length > 0) {
+    if (admission.outcome === ATTEMPT_ADMITTED && candidates.length > 0) {
         // The reservation is released however this ends, including on a throw
         // from bcrypt - a malformed hash would otherwise leak it and wedge the
         // caller at the in-flight cap for the rest of the window.
@@ -379,10 +389,7 @@ export default (allowViewAccess) => async (req, res, next) => {
             // of legitimate logins can never lock a client out - and a throw
             // from bcrypt is the server's fault, so it releases the reservation
             // without spending the caller's budget either.
-            settleAttempt(req, {
-                reserved: candidates.length,
-                failed: compared && !matched ? candidates.length : 0
-            });
+            admission.settle({failed: compared && !matched ? candidates.length : 0});
         }
 
         if (matched) {
@@ -397,8 +404,8 @@ export default (allowViewAccess) => async (req, res, next) => {
         return next();
     }
 
-    if (admission === ATTEMPT_LOCKED_OUT) return tooManyAttempts(res);
-    if (admission === ATTEMPT_BUSY) return busyComparing(res);
+    if (admission.outcome === ATTEMPT_LOCKED_OUT) return tooManyAttempts(res);
+    if (admission.outcome === ATTEMPT_BUSY) return busyComparing(res);
 
     return res.status(401).json({
         message: "Please provide the correct password in the header",

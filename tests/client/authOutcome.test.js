@@ -137,16 +137,25 @@ describe("the credential prompt's own branches", () => {
     });
 
     it("opens it rather than the password box", () => {
+        // Bounded to the one statement: `/s` across the whole file would still
+        // pass if these two fragments drifted into unrelated branches.
         assert.match(read("client/src/common/contexts/Config/ConfigContext.jsx"),
-            /kind === PROMPT_BUSY.*busyDialog\(\)/s,
+            /kind === PROMPT_BUSY\) return openAlertDialog\(busyDialog\(\)\)/,
             "a busy refusal still falls through to the wrong-password prompt");
     });
 
-    // Otherwise the unclosable "could not reach the API" dialog covers a server
-    // that is answering perfectly well.
-    it("treats a busy refusal as a refusal, not an unreachable API", () => {
-        assert.match(read("client/src/common/contexts/Config/ConfigContext.jsx"),
-            /res\.status === 401 \|\| res\.status === 429 \|\| res\.status === 503/,
-            "a 503 is classified as the API being unreachable");
+    /**
+     * A busy refusal is a refusal - but only when the body says it is ours.
+     * A reverse proxy fronting a stopped container answers 503 too, and
+     * treating that as a credential problem puts a password box in front of a
+     * server that is down, then calls the password wrong when the retry fails
+     * the same way. Server-side node.js makes exactly this check.
+     */
+    it("treats our own busy refusal as a refusal", () => {
+        const source = read("client/src/common/contexts/Config/ConfigContext.jsx");
+
+        assert.match(source, /res\.status === 503/, "a 503 is never treated as a refusal");
+        assert.match(source, /body\?\.type === SERVER_BUSY/,
+            "any 503 is taken as a credential refusal, including a gateway's");
     });
 });

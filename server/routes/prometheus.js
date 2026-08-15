@@ -5,7 +5,7 @@ import * as config from '../controller/config.js';
 import * as serverController from '../controller/servers.js';
 import bcrypt from 'bcryptjs';
 import {
-    ATTEMPT_BUSY, ATTEMPT_LOCKED_OUT, allowsPasswordlessAccess, clearFailedAttempts, reserveAttempt, settleAttempt
+    ATTEMPT_BUSY, ATTEMPT_LOCKED_OUT, allowsPasswordlessAccess, clearFailedAttempts, reserveAttempt
 } from '../middlewares/password.js';
 import { matchesSetupToken } from '../util/setupToken.js';
 import { isFailedTest } from '../util/testOutcome.js';
@@ -66,7 +66,7 @@ const authorizeMetrics = async (req, res) => {
     // still gets the WWW-Authenticate challenge that says what is missing.
     const admission = reserveAttempt(req);
 
-    if (admission === ATTEMPT_LOCKED_OUT) {
+    if (admission.outcome === ATTEMPT_LOCKED_OUT) {
         res.status(429).end('Too many failed attempts');
         return false;
     }
@@ -74,7 +74,7 @@ const authorizeMetrics = async (req, res) => {
     // Busy is transient and not about the credentials, so a scraper that
     // briefly overlapped its own correct polls is told to retry rather than
     // that its password was refused.
-    if (admission === ATTEMPT_BUSY) {
+    if (admission.outcome === ATTEMPT_BUSY) {
         res.status(503).set('Retry-After', '1').end('Busy checking passwords');
         return false;
     }
@@ -92,7 +92,7 @@ const authorizeMetrics = async (req, res) => {
         // comparison actually ran and the guess was wrong - a scraper polling
         // with the right password never spends the failure budget, and neither
         // does an error on the way to checking one.
-        settleAttempt(req, {failed: compared && !valid ? 1 : 0});
+        admission.settle({failed: compared && !valid ? 1 : 0});
     }
 
     if (!valid) {

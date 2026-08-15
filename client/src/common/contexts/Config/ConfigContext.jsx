@@ -2,7 +2,7 @@ import React, {createContext, useEffect, useState} from "react";
 import {useAlert} from "../Alert";
 import {login, request} from "@/common/utils/RequestUtil";
 import {promptUntilAccepted} from "@/common/utils/PasswordPrompt";
-import {promptFor, PROMPT_BUSY, PROMPT_SETUP_TOKEN, PROMPT_THROTTLED} from "@/common/utils/AuthOutcome";
+import {promptFor, PROMPT_BUSY, PROMPT_SETUP_TOKEN, PROMPT_THROTTLED, SERVER_BUSY} from "@/common/utils/AuthOutcome";
 import {markPasswordUnset} from "@/common/utils/PasswordSetup";
 import {
     apiErrorDialog, busyDialog, passwordRequiredDialog, setupTokenDialog, throttledDialog
@@ -32,13 +32,22 @@ export const ConfigProvider = (props) => {
             // discarded it one line before it was needed, so every refusal -
             // including one from an instance with no password at all - asked
             // for "your password".
-            // 503 joins them: a busy instance is refusing this caller for a
-            // reason it can name, and treating it as unreachable put an
-            // unclosable "could not reach the API" dialog over a server that
-            // was answering perfectly well.
-            if (res.status === 401 || res.status === 429 || res.status === 503) {
+            if (res.status === 401 || res.status === 429) {
                 const body = await res.json().catch(() => ({}));
                 throw {credential: true, type: body?.type};
+            }
+
+            // A 503 only counts when the body says it is ours. A reverse proxy
+            // in front of a stopped container answers 503 too, and treating
+            // that as a refusal put a password box in front of a server that
+            // was down - then called the password wrong when the retry failed
+            // the same way. This is the check node.js makes for the same
+            // reason; "could not reach the API" is the truthful answer there.
+            if (res.status === 503) {
+                const body = await res.json().catch(() => ({}));
+                if (body?.type === SERVER_BUSY) throw {credential: true, type: body.type};
+
+                throw {credential: false};
             }
             if (!res.ok) throw {credential: false};
 

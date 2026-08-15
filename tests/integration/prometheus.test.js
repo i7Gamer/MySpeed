@@ -5,11 +5,10 @@ import { bootServer, api, seedTests, setConfig } from "./helpers/boot.js";
 let server;
 let resetFailedAttempts;
 let reserveAttempt;
-let settleAttempt;
 
 before(async () => {
     server = await bootServer();
-    ({resetFailedAttempts, reserveAttempt, settleAttempt} = await import("../../server/middlewares/password.js"));
+    ({resetFailedAttempts, reserveAttempt} = await import("../../server/middlewares/password.js"));
 });
 
 after(async () => {
@@ -77,10 +76,7 @@ describe("GET /api/prometheus/metrics", () => {
         // the scrapes land on one counter.
         const sameCaller = {headers: {}, socket: {remoteAddress: "127.0.0.1"}};
         const spend = (attempts) => {
-            for (let i = 0; i < attempts; i++) {
-                reserveAttempt(sameCaller);
-                settleAttempt(sameCaller, {failed: 1});
-            }
+            for (let i = 0; i < attempts; i++) reserveAttempt(sameCaller).settle({failed: 1});
         };
 
         it("refuses to keep comparing after too many wrong passwords", async () => {

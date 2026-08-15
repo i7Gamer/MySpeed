@@ -5,7 +5,6 @@ import { bootServer, api, setConfig } from "./helpers/boot.js";
 let server;
 let resetFailedAttempts;
 let reserveAttempt;
-let settleAttempt;
 let ATTEMPT_ADMITTED;
 let ATTEMPT_LOCKED_OUT;
 let ATTEMPT_BUSY;
@@ -19,7 +18,7 @@ before(async () => {
 
     const module = await import("../../server/middlewares/password.js");
 
-    ({resetFailedAttempts, reserveAttempt, settleAttempt, clearFailedAttempts,
+    ({resetFailedAttempts, reserveAttempt, clearFailedAttempts,
         ATTEMPT_ADMITTED, ATTEMPT_LOCKED_OUT, ATTEMPT_BUSY} = module);
     // The same middleware the routes mount, for the assertions that need calls
     // to genuinely overlap - see "attempts made at the same time".
@@ -298,7 +297,8 @@ describe("password attempt throttling", () => {
         it("admits exactly the budget, however simultaneous the calls are", async () => {
             const outcomes = await Promise.all(
                 Array.from({length: MAX_FAILED_ATTEMPTS * 3}, async () => {
-                    if (reserveAttempt(CALLER) !== ATTEMPT_ADMITTED) return "refused";
+                    const admission = reserveAttempt(CALLER);
+                    if (admission.outcome !== ATTEMPT_ADMITTED) return "refused";
 
                     try {
                         // A stand-in for the bcrypt compare: the yield to the
@@ -306,7 +306,7 @@ describe("password attempt throttling", () => {
                         await new Promise((resolve) => setTimeout(resolve, 5));
                         return "compared";
                     } finally {
-                        settleAttempt(CALLER, {failed: 1});
+                        admission.settle({failed: 1});
                     }
                 }));
 
@@ -319,11 +319,12 @@ describe("password attempt throttling", () => {
             const HALF = MAX_FAILED_ATTEMPTS / 2;
 
             for (let i = 0; i < HALF; i++) {
-                assert.equal(reserveAttempt(CALLER, 2), ATTEMPT_ADMITTED);
-                settleAttempt(CALLER, {reserved: 2, failed: 2});
+                const admission = reserveAttempt(CALLER, 2);
+                assert.equal(admission.outcome, ATTEMPT_ADMITTED);
+                admission.settle({failed: 2});
             }
 
-            assert.equal(reserveAttempt(CALLER), ATTEMPT_LOCKED_OUT,
+            assert.equal(reserveAttempt(CALLER).outcome, ATTEMPT_LOCKED_OUT,
                 "two guesses a request were counted as one");
         });
 
@@ -331,8 +332,9 @@ describe("password attempt throttling", () => {
         // correct guesses would sit at the in-flight cap for the whole window.
         it("frees the reservation on a guess that was right", async () => {
             for (let i = 0; i < MAX_FAILED_ATTEMPTS * 3; i++) {
-                assert.equal(reserveAttempt(CALLER), ATTEMPT_ADMITTED, `reservation ${i} was refused`);
-                settleAttempt(CALLER, {failed: 0});
+                const admission = reserveAttempt(CALLER);
+                assert.equal(admission.outcome, ATTEMPT_ADMITTED, `reservation ${i} was refused`);
+                admission.settle({failed: 0});
             }
         });
 
@@ -343,15 +345,19 @@ describe("password attempt throttling", () => {
          * first is what told a legitimate client its password was wrong.
          */
         it("tells a busy server apart from a locked-out caller", async () => {
-            for (let i = 0; i < MAX_FAILED_ATTEMPTS; i++)
-                assert.equal(reserveAttempt(CALLER), ATTEMPT_ADMITTED);
+            const held = [];
+            for (let i = 0; i < MAX_FAILED_ATTEMPTS; i++) {
+                const admission = reserveAttempt(CALLER);
+                assert.equal(admission.outcome, ATTEMPT_ADMITTED);
+                held.push(admission);
+            }
 
             // Reservations still held, no failures recorded yet.
-            assert.equal(reserveAttempt(CALLER), ATTEMPT_BUSY);
+            assert.equal(reserveAttempt(CALLER).outcome, ATTEMPT_BUSY);
 
-            for (let i = 0; i < MAX_FAILED_ATTEMPTS; i++) settleAttempt(CALLER, {failed: 1});
+            for (const admission of held) admission.settle({failed: 1});
 
-            assert.equal(reserveAttempt(CALLER), ATTEMPT_LOCKED_OUT);
+            assert.equal(reserveAttempt(CALLER).outcome, ATTEMPT_LOCKED_OUT);
         });
 
         /**
@@ -370,16 +376,16 @@ describe("password attempt throttling", () => {
 
             // Fill the cap and settle none of it.
             for (let i = 0; i < MAX_FAILED_ATTEMPTS; i++)
-                assert.equal(reserveAttempt(LEAKY), ATTEMPT_ADMITTED);
+                assert.equal(reserveAttempt(LEAKY).outcome, ATTEMPT_ADMITTED);
 
-            assert.equal(reserveAttempt(LEAKY), ATTEMPT_BUSY, "the cap did not hold");
+            assert.equal(reserveAttempt(LEAKY).outcome, ATTEMPT_BUSY, "the cap did not hold");
 
             // Past the window the stale reservations are swept rather than
             // held against the caller for good.
             const realNow = Date.now;
             try {
                 Date.now = () => realNow() + 61_000;
-                assert.equal(reserveAttempt(LEAKY), ATTEMPT_ADMITTED,
+                assert.equal(reserveAttempt(LEAKY).outcome, ATTEMPT_ADMITTED,
                     "a leaked reservation wedged the caller permanently");
             } finally {
                 Date.now = realNow;
@@ -405,19 +411,19 @@ describe("password attempt throttling", () => {
                 Date.now = () => realNow() + offset;
 
                 // One reservation that is never released...
-                assert.equal(reserveAttempt(BUSY_CALLER), ATTEMPT_ADMITTED);
+                assert.equal(reserveAttempt(BUSY_CALLER).outcome, ATTEMPT_ADMITTED);
 
                 // ...then a request a second, well past the window.
                 for (let i = 0; i < 120; i++) {
                     offset += 1000;
-                    if (reserveAttempt(BUSY_CALLER) === ATTEMPT_ADMITTED)
-                        settleAttempt(BUSY_CALLER, {failed: 0});
+                    const admission = reserveAttempt(BUSY_CALLER);
+                    if (admission.outcome === ATTEMPT_ADMITTED) admission.settle({failed: 0});
                 }
 
                 // The leak is gone rather than carried forward, so the whole cap
                 // is available again.
                 for (let i = 0; i < MAX_FAILED_ATTEMPTS; i++)
-                    assert.equal(reserveAttempt(BUSY_CALLER), ATTEMPT_ADMITTED,
+                    assert.equal(reserveAttempt(BUSY_CALLER).outcome, ATTEMPT_ADMITTED,
                         `slot ${i} was still held by a leak the traffic kept alive`);
             } finally {
                 Date.now = realNow;
@@ -425,13 +431,12 @@ describe("password attempt throttling", () => {
         });
 
         it("is refunded by the same module", async () => {
-            for (let i = 0; i < MAX_FAILED_ATTEMPTS - 1; i++) {
-                reserveAttempt(CALLER);
-                settleAttempt(CALLER, {failed: 1});
-            }
+            for (let i = 0; i < MAX_FAILED_ATTEMPTS - 1; i++)
+                reserveAttempt(CALLER).settle({failed: 1});
             clearFailedAttempts(CALLER);
 
-            assert.equal(reserveAttempt(CALLER), ATTEMPT_ADMITTED, "the refund did not reach the counter");
+            assert.equal(reserveAttempt(CALLER).outcome, ATTEMPT_ADMITTED,
+                "the refund did not reach the counter");
         });
 
         /**
