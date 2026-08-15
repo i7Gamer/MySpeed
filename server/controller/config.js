@@ -196,7 +196,7 @@ export const validateInput = async (key, value) => {
     if (key === "libreUrl" && value !== "none") {
         try {
             new URL(value);
-        } catch (e) {
+        } catch {
             return "You need to provide a valid URL";
         }
     }
@@ -417,7 +417,7 @@ export const importConfig = async (obj) => {
             for (const {key, model} of IMPORTED_TABLES)
                 await model.bulkCreate(rows[key], {transaction});
         });
-    } catch (e) {
+    } catch {
         return false;
     }
 

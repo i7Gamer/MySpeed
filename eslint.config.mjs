@@ -38,6 +38,16 @@ const COMPILER_RULES_PENDING_A_PASS = {
 // package.json with the `with { type: "json" }` attribute the ESM spec requires.
 const ECMA_VERSION = 2025;
 
+const UNUSED_VARS = {
+    // `const {server, ...rest} = result` is how a key is left out of an object,
+    // so the named half is doing the work even though nothing reads it. Seven of
+    // the eight findings this rule opened with were that idiom.
+    ignoreRestSiblings: true,
+    // The conventional mark for a parameter a signature requires and the body
+    // does not want.
+    argsIgnorePattern: "^_"
+};
+
 export default [
     {ignores: ["**/node_modules/**", "**/build/**", "client/dev-dist/**", "**/dist/**"]},
     {
@@ -61,7 +71,7 @@ export default [
             "react-hooks/exhaustive-deps": "warn",
             // React is in scope through the automatic JSX runtime, so a file
             // that imports it for the classic transform is not unused code.
-            "no-unused-vars": ["warn", {varsIgnorePattern: "^React$", argsIgnorePattern: "^_"}]
+            "no-unused-vars": ["warn", {...UNUSED_VARS, varsIgnorePattern: "^React$"}]
         }
     },
     {
@@ -74,7 +84,7 @@ export default [
         },
         rules: {
             ...js.configs.recommended.rules,
-            "no-unused-vars": ["warn", {argsIgnorePattern: "^_"}]
+            "no-unused-vars": ["warn", UNUSED_VARS]
         }
     }
 ];

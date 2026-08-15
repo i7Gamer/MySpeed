@@ -22,6 +22,10 @@ export const Nodes = () => {
 
     useEffect(() => {
         updateNodes();
+        // Once, at mount. `updateNodes` is a plain arrow on the context, rebuilt
+        // whenever the provider renders - and it sets the very state that
+        // renders it, so listing it is a loop rather than a refresh.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     return (

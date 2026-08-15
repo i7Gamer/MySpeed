@@ -35,7 +35,7 @@ export const startSpeedtest = async ({updateStatus, setRunning, updateTests, ale
         }
 
         await updateTests();
-    } catch (error) {
+    } catch {
         setRunning(false);
         alert.openAlert(t("failed"), t("header.running"), {buttonText: t("dialog.okay")});
     } finally {

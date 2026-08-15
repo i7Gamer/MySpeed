@@ -39,7 +39,7 @@ export const parseProgressLine = (mode, line) => {
     let data;
     try {
         data = JSON.parse(line);
-    } catch (e) {
+    } catch {
         // A chunk boundary can split a line in half. The next read carries it.
         return null;
     }

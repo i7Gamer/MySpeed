@@ -121,6 +121,12 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
             e.preventDefault();
             handleSubmit();
         }
+        // `close` and `handleSubmit` are rebuilt on every render, so listing
+        // them would give this callback a new identity every time and the
+        // listener below would be swapped on each one. Everything they read -
+        // the alert and the input's value - is already a dependency here, so
+        // there is no closure to go stale.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [alert, inputValue]);
 
     useEffect(() => {

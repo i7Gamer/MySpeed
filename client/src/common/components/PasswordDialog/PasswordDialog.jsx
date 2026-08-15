@@ -118,7 +118,7 @@ export const PasswordDialog = ({open, onClose}) => {
             reloadConfig();
             updateToast(t("update.password_removed"), "green", faCheck);
             close();
-        } catch (e) {
+        } catch {
             updateToast(t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
         }
     };

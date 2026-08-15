@@ -17,7 +17,7 @@ app.get("/version", password(false), async (req, res) => {
     try {
         const data = await getJson(remote_url);
         res.json({local: version, remote: data.tag_name.replace("v", "")});
-    } catch (e) {
+    } catch {
         res.json({local: version, remote: "0"});
     }
 });

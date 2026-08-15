@@ -17,7 +17,7 @@ export const Error = (props) => {
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [reloadTimer]);
+    }, [reloadTimer, props.disableReload]);
 
     return (
         <div className={"error-page" + (props.disableReload ? " no-reload" : "")}>

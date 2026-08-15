@@ -205,7 +205,7 @@ describe("what the preview costs the mounted dialog", () => {
 
     it("computes the preview once the dialog is open", () => {
         const walks = [];
-        const memo = previewMemo({open: true, customCron: HOURLY, config: QUIET_WINDOW,
+        previewMemo({open: true, customCron: HOURLY, config: QUIET_WINDOW,
             getNextRunDate: (...args) => walks.push(args) && MIDNIGHT_AFTER});
 
         assert.equal(walks.length, 1, "an open dialog shows no preview at all");

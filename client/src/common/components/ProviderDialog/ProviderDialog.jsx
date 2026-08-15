@@ -67,6 +67,11 @@ export const ProviderDialog = ({open, onClose}) => {
         if (!open) return;
 
         setServerId(config[provider + "Id"] || "none");
+        // The provider alone, deliberately - see above. `config` here would
+        // re-run on every config reload, which is exactly the save that used to
+        // overwrite an edit in progress; `open` would reset the field under
+        // whoever was typing in it when a reopen re-ran the effect.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [provider]);
 
     useEffect(() => {

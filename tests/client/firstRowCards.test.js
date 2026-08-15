@@ -114,7 +114,10 @@ describe("the hour formatter", () => {
     it("is shared rather than reimplemented per chart", () => {
         const hourly = read("pages/Statistics/charts/HourlyChart.jsx");
 
-        assert.match(hourly, /formatHour\(hour, preferences\)/);
+        // Whatever the hour is called at the call site: what matters is that the
+        // preference reaches the one formatter, and that the 12-hour arithmetic
+        // is not written out a second time beside it.
+        assert.match(hourly, /formatHour\([\w.]+, preferences\)/);
         assert.doesNotMatch(hourly, /const suffix = hour >= 12/);
         assert.match(overview, /formatHour/);
     });

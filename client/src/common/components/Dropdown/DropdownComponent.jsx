@@ -21,7 +21,6 @@ import {useAlert} from "@/common/contexts/Alert";
 import {postRequest} from "@/common/utils/RequestUtil";
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
-import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {IntegrationDialog} from "@/common/components/IntegrationDialog";
 import LanguageDialog from "@/common/components/LanguageDialog";
 import ProviderDialog from "@/common/components/ProviderDialog";
@@ -35,7 +34,6 @@ import PreferencesDialog from "@/common/components/PreferencesDialog";
 const DropdownComponent = ({isOpen, switchDropdown}) => {
     const [config] = useContext(ConfigContext);
     const [status, updateStatus] = useContext(StatusContext);
-    const updateToast = useContext(ToastNotificationContext);
     const alert = useAlert();
     const [showIntegrationDialog, setShowIntegrationDialog] = useState(false);
     const [showLanguageDialog, setShowLanguageDialog] = useState(false);
@@ -77,7 +75,11 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
 
         document.addEventListener("keyup", onPress);
         return () => document.removeEventListener("keyup", onPress);
-    }, [isOpen]);
+        // The prop is listed rather than narrowed away: this only swaps one
+        // document listener for another, which costs nothing, and a handler
+        // holding the parent's previous closure is a real way for Escape to
+        // close nothing.
+    }, [isOpen, switchDropdown]);
     
     const togglePause = async () => {
         if (!status.paused) {

@@ -40,7 +40,7 @@ export const ConfigProvider = (props) => {
 
             try {
                 return JSON.parse(await res.text());
-            } catch (e) {
+            } catch {
                 throw {credential: false};
             }
         }).then(result => {
@@ -147,6 +147,10 @@ export const ConfigProvider = (props) => {
 
     const checkConfig = async () => (await request("/config")).json();
 
+    // Once, at mount. reloadConfig reaches `navigate` and `showErrorDialog`,
+    // both rebuilt on every render - listing them would refetch the config on
+    // each one, and each fetch sets the state that causes the next render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(reloadConfig, []);
 
     useEffect(() => {

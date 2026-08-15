@@ -148,7 +148,7 @@ export const nextRun = (cron = currentCron, quietHours = null) => {
         }
 
         return null;
-    } catch (e) {
+    } catch {
         return null;
     }
 };

@@ -131,6 +131,11 @@ export const NodeContainer = (node) => {
         updateData().catch(() => setNodeError("SERVER_NOT_REACHABLE"));
         const interval = setInterval(() => updateData().catch(() => setNodeError("SERVER_NOT_REACHABLE")), 10000);
         return () => clearInterval(interval);
+        // One poller for the life of the card. `updateData` is rebuilt on every
+        // render, so listing it would tear the interval down and start a new one
+        // each time - and since updateData sets state, the ten seconds would
+        // never elapse.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const switchNode = () => {

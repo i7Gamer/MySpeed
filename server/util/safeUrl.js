@@ -113,8 +113,6 @@ const isAllowedHost = (url) => {
         entry.hostname === url.hostname && (entry.port === "" || entry.port === effectivePort(url)));
 };
 
-const IPV4_MAPPED_PREFIX = "::ffff:";
-
 const octets = (address) => address.split(".").map(Number);
 
 const isBlockedIpv4 = (address) => {

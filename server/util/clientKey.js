@@ -38,7 +38,7 @@ export const normaliseAddress = (address) => {
 };
 
 const ipv6Prefix = (address) => {
-    const [head, tail = ""] = address.split("::");
+    const [head] = address.split("::");
     const headGroups = head === "" ? [] : head.split(":");
 
     // Already at or under the prefix length, and not elided - nothing to cut.

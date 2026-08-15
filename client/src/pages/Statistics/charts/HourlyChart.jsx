@@ -12,12 +12,14 @@ const HourlyChart = memo((props) => {
     const [preferences] = useContext(PreferencesContext);
     const speedUnit = getSpeedUnit(preferences);
 
-    const formatHourLabel = (hour) => formatHour(hour, preferences);
 
     const chartData = useMemo(() => {
         if (!props.hourlyAverages) return { labels: [], datasets: [] };
 
-        const labels = props.hourlyAverages.map(h => formatHourLabel(h.hour));
+        // Inline rather than through a one-line wrapper: the wrapper closed over
+        // `preferences`, which this memo already depends on, so it was a second
+        // name for the dependency the memo is keyed on.
+        const labels = props.hourlyAverages.map(h => formatHour(h.hour, preferences));
 
         return {
             labels,
