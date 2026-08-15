@@ -23,6 +23,17 @@ $header-gap: 2rem
 // 1.1rem button made one set of controls announce itself as three.
 $toolbar-text-size: 1.1rem
 
+// The three shapes the statistics page takes: three cards to a row, then two,
+// then one. Written down here because two stylesheets draw them - the stat
+// cards' container and the chart cards' - and a page that reflows in one and
+// not the other is nine cards in two different layouts at once. They were a
+// `900px` in each file with nothing tying them together.
+//
+// Measured against the widest labels the cards carry, in MB/s, where every
+// figure gains a decimal and a wider unit.
+$stats-two-column: 1030px
+$stats-one-column: 720px
+
 // And the space above and below that text. The toolbar wraps on a narrow
 // viewport, and a flex line is only as tall as its own tallest item - so once
 // the controls sit on different lines, stretch stops equalising them and each

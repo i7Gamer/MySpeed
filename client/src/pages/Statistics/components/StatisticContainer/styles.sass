@@ -1,10 +1,17 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
 
 .stats-container
   display: flex
   flex-direction: column
   min-width: 16rem
   max-width: 100%
+  // The card's border is part of its width, not added to it. Without this a
+  // full-width card is 100% *plus* its two 1px borders, which is 2px more than
+  // the row it sits in - so it overhung the right-hand edge and took the page's
+  // gutter with it. The reset in default.sass only reaches `main > *`, which is
+  // the area around these, not the cards themselves.
+  box-sizing: border-box
   border: 1px solid $light-gray
   background-color: var(--glass-bg)
   backdrop-filter: blur(8px)
@@ -13,7 +20,11 @@
   cursor: pointer
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease
   animation: 0.25s fadeIn ease-out
-  flex: 1 1 15%
+  // Three to a row, sharing it equally - the size classes below say which card
+  // is which, not how wide it is. This was 15%, against the summary's 35%, so
+  // the two panels beside it started 20 points behind and grow: 1 only ever
+  // handed back an equal share of what was left.
+  flex: 1 1 30%
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1)
   position: relative
   contain: layout style
@@ -63,19 +74,21 @@
   justify-content: center
   align-items: center
 
-.container-small
-  flex: 1 1 5%
-
-.container-normal
+// The size classes no longer set a width of their own while three cards share a
+// row: their contents want the same room as each other, and saying otherwise is
+// what cut the labels. They still name which card is which, which is what the
+// two-column stage reflows on - see pages/Statistics/styles.sass, where the
+// page's shape is decided in one place rather than in each card's stylesheet.
+//
+// They were 5% for a value card, 15% for a panel and 35% for the summary, with
+// flex-grow: 1 on all three - so the leftover was split equally and never
+// corrected the lopsided start. Measured at 1100px: the summary took 490px and
+// the panel beside it 277, where "Variation within a test" wanted 355.
+.container-small,
+.container-normal,
+.container-large
   flex: 1 1 30%
 
-.container-large
-  flex: 1 1 35%
-
-@media screen and (max-width: 900px)
-  .stats-container
-    min-width: 100%
-    flex: 1 1 100%
-
+@media screen and (max-width: $stats-one-column)
   .stats-content
     min-height: 10rem

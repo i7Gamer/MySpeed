@@ -1,10 +1,17 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
 
 .chart-container
   display: flex
   flex-direction: column
   min-width: 16rem
   max-width: 100%
+  // The border - and, below 500px, the padding - are part of the card's width
+  // rather than added to it. Without this a full-width card measured 100% plus
+  // 2px, and 100% plus 18px once it took padding, so it overhung the right-hand
+  // edge and swallowed the page's gutter. The reset in default.sass only
+  // reaches `main > *`, which is the area around these rather than the cards.
+  box-sizing: border-box
   border: 1px solid $light-gray
   background-color: var(--glass-bg)
   backdrop-filter: blur(8px)
@@ -49,12 +56,11 @@
     max-width: 100% !important
     max-height: 100% !important
 
-@media screen and (max-width: 900px)
-  .chart-container
-    min-width: 100%
-    max-width: 100%
-    flex: 1 1 100%
-
+// How wide the card is at each stage is the page's business, not this file's -
+// nine cards reflowing together cannot be decided in one of their stylesheets.
+// See pages/Statistics/styles.sass. What is left here is how tall the chart
+// inside it stands once the card has the row to itself.
+@media screen and (max-width: $stats-one-column)
   .chart-body
     min-height: 12rem
     max-height: 16rem

@@ -18,6 +18,48 @@
   > .page-toolbar
     margin-bottom: 0
 
+// The page's three shapes, decided here because this is the only stylesheet
+// that knows about all nine cards. It used to be a `max-width: 900px` written
+// out twice - once in the stat cards' container, once in the chart cards' - and
+// nine cards reflowing on two separate figures is two layouts at once the
+// moment either moves.
+//
+// Direct children only. ChartModal is a child of this same area and renders the
+// same card markup with the whole viewport to spend, so a descendant selector
+// would reflow the enlarged view along with the page behind it - which is the
+// trap OverviewChart already works around with :not(.chart-modal-body *).
+//
+// Two to a row, with the summary spanning them. There was no step between three
+// across and one: the page went from three cards of ~330px straight to nine of
+// full width at 900px, and the cards that were being cut kept being cut all the
+// way down.
+//
+// The pairs fall out of the order the cards are already written in, once the
+// summary takes a row of its own - last test beside stability, the two speed
+// charts together, ping beside the hourly average, and the two value cards
+// last. Nothing has to be moved to make it work.
+@media screen and (max-width: $stats-two-column)
+  .statistic-area
+    > .stats-container,
+    > .chart-container
+      flex: 1 1 calc(50% - #{$card-gap} / 2)
+
+    // The page's summary, and the widest thing on it: five labelled rows that
+    // read as a paragraph rather than as a tile. It is the one card that has
+    // something to do with a full row.
+    > .container-large
+      flex: 1 1 100%
+
+// And one to a row. The floor is the cards' own 16rem: below about 524px of
+// row, two of them cannot sit side by side whatever this says, so the stage
+// above degrades into this one on its own if the figure is ever wrong.
+@media screen and (max-width: $stats-one-column)
+  .statistic-area
+    > .stats-container,
+    > .chart-container
+      min-width: 100%
+      flex: 1 1 100%
+
 .statistic-stale
   opacity: 0.7
   transition: opacity 0.2s ease
