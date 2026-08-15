@@ -16,6 +16,14 @@
 .test-details
   flex: 1 1 auto
   min-width: 0
+  // What the facts grid below reflows against. It has to be the panel and not
+  // the window: this markup is drawn inside an expanded overview row on one
+  // page and inside the chart modal on the other, and those two give it
+  // different room at the same viewport, so one viewport figure cannot be right
+  // for both. Safe on this element - its inline size comes from its parent, not
+  // from its contents, which is the one thing inline-size containment takes
+  // away.
+  container-type: inline-size
 
 .detail-metrics
   display: grid
@@ -164,12 +172,42 @@
 // it sounds: $page-max-width is shared by every page, and 1570px was the
 // threshold there - for tracks with 7px to spare.
 //
+// Two floors, because one of them was being set by a value most tests do not
+// carry. 18rem clears an external IPv6 and stays under the 309px four columns
+// leave - but two columns of it need 38rem, so the panel fell to a single
+// column the moment it had less, while the facts beside the address wanted far
+// less than that. Measured on a typical test: six facts, 226px at the widest
+// (a server name over its host), 119px at the median.
+//
+// So below the width where two 18rem columns fit, the floor becomes what the
+// other facts actually want and the address wraps, which is what
+// overflow-wrap: anywhere on the value is already there for. Measured after:
+// two columns hold down to about 460px of window rather than 687.
+//
+// Giving the address a row of its own instead - grid-column: 1 / -1 on that one
+// fact - was the tidier-sounding alternative and it does not work here. The
+// four facts that carry a second line are deliberately adjacent so that only
+// one row grows tall (see factsGridRows.test.js); pulling the fourth of them
+// out of the flow leaves the third stranded. Measured on a complete record: two
+// holes in the grid at every two-column width, against one extra line on the
+// connection fact for the narrow ones. The extra line is the cheaper of the
+// two, and it is the trade the overview's summary card already makes.
+$fact-column: 18rem
+$fact-column-narrow: 11rem
+$fact-gap: 2rem
+
 // min() because a bare 18rem track does not shrink below 18rem: on a phone that
 // is a 288px column inside a 281px grid, overflowing its own container.
 .detail-facts
   display: grid
-  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr))
-  gap: 1rem 2rem
+  grid-template-columns: repeat(auto-fit, minmax(min($fact-column, 100%), 1fr))
+  gap: 1rem $fact-gap
+
+// The panel's own width, not the window's - see container-type on .test-details.
+@container (width < #{$fact-column * 2 + $fact-gap})
+  .detail-facts
+    grid-template-columns: repeat(auto-fit, minmax(min($fact-column-narrow, 100%), 1fr))
+
 
 // Label above the value rather than beside it.
 //
