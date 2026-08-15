@@ -153,89 +153,25 @@ describe("the header's breakpoints run wide to narrow", () => {
 });
 
 /**
- * The toolbar's labels, and the width they are given up at.
+ * The toolbar's labels are no longer given up at a width written down here.
  *
- * Measured with the labels forced on across the range: the date picker beside
- * them absorbs the slack, and all three controls hold a single line with every
- * label down to 480px - the row first wraps at 460. The export dropped the word
- * "Export" at 600, with 120px of room still under it.
+ * These figures - 600px, then 480 and 368 - were each measured against the
+ * English label and a preset's 126px range trigger. A custom range prints its
+ * two dates and is 300px, so the row ran out 220px before the viewport reached
+ * any of them: measured, the three controls broke onto separate lines at 660px
+ * and kept both labels until 480. PageToolbar measures its own row instead, and
+ * toolbarFit.test.js covers the stages it picks.
+ *
+ * What is left here is the part that is still this file's business: that no
+ * viewport figure came back, and that a control which can lose its only text
+ * still has a name.
  */
 describe("the toolbar controls keep their labels until they do not fit", () => {
-    it("collapses the export at the measured width, not at 600px", () => {
-        const collapse = queriesMentioning(exportButton, "480px");
-
-        assert.ok(collapse.some((body) => /\.export-text[^{]*\{[^}]*display:\s*none/.test(body)),
-            "the export label is not dropped at 480px");
-        assert.equal(queriesMentioning(exportButton, "600px").length, 0,
-            "the export still collapses at 600px as well");
-    });
-
-    /**
-     * And only where there is a start button to make room for.
-     *
-     * A read-only visitor cannot start a test, so that control renders nothing
-     * at all and the row is two controls wide. Measured in read-only mode: the
-     * picker and the *labelled* export hold one line together at every width
-     * down to 320px, status bar on its own row as before - so there is nothing
-     * to buy there and nothing is spent.
-     *
-     * An adjacent sibling rather than :has(): the export follows the start
-     * button directly in the toolbar's markup, so this is a plain sibling match
-     * with no support caveat behind it.
-     */
-    it("keeps the export's label when no start button shares its row", () => {
-        const collapse = queriesMentioning(exportButton, "480px");
-        const hiding = collapse.filter((body) => /\.export-text[^{]*\{[^}]*display:\s*none/.test(body));
-
-        assert.ok(hiding.length > 0, "nothing hides the label at all");
-
-        for (const body of hiding)
-            assert.match(body, /\.start-test\s*\+\s*\.export-button-container[^{]*\.export-text/,
-                "the label is dropped whether or not a start button stands beside it");
-    });
-
-    // The square, the missing chevron and the menu's own anchor all answer to
-    // the collapse, so they have to be scoped with it - a labelled button in
-    // read-only mode lends the menu its 141px and needs none of them.
-    it("scopes the whole collapsed shape, not only the label", () => {
-        const collapse = queriesMentioning(exportButton, "480px");
-
-        for (const property of [/aspect-ratio/, /\.chevron-icon/, /\.export-dropdown/]) {
-            const owner = collapse.find((body) => property.test(body));
-            assert.ok(owner, `nothing in the narrow query mentions ${property}`);
-            assert.match(owner, /\.start-test\s*\+\s*\.export-button-container/,
-                `${property} applies even with no start button beside the export`);
-        }
-    });
-
-    it("tightens the start button at the same width, so the two agree", () => {
-        assert.ok(queriesMentioning(startTest, "480px").length > 0,
-            "the start button still tightens at a different width from the export beside it");
-        assert.equal(queriesMentioning(startTest, "600px").length, 0,
-            "the start button still has its old 600px rule");
-    });
-
-    /**
-     * The start button keeps its word for as long as there is room for it - it
-     * is the page's primary action and a bare gauge does not say "start a
-     * test" - and gives it up only where keeping it costs the toolbar a row.
-     *
-     * By 366px the date picker is at its own minimum and the row cannot hold
-     * three labelled controls: the export was pushed onto a line of its own,
-     * which is both a third row and that control sitting at the left-hand end,
-     * the one place in the app it never is. The word is ~90px, which is the
-     * whole difference between those two layouts.
-     */
-    it("keeps the start button's label down to where the row runs out", () => {
-        // 368, not a round number: measured, 369px still holds all three
-        // labelled and 368 is the first width that wraps.
-        const collapse = queriesMentioning(startTest, "368px");
-        const earlier = queriesMentioning(startTest, "480px");
-
-        assert.ok(collapse.some((body) => /span\s*\{[^}]*display:\s*none/.test(body)),
-            "the start button never drops its label, so the export keeps its own row");
-        assert.ok(!earlier.some((body) => /span\s*\{[^}]*display:\s*none/.test(body)),
-            "the label goes at 480px, a hundred pixels before it has to");
+    it("has no width in either button deciding a label", () => {
+        for (const [name, css] of [["export", exportButton], ["start", startTest]])
+            for (const width of ["600px", "480px", "368px"])
+                assert.equal(queriesMentioning(css, width).length, 0,
+                    `the ${name} button collapses at a hardcoded ${width} again`);
     });
 
     // Hiding the only text in a button leaves it with no accessible name at
@@ -261,17 +197,11 @@ describe("the toolbar controls keep their labels until they do not fit", () => {
  * used to centre itself, so it also slid in from half a screen off.
  */
 describe("the export menu opens under its own button", () => {
-    const narrow = queriesMentioning(exportButton, "480px")
-        .filter((body) => /\.export-dropdown/.test(body));
-
-    it("does not pin the menu to the viewport", () => {
-        assert.ok(narrow.length > 0, "the narrow rule for the dropdown is gone");
-
-        for (const body of narrow) {
-            assert.doesNotMatch(body, /position:\s*fixed/,
-                "the menu is still fixed to the viewport rather than to its button");
-            assert.doesNotMatch(body, /bottom:\s*1rem/, "the menu still sits at the foot of the screen");
-        }
+    it("is never pinned to the viewport", () => {
+        assert.doesNotMatch(exportButton, /\.export-dropdown[^{]*\{[^}]*position:\s*fixed/,
+            "the menu is fixed to the viewport rather than to its button again");
+        assert.doesNotMatch(exportButton, /bottom:\s*1rem/,
+            "the menu sits at the foot of the screen again");
     });
 
     // The container is the positioning context at every width, so the menu
@@ -285,10 +215,8 @@ describe("the export menu opens under its own button", () => {
 
     // A ~45px square button cannot lend the menu its width, so the menu states
     // one of its own - otherwise the two options wrap inside a 45px panel.
-    it("gives the menu a width the button no longer has", () => {
-        assert.ok(narrow.some((body) => /min-width:/.test(body)),
-            "the menu takes the collapsed button's width, which is one icon wide");
-    });
+    // That rule moved to the toolbar with the rest of the collapsed shape;
+    // toolbarFit.test.js is where it is checked.
 
     /**
      * And the button it hangs off has to be somewhere the menu can hang from.

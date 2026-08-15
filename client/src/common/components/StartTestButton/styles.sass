@@ -34,40 +34,11 @@
     opacity: 0.5
     cursor: default
 
-// Only the horizontal room tightens; the height is shared with every other
-// control in the toolbar.
+// The tightened padding and the icon-only square live in
+// PageToolbar/styles.sass, keyed off the stage that component measured. They
+// were `max-width: 480px` and `max-width: 368px` blocks here - figures taken
+// against the English label and a preset's 126px range trigger, so a custom
+// range or a longer translation ran the row out long before either.
 //
-// At the width the export drops its label, measured rather than guessed - the
-// two sit in the same row and tightening one of them early only moves the
-// slack to the other.
-@media screen and (max-width: 480px)
-  .start-test
-    padding: $toolbar-control-padding-y 1.25rem
-
-// And below this the word goes too.
-//
-// It is kept as long as there is any room for it - this is the page's primary
-// action and a bare gauge does not say "start a test" - but by here the date
-// picker is at its own minimum and the row cannot hold three labelled
-// controls: the export was being pushed onto a line of its own, which cost the
-// toolbar a third row and left that control at the left-hand end, the one
-// place in the app it is not. The word is ~90px, which is exactly the
-// difference between those two layouts.
-//
-// The name survives the collapse: it is on the button as an aria-label, so
-// what a screen reader announces does not change with the viewport.
-//
-// 368 rather than a round number because that is where the row actually runs
-// out: measured, 369px still holds all three labelled and 368 is the first
-// width that wraps. Collapsing at 366 left a two-pixel band that still took
-// the third row. The figure is the English label's; a longer translation wraps
-// a few pixels earlier and simply spends one extra row there, which is now a
-// tidy row - the export sits at its right-hand end either way.
-@media screen and (max-width: 368px)
-  .start-test
-    padding: $toolbar-control-padding-y 0.7rem
-    aspect-ratio: 1 / 1
-    justify-content: center
-
-    span
-      display: none
+// The word is ~90px, and giving it up is exactly the difference between a
+// toolbar of two rows and one of three.

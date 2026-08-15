@@ -66,6 +66,65 @@
   .export-button
     font-size: $toolbar-text-size
 
+// How much of itself the row draws, chosen by measuring it rather than by
+// asking the viewport - PageToolbar/fit.js has the why, and PageToolbar.jsx
+// applies each stage and keeps the first that holds one line.
+//
+// Stated here, like the sizes above, because the toolbar is the only place
+// these controls ever stand together and it is their row that runs out. The two
+// media queries this replaces lived in the buttons' own stylesheets and were
+// measured against a preset's 126px trigger; a custom range is 300px, so the
+// row broke at 660px and kept both labels until 480.
+//
+// The export goes first: the start button is what these pages are for, and a
+// bare gauge does not say "start a test".
+//
+// No adjacent-sibling guard any more. That rule existed so a read-only
+// visitor - who gets no start button at all - kept the export's label, which a
+// viewport query could not work out for itself. A measurement can: with one
+// fewer control the row does not wrap, so this never applies.
+.page-toolbar[data-compact="export"],
+.page-toolbar[data-compact="all"]
+  .export-text
+    display: none
+
+  .chevron-icon
+    display: none
+
+  // Drops to an icon-only square; the height stays the toolbar's.
+  .export-button
+    padding: $toolbar-control-padding-y 0.7rem
+    aspect-ratio: 1 / 1
+    justify-content: center
+
+  // Anchored under the button, like it is at every other width. The button is a
+  // ~45px square by now and the container only as wide, so the panel has to
+  // hang from its right edge and state a width of its own - a labelled button
+  // lends it 141px and the base rule's left/right pair fits the two together.
+  .export-dropdown
+    left: auto
+    right: 0
+    min-width: 10rem
+
+  // Only the horizontal room tightens; the height is shared with every other
+  // control in the row.
+  .start-test
+    padding: $toolbar-control-padding-y 1.25rem
+
+// And here the word goes too. It is kept as long as there is any room for it,
+// and given up only where keeping it costs the toolbar a row.
+//
+// The name survives the collapse: both controls carry it as an aria-label, so
+// what a screen reader announces does not change with the width.
+.page-toolbar[data-compact="all"]
+  .start-test
+    padding: $toolbar-control-padding-y 0.7rem
+    aspect-ratio: 1 / 1
+    justify-content: center
+
+    span
+      display: none
+
 // Four controls do not fit one line here: the bar takes a row of its own below
 // the three that bound it.
 @media screen and (max-width: 900px)

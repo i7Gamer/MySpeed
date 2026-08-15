@@ -94,53 +94,14 @@
     font-size: 0.95rem
     font-weight: 500
 
-// Where the label is actually out of room, not where it was once guessed to
-// be. Measured across the range: the picker beside it absorbs the slack, and
-// the three controls hold one line with every label on it down to 480px - at
-// 460 the row wraps. Collapsing at 600 threw the word "Export" away with
-// 120px of space still under it.
+// The collapsed shape - icon-only button, no chevron, a menu that states its
+// own width - lives in PageToolbar/styles.sass, keyed off the stage that
+// component measured. It was a `max-width: 480px` block here, which could only
+// ever be right for one range and one language.
 //
-// And only where a start button shares the row with it.
-//
-// A read-only visitor cannot start a test, so StartTestButton renders nothing
-// at all - and the ~150px it would have taken is more than the label needs.
-// Measured across the range: in read-only mode the picker and the *labelled*
-// export hold one line together at every width down to 320px, with the status
-// bar on its own row exactly as before. There is nothing to buy there, so
-// nothing is spent.
-//
-// An adjacent sibling rather than :has(), which nothing here needs: the export
-// follows the start button directly in the toolbar's markup, so "a start
-// button stands beside me" is a plain sibling match with no support caveat.
-@media screen and (max-width: 480px)
-  .start-test + .export-button-container
-    .export-text
-      display: none
-
-    // Drops to an icon-only square; the height stays the toolbar's.
-    .export-button
-      padding: $toolbar-control-padding-y 0.7rem
-      aspect-ratio: 1 / 1
-      justify-content: center
-
-    .chevron-icon
-      display: none
-
-    // Anchored under the button, like it is at every other width.
-    //
-    // It used to become a fixed bottom sheet here - `bottom: 1rem` against the
-    // viewport - which put the menu at the foot of the screen, a long way from
-    // the icon that opened it and with nothing to say which control it
-    // belonged to. Worse, the open animation it shares tweens `transform`,
-    // which is what the sheet was using to centre itself, so it slid in from
-    // half a screen off before snapping back.
-    //
-    // Scoped with the collapse, because it is the collapse it answers to: the
-    // button is a ~45px square by then and the container only as wide, so the
-    // panel has to hang from its right edge and state a width of its own. A
-    // labelled button lends it 141px and the base rule's left/right pair fits
-    // the two of them together, which is what every wider width does.
-    .export-dropdown
-      left: auto
-      right: 0
-      min-width: 10rem
+// It used to make the menu a fixed bottom sheet as well - `bottom: 1rem`
+// against the viewport - which put it at the foot of the screen, a long way
+// from the icon that opened it and with nothing to say which control it
+// belonged to. Worse, the open animation it shares tweens `transform`, which
+// is what the sheet used to centre itself, so it slid in from half a screen
+// off before snapping back. The menu hangs off its button at every width now.
