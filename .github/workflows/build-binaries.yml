@@ -87,18 +87,15 @@ jobs:
         include:
           # Default Bun x64 target needs AVX2. Older CPUs (e.g. Bay Trail
           # Celeron) SIGILL on startup — ship a baseline build for them.
-          - arch: x64
-            label: x64
+          - label: x64
             target: bun-linux-x64
             runner: ubuntu-latest
             artifact_name: MySpeed-linux-x64
-          - arch: x64
-            label: x64-baseline
+          - label: x64-baseline
             target: bun-linux-x64-baseline
             runner: ubuntu-latest
             artifact_name: MySpeed-linux-x64-baseline
-          - arch: arm64
-            label: arm64
+          - label: arm64
             target: bun-linux-arm64
             runner: ubuntu-24.04-arm
             artifact_name: MySpeed-linux-arm64

@@ -127,6 +127,10 @@ release_asset_url() {
 RELEASE_URL=$(release_asset_url "$BINARY_NAME")
 if [ -z "$RELEASE_URL" ] && [ -n "$BINARY_FALLBACK" ]; then
     echo -e "$YELLOWℹ Info:$NORMAL $BINARY_NAME not in latest release — trying $BINARY_FALLBACK."
+    if [ "$BINARY_FALLBACK" = "MySpeed-linux-x64" ]; then
+        echo -e "$YELLOWℹ Info:$NORMAL that build requires AVX2 and will likely crash on this CPU."
+        echo -e "$NORMAL Build a baseline binary locally with 'bun run build:binary:baseline' until the next release ships one."
+    fi
     BINARY_NAME="$BINARY_FALLBACK"
     RELEASE_URL=$(release_asset_url "$BINARY_NAME")
 fi
