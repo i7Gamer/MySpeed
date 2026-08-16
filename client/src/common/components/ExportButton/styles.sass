@@ -16,7 +16,11 @@
   border: 1px solid $light-gray
   border-radius: 0.6rem
   cursor: pointer
-  transition: all 0.2s ease-in-out
+  // Only the border ever answers a state change here. `all` also eased the
+  // padding, which is what the collapse retunes - so the fit walk, writing a
+  // stage and measuring it in the same frame, read the previous stage's box
+  // at t=0 and could keep a stage the settled button then wrapped.
+  transition: border-color 0.2s ease-in-out
   color: $white
   font-family: inherit
   font-size: 0.95rem

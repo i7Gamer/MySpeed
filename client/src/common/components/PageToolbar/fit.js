@@ -12,8 +12,10 @@
  * particular controls fit this particular row - and that depends on the
  * selected range, on the translation, and on whether the status bar has already
  * dropped to a line of its own and handed its width back. So the row is
- * measured instead, and the answer falls out of the measurement: when the
- * status bar drops, the top line grows and the labels come back by themselves.
+ * measured instead - useFitStages walks the stages below, applying each and
+ * keeping the first that holds one line - and the answer falls out of the
+ * measurement: when the status bar drops, the top line grows and the labels
+ * come back by themselves.
  */
 
 /**
@@ -27,28 +29,3 @@ export const TOOLBAR_STAGES = ["none", "export", "all"];
 
 /** The controls that share the row, in the order they are drawn. */
 export const TOOLBAR_CONTROLS = [".date-range-picker", ".start-test", ".export-button-container"];
-
-/**
- * Whether the controls have broken onto more than one line.
- *
- * Read off their top edges rather than by adding up widths: the row is a flex
- * container that already knows how to lay itself out, and the sum of the
- * natural widths is not something a laid-out row can be asked for - the picker
- * grows to fill whatever line it lands on, so its rendered width says nothing
- * about what it wanted.
- *
- * A control that is not on screen is null and is not counted. The start button
- * renders nothing at all for a read-only visitor, which used to need a rule of
- * its own in the stylesheet; here it is simply one fewer thing to fit.
- */
-export const controlsWrapped = (tops) =>
-    new Set(tops.filter((top) => typeof top === "number")).size > 1;
-
-/**
- * The next stage to try, or null when there is nothing narrower left.
- *
- * The caller walks these in order, applying each and measuring, and stops at
- * the first that holds one line - so the labels are kept for as long as there
- * is room for them and given up one at a time.
- */
-export const nextStage = (stage) => TOOLBAR_STAGES[TOOLBAR_STAGES.indexOf(stage) + 1] ?? null;

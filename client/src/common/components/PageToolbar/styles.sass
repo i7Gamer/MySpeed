@@ -66,8 +66,20 @@
   .export-button
     font-size: $toolbar-text-size
 
+// The walk's guard rule. useFitStages writes each stage and reads the row's
+// geometry straight back, inside one frame - but a transition answers a
+// property change with its start value at t=0, so a stage measured mid-ease
+// would wear the previous stage's box and the walk would pick a stage the
+// settled row cannot hold. While the row wears data-measuring there are no
+// transitions; the attribute is gone before the frame paints, so nothing
+// visible ever misses its animation. !important because this must outrank
+// every control's own transition rule, whatever its specificity.
+.page-toolbar[data-measuring]
+  &, *
+    transition: none !important
+
 // How much of itself the row draws, chosen by measuring it rather than by
-// asking the viewport - PageToolbar/fit.js has the why, and PageToolbar.jsx
+// asking the viewport - PageToolbar/fit.js has the why, and useFitStages
 // applies each stage and keeps the first that holds one line.
 //
 // Stated here, like the sizes above, because the toolbar is the only place

@@ -1,12 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import {
-    controlsWrapped, nextStage, TOOLBAR_CONTROLS, TOOLBAR_STAGES
-} from "@/common/components/PageToolbar/fit.js";
+import { controlsWrapped, nextStage, resumeStage } from "@/common/hooks/useFitStages.js";
+import { TOOLBAR_CONTROLS, TOOLBAR_STAGES } from "@/common/components/PageToolbar/fit.js";
 import { compile, read, rules } from "../helpers/sass.mjs";
 
 const toolbarSource = read("common/components/PageToolbar/PageToolbar.jsx");
+const hookSource = read("common/hooks/useFitStages.js");
 const toolbar = compile("common/components/PageToolbar/styles.sass");
+const exportButton = compile("common/components/ExportButton/styles.sass");
 
 /**
  * The toolbar gave up its labels at two fixed viewport widths, and those were
@@ -71,9 +72,32 @@ describe("the order the labels are given up in", () => {
     });
 
     it("walks the stages once and then stops", () => {
-        assert.equal(nextStage("none"), "export");
-        assert.equal(nextStage("export"), "all");
-        assert.equal(nextStage("all"), null, "the walk never terminates, so the measurement loops forever");
+        assert.equal(nextStage(TOOLBAR_STAGES, "none"), "export");
+        assert.equal(nextStage(TOOLBAR_STAGES, "export"), "all");
+        assert.equal(nextStage(TOOLBAR_STAGES, "all"), null,
+            "the walk never terminates, so the measurement loops forever");
+    });
+
+    // A stage nothing declared must end the walk, not restart it: indexOf's -1
+    // plus one is the first stage, which would walk forever from a typo.
+    it("ends the walk on a stage it does not know", () => {
+        assert.equal(nextStage(TOOLBAR_STAGES, "bogus"), null);
+    });
+
+    /**
+     * Where a re-measure may pick up. A width that only shrank cannot make an
+     * earlier - wider - stage fit, so the walk resumes from the stage the row
+     * already wears instead of re-proving every stage above it; anything the
+     * row wears that the stages do not name falls back to the widest.
+     */
+    it("resumes from the stage the row is at", () => {
+        assert.equal(resumeStage(TOOLBAR_STAGES, "export"), "export");
+        assert.equal(resumeStage(TOOLBAR_STAGES, "all"), "all");
+    });
+
+    it("resumes from the top when the row wears a stage nothing declared", () => {
+        assert.equal(resumeStage(TOOLBAR_STAGES, "bogus"), "none");
+        assert.equal(resumeStage(TOOLBAR_STAGES, undefined), "none");
     });
 
     it("names controls the toolbar actually draws", () => {
@@ -86,40 +110,100 @@ describe("the order the labels are given up in", () => {
 /**
  * And the component measures rather than asking the viewport.
  *
- * The stylesheet cannot be asked whether a row fits, so the decision moved into
- * the component - which means the guard against it silently reverting is a
- * check that the observer is wired and that the old media queries are gone.
+ * The stylesheet cannot be asked whether a row fits, so the decision lives in
+ * useFitStages - which means the guard against it silently reverting is a
+ * check that every trigger that can change the answer re-runs the measurement.
+ * There were four found missing, each shipped as a stale toolbar: the start
+ * button mounting once /config resolves, a language swapping the labels after
+ * the old listener had already measured, the Inter webfont arriving with wider
+ * glyphs than the fallback's, and a fractional resize inside one clientWidth
+ * integer.
  */
 describe("the toolbar measures its own row", () => {
+    it("delegates the measurement to the shared hook", () => {
+        assert.match(toolbarSource, /useFitStages\(/,
+            "the toolbar walks stages by hand again instead of through the hook");
+    });
+
     it("observes the row rather than the window", () => {
-        assert.match(toolbarSource, /ResizeObserver/,
+        assert.match(hookSource, /ResizeObserver/,
             "nothing watches the row, so the stage is decided once and never revisited");
-        assert.match(toolbarSource, /useLayoutEffect/,
+        assert.match(hookSource, /useLayoutEffect/,
             "the measurement runs after paint, so the wrapped row is drawn once before it collapses");
     });
 
     /**
-     * A range change and a language change both alter the trigger's width
-     * without altering the row's, so a ResizeObserver never fires for either.
-     * The first is a prop; the second is an i18next event.
+     * The row's contents can change without its width changing - the start
+     * button mounts when the config arrives, a test run swaps its label for
+     * "Running" and back, a language prints longer words - and none of that
+     * moves the width a ResizeObserver watches. The DOM itself is the one
+     * thing that sees every such change.
      */
-    it("re-measures when the label changes but the row does not", () => {
-        assert.match(toolbarSource, /languageChanged/,
-            "switching language leaves the toolbar at the previous language's stage");
-        assert.match(toolbarSource, /\[from,\s*to,\s*timeframe]/,
-            "selecting a custom range leaves the toolbar sized for the preset it replaced");
+    it("re-measures when the row's contents change", () => {
+        assert.match(hookSource, /MutationObserver/,
+            "a control mounting after the config loads leaves the toolbar at the two-control stage");
+
+        for (const watched of ["childList", "subtree", "characterData"])
+            assert.match(hookSource, new RegExp(`${watched}:\\s*true`),
+                `the mutation observer does not watch ${watched}, so that class of change is missed`);
+    });
+
+    // The first walk runs before the webfont arrives on a cold cache, against
+    // fallback glyphs a few px narrower per label - enough to cross a stage
+    // boundary and stay wrong, because the swap changes no width.
+    it("re-measures once the fonts are in", () => {
+        assert.match(hookSource, /fonts\?\.ready/,
+            "a cold-cache visit keeps the stage the fallback font measured");
+    });
+
+    // The old listener measured the *outgoing* language: i18next emits
+    // synchronously, React commits the new labels afterwards, so the walk read
+    // a DOM that was about to be replaced. The mutation observer sees the
+    // commit itself, which is the only moment worth measuring.
+    it("has no ear on i18next any more", () => {
+        for (const source of [toolbarSource, hookSource]) {
+            assert.doesNotMatch(source, /from ["']i18next["']/,
+                "i18next is imported again, which smells of the stale-DOM listener");
+            assert.doesNotMatch(source, /i18n\.on\(|languageChanged"/,
+                "measuring during the language event reads the labels React is about to replace");
+        }
+    });
+
+    // clientWidth is an integer; flex wrapping is not. A fractional resize
+    // inside one integer bucket flipped the wrap with the guard asleep.
+    it("guards the re-measure on a fractional width", () => {
+        assert.match(hookSource, /getBoundingClientRect\(\)\.width !== lastWidth/,
+            "the width guard is gone, so every height change re-walks and can loop");
+        assert.doesNotMatch(hookSource, /row\.clientWidth/,
+            "the guard reads a rounded value and sleeps through sub-pixel wraps");
     });
 
     // Reading a rect straight after writing the attribute is what makes the
     // walk work at all - each stage has to be laid out before it can be
     // measured - so the write and the read belong in the same pass.
     it("applies a stage before measuring it", () => {
-        assert.match(toolbarSource, /dataset\.compact/,
+        assert.match(hookSource, /dataset\.compact/,
             "the stage never reaches the DOM, so the CSS below has nothing to key on");
     });
 
+    /**
+     * A transition answers a property change with its start value at t=0, so a
+     * stage measured mid-walk would wear the previous stage's box. The walk
+     * brackets itself with data-measuring, the stylesheet turns transitions off
+     * under it, and the attribute is gone before the frame paints.
+     */
+    it("suppresses transitions while it measures", () => {
+        assert.match(hookSource, /dataset\.measuring/,
+            "stages are measured while their properties are still easing from the last stage");
+        assert.match(hookSource, /delete row\.dataset\.measuring/,
+            "the suppression outlives the walk, which kills every animation in the row");
+    });
+
     it("stops observing when it unmounts", () => {
-        assert.match(toolbarSource, /disconnect\(\)/, "the observer outlives the toolbar");
+        const disconnects = hookSource.match(/\.disconnect\(\)/g) ?? [];
+
+        assert.ok(disconnects.length >= 2,
+            "one of the two observers outlives the toolbar");
     });
 });
 
@@ -170,6 +254,10 @@ describe("the collapse the stylesheet draws", () => {
      * The menu still has to hang off a button that is one icon wide, which is
      * the one part of the old narrow block that was about the collapse rather
      * than about the viewport.
+     *
+     * The anchor is load-bearing: without `left: auto; right: 0` the base
+     * rule's left/right pair pins a 160px menu to the left edge of a ~45px
+     * container at the right-hand end of the row, which runs it off-screen.
      */
     it("still gives the export menu a width once its button has none", () => {
         const menu = at("export", ".export-dropdown");
@@ -178,5 +266,40 @@ describe("the collapse the stylesheet draws", () => {
             "the menu takes the collapsed button's width, which is one icon wide");
         assert.ok(!menu.some(({body}) => /position:\s*fixed/.test(body)),
             "the menu is pinned to the viewport again");
+    });
+
+    it("hangs the menu off the collapsed button's right edge", () => {
+        const menu = at("export", ".export-dropdown");
+
+        assert.ok(menu.some(({body}) => /left:\s*auto/.test(body)),
+            "the base rule's left: 0 still applies, which stretches the menu from the button's left");
+        assert.ok(menu.some(({body}) => /right:\s*0/.test(body)),
+            "nothing holds the menu to the button's right edge, so it hangs off-screen");
+    });
+
+    /**
+     * The walk's guard rule. Every stage is written and measured inside one
+     * frame; a transition would hand the measurement the previous stage's
+     * geometry, so under data-measuring there are none.
+     */
+    it("turns transitions off under the measuring flag", () => {
+        const suppressing = rules(toolbar).filter(({selector, body}) =>
+            selector.includes("[data-measuring]") && /transition:\s*none/.test(body));
+
+        assert.ok(suppressing.length > 0,
+            "nothing suppresses transitions mid-walk, so a stage is measured wearing the last one's box");
+        assert.ok(suppressing.some(({body}) => /!important/.test(body)),
+            "a component's own transition rule outranks the suppression and eases anyway");
+    });
+
+    // The export button eased *everything*, padding included, which is what
+    // let a mid-walk measurement read the old box in the first place. Its
+    // states only ever change the border colour, so that is all it eases now.
+    it("no longer eases the export button's geometry", () => {
+        const button = rules(exportButton).find(({selector}) => selector === ".export-button");
+
+        assert.ok(button, "the export button's base rule is gone");
+        assert.doesNotMatch(button.body, /transition:\s*all/,
+            "the button still eases every property, geometry included");
     });
 });

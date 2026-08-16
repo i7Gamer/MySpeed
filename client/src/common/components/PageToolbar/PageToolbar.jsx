@@ -1,18 +1,12 @@
-import {useLayoutEffect, useRef} from "react";
-import i18n from "i18next";
+import {useRef} from "react";
 import DateRangePicker from "@/common/components/DateRangePicker";
 import StatusBarComponent from "@/common/components/StatusBar";
 import StartTestButton from "@/common/components/StartTestButton";
 import ExportButton from "@/common/components/ExportButton";
 import {isAllTime} from "@/common/utils/TimeframeUtil";
-import {controlsWrapped, TOOLBAR_CONTROLS, TOOLBAR_STAGES} from "./fit";
+import {useFitStages} from "@/common/hooks/useFitStages";
+import {TOOLBAR_CONTROLS, TOOLBAR_STAGES} from "./fit";
 import "./styles.sass";
-
-/** The top edge of each control that is on screen, rounded off the sub-pixel. */
-const controlTops = (row) => TOOLBAR_CONTROLS.map((selector) => {
-    const node = row.querySelector(selector);
-    return node ? Math.round(node.getBoundingClientRect().top) : null;
-});
 
 /**
  * The controls that sit above a page of test data: the range they cover, the
@@ -28,54 +22,10 @@ const controlTops = (row) => TOOLBAR_CONTROLS.map((selector) => {
 export const PageToolbar = ({from, to, timeframe, onRangeChange, onTimeframeChange, exportRange}) => {
     const rowRef = useRef(null);
 
-    /**
-     * How much of itself the row can afford to draw - see fit.js for why this
-     * is measured rather than written as a media query.
-     *
-     * Each stage is applied and then measured, keeping the first that holds one
-     * line, so a label is given up only where it costs the toolbar a row. The
-     * write and the read are one pass with no paint between them, which is what
-     * useLayoutEffect buys: the alternative is drawing the wrapped row once and
-     * collapsing it in the frame after, which reads as a flicker on every
-     * resize.
-     */
-    useLayoutEffect(() => {
-        const row = rowRef.current;
-        if (!row) return;
-
-        let lastWidth = null;
-
-        const apply = () => {
-            lastWidth = row.clientWidth;
-
-            for (const stage of TOOLBAR_STAGES) {
-                row.dataset.compact = stage;
-                if (!controlsWrapped(controlTops(row))) return;
-            }
-        };
-
-        apply();
-
-        // Only a change of width can change what fits. Guarded on it because
-        // the stage this callback picks changes the row's *height* - a wrapped
-        // toolbar is a line taller - and an unguarded observer would see its
-        // own effect and call straight back into itself.
-        const observer = new ResizeObserver(() => {
-            if (row.clientWidth !== lastWidth) apply();
-        });
-        observer.observe(row);
-
-        // A language changes the labels without changing the row, so no resize
-        // is observed and the toolbar would keep the previous language's stage.
-        // The selected range does the same and is a prop, so it is a dependency
-        // below: "All time" is 126px and a pair of dates is 300.
-        i18n.on("languageChanged", apply);
-
-        return () => {
-            observer.disconnect();
-            i18n.off("languageChanged", apply);
-        };
-    }, [from, to, timeframe]);
+    // How much of itself the row can afford to draw - fit.js for why this is
+    // measured rather than written as a media query, useFitStages for the
+    // triggers that keep the measurement honest.
+    useFitStages(rowRef, TOOLBAR_STAGES, TOOLBAR_CONTROLS);
 
     return (
         <div className="page-toolbar" data-compact="none" ref={rowRef}>
