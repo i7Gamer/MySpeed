@@ -71,22 +71,26 @@ describe("the statistics page's shape", () => {
  * description sub-line by 7px, on an element whose whole job is to ellipsise.
  */
 describe("what a card asks for while three share a row", () => {
-    const basisOf = (selector) => {
-        const rule = rules(statContainer).find((r) => r.selector.split(",")
-            .some((part) => part.trim() === selector));
-        assert.ok(rule, `${selector} declares nothing`);
+    it("asks for one share, stated once, on the card itself", () => {
+        const base = rules(statContainer).find(({selector}) => selector === ".stats-container");
 
-        const flex = rule.body.match(/flex:\s*([^;]+)/)?.[1]?.trim();
-        assert.ok(flex, `${selector} sets no flex`);
-        return flex;
-    };
+        assert.ok(base, ".stats-container declares nothing");
+        assert.match(base.body, /flex:\s*1 1 30%/,
+            "the shared share is gone, so the cards are back to sizing themselves apart");
+    });
 
-    it("asks for the same share whichever card it is", () => {
-        const base = basisOf(".stats-container");
+    // The size classes name which card is which - the page's stages reflow on
+    // them - but a width of their own is a second home for the same figure,
+    // editable apart from the first: the base changes and the page still
+    // renders from the copy.
+    it("gives a size class no width of its own", () => {
+        for (const size of [".container-small", ".container-normal", ".container-large"]) {
+            const sized = rules(statContainer).filter(({selector, body}) =>
+                selector.split(",").some((part) => part.trim() === size) && /flex:/.test(body));
 
-        for (const size of [".container-small", ".container-normal", ".container-large"])
-            assert.equal(basisOf(size), base,
-                `${size} still starts from a different width than the cards beside it`);
+            assert.equal(sized.length, 0,
+                `${size} sets a width of its own again, which is what cut the labels`);
+        }
     });
 
     // The old figures, named so a partial revert is caught rather than passing
@@ -151,3 +155,66 @@ describe("a card that has the row to itself", () => {
                 "the card is its stated width plus its border, so it overhangs the page");
         });
 });
+
+/**
+ * The loading page keeps the loaded page's shape.
+ *
+ * The three shimmer cards are direct children of the same area, so a stage
+ * that reflows `> .stats-container` and misses `> .skeleton-chart` is a page
+ * that loads three-across and then jumps into summary-plus-pairs the moment
+ * the content lands - a full-page reflow on every visit in the band.
+ */
+describe("the loading skeletons follow the page's stages", () => {
+    const stage = (ceiling) => {
+        const block = mediaBlocks(page).find(({condition}) => condition.includes(`${ceiling}px`));
+        assert.ok(block, `no stage reflows at ${ceiling}px`);
+        return block.body;
+    };
+
+    const declared = () => {
+        const widths = ceilings(page);
+        assert.equal(widths.length, 2, "the page no longer declares exactly two stages");
+        return {two: Math.max(...widths), one: Math.min(...widths)};
+    };
+
+    it("pairs the shimmers at the two-column stage", () => {
+        const paired = rules(stage(declared().two)).filter(({selector, body}) =>
+            selector.includes("> .skeleton-chart") && /flex:\s*1 1 calc\(50%/.test(body));
+
+        assert.ok(paired.length > 0,
+            "the shimmers keep three-across while the content behind them loads as pairs");
+    });
+
+    // The first shimmer stands where the summary will: the card after the
+    // toolbar, spanning its row so the two below it pair up like the content.
+    it("spans the first shimmer like the summary it stands for", () => {
+        const spanning = rules(stage(declared().two)).find(({selector, body}) =>
+            selector.includes(".page-toolbar + .skeleton-chart") && /flex:\s*1 1 100%/.test(body));
+
+        assert.ok(spanning,
+            "every shimmer takes half a row, so the loading page pairs where the loaded one spans");
+    });
+
+    it("stacks the shimmers at the one-column stage", () => {
+        const stacked = rules(stage(declared().one)).filter(({selector, body}) =>
+            selector.includes("> .skeleton-chart") && /flex:\s*1 1 100%/.test(body));
+
+        assert.ok(stacked.length > 0,
+            "the shimmers sit three-across on a width whose content loads single-file");
+    });
+
+    // The base rule is what the stages override; equal specificity means the
+    // stages must come later in the file, so the base cannot silently win.
+    it("declares the shimmer's own share before the stages", () => {
+        const base = page.search(/\.statistic-loading[^{]*\.skeleton-chart|\.skeleton-chart[^{]*\{/);
+        const firstStage = page.indexOf("@media");
+
+        assert.notEqual(base, -1, "the shimmer cards have no base rule at all");
+        assert.ok(base < firstStage,
+            "the shimmer base rule follows the stages and outranks them by source order");
+    });
+});
+
+// The summary's own trims - container-keyed now, so its full-row and modal
+// copies keep their detail - are pinned in overviewModalStyles.test.js, the
+// file that owns that stylesheet's contract.

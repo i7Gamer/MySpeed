@@ -1,66 +1,66 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import * as sass from "sass";
-import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { compile, containerBlocks, mediaBlocks, rules } from "../helpers/sass.mjs";
 
-const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
-
-const STYLESHEET = "pages/Statistics/charts/OverviewChart/styles.sass";
-
-// Stands in for the "@/" alias vite gives the client, which the stylesheets use
-// to reach the shared colour definitions.
-const aliasImporter = {
-    findFileUrl(url) {
-        if (!url.startsWith("@/")) return null;
-        return pathToFileURL(path.join(CLIENT_SRC, url.slice(2)));
-    }
-};
-
-const compiled = sass.compile(path.join(CLIENT_SRC, STYLESHEET), {importers: [aliasImporter]}).css;
-
-const MODAL_GUARD = ":not(.chart-modal-body *)";
-
-// Every rule block in the compiled sheet, as {selector, body} pairs. Nested
-// media queries only wrap blocks, so a flat scan still sees each one.
-const blocks = [...compiled.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .map(([, selector, body]) => ({selector: selector.trim(), body}));
+const compiled = compile("pages/Statistics/charts/OverviewChart/styles.sass");
 
 /**
- * The narrow-viewport rules exist because the *card* loses room as the page
- * grid tightens: they drop the icons and descriptions and clamp the label to a
- * fixed ellipsized width. The modal renders the same markup, so on any laptop
- * under 1400px these rules used to strip the enlarged detail view of exactly
- * the detail it exists to show - while the modal stylesheet kept sizing a
- * description that was display: none.
+ * The narrow-card rules exist because the *card* loses room as the page grid
+ * tightens: they drop the icons and descriptions and clamp the label to a
+ * fixed ellipsized width. The modal renders the same markup with the whole
+ * viewport to spend, and while the trims keyed on the viewport every one of
+ * them needed a :not(.chart-modal-body *) guard so the enlarged view kept the
+ * detail it exists to show.
  *
- * The guard cannot be an ancestor class on the card side, because the modal is
- * rendered inside the same .statistic-area as the cards; the modal body is the
- * only discriminating ancestor, so the card rules exclude it.
+ * The trims key on the width of .overview-items itself now - the list is a
+ * container - so the modal's copy is exempt by geometry rather than by guard:
+ * a wide list simply matches no trim. The same geometry fixed the spanning
+ * summary, which from 1030px down takes its whole row and was still being
+ * dressed in the form tuned for a ~330px card. What this file pins is that
+ * nothing viewport-keyed or modal-guarded creeps back.
  */
 describe("the overview chart stylesheet", () => {
-    it("hides nothing inside the modal", () => {
-        const hiders = blocks.filter(({body}) => /display:\s*none/.test(body));
+    it("hides and clamps only under a container query", () => {
+        for (const {body} of mediaBlocks(compiled))
+            assert.doesNotMatch(body, /display:\s*none|text-overflow:\s*ellipsis/,
+                "a viewport figure trims the card again, which strips wide cards and the modal too");
 
-        assert.ok(hiders.length > 0, "expected the card to hide details on narrow viewports");
-        for (const {selector} of hiders)
-            assert.ok(selector.includes(MODAL_GUARD), `"${selector}" hides content inside the modal too`);
+        const trimming = containerBlocks(compiled)
+            .filter(({body}) => /display:\s*none/.test(body));
+
+        assert.ok(trimming.length > 0, "no container query trims the card at all any more");
     });
 
-    it("clamps no label inside the modal", () => {
-        const clamps = blocks.filter(({body}) => /text-overflow:\s*ellipsis|width:\s*1[05]rem/.test(body));
+    it("establishes the list the trims measure", () => {
+        const items = rules(compiled).find(({selector}) => selector === ".overview-items");
 
-        assert.ok(clamps.length > 0, "expected the card to clamp its labels on narrow viewports");
-        for (const {selector} of clamps)
-            assert.ok(selector.includes(MODAL_GUARD), `"${selector}" clamps the label inside the modal too`);
+        assert.ok(items, "the list has no base rule");
+        assert.match(items.body, /container-type:\s*inline-size/,
+            "nothing establishes the container, so no trim ever matches and tight cards overflow");
     });
 
-    it("still trims the card itself on narrow viewports", () => {
-        assert.match(compiled, /@media[^{]*max-width:\s*1400px/);
+    it("still trims the card itself when the list is tight", () => {
         assert.match(compiled,
-            /\.overview-items \.panel-row:not\(\.chart-modal-body \*\) \.panel-row-icon\s*\{[^}]*display:\s*none/);
+            /\.overview-items \.panel-row \.panel-row-icon\s*\{[^}]*display:\s*none/);
         assert.match(compiled,
-            /\.overview-items \.panel-row:not\(\.chart-modal-body \*\) \.panel-row-description\s*\{[^}]*display:\s*none/);
+            /\.overview-items \.panel-row \.panel-row-description\s*\{[^}]*display:\s*none/);
+    });
+
+    // Two steps, the wrap inside the trim: a label that wraps while its icon
+    // and description still show is a step order gone backwards.
+    it("keys the wrap step inside the trim step", () => {
+        const steps = containerBlocks(compiled)
+            .map(({condition}) => parseFloat(condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]))
+            .filter(Number.isFinite);
+
+        assert.equal(steps.length, 2, "the trim and wrap steps are not both container-keyed");
+        assert.ok(steps[0] > steps[1],
+            "the wrap step is not inside the trim step, so a label wraps while its icon still shows");
+    });
+
+    it("needs no modal guard once geometry decides", () => {
+        assert.doesNotMatch(compiled, /chart-modal-body/,
+            "the guard is back, which means something other than the card's own width decides");
     });
 
     /**
@@ -69,10 +69,10 @@ describe("the overview chart stylesheet", () => {
      * The row it draws is shared with three other panels now, and theirs name a
      * single measurement in a word where these carry a sentence - so a rule
      * written against the bare row would strip the stability card of the
-     * sub-lines it is read for, on every laptop under 1400px.
+     * sub-lines it is read for.
      */
     it("scopes every row rule to this card rather than to the shared row", () => {
-        for (const {selector} of blocks.filter(({selector}) => selector.includes(".panel-row")))
+        for (const {selector} of rules(compiled).filter(({selector}) => selector.includes(".panel-row")))
             assert.ok(selector.includes(".overview-items"),
                 `"${selector}" dresses the shared row on every panel that uses it`);
     });
@@ -83,7 +83,7 @@ describe("the overview chart stylesheet", () => {
      * value's size does not copy the whole layout into its own sheet.
      */
     it("copies none of the shared row's own declarations", () => {
-        const own = blocks.filter(({selector}) => /^\.panel-row/.test(selector));
+        const own = rules(compiled).filter(({selector}) => /^\.panel-row/.test(selector));
 
         assert.deepEqual(own.map(({selector}) => selector), [],
             "the shared row's rules are compiled into this card's stylesheet as well");

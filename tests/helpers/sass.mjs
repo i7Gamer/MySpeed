@@ -31,15 +31,15 @@ export const compile = (file) => sass.compile(path.join(CLIENT_SRC, file), {impo
 export const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
 
 /**
- * Every @media block, as its raw condition and body.
+ * Every block of the given at-rule, as its raw condition and body.
  *
  * The block is captured by counting braces rather than by looking for a
  * close-brace on its own line: a body may nest arbitrary rules, and the
  * old newline heuristic only held for one compiler output style.
  */
-export const mediaBlocks = (css) => {
+const blocksOf = (css, atRule) => {
     const blocks = [];
-    const opener = /@media([^{]*)\{/g;
+    const opener = new RegExp(`@${atRule}([^{]*)\\{`, "g");
 
     let match;
     while ((match = opener.exec(css)) !== null) {
@@ -57,6 +57,11 @@ export const mediaBlocks = (css) => {
 
     return blocks;
 };
+
+export const mediaBlocks = (css) => blocksOf(css, "media");
+
+/** The @container twin, for widths an element measures for itself. */
+export const containerBlocks = (css) => blocksOf(css, "container");
 
 /** The body of every media query whose condition mentions the given text. */
 export const queriesMentioning = (css, condition) => mediaBlocks(css)

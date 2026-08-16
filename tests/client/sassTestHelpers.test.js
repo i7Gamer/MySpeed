@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mediaBlocks, rules, ceilings, queriesMentioning } from "../helpers/sass.mjs";
+import { containerBlocks, mediaBlocks, rules, ceilings, queriesMentioning } from "../helpers/sass.mjs";
 
 /**
  * The parsers the stylesheet tests share, proven against the shapes that broke
@@ -44,6 +44,19 @@ describe("mediaBlocks", () => {
         const blocks = mediaBlocks(tight);
 
         assert.equal(blocks.length, 1);
+        assert.match(blocks[0].body, /\.b\{/);
+        assert.doesNotMatch(blocks[0].body, /\.c\{/, "the block swallowed the rule after it");
+    });
+});
+
+describe("containerBlocks", () => {
+    // Same contract as mediaBlocks, for the width the element itself measures.
+    it("captures @container blocks the way mediaBlocks captures @media", () => {
+        const sheet = "@container (width < 25rem){.a{display:none}.b{color:red}}.c{color:blue}";
+        const blocks = containerBlocks(sheet);
+
+        assert.equal(blocks.length, 1);
+        assert.match(blocks[0].condition, /width < 25rem/);
         assert.match(blocks[0].body, /\.b\{/);
         assert.doesNotMatch(blocks[0].body, /\.c\{/, "the block swallowed the rule after it");
     });

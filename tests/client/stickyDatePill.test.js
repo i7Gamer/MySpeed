@@ -1,19 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import * as sass from "sass";
-import { fileURLToPath, pathToFileURL } from "node:url";
-
-const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
-
-const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
-
-const compile = (file) => sass.compile(path.join(CLIENT_SRC, file), {
-    importers: [{
-        findFileUrl: (url) => url.startsWith("@/") ? pathToFileURL(path.join(CLIENT_SRC, url.slice(2))) : null
-    }]
-}).css;
+import { compile, containerBlocks, read } from "../helpers/sass.mjs";
 
 /**
  * The floating date is a scrolling indicator that never left.
@@ -69,9 +56,11 @@ describe("the floating date pill", () => {
 describe("the overview card's row labels", () => {
     const css = compile("pages/Statistics/charts/OverviewChart/styles.sass");
 
-    const narrow = [...css.matchAll(/@media screen and \(max-width: (\d+)px\)\s*\{([\s\S]*?)\n}/g)]
-        .map(([, width, body]) => ({width: Number(width), body}))
-        .filter(({body}) => /\.panel-row-title/.test(body))
+    // The trims key on the card's own list now - @container, not viewport -
+    // so the narrowest step is the smallest list width touching the title.
+    const narrow = containerBlocks(css)
+        .map(({condition, body}) => ({width: parseFloat(condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]), body}))
+        .filter(({width, body}) => Number.isFinite(width) && /\.panel-row-title/.test(body))
         .sort((a, b) => a.width - b.width)[0];
 
     // The row itself is shared with three other panels now; these rules are the

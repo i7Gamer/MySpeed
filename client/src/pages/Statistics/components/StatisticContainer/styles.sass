@@ -74,20 +74,17 @@
   justify-content: center
   align-items: center
 
-// The size classes no longer set a width of their own while three cards share a
-// row: their contents want the same room as each other, and saying otherwise is
-// what cut the labels. They still name which card is which, which is what the
-// two-column stage reflows on - see pages/Statistics/styles.sass, where the
-// page's shape is decided in one place rather than in each card's stylesheet.
+// The size classes set no width at all: every card asks for the base rule's
+// share, and a second rule saying the same 30% was a second home for the
+// figure - editable apart from the first, so the base could change and the
+// page still render from the copy. They still name which card is which, which
+// is what the two-column stage reflows on - see pages/Statistics/styles.sass,
+// where the page's shape is decided in one place rather than here.
 //
 // They were 5% for a value card, 15% for a panel and 35% for the summary, with
 // flex-grow: 1 on all three - so the leftover was split equally and never
 // corrected the lopsided start. Measured at 1100px: the summary took 490px and
 // the panel beside it 277, where "Variation within a test" wanted 355.
-.container-small,
-.container-normal,
-.container-large
-  flex: 1 1 30%
 
 @media screen and (max-width: $stats-one-column)
   .stats-content
