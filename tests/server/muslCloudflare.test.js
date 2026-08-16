@@ -13,6 +13,17 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const existsIn = (...paths) => (candidate) => paths.includes(candidate);
 
 /**
+ * A literal turned into a pattern that matches only itself.
+ *
+ * Escaping just the dots reads as enough for a version string, and CodeQL is
+ * right that it is not: a backslash left alone escapes whatever follows it, so
+ * the pattern stops meaning the text it was built from. Nothing here is
+ * attacker-controlled, which is why this is a tidiness matter rather than a
+ * hole - but a half-escaper is worth neither keeping nor explaining twice.
+ */
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
  * Alpine reports itself as linux/x64 like any other Linux, so the platform pair
  * the download list is keyed on cannot tell the two libcs apart. The loader
  * needs the distinction because every Cloudflare CLI release is glibc-linked.
@@ -126,7 +137,7 @@ describe("the image ships a musl Cloudflare CLI", () => {
     });
 
     it("compiles the version the loader would otherwise fetch", () => {
-        assert.match(dockerfile, new RegExp(`ARG CFSPEEDTEST_VERSION=${cloudflareVersion.replace(/\./g, "\\.")}\\b`));
+        assert.match(dockerfile, new RegExp(`ARG CFSPEEDTEST_VERSION=${escapeRegExp(cloudflareVersion)}\\b`));
         assert.match(dockerfile, /cargo install .*--version \$\{CFSPEEDTEST_VERSION\}/);
     });
 
@@ -144,8 +155,6 @@ describe("the image ships a musl Cloudflare CLI", () => {
  * the refusal above exists to replace, in the one place a user actually reads.
  */
 describe("the failure a run records when the CLI is not there", () => {
-    const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
     it("explains a missing Cloudflare CLI on a musl system", () => {
         const message = missingBinaryMessage("cloudflare", "./bin/cfspeedtest", "ENOENT", true);
 
@@ -160,7 +169,7 @@ describe("the failure a run records when the CLI is not there", () => {
 
             const message = missingBinaryMessage(mode, binary, "ENOENT", false);
 
-            assert.match(message, new RegExp(escape(binary)));
+            assert.match(message, new RegExp(escapeRegExp(binary)));
             assert.doesNotMatch(message, /musl/i, `${mode} blamed musl on a glibc system`);
         }
     });
