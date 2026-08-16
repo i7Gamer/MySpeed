@@ -15,7 +15,8 @@ PORT="${2:-5216}"
 CONTAINER="myspeed-verify-$$"
 BASE="http://127.0.0.1:${PORT}"
 
-# The first boot downloads the three provider CLIs before the server listens.
+# The first boot downloads the Ookla and librespeed CLIs before the server
+# listens; the Cloudflare one ships in the image.
 # Overridable so the wait can be tightened on a fast network or in a test.
 MAX_ATTEMPTS="${VERIFY_MAX_ATTEMPTS:-60}"
 SLEEP_SECONDS="${VERIFY_SLEEP_SECONDS:-5}"

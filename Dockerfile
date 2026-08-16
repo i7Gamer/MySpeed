@@ -18,7 +18,9 @@ FROM rust:1-alpine AS cfspeedtest-build
 
 ARG CFSPEEDTEST_VERSION=2.2.2
 
-RUN apk add --no-cache musl-dev pkgconfig
+# musl-dev only: cfspeedtest reaches the network through rustls, so nothing in
+# the tree probes pkg-config for a system library.
+RUN apk add --no-cache musl-dev
 RUN cargo install cfspeedtest --locked --version ${CFSPEEDTEST_VERSION} --root /out
 
 FROM oven/bun:1-alpine AS server-build
@@ -79,8 +81,9 @@ VOLUME ["/myspeed/data"]
 
 EXPOSE 5216
 
-# The start period is generous because the first boot downloads the three
-# provider CLIs before the server begins listening.
+# The start period is generous because the first boot downloads the Ookla and
+# librespeed CLIs before the server begins listening. The Cloudflare one is
+# baked in above, so it is the one provider that costs nothing here.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
     CMD wget -qO- "http://127.0.0.1:${SERVER_PORT:-5216}/api/health" || exit 1
 
