@@ -95,9 +95,21 @@ at runtime.
 
 #### 🪟 Windows
 
-Download `MySpeed-windows-x64.exe` (or the MSI installer, which registers MySpeed as a
-Windows service) from the [releases page](https://github.com/i7Gamer/MySpeed/releases/latest),
-place it in a folder of your choice and run it.
+Download from the [releases page](https://github.com/i7Gamer/MySpeed/releases/latest):
+
+- `MySpeed-windows-x64.exe` — default Bun target (needs **AVX2**)
+- `MySpeed-windows-x64-baseline.exe` — older x86_64 CPUs without AVX2 (SSE4.2 / Nehalem+)
+- `MySpeed-installer.msi` and `MySpeed-installer-baseline.msi` — the same two as an
+  installer, which registers MySpeed as a Windows service
+
+Nothing picks the right one for you here, so go by the symptom: the exe exits
+immediately with `Illegal instruction`, and the MSI installs cleanly but leaves a
+service that never starts. Either one means the baseline build. To check before
+downloading, PowerShell 7 answers it with
+`[System.Runtime.Intrinsics.X86.Avx2]::IsSupported`.
+
+The two installers are one product, so running the other one switches the build and
+keeps your database.
 
 The exe keeps its data in a `data` folder next to the directory you start it from, so
 run it from the folder you want that data to live in. The MSI installs to
