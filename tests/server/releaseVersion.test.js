@@ -51,31 +51,12 @@ const wixVersion = (version) => {
 };
 
 /**
- * The version is validated once, at the first step, and everything downstream
- * trusts it - so it has to be validated against what the whole pipeline can
- * actually deliver, not against semver in general.
- *
- * It was not. The pattern admitted an optional suffix group, so `1.4.0-rc.1` and
- * `1.4.0.1` both passed, and build-msi.yml splices the version straight into
- * WiX's Product/@Version as `<version>.0` - which must be numeric dotted fields.
- * candle then refused it. By that point create-release has already pushed the
- * tag and the draft, build-binaries has uploaded every asset, and build-docker
- * has pushed `:latest` and `:<version>` to Docker Hub. The MSI job fails,
- * finalize-release is skipped, and cleanup-on-failure deliberately does not fire
- * - leaving `:latest` on Docker Hub silently replaced by a release candidate,
- * which is the part no rollback here undoes.
- *
- * Latent rather than live: every tag in the repo is plain three-part semver, so
- * this waits for the first time someone types a suffixed version. The fix is to
- * refuse it at the step before anything has been published.
- */
-/**
  * finalize-release.yml writes the Downloads table every release page opens
  * with, and it names each file as a literal. Adding a build to the matrix
  * therefore uploads an asset that nothing links to: MySpeed-linux-x64-baseline
  * arrived reachable only by scrolling past the table into the raw asset list,
- * and it exists precisely for the people least likely to work out which of
- * seven files they need.
+ * and it exists precisely for the people least likely to work out which of the
+ * files they need.
  */
 describe("the release body links every asset that is uploaded", () => {
     it("names each one in the Downloads table", () => {
@@ -135,6 +116,25 @@ describe("a locally built binary is compiled like the released one", () => {
     }
 });
 
+/**
+ * The version is validated once, at the first step, and everything downstream
+ * trusts it - so it has to be validated against what the whole pipeline can
+ * actually deliver, not against semver in general.
+ *
+ * It was not. The pattern admitted an optional suffix group, so `1.4.0-rc.1` and
+ * `1.4.0.1` both passed, and build-msi.yml splices the version straight into
+ * WiX's Product/@Version as `<version>.0` - which must be numeric dotted fields.
+ * candle then refused it. By that point create-release has already pushed the
+ * tag and the draft, build-binaries has uploaded every asset, and build-docker
+ * has pushed `:latest` and `:<version>` to Docker Hub. The MSI job fails,
+ * finalize-release is skipped, and cleanup-on-failure deliberately does not fire
+ * - leaving `:latest` on Docker Hub silently replaced by a release candidate,
+ * which is the part no rollback here undoes.
+ *
+ * Latent rather than live: every tag in the repo is plain three-part semver, so
+ * this waits for the first time someone types a suffixed version. The fix is to
+ * refuse it at the step before anything has been published.
+ */
 describe("the version a release may be dispatched with", () => {
     it("accepts the shape every release so far has used", () => {
         for (const version of ["1.0.3", "1.2.5", "1.3.0", "2.0.0", "10.20.30"])
