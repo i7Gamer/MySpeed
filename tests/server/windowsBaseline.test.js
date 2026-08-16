@@ -65,4 +65,19 @@ describe("the Windows binaries a release publishes", () => {
             "the build artifact name is not the matrix's, so the two legs collide");
     });
 
+    /**
+     * A green compile says nothing about whether the binary runs - #13's bar was
+     * boot-and-serve proof rather than a successful build, and the crash this
+     * whole matrix exists for happens at startup, long after the compiler is
+     * happy. The gate only gates while it sits in front of the upload: run
+     * afterwards, it reports a broken binary that is already a release asset.
+     */
+    it("proves the binary boots before attaching it to the release", () => {
+        const verify = windows.indexOf("verify-binary.ps1");
+        const upload = windows.indexOf("Upload to Release");
+
+        assert.notEqual(verify, -1, "the Windows binaries are uploaded without ever having been run");
+        assert.notEqual(upload, -1, "the Windows job no longer uploads anything");
+        assert.ok(verify < upload, "the binary is uploaded before it is verified, so the check gates nothing");
+    });
 });
