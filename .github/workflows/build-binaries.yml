@@ -67,8 +67,42 @@ jobs:
       - name: Generate client embed
         run: bun run generate-client-embed
 
+      # Retried, because the baseline leg fetches a runtime mid-compile and that
+      # fetch has failed this runner twice: "Failed to extract executable for
+      # 'bun-windows-x64-baseline-v1.3.14'. The download may be incomplete.",
+      # after bundling cleanly. The default leg never sees it - the runner's own
+      # Bun is windows-x64, so there is nothing to download - and the same
+      # target compiled on a cold cache off CI, which is what points at the
+      # fetch rather than at the target.
+      #
+      # Worth the loop rather than a re-dispatch: build-binaries failing is one
+      # of the two conditions that tear the tag and the draft release down, and
+      # Docker Hub has already been pushed by the time it does.
+      #
+      # The cached runtime goes between attempts. Bun keeps it at
+      # ~/.bun/install/cache/<target>-v<version>, and a truncated file there is
+      # precisely what the message reports - left in place, every retry reads it
+      # back and fails the same way.
       - name: Compile binary
-        run: bun build --compile --compile-autoload-package-json --external pg-hstore --external pg --target=${{ matrix.target }} server/index.js --outfile MySpeed.exe
+        shell: pwsh
+        run: |
+          $attempts = 3
+
+          for ($attempt = 1; $attempt -le $attempts; $attempt++) {
+            bun build --compile --compile-autoload-package-json --external pg-hstore --external pg --target=${{ matrix.target }} server/index.js --outfile MySpeed.exe
+
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+
+            Write-Host "::warning::compile attempt $attempt of $attempts failed (exit $LASTEXITCODE)"
+
+            if ($attempt -lt $attempts) {
+              Remove-Item "$HOME/.bun/install/cache/${{ matrix.target }}-v*" -Recurse -Force -ErrorAction SilentlyContinue
+              Start-Sleep -Seconds 15
+            }
+          }
+
+          Write-Host "::error::the binary never compiled in $attempts attempts"
+          exit 1
 
       # A green compile says nothing about whether the binary runs, which is the
       # whole premise of the baseline leg. Before the upload, so a binary that

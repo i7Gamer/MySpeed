@@ -85,6 +85,66 @@ describe("the Windows binaries a release publishes", () => {
 });
 
 /**
+ * Compiling the baseline target fetches a runtime, and that fetch can fail.
+ *
+ * The default leg needs no download - the runner's own Bun is windows-x64 - so
+ * only the baseline leg reaches for a ~93MB runtime mid-compile. Twice in a row
+ * on 1.3.3 the windows-latest runner answered `Failed to extract executable for
+ * 'bun-windows-x64-baseline-v1.3.14'. The download may be incomplete.` after
+ * bundling 921 modules cleanly, while the same target and version compiled on a
+ * cold cache locally and `bun-linux-x64-baseline` compiled on its own runner in
+ * the same run. So it is the fetch on that runner, not the target.
+ *
+ * That failure takes the whole release with it: build-binaries failing is one
+ * of the two conditions cleanup-on-failure tears the tag and the draft down
+ * for, and the Docker images are already pushed by then.
+ *
+ * The retry has to discard the cached runtime between attempts. Bun keeps the
+ * download under ~/.bun/install/cache/<target>-v<version>, and a truncated file
+ * there is what the message is reporting - so a second attempt that finds it
+ * still sitting there fails in exactly the same way.
+ */
+describe("compiling the Windows binaries", () => {
+    const step = (() => {
+        const start = windows.indexOf("- name: Compile binary");
+        assert.notEqual(start, -1, "the Windows job no longer has a compile step");
+
+        const next = windows.indexOf("\n      - name: ", start + 1);
+        return next === -1 ? windows.slice(start) : windows.slice(start, next);
+    })();
+
+    it("still compiles the leg's own target", () => {
+        assert.match(step, /--target=\$\{\{ matrix\.target \}\}/,
+            "the compile no longer targets the matrix leg, so both legs build the same binary");
+    });
+
+    it("tries more than once before failing the release", () => {
+        // Read where the bound is declared rather than off the loop condition,
+        // which names the variable rather than a figure.
+        const attempts = /\$attempts\s*=\s*(\d+)/.exec(step);
+
+        assert.ok(attempts, "the compile runs once, so one bad download loses the whole release");
+        assert.match(step, /-le \$attempts\b/, "the loop does not run to the bound it declares");
+        assert.ok(Number(attempts[1]) >= 2 && Number(attempts[1]) <= 5,
+            `${attempts[1]} attempts is not a bounded retry`);
+    });
+
+    /**
+     * The load-bearing half. Without it the retry re-reads the same truncated
+     * file and reports the same error, three times instead of once.
+     */
+    it("discards the cached runtime between attempts", () => {
+        assert.match(step, /Remove-Item[^\n]*\$\{\{ matrix\.target \}\}/,
+            "a retry keeps whatever partial download failed the first attempt, so it cannot succeed");
+    });
+
+    it("still fails the job when every attempt fails", () => {
+        assert.match(step, /exit 1/,
+            "a compile that never succeeded exits zero, so an absent binary reaches the upload");
+    });
+});
+
+/**
  * Windows has no install script picking the right binary the way scripts/
  * install.sh does on Linux, so a user on this hardware who wants the service
  * has to be given a second installer to download. The two are one product
