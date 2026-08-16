@@ -32,13 +32,31 @@ describe("the floor a facts column stands on", () => {
             "there is only one floor, so the grid still drops straight to a single column");
     });
 
+    const widthOf = (name) => parseFloat(source.match(new RegExp(`\\${name}:\\s*([\\d.]+)rem`))[1]);
+
     // The two have to be a step apart in the right direction, or the fallback
     // is the same figure written twice - or worse, the wider of the two.
     it("falls back to something actually narrower", () => {
-        const widthOf = (name) => parseFloat(source.match(new RegExp(`\\${name}:\\s*([\\d.]+)rem`))[1]);
-
         assert.ok(widthOf("$fact-column-narrow") < widthOf("$fact-column"),
             "the fallback floor is no narrower than the one it replaces");
+    });
+
+    /**
+     * But not so narrow that three of them fit where two wide ones just
+     * stopped. auto-fit places as many tracks as the floor allows, so a floor
+     * below a third of the switch width put THREE columns into the band just
+     * under it - the count went 2, then 3, then 2 as the panel shrank, and the
+     * 226px widest ordinary fact wrapped in ~180px tracks. The floor must keep
+     * a third track from fitting at the widest container the narrow rule ever
+     * sees, which is the switch itself.
+     */
+    it("never lets a third column into the band below the switch", () => {
+        const narrow = widthOf("$fact-column-narrow");
+        const wide = widthOf("$fact-column");
+        const gap = widthOf("$fact-gap");
+
+        assert.ok(3 * narrow + 2 * gap > 2 * wide + gap,
+            "three narrow columns fit just under the two-wide switch, so the count goes 2-3-2 while shrinking");
     });
 
     /**

@@ -192,8 +192,16 @@
 // holes in the grid at every two-column width, against one extra line on the
 // connection fact for the narrow ones. The extra line is the cheaper of the
 // two, and it is the trade the overview's summary card already makes.
+//
+// The narrow floor also has a floor of its own: above a third of the switch
+// width, minus the gaps' share. auto-fit places as many tracks as fit, so 11rem
+// let THREE columns into the 16px band just under the 38rem switch - the count
+// went 2, then 3, then 2 as the panel shrank, and the 226px widest ordinary
+// fact wrapped inside ~180px tracks. At 11.5rem a third track no longer fits
+// below the switch (3 x 11.5rem + 4rem of gaps = 38.5rem > 38rem), and the
+// median 119px fact loses nothing to the extra half rem.
 $fact-column: 18rem
-$fact-column-narrow: 11rem
+$fact-column-narrow: 11.5rem
 $fact-gap: 2rem
 
 // min() because a bare 18rem track does not shrink below 18rem: on a phone that
@@ -207,7 +215,6 @@ $fact-gap: 2rem
 @container (width < #{$fact-column * 2 + $fact-gap})
   .detail-facts
     grid-template-columns: repeat(auto-fit, minmax(min($fact-column-narrow, 100%), 1fr))
-
 
 // Label above the value rather than beside it.
 //
