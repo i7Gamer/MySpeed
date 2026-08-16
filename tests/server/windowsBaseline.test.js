@@ -9,6 +9,7 @@ const WORKFLOWS = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..",
 const read = (name) => fs.readFileSync(path.join(WORKFLOWS, name), "utf8");
 
 const binaries = read("build-binaries.yml");
+const msi = read("build-msi.yml");
 
 // A job's own lines, so an assertion about the Windows job cannot be satisfied
 // by something the Linux job happens to say. Jobs sit at two spaces; the next
@@ -29,6 +30,7 @@ const matrixValues = (block, key) => [...block.matchAll(new RegExp(`^\\s*-? *${k
     .map((found) => found[1].trim());
 
 const windows = job(binaries, "build-windows");
+const installer = job(msi, "build-msi");
 
 /**
  * Bun's default x64 target compiles in AVX2. On a pre-Haswell / Atom-class CPU
@@ -79,5 +81,92 @@ describe("the Windows binaries a release publishes", () => {
         assert.notEqual(verify, -1, "the Windows binaries are uploaded without ever having been run");
         assert.notEqual(upload, -1, "the Windows job no longer uploads anything");
         assert.ok(verify < upload, "the binary is uploaded before it is verified, so the check gates nothing");
+    });
+});
+
+/**
+ * Windows has no install script picking the right binary the way scripts/
+ * install.sh does on Linux, so a user on this hardware who wants the service
+ * has to be given a second installer to download. The two are one product
+ * carrying a different payload, which is what the identity assertions are
+ * about - a second product would be a different bug.
+ */
+describe("the MSI a release publishes", () => {
+    it("builds an installer around each Windows variant", () => {
+        const consumed = matrixValues(installer, "artifact");
+        const published = matrixValues(windows, "artifact_name");
+
+        assert.equal(consumed.length, 2, "the MSI job no longer has one leg per Windows binary");
+        assert.deepEqual([...consumed].sort(), [...published].sort(),
+            "the MSI job does not build one installer per Windows binary");
+    });
+
+    /**
+     * The contract between the two workflows, and the reason it is worth
+     * asserting: build-msi names the artifact it downloads as a literal, so
+     * renaming a binary in build-binaries breaks a job in a different file, at
+     * release time, after every binary has already been uploaded.
+     */
+    it("downloads artifacts that build-binaries actually publishes", () => {
+        assert.match(installer, /name: \$\{\{ matrix\.artifact \}\}/,
+            "the MSI job downloads a hardcoded artifact rather than its leg's");
+
+        const published = new Set(matrixValues(windows, "artifact_name"));
+        for (const artifact of matrixValues(installer, "artifact"))
+            assert.ok(published.has(artifact), `build-binaries never uploads an artifact named ${artifact}`);
+    });
+
+    it("gives each installer its own name", () => {
+        const names = matrixValues(installer, "asset_name");
+
+        assert.equal(names.length, 2, "the MSI job no longer builds exactly two installers");
+        assert.equal(new Set(names).size, names.length,
+            "both installers upload under one asset name, so the second upload fails mid-release");
+        assert.match(installer, /ASSET_NAME: \$\{\{ matrix\.asset_name \}\}/,
+            "the installers are uploaded under a fixed name rather than their leg's");
+    });
+
+    /**
+     * The two installers deliberately share an UpgradeCode: they are one
+     * product, and a distinct code would let both install at once, each
+     * registering a service named MySpeed against one ProgramData directory.
+     *
+     * Sharing it is only half the answer. At the same version WiX's default
+     * refuses to treat the other variant as an upgrade, so the user whose
+     * service never started downloads the baseline, installs it on top, and
+     * ends up with two entries in Add/Remove Programs instead of a working
+     * service - which is the exact person this whole change is for.
+     */
+    it("lets a user swap to the other variant of the same version", () => {
+        assert.match(installer, /<MajorUpgrade[^>]*AllowSameVersionUpgrades="yes"/,
+            "installing the other variant of the same version leaves both registered");
+        assert.equal(installer.match(/UpgradeCode="[^"]+"/g).length, 1,
+            "the two installers no longer share one UpgradeCode");
+    });
+
+    /**
+     * The WiX document is prose-heavy and lives inside a PowerShell here-string
+     * inside YAML, where nothing parses it as XML until candle does - at release
+     * time, after every binary is uploaded. `--` is the trap that catches: it is
+     * illegal inside an XML comment and natural to type in one.
+     */
+    it("writes XML comments candle can parse", () => {
+        for (const [, comment] of installer.matchAll(/<!--([\s\S]*?)-->/g))
+            assert.doesNotMatch(comment, /--/,
+                `an XML comment contains "--", which candle refuses: ${comment.trim().slice(0, 60)}`);
+    });
+
+    /**
+     * The MSI is the variant whose failure is silent - it installs cleanly and
+     * leaves a service that never starts - so which one is installed has to be
+     * answerable without rerunning the installer. Add/Remove Programs shows
+     * Product/@Name, and that is the only place it shows.
+     */
+    it("says which variant is installed", () => {
+        const names = matrixValues(installer, "product_name");
+
+        assert.match(installer, /Name="\$\{\{ matrix\.product_name \}\}"/,
+            "both installers register under one name, so nothing tells the two apart once installed");
+        assert.equal(new Set(names).size, 2, "the two installers no longer carry distinct product names");
     });
 });

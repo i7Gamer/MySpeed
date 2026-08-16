@@ -16,16 +16,18 @@ const binaries = read("build-binaries.yml");
 const finalize = read("finalize-release.yml");
 
 /**
- * Every asset name build-binaries.yml uploads, read out of the workflow rather
- * than restated here. The templated ones are the matrix expanding
- * artifact_name, which is already collected literally.
+ * Every asset name a release uploads, read out of the workflows rather than
+ * restated here. build-msi.yml counts too - it attaches installers to the same
+ * release. The templated ones are the matrices expanding artifact_name and
+ * asset_name, which are already collected literally.
  */
 const uploadedAssets = () => {
-    const names = [...binaries.matchAll(/^\s*(?:artifact_name|ASSET_NAME):\s*(\S+)\s*$/gm)]
+    const names = [binaries, msi]
+        .flatMap((workflow) => [...workflow.matchAll(/^\s*(?:artifact_name|asset_name|ASSET_NAME):\s*(\S+)\s*$/gm)])
         .map((match) => match[1])
         .filter((name) => !name.includes("${{"));
 
-    assert.notEqual(names.length, 0, "no release assets could be read out of build-binaries.yml");
+    assert.notEqual(names.length, 0, "no release assets could be read out of the build workflows");
 
     return [...new Set(names)];
 };
@@ -80,7 +82,7 @@ describe("the release body links every asset that is uploaded", () => {
         const unlinked = uploadedAssets().filter((asset) => !finalize.includes(asset));
 
         assert.deepEqual(unlinked, [],
-            "these are uploaded by build-binaries.yml and linked nowhere in the release body");
+            "these are uploaded by the build workflows and linked nowhere in the release body");
     });
 });
 

@@ -12,13 +12,32 @@ on:
 
 jobs:
   build-msi:
-    name: "Windows MSI Installer"
+    name: "Windows MSI Installer (${{ matrix.label }})"
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One installer per Windows binary. The service is where the AVX2
+          # crash is worst - it installs cleanly and then never starts - and
+          # Windows has no install script to pick the right binary the way
+          # scripts/install.sh does on Linux, so the choice has to be a download.
+          - label: x64
+            artifact: MySpeed-windows-x64.exe
+            product_name: MySpeed
+            asset_name: MySpeed-installer.msi
+          - label: x64-baseline
+            artifact: MySpeed-windows-x64-baseline.exe
+            product_name: MySpeed (no AVX2)
+            asset_name: MySpeed-installer-baseline.msi
+
     steps:
+      # Both artifacts carry a MySpeed.exe, so everything below - the WiX
+      # source, the service configuration, every GUID - is identical either way.
       - name: Download Windows server binary
         uses: actions/download-artifact@v8
         with:
-          name: MySpeed-windows-x64.exe
+          name: ${{ matrix.artifact }}
           path: ./installer
 
       - name: Download WinSW service wrapper
@@ -62,10 +81,23 @@ jobs:
           $wxsContent = @"
           <?xml version="1.0" encoding="UTF-8"?>
           <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-            <Product Id="*" Name="MySpeed" Language="1033" Version="${{ inputs.version }}.0" Manufacturer="Timo" UpgradeCode="A1B2C3D4-5E6F-7890-ABCD-EF1234567890">
+            <Product Id="*" Name="${{ matrix.product_name }}" Language="1033" Version="${{ inputs.version }}.0" Manufacturer="Timo" UpgradeCode="A1B2C3D4-5E6F-7890-ABCD-EF1234567890">
               <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
           
-              <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+              <!-- The two installers share this product's UpgradeCode on purpose:
+                   they are one product carrying a different binary, and separate
+                   codes would let both install at once, each registering a service
+                   named MySpeed against one ProgramData directory.
+
+                   AllowSameVersionUpgrades is the other half of that. The person
+                   this second installer exists for installed the wrong one, watched
+                   the service never start, and now installs the other at the same
+                   version - which the default refuses to treat as an upgrade,
+                   leaving two entries in Add/Remove Programs instead of a working
+                   service. ProgramData is untouched by the swap, and MigrateLegacyData
+                   below already refuses to copy over a database that is there, so
+                   the existing data survives it. -->
+              <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
               <MediaTemplate EmbedCab="yes" />
           
               <Feature Id="ProductFeature" Title="MySpeed" Level="1">
@@ -143,17 +175,20 @@ jobs:
           "@
           $wxsContent | Out-File -FilePath "installer\myspeed.wxs" -Encoding UTF8
 
+      # ICE61 fires on AllowSameVersionUpgrades because the upgrade table then
+      # covers the current version too. That is the intent, and it is only a
+      # warning, but silencing it keeps a real one visible in the log.
       - name: Build MSI
         working-directory: installer
         run: |
           candle -arch x64 myspeed.wxs
-          light myspeed.wixobj -o MySpeed-installer.msi
+          light myspeed.wixobj -sice:ICE61 -o MySpeed-installer.msi
 
       - name: Upload to Release
         uses: actions/github-script@v9
         env:
           RELEASE_ID: ${{ inputs.release_id }}
-          ASSET_NAME: MySpeed-installer.msi
+          ASSET_NAME: ${{ matrix.asset_name }}
           ASSET_PATH: installer/MySpeed-installer.msi
         with:
           script: |

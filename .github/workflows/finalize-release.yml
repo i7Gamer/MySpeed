@@ -65,7 +65,7 @@ jobs:
             let body = `## Downloads\n\n`;
             body += `| Platform | x86-64 | ARM64 |\n`;
             body += `| :-- | :-- | :-- |\n`;
-            body += `| **Windows** | ${L('EXE', 'MySpeed-windows-x64.exe')} · ${L('MSI', 'MySpeed-installer.msi')} · ${L('No AVX2', 'MySpeed-windows-x64-baseline.exe')} | |\n`;
+            body += `| **Windows** | ${L('EXE', 'MySpeed-windows-x64.exe')} · ${L('MSI', 'MySpeed-installer.msi')} · ${L('EXE (no AVX2)', 'MySpeed-windows-x64-baseline.exe')} · ${L('MSI (no AVX2)', 'MySpeed-installer-baseline.msi')} | |\n`;
             body += `| **Linux** | ${L('Binary', 'MySpeed-linux-x64')} · ${L('No AVX2', 'MySpeed-linux-x64-baseline')} | ${L('Binary', 'MySpeed-linux-arm64')} |\n`;
             body += `| **macOS** | ${L('Binary', 'MySpeed-macos-x64')} | ${L('Binary', 'MySpeed-macos-arm64')} |\n`;
             body += `\n### Source Distribution\n`;
