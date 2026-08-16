@@ -196,6 +196,53 @@ describe("the floor a row stands on", () => {
 });
 
 /**
+ * And it has to be given a width to stand that height in.
+ *
+ * The failure line is one sentence, nowrap, with an ellipsis for when it does
+ * not fit - and none of that does anything without something bounding its
+ * width. In both grid layouts the bound is its `grid-column`, which spans the
+ * tracks the measurements would have used. Below 660px the row stops being a
+ * grid: `flex-direction: column` with `align-items: flex-start`, where a
+ * grid-column means nothing and an item is as wide as its content.
+ *
+ * So the sentence ran straight past the card. Measured at a 600px viewport: the
+ * cell rendered 342px beyond the right edge of a 566px card, clipped by the
+ * card's own `overflow: hidden` - cut mid-word, with no ellipsis to say it had
+ * been cut, and the `title` attribute the only way left to read it.
+ */
+describe("the failure line on a stacked row", () => {
+    // The block that turns the row into a stack, found by what it does rather
+    // than by the width it does it at.
+    const stacked = [...css.matchAll(/@media[^{]*\{([\s\S]*?)\n}/g)]
+        .map(([, body]) => body)
+        .find((body) => /\.speedtest\s*\{[^}]*flex-direction:\s*column/.test(body));
+
+    it("has a stack to guard at all", () => {
+        assert.ok(stacked, "the row no longer becomes a column, so this guards nothing");
+    });
+
+    /**
+     * Stretch rather than a width: the row's padding is its own business and a
+     * percentage would have to know it. What the cell needs is simply to be as
+     * wide as the column it is in, which is what the cross-axis default would
+     * have given it had the row not asked for flex-start.
+     */
+    it("is bounded by the column it sits in", () => {
+        assert.match(stacked, /\.speedtest-failure\s*\{[^}]*align-self:\s*stretch/,
+            "the sentence is as wide as its own text, so it overruns the card instead of ellipsing");
+    });
+
+    // The two together are what an ellipsis needs: something to overflow, and
+    // permission to shrink below the content that overflows it.
+    it("keeps the pieces an ellipsis is made of", () => {
+        assert.match(css, /\.speedtest-failure\s*\{[^}]*min-width:\s*0/,
+            "the cell cannot shrink below its sentence, so the bound above buys nothing");
+        assert.match(css, /\.speedtest-failure-text\s*\{[^}]*text-overflow:\s*ellipsis/,
+            "the sentence is cut with nothing to say it was cut");
+    });
+});
+
+/**
  * The three measurements a row prints are whole numbers.
  *
  * The list is read down its columns - that is what the fixed grid above exists

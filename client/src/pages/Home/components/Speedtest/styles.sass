@@ -433,6 +433,20 @@ $row-min-height: 3rem
     font-size: 14pt
   .bufferbloat-increase
     font-size: 12pt
+  // The failure sentence is nowrap with an ellipsis, and neither does anything
+  // without something bounding its width. In both grid layouts that bound is
+  // its grid-column, spanning the tracks the measurements would have used; here
+  // there is no grid, and `align-items: flex-start` above leaves every item as
+  // wide as its own content. So the sentence ran straight out of the card -
+  // measured at 600px, 342px past the edge of a 566px card, clipped by the
+  // card's own overflow with no ellipsis to say it had been cut.
+  //
+  // Stretch rather than a width: the row's padding is its own business and a
+  // percentage would have to know it. This is the cross-axis default the stack
+  // gave up when it asked for flex-start, handed back to the one item that
+  // needs it.
+  .speedtest-failure
+    align-self: stretch
   // Nothing to hold open once the row is a stack - the grid is gone, so no
   // column shifts into the space - and an empty line in the middle of one reads
   // as a missing measurement rather than as an absent one.
