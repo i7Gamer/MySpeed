@@ -81,4 +81,12 @@ echo "Checking the container healthcheck ..."
 [ "$(docker inspect --format '{{.State.Health.Status}}' "$CONTAINER")" = "healthy" ] \
     || fail "The container's own healthcheck did not report healthy."
 
+# The baked Cloudflare CLI has to *execute*, not merely exist: the bug it
+# replaces was a glibc binary the musl kernel loader refused with ENOENT, which
+# no file-presence check can see. Each matrix job runs on a runner native to
+# its platform, so this proves the amd64 and arm64 musl builds for real.
+echo "Checking the baked Cloudflare CLI ..."
+docker exec "$CONTAINER" /myspeed/bin/cfspeedtest --version | grep -q "cfspeedtest" \
+    || fail "The baked musl cfspeedtest does not execute in this image."
+
 echo "Image verified."
