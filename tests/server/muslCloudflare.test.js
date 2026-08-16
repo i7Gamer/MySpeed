@@ -34,13 +34,39 @@ describe("recognising a musl system", () => {
      * installed therefore looks exactly like Alpine to a bare presence check,
      * and the Cloudflare provider was refused on a host where the published
      * glibc build runs perfectly. The glibc loader sitting beside it is what
-     * settles the question: Alpine has no such file.
+     * settles the question: a plain Alpine has no such file.
      */
     it("does not call a glibc system musl just because musl is installed too", () => {
         assert.equal(isMuslLinux("linux", existsIn(
             "/lib/ld-musl-x86_64.so.1", "/lib64/ld-linux-x86-64.so.2")), false);
         assert.equal(isMuslLinux("linux", existsIn(
             "/lib/ld-musl-aarch64.so.1", "/lib/ld-linux-aarch64.so.1")), false);
+    });
+
+    /**
+     * Reading it purely as "a glibc loader wins" then breaks the other way.
+     * `apk add gcompat` is how an Alpine host runs the occasional glibc-only
+     * program, and it puts /lib/ld-linux-x86-64.so.2 and its /lib64 twin right
+     * beside the musl ones - so the machine the whole musl branch exists for
+     * would go back to fetching a build for the libc it does not have.
+     *
+     * Alpine names its C library twice, ld-musl-<arch>.so.1 and
+     * libc.musl-<arch>.so.1 pointing at it, and the second name is the one only
+     * a musl userspace carries: Debian's musl package installs the loader
+     * alone, and no compatibility shim adds it. Verified in containers both
+     * ways round.
+     */
+    it("is not talked out of musl by a glibc compatibility layer", () => {
+        assert.equal(isMuslLinux("linux", existsIn(
+            "/lib/ld-musl-x86_64.so.1", "/lib/libc.musl-x86_64.so.1",
+            "/lib/ld-linux-x86-64.so.2", "/lib64/ld-linux-x86-64.so.2")), true);
+    });
+
+    // Plain Alpine carries both names, which has to stay the ordinary answer
+    // and not merely the exception above.
+    it("sees musl when both of its names are present", () => {
+        assert.equal(isMuslLinux("linux", existsIn(
+            "/lib/ld-musl-aarch64.so.1", "/lib/libc.musl-aarch64.so.1")), true);
     });
 
     it("is only a Linux question", () => {
