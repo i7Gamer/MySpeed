@@ -70,6 +70,24 @@ NIC, and the interface picker in the settings starts listing your actual interfa
 MySpeed still listens on port 5216, now directly on the host. This has no effect on
 Docker Desktop for Windows and macOS, where the traffic goes through a VM either way.
 
+#### 🐧 Linux (binary)
+
+Download a Linux binary from the [releases page](https://github.com/i7Gamer/MySpeed/releases/latest):
+
+- `MySpeed-linux-x64` — default Bun target (needs **AVX2**)
+- `MySpeed-linux-x64-baseline` — older x86_64 CPUs without AVX2 (SSE4.2 / Nehalem+)
+- `MySpeed-linux-arm64` — aarch64
+
+If the default binary exits immediately with `Illegal instruction` / `SIGILL`, use the
+baseline build. The install script picks baseline automatically when `/proc/cpuinfo`
+has no `avx2` flag.
+
+```bash
+curl -sSL -o /tmp/myspeed-install.sh \
+  https://raw.githubusercontent.com/i7Gamer/MySpeed/development/scripts/install.sh
+sudo bash /tmp/myspeed-install.sh
+```
+
 #### 🪟 Windows
 
 Download `MySpeed-windows-x64.exe` (or the MSI installer, which registers MySpeed as a

@@ -27,10 +27,20 @@ fi
 ARCH=$(uname -m)
 case "$ARCH" in
     x86_64)
-        BINARY_NAME="MySpeed-linux-x64"
+        # Bun's default linux-x64 executable requires AVX2. CPUs without it
+        # (pre-Haswell / some Atom/Celeron) die with SIGILL on startup.
+        if grep -qw avx2 /proc/cpuinfo 2>/dev/null; then
+            BINARY_NAME="MySpeed-linux-x64"
+            BINARY_FALLBACK="MySpeed-linux-x64-baseline"
+        else
+            BINARY_NAME="MySpeed-linux-x64-baseline"
+            BINARY_FALLBACK="MySpeed-linux-x64"
+            echo -e "$YELLOWℹ Info:$NORMAL CPU has no AVX2 — selecting the baseline Linux binary."
+        fi
         ;;
     aarch64|arm64)
         BINARY_NAME="MySpeed-linux-arm64"
+        BINARY_FALLBACK=""
         ;;
     *)
         echo -e "$RED✗ Unsupported architecture: $ARCH"
@@ -106,7 +116,20 @@ clear
 
 echo -e "$BLUE🔎 STATUS MESSAGE"
 echo -e "$NORMAL Fetching latest release information..."
-RELEASE_URL=$(curl -s https://api.github.com/repos/i7Gamer/MySpeed/releases/latest | grep "browser_download_url.*$BINARY_NAME" | cut -d '"' -f 4)
+# Match the asset name exactly so MySpeed-linux-x64 does not also hit
+# MySpeed-linux-x64-baseline.
+RELEASE_JSON=$(curl -s https://api.github.com/repos/i7Gamer/MySpeed/releases/latest)
+release_asset_url() {
+    local name="$1"
+    echo "$RELEASE_JSON" | grep -oE "\"browser_download_url\":[[:space:]]*\"[^\"]+/${name}\"" | head -1 | cut -d '"' -f 4
+}
+
+RELEASE_URL=$(release_asset_url "$BINARY_NAME")
+if [ -z "$RELEASE_URL" ] && [ -n "$BINARY_FALLBACK" ]; then
+    echo -e "$YELLOWℹ Info:$NORMAL $BINARY_NAME not in latest release — trying $BINARY_FALLBACK."
+    BINARY_NAME="$BINARY_FALLBACK"
+    RELEASE_URL=$(release_asset_url "$BINARY_NAME")
+fi
 
 if [ -z "$RELEASE_URL" ]; then
     echo -e "$RED✗ Could not find release for $BINARY_NAME"
