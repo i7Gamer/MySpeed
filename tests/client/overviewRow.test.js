@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { convertSpeed, formatLatency, formatWhole, SPEED_UNIT_MBYTES } from "@/common/utils/FormatUtil.js";
+import {
+    convertSpeed, formatLatency, formatShortDay, formatShortTime, formatWhole, SPEED_UNIT_MBYTES
+} from "@/common/utils/FormatUtil.js";
 import { getIconBySpeed } from "@/common/utils/TestUtil.js";
 import { clickable } from "@/common/utils/Clickable.js";
 import { compile, mediaBlocks, read } from "../helpers/sass.mjs";
@@ -264,6 +266,92 @@ describe("the failure line on a stacked row", () => {
             "the cell cannot shrink below its sentence, so the bound above buys nothing");
         assert.match(css, /\.speedtest-failure-text\s*\{[^}]*text-overflow:\s*ellipsis/,
             "the sentence is cut with nothing to say it was cut");
+    });
+});
+
+/**
+ * The date cell prints the time and nothing else.
+ *
+ * It carried a translated preposition in front of it - `t("time.at")` before a
+ * clock time, `t("time.on")` before a day. In English that is one short word,
+ * and the date track was measured with it sitting there. In other languages it
+ * is not: "A las", "W dniu", "Zamanında", "На адрес". A prefix wider than the
+ * track wraps the cell onto a second line, and the cell is what sets the height
+ * of the row - so a list of a hundred tests stood a good deal taller than its
+ * contents needed, in every language but the one it was measured in.
+ *
+ * Width is only half of it. Four of those are translations of the English word
+ * rather than of its sense here - "on" as in a website (ru, bg), "on" as in
+ * active (pt "Ativo"), "at" as in on time (tr "Zamanında") - and uk has neither
+ * key at all. That is what a bare preposition handed to a translator produces:
+ * there is no sentence around it, and nothing in the string says what it
+ * prefixes. Shortening it would leave every one of those still wrong.
+ *
+ * Nothing goes with it. The two formats already say which row is which - a
+ * named day where the row stands for a day, a clock time otherwise - and the
+ * icon beside them says the cell is a time. The last test below is that
+ * distinction, which the word had been the redundant half of.
+ */
+describe("what the row's date cell prints", () => {
+    const CELL = 'className="date-text"';
+
+    const LABEL_START = "let isAverage";
+    const LABEL_END = "const pingValue";
+
+    // The expression the cell draws, taken as written. What is wrong with a
+    // composed label is the composing, so this asserts on the source rather
+    // than on a rendered string: any spelling that concatenates something in
+    // front of the time is the defect, whatever that something formats to.
+    const drawn = () => {
+        const start = row.indexOf(CELL);
+        assert.notEqual(start, -1, "the date cell is no longer marked date-text");
+
+        const from = row.indexOf(">", start);
+        const to = row.indexOf("</h2>", from);
+        assert.notEqual(to, -1, "the date cell is no longer an h2");
+
+        return row.slice(from + 1, to).trim();
+    };
+
+    /**
+     * The label itself, lifted out and run - the same treatment the printed
+     * figures below get, and for the same reason: which formatter a row reaches
+     * for is only observable by handing it a row.
+     */
+    const labelled = (props, preferences = {}) => {
+        const start = row.indexOf(LABEL_START);
+        assert.notEqual(start, -1, "the row no longer derives its label in one place");
+
+        const end = row.indexOf(LABEL_END, start);
+        assert.notEqual(end, -1, `${LABEL_END} no longer follows it`);
+
+        return new Function("props", "preferences", "formatShortDay", "formatShortTime",
+            `${row.slice(start, end)}\nreturn timeString;`)(
+            props, preferences, formatShortDay, formatShortTime);
+    };
+
+    it("draws the formatted date alone", () => {
+        assert.equal(drawn(), "{timeString}",
+            "the cell composes its text again, which is how a translated word got in front of the time");
+    });
+
+    it("puts no translated word in front of it", () => {
+        assert.doesNotMatch(row, /t\(\s*"time\./,
+            "the row reads a time.* string again - the prefix that wrapped the cell in half the languages");
+    });
+
+    // Asserted against the clock rather than against a month name: the label
+    // goes through toLocaleDateString, so what August is called depends on the
+    // machine the suite runs on. What matters is that the two branches are
+    // still telling two different kinds of row apart.
+    it("still tells a day's average from a single test by its format alone", () => {
+        const afternoon = new Date(2026, 7, 15, 14, 32);
+        const day = labelled({type: "average", time: afternoon});
+
+        assert.equal(labelled({time: afternoon}), "14:32");
+        assert.notEqual(day, "14:32",
+            "an averaged row is labelled with a time, and nothing else on it says it stands for a whole day");
+        assert.match(day, /15/, "the averaged row no longer names the day it covers");
     });
 });
 

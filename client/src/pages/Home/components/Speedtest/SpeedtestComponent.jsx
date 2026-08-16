@@ -53,6 +53,10 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
     // rather than a time. Spelled out through the shared formatter: it was the
     // one date left in the interface written numerically as DD.MM, which half
     // its readers parse as MM.DD.
+    //
+    // This is the whole label. It used to be prefixed with a translated
+    // preposition, which the cell has no room for outside English - see the
+    // date-cell tests for why the word is gone rather than shortened.
     let timeString = isAverage
         ? formatShortDay(props.time)
         : formatShortTime(props.time, preferences);
@@ -209,7 +213,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                 <div className="date" data-grade={props.error ? "error" : "blue"}>
                     <FontAwesomeIcon icon={props.error ? faInfo : faClockRotateLeft}
                                      className={"container-icon icon-" + (props.error ? "error" : "blue")}/>
-                    <h2 className="date-text">{(t("time." + (isAverage ? "on" : "at"))) + " " + timeString}</h2>
+                    <h2 className="date-text">{timeString}</h2>
                 </div>
                 {/* A failed test says why here rather than showing three empty
                     columns that have to be expanded to mean anything. The
