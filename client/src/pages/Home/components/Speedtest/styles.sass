@@ -87,7 +87,18 @@ $row-min-height: 3rem
   // there is no width here to win, only slack to put where it is used. The
   // widest row is a 10 Gbit line - "10000 Mbps" twice - with a three-digit ping
   // carrying a jitter and a two-decimal packet loss stacked beside it.
-  grid-template-columns: 11.75rem 16rem 5rem 14.25rem 14.25rem auto
+  //
+  // The date track is the exception, and it grew by 1rem. It had been measured
+  // against a 24-hour clock - "04:44" is 94px here - while the 12-hour setting
+  // prints "10:44 AM" at 147px into the 137px the track left after the icon and
+  // the label's margin. So the ten, eleven and twelve o'clock rows wrapped and
+  // stood 30px taller than the rows around them. Measured over all 1440 clock
+  // times rather than over a sample, which named a narrower worst case.
+  //
+  // This one does move the total, by design: the row folds at 1400px and needs
+  // about 1116px to lay out, so there is room to spend and no breakpoint near
+  // enough to feel it. Verified at 1401px, where nothing overlaps.
+  grid-template-columns: 12.75rem 16rem 5rem 14.25rem 14.25rem auto
   justify-content: space-between
   padding: 1.5rem 2rem
   align-items: center
@@ -310,11 +321,15 @@ $row-min-height: 3rem
 // was, so this threshold is too. What moved is which column holds the slack -
 // see the note above the base grid.
 //
-// One variable per column, because the 920px block below draws the same
+// One variable per column, because the folded block below draws the same
 // widths minus the tracks that fold away - an invariant that lived in a
 // comment, where a re-measure of one block could leave the other behind.
 // Spelled from these, the folded row is a subset by construction.
-$narrow-date: 9.25rem
+// Grown by 0.75rem for the same reason the base tier's date track was, and by
+// the same measurement at this tier's own 18pt: "10:44 AM" wants 110px where
+// 9.25rem left it 103. The margin here is the thinner of the two - 156px of
+// track, less the 35px icon and a 0.6rem gap, is 111px.
+$narrow-date: 9.75rem
 $narrow-ping: 13rem
 $narrow-grade: 5rem
 $narrow-speed: 11rem
@@ -355,7 +370,15 @@ $narrow-speed: 11rem
 // 2.3 Gbit line's values the five measurements sit side by side down to 880px
 // now that each column takes only the width it needs, so a 1000 window gets to
 // keep them. It was 1150 when every column took a quarter of the row.
-@media (max-width: 920px)
+//
+// 930 rather than 920, because the date track grew by 0.75rem for the 12-hour
+// clock and this ceiling had no arithmetic tying it to the tracks it gives up
+// on. The row wants 926px here - five tracks, the chevron, five gaps, its own
+// padding and 34px of page gutter - so 920 left a band from 921 to 925 where
+// the row laid out wider than the page had for it and put its last column in
+// the gutter. A grid item does not clip, so nothing wrapped to say so.
+// overviewRow.test.js states that sum against this ceiling now.
+@media (max-width: 930px)
   .speedtest
     // The same three widths the six-column row uses - the same variables, so
     // it cannot be otherwise - minus the two tracks that fold away: the ping

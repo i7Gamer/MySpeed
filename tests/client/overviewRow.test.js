@@ -356,6 +356,208 @@ describe("what the row's date cell prints", () => {
 });
 
 /**
+ * The date column is wide enough for the widest clock it can print.
+ *
+ * The track was measured against a 24-hour label, which is the shorter of the
+ * two the cell can be set to: "04:44" is 94px at the base tier where "10:44 AM"
+ * is 147px, and the column only ever had 137px to give. So on a 12-hour clock
+ * the ten, eleven and twelve o'clock rows wrapped and stood 30px taller than
+ * the rows around them - a list that changes height as it scrolls, which is the
+ * thing the constants at the top of that stylesheet exist to prevent.
+ *
+ * It went unseen because the translated prefix in front of the label used to
+ * overflow the column in every language at every hour, so the rows were
+ * uniformly too tall rather than unevenly so. Removing the prefix left the
+ * three genuine offenders on their own.
+ *
+ * The widths below were measured in a browser over all 1440 clock times at each
+ * tier's own font size, rather than over the times a fixture happens to hold -
+ * the sample said "10:03 AM", which is only the widest of what was in it. The
+ * assertion is the inequality rather than the figures, so re-measuring one part
+ * of the cell does not quietly invalidate the others.
+ *
+ * The stacked tier below 660px is deliberately absent: the row is a flex column
+ * with align-items: flex-start there, so the cell is as wide as its own content
+ * and there is no track to outgrow.
+ */
+describe("the room the date column gives its label", () => {
+    const REM = 16;
+
+    // The rules below are found by their indentation, so the carriage returns
+    // have to go first - a sass rule read off a CRLF checkout ends every line
+    // in one, and \s+ then swallows the newline it is meant to anchor to.
+    const source = styles.replace(/\r/g, "");
+
+    // Measured, Chrome, at the font size each tier sets on .date-text: 32px at
+    // the base tier and 24px below 1400px. "10:44 AM" is the widest of every
+    // clock time at both, ahead of the widest 24-hour time and the widest named
+    // day the averaged branch would print.
+    const WIDEST_LABEL = {base: 147, narrow: 110};
+
+    // The clock glyph beside it, which the flex row lays out before the text.
+    // Same box at both tiers - it is sized in rem by its own rule, not by the
+    // label's font size.
+    const ICON = 35;
+
+    const rem = (value) => {
+        const match = /([\d.]+)rem/.exec(value);
+        assert.ok(match, `${value} is no longer stated in rem`);
+        return parseFloat(match[1]) * REM;
+    };
+
+    const templates = [...source.matchAll(/grid-template-columns:([^\n]*)/g)]
+        .map(([, tracks]) => tracks.trim());
+
+    // The first track of the base tier, which states its widths as literals.
+    const baseTrack = () => rem(templates[0].split(/\s+/)[0]);
+
+    const narrowTrack = () => {
+        const declared = /\$narrow-date:\s*([\d.]+rem)/.exec(source);
+        assert.ok(declared, "the narrow tiers no longer name their date track");
+        return rem(declared[1]);
+    };
+
+    // .date-text sets `margin: 0 0 0 1rem` at the base tier and overrides
+    // margin-left below 1400px.
+    const baseMargin = () => {
+        const shorthand = /\.date-text\n\s+margin:\s*([^\n]+)/.exec(source);
+        assert.ok(shorthand, ".date-text no longer sets its margin as a shorthand");
+        return rem(shorthand[1].trim().split(/\s+/).pop());
+    };
+
+    const narrowMargin = () => {
+        const override = /\.date-text\n\s+font-size:[^\n]*\n\s+margin-left:\s*([^\n]+)/.exec(source);
+        assert.ok(override, "the narrow tiers no longer override the label's margin");
+        return rem(override[1].trim());
+    };
+
+    it("fits the widest clock at the base tier", () => {
+        const available = baseTrack() - ICON - baseMargin();
+
+        assert.ok(available >= WIDEST_LABEL.base,
+            `the date track leaves ${available}px for a label needing ${WIDEST_LABEL.base}px, `
+            + "so a two-digit hour on a 12-hour clock wraps and that row stands taller than its neighbours");
+    });
+
+    it("fits the widest clock at the narrow tiers", () => {
+        const available = narrowTrack() - ICON - narrowMargin();
+
+        assert.ok(available >= WIDEST_LABEL.narrow,
+            `$narrow-date leaves ${available}px for a label needing ${WIDEST_LABEL.narrow}px`);
+    });
+
+    /**
+     * And no wider than it has to be. The row's total is what decides where it
+     * stops fitting and folds, so width taken here is width the measurements
+     * beside it do not get - the column was already the one carrying slack,
+     * being the only one whose content is not a measurement.
+     */
+    it("takes no more room than the label needs", () => {
+        const slack = {
+            base: baseTrack() - ICON - baseMargin() - WIDEST_LABEL.base,
+            narrow: narrowTrack() - ICON - narrowMargin() - WIDEST_LABEL.narrow
+        };
+
+        for (const [tier, spare] of Object.entries(slack))
+            assert.ok(spare < REM,
+                `the ${tier} date track carries ${spare}px past its widest label, which is width `
+                + "the row's own total pays for");
+    });
+});
+
+/**
+ * The row folds before it runs out of room, not after.
+ *
+ * The six-column tier holds fixed tracks, so the width it needs is arithmetic:
+ * five tracks, the chevron, the gaps between them and the row's own padding.
+ * Below that it has to fold, and the ceiling of the folded tier is what decides
+ * when. Those two numbers were consistent and unrelated - nothing tied the
+ * ceiling to the tracks it exists to give up on - so widening the date track by
+ * 0.75rem for the 12-hour clock silently opened a band just above the fold
+ * where the row no longer fitted: measured, it overran its padding by 5px at
+ * 921px and by 1px at 925px, the last column drawn into the page gutter.
+ *
+ * A grid item does not clip, so that band showed as the chevron leaving the
+ * card rather than as anything wrapping. The ceiling moved to 930px, and the
+ * inequality below is what keeps the two together the next time a track is
+ * re-measured.
+ */
+describe("where the six-column row gives up", () => {
+    const REM = 16;
+
+    /**
+     * What surrounds the row at the fold, measured in a browser: the page
+     * gutters either side of the card plus its borders, everything between the
+     * viewport width and the row's own border box.
+     *
+     * Constant across this tier - it comes from the page layout, not from the
+     * row - and confirmed at 935px and 960px, which agreed to the pixel.
+     */
+    const PAGE_CHROME = 34;
+
+    const px = (value) => {
+        const match = /([\d.]+)rem/.exec(value);
+        assert.ok(match, `${value} is no longer stated in rem`);
+        return parseFloat(match[1]) * REM;
+    };
+
+    // The compiled tier, so the track variables arrive resolved.
+    const sixColumn = mediaBlocks(css)
+        .find(({condition, body}) => /max-width:\s*1400px/.test(condition)
+            && /grid-template-columns/.test(body));
+
+    const folded = mediaBlocks(css)
+        .find(({body}) => /\.speedtest\s*\{[^}]*grid-template-rows/.test(body));
+
+    it("has both tiers to relate", () => {
+        assert.ok(sixColumn, "the six-column tier no longer sizes its own tracks");
+        assert.ok(folded, "the row no longer folds into rows at all");
+    });
+
+    it("folds at or above the width its own tracks need", () => {
+        const template = /grid-template-columns:([^;}]*)/.exec(sixColumn.body)[1];
+        const tracks = template.trim().split(/\s+/).filter((track) => track !== "auto");
+
+        assert.equal(tracks.length, 5, "the six-column tier no longer names five fixed tracks");
+
+        const chevron = px(/\.speedtest-chevron\s*\{[^}]*width:\s*([^;}]+)/.exec(css)[1]);
+        const gap = px(/\.speedtest\s*\{[^}]*[^-]gap:\s*([^;}]+)/.exec(css)[1]);
+        const padding = /padding:\s*([^;}]+)/.exec(sixColumn.body)[1].trim().split(/\s+/);
+
+        // Five tracks and the chevron make six columns, so five gaps between
+        // them; the padding is stated as vertical then horizontal.
+        const needs = tracks.reduce((total, track) => total + px(track), 0)
+            + chevron + gap * 5 + px(padding[1]) * 2 + PAGE_CHROME;
+
+        const ceiling = Number(/max-width:\s*(\d+)px/.exec(folded.condition)[1]);
+
+        assert.ok(ceiling >= needs,
+            `the row folds at ${ceiling}px but needs ${needs}px, so between those two widths it `
+            + "lays out wider than the page gives it and the last column is drawn into the gutter");
+    });
+
+    /**
+     * And not far above it either: every pixel between the two is a width where
+     * the row has folded into two lines with room to spare for one.
+     */
+    it("does not fold earlier than it has to", () => {
+        const ceiling = Number(/max-width:\s*(\d+)px/.exec(folded.condition)[1]);
+        const template = /grid-template-columns:([^;}]*)/.exec(sixColumn.body)[1];
+        const tracks = template.trim().split(/\s+/).filter((track) => track !== "auto");
+
+        const chevron = px(/\.speedtest-chevron\s*\{[^}]*width:\s*([^;}]+)/.exec(css)[1]);
+        const gap = px(/\.speedtest\s*\{[^}]*[^-]gap:\s*([^;}]+)/.exec(css)[1]);
+        const padding = /padding:\s*([^;}]+)/.exec(sixColumn.body)[1].trim().split(/\s+/);
+
+        const needs = tracks.reduce((total, track) => total + px(track), 0)
+            + chevron + gap * 5 + px(padding[1]) * 2 + PAGE_CHROME;
+
+        assert.ok(ceiling - needs < 2 * REM,
+            `the row folds ${ceiling - needs}px before it has to, giving up a column layout that fits`);
+    });
+});
+
+/**
  * The three measurements a row prints are whole numbers.
  *
  * The list is read down its columns - that is what the fixed grid above exists
