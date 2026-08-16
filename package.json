@@ -15,6 +15,7 @@
     "server": "bun run --watch server/index.js",
     "build": "bun run generate-migrations && bun run generate-integrations && cd client && bun run build",
     "build:binary": "bun run build && rm -rf build && mv client/build . && bun run generate-client-embed && bun build --compile --compile-autoload-package-json --external pg-hstore --external pg server/index.js --outfile MySpeed",
+    "build:binary:baseline": "bun run build && rm -rf build && mv client/build . && bun run generate-client-embed && bun build --compile --compile-autoload-package-json --external pg-hstore --external pg --target=bun-linux-x64-baseline server/index.js --outfile MySpeed-linux-x64-baseline",
     "generate-client-embed": "node scripts/generate-client-embed.js",
     "generate-migrations": "node scripts/generate-migrations.js",
     "generate-integrations": "node scripts/generate-integrations.js",
