@@ -1,31 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import * as sass from "sass";
-
-const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
-
-const aliasImporter = {
-    findFileUrl(url) {
-        if (!url.startsWith("@/")) return null;
-        return pathToFileURL(path.join(CLIENT_SRC, url.slice(2)));
-    }
-};
-
-const compile = (file) => sass.compile(path.join(CLIENT_SRC, file), {importers: [aliasImporter]}).css;
-
-const readSource = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
+import { ceilings, compile, mediaBlocks, queriesMentioning, read } from "../helpers/sass.mjs";
 
 const header = compile("common/components/Header/styles.sass");
 const exportButton = compile("common/components/ExportButton/styles.sass");
 const startTest = compile("common/components/StartTestButton/styles.sass");
-
-/** The body of every media query whose condition mentions the given text. */
-const queriesMentioning = (css, condition) => [...css.matchAll(/@media([^{]*)\{([\s\S]*?)\n}/g)]
-    .filter(([, header]) => header.includes(condition))
-    .map(([, , body]) => body);
 
 /**
  * The header's title box on a narrow screen.
@@ -94,8 +73,8 @@ describe("the header keeps its logo on a narrow screen", () => {
  */
 describe("the header title survives the width above the reflow", () => {
     it("keeps the reduced inset down to where the layout actually reflows", () => {
-        const squeeze = [...header.matchAll(/@media([^{]*)\{/g)]
-            .map(([, condition]) => condition)
+        const squeeze = mediaBlocks(header)
+            .map(({condition}) => condition)
             .find((condition) => condition.includes("1250px"));
 
         assert.ok(squeeze, "the squeeze zone is gone");
@@ -121,34 +100,27 @@ describe("the header title survives the width above the reflow", () => {
  * so, and no rendering test would catch it until that second rule exists.
  */
 describe("the header's breakpoints run wide to narrow", () => {
-    /**
-     * Only the blocks bounded from above alone. The squeeze zone states a
-     * min-width and a max-width together, which places it by neither end, and
-     * ordering it against the rest would be a rule about nothing.
-     */
-    const ceilings = [...header.matchAll(/@media([^{]*)\{/g)]
-        .map(([, condition]) => condition)
-        .filter((condition) => !condition.includes("min-width"))
-        .map((condition) => Number(condition.match(/max-width:\s*(\d+)px/)?.[1]))
-        .filter((width) => Number.isFinite(width));
+    // Only the blocks bounded from above alone - the helper already skips the
+    // squeeze zone, which a min-width places by neither end.
+    const headerCeilings = ceilings(header);
 
     it("has breakpoints to order at all", () => {
-        assert.ok(ceilings.length > 2, "the header no longer has max-width breakpoints to order");
+        assert.ok(headerCeilings.length > 2, "the header no longer has max-width breakpoints to order");
     });
 
     it("declares each one below the one above it", () => {
-        const descending = [...ceilings].sort((a, b) => b - a);
+        const descending = [...headerCeilings].sort((a, b) => b - a);
 
-        assert.deepEqual(ceilings, descending,
-            `breakpoints are declared ${ceilings.join(" -> ")}; a block out of order wins`
+        assert.deepEqual(headerCeilings, descending,
+            `breakpoints are declared ${headerCeilings.join(" -> ")}; a block out of order wins`
             + " over the narrower ones below it for every rule they share");
     });
 
     // Two blocks with the same ceiling are the same case written twice, and
     // which of them wins is then a question about line numbers.
     it("states each width once", () => {
-        assert.equal(new Set(ceilings).size, ceilings.length,
-            `two blocks share a ceiling: ${ceilings.join(" -> ")}`);
+        assert.equal(new Set(headerCeilings).size, headerCeilings.length,
+            `two blocks share a ceiling: ${headerCeilings.join(" -> ")}`);
     });
 });
 
@@ -177,8 +149,8 @@ describe("the toolbar controls keep their labels until they do not fit", () => {
     // Hiding the only text in a button leaves it with no accessible name at
     // all. Both controls in this row collapse, so both carry their name.
     it("keeps both collapsing controls named for a screen reader", () => {
-        const start = readSource("common/components/StartTestButton/StartTestButton.jsx");
-        const exportSource = readSource("common/components/ExportButton/ExportButton.jsx");
+        const start = read("common/components/StartTestButton/StartTestButton.jsx");
+        const exportSource = read("common/components/ExportButton/ExportButton.jsx");
 
         assert.match(start, /aria-label=\{label}/,
             "the start button is a bare gauge glyph with no name once collapsed");

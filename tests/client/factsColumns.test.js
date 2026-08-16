@@ -1,26 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import * as sass from "sass";
-import { fileURLToPath, pathToFileURL } from "node:url";
-
-const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
+import { compile, read } from "../helpers/sass.mjs";
 
 const STYLES = "common/components/TestDetails/styles.sass";
 
-const aliasImporter = {
-    findFileUrl(url) {
-        if (!url.startsWith("@/")) return null;
-        return pathToFileURL(path.join(CLIENT_SRC, url.slice(2)));
-    }
-};
+const css = compile(STYLES);
+const source = read(STYLES);
 
-const css = sass.compile(path.join(CLIENT_SRC, STYLES), {importers: [aliasImporter]}).css;
-const source = fs.readFileSync(path.join(CLIENT_SRC, STYLES), "utf8");
-
-const ruleFor = (selector, within = css) => {
-    const match = within.match(new RegExp(`\\${selector}\\s*\\{([^}]*)}`));
+const ruleFor = (selector) => {
+    const match = css.match(new RegExp(`\\${selector}\\s*\\{([^}]*)}`));
     assert.ok(match, `${selector} declares nothing`);
     return match[1];
 };

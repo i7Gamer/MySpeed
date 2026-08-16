@@ -1,33 +1,19 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import * as sass from "sass";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import { convertSpeed, formatLatency, formatWhole, SPEED_UNIT_MBYTES } from "@/common/utils/FormatUtil.js";
 import { getIconBySpeed } from "@/common/utils/TestUtil.js";
 import { clickable } from "@/common/utils/Clickable.js";
-
-const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
+import { compile, mediaBlocks, read } from "../helpers/sass.mjs";
 
 const ROW = "pages/Home/components/Speedtest/SpeedtestComponent.jsx";
 const AREA = "pages/Home/components/TestArea/TestAreaComponent.jsx";
 const STYLES = "pages/Home/components/Speedtest/styles.sass";
 
-const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
-
 const row = read(ROW);
 const area = read(AREA);
 const styles = read(STYLES);
 
-const aliasImporter = {
-    findFileUrl(url) {
-        if (!url.startsWith("@/")) return null;
-        return pathToFileURL(path.join(CLIENT_SRC, url.slice(2)));
-    }
-};
-
-const css = sass.compile(path.join(CLIENT_SRC, STYLES), {importers: [aliasImporter]}).css;
+const css = compile(STYLES);
 
 /**
  * The keyboard handler the row is wired with, taken out of the JSX and run.
@@ -213,8 +199,8 @@ describe("the floor a row stands on", () => {
 describe("the failure line on a stacked row", () => {
     // The block that turns the row into a stack, found by what it does rather
     // than by the width it does it at.
-    const stacked = [...css.matchAll(/@media[^{]*\{([\s\S]*?)\n}/g)]
-        .map(([, body]) => body)
+    const stacked = mediaBlocks(css)
+        .map(({body}) => body)
         .find((body) => /\.speedtest\s*\{[^}]*flex-direction:\s*column/.test(body));
 
     it("has a stack to guard at all", () => {

@@ -1,39 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import * as sass from "sass";
-import { fileURLToPath, pathToFileURL } from "node:url";
-
-const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
-
-const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
-
-const aliasImporter = {
-    findFileUrl(url) {
-        if (!url.startsWith("@/")) return null;
-        return pathToFileURL(path.join(CLIENT_SRC, url.slice(2)));
-    }
-};
-
-const compile = (file) => sass.compile(path.join(CLIENT_SRC, file), {importers: [aliasImporter]}).css;
+import { ceilings, compile, mediaBlocks, read, rules } from "../helpers/sass.mjs";
 
 const page = compile("pages/Statistics/styles.sass");
 const statContainer = compile("pages/Statistics/components/StatisticContainer/styles.sass");
 const chartContainer = compile("pages/Statistics/charts/SpeedChart/styles.sass");
 const layoutSource = read("common/styles/layout.sass");
-
-/** Every max-width ceiling a stylesheet reflows on. */
-const ceilings = (css) => [...css.matchAll(/@media([^{]*)\{/g)]
-    .map(([, condition]) => Number(condition.match(/max-width:\s*(\d+)px/)?.[1]))
-    .filter(Number.isFinite);
-
-// The @media header is dropped rather than parsed: a rule body may contain a
-// brace, so a naive pass reads the whole nested block as one @media rule and
-// the selectors inside it are never seen at all.
-const rules = (css) => [...css.replace(/@media[^{]*\{/g, "").matchAll(/([^{}]+)\{([^}]*)}/g)]
-    .map(([, selector, body]) => ({selector: selector.replace(/\s+/g, " ").trim(), body}))
-    .filter(({selector}) => selector.length > 0);
 
 /**
  * The nine cards had two shapes and one figure deciding between them.
@@ -135,11 +107,14 @@ describe("what a card asks for while three share a row", () => {
  * 1+2+2+2+2 from 1000px to 760, with nothing cut on any card.
  */
 describe("the two-column stage", () => {
+    // Anchored to the widest ceiling rather than to "the first @media": an
+    // unrelated query added above the stages must not silently retarget this.
     const twoColumn = () => {
-        const start = page.indexOf("@media");
-        const end = page.indexOf("@media", start + 1);
-        assert.notEqual(start, -1, "the page declares no stages at all");
-        return page.slice(start, end === -1 ? undefined : end);
+        const declared = ceilings(page);
+        assert.ok(declared.length > 0, "the page declares no stages at all");
+
+        const widest = Math.max(...declared);
+        return mediaBlocks(page).find(({condition}) => condition.includes(`${widest}px`)).body;
     };
 
     it("puts two cards on a row", () => {

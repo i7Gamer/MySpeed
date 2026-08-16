@@ -1,30 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import * as sass from "sass";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import {
     controlsWrapped, nextStage, TOOLBAR_CONTROLS, TOOLBAR_STAGES
 } from "@/common/components/PageToolbar/fit.js";
-
-const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
-
-const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
-
-const aliasImporter = {
-    findFileUrl(url) {
-        if (!url.startsWith("@/")) return null;
-        return pathToFileURL(path.join(CLIENT_SRC, url.slice(2)));
-    }
-};
-
-const compile = (file) => sass.compile(path.join(CLIENT_SRC, file), {importers: [aliasImporter]}).css;
+import { compile, read, rules } from "../helpers/sass.mjs";
 
 const toolbarSource = read("common/components/PageToolbar/PageToolbar.jsx");
 const toolbar = compile("common/components/PageToolbar/styles.sass");
-const exportButton = compile("common/components/ExportButton/styles.sass");
-const startTest = compile("common/components/StartTestButton/styles.sass");
 
 /**
  * The toolbar gave up its labels at two fixed viewport widths, and those were
@@ -153,11 +135,9 @@ describe("the collapse the stylesheet draws", () => {
     // Read as rules rather than matched against the raw text: sass groups the
     // two stages into one comma-separated selector, so a regex looking for
     // `.export-text {` finds `.export-text,` and reports the rule missing.
-    // Quotes stripped as well: the attribute is written `[data-compact="all"]`
-    // in the stylesheet and sass emits it as `[data-compact=all]`, so matching
-    // the source spelling finds nothing at all.
-    const rules = (css) => [...css.matchAll(/([^{}]+)\{([^}]*)}/g)]
-        .map(([, selector, body]) => ({selector: selector.replace(/["']/g, "").trim(), body}));
+    // The shared parser also strips quotes - the attribute is written
+    // `[data-compact="all"]` in the stylesheet and sass emits it as
+    // `[data-compact=all]`, so matching the source spelling finds nothing.
 
     /** Every rule that applies at a stage and mentions a given part. */
     const at = (stage, part) => rules(toolbar).filter(({selector}) =>
@@ -182,15 +162,9 @@ describe("the collapse the stylesheet draws", () => {
         assert.ok(at("all", ".start-test").some(({body}) => /aspect-ratio/.test(body)));
     });
 
-    it("has no viewport figure left deciding a label", () => {
-        const queriesMentioning = (css, condition) => [...css.matchAll(/@media([^{]*)\{/g)]
-            .filter(([, header]) => header.includes(condition));
-
-        for (const [name, css] of [["export", exportButton], ["start", startTest]])
-            for (const width of ["480px", "368px"])
-                assert.equal(queriesMentioning(css, width).length, 0,
-                    `the ${name} button still collapses at a hardcoded ${width}`);
-    });
+    // That no viewport figure decides a label any more is asserted once, in
+    // narrowHeaderAndToolbar.test.js, which checks a superset of the widths -
+    // a second copy here had already drifted to a shorter list.
 
     /**
      * The menu still has to hang off a button that is one icon wide, which is
