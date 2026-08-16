@@ -8,6 +8,19 @@ RUN bun install --frozen-lockfile
 COPY ./client ./
 RUN bun run build
 
+# Every cfspeedtest release is glibc-linked, so the binary the server downloads
+# on first boot cannot exec on this musl base - the kernel reports the missing
+# interpreter as ENOENT on the binary itself, and the Cloudflare provider then
+# records a failed test every run with nothing naming the cause. The crate is
+# published, so the same version is compiled against musl here and shipped in
+# bin/, where fileExists() finds it and the download is skipped.
+FROM rust:1-alpine AS cfspeedtest-build
+
+ARG CFSPEEDTEST_VERSION=2.2.2
+
+RUN apk add --no-cache musl-dev pkgconfig
+RUN cargo install cfspeedtest --locked --version ${CFSPEEDTEST_VERSION} --root /out
+
 FROM oven/bun:1-alpine AS server-build
 
 WORKDIR /myspeed
@@ -50,6 +63,8 @@ COPY --from=client-build /client/build /myspeed/build
 # first boot, and it deliberately sits outside the data volume so an upgrade
 # refetches binaries matching the new image.
 RUN mkdir -p /myspeed/data /myspeed/bin && chown -R bun:bun /myspeed
+
+COPY --from=cfspeedtest-build --chown=bun:bun /out/bin/cfspeedtest /myspeed/bin/cfspeedtest
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
