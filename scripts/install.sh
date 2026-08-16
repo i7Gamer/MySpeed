@@ -126,11 +126,20 @@ release_asset_url() {
 
 RELEASE_URL=$(release_asset_url "$BINARY_NAME")
 if [ -z "$RELEASE_URL" ] && [ -n "$BINARY_FALLBACK" ]; then
-    echo -e "$YELLOWℹ Info:$NORMAL $BINARY_NAME not in latest release — trying $BINARY_FALLBACK."
+    # The fallback only runs one way. Baseline starts on every x86_64 CPU, so an
+    # AVX2 machine that has to take it loses nothing. The reverse installs a
+    # binary that SIGILLs on every start, under a unit written below with
+    # Restart=always - a permanent crash loop, announced by the completion
+    # banner as a finished installation. Stopping is the more useful answer.
     if [ "$BINARY_FALLBACK" = "MySpeed-linux-x64" ]; then
-        echo -e "$YELLOWℹ Info:$NORMAL that build requires AVX2 and will likely crash on this CPU."
-        echo -e "$NORMAL Build a baseline binary locally with 'bun run build:binary:baseline' until the next release ships one."
+        echo -e "$RED✗ ABORTED"
+        echo -e "$NORMAL This CPU has no AVX2, and $BINARY_NAME is not among the latest release's assets."
+        echo -e "$NORMAL $BINARY_FALLBACK needs AVX2 and would crash on every start here, so it was not installed."
+        echo -e "$NORMAL Build one on a Linux machine with 'bun run build:binary:baseline', or wait for the next release."
+        exit 1
     fi
+
+    echo -e "$YELLOWℹ Info:$NORMAL $BINARY_NAME not in latest release — trying $BINARY_FALLBACK."
     BINARY_NAME="$BINARY_FALLBACK"
     RELEASE_URL=$(release_asset_url "$BINARY_NAME")
 fi

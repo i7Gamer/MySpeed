@@ -105,6 +105,27 @@ describe("install.sh picks a Linux binary the CPU can run", () => {
      * both - so shipping the baseline build broke the installer for every AVX2
      * machine the moment it existed.
      */
+    /**
+     * The fallback exists for the window where a release has one x64 build and
+     * not the other, and it runs in both directions - but only one of them is
+     * safe. Baseline runs on every x86_64 CPU, so an AVX2 machine falling back
+     * to it loses nothing. The other way round installs a binary that SIGILLs on
+     * every start, under a unit this script writes with Restart=always, and then
+     * prints the completion banner over it: a permanent crash loop reported as a
+     * finished install, which is the one outcome worse than stopping.
+     */
+    it("refuses to install the AVX2 build on a CPU without AVX2", () => {
+        const start = source.indexOf("BINARY_FALLBACK\" = \"MySpeed-linux-x64\"");
+        assert.notEqual(start, -1, "the fallback no longer distinguishes which direction it is going");
+
+        const branch = source.slice(start, source.indexOf("\n    fi", start));
+
+        assert.match(branch, /exit\s+[1-9]/,
+            "the installer carries on to its success banner over a binary that cannot start here");
+        assert.doesNotMatch(branch, /BINARY_NAME="?\$BINARY_FALLBACK/,
+            "the AVX2 build is still selected for a CPU the script just found has no AVX2");
+    });
+
     it("matches the release asset name exactly", () => {
         const start = source.indexOf("release_asset_url()");
         assert.notEqual(start, -1, "the release lookup is no longer a function this can read");
