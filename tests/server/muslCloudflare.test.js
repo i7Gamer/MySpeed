@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMuslLinux } from "../../server/util/providers/libc.js";
 import { selectBinary } from "../../server/util/providers/loadCloudflare.js";
+import { missingBinaryMessage } from "../../server/util/speedtest.js";
 import { cloudflareVersion } from "../../server/config/binaries.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -24,6 +25,22 @@ describe("recognising a musl system", () => {
 
     it("does not mistake a glibc system for musl", () => {
         assert.equal(isMuslLinux("linux", existsIn("/lib64/ld-linux-x86-64.so.2")), false);
+    });
+
+    /**
+     * Debian and Ubuntu package musl for cross-compiling, and its loader lands
+     * at /usr/lib/ld-musl-x86_64.so.1 - which /lib/ld-musl-x86_64.so.1 resolves
+     * to on every merged-/usr system. A glibc machine with that package
+     * installed therefore looks exactly like Alpine to a bare presence check,
+     * and the Cloudflare provider was refused on a host where the published
+     * glibc build runs perfectly. The glibc loader sitting beside it is what
+     * settles the question: Alpine has no such file.
+     */
+    it("does not call a glibc system musl just because musl is installed too", () => {
+        assert.equal(isMuslLinux("linux", existsIn(
+            "/lib/ld-musl-x86_64.so.1", "/lib64/ld-linux-x86-64.so.2")), false);
+        assert.equal(isMuslLinux("linux", existsIn(
+            "/lib/ld-musl-aarch64.so.1", "/lib/ld-linux-aarch64.so.1")), false);
     });
 
     it("is only a Linux question", () => {
@@ -49,6 +66,11 @@ describe("choosing the Cloudflare CLI to download", () => {
     it("still serves glibc Linux the published build", () => {
         assert.equal(selectBinary({platform: "linux", arch: "x64", musl: false}).suffix,
             "cfspeedtest-x86_64-unknown-linux-gnu.tar.gz");
+    });
+
+    it("still serves glibc Linux on arm64, which the image also builds for", () => {
+        assert.equal(selectBinary({platform: "linux", arch: "arm64", musl: false}).suffix,
+            "cfspeedtest-aarch64-unknown-linux-gnu.tar.gz");
     });
 
     it("keeps falling back to the universal macOS archive", () => {
@@ -84,5 +106,43 @@ describe("the image ships a musl Cloudflare CLI", () => {
 
     it("puts it where the loader looks for it", () => {
         assert.match(dockerfile, /COPY --from=cfspeedtest-build .*\/myspeed\/bin\/cfspeedtest/);
+    });
+});
+
+/**
+ * Saying it once at boot is not saying it. loadCli reports a provider it could
+ * not prepare to the log and carries on - deliberately, so one unreachable
+ * download cannot stop the server - and the run path then spawns
+ * ./bin/cfspeedtest directly. Every scheduled test therefore went on recording
+ * `ENOENT: posix_spawn './bin/cfspeedtest'`, which is the same opaque failure
+ * the refusal above exists to replace, in the one place a user actually reads.
+ */
+describe("the failure a run records when the CLI is not there", () => {
+    const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    it("explains a missing Cloudflare CLI on a musl system", () => {
+        const message = missingBinaryMessage("cloudflare", "./bin/cfspeedtest", "ENOENT", true);
+
+        assert.match(message, /musl/i);
+        assert.match(message, /glibc/i);
+        assert.match(message, /cfspeedtest/);
+    });
+
+    it("still names the binary when musl is not the reason", () => {
+        for (const [mode, binary] of [["ookla", "./bin/speedtest"],
+            ["libre", "./bin/librespeed-cli"], ["cloudflare", "./bin/cfspeedtest"]]) {
+
+            const message = missingBinaryMessage(mode, binary, "ENOENT", false);
+
+            assert.match(message, new RegExp(escape(binary)));
+            assert.doesNotMatch(message, /musl/i, `${mode} blamed musl on a glibc system`);
+        }
+    });
+
+    // A CLI that is present but unrunnable, or a spawn that failed for any other
+    // reason, still has its own error - which says more than this could.
+    it("leaves every other spawn failure alone", () => {
+        assert.equal(missingBinaryMessage("cloudflare", "./bin/cfspeedtest", "EACCES", true), null);
+        assert.equal(missingBinaryMessage("cloudflare", "./bin/cfspeedtest", undefined, true), null);
     });
 });

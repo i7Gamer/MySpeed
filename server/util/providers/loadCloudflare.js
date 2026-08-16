@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { cloudflareVersion, cloudflareList } from '../../config/binaries.js';
 import { downloadAndExtract } from './downloadHelper.js';
-import { isMuslLinux } from './libc.js';
+import { isMuslLinux, MUSL_CLOUDFLARE_REASON } from './libc.js';
 
 const binaryName = `cfspeedtest${process.platform === 'win32' ? '.exe' : ''}`;
 const binaryRegex = /cfspeedtest(.exe)?$/;
@@ -23,7 +23,7 @@ export const fileExists = async () => fs.existsSync(binaryPath);
  */
 export const selectBinary = ({platform = process.platform, arch = process.arch, musl = isMuslLinux()} = {}) => {
     if (platform === 'linux' && musl)
-        throw new Error('The Cloudflare CLI is only published for glibc, and this is a musl system. ' +
+        throw new Error(`${MUSL_CLOUDFLARE_REASON}. ` +
             'The MySpeed image ships a musl build in bin/; restore it, or install cfspeedtest ' +
             `${cloudflareVersion} into bin/ yourself, to use the Cloudflare provider here`);
 

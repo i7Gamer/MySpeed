@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { parseCliOutput } from './providers/cliOutput.js';
 import { parseProgressLine } from './providers/progress.js';
+import { isMuslLinux, MUSL_CLOUDFLARE_REASON } from './providers/libc.js';
 import * as interfacesModule from '../util/loadInterfaces.js';
 import * as config from '../controller/config.js';
 import fs from 'node:fs';
@@ -80,6 +81,28 @@ export const missingInterfaceMessage = (mode, platform, currentInterface, interf
 
     return `The configured network interface "${currentInterface}" has no usable address. ` +
         "Check the interface setting, and that the server can reach the network";
+};
+
+/**
+ * What to record instead of a bare spawn failure, or null when the failure
+ * speaks for itself.
+ *
+ * A CLI that is not on disk fails with `ENOENT: posix_spawn './bin/cfspeedtest'`,
+ * which reads as a missing file and says nothing about why it is missing.
+ * loadCli reports a download that did not happen to the log and carries on by
+ * design, so that line has scrolled away long before anyone opens the failed
+ * test - and on a musl system the download can never succeed at all, so every
+ * scheduled run recorded the same unexplained ENOENT forever.
+ */
+export const missingBinaryMessage = (mode, binaryPath, errorCode, musl = isMuslLinux()) => {
+    if (errorCode !== 'ENOENT') return null;
+
+    if (mode === "cloudflare" && musl)
+        return `${MUSL_CLOUDFLARE_REASON}, so ${binaryPath} could not be downloaded. `
+            + 'The MySpeed image ships a musl build in bin/; restore it, or install cfspeedtest into bin/ yourself';
+
+    return `The speedtest CLI ${binaryPath} is not there. It is downloaded when the server starts, `
+        + 'so the server log says why that did not finish';
 };
 
 export default async (mode, serverId, serverUrl, onProgress) => {
@@ -190,13 +213,17 @@ export default async (mode, serverId, serverUrl, onProgress) => {
     });
 
     await new Promise((resolve, reject) => {
-        // Rejected as-is: wrapping it in {message: e} gave the wrapper a
+        // A binary that is not there is the one spawn failure whose own message
+        // explains nothing, so it gets one that does. Everything else is
+        // rejected as-is: wrapping it in {message: e} gave the wrapper a
         // `message` key holding an Error, which the caller then stored verbatim
         // in a string column.
         testProcess.on('error', (error) => {
             clearTimeout(timeout);
             clearTimeout(escalation);
-            reject(error);
+
+            const missing = missingBinaryMessage(mode, binaryPath, error.code);
+            reject(missing ? new Error(missing) : error);
         });
 
         // 'close' rather than 'exit': the process can exit while its pipes still
