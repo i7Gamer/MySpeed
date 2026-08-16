@@ -4,9 +4,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const WORKFLOWS = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", ".github", "workflows");
+const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+const WORKFLOWS = path.join(ROOT, ".github", "workflows");
 
 const read = (name) => fs.readFileSync(path.join(WORKFLOWS, name), "utf8");
+const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
 
 const release = read("create_release.yml");
 const msi = read("build-msi.yml");
@@ -55,7 +57,7 @@ const wixVersion = (version) => {
  * `1.4.0.1` both passed, and build-msi.yml splices the version straight into
  * WiX's Product/@Version as `<version>.0` - which must be numeric dotted fields.
  * candle then refused it. By that point create-release has already pushed the
- * tag and the draft, build-binaries has uploaded all six assets, and build-docker
+ * tag and the draft, build-binaries has uploaded every asset, and build-docker
  * has pushed `:latest` and `:<version>` to Docker Hub. The MSI job fails,
  * finalize-release is skipped, and cleanup-on-failure deliberately does not fire
  * - leaving `:latest` on Docker Hub silently replaced by a release candidate,
@@ -80,6 +82,55 @@ describe("the release body links every asset that is uploaded", () => {
         assert.deepEqual(unlinked, [],
             "these are uploaded by build-binaries.yml and linked nowhere in the release body");
     });
+});
+
+/**
+ * What `bun build --compile` is given, reduced to the flags that decide what
+ * ends up inside the executable. The target and the output name are what the
+ * two callers legitimately differ on, so they are dropped before comparing.
+ */
+const compileFlags = (command) => {
+    // `${{ matrix.target }}` holds a space, so it has to stop being an
+    // expression before the command can be split on whitespace at all.
+    const tokens = command.replace(/\$\{\{[^}]*\}\}/g, "TEMPLATE").trim().split(/\s+/);
+    const flags = [];
+
+    for (let index = 0; index < tokens.length; index++) {
+        if (tokens[index].startsWith("--target")) continue;
+        // --outfile carries its value as the next argument.
+        if (tokens[index] === "--outfile") index++;
+        else flags.push(tokens[index]);
+    }
+
+    return flags;
+};
+
+/**
+ * package.json's build:binary scripts and the workflow's compile step are the
+ * same command written out twice. `--external pg` and `--external pg-hstore`
+ * are the load-bearing part: without them the compile pulls in drivers this
+ * build does not ship, and the difference does not surface until the binary
+ * runs. build:binary:baseline exists so someone on a non-AVX2 CPU can build
+ * their own until a release carries one - which is worth nothing if what they
+ * build is not what the release would have given them.
+ */
+describe("a locally built binary is compiled like the released one", () => {
+    const workflowCompile = () => {
+        const found = binaries.match(/run: (bun build --compile[^\n]*--target=\$\{\{ matrix\.target \}\}[^\n]*)/);
+        assert.notEqual(found, null, "the Linux compile step is no longer a bun build this can read");
+
+        return found[1];
+    };
+
+    for (const script of ["build:binary", "build:binary:baseline"]) {
+        it(`${script} passes the same flags as the workflow`, () => {
+            const found = pkg.scripts[script].match(/bun build --compile.*/);
+            assert.notEqual(found, null, `${script} no longer compiles with bun build`);
+
+            assert.deepEqual(compileFlags(found[0]), compileFlags(workflowCompile()),
+                `${script} and build-binaries.yml no longer produce the same executable`);
+        });
+    }
 });
 
 describe("the version a release may be dispatched with", () => {
