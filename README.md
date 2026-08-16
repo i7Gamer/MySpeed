@@ -88,6 +88,11 @@ curl -sSL -o /tmp/myspeed-install.sh \
 sudo bash /tmp/myspeed-install.sh
 ```
 
+Building a Linux binary yourself (`bun run build:binary:baseline`) has to happen *on*
+Linux — a container is fine. Cross-compiling from macOS or Windows embeds the host's
+native addons (e.g. `@resvg/resvg-js`), producing a binary that starts and then fails
+at runtime.
+
 #### 🪟 Windows
 
 Download `MySpeed-windows-x64.exe` (or the MSI installer, which registers MySpeed as a
