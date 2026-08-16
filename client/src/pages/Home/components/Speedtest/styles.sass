@@ -309,9 +309,19 @@ $row-min-height: 3rem
 // The tracks here were re-measured with the speeds whole; the sum is what it
 // was, so this threshold is too. What moved is which column holds the slack -
 // see the note above the base grid.
+//
+// One variable per column, because the 920px block below draws the same
+// widths minus the tracks that fold away - an invariant that lived in a
+// comment, where a re-measure of one block could leave the other behind.
+// Spelled from these, the folded row is a subset by construction.
+$narrow-date: 9.25rem
+$narrow-ping: 13rem
+$narrow-grade: 5rem
+$narrow-speed: 11rem
+
 @media (max-width: 1400px)
   .speedtest
-    grid-template-columns: 9.25rem 13rem 5rem 11rem 11rem auto
+    grid-template-columns: $narrow-date $narrow-ping $narrow-grade $narrow-speed $narrow-speed auto
     padding: 1.25rem 1.25rem
   .date-text
     font-size: 18pt
@@ -347,11 +357,12 @@ $row-min-height: 3rem
 // keep them. It was 1150 when every column took a quarter of the row.
 @media (max-width: 920px)
   .speedtest
-    // The same three widths the six-column row uses, minus the two tracks that
-    // fold away: the ping and the badge share a column here, one above the
-    // other, so that column is sized by whichever is wider - which is the ping
-    // with its two quality figures, not the badge with its milliseconds.
-    grid-template-columns: 9.25rem 13rem 11rem
+    // The same three widths the six-column row uses - the same variables, so
+    // it cannot be otherwise - minus the two tracks that fold away: the ping
+    // and the badge share a column here, one above the other, so that column
+    // is sized by whichever is wider - which is the ping with its two quality
+    // figures, not the badge with its milliseconds.
+    grid-template-columns: $narrow-date $narrow-ping $narrow-speed
     // Both lines reserve the badge's height whether or not there is a badge on
     // them. The grade is drawn at the size of an icon, which is taller than a
     // value's line box, so without this a row carrying one stood 14px taller

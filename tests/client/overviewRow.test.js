@@ -182,6 +182,45 @@ describe("the floor a row stands on", () => {
 });
 
 /**
+ * The narrow grid tiers state their tracks once.
+ *
+ * The 920px three-column row is "the same three widths the six-column row
+ * uses, minus the tracks that fold away" - an invariant that lived in a
+ * comment, so a re-measure of one block could leave the other behind with
+ * nothing to say so. Both narrow templates now spell their tracks with the
+ * same variables, which makes the subset true by construction; the base tier
+ * keeps its own literals, being its own set of measurements.
+ */
+describe("the narrow grid tiers share their track widths", () => {
+    const templates = [...styles.matchAll(/grid-template-columns:([^\n]*)/g)]
+        .map(([, tracks]) => tracks.trim());
+
+    const names = (template) => template.match(/\$[\w-]+/g) ?? [];
+
+    it("has the three tiers it sizes", () => {
+        assert.equal(templates.length, 3, "a grid tier appeared or vanished; re-map this file's contract");
+    });
+
+    it("leaves no literal width in either narrow tier", () => {
+        for (const template of templates.slice(1))
+            assert.doesNotMatch(template, /[\d.]+rem/,
+                "a narrow tier states a width inline again, free to drift from its sibling tier");
+    });
+
+    it("builds the folded row from the six-column row's own tracks", () => {
+        const six = names(templates[1]);
+        const three = names(templates[2]);
+
+        assert.equal(six.length, 5, "the six-column tier no longer names five tracks plus auto");
+        assert.equal(three.length, 3, "the folded row no longer names three tracks");
+
+        for (const name of three)
+            assert.ok(six.includes(name),
+                `${name} is not one of the six-column tier's tracks, so the two layouts disagree`);
+    });
+});
+
+/**
  * And it has to be given a width to stand that height in.
  *
  * The failure line is one sentence, nowrap, with an ellipsis for when it does
