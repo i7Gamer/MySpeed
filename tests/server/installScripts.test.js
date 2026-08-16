@@ -106,6 +106,25 @@ describe("install.sh picks a Linux binary the CPU can run", () => {
      * machine the moment it existed.
      */
     /**
+     * A rate limit, an outage, or no network at all answers with JSON that
+     * carries no assets - which reads exactly like a release that happens not
+     * to hold the file being looked for. The refusal below names the missing
+     * asset as a fact and stops the install on it, so every failed API call
+     * would be explained as a gap in the release. Nothing downstream can tell
+     * the two apart, which makes this the only place it can be settled.
+     */
+    it("does not blame the release for an answer that was not one", () => {
+        const fetched = source.indexOf("RELEASE_JSON=$(curl");
+        const refusal = source.indexOf("BINARY_FALLBACK\" = \"MySpeed-linux-x64\"");
+
+        assert.ok(fetched !== -1 && refusal !== -1 && fetched < refusal,
+            "install.sh no longer fetches the release before it chooses a binary");
+
+        assert.match(source.slice(fetched, refusal), /RELEASE_JSON[\s\S]*?exit\s+[1-9]/,
+            "a response that is not a release reaches the refusal, which reports it as a missing asset");
+    });
+
+    /**
      * The fallback exists for the window where a release has one x64 build and
      * not the other, and it runs in both directions - but only one of them is
      * safe. Baseline runs on every x86_64 CPU, so an AVX2 machine falling back

@@ -119,6 +119,20 @@ echo -e "$NORMAL Fetching latest release information..."
 # Match the asset name exactly so MySpeed-linux-x64 does not also hit
 # MySpeed-linux-x64-baseline.
 RELEASE_JSON=$(curl -s https://api.github.com/repos/i7Gamer/MySpeed/releases/latest)
+
+# A rate limit, an outage, or no network answers with JSON holding no assets at
+# all, which reads exactly like a release that happens not to carry the file
+# being looked for. Everything below reports a missing asset as a fact - and on
+# a CPU without AVX2 it stops the install on that basis - so the two have to be
+# told apart here, while the difference is still visible.
+if ! echo "$RELEASE_JSON" | grep -q "browser_download_url"; then
+    echo -e "$RED✗ Could not fetch release information"
+    echo -e "$NORMAL The GitHub API did not answer with a release. This is usually a rate limit or no network."
+    DETAIL=$(echo "$RELEASE_JSON" | grep -oE "\"message\":[[:space:]]*\"[^\"]*\"" | head -1 | cut -d '"' -f 4)
+    [ -n "$DETAIL" ] && echo -e "$NORMAL GitHub said: $DETAIL"
+    exit 1
+fi
+
 release_asset_url() {
     local name="$1"
     echo "$RELEASE_JSON" | grep -oE "\"browser_download_url\":[[:space:]]*\"[^\"]+/${name}\"" | head -1 | cut -d '"' -f 4
