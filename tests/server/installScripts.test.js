@@ -53,6 +53,71 @@ describe("the root privilege guard", () => {
     }
 });
 
+/**
+ * Bun's default linux-x64 executable uses AVX2, so it dies with SIGILL on the
+ * pre-Haswell Atoms and Celerons a great many home servers still are. The
+ * release carries a baseline build beside it now, which only helps anyone if
+ * the installer picks it - and the systemd unit written a few lines later has
+ * Restart=always, so choosing wrong is a permanent crash loop rather than one
+ * visible failure.
+ */
+describe("install.sh picks a Linux binary the CPU can run", () => {
+    const source = read("install.sh");
+
+    // The x86_64 case arm, up to the next one.
+    const x86Branch = () => {
+        const start = source.indexOf("x86_64)");
+        const end = source.indexOf("aarch64|arm64)");
+
+        assert.ok(start !== -1 && end !== -1 && start < end,
+            "install.sh no longer chooses its binary per architecture");
+
+        return source.slice(start, end);
+    };
+
+    it("chooses on the CPU's own AVX2 flag", () => {
+        const branch = x86Branch();
+
+        assert.match(branch, /avx2/, "every x86_64 CPU is handed the same binary again");
+        assert.match(branch, /\/proc\/cpuinfo/, "the AVX2 decision is not made from what the CPU reports");
+    });
+
+    /**
+     * A /proc it cannot read has to land on the baseline build as well: that one
+     * runs on both, and the cost of guessing wrong in the other direction is an
+     * install that never starts.
+     */
+    it("gives a CPU it cannot vouch for the baseline build", () => {
+        const branch = x86Branch();
+        const withoutAvx2 = branch.slice(branch.indexOf("else"));
+
+        assert.match(branch, /2>\/dev\/null/,
+            "an unreadable /proc/cpuinfo is an error rather than a decision");
+        assert.match(withoutAvx2, /BINARY_NAME="MySpeed-linux-x64-baseline"/,
+            "a CPU without AVX2 is handed the build that SIGILLs on it");
+    });
+
+    /**
+     * The lookup was `grep "browser_download_url.*$BINARY_NAME"`, which is a
+     * substring match. With a MySpeed-linux-x64-baseline asset in the release,
+     * MySpeed-linux-x64 matches both lines, RELEASE_URL becomes two
+     * newline-separated URLs, and `wget -O myspeed "$RELEASE_URL"` is handed
+     * both - so shipping the baseline build broke the installer for every AVX2
+     * machine the moment it existed.
+     */
+    it("matches the release asset name exactly", () => {
+        const start = source.indexOf("release_asset_url()");
+        assert.notEqual(start, -1, "the release lookup is no longer a function this can read");
+
+        const body = source.slice(start, source.indexOf("\n}", start));
+
+        assert.match(body, /\$\{name\}\\"/,
+            "the asset name is unanchored, so a longer name beginning with it matches as well");
+        assert.match(body, /head -1/,
+            "nothing bounds the lookup to one URL, so two assets become one unusable wget argument");
+    });
+});
+
 describe("uninstall.sh --keep-data", () => {
     const source = read("uninstall.sh");
 
