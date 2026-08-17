@@ -267,6 +267,29 @@ describe("the failure line on a stacked row", () => {
         assert.match(css, /\.speedtest-failure-text\s*\{[^}]*text-overflow:\s*ellipsis/,
             "the sentence is cut with nothing to say it was cut");
     });
+
+    /**
+     * And on a phone it gets a second line to say it in.
+     *
+     * One line is right on a wide row, where the sentence nearly always fits and
+     * the `title` finishes it for the rare one that does not. On a stacked card
+     * it is not: measured at 375px the cell holds about 40 characters of a
+     * 108-character reason, so the summary reads "Could not open a connection to
+     * the test..." - which names no cause at all. And a title attribute is a
+     * hover, which a phone does not have.
+     *
+     * Two lines rather than free wrapping, because this file's first concern is
+     * that a list does not change row height as it scrolls: a clamp doubles what
+     * is readable and still reserves a height the card can be built around. The
+     * whole reason stays one tap away in the detail panel, which wraps it in
+     * full - that is what makes the clamp a summary rather than a loss.
+     */
+    it("gives the sentence a second line where there is no hover to finish it", () => {
+        assert.match(stacked, /\.speedtest-failure-text\s*\{[^}]*-webkit-line-clamp:\s*2/,
+            "a phone shows a third of the reason and offers a tooltip it cannot open");
+        assert.match(stacked, /\.speedtest-failure-text\s*\{[^}]*white-space:\s*normal/,
+            "the clamp cannot take a second line while the sentence is still nowrap");
+    });
 });
 
 /**

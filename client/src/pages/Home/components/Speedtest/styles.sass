@@ -481,6 +481,26 @@ $narrow-speed: 11rem
   // needs it.
   .speedtest-failure
     align-self: stretch
+  // And a second line to say it in.
+  //
+  // One line is right on a wide row: the sentence nearly always fits, and the
+  // `title` finishes the rare one that does not. Here it is not. Measured at
+  // 375px the cell holds about 40 characters of a 108-character reason, so the
+  // summary reads "Could not open a connection to the test..." - which names no
+  // cause at all - and the title that would finish it is a hover, which a phone
+  // does not have.
+  //
+  // Clamped at two rather than left to wrap, because the first thing this file
+  // pins down is a list that does not change row height as it scrolls: two lines
+  // double what is readable and still reserve a height the card is built around.
+  // The whole reason is one tap away in the detail panel, which wraps it in full
+  // - that is what makes this a summary rather than a loss.
+  .speedtest-failure-text
+    white-space: normal
+    display: -webkit-box
+    -webkit-box-orient: vertical
+    -webkit-line-clamp: 2
+    line-clamp: 2
   // Nothing to hold open once the row is a stack - the grid is gone, so no
   // column shifts into the space - and an empty line in the middle of one reads
   // as a missing measurement rather than as an absent one.
