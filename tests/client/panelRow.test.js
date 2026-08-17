@@ -58,6 +58,12 @@ const PANELS = [
 const asClassName = (name) => new RegExp(`["'\\s]${name}(?![-\\w])`);
 const asSelector = (name) => new RegExp(`\\.${name}(?![-\\w])`);
 
+// Every stylesheet the client has, which is the question the guard above puts
+// to four of them.
+const STYLESHEETS = fs.readdirSync(CLIENT_SRC, {recursive: true})
+    .filter((file) => file.endsWith(".sass"))
+    .map((file) => file.split(path.sep).join("/"));
+
 const bodyOf = (selector) => {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const match = css.match(new RegExp(`${escaped}(?![-\\w])\\s*\\{([^}]*)}`));
@@ -379,5 +385,41 @@ describe("the panels that state readings", () => {
     it("does not mistake the overview's row container for a retired row", () => {
         assert.doesNotMatch('<div className="overview-items">', asClassName("overview-item"));
         assert.doesNotMatch(".overview-items\n  display: flex", asSelector("overview-item"));
+    });
+
+    /**
+     * And the sheet that dressed all four of them at once.
+     *
+     * The guard above asks each panel's own stylesheet, and each of the four
+     * answered honestly. The shared dialog's sheet was not on the list: it
+     * sized the svg and the font of every one of these rows for the enlarged
+     * view, and four blocks of rules for classes no component had drawn since
+     * the refactor sat there with the suite green over them.
+     *
+     * Rules nothing can match are not merely inert. They are the next reader's
+     * evidence that the class is still in use, and the enlarged view is exactly
+     * where someone would look to find out how these rows are meant to grow.
+     *
+     * Naming one more file would leave the same hole one file over, so the
+     * question is put to every stylesheet the client has.
+     */
+    it("keeps no retired row in any stylesheet, not only the panel's own", () => {
+        for (const file of STYLESHEETS) {
+            const sheet = read(file);
+
+            for (const {retired} of PANELS)
+                assert.doesNotMatch(sheet, asSelector(retired),
+                    `${file} still dresses .${retired}`);
+        }
+    });
+
+    // The sweep is only worth its runtime if it reaches past the four files the
+    // guard above already reads - the shared dialog's sheet being the one that
+    // held these rules while every listed file was clean.
+    it("sweeps the shared dialog's sheet, which held them", () => {
+        assert.ok(STYLESHEETS.includes("common/components/ChartModal/styles.sass"),
+            "the enlarged view's stylesheet is outside the sweep, which is where the dead rules were");
+        assert.ok(STYLESHEETS.length > PANELS.length,
+            "the sweep reads no more than the panels' own sheets");
     });
 });

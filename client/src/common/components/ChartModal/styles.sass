@@ -238,18 +238,6 @@ $overview-gap: 3rem
     flex: none
     height: auto
     min-height: 0
-        
-    .consistency-item
-      svg
-        width: 3rem
-        height: 3rem
-      .consistency-info
-        h2
-          font-size: 1.25rem
-        p
-          font-size: 1.25rem
-        .consistency-detail
-          font-size: 0.95rem
 
   // Eight items, each a single line, stacked into a column taller than most
   // screens. Two columns halve that without crowding either one.
@@ -276,44 +264,11 @@ $overview-gap: 3rem
     @media screen and (min-width: $modal-breakpoint-two-column)
       grid-template-columns: repeat(2, minmax(0, min(#{$overview-column}, calc((100vw - #{$modal-chrome} - #{$overview-gap}) / 2))))
 
-    .overview-item
-      .info-area
-        svg
-          width: 3rem
-          height: 3rem
-        .text-area
-          h2
-            font-size: 1.25rem
-          p
-            font-size: 0.9rem
-      h2
-        font-size: 1.75rem
-
   .info-container
     gap: 2rem
-        
-    .test-container
-      svg
-        width: 3rem
-        height: 3rem
-      .test-info
-        h2
-          font-size: 1.25rem
-        p
-          font-size: 1.1rem
 
   .value-container
     gap: 2rem
-        
-    .value-item
-      svg
-        width: 3rem
-        height: 3rem
-      .value-info
-        h2
-          font-size: 1.25rem
-        p
-          font-size: 1.1rem
 
 .chart-modal-toolbar
   display: flex
