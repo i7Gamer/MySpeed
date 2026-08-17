@@ -27,6 +27,29 @@ describe("the statistics page's shape", () => {
             "the one-column stage has no shared constant");
     });
 
+    /**
+     * And it leaves the three-across stage before that stage starts cutting.
+     *
+     * It was 1030px, which is where three cards stop fitting *at all* rather
+     * than where they stop reading well. The band above it was the problem: at
+     * around 1050 the page is still three across, each card near 330px, and the
+     * summary - five labelled rows, the widest thing on the page - is dressed in
+     * a form tuned for a third of a much wider row. Reported from a real window
+     * at 1050px as simply not looking good, which is what a card holding a
+     * paragraph at tile width looks like.
+     *
+     * Raised so the summary takes its own row while there is still room for it
+     * to read as one, rather than at the last width where three columns are
+     * geometrically possible.
+     */
+    it("leaves the three-across stage before its cards get too narrow to read", () => {
+        const at = parseInt(layoutSource.match(/\$stats-two-column:\s*(\d+)px/)?.[1], 10);
+
+        assert.ok(Number.isFinite(at), "the two-column stage has no figure to check");
+        assert.ok(at >= 1250,
+            `three cards share the row down to ${at}px, where the summary is about 330px wide`);
+    });
+
     // The figure they used to share by coincidence. Either card type keeping a
     // hardcoded ceiling is the page reflowing in two halves at two widths.
     it("leaves no card type reflowing on a width of its own", () => {
