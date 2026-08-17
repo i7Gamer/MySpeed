@@ -223,7 +223,18 @@ export const importTests = async (data) => {
             if (!NUMERIC_COLUMNS.every((column) => isImportableNumber(entry[column]))) { skipped++; continue; }
 
             try {
-                await tests.create(entry, {transaction});
+                // Without the backup's own id. Those are the ids of the
+                // instance that wrote the file and mean nothing on the one
+                // reading it - written through, every id already taken raised a
+                // UNIQUE violation, which the catch below counted as an
+                // unusable row and the route still reported as a success. The
+                // shape that costs the most is the ordinary one: a disk dies,
+                // MySpeed is reinstalled and runs for a week before anyone gets
+                // to the backup, and the restore then silently discards exactly
+                // the overlapping week. Left to the database, nothing collides.
+                const {id, ...row} = entry;
+
+                await tests.create(row, {transaction});
                 imported++;
             } catch (e) {
                 skipped++;
@@ -235,8 +246,14 @@ export const importTests = async (data) => {
     if (skipped > 0) console.warn(`Skipped ${skipped} unusable row(s) while importing ${data.length}`);
 
     // Reporting success for a file where nothing was usable told the operator
-    // their history had been restored when the table was still empty.
-    return data.length === 0 || imported > 0;
+    // their history had been restored when the table was still empty. The
+    // counts travel with it so a partly-usable file is not reported as a whole
+    // one either.
+    return {
+        ok: data.length === 0 || imported > 0,
+        imported,
+        skipped
+    };
 }
 
 /** Every test there is, oldest first - the order the aggregation reads them in. */

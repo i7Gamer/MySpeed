@@ -363,19 +363,63 @@ describe("import validation", () => {
     /**
      * The rows are written inside one transaction - sqlite otherwise commits,
      * and fsyncs, once per row, which is most of what restoring a backup costs.
-     * A row the validation passes can still be refused by the database: a
-     * hand-edited history with a duplicate id is the realistic way in. The
+     * A row the validation passes can still be refused by the database, and the
      * rest of the file has to survive it rather than being rolled back with it.
      */
     it("keeps the rows around one the database itself refuses", async () => {
         await seedTests(server.tests, []);
 
         const {status} = await importTests([
-            row({id: 1}), row({id: 1, created: daysAgo(2)}), row({id: 2, created: daysAgo(3)})
+            row(), row({created: "not a date"}), row({created: daysAgo(3)})
         ]);
 
         assert.equal(status, 200);
         assert.equal(await server.tests.count(), 2);
+    });
+
+    /**
+     * A backup's ids are the ids of the instance that wrote it, and mean
+     * nothing on the one reading it.
+     *
+     * They were written through as-is, so restoring onto a history that was not
+     * empty raised a UNIQUE violation for every id already taken - each one
+     * caught, counted into a console-only tally, and reported as a success. The
+     * realistic shape is the worst one: a disk dies, MySpeed is reinstalled and
+     * runs for a week before anyone gets to the backup, and the restore then
+     * silently discards exactly the week's worth of ids that overlap.
+     *
+     * Left to the database to assign, nothing collides and the whole file lands.
+     */
+    it("restores every row onto a history that already holds those ids", async () => {
+        await seedTests(server.tests, [row({created: daysAgo(1)}), row({created: daysAgo(2)})]);
+
+        // The ids actually taken, not 1 and 2. sqlite's AUTOINCREMENT sequence
+        // never reuses a value, so by this point in the file the seeded rows are
+        // numbered well above where a hand-written id would collide - and a test
+        // that guessed would pass without the two ever meeting.
+        const taken = (await server.tests.findAll()).map((test) => test.id);
+        assert.equal(taken.length, 2);
+
+        const {status} = await importTests([
+            row({id: taken[0], created: daysAgo(10)}),
+            row({id: taken[1], created: daysAgo(11)})
+        ]);
+
+        assert.equal(status, 200);
+        assert.equal(await server.tests.count(), 4,
+            "part of the backup was discarded and the restore still reported success");
+    });
+
+    // What could not be used has to be visible somewhere the operator looks. A
+    // bare "Tests imported" over a file that was half refused is the same
+    // silence by a shorter route.
+    it("says how much of the file it could not use", async () => {
+        await seedTests(server.tests, []);
+
+        const {body} = await importTests([row(), row({time: "thirty"}), row({created: daysAgo(4)})]);
+
+        assert.equal(body.imported, 2);
+        assert.equal(body.skipped, 1);
     });
 
     // A failed test stores -1 placeholders and providers without jitter store

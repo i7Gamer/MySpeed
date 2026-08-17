@@ -75,8 +75,16 @@ app.delete("/tests/history", password(false), previewReadOnly, async (req, res) 
 });
 
 app.put("/tests/history", password(false), previewReadOnly, importBody, async (req, res) => {
-    let result = await tests.importTests(req.body);
-    res.status(result ? 200 : 500).json({message: result ? "Tests imported" : "Error importing tests"});
+    const {ok, imported, skipped} = await tests.importTests(req.body);
+
+    // The counts travel with the message. A file that was half refused answered
+    // the same bare "Tests imported" as one that restored whole, which is the
+    // difference an operator most needs to see.
+    res.status(ok ? 200 : 500).json({
+        message: ok ? "Tests imported" : "Error importing tests",
+        imported,
+        skipped
+    });
 });
 
 /**
