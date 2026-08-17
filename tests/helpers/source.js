@@ -145,6 +145,34 @@ export const findMounts = (source, verbs) => {
 };
 
 /**
+ * Mounts that look like mounts but that findMounts cannot read.
+ *
+ * The pattern above needs two things the language does not: `app.` at the very
+ * start of a line, and a quote as the first argument. A mount that is indented -
+ * inside an `if`, a loop, a helper - or whose path is a `const` matches nothing
+ * and is silently absent from every scan built on it. The security assertions
+ * derived from those scans then pass, because a route that was never found is
+ * never unclassified and never missing; their only defence is a floor on the
+ * count, and a floor with slack in it cannot notice one route going quiet.
+ *
+ * That is the one direction a security scan must not fail in, and it is exactly
+ * the failure the guard being scanned for was written to end: a rule that is
+ * reproduced by hand is a rule something forgets. So the scan says what it could
+ * not read instead of skipping it, and the caller fails on that.
+ *
+ * Deliberately a *count* of the difference rather than a cleverer parser. The
+ * strict pattern is what the assertions are built on; anything this notices is
+ * something they cannot see, whatever the reason.
+ */
+export const unreadableMountCount = (source, verbs) => {
+    // Any indentation, any first argument - but still a call, so the prose in a
+    // comment that names `app.all` without calling it is not counted.
+    const naive = new RegExp(`\\bapp\\.(?:${verbs.join("|")})\\s*\\(`, "g");
+
+    return [...source.matchAll(naive)].length - findMounts(source, verbs).length;
+};
+
+/**
  * The balanced body of a declaration, for the assertions that are about the
  * shape of a function rather than about running it.
  *

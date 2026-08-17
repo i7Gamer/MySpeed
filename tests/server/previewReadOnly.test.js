@@ -1,7 +1,7 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import previewReadOnly from "../../server/middlewares/previewReadOnly.js";
-import { findMounts, listSources, mountText, readSource } from "../helpers/source.js";
+import { findMounts, listSources, mountText, readSource, unreadableMountCount } from "../helpers/source.js";
 
 /**
  * What a visitor to a public demo is allowed to change, which is nothing that
@@ -158,6 +158,36 @@ describe("nothing destructive is left open on a demo", () => {
         assert.ok(GUARDED.length >= 12, `only ${GUARDED.length} mutating routes were found`);
         assert.ok(GUARDED.some(({file}) => file.endsWith("nodes.js")),
             "the node routes were not scanned");
+    });
+
+    /**
+     * The floor above is not enough on its own, and this is what it was missing.
+     *
+     * findMounts needs `app.` at the start of a line and a quoted path. A mount
+     * that is indented - inside an `if`, a loop, a helper - or one whose path is
+     * a `const` matches nothing, so it is absent from GUARDED entirely: not
+     * unguarded, not exempt, simply not there. Every assertion in this file is
+     * derived from that list, so none of them can see it, and the floor has four
+     * or five of slack to absorb the loss.
+     *
+     * That is the one direction a security scan must not fail in - and it is the
+     * same failure the middleware being scanned for exists to end. A rule that is
+     * reproduced by hand is a rule something forgets; a scan that quietly drops
+     * what it cannot parse forgets in exactly the same way.
+     *
+     * Both verb sets, so neither scan in this file has a blind spot the other
+     * would have caught.
+     */
+    it("can read every mount in the files it scans", () => {
+        const unreadable = routeFiles
+            .map((file) => ({
+                file,
+                missed: unreadableMountCount(readSource(file), [...MUTATING_VERBS, "get"])
+            }))
+            .filter(({missed}) => missed !== 0);
+
+        assert.deepEqual(unreadable, [],
+            "a route is mounted in a way this scan cannot see, so every assertion below skips it");
     });
 
     /**
