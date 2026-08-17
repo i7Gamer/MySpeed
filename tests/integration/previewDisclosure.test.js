@@ -12,6 +12,15 @@ const NODE = {name: "Attic", url: "http://192.168.1.40:5216", password: "TheNode
 
 const CONNECTION = {isp: "Deutsche Telekom AG", externalIp: "203.0.113.5", resultId: "9876543210"};
 
+/**
+ * A range around the seeded row, since the export refuses a request without one.
+ *
+ * Bounded rather than every year there has ever been: the route caps a window
+ * at MAX_RANGE_DAYS and answers 400 above it, so an "all of time" range would
+ * fail for a reason that has nothing to do with what is being asserted.
+ */
+const EXPORT_RANGE = "from=2026-01-01&to=2026-12-31";
+
 const asVisitor = (pathname) => api(server.baseUrl, pathname);
 
 const onDemo = async (pathname) => {
@@ -158,6 +167,94 @@ describe("a demo instance", () => {
 
         for (const key of ["ping", "download", "upload"])
             assert.ok(body[key], `${key} is needed to grade the measurements`);
+    });
+});
+
+/**
+ * The exports, which are operator artefacts however they are asked for.
+ *
+ * GET /api/storage/config takes `includeSecrets` from the query string and had
+ * no preview guard at all, so a visitor to a demo could ask for the full export
+ * and be given it: the admin password hash, every node password in clear and
+ * every integration credential. Worse than the /integrations/active hole beside
+ * it, which never carried the hash or the node passwords - and the route's own
+ * comment lists exactly what a full export contains. It simply never asked who
+ * was asking.
+ *
+ * The two history downloads are the same shape: they answer with tests.listAll()
+ * untouched, so the provider and external address that /api/speedtests/export
+ * strips for an untrusted reader went out in full through this door instead.
+ *
+ * Sealed rather than redacted. A redacted config export still carries the whole
+ * withheld list - the cron, the quiet hours, the adapter name - because that is
+ * what a configuration is, and /api/speedtests/export is already the redacted
+ * way to take the measurements away. The client catches the refusal and shows
+ * its message, which is how every other preview refusal reaches a visitor.
+ */
+describe("a demo and the exports", () => {
+    it("refuses a full configuration export", async () => {
+        const {status, body} = await onDemo("/storage/config?includeSecrets=true");
+
+        assert.equal(status, 403, "a demo visitor downloaded the password hash and every credential");
+        assert.match(body.message, /preview mode/i);
+    });
+
+    // Asked for without the flag it is still the instance's configuration, and
+    // still carries every key the config route withholds.
+    it("refuses a redacted one too", async () => {
+        assert.equal((await onDemo("/storage/config")).status, 403);
+    });
+
+    for (const format of ["json", "csv"])
+        it(`refuses the ${format} history download`, async () => {
+            const {status} = await onDemo(`/storage/tests/history/${format}`);
+
+            assert.equal(status, 403, "the raw history went out with its connection identity");
+        });
+
+    /**
+     * The adapter list, which is the disclosure the config route keeps one
+     * entry of back. Withholding the selected `interface` buys nothing while
+     * the whole list is a request away - and the provider dialog that reads it
+     * is already closed on a demo.
+     */
+    it("refuses the network adapter list", async () => {
+        assert.equal((await onDemo("/info/interfaces")).status, 403);
+    });
+
+    // The redacted export a demo visitor may still take away, so that sealing
+    // the raw one above costs a visitor nothing they were meant to have.
+    it("still lets a visitor export the measurements", async () => {
+        const {status, body} = await onDemo(`/speedtests/export?${EXPORT_RANGE}&format=json`);
+
+        assert.equal(status, 200, "the demo lost the export it is meant to offer");
+        assert.ok(body.length > 0, "nothing was in range, so the redaction below proves nothing");
+        assert.equal(body[0].isp, null, "and it must still be the redacted one");
+    });
+});
+
+/**
+ * And the operator's own instance keeps all of it.
+ */
+describe("an ordinary instance and the exports", () => {
+    it("still exports the configuration with its secrets", async () => {
+        const {status, body} = await asVisitor("/storage/config?includeSecrets=true");
+
+        assert.equal(status, 200);
+        assert.equal(body.secretsRedacted, false);
+
+        const telegram = body.integrations.find((row) => row.name === "telegram");
+        assert.equal(telegram.data.token ?? JSON.parse(telegram.data).token, TELEGRAM_TOKEN,
+            "a full export that redacts is a backup that cannot restore");
+    });
+
+    it("still downloads the history", async () => {
+        for (const format of ["json", "csv"])
+            assert.equal((await asVisitor(`/storage/tests/history/${format}`)).status, 200);
+    });
+
+    it("still answers with the adapter list", async () => {
+        assert.equal((await asVisitor("/info/interfaces")).status, 200);
     });
 });
 
