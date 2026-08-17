@@ -41,11 +41,21 @@ jobs:
 
       # The version now comes from the dispatch input rather than a pushed tag.
       # Normalised so that both "1.1.0" and "v1.1.0" are accepted.
+      # Read through env, never spliced into the script body. A `${{ }}`
+      # expression is substituted into the shell source before bash parses it,
+      # so the dispatch input reached this step as code - eleven lines above the
+      # regex that exists precisely because the value is not trusted, in a job
+      # where checkout has already written a contents:write token into
+      # .git/config. Dispatching needs write access, so this is not a boundary
+      # being crossed; it is the difference between "can cut a release" and "can
+      # run anything inside the release job". The cleanup jobs below already do
+      # it this way, for the same reason.
       - name: Get version from input
         id: get_version
+        env:
+          RAW_VERSION: ${{ inputs.version }}
         run: |
-          VERSION="${{ inputs.version }}"
-          VERSION="${VERSION#v}"
+          VERSION="${RAW_VERSION#v}"
 
           # Three numeric parts and nothing after them, which is narrower than
           # semver allows and exactly what this pipeline can deliver. build-msi

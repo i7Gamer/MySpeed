@@ -43,8 +43,12 @@ const validator = () => {
 };
 
 // What build-msi.yml makes of that version when it writes Product/@Version.
+//
+// Read through the environment rather than spliced from `${{ inputs.version }}`:
+// no workflow expression reaches a script body anywhere in the release chain
+// now, which binaryVerification.test.js holds the whole chain to.
 const wixVersion = (version) => {
-    const template = msi.match(/Version="\$\{\{ inputs\.version \}\}([^"]*)"/);
+    const template = msi.match(/Version="\$\(\$env:VERSION\)([^"]*)"/);
     assert.notEqual(template, null, "the MSI no longer builds its product version from the release version");
 
     return version + template[1];
@@ -176,7 +180,10 @@ describe("the version a release may be dispatched with", () => {
     // The leading v is stripped before anything downstream sees it, so the MSI
     // never receives one - build-msi takes create-release's normalised output.
     it("passes the normalised version on to the MSI", () => {
-        assert.match(release, /VERSION="\$\{VERSION#v}"/,
+        // RAW_VERSION, not VERSION: the dispatch input arrives through env: so
+        // that it is never substituted into the shell source before bash parses
+        // it. The stripping itself is unchanged.
+        assert.match(release, /VERSION="\$\{RAW_VERSION#v}"/,
             "a dispatched 'v1.4.0' keeps its prefix");
         assert.match(release, /version: \$\{\{ needs\.create-release\.outputs\.version }}/,
             "the MSI is handed the raw dispatch input rather than the validated one");

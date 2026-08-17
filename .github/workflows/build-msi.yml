@@ -75,13 +75,21 @@ jobs:
           choco install wixtoolset -y
           echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" >> $env:GITHUB_PATH
 
+      # Through env like the rest of the chain, so no workflow expression is
+      # substituted into a script body. Both values arrive already checked -
+      # create-release refuses a version that is not three numbers, and
+      # product_name is the matrix's own - but the rule is uniform so that
+      # staying safe does not depend on remembering which were checked upstream.
       - name: Create WiX configuration
         shell: powershell
+        env:
+          PRODUCT_NAME: ${{ matrix.product_name }}
+          VERSION: ${{ inputs.version }}
         run: |
           $wxsContent = @"
           <?xml version="1.0" encoding="UTF-8"?>
           <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-            <Product Id="*" Name="${{ matrix.product_name }}" Language="1033" Version="${{ inputs.version }}.0" Manufacturer="Timo" UpgradeCode="A1B2C3D4-5E6F-7890-ABCD-EF1234567890">
+            <Product Id="*" Name="$($env:PRODUCT_NAME)" Language="1033" Version="$($env:VERSION).0" Manufacturer="Timo" UpgradeCode="A1B2C3D4-5E6F-7890-ABCD-EF1234567890">
               <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
           
               <!-- The two installers share this product's UpgradeCode on purpose:
