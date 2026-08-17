@@ -13,8 +13,27 @@ import { stripTrailingSlashes } from "../util/helpers.js";
  * Measurement names take the same treatment minus the equals sign, which
  * carries no meaning there.
  */
-const escapeTag = (value) => String(value).replace(/[\\ ,=]/g, "\\$&");
-const escapeMeasurement = (value) => String(value).replace(/[\\ ,]/g, "\\$&");
+/**
+ * A newline cannot be escaped, so it is swapped for a space before anything
+ * else runs.
+ *
+ * Line protocol has no spelling for one inside a tag - it is the record
+ * separator itself. A value carrying one therefore did not produce a tag with a
+ * newline in it: it ended the line early and left the remainder to be read as a
+ * second, malformed point, which influx answers with a 400. Every write from
+ * that integration then failed, for a reason nothing on screen connects to the
+ * host field somebody pasted a trailing newline into.
+ *
+ * A space rather than nothing, so the two halves of the value stay apart, and a
+ * run of them collapses to one. It has to happen before the escaping below or
+ * the space it introduces ends the tag section early instead - the same break
+ * by a different route.
+ */
+const NEWLINES = /[\r\n]+/g;
+const oneLine = (value) => String(value).replace(NEWLINES, " ");
+
+const escapeTag = (value) => oneLine(value).replace(/[\\ ,=]/g, "\\$&");
+const escapeMeasurement = (value) => oneLine(value).replace(/[\\ ,]/g, "\\$&");
 
 /**
  * @returns the line, or null when nothing survived the field filter.

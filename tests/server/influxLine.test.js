@@ -54,6 +54,79 @@ describe("influx line protocol", () => {
 
     // The measurement name was interpolated raw, so a name with a space or a
     // comma silently produced an unparseable write.
+    /**
+     * A newline is not an escapable character in line protocol - it is the
+     * record separator, and the protocol has no spelling for one inside a tag.
+     * So a value carrying one did not produce a tag with a newline in it: it
+     * ended the line early and left the remainder to be parsed as a second
+     * point, which influx answers with a 400. Every write from that integration
+     * then failed, for a reason nothing on screen connects to the host field.
+     *
+     * The values here are typed by an operator into the integration's own form,
+     * so this is a paste with a stray newline rather than an attack - but it is
+     * also the only thing standing between a pasted hostname and an integration
+     * that silently never works again.
+     */
+    describe("a tag value carrying a newline", () => {
+        for (const [name, raw] of [["a line feed", "a\nb"], ["a carriage return", "a\rb"],
+            ["a windows pair", "a\r\nb"]]) {
+            it(`keeps ${name} on one line`, () => {
+                const line = buildLine("m", {host: raw}, fields, TIMESTAMP);
+
+                assert.equal(line.includes("\n"), false, "the point was split into two records");
+                assert.equal(line.includes("\r"), false);
+            });
+        }
+
+        it("keeps the text either side of it, separated and escaped", () => {
+            const line = buildLine("m", {host: "a\nb"}, fields, TIMESTAMP);
+
+            assert.match(line, /host=a\\ b/, "the newline took the rest of the value with it");
+        });
+
+        it("collapses a run of them into a single separator", () => {
+            const line = buildLine("m", {host: "a\r\n\n\rb"}, fields, TIMESTAMP);
+
+            assert.match(line, /host=a\\ b/);
+        });
+
+        it("handles one in a tag key as well", () => {
+            const line = buildLine("m", {"a\nkey": "value"}, fields, TIMESTAMP);
+
+            assert.equal(line.includes("\n"), false);
+            assert.match(line, /a\\ key=value/);
+        });
+
+        it("handles one in the measurement name", () => {
+            const line = buildLine("a\nname", {host: "h"}, fields, TIMESTAMP);
+
+            assert.equal(line.includes("\n"), false);
+            assert.match(line, /^a\\ name,/);
+        });
+
+        it("leaves a trailing newline behind as an ordinary trailing space", () => {
+            const line = buildLine("m", {host: "server1\n"}, fields, TIMESTAMP);
+
+            assert.equal(line.includes("\n"), false);
+            assert.match(line, /host=server1\\ /);
+        });
+
+        /**
+         * The escaping has to happen after the swap, or the space it
+         * introduces ends the tag section early - the same break by a different
+         * route. Asserted on the whole line rather than on a split at the first
+         * space, because the escaped space is still a space: the tag that
+         * follows has to survive, and the fields have to still begin where the
+         * unescaped separator is.
+         */
+        it("escapes the separator it introduces", () => {
+            const line = buildLine("m", {host: "a\nb", second: "kept"}, fields, TIMESTAMP);
+
+            assert.match(line, /,second=kept download=/,
+                "the tag section ended at the space that replaced the newline");
+        });
+    });
+
     it("escapes spaces and commas in the measurement name", () => {
         assert.match(buildLine("my speeds,eu", {}, fields, TIMESTAMP), /^my\\ speeds\\,eu /);
     });
