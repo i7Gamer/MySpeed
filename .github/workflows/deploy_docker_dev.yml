@@ -14,8 +14,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  publish:
-    name: "Publish"
+  # The same two steps the release chain takes, for the same reason: the builds
+  # push each architecture by digest, and the tag is a second, separate act.
+  # Nothing gates them apart here - there are no binaries to wait for - but
+  # keeping both callers on one path is what stops :latest ever being published
+  # by something that did not build both architectures.
+  build:
+    name: "Build"
     # Only the checkout inside build-docker.yml needs the token; the push
     # authenticates against Docker Hub separately.
     permissions:
@@ -23,5 +28,14 @@ jobs:
     uses: ./.github/workflows/build-docker.yml
     with:
       ref: ${{ github.ref }}
+    secrets: inherit
+
+  publish:
+    name: "Publish"
+    needs: build
+    permissions:
+      contents: read
+    uses: ./.github/workflows/publish-docker.yml
+    with:
       tags: latest
     secrets: inherit

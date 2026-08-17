@@ -1,0 +1,84 @@
+name: Publish Docker
+
+# The moment a MySpeed image becomes pullable by name.
+#
+# Split out of build-docker.yml so the release chain can hold it behind
+# build-binaries. It used to sit at the end of that workflow, which ran beside
+# the binaries rather than after them, so the tags went up while a binary could
+# still fail - and when one did, cleanup-on-failure deleted the tag and the
+# draft release and left `:latest` pointing at a version with no release behind
+# it. Nothing rolls a registry back; the fix is not to publish that early.
+#
+# The line the split follows is the one the pipeline already had: build-docker
+# pushes each architecture by digest, which is an untagged blob that no
+# `docker pull` resolves to, and only the manifest list below gives those
+# digests a name. So a release that dies after the builds leaves unreferenced
+# digests - collectable, invisible - instead of a moved tag.
+on:
+  workflow_call:
+    inputs:
+      tags:
+        description: "Newline-separated tags to publish, without the image name"
+        required: true
+        type: string
+
+env:
+  REGISTRY_IMAGE: i7gamer/myspeed
+
+# Pushing authenticates against Docker Hub with its own secrets. Left unset this
+# would inherit whatever the caller holds - contents: write, in the release
+# chain - for a job that never touches the repository.
+permissions:
+  contents: read
+
+jobs:
+  merge:
+    name: "Merge Docker Manifests"
+    runs-on: ubuntu-latest
+    # Never checks the repository out - it only pulls the digest artifacts and
+    # pushes the manifest list - so it needs no token scopes at all.
+    permissions: {}
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # One manifest list carrying both per-arch digests, published under every
+      # requested tag at once. Each tag therefore points at the same multi-arch
+      # manifest rather than at whichever architecture was pushed last.
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          TAGS: ${{ inputs.tags }}
+        run: |
+          tag_args=()
+          while IFS= read -r tag; do
+            tag="${tag//[[:space:]]/}"
+            [ -n "$tag" ] || continue
+            tag_args+=(-t "${REGISTRY_IMAGE}:${tag}")
+          done <<< "$TAGS"
+
+          if [ ${#tag_args[@]} -eq 0 ]; then
+            echo "::error::No tags to publish."
+            exit 1
+          fi
+
+          digest_args=()
+          for digest in *; do
+            digest_args+=("${REGISTRY_IMAGE}@sha256:${digest}")
+          done
+
+          docker buildx imagetools create "${tag_args[@]}" "${digest_args[@]}"

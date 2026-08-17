@@ -125,12 +125,29 @@ jobs:
       release_id: ${{ needs.create-release.outputs.release_id }}
     secrets: inherit
 
+  # Beside the binaries, not after them: this is the slow half, and it only
+  # pushes untagged digests, which publish nothing anyone can pull by name.
   build-docker:
     name: "Build Docker"
     needs: create-release
     uses: ./.github/workflows/build-docker.yml
     with:
       ref: v${{ needs.create-release.outputs.version }}
+    secrets: inherit
+
+  # The tags, and the first moment this release is visible to `docker pull`.
+  #
+  # Held behind build-binaries because that is the job whose failure tears the
+  # release down: cleanup-on-failure deletes the tag and the draft, and it has
+  # no reach into a registry. Published beside the binaries, as it was until
+  # 1.3.3, a failed release left `:latest` on a version that no longer had a
+  # GitHub release - which happened three times the night 1.3.3 was cut, and
+  # left `docker pull myspeed` on an unreleased build for about four hours.
+  publish-docker:
+    name: "Publish Docker"
+    needs: [create-release, build-binaries, build-docker]
+    uses: ./.github/workflows/publish-docker.yml
+    with:
       tags: |
         latest
         ${{ needs.create-release.outputs.version }}
@@ -145,9 +162,11 @@ jobs:
       release_id: ${{ needs.create-release.outputs.release_id }}
     secrets: inherit
 
+  # After publish-docker rather than beside it: this is what turns the draft
+  # into the published release, and the body it writes names the Docker tags.
   finalize-release:
     name: "Finalize Release"
-    needs: [create-release, build-binaries, build-docker, build-msi]
+    needs: [create-release, build-binaries, publish-docker, build-msi]
     uses: ./.github/workflows/finalize-release.yml
     with:
       version: ${{ needs.create-release.outputs.version }}
@@ -159,10 +178,18 @@ jobs:
   # failing leaves a draft with a platform missing. Neither is salvageable, so
   # the tag is freed up and the same version can be dispatched again.
   #
-  # A build-docker or build-msi failure deliberately does not reach here. Every
-  # platform binary is already attached by then and the release is still a draft,
-  # so deleting it would destroy good artifacts over a side channel that can be
-  # retried by hand. report-partial-release says what was left behind instead.
+  # A build-docker, publish-docker or build-msi failure deliberately does not
+  # reach here. Every platform binary is already attached by then and the release
+  # is still a draft, so deleting it would destroy good artifacts over a side
+  # channel that can be retried by hand. report-partial-release says what was
+  # left behind instead.
+  #
+  # What this job can undo is now the whole of what a failure at this point has
+  # published. It deletes a tag and a draft release, and it has no reach into a
+  # registry - which is why publish-docker waits for build-binaries rather than
+  # running beside it. A failure here leaves untagged digests on Docker Hub:
+  # unreferenced, unresolvable by `docker pull`, and collectable, rather than
+  # `:latest` moved to a version whose release is about to be deleted.
   #
   # The version bump commit is not reverted. Rewriting the default branch to undo
   # a failed release is worse than leaving it, and it costs nothing: re-running
@@ -221,7 +248,7 @@ jobs:
   report-partial-release:
     name: "Report Partial Release"
     runs-on: ubuntu-latest
-    needs: [create-release, build-binaries, build-docker, build-msi, finalize-release]
+    needs: [create-release, build-binaries, build-docker, publish-docker, build-msi, finalize-release]
     if: |
       failure()
       && needs.create-release.result == 'success'
@@ -230,7 +257,8 @@ jobs:
       - name: Summarise what survived
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
-          DOCKER_RESULT: ${{ needs.build-docker.result }}
+          DOCKER_BUILD_RESULT: ${{ needs.build-docker.result }}
+          DOCKER_PUBLISH_RESULT: ${{ needs.publish-docker.result }}
           MSI_RESULT: ${{ needs.build-msi.result }}
           FINALIZE_RESULT: ${{ needs.finalize-release.result }}
         run: |
@@ -241,9 +269,21 @@ jobs:
             echo
             echo "| Job | Result |"
             echo "| :-- | :-- |"
-            echo "| Build Docker | $DOCKER_RESULT |"
+            echo "| Build Docker | $DOCKER_BUILD_RESULT |"
+            echo "| Publish Docker | $DOCKER_PUBLISH_RESULT |"
             echo "| Build MSI | $MSI_RESULT |"
             echo "| Finalize Release | $FINALIZE_RESULT |"
+            echo
+
+            # Which of the two the images reached matters to whoever picks this
+            # up: a build that pushed digests published nothing pullable, while
+            # a publish that succeeded has already moved :latest.
+            if [ "$DOCKER_PUBLISH_RESULT" = "success" ]; then
+              echo "\`:latest\` and \`:$VERSION\` are already on Docker Hub."
+            else
+              echo "No Docker tag was published. The per-arch digests may be up, but"
+              echo "nothing resolves to them and \`:latest\` still points where it did."
+            fi
             echo
             echo "Fix the failing job and publish the draft by hand, or free the version"
             echo "number up for another run with:"
