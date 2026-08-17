@@ -1,6 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createShutdown } from "../../server/util/shutdown.js";
+
+/** Lets whatever the cleanup hook chained onto settle before anything is asserted. */
+const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 /** A listener that closes when told to, or never, like one holding a live connection. */
 const listener = ({closes = true} = {}) => {
@@ -137,5 +143,159 @@ describe("createShutdown", () => {
         shutdown("SIGTERM");
 
         assert.deepEqual(exited, [0]);
+    });
+});
+
+/**
+ * What is still open once nothing is listening.
+ *
+ * onStop clears the intervals and cancels both scheduled jobs, and that was the
+ * whole of the shutdown - the database handle was left to the exit. This
+ * project already knows why that is not merely untidy: stopAfterReset closes it
+ * explicitly, with a comment about sqlite's WAL mode leaving a -wal and a -shm
+ * beside the database file, and `docker exec` skipping the entrypoint's
+ * privilege drop so those two are created root-owned inside a volume the server
+ * reads as another user. The signal path is the one every `docker stop` takes
+ * and it did not close anything.
+ *
+ * A hook rather than another injected callback beside onStop, because the
+ * ordering is the point: onStop runs first and stops new work arriving, this
+ * runs last, once no listener can still be serving a request out of the
+ * connection it is about to close.
+ */
+describe("createShutdown with a cleanup hook", () => {
+    const withCleanup = (onCleanup, listeners = [listener()]) => {
+        const ran = [];
+        const {shutdown, exited, timers} = harness({
+            listeners,
+            overrides: {onCleanup: () => { ran.push(true); return onCleanup(); }}
+        });
+
+        return {shutdown, exited, timers, ran};
+    };
+
+    it("runs after the last listener has closed, and exits after that", async () => {
+        const {shutdown, exited, ran} = withCleanup(async () => undefined);
+
+        shutdown("SIGTERM");
+        assert.deepEqual(exited, [], "exited before the database was closed");
+
+        await settle();
+
+        assert.deepEqual(ran, [true]);
+        assert.deepEqual(exited, [0]);
+    });
+
+    it("runs when there was never anything listening", async () => {
+        const {shutdown, exited, ran} = withCleanup(async () => undefined, []);
+
+        shutdown("SIGTERM");
+        await settle();
+
+        assert.deepEqual(ran, [true]);
+        assert.deepEqual(exited, [0]);
+    });
+
+    // A database that has already gone away rejects here, and an exit that
+    // waits for a clean close it will never get is the hang this replaced.
+    it("still exits when the cleanup rejects", async () => {
+        const {shutdown, exited} = withCleanup(async () => { throw new Error("Connection lost"); });
+
+        shutdown("SIGTERM");
+        await settle();
+
+        assert.deepEqual(exited, [0]);
+    });
+
+    it("still exits when the cleanup throws synchronously", async () => {
+        const {shutdown, exited} = withCleanup(() => { throw new Error("no handle"); });
+
+        shutdown("SIGTERM");
+        await settle();
+
+        assert.deepEqual(exited, [0]);
+    });
+
+    /**
+     * The deadline outranks the hook.
+     *
+     * A close that never comes back must not be able to hold the container past
+     * the grace period - that is the entire failure this module exists to end,
+     * and a hook that hangs would have reintroduced it one layer down.
+     */
+    it("gives up on a cleanup that never finishes", async () => {
+        const {shutdown, exited, timers} = withCleanup(() => new Promise(() => undefined));
+
+        shutdown("SIGTERM");
+        await settle();
+        assert.deepEqual(exited, []);
+
+        timers[0].fn();
+
+        assert.deepEqual(exited, [0]);
+    });
+
+    it("does not close the database twice, however many signals arrive", async () => {
+        const {shutdown, exited, ran} = withCleanup(async () => undefined);
+
+        shutdown("SIGTERM");
+        shutdown("SIGINT");
+        await settle();
+        shutdown("SIGTERM");
+        await settle();
+
+        assert.deepEqual(ran, [true]);
+        assert.deepEqual(exited, [0]);
+    });
+
+    // And the deadline firing after a clean close must not exit a second time,
+    // now that the exit no longer happens in the same tick.
+    it("exits once when the deadline fires after the cleanup finished", async () => {
+        const {shutdown, exited, timers} = withCleanup(async () => undefined);
+
+        shutdown("SIGTERM");
+        await settle();
+        timers[0].fn();
+
+        assert.deepEqual(exited, [0]);
+    });
+
+    // Every existing caller passes no hook at all, and the shutdown they get
+    // must stay the synchronous one the tests above describe.
+    it("exits in the same tick when there is no hook", () => {
+        const {shutdown, exited} = harness({listeners: [listener()]});
+
+        shutdown("SIGTERM");
+
+        assert.deepEqual(exited, [0], "an absent hook made the exit asynchronous");
+    });
+});
+
+/**
+ * And the server actually hands it one.
+ *
+ * index.js cannot be imported to be asked - it opens the database, downloads a
+ * CLI and takes the port - so the wiring is read rather than run, the way the
+ * failure handler's is in runStateRelease.test.js. Without this the hook above
+ * is a feature nothing uses.
+ */
+describe("the server's own shutdown", () => {
+    const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+    const source = fs.readFileSync(path.join(root, "server/index.js"), "utf8");
+
+    const call = source.slice(source.indexOf("createShutdown({"),
+        source.indexOf("process.on('SIGTERM'"));
+
+    it("closes the database on the way out", () => {
+        assert.notEqual(source.indexOf("createShutdown({"), -1, "the shutdown is no longer built here");
+        assert.match(call, /onCleanup/, "the signal path leaves the database handle open");
+        assert.match(call, /db\.close\(\)/, "something other than the database is being closed");
+    });
+
+    // The timers still stop first: onStop is what keeps new work from arriving
+    // while the listeners drain.
+    it("still stops the timers before it waits", () => {
+        assert.match(call, /onStop/);
+        assert.match(call, /stopTimer\(\)/);
     });
 });
