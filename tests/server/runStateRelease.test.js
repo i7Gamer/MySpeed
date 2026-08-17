@@ -1,8 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { bodyOf, readSource } from "../helpers/source.js";
 
 /**
  * A run that ends says so, however it ended.
@@ -20,23 +18,10 @@ import { fileURLToPath } from "node:url";
  * finally since the last time this bit - which is exactly why the second half
  * of the same guarantee went unnoticed.
  */
-const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-const source = fs.readFileSync(path.join(root, "server/tasks/speedtest.js"), "utf8");
+const source = readSource("server/tasks/speedtest.js");
 
-const bodyFrom = (open) => {
-    const start = source.indexOf(open);
-    assert.notEqual(start, -1, `${open} is no longer in tasks/speedtest.js`);
-
-    const from = source.indexOf("{", start);
-    let depth = 0;
-
-    for (let index = from; index < source.length; index++) {
-        if (source[index] === "{") depth++;
-        else if (source[index] === "}" && --depth === 0) return source.slice(from, index + 1);
-    }
-
-    assert.fail(`${open} is never closed`);
-};
+// Named for what it is here: every slice below is a function in that file.
+const bodyFrom = (declaration) => bodyOf(source, declaration);
 
 describe("the failure handler", () => {
     const handler = bodyFrom("} catch (e) {");

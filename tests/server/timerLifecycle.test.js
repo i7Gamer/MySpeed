@@ -1,10 +1,8 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import * as timer from "../../server/tasks/timer.js";
 import * as integrationTimer from "../../server/tasks/integrations.js";
+import { bodyIn } from "../helpers/source.js";
 
 /**
  * The scheduler's teardown, which had nothing holding it to its own contract.
@@ -26,34 +24,6 @@ import * as integrationTimer from "../../server/tasks/integrations.js";
 // is running.
 const DISTANT_CRON = "0 3 1 1 *";
 const OTHER_CRON = "0 4 1 1 *";
-
-const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-
-/**
- * The balanced body of a declaration, for the two assertions below that are
- * about the shape of a scheduled callback rather than about firing it.
- *
- * Matched brace by brace rather than sliced up to the next export, because the
- * function that would fill such a gap in timer.js is runTask itself - so a
- * `.catch` added *there* would satisfy an assertion about startTimer, which is
- * precisely the confusion these two tests exist to prevent.
- */
-const bodyOf = (file, declaration) => {
-    const source = fs.readFileSync(path.join(root, file), "utf8");
-
-    const start = source.indexOf(declaration);
-    assert.notEqual(start, -1, `${declaration} is gone from ${file}`);
-
-    const from = source.indexOf("{", start);
-    let depth = 0;
-
-    for (let index = from; index < source.length; index++) {
-        if (source[index] === "{") depth++;
-        else if (source[index] === "}" && --depth === 0) return source.slice(from, index + 1);
-    }
-
-    return assert.fail(`${declaration} is never closed in ${file}`);
-};
 
 afterEach(() => {
     timer.stopTimer();
@@ -112,7 +82,7 @@ describe("the speedtest schedule", () => {
      * which is the thing this is about not having.
      */
     it("guards the run it schedules", () => {
-        const startTimer = bodyOf("server/tasks/timer.js", "export const startTimer");
+        const startTimer = bodyIn("server/tasks/timer.js", "export const startTimer");
 
         assert.match(startTimer, /scheduleJob\(/, "the run is no longer scheduled here");
         assert.match(startTimer, /\.catch\(/,
@@ -150,7 +120,7 @@ describe("the integration ping schedule", () => {
      * database behind it, which is the very thing this is about not having.
      */
     it("guards the tick it schedules", () => {
-        const startTimer = bodyOf("server/tasks/integrations.js", "export const startTimer");
+        const startTimer = bodyIn("server/tasks/integrations.js", "export const startTimer");
 
         assert.match(startTimer, /scheduleJob\(/, "the ping job is no longer scheduled here");
         assert.match(startTimer, /\.catch\(/,
