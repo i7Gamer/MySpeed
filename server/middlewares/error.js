@@ -46,8 +46,20 @@ export default (err, req, res, next) => {
      * Client errors stay out of the log. They are as frequent as anyone cares
      * to make them, and a stranger who can write to the operator's disk by
      * sending bad JSON has been handed something they should not have.
+     *
+     * The stack, not the error object. console.error runs util.inspect over an
+     * Error, which prints its own enumerable properties beside the frames -
+     * and sequelize's DatabaseError copies the failed statement's bind
+     * parameters onto itself. The integrations table's `data` column is where
+     * every downstream credential lives, so a database failure on an
+     * integration write printed the telegram bot token, the webhook URL and the
+     * influx token into the log. On the Windows service that log is a file on
+     * disk, and it is the first thing anyone attaches to a bug report.
+     *
+     * util/errorHandler.js records `reported.stack` for the same reason, which
+     * is why nothing ever leaked through that path.
      */
-    if (!isClientError) console.error("Unhandled route error:", err);
+    if (!isClientError) console.error("Unhandled route error:", err?.stack ?? err?.message ?? String(err));
 
     if (res.headersSent) return next(err);
 
