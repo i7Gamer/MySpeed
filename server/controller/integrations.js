@@ -9,6 +9,50 @@ const events = {};
 
 const lastPings = {};
 
+/**
+ * Whether the most recent speedtest failed.
+ *
+ * One instance runs one speedtest, so this is a fact about the instance rather
+ * than about any integration, and it is kept here rather than per row. It
+ * starts false again after a restart, which is honest: a fresh process has not
+ * seen a test fail, and the next one will say so either way.
+ */
+let lastTestFailed = false;
+
+/**
+ * Whether this integration's keep-alive would undo what its failure ping said.
+ *
+ * healthChecks pings four things, and the keep-alive goes to the same URL a
+ * finished test does - healthchecks.io's *success* endpoint. So a minute after
+ * a speedtest failed and /fail was pinged, the keep-alive reported the check up
+ * again: the one notification an operator most wants was delivered and then
+ * withdrawn by the integration itself, with nothing said. Held back until a
+ * test actually succeeds, which is the only thing that should clear a failure.
+ *
+ * Declared by the module rather than decided by name here, the same way
+ * `notifier` is and for the same reason: which integrations behave which way is
+ * a fact about the whole set. Only a keep-alive that *asserts health* qualifies
+ * - webhook's send_alive carries a payload and claims nothing about the line,
+ * so it keeps firing and its consumer keeps hearing that MySpeed is running.
+ *
+ * Exported for its tests, like suppressesEvent below: triggerEvent cannot be
+ * exercised without a database behind it.
+ */
+export const suppressesKeepAlive = (eventName, definition, failing) => {
+    if (eventName !== "minutePassed") return false;
+    if (definition?.aliveMeansHealthy !== true) return false;
+
+    return Boolean(failing);
+};
+
+/** The outcome the decision above is made against. */
+export const testIsFailing = () => lastTestFailed;
+
+/** Forgets it, for the tests that need a known starting point. */
+export const clearTestOutcome = () => {
+    lastTestFailed = false;
+};
+
 const registerEvent = (module) => (name, callback) => {
     if (!events[name]) events[name] = [];
     events[name].push({module, callback});
@@ -69,11 +113,24 @@ const triggerActivity = async (id, error) => {
 }
 
 export const triggerEvent = async (name, data) => {
+    // Recorded before anything else, including the early return below: whether
+    // the last test failed is a fact about the instance, not about whether
+    // something happens to be listening for the event right now. An integration
+    // added between a failure and the next test must still find it there.
+    if (name === "testFailed") lastTestFailed = true;
+    if (name === "testFinished") lastTestFailed = false;
+
     if (!events[name]) return;
 
     for (const module of events[name]) {
         const active = await getActiveByName(module.module);
         for (const integration of active) {
+            // Ahead of the throttle, which advances the ping clock as a side
+            // effect of letting one through - charging that to a ping being
+            // held back would delay the first real one after a recovery by a
+            // whole interval.
+            if (suppressesKeepAlive(name, getIntegration(module.module), lastTestFailed)) continue;
+
             if (shouldThrottlePing(name, integration)) continue;
 
             // Stamped even though nothing was sent. The activity columns are

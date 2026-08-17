@@ -26,6 +26,12 @@ export default (registerEvent) => {
     }
 
     return {
+        // The keep-alive above goes to the same URL a finished test does, which
+        // is the success endpoint - so left to itself it reported the check up
+        // again within a minute of a failure and took the /fail ping back.
+        // suppressesKeepAlive in controller/integrations.js explains the flag;
+        // only a test that actually succeeds clears a failure now.
+        aliveMeansHealthy: true,
         icon: "fa-solid fa-heart-pulse",
         fields: [
             {name: "url", type: "text", required: true, secret: true, regex: /^https?:\/\/\S+$/},
