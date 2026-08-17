@@ -357,3 +357,48 @@ describe("a latest test that failed", () => {
             "removing the series left it removed");
     });
 });
+
+/**
+ * Six scrapes at once, all of which must get a complete answer.
+ *
+ * The gauges are module-level and shared by every request, and the scrape
+ * clears them before it has anything to put back. The order that hurts is
+ * clear-after-set: one scrape sets its values and starts rendering, another
+ * enters and clears, and the first then serves empty families - which reads as
+ * an instance that has never tested rather than as a concurrent scrape. A
+ * Prometheus HA pair scrapes the same target by design, and one `curl` during a
+ * scheduled scrape does it just as well.
+ *
+ * This is the end-to-end check that queueing them did not break the ordinary
+ * case; the queue's own guarantee is asserted directly in serialiseQueue's
+ * tests, because the interleaving above cannot be provoked to order over a real
+ * socket.
+ */
+describe("concurrent scrapes", () => {
+    const CONCURRENT = 6;
+
+    const pingOf = (text) => {
+        const line = text.split("\n").find((row) => row.startsWith("myspeed_ping{"));
+        return line === undefined ? null : parseFloat(line.slice(line.lastIndexOf(" ") + 1));
+    };
+
+    it("all answer with the measurement, not with an empty exporter", async () => {
+        await seedTests(server.tests, [{created: new Date().toISOString(), ping: 17}]);
+
+        const scrapes = await Promise.all(Array.from({length: CONCURRENT}, () => metrics()));
+
+        for (const [index, {status, text}] of scrapes.entries()) {
+            assert.equal(status, 200, `scrape ${index} failed outright`);
+            assert.equal(pingOf(text), 17,
+                `scrape ${index} of ${CONCURRENT} was served while another had cleared the gauges`);
+        }
+    });
+
+    // Queued, not dropped or merged: every caller gets its own answer.
+    it("answers every one of them", async () => {
+        const scrapes = await Promise.all(Array.from({length: CONCURRENT}, () => metrics()));
+
+        assert.equal(scrapes.length, CONCURRENT);
+        for (const {text} of scrapes) assert.match(text, /myspeed_/);
+    });
+});
