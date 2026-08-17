@@ -475,6 +475,29 @@ describe("the health checks keep-alive", () => {
             [config.url, `${config.url}/start`, `${config.url}/fail`]);
     });
 
+    /**
+     * And the flag does not travel into the ping log.
+     *
+     * healthchecks.io stores the ping body and shows it as that ping's log
+     * entry. `testFailing` is this module's instruction about which URL to use,
+     * not something the operator asked to record, and leaving it in the payload
+     * wrote a line of MySpeed's internal routing state into their log once a
+     * minute forever.
+     */
+    it("keeps the routing flag out of the body it posts", async () => {
+        const {events} = load(setupHealthChecks);
+        await fire(events, "minutePassed", config, {testFailing: true});
+
+        assert.deepEqual(sent[0].body, {}, "the flag was logged as though it were content");
+    });
+
+    it("still forwards everything else a payload carries", async () => {
+        const {events} = load(setupHealthChecks);
+        await fire(events, "testFinished", config, {...RESULT, testFailing: false});
+
+        assert.deepEqual(sent[0].body, RESULT, "the measurements stopped reaching the ping log");
+    });
+
     // The trailing slash a url pasted from an address bar carries, which the
     // module already strips for the other paths.
     it("strips a trailing slash before /fail as well", async () => {

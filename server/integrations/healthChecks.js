@@ -35,6 +35,23 @@ const events = [
 const pathFor = (event, path, payload) =>
     event === 'minutePassed' && payload?.testFailing ? FAILURE_PATH : path;
 
+/**
+ * The payload without the flag above.
+ *
+ * healthchecks.io stores the ping body and shows it as that ping's log entry.
+ * `testFailing` is an instruction about which URL to use, not something the
+ * operator asked to record, and leaving it in wrote a line of MySpeed's routing
+ * state into their log once a minute for as long as the instance ran.
+ *
+ * The nullish default rather than a parameter one, because `payload` is null on
+ * an event that carries nothing and a default only covers undefined.
+ */
+const bodyFor = (payload) => {
+    const {testFailing, ...rest} = payload ?? {};
+
+    return rest;
+};
+
 export default (registerEvent) => {
     for (const [event, path] of events) {
         registerEvent(event, async ({data: c}, payload, activity) => {
@@ -48,7 +65,7 @@ export default (registerEvent) => {
             const url = stripTrailingSlashes(c.url);
             const target = pathFor(event, path, payload);
 
-            await postJson(target ? `${url}/${target}` : url, payload ?? {},
+            await postJson(target ? `${url}/${target}` : url, bodyFor(payload),
                 {headers: {"user-agent": "MySpeed/HealthAgent"}, activity});
         });
     }
