@@ -22,6 +22,31 @@ const getApiRoot = () => {
 }
 
 /**
+ * A fetch that cannot outlive REQUEST_TIMEOUT.
+ *
+ * One wrapper rather than a copy per helper, because the copies drifted: three
+ * of the four calls in this file armed an AbortController and login() did not.
+ * A refusal and a dropped connection both reject, so login's callers handled
+ * those - but a request that is accepted and then never answered does neither,
+ * and the one place login is awaited is the top level of index.jsx. Nothing
+ * catches a promise that never settles: module evaluation stops there and the
+ * render below it never runs, which is a blank page with nothing said.
+ *
+ * The bound guards the time to the response headers only. It is cleared once
+ * fetch resolves, so reading a large export body afterwards is not raced.
+ */
+const timedFetch = async (url, init = {}) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+    try {
+        return await fetch(url, {...init, signal: controller.signal});
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+/**
  * Signs in, so the browser holds a session cookie instead of the password.
  *
  * The password used to live in localStorage and be replayed on every request:
@@ -30,7 +55,7 @@ const getApiRoot = () => {
  * can read it either - which is the point.
  */
 export const login = async (password) => {
-    const response = await fetch("/api/session", {
+    const response = await timedFetch("/api/session", {
         method: "POST",
         headers: {"content-type": "application/json"},
         body: JSON.stringify({password})
@@ -55,7 +80,7 @@ export const login = async (password) => {
     return {ok: false, type: body?.type};
 }
 
-export const logout = () => fetch("/api/session", {method: "DELETE"});
+export const logout = () => timedFetch("/api/session", {method: "DELETE"});
 
 const STORED_PASSWORD_KEY = "password";
 
@@ -82,40 +107,20 @@ export const migrateStoredPassword = async () => {
 const getHeaders = () => ({"content-type": "application/json"});
 
 // Run a plain request with all default values using the base path
-export const baseRequest = async (path, method = "GET", body = {}, headers = {}) => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+export const baseRequest = async (path, method = "GET", body = {}, headers = {}) =>
+    timedFetch("/api" + path, {
+        headers: {...getHeaders(), ...headers}, method,
+        body: method !== "GET" ? JSON.stringify(body) : undefined
+    });
 
-    try {
-        return await fetch("/api" + path, {
-            headers: {...getHeaders(), ...headers}, method,
-            body: method !== "GET" ? JSON.stringify(body) : undefined,
-            signal: controller.signal
-        });
-    } finally {
-        clearTimeout(timeout);
-    }
-}
-
-// Run a plain request with all default values. The timeout mirrors
-// baseRequest and guards the time to the response headers only - it is
-// cleared once fetch resolves, so reading a large export body afterwards is
-// not raced. Without it a stalled connection, or a proxied node that accepted
-// and then went quiet, hung the fetch forever with nothing said on screen.
-export const request = async (path, method = "GET", body = {}, headers = {}) => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-
-    try {
-        return await fetch(getApiRoot() + path, {
-            headers: {...getHeaders(), ...headers}, method,
-            body: method !== "GET" ? JSON.stringify(body) : undefined,
-            signal: controller.signal
-        });
-    } finally {
-        clearTimeout(timeout);
-    }
-}
+// Run a plain request with all default values. Bounded like the rest - without
+// it a stalled connection, or a proxied node that accepted and then went quiet,
+// hung the fetch forever with nothing said on screen.
+export const request = async (path, method = "GET", body = {}, headers = {}) =>
+    timedFetch(getApiRoot() + path, {
+        headers: {...getHeaders(), ...headers}, method,
+        body: method !== "GET" ? JSON.stringify(body) : undefined
+    });
 
 /**
  * Turns a non-2xx response into a RequestError carrying the server's own
