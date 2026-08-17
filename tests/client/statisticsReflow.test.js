@@ -104,49 +104,71 @@ describe("what a card asks for while three share a row", () => {
 });
 
 /**
- * Except the summary, which is not asking for the same room as the two beside
- * it.
+ * Except the left-hand column, which is wider than the two beside it.
  *
- * Its labels and descriptions are the page's only sentences - "Peak-hour
- * slowdown" over "Slowest around 8:00 PM, fastest around 4:00 AM" - where the
- * stability and latest-test cards beside it name a measurement in a word and
- * qualify it with "±3 Mbps". At an equal third of the old 1400px page each card
- * held ~409px of list, which left the packet-loss row 222px for a sentence
- * wanting 271 and the peak-hour row 295 for one wanting 304: those two wrapped
- * to a second line while their line-mates sat on hundreds of spare pixels.
+ * The summary asks for the width. Its labels and descriptions are the page's
+ * only sentences - "Peak-hour slowdown" over "Slowest around 8:00 PM, fastest
+ * around 4:00 AM" - where the stability and latest-test cards beside it name a
+ * measurement in a word and qualify it with "±3 Mbps". At an equal third of the
+ * old 1400px page each card held ~409px of list, which left the packet-loss row
+ * 222px for a sentence wanting 271 and the peak-hour row 295 for one wanting
+ * 304: those two wrapped to a second line while their line-mates sat on hundreds
+ * of spare pixels. An equal third of even the wider page is 475px, which clears
+ * the first of those by two.
  *
- * The wider page settles that at full width on its own; the share is what holds
- * from 1031px up, where three cards still share the row, and what leaves a
- * longer language somewhere to go.
+ * The cards leading the other two rows take the same share, because a column
+ * that changes width halfway down the page is not a column.
  *
- * Stated here rather than on the card, like the stages below it: this is the
- * one stylesheet that knows there are two other cards on that row.
+ * Stated here rather than on the cards, like the stages below it: this is the
+ * one stylesheet that knows what else is on the row.
  */
-describe("the share the summary takes while three share a row", () => {
-    const summary = rules(page.split("@media")[0])
+describe("the share the left-hand column takes while three share a row", () => {
+    // The card that leads each of the three rows - see the card order, which is
+    // what decides which those are.
+    const LEADS = [".container-large", ".ping-chart", ".hourly-chart"];
+
+    const column = rules(page.split("@media")[0])
         .find(({selector}) => selector.includes(".container-large"));
 
     /** The percentage it asks for, and the gap allowance it takes back off it. */
     const share = () => {
-        const stated = summary?.body.match(/flex:\s*1 1 calc\((\d+)% - ([\d.]+)rem\)/);
+        const stated = column?.body.match(/flex:\s*1 1 calc\((\d+)% - ([\d.]+)rem\)/);
 
-        assert.ok(stated, "the summary's share is not a percentage of the row less an allowance");
+        assert.ok(stated, "the column's share is not a percentage of the row less an allowance");
         return {percent: Number(stated[1]), allowance: Number(stated[2])};
     };
 
-    const equalShare = () => Number(rules(statContainer)
-        .find(({selector}) => selector === ".stats-container").body.match(/flex:\s*1 1 (\d+)%/)[1]);
+    // Stat cards and chart cards share a row, so their bases have to agree
+    // before either can be called "the equal share".
+    const equalShare = () => {
+        const shares = [statContainer, chartContainer].map((css) => Number(rules(css)
+            .find(({selector}) => /^\.(stats|chart)-container$/.test(selector))
+            .body.match(/flex:\s*1 1 (\d+)%/)[1]));
+
+        assert.equal(shares[0], shares[1],
+            `a stat card asks for ${shares[0]}% of the row and a chart card ${shares[1]}%`);
+        return shares[0];
+    };
 
     it("asks for more of the row than the cards beside it", () => {
-        assert.ok(summary, "the summary takes an equal third again, where its sentences wrap");
+        assert.ok(column, "the summary takes an equal third again, where its sentences wrap");
         assert.ok(share().percent > equalShare(),
-            `the summary asks for ${share().percent}%, which is no more than an equal third`);
+            `the column asks for ${share().percent}%, which is no more than an equal third`);
+    });
+
+    // A column that is only wide on the row the summary is on is not a column:
+    // its edge moves halfway down the page, and every card below it is out of
+    // line with the card above.
+    it("is the same width on every row, not only the summary's", () => {
+        for (const lead of LEADS)
+            assert.ok(column.selector.includes(lead),
+                `${lead} leads a row at an equal third, so the column steps in halfway down the page`);
     });
 
     // Two of them at that share and the row cannot hold three cards at all.
     it("leaves the two beside it a share each", () => {
         assert.ok(share().percent + 2 * equalShare() <= 100,
-            `the summary's ${share().percent}% and two of ${equalShare()}% ask for more row than there is`);
+            `the column's ${share().percent}% and two of ${equalShare()}% ask for more row than there is`);
     });
 
     /**
@@ -164,7 +186,7 @@ describe("the share the summary takes while three share a row", () => {
         const gaps = 100 - share().percent - 2 * equalShare() > 0 ? 0 : 2 * gap;
 
         assert.ok(share().allowance >= gaps,
-            `the summary gives back ${share().allowance}rem where the row's gaps cost ${gaps}rem,`
+            `the column gives back ${share().allowance}rem where the row's gaps cost ${gaps}rem,`
             + " so three cards do not fit the line and one wraps");
     });
 
