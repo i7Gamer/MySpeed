@@ -105,6 +105,30 @@ describe("errorHandler", () => {
             assert.equal(code, 0, "the reporter itself threw");
             assert.match(stdout, /survived/);
         });
+
+        /**
+         * The one input that could take the reporter down with it.
+         *
+         * An object with no prototype cannot be coerced to a string at all -
+         * `String(value)` throws "Cannot convert object to primitive value",
+         * and so did the concatenation that built the log entry before it. This
+         * function is also the uncaughtException handler, so a throw inside it
+         * ends the process with neither the original error nor this one
+         * recorded anywhere. The last line of defence has to be unable to fail.
+         */
+        it("survives an object that cannot be described", async () => {
+            const {code, stdout, stderr} = await runHandler("{fatal: false}", "Object.create(null)");
+
+            assert.equal(code, 0, "the reporter threw and took the process with it");
+            assert.match(stdout, /survived/);
+            assert.match(stderr, /could not be described/, "nothing at all was reported");
+        });
+
+        it("still writes a line to the log for one", async () => {
+            await runHandler("{fatal: false}", "Object.create(null)");
+
+            assert.match(logContents(), /could not be described/);
+        });
     });
 
     describe("fatal", () => {

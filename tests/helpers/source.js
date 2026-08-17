@@ -30,15 +30,21 @@ export const readSource = (file) => fs.readFileSync(path.join(root, file), "utf8
  * the end of the file, either of which is visible in the assertion that follows.
  *
  * A declaration with no braces at all - an arrow whose body is one expression -
- * has nothing to balance, and the search finds the next `{` anywhere below it
- * instead. That throws rather than handing back some later function's body,
- * which would be a slice about the wrong code entirely.
+ * has nothing to balance, and is refused rather than answered. Refused
+ * explicitly, because the obvious shape is quietly wrong: indexOf answers -1,
+ * and a walk from there scans the file from its start and balances the first
+ * pair it meets - an import's `{ … }`, several declarations above the one that
+ * was asked for - then slices from -1, which JavaScript reads as one character
+ * from the *end*. That returns an empty string, and every assertion made
+ * against it passes.
  */
 export const bodyOf = (source, declaration) => {
     const start = source.indexOf(declaration);
     if (start === -1) throw new Error(`"${declaration}" is not in this source`);
 
     const from = source.indexOf("{", start);
+    if (from === -1) throw new Error(`"${declaration}" has no braced body`);
+
     let depth = 0;
 
     for (let index = from; index < source.length; index++) {

@@ -10,7 +10,20 @@ const filePath = process.cwd() + "/data/logs/error.log";
  * log recorded the same nothing. index.js normalised before calling; doing it
  * here means the callers that report a rejection do not each have to remember.
  */
-const asError = (value) => value instanceof Error ? value : new Error(String(value));
+const asError = (value) => {
+    if (value instanceof Error) return value;
+
+    try {
+        return new Error(String(value));
+    } catch {
+        // An object with no prototype cannot be coerced to a string at all, and
+        // this function is the uncaughtException handler - a throw in here ends
+        // the process with neither the original error nor this one written
+        // down. The last line of defence has to be unable to fail, so an
+        // indescribable value is reported as being one.
+        return new Error("An error that could not be described");
+    }
+};
 
 /**
  * Records an error to data/logs/error.log.

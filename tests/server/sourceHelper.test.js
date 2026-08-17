@@ -52,6 +52,38 @@ describe("bodyOf", () => {
     it("throws when the body is never closed", () => {
         assert.throws(() => bodyOf("const a = () => { unclosed();", "const a"), /never closed/);
     });
+
+    /**
+     * An arrow whose body is one expression has no braces to balance, and the
+     * obvious handling of that is quietly wrong: indexOf answers -1, a walk
+     * from there scans the file from its start and balances the first pair it
+     * meets - an import's, several declarations above - and then slices from
+     * -1, which JavaScript reads as one character from the end. The answer is
+     * an empty string, and every assertion made against it passes.
+     *
+     * This is not hypothetical: isUntrustedReader is one line long, and it
+     * behaved exactly this way the moment an import was added above it.
+     */
+    it("refuses a declaration with no braced body", () => {
+        const source = 'import { thing } from "./thing.js";\nexport const a = (x) => x || thing();';
+
+        assert.throws(() => bodyOf(source, "export const a"), /no braced body/,
+            "the walker balanced the import's braces and sliced from the end of the file");
+    });
+
+    it("does not answer an empty string for one", () => {
+        const source = 'import { thing } from "./thing.js";\nexport const a = (x) => x || thing();';
+
+        let answered = "not called";
+        try {
+            answered = bodyOf(source, "export const a");
+        } catch {
+            // The throw above is the contract; this only proves it never
+            // returns the empty slice that made assertions vacuous.
+        }
+
+        assert.equal(answered, "not called");
+    });
 });
 
 describe("readSource", () => {
@@ -66,14 +98,9 @@ describe("bodyIn", () => {
             /tail\.then\(task\)/);
     });
 
-    /**
-     * An arrow with no braces has no body to match, and the walker finds the
-     * next `{` anywhere below it instead. It says so rather than returning
-     * whatever that turned out to be - isUntrustedReader is one line long and
-     * would otherwise have handed back some later function's body.
-     */
+    // The real one-line declaration that found the bug above.
     it("refuses a declaration with no braces to balance", () => {
         assert.throws(() => bodyIn("server/util/untrustedReader.js", "export const isUntrustedReader"),
-            /never closed/);
+            /no braced body/);
     });
 });
