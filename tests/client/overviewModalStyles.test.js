@@ -58,6 +58,27 @@ describe("the overview chart stylesheet", () => {
             "the wrap step is not inside the trim step, so a label wraps while its icon still shows");
     });
 
+    /**
+     * And the trim step is where a row runs out, not where the card once did.
+     *
+     * It was 25rem, converted from a 1400px viewport figure - the width the card
+     * used to reach rather than the width its rows need. With the page capped at
+     * 1400 the list only ever got to 409px, nine past that threshold, so the
+     * descriptions appeared in a nine-pixel window and wrapped to a second line
+     * in all of it. Widened, the band above it is real, and measured across it a
+     * description needs 473px of list to sit beside its figure - below which the
+     * row broke and put the value under the label instead.
+     */
+    it("trims where the row stops holding its description beside its figure", () => {
+        const trim = Math.max(...containerBlocks(compiled)
+            .map(({condition}) => parseFloat(condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]))
+            .filter(Number.isFinite));
+
+        // 473px of list, in the 16px rem the card is measured in.
+        assert.ok(trim >= 473 / 16,
+            `the card keeps its descriptions down to ${trim}rem, where the row breaks under them`);
+    });
+
     it("needs no modal guard once geometry decides", () => {
         assert.doesNotMatch(compiled, /chart-modal-body/,
             "the guard is back, which means something other than the card's own width decides");

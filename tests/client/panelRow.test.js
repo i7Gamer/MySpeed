@@ -300,9 +300,13 @@ describe("the overview card spaces its rows", () => {
             "nothing separates one row from the next");
     });
 
-    it("spreads them down the card the way the panel beside it does", () => {
-        assert.match(container, /justify-content:\s*space-between/);
-        assert.match(container, /flex:\s*1/);
+    // How much room, and that it is the same room every other panel leaves,
+    // belongs with the three cards it is shared with - see panelRowGap.test.js.
+    // It used to spread the rows down the card instead, which is what made this
+    // one the narrowest gap on a row of four cards that were meant to match.
+    it("holds them to that room rather than spreading them", () => {
+        assert.doesNotMatch(container, /justify-content:\s*space-between/,
+            "the rows take whatever height the card has left, so the gap is a floor and not a gap");
     });
 });
 

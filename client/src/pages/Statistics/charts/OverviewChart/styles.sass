@@ -2,8 +2,6 @@
 // The sizes only, not the row's rules - see that partial for why.
 @use "@/pages/Statistics/components/PanelRow/variables" as row
 
-// Spread down the card, the way the stability panel beside it spreads its own.
-//
 // The rows used to be held apart by an accident: the value was a bare <h2>, and
 // its default 0.83em margin was the whole of what separated one row from the
 // next. The shared row states its value in a div, as it should, and the five
@@ -11,9 +9,16 @@
 .overview-items
   display: flex
   flex-direction: column
-  justify-content: space-between
-  gap: 0.5rem
-  flex: 1
+  // Centred on a fixed gap rather than spread across whatever height the card
+  // has: spreading gave every card on the row a different gap, and this one the
+  // narrowest of them - see the row's own $panel-row-gap for the measurements.
+  justify-content: center
+  gap: row.$panel-row-gap
+  // And it keeps its rows at that gap rather than being squeezed under them.
+  // Between about 1150 and 1350px the descriptions wrap to a second line and
+  // the list wants more height than the card has: shrinking there is what put
+  // the rows back on the floor, with overflow-y hiding the evidence.
+  flex: 1 0 auto
   width: 100%
   overflow-y: clip
   // What the trims below reflow against. It has to be the list and not the
@@ -43,10 +48,23 @@
 // the old :not(.chart-modal-body *) exemption goes with the viewport figures:
 // an enlarged view is simply a wide container.
 
-// Where the five rows stop affording their icons and descriptions. The old
-// 1400px viewport figure stood for a ~450px card in the three-across grid;
-// minus the card's padding that is ~400px of list, with a digit's slack.
-$overview-trim: 25rem
+// Where the five rows stop affording their icons and descriptions.
+//
+// It was 25rem, converted from a 1400px viewport figure that stood for a ~450px
+// card in the three-across grid. That was never the width the rows actually
+// need: it is where the card *used* to run out, and since the page was capped
+// at 1400px the list only ever reached 409px - nine past the threshold - so the
+// descriptions appeared in a nine-pixel window and wrapped to a second line in
+// all of it. Reported as exactly that.
+//
+// With the summary taking 40% of a 1600px page the list runs to 566px, and the
+// band above the threshold is real: measured across it, "Average across the
+// tests that measured it" needs 473px of list to sit beside its figure, and
+// below that the row broke and put the value under the label instead. So the
+// threshold is that measurement now, with a rem of slack for a longer language:
+// the descriptions are shown where they fit beside the reading, and given up
+// where they do not.
+$overview-trim: 30rem
 
 // And where the title wraps rather than cuts - the old 1000px figure's ~340px
 // card, converted the same way. Below this the description is hidden too, so

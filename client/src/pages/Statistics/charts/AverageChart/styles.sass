@@ -3,10 +3,12 @@
 // The sizes only, not the row's rules - see that partial for why.
 @use "@/pages/Statistics/components/PanelRow/variables" as row
 
+// The gap is the one every panel that stacks these rows uses - see
+// $panel-row-gap, where the four figures this replaces are measured.
 .value-container
   display: flex
   flex-direction: column
-  gap: 1.75rem
+  gap: row.$panel-row-gap
   justify-content: center
   width: 100%
 
