@@ -424,3 +424,63 @@ describe("a message longer than the provider accepts", () => {
         });
     }
 });
+
+/**
+ * The keep-alive follows the last test rather than always claiming success.
+ *
+ * The minute ping goes to the root URL, which is healthchecks.io's success
+ * endpoint - so it reported the check up again within sixty seconds of a
+ * failure and took the /fail ping back. Routed to /fail instead while a failure
+ * stands: the check keeps the state the test gave it, and the ping still
+ * arrives, which is the only way to tell "the line is down" from "MySpeed is
+ * gone". The outcome reaches the module in the event payload; tasks reads it
+ * from the stored tests, so a restart cannot forget it.
+ */
+describe("the health checks keep-alive", () => {
+    const config = {url: "https://hc.example.net/ping/uuid"};
+
+    const pinged = async (payload) => {
+        const {events} = load(setupHealthChecks);
+        await fire(events, "minutePassed", config, payload);
+        return sent[0].url;
+    };
+
+    it("goes to /fail while the last test is a failure", async () => {
+        assert.equal(await pinged({testFailing: true}), `${config.url}/fail`);
+    });
+
+    it("goes to the root url while it is not", async () => {
+        assert.equal(await pinged({testFailing: false}), config.url);
+    });
+
+    // A payload from before this existed, and the one the module's own tests
+    // fire: no claim about the last test is not a claim that it failed.
+    it("goes to the root url when the payload says nothing", async () => {
+        assert.equal(await pinged({}), config.url);
+        assert.equal(await pinged(undefined), config.url);
+    });
+
+    // Only the keep-alive is routed. The other three carry the outcome in the
+    // event itself, and a finished test that landed on /fail would leave the
+    // check down after the line recovered.
+    it("leaves the other three events on their own paths", async () => {
+        const {events} = load(setupHealthChecks);
+        const failing = {testFailing: true};
+
+        await fire(events, "testFinished", config, failing);
+        await fire(events, "testStarted", config, failing);
+        await fire(events, "testFailed", config, failing);
+
+        assert.deepEqual(sent.map((request) => request.url),
+            [config.url, `${config.url}/start`, `${config.url}/fail`]);
+    });
+
+    // The trailing slash a url pasted from an address bar carries, which the
+    // module already strips for the other paths.
+    it("strips a trailing slash before /fail as well", async () => {
+        const {events} = load(setupHealthChecks);
+        await fire(events, "minutePassed", {url: "https://hc.example.net/ping/uuid/"}, {testFailing: true});
+
+        assert.equal(sent[0].url, `${config.url}/fail`);
+    });
+});

@@ -1,5 +1,7 @@
 import schedule from 'node-schedule';
 import { triggerEvent } from "../controller/integrations.js";
+import { getLatest } from "../controller/speedtests.js";
+import { isFailedTest } from "../util/testOutcome.js";
 
 let currentState = "ping";
 let job;
@@ -8,8 +10,22 @@ export const setState = (state = "ping") => {
     currentState = state;
 };
 
+/**
+ * The keep-alive, carrying how the last test went.
+ *
+ * healthChecks sends this ping to a different endpoint while a failure stands,
+ * because its usual one is healthchecks.io's success URL and using it a minute
+ * after /fail took the failure back. The outcome is read from the stored tests
+ * on every ping rather than remembered in a module variable: a restart between
+ * a failed test and the next one would forget a remembered flag and mark the
+ * check up, which is the same overwrite waiting for a `docker restart` - and a
+ * restart is exactly when somebody is looking.
+ *
+ * isFailedTest answers false for the undefined getLatest returns on an install
+ * that has never tested, which is the right answer: nothing has failed there.
+ */
 export const sendPing = async (type, message) => {
-    await triggerEvent("minutePassed", {type, message});
+    await triggerEvent("minutePassed", {type, message, testFailing: isFailedTest(await getLatest())});
 };
 
 export const sendCurrent = async () => {
@@ -45,7 +61,14 @@ export const startTimer = () => {
     // pinging every integration a second time, every minute, forever.
     stopTimer();
 
-    job = schedule.scheduleJob('* * * * *', () => sendCurrent());
+    // Caught here, because nothing else does. The tick reads the stored tests
+    // to decide where the healthChecks keep-alive goes, so it can reject on a
+    // database that has gone away - or one a shutdown already under way has
+    // closed, since the signal path closes the handle before the process
+    // leaves. Uncaught, that reached index.js's unhandledRejection handler and
+    // was reported as a server fault, once a minute.
+    job = schedule.scheduleJob('* * * * *', () => sendCurrent().catch(err =>
+        console.error(`Could not send the keep-alive: ${err?.message ?? err}`)));
 };
 
 export const stopTimer = () => {

@@ -1,5 +1,8 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import * as timer from "../../server/tasks/timer.js";
 import * as integrationTimer from "../../server/tasks/integrations.js";
 
@@ -74,6 +77,34 @@ describe("the integration ping schedule", () => {
         assert.equal(first.nextInvocation(), null,
             "the replaced ping job is still armed and will double every ping");
         assert.notEqual(integrationTimer.currentJob(), first);
+    });
+
+    /**
+     * And a tick that rejects stays a logged line rather than becoming an
+     * unhandled rejection.
+     *
+     * The tick is not a bare notification any more: it reads the stored tests
+     * to decide where the healthChecks keep-alive should be sent, so it can now
+     * reject on a database that has gone away - or one closed by a shutdown
+     * already in progress, which is a race the signal handler opened when it
+     * started closing the handle. Nothing was catching it, so that surfaced
+     * through index.js's unhandledRejection handler as though the server itself
+     * had faulted, once every minute.
+     *
+     * Read from the source because what is being asserted is the shape of the
+     * callback handed to node-schedule; firing it for real would need a
+     * database behind it, which is the very thing this is about not having.
+     */
+    it("guards the tick it schedules", () => {
+        const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+        const source = fs.readFileSync(path.join(root, "server/tasks/integrations.js"), "utf8");
+
+        const startTimer = source.slice(source.indexOf("export const startTimer"),
+            source.indexOf("export const stopTimer"));
+
+        assert.match(startTimer, /scheduleJob\(/, "the ping job is no longer scheduled here");
+        assert.match(startTimer, /\.catch\(/,
+            "a rejecting tick is an unhandled rejection every minute");
     });
 });
 
