@@ -85,62 +85,80 @@ describe("the Windows binaries a release publishes", () => {
 });
 
 /**
- * Compiling the baseline target fetches a runtime, and that fetch can fail.
+ * The compile is run by a Bun that is already the target it compiles for.
  *
- * The default leg needs no download - the runner's own Bun is windows-x64 - so
- * only the baseline leg reaches for a ~93MB runtime mid-compile. Twice in a row
- * on 1.3.3 the windows-latest runner answered `Failed to extract executable for
- * 'bun-windows-x64-baseline-v1.3.14'. The download may be incomplete.` after
- * bundling 921 modules cleanly, while the same target and version compiled on a
- * cold cache locally and `bun-linux-x64-baseline` compiled on its own runner in
- * the same run. So it is the fetch on that runner, not the target.
+ * Asked to compile for a target it is not, Bun fetches that runtime itself -
+ * and on windows-latest that fetch does not work. Three releases in a row died
+ * on `Failed to extract executable for 'bun-windows-x64-baseline-v1.3.14'. The
+ * download may be incomplete.`, roughly 0.6s after bundling 921 modules
+ * cleanly, each one deleting its own tag and draft while the Docker jobs had
+ * already pushed :latest.
  *
- * That failure takes the whole release with it: build-binaries failing is one
- * of the two conditions cleanup-on-failure tears the tag and the draft down
- * for, and the Docker images are already pushed by then.
+ * Diagnosed on the runner rather than guessed at, after two wrong guesses. The
+ * message names a download, but nothing about it holds: Defender's real-time
+ * protection is off there and an exclusion changed nothing; curl fetched the
+ * same artifact in a second (38,023,440 bytes) and Expand-Archive unpacked it;
+ * and Bun's cache was empty afterwards, so no partial file was ever written.
+ * Retrying three times with the cache cleared in between failed identically
+ * three times.
  *
- * The retry has to discard the cached runtime between attempts. Bun keeps the
- * download under ~/.bun/install/cache/<target>-v<version>, and a truncated file
- * there is what the message is reporting - so a second attempt that finds it
- * still sitting there fails in exactly the same way.
+ * What did work, first time, was compiling with the baseline Bun itself. That
+ * is also why the default leg has never failed - the runner's Bun is
+ * windows-x64, so that leg has nothing to fetch. Both legs now get a Bun
+ * matching their own target, which puts the working leg's condition under the
+ * broken one rather than adding a workaround to it.
+ *
+ * setup-bun stays for everything else in the job: it installs the host Bun that
+ * runs bun install and the client build, neither of which cares about the
+ * target.
  */
 describe("compiling the Windows binaries", () => {
-    const step = (() => {
-        const start = windows.indexOf("- name: Compile binary");
-        assert.notEqual(start, -1, "the Windows job no longer has a compile step");
+    const stepNamed = (name) => {
+        const start = windows.indexOf(`- name: ${name}`);
+        assert.notEqual(start, -1, `the Windows job no longer has a "${name}" step`);
 
         const next = windows.indexOf("\n      - name: ", start + 1);
         return next === -1 ? windows.slice(start) : windows.slice(start, next);
-    })();
+    };
+
+    // Looked up inside each test rather than once above them: resolved here,
+    // a missing step fails the whole block with one message and the assertions
+    // below never report at all.
+    const fetchStep = () => stepNamed("Fetch a Bun matching the target");
+    const compileStep = () => stepNamed("Compile binary");
 
     it("still compiles the leg's own target", () => {
-        assert.match(step, /--target=\$\{\{ matrix\.target \}\}/,
+        assert.match(compileStep(), /--target=\$\{\{ matrix\.target \}\}/,
             "the compile no longer targets the matrix leg, so both legs build the same binary");
     });
 
-    it("tries more than once before failing the release", () => {
-        // Read where the bound is declared rather than off the loop condition,
-        // which names the variable rather than a figure.
-        const attempts = /\$attempts\s*=\s*(\d+)/.exec(step);
+    /**
+     * Bun publishes its releases under the same names these targets carry, so
+     * the archive is the matrix value with .zip after it. Spelled from the
+     * matrix rather than restated, or the two legs fetch one runtime and the
+     * baseline leg is back to compiling for a target it is not.
+     */
+    it("fetches the runtime for the leg's own target", () => {
+        assert.match(fetchStep(), /\$\{\{ matrix\.target \}\}\.zip/,
+            "the fetched runtime is not the leg's target, so one leg compiles cross-target again");
+    });
 
-        assert.ok(attempts, "the compile runs once, so one bad download loses the whole release");
-        assert.match(step, /-le \$attempts\b/, "the loop does not run to the bound it declares");
-        assert.ok(Number(attempts[1]) >= 2 && Number(attempts[1]) <= 5,
-            `${attempts[1]} attempts is not a bounded retry`);
+    it("compiles with that runtime rather than the host one", () => {
+        assert.doesNotMatch(compileStep(), /^\s*bun build/m,
+            "the compile calls the host bun, which is what fetches a runtime it cannot extract");
+        assert.match(compileStep(), /TARGET_BUN/,
+            "the compile does not use the Bun the step before it fetched");
+        assert.match(fetchStep(), /TARGET_BUN=/, "nothing publishes the fetched Bun's path");
     });
 
     /**
-     * The load-bearing half. Without it the retry re-reads the same truncated
-     * file and reports the same error, three times instead of once.
+     * A fetch that quietly produced no bun.exe would leave the compile calling
+     * an empty path, which is a far worse error to read at release time than
+     * the one it replaces.
      */
-    it("discards the cached runtime between attempts", () => {
-        assert.match(step, /Remove-Item[^\n]*\$\{\{ matrix\.target \}\}/,
-            "a retry keeps whatever partial download failed the first attempt, so it cannot succeed");
-    });
-
-    it("still fails the job when every attempt fails", () => {
-        assert.match(step, /exit 1/,
-            "a compile that never succeeded exits zero, so an absent binary reaches the upload");
+    it("fails the fetch rather than passing an empty path on", () => {
+        assert.match(fetchStep(), /--fail/, "curl reports a 404 body as a successful download");
+        assert.match(fetchStep(), /throw/, "an archive with no bun.exe in it is passed on as an empty path");
     });
 });
 
