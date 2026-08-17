@@ -10,6 +10,7 @@ import {
 import { matchesSetupToken } from '../util/setupToken.js';
 import { isFailedTest } from '../util/testOutcome.js';
 import { createQueue } from '../util/serialiseQueue.js';
+import { clientGone } from '../util/clientGone.js';
 
 const app = express.Router();
 
@@ -273,7 +274,12 @@ const collect = async (res) => {
 app.get('/metrics', async (req, res) => {
     if (!await authorizeMetrics(req, res)) return;
 
-    await scrapes(() => collect(res));
+    // Checked at the front of the queue rather than on arrival: the wait is
+    // what outlasts the caller. Prometheus drops a scrape at its scrape_timeout
+    // - ten seconds by default - and a queued entry that reaches the front
+    // after that would read the database and render the whole registry into a
+    // socket nobody is listening to.
+    await scrapes(() => clientGone(req, res) ? undefined : collect(res));
 });
 
 export default app;
