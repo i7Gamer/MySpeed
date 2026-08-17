@@ -10,6 +10,11 @@ import { importBody } from './storage.js';
 
 const app = express.Router();
 
+// What the client sends to mean "stop holding a password for this node". The
+// column stores null; this is the wire spelling, which the dialog's remove
+// button is the only thing that produces.
+const NO_NODE_PASSWORD = "none";
+
 /**
  * The configured nodes, and to anyone but the operator none.
  *
@@ -100,19 +105,31 @@ app.patch("/:nodeId/password", password(false),
     const node = await nodes.getOne(req.params.nodeId);
     if (node === null) return res.status(404).json({message: "Node not found"});
 
-    const result = await nodes.checkStatus(node.url, req.body.password);
+    // Forgetting a credential is not setting one, and needs no proof the far
+    // end still accepts anything. Checked as though it were a password, the
+    // sentinel was presented to the node as one - which nothing accepts, and
+    // which the node whose own password has just been removed refuses hardest,
+    // that being the only reason anyone sends this. So the clear was refused
+    // 400 and the parent kept the stale credential while the client reported
+    // success, and every poll afterwards authenticated with a password the node
+    // no longer had.
+    const clearing = req.body.password === NO_NODE_PASSWORD;
 
-    if (result === "INVALID_URL")
-        return res.status(400).json({message: "Invalid URL", type: "INVALID_URL"});
+    if (!clearing) {
+        const result = await nodes.checkStatus(node.url, req.body.password);
 
-    if (result === "PASSWORD_REQUIRED")
-        return res.status(400).json({message: "Invalid password", type: "PASSWORD_REQUIRED"});
+        if (result === "INVALID_URL")
+            return res.status(400).json({message: "Invalid URL", type: "INVALID_URL"});
 
-    if (result === "NODE_BUSY")
-        return res.status(503).set("Retry-After", "1")
-            .json({message: "The node is busy right now. Please try again", type: "NODE_BUSY"});
+        if (result === "PASSWORD_REQUIRED")
+            return res.status(400).json({message: "Invalid password", type: "PASSWORD_REQUIRED"});
 
-    await nodes.updatePassword(req.params.nodeId, req.body.password === "none" ? null : req.body.password);
+        if (result === "NODE_BUSY")
+            return res.status(503).set("Retry-After", "1")
+                .json({message: "The node is busy right now. Please try again", type: "NODE_BUSY"});
+    }
+
+    await nodes.updatePassword(req.params.nodeId, clearing ? null : req.body.password);
     res.json({message: "Node password successfully updated", type: "PASSWORD_UPDATED"});
 });
 
