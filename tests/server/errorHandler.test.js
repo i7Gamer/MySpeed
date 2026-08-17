@@ -131,6 +131,72 @@ describe("errorHandler", () => {
         });
     });
 
+    /**
+     * Where the error came from, which is the whole reason for keeping a file.
+     *
+     * The entry was built by concatenating the Error into a string, and that
+     * calls toString() - "Error: boom", and nothing else. So data/logs/error.log
+     * held exactly what the console line above it already said, and the frames
+     * were discarded at the one point they were being written down for. The
+     * log's own header points bug reports at this file; what arrived was a
+     * message with no indication of which of the callers produced it.
+     *
+     * The stack already begins with "Error: <message>", so recording it is a
+     * substitution rather than an addition - nothing that read the old entry
+     * loses anything.
+     */
+    describe("the stack", () => {
+        // The function name appears in the stack and nowhere else - not in the
+        // message, not in the context - so matching it cannot pass by accident.
+        const thrownFrom = '(function deliberatelyNamedThrower() { return new Error("stacky"); })()';
+
+        it("is written to the log, not just the message", async () => {
+            await runHandler("{fatal: false}", thrownFrom);
+
+            assert.match(logContents(), /deliberatelyNamedThrower/,
+                "the entry is the error's toString(), so every frame was dropped");
+        });
+
+        it("keeps the message that heads it", async () => {
+            await runHandler("{fatal: false}", thrownFrom);
+
+            assert.match(logContents(), /Error: stacky/);
+        });
+
+        it("still records the context beside it", async () => {
+            await runHandler('{fatal: false, context: "The scheduled speedtest failed"}', thrownFrom);
+
+            const entry = logContents();
+            assert.match(entry, /The scheduled speedtest failed/);
+            assert.match(entry, /deliberatelyNamedThrower/, "the context displaced the stack");
+        });
+
+        // The console line is a summary and stays one - a stack on stderr for
+        // every non-fatal integration failure is noise, and the file is where
+        // the detail was always meant to go.
+        it("is not added to the console line", async () => {
+            const {stderr} = await runHandler("{fatal: false}", thrownFrom);
+
+            assert.match(stderr, /An error occurred: stacky/);
+            assert.doesNotMatch(stderr, /deliberatelyNamedThrower/, "stderr now carries a full stack per error");
+        });
+
+        /**
+         * An Error can reach here without one: a cross-realm error, one built
+         * where Error.stackTraceLimit was 0, or a caller that assembled the
+         * object itself. This function is the uncaughtException handler, so
+         * "undefined" is not an acceptable thing to write instead.
+         */
+        it("falls back to the message when the error carries none", async () => {
+            await runHandler("{fatal: false}",
+                'Object.assign(new Error("stackless"), {stack: undefined})');
+
+            const entry = logContents();
+            assert.match(entry, /stackless/);
+            assert.doesNotMatch(entry, /## [^\n]*\nundefined/, "the entry recorded the word undefined");
+        });
+    });
+
     describe("fatal", () => {
         it("exits with a failure code by default", async () => {
             const {code, stdout} = await runHandler();

@@ -48,7 +48,20 @@ export default (error, {fatal = true, context = null} = {}) => {
 
     console.error((context ?? "An error occurred") + ": " + reported.message);
 
-    fs.writeFile(filePath, lineStarter + "## " + date + "\n" + (context ? context + "\n" : "") + reported,
+    // The stack, not the Error itself. Concatenating the Error calls toString(),
+    // which is "Error: <message>" and nothing more - so the file held exactly
+    // what the console line above already said, and the frames were dropped at
+    // the one point they were being written down for. The log's own header
+    // points bug reports here.
+    //
+    // A stack already begins with "Error: <message>", so this replaces the old
+    // entry rather than adding to it. The fallbacks are for an Error that
+    // carries no stack - built where Error.stackTraceLimit was 0, or assembled
+    // by a caller - because this is the uncaughtException handler and
+    // "undefined" is not an acceptable thing to write instead.
+    const recorded = reported.stack || reported.message || String(reported);
+
+    fs.writeFile(filePath, lineStarter + "## " + date + "\n" + (context ? context + "\n" : "") + recorded,
         {flag: 'a+'}, err => {
             if (err) console.error("Could not save error log file.", reported);
 
