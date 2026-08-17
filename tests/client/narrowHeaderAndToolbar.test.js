@@ -196,16 +196,18 @@ describe("the export menu opens under its own button", () => {
      * The menu opens off the button's right edge, so a button at the *left* of
      * a row opens it leftwards off the screen - measured at 114px past the edge
      * on a 338px screen, where the picker hits its minimum and the export is
-     * pushed onto a line of its own. Held at the right-hand end the anchor is
-     * the same at every width, which is why this belongs with the menu's
-     * position rather than with the toolbar's layout.
+     * pushed onto a line of its own.
+     *
+     * Which stage the row is drawn at is decided by measuring it, so the anchor
+     * is pinned with the rest of the stacked row in toolbarFit.test.js. What is
+     * still this file's business is that no width here decides it: a 900px
+     * figure could not see that a read-only visitor has one control fewer and
+     * half a line of status, and dropped their bar 400px early.
      */
-    it("holds the export at the right-hand end of whatever row it lands on", () => {
+    it("has no viewport figure stacking the toolbar", () => {
         const toolbar = compile("common/components/PageToolbar/styles.sass");
-        const wrapped = queriesMentioning(toolbar, "900px");
 
-        assert.ok(wrapped.some((body) =>
-            /\.export-button-container\s*\{[^}]*margin-left:\s*auto/.test(body)),
-            "a wrapped export sits at the left of its row, which opens its menu off-screen");
+        assert.equal(queriesMentioning(toolbar, "900px").length, 0,
+            "the toolbar wraps at a hardcoded 900px again, whoever is looking at it");
     });
 });

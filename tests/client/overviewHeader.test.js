@@ -145,12 +145,13 @@ describe("the page toolbar", () => {
     });
 
     // Four controls on one line do not fit a phone: the bar takes a row of its
-    // own below the three that bound it.
-    it("wraps on a narrow viewport", () => {
-        const narrow = compiled.split("@media").slice(1).join("@media");
-
-        assert.match(narrow, /\.page-toolbar\s*\{[^}]*flex-wrap:\s*wrap/);
-        assert.match(narrow, /\.page-toolbar\s*>\s*\.status-bar\s*\{[^}]*flex:\s*1 1 100%/);
+    // own below the three that bound it. Which width that happens at is the
+    // measurement's business rather than a figure written here - toolbarFit
+    // owns that contract - so all this asks is that the row can break and that
+    // there is a stage where the bar spans it.
+    it("wraps once the row runs out", () => {
+        assert.match(compiled, /\.page-toolbar\s*\{[^}]*flex-wrap:\s*wrap/);
+        assert.match(compiled, /\[data-compact=[^\]]*][^{]*\.status-bar\s*\{[^}]*flex:\s*1 1 100%/);
     });
 });
 

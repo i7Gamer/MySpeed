@@ -22,6 +22,26 @@
   opacity: 0.7
   transition: opacity 0.2s ease
 
+// The one card on the top row that is not asking for the same room as the two
+// beside it.
+//
+// Its labels and descriptions are the page's only sentences - "Peak-hour
+// slowdown" over "Slowest around 8:00 PM, fastest around 4:00 AM" - where the
+// stability and latest-test cards name a measurement in a word and qualify it
+// with "±3 Mbps". At an equal third of 1400px every card holds ~409px of list,
+// which leaves the packet-loss row ~222px for a sentence wanting 271 and the
+// peak-hour row ~295 for one wanting 304: those two wrapped onto a second line
+// while their line-mates sat on hundreds of spare pixels. At this share the
+// summary holds ~550px and the two beside it ~413, which is more than either
+// has ever needed.
+//
+// Here rather than on the card, like the stages below: this is the one
+// stylesheet that knows there are two other cards on that row. Above the
+// stages, deliberately - they restate this selector at equal specificity, and
+// only source order settles those.
+.statistic-area > .container-large
+  flex: 1 1 40%
+
 // Above the stages, deliberately: the stage rules below override this share at
 // equal specificity, which only source order settles.
 .statistic-loading
@@ -54,10 +74,16 @@
 // full width at 900px, and the cards that were being cut kept being cut all the
 // way down.
 //
-// The pairs fall out of the order the cards are already written in, once the
-// summary takes a row of its own - last test beside stability, the two speed
-// charts together, ping beside the hourly average, and the two value cards
-// last. Nothing has to be moved to make it work.
+// The pairs fall out of the order the cards are written in, once the summary
+// takes a row of its own: last test beside stability, then latency beside
+// download, upload beside the hourly average, and the two value cards last.
+//
+// Charts pair with charts and panels with panels, but the two speed charts are
+// not the pair they were - that is what the order costs here. It buys the
+// column above: three across, the latency chart leads the second row so each
+// speed chart sits directly over its own value card, and no order can have
+// both. Position 5 and 6 hold the speed charts for that alignment, and this
+// stage pairs 4-5 and 6-7.
 //
 // The shimmer cards reflow with the content they stand for, or the page loads
 // in one shape and snaps into another the moment the numbers land.

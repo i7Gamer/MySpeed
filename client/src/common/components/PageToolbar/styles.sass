@@ -12,6 +12,11 @@
 .page-toolbar
   display: flex
   align-items: stretch
+  // What the measurement reads. useFitStages picks a stage by asking whether
+  // the controls still share one line, and a row that cannot break has no
+  // answer to give: the controls would only shrink, the walk would never see a
+  // second line, and every stage below "none" would be unreachable.
+  flex-wrap: wrap
   gap: 0.75rem
   width: 100%
   box-sizing: border-box
@@ -26,7 +31,14 @@
 
   > .status-bar
     flex: 1 1 auto
-    min-width: 0
+    // What the bar is asking for when it asks for a row of its own: its own
+    // line of text, undivided. Its content is the only honest figure here,
+    // because the content is what changes - a read-only visitor is told neither
+    // the schedule nor anything else the detail line holds, a running test says
+    // something different again, and every translation is its own length. At
+    // min-width: 0 the bar shrank to a sliver beside the controls and wrapped
+    // its sentence into three lines rather than admitting it had run out.
+    min-width: max-content
     margin-top: 0
     margin-bottom: 0
     // The pages' cards keep the 1rem corner; the toolbar is not one of them.
@@ -83,13 +95,49 @@
 // applies each stage and keeps the first that holds one line.
 //
 // Stated here, like the sizes above, because the toolbar is the only place
-// these controls ever stand together and it is their row that runs out. The two
-// media queries this replaces lived in the buttons' own stylesheets and were
-// measured against a preset's 126px trigger; a custom range is 300px, so the
-// row broke at 660px and kept both labels until 480.
+// these controls ever stand together and it is their row that runs out. The
+// three media queries this replaces were each measured against a preset's 126px
+// trigger and a full-access instance; a custom range is 300px and a read-only
+// visitor has one control fewer, so every one of them was wrong in both
+// directions.
 //
-// The export goes first: the start button is what these pages are for, and a
-// bare gauge does not say "start a test".
+// First to go: the bar takes a row of its own, below the three that bound it.
+// It costs no information - every control and every label survives - and it
+// hands the top line its whole width back, which is what lets the labels below
+// come back by themselves.
+.page-toolbar[data-compact="wrap"],
+.page-toolbar[data-compact="export"],
+.page-toolbar[data-compact="all"]
+  // Now that the bar is not sharing the line, the picker is the only control on
+  // it that can give any width back. At the base rule's 0 0 auto it gives none,
+  // and a custom range's two dates push the export off the line on a phone.
+  > .date-range-picker
+    flex: 1 1 auto
+    min-width: 0
+
+  // And the bar stops asking for its content's width, having been given a whole
+  // row: held to max-content here it would simply overflow a narrow one.
+  > .status-bar
+    flex: 1 1 100%
+    min-width: 0
+    order: 1
+
+  // Keeps the export at the right-hand end wherever it lands.
+  //
+  // Below about 366px the picker hits its own minimum and the export is pushed
+  // onto a line of its own, where it sat at the *left* - the only width in the
+  // app where that control is not at the right-hand end. Its menu hangs off its
+  // right edge, so from there the menu opened leftwards and ran 114px off the
+  // side of the screen.
+  //
+  // A no-op on the line it shares with the picker: that one grows to fill the
+  // row, so there is no free space for this to absorb. On a line of its own
+  // there is, and it takes all of it.
+  > .export-button-container
+    margin-left: auto
+
+// Then the words. The export goes first: the start button is what these pages
+// are for, and a bare gauge does not say "start a test".
 //
 // No adjacent-sibling guard any more. That rule existed so a read-only
 // visitor - who gets no start button at all - kept the export's label, which a
@@ -136,31 +184,3 @@
 
     span
       display: none
-
-// Four controls do not fit one line here: the bar takes a row of its own below
-// the three that bound it.
-@media screen and (max-width: 900px)
-  .page-toolbar
-    flex-wrap: wrap
-
-    > .date-range-picker
-      flex: 1 1 auto
-      min-width: 0
-
-    > .status-bar
-      flex: 1 1 100%
-      order: 1
-
-    // Keeps the export at the right-hand end wherever it lands.
-    //
-    // Below about 366px the picker hits its own minimum and the export is
-    // pushed onto a line of its own, where it sat at the *left* - the only
-    // width in the app where that control is not at the right-hand end. Its
-    // menu hangs off its right edge, so from there the menu opened leftwards
-    // and ran 114px off the side of the screen.
-    //
-    // A no-op on the line it shares with the picker: that one grows to fill the
-    // row, so there is no free space for this to absorb. On a line of its own
-    // there is, and it takes all of it.
-    > .export-button-container
-      margin-left: auto

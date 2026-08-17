@@ -16,16 +16,35 @@
  * keeping the first that holds one line - and the answer falls out of the
  * measurement: when the status bar drops, the top line grows and the labels
  * come back by themselves.
+ *
+ * The bar's own drop was the last figure left, at 900px, and it was wrong in
+ * both directions for the same reason the label figures were. A read-only
+ * visitor gets no start button - the component renders nothing rather than
+ * offering a control that would answer 401 - and /status withholds the schedule
+ * from them, so their bar is one short line beside two controls and was being
+ * stacked some 400px before the row ran out. The other way: a custom range
+ * prints two dates in a 300px trigger, and at 950px the bar was squeezed
+ * instead of stacked. It is a stage of the walk now, like the rest.
  */
 
 /**
  * The stages the toolbar can be drawn at, widest first.
  *
- * The export goes first because it is the secondary action - the start button
- * is what these pages are for, and a bare gauge does not say "start a test".
- * That is the order the two media queries had, kept.
+ * The bar stacks first, because it is the one step that costs no information:
+ * every control and every label survives it, and the bar reads exactly as it
+ * did with a whole row to itself. It also hands the top line its full width
+ * back, so a stage that gave up a word before it would be paying for room it
+ * was about to be given.
+ *
+ * Then the words. The export goes before the start button because it is the
+ * secondary action - the start button is what these pages are for, and a bare
+ * gauge does not say "start a test". That is the order the two media queries
+ * had, kept.
+ *
+ * Cumulative rather than exclusive: everything after "wrap" stacks the bar too,
+ * so the ladder only ever takes things away.
  */
-export const TOOLBAR_STAGES = ["none", "export", "all"];
+export const TOOLBAR_STAGES = ["none", "wrap", "export", "all"];
 
 /** The controls that share the row, in the order they are drawn. */
 export const TOOLBAR_CONTROLS = [".date-range-picker", ".start-test", ".export-button-container"];

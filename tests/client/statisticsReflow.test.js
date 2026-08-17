@@ -6,6 +6,7 @@ const page = compile("pages/Statistics/styles.sass");
 const statContainer = compile("pages/Statistics/components/StatisticContainer/styles.sass");
 const chartContainer = compile("pages/Statistics/charts/SpeedChart/styles.sass");
 const layoutSource = read("common/styles/layout.sass");
+const statisticsSource = read("pages/Statistics/Statistics.jsx");
 
 /**
  * The nine cards had two shapes and one figure deciding between them.
@@ -99,6 +100,53 @@ describe("what a card asks for while three share a row", () => {
         for (const old of [/flex:\s*1 1 5%/, /flex:\s*1 1 15%/, /flex:\s*1 1 35%/])
             assert.doesNotMatch(statContainer, old,
                 `a card still starts from ${old}, which is what cut the labels`);
+    });
+});
+
+/**
+ * Except the summary, which is not asking for the same room as the two beside
+ * it.
+ *
+ * Its labels and descriptions are the page's only sentences - "Peak-hour
+ * slowdown" over "Slowest around 8:00 PM, fastest around 4:00 AM" - where the
+ * stability and latest-test cards beside it name a measurement in a word and
+ * qualify it with "±3 Mbps". At an equal third of 1400px each card holds ~409px
+ * of list, which leaves the packet-loss row ~222px for a sentence wanting 271
+ * and the peak-hour row ~295 for one wanting 304: those two rows wrapped to two
+ * lines while their line-mates sat on hundreds of spare pixels.
+ *
+ * Stated here rather than on the card, like the stages below it: this is the
+ * one stylesheet that knows there are two other cards on that row.
+ */
+describe("the share the summary takes while three share a row", () => {
+    const summary = rules(page.split("@media")[0])
+        .find(({selector}) => selector.includes(".container-large"));
+
+    it("asks for more of the row than the cards beside it", () => {
+        assert.ok(summary, "the summary takes an equal third again, where its sentences wrap");
+
+        const share = Number(summary.body.match(/flex:\s*1 1 (\d+)%/)?.[1]);
+
+        assert.ok(Number.isFinite(share), "the summary's share is not a percentage of the row");
+        assert.ok(share > 30, `the summary asks for ${share}%, which is no more than an equal third`);
+    });
+
+    // Two of them at that share and the row cannot hold three cards at all.
+    it("leaves the two beside it a share each", () => {
+        const share = Number(summary.body.match(/flex:\s*1 1 (\d+)%/)?.[1]);
+
+        assert.ok(share <= 40, `the summary asks for ${share}%, which squeezes its line-mates below their own`);
+    });
+
+    /**
+     * And it says so above the stages, which restate it at equal specificity -
+     * the summary spans the whole row from the two-column stage down. Only
+     * source order settles those, so a base rule written after them would win
+     * back its third on every narrow screen.
+     */
+    it("declares that share before the stages that override it", () => {
+        assert.ok(page.indexOf(".container-large") < page.indexOf("@media"),
+            "the summary's own share is declared after the stages and outranks them by source order");
     });
 });
 
@@ -212,6 +260,67 @@ describe("the loading skeletons follow the page's stages", () => {
         assert.notEqual(base, -1, "the shimmer cards have no base rule at all");
         assert.ok(base < firstStage,
             "the shimmer base rule follows the stages and outranks them by source order");
+    });
+});
+
+/**
+ * Which card lands under which, while three share a row.
+ *
+ * A wrapping row has columns whether anyone designed them or not, and the page
+ * had drawn a set nobody meant: with the hourly chart leading the third row,
+ * "Download" averages sat under the *upload* chart and "Upload" averages under
+ * the ping. Two cards about the same metric, one directly above the other,
+ * naming different ones.
+ *
+ * The order is the only thing that decides this - every card takes the same
+ * share - so the pairing is a property of the render, not of the stylesheet,
+ * and this is where it is held.
+ */
+describe("the columns the second and third rows fall into", () => {
+    const COLUMNS = 3;
+
+    /** The nine cards in render order, each under the metric it is about. */
+    const cards = () => {
+        const body = statisticsSource.slice(statisticsSource.lastIndexOf("statistic-area${isStale"));
+        const named = [...body.slice(0, body.indexOf("<ChartModal"))
+            .matchAll(/<(OverviewChart|LatestTestChart|ConsistencyChart|PingChart|SpeedChart|HourlyChart|AverageChart)\b([^>]*)>/g)];
+
+        return named.map(([, name, props]) => {
+            if (name === "SpeedChart") return `speed:${props.match(/dataKey="(\w+)"/)?.[1]}`;
+            if (name === "AverageChart") return `average:${props.match(/statistics\.values\.(\w+)/)?.[1]}`;
+            return name;
+        });
+    };
+
+    it("renders the nine the page is made of", () => {
+        assert.equal(cards().length, 9, `the page renders ${cards().length} cards, so the rows are not three deep`);
+    });
+
+    // down/up on the value cards, download/upload on the charts - the two
+    // names for one metric, which is the pairing this is about.
+    for (const [chart, panel] of [["speed:download", "average:down"], ["speed:upload", "average:up"]])
+        it(`puts ${panel} directly under ${chart}`, () => {
+            const order = cards();
+            const above = order.indexOf(chart);
+            const below = order.indexOf(panel);
+
+            assert.ok(above >= 0 && below >= 0, `${chart} or ${panel} is no longer rendered`);
+            assert.equal(below % COLUMNS, above % COLUMNS,
+                `${panel} sits in column ${below % COLUMNS} under a chart in column ${above % COLUMNS}`);
+            assert.equal(Math.floor(below / COLUMNS), Math.floor(above / COLUMNS) + 1,
+                `${panel} is not on the row below ${chart}, so the pair is not read as one`);
+        });
+
+    // What makes the two above work: the latency chart leads the row the speed
+    // charts are on, so they start at the second column and the value cards
+    // below them start at the second column too.
+    it("leads the second row with the latency chart", () => {
+        const order = cards();
+
+        assert.equal(order.indexOf("PingChart") % COLUMNS, 0,
+            "the ping chart no longer starts a row, which shifts the speed charts off their panels");
+        assert.ok(order.indexOf("PingChart") < order.indexOf("speed:download"),
+            "the ping chart follows the speed charts again");
     });
 });
 
