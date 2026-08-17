@@ -1,8 +1,7 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import { isPreviewInstance } from "../../server/util/previewMode.js";
+import { listSources, readSource } from "../helpers/source.js";
 
 const ROUTES_DIR = "server/routes";
 
@@ -60,7 +59,10 @@ describe("isPreviewInstance", () => {
  * demo has, not decisions about what a stranger may be told.
  */
 describe("the route files", () => {
-    const files = fs.readdirSync(ROUTES_DIR).filter((name) => name.endsWith(".js"));
+    // Resolved from this module rather than the working directory, like every
+    // other source-reading test here: a runner launched from anywhere else
+    // would otherwise scan a different tree, or none.
+    const files = listSources(ROUTES_DIR);
 
     it("finds the routes to check", () => {
         assert.ok(files.length >= 8, `only ${files.length} route files were found`);
@@ -68,7 +70,7 @@ describe("the route files", () => {
 
     for (const name of files)
         it(`${name} asks the predicate rather than the environment`, () => {
-            const source = fs.readFileSync(path.join(ROUTES_DIR, name), "utf8");
+            const source = readSource(`${ROUTES_DIR}/${name}`);
 
             assert.doesNotMatch(source, /process\.env\.PREVIEW_MODE/,
                 "the guard is written out by hand, where nothing scans for it");

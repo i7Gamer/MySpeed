@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bodyIn, bodyOf, readSource } from "../helpers/source.js";
+import os from "node:os";
+import { bodyIn, bodyOf, listSources, mountText, readSource } from "../helpers/source.js";
 
 /**
  * The helper several tests read source with, which had been written twice.
@@ -102,5 +103,106 @@ describe("bodyIn", () => {
     it("refuses a declaration with no braces to balance", () => {
         assert.throws(() => bodyIn("server/util/untrustedReader.js", "export const isUntrustedReader"),
             /no braced body/);
+    });
+});
+
+/**
+ * One route mount's text, bounded by the mount that follows it.
+ *
+ * The scans that hold a route to its guard used to slice from the mount to the
+ * next `=>` in the file. That is sound only while every handler is an arrow: a
+ * route mounted with a named function has no arrow of its own, so the search
+ * runs on into the *next* route and the slice comes back carrying that route's
+ * middleware. A neighbour's guard then marks an unguarded route as guarded,
+ * which is the one direction a security scan must not fail in.
+ */
+describe("mountText", () => {
+    const AT = (source, mount) => source.indexOf(mount);
+
+    it("returns the middleware list up to the handler", () => {
+        const source = 'app.get("/a", password(false), async (req, res) => {\n    body();\n});';
+
+        const text = mountText(source, AT(source, "app.get"));
+
+        assert.match(text, /password\(false\)/);
+        assert.doesNotMatch(text, /body\(\)/, "the handler body is not the middleware list");
+    });
+
+    /**
+     * The failure this exists for. /a has a named handler and no arrow, so a
+     * search for the next `=>` lands on /b's - and /b is the guarded one.
+     */
+    it("does not reach into the next mount for a route with no arrow", () => {
+        const source = [
+            'app.get("/a", password(false), handleA);',
+            'app.get("/b", password(false), previewReadOnly.blocking("no"), async (req, res) => {});'
+        ].join("\n");
+
+        assert.doesNotMatch(mountText(source, AT(source, 'app.get("/a"')), /blocking/,
+            "an unguarded route was handed its neighbour's guard");
+    });
+
+    it("still finds the guard on the route that carries it", () => {
+        const source = [
+            'app.get("/a", password(false), handleA);',
+            'app.get("/b", password(false), previewReadOnly.blocking("no"), async (req, res) => {});'
+        ].join("\n");
+
+        assert.match(mountText(source, AT(source, 'app.get("/b"')), /blocking/);
+    });
+
+    it("handles a mount that spans several lines", () => {
+        const source = [
+            'app.get("/a", password(false),',
+            '    previewReadOnly.blocking("no"),',
+            '    async (req, res) => {',
+            '        body();',
+            '    });'
+        ].join("\n");
+
+        const text = mountText(source, AT(source, "app.get"));
+
+        assert.match(text, /blocking/);
+        assert.doesNotMatch(text, /body\(\)/);
+    });
+
+    // The last route in a file has no mount after it to stop at.
+    it("reads to the end of the file for the final mount", () => {
+        const source = 'app.get("/only", password(false), handleOnly);\n';
+
+        assert.match(mountText(source, AT(source, "app.get")), /handleOnly/);
+    });
+
+    // A mount indented inside a block is not one this bound recognises, and it
+    // must not swallow the rest of the file looking for one that is.
+    it("stops at the next mount whatever the verb", () => {
+        const source = [
+            'app.get("/a", password(false), handleA);',
+            'app.delete("/b", password(false), previewReadOnly, handleB);'
+        ].join("\n");
+
+        assert.doesNotMatch(mountText(source, AT(source, 'app.get("/a"')), /previewReadOnly/);
+    });
+});
+
+describe("listSources", () => {
+    it("lists the javascript files in a directory under the root", () => {
+        const files = listSources("server/routes");
+
+        assert.ok(files.includes("nodes.js"));
+        assert.ok(files.every((name) => name.endsWith(".js")));
+    });
+
+    // Resolved from this module rather than the working directory, so a runner
+    // launched from anywhere finds the same files.
+    it("does not depend on the working directory", () => {
+        const before = process.cwd();
+
+        process.chdir(os.tmpdir());
+        try {
+            assert.ok(listSources("server/routes").length >= 8);
+        } finally {
+            process.chdir(before);
+        }
     });
 });

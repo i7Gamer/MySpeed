@@ -1,9 +1,7 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import previewReadOnly from "../../server/middlewares/previewReadOnly.js";
+import { listSources, mountText, readSource } from "../helpers/source.js";
 
 /**
  * What a visitor to a public demo is allowed to change, which is nothing that
@@ -116,8 +114,6 @@ describe("previewReadOnly", () => {
  * which is the failure this list exists to make loud.
  */
 describe("nothing destructive is left open on a demo", () => {
-    const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-    const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
     /**
      * Every route that can change something, found rather than listed.
@@ -149,12 +145,10 @@ describe("nothing destructive is left open on a demo", () => {
         {file: "server/routes/session.js", route: "/"}
     ];
 
-    const routeFiles = fs.readdirSync(path.join(root, "server", "routes"))
-        .filter((name) => name.endsWith(".js"))
-        .map((name) => `server/routes/${name}`);
+    const routeFiles = listSources("server/routes").map((name) => `server/routes/${name}`);
 
     const GUARDED = routeFiles.flatMap((file) => {
-        const source = read(file);
+        const source = readSource(file);
 
         return [...source.matchAll(MUTATING_ROUTE)]
             .map(([match, , , route]) => ({file, route, at: source.indexOf(match)}))
@@ -177,22 +171,23 @@ describe("nothing destructive is left open on a demo", () => {
      * visitors come for. Read-only would be the simpler rule and the wrong one.
      */
     it("still lets a visitor run a test", () => {
-        const source = read("server/routes/speedtests.js");
+        const source = readSource("server/routes/speedtests.js");
         const at = source.indexOf('app.post("/run"');
 
         assert.notEqual(at, -1, "the run route is gone");
-        assert.doesNotMatch(source.slice(at, source.indexOf("=>", at)), /previewReadOnly/,
+        assert.doesNotMatch(mountText(source, at), /previewReadOnly/,
             "running a test is what preview mode exists to demonstrate");
     });
 
     for (const {file, route, at} of GUARDED) {
-        it(`${route} in ${path.basename(file)} is guarded`, () => {
-            const source = read(file);
+        it(`${route} in ${file.split("/").pop()} is guarded`, () => {
+            const source = readSource(file);
 
-            // The middleware list, up to the handler - a guard placed after the
-            // work has been done is not a guard. Handlers here are arrow
-            // functions, so the first `=>` after the mount ends the list.
-            const declaration = source.slice(at, source.indexOf("=>", at));
+            // The middleware list, up to the handler - a guard placed after
+            // the work has been done is not a guard. Bounded at the next mount
+            // before it is trimmed at the handler, so a route with no arrow of
+            // its own cannot be handed the following route's guard.
+            const declaration = mountText(source, at);
 
             assert.match(declaration, /previewReadOnly/,
                 `${route} in ${file} can be called by any visitor to a demo instance`);
@@ -257,14 +252,13 @@ describe("previewReadOnly.blocking", () => {
  * that looks like nothing in particular.
  */
 describe("the node proxy is sealed on a demo", () => {
-    const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-    const source = fs.readFileSync(path.join(root, "server/routes/nodes.js"), "utf8");
+    const source = readSource("server/routes/nodes.js");
 
     const declarationOf = (mount) => {
         const at = source.indexOf(mount);
         assert.notEqual(at, -1, `${mount} is gone from server/routes/nodes.js`);
 
-        return source.slice(at, source.indexOf("=>", at));
+        return mountText(source, at);
     };
 
     it("refuses the proxy whatever the method", () => {
@@ -346,13 +340,23 @@ describe("every read route decides what a demo may have", () => {
 
     /** Refused on a demo, and each must carry the guard that refuses it. */
     const SEALED = {
+        "nodes.js /:nodeId/*route": "reaches another machine with that machine's password attached",
         "storage.js /config": "the full export: the password hash, node passwords and every credential",
         "storage.js /tests/history/json": "the raw history, which /speedtests/export serves redacted",
         "storage.js /tests/history/csv": "the same rows in the other format",
         "system.js /interfaces": "the adapter names GET /config withholds one of"
     };
 
-    const MOUNT = /^app\.get\(\s*(["'`])(.*?)\1/gm;
+    /**
+     * `all` as well as `get`. An app.all route answers a GET, and it satisfies
+     * the mutating scan above by carrying plain previewReadOnly - which lets
+     * reads straight through. That is the node proxy exactly: it reached
+     * another machine with that machine's password attached, and took three
+     * passes to find because a read there does not look like a read. A scan
+     * written to stop that recurring has to be able to see the verb it
+     * happened on.
+     */
+    const MOUNT = /^app\.(get|all)\(\s*(["'`])(.*?)\2/gm;
 
     /**
      * A guard two routes share is bound to a name first, so that one refusal
@@ -362,17 +366,13 @@ describe("every read route decides what a demo may have", () => {
     const GUARD = /previewReadOnly\.blocking/;
     const NAMED_GUARD = /const\s+(\w+)\s*=\s*previewReadOnly\.blocking/g;
 
-    const routesDir = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "server", "routes");
-
-    const found = fs.readdirSync(routesDir)
-        .filter((name) => name.endsWith(".js"))
+    const found = listSources("server/routes")
         .flatMap((name) => {
-            const source = fs.readFileSync(path.join(routesDir, name), "utf8");
+            const source = readSource(`server/routes/${name}`);
             const named = [...source.matchAll(NAMED_GUARD)].map(([, binding]) => binding);
 
-            return [...source.matchAll(MOUNT)].map(([match, , route]) => {
-                const declaration = source.slice(source.indexOf(match),
-                    source.indexOf("=>", source.indexOf(match)));
+            return [...source.matchAll(MOUNT)].map(([match, , , route]) => {
+                const declaration = mountText(source, source.indexOf(match));
 
                 return {
                     key: `${name} ${route}`,

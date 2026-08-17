@@ -8,6 +8,39 @@ const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 export const readSource = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
 /**
+ * The javascript files in a directory under the repository root.
+ *
+ * Resolved from this module rather than the working directory, like readSource
+ * above: a runner launched from anywhere else finds the same files, or fails
+ * loudly instead of scanning some other tree.
+ */
+export const listSources = (dir) =>
+    fs.readdirSync(path.join(root, dir)).filter((name) => name.endsWith(".js"));
+
+/**
+ * The middleware list of one route mount, bounded by the mount that follows it.
+ *
+ * The scans that hold a route to its guard used to slice from the mount to the
+ * next `=>` in the file, which is sound only while every handler is an arrow. A
+ * route mounted with a named function has no arrow of its own, so that search
+ * runs on into the *next* route and the slice comes back carrying that route's
+ * middleware - and a neighbour's guard then marks an unguarded route as
+ * guarded, which is the one direction a security scan must not fail in.
+ *
+ * So the window is closed first, at the next mount, and only then trimmed at
+ * the handler. A route with no arrow simply keeps its whole mount, which is
+ * exactly the text that was being asked about.
+ */
+export const mountText = (source, at) => {
+    const following = source.slice(at + 1).search(/^app\./m);
+    const window = source.slice(at, following === -1 ? source.length : at + 1 + following);
+
+    const handler = window.indexOf("=>");
+
+    return handler === -1 ? window : window.slice(0, handler);
+};
+
+/**
  * The balanced body of a declaration, for the assertions that are about the
  * shape of a function rather than about running it.
  *
