@@ -19,9 +19,10 @@ import IndonesianFlag from "@/common/assets/languages/id.webp";
 // The locale is keyed by language ("uk") and the flag by country ("ua"), as
 // Portuguese is already keyed "pt" against a "br" flag.
 import UkrainianFlag from "@/common/assets/languages/ua.webp";
+import {readStored, writeStored} from "@/common/utils/Storage";
 
-if (localStorage.getItem('language') === null)
-    localStorage.setItem('language', navigator.language.split('-')[0]);
+if (readStored('language') === null)
+    writeStored('language', navigator.language.split('-')[0]);
 
 export const languages = [
     {name: 'English', code: 'en', flag: EnglishFlag},

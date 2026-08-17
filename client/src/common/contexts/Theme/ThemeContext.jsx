@@ -1,10 +1,11 @@
 import React, {createContext, useEffect, useState} from "react";
+import {readStored, writeStored} from "@/common/utils/Storage";
 
 export const ThemeContext = createContext({});
 
 export const ThemeProvider = (props) => {
     const [isDarkMode, setIsDarkMode] = useState(() => {
-        const savedTheme = localStorage.getItem("theme");
+        const savedTheme = readStored("theme");
         if (savedTheme) return savedTheme === "dark";
         return true;
     });
@@ -12,7 +13,7 @@ export const ThemeProvider = (props) => {
     const toggleTheme = () => {
         const newTheme = !isDarkMode;
         setIsDarkMode(newTheme);
-        localStorage.setItem("theme", newTheme ? "dark" : "light");
+        writeStored("theme", newTheme ? "dark" : "light");
     };
 
     useEffect(() => {

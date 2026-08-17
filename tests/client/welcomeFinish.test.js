@@ -65,16 +65,17 @@ const runFinish = async ({previewMode = false, refuse = []} = {}) => {
             patched.push({path, value: body.value});
             return {ok: !refuse.includes(path), status: refuse.includes(path) ? 403 : 200};
         },
-        assertOk: async (response, path) => {
+        assertOk: async (response, _path) => {
             if (response.ok) return response;
             throw new StubRequestError(response.status,
                 "You can't change anything on this instance in preview mode");
         },
         RequestError: StubRequestError,
-        localStorage: {
-            setItem: (key, value) => stored.set(key, value),
-            getItem: (key) => stored.has(key) ? stored.get(key) : null
-        },
+        // The guarded wrapper, not localStorage: a blocked or partitioned store
+        // throws on the property access itself, and this runs on a demo, which
+        // is the deployment most likely to be embedded in someone else's page.
+        writeStored: (key, value) => stored.set(key, value),
+        readStored: (key) => stored.has(key) ? stored.get(key) : null,
         updateToast: (message, colour) => toasts.push({message, colour}),
         faExclamationTriangle: "icon",
         t: (key) => key,

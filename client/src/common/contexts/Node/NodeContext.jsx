@@ -2,6 +2,7 @@ import React, {useState, createContext, useEffect, useContext, useRef} from "rea
 import {baseRequest} from "@/common/utils/RequestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
 import {LOCAL_NODE, selectedNode} from "@/common/contexts/Node/nodeSelection";
+import {readStored, writeStored} from "@/common/utils/Storage";
 
 export const NodeContext = createContext({});
 
@@ -13,7 +14,7 @@ export const NodeProvider = (props) => {
     // reconciliation below cannot tell those apart on its own, and treating the
     // second as the first would move every session to this instance on load.
     const [nodesLoaded, setNodesLoaded] = useState(false);
-    const [currentNode, setCurrentNode] = useState(parseInt(localStorage.getItem("currentNode")) || LOCAL_NODE);
+    const [currentNode, setCurrentNode] = useState(parseInt(readStored("currentNode")) || LOCAL_NODE);
 
     /*
      * Only the newest request is allowed to settle - the same discipline
@@ -60,7 +61,7 @@ export const NodeProvider = (props) => {
     }, [config]);
 
     const updateCurrentNode = (node) => {
-        localStorage.setItem("currentNode", node);
+        writeStored("currentNode", node);
         setCurrentNode(parseInt(node));
     }
 

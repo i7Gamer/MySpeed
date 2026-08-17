@@ -158,7 +158,7 @@ describe("Enter while a button outside the alert has focus", () => {
     // The backdrop is mounted a tick after the alert opens, and Escape already
     // guards against a press that lands in between.
     it("submits when the alert has no mounted area to ask about yet", () => {
-        const {press, closed} = openAlert();
+        const {closed} = openAlert();
         closed.length = 0;
 
         const arealess = handlerWith({

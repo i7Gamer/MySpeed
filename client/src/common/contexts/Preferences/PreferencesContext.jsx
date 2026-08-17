@@ -3,6 +3,7 @@ import {DEFAULT_TIMEFRAME} from "@/common/utils/TimeframeUtil";
 import {
     GRADE_VALUES_ATTRIBUTE, GRADE_VALUES_OFF, GRADE_VALUES_ON, TIME_FORMAT_24H, SPEED_UNIT_MBPS
 } from "./constants";
+import {readStored, writeStored} from "@/common/utils/Storage";
 
 // Re-exported so every existing import of this module keeps working. The values
 // themselves live in a plain module, which lets a utility read them without
@@ -29,7 +30,7 @@ const DEFAULTS = {
 
 const loadPreferences = () => {
     try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        const raw = readStored(STORAGE_KEY);
         if (!raw) return {...DEFAULTS};
         const parsed = JSON.parse(raw);
         return {...DEFAULTS, ...parsed};
@@ -40,7 +41,7 @@ const loadPreferences = () => {
 
 const persistPreferences = (preferences) => {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
+        writeStored(STORAGE_KEY, JSON.stringify(preferences));
     } catch {
         // Full, or blocked entirely in a private window. A preference that
         // cannot be written down is not worth failing a render over - it simply

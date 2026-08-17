@@ -1,4 +1,5 @@
 import { SERVER_BUSY } from "@/common/utils/AuthOutcome";
+import {readStored, removeStored} from "@/common/utils/Storage";
 
 const REQUEST_TIMEOUT = 10000;
 
@@ -16,8 +17,8 @@ export class RequestError extends Error {
 }
 
 const getApiRoot = () => {
-    if (localStorage.getItem("currentNode") !== null && localStorage.getItem("currentNode") !== "0") {
-        return "/api/nodes/" + localStorage.getItem("currentNode");
+    if (readStored("currentNode") !== null && readStored("currentNode") !== "0") {
+        return "/api/nodes/" + readStored("currentNode");
     } else return "/api";
 }
 
@@ -92,13 +93,13 @@ const STORED_PASSWORD_KEY = "password";
  * to keep, and leaving it behind would defeat the point of the change.
  */
 export const migrateStoredPassword = async () => {
-    const stored = localStorage.getItem(STORED_PASSWORD_KEY);
+    const stored = readStored(STORED_PASSWORD_KEY);
     if (stored === null) return;
 
     try {
         await login(stored);
     } finally {
-        localStorage.removeItem(STORED_PASSWORD_KEY);
+        removeStored(STORED_PASSWORD_KEY);
     }
 }
 

@@ -11,6 +11,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {faExclamationTriangle} from "@fortawesome/free-solid-svg-icons";
 import {t} from "i18next";
+import {writeStored} from "@/common/utils/Storage";
 
 export const WelcomeDialog = ({open, onClose}) => {
     const [config, reloadConfig] = useContext(ConfigContext);
@@ -55,7 +56,7 @@ export const WelcomeDialog = ({open, onClose}) => {
             // Nothing to save on a demo in any case: its configuration is fixed
             // by the operator who published it.
             if (config.previewMode) {
-                localStorage.setItem("welcomeShown", "true");
+                writeStored("welcomeShown", "true");
             } else {
                 await patch("/config/provider", provider);
                 await patch("/config/ping", ping);
