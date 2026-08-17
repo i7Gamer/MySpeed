@@ -4,6 +4,7 @@ import * as timer from '../tasks/timer.js';
 import password from '../middlewares/password.js';
 import previewReadOnly from '../middlewares/previewReadOnly.js';
 import { isUntrustedReader } from '../util/untrustedReader.js';
+import { isPreviewInstance } from '../util/previewMode.js';
 
 const app = express.Router();
 
@@ -44,14 +45,14 @@ app.get("/", password(true), async (req, res) => {
     // generated result, and StatusUtil would hide the button this reported true.
     // What the server discloses is the question above; they are not the same one.
     configValues['viewMode'] = req.viewMode;
-    configValues['previewMode'] = process.env.PREVIEW_MODE === "true";
+    configValues['previewMode'] = isPreviewInstance();
 
     // Whether a password exists, never the value. The client used to work this
     // out from its own localStorage, which meant the answer was per-browser:
     // an instance with a password showed as unprotected on every other device.
     configValues['passwordSet'] = (await config.getValue("password")) !== config.NO_PASSWORD;
 
-    if (process.env.PREVIEW_MODE === "true")
+    if (isPreviewInstance())
         configValues['previewMessage'] = String(process.env.PREVIEW_MESSAGE || "The owner of this instance has not provided a message");
 
     if (Object.keys(configValues).length === 0) return res.status(404).json({message: "Hmm. There are no config values. Weird..."});

@@ -1,3 +1,5 @@
+import { isPreviewInstance } from "./previewMode.js";
+
 /**
  * Whether this caller is a reader the instance does not owe its operator's own
  * details to.
@@ -20,5 +22,4 @@
  * "What the client may do" and "what the server will disclose" are two
  * questions, and the demo answers them differently; this is the second one.
  */
-export const isUntrustedReader = (req) =>
-    Boolean(req?.viewMode) || process.env.PREVIEW_MODE === "true";
+export const isUntrustedReader = (req) => Boolean(req?.viewMode) || isPreviewInstance();

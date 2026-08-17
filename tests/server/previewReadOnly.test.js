@@ -296,3 +296,134 @@ describe("the node proxy is sealed on a demo", () => {
         assert.match(listing, /isUntrustedReader/);
     });
 });
+
+/**
+ * And every read route has decided what a demo may have.
+ *
+ * The mutating routes have been held to their guard by the scan above since two
+ * of them were found open. The reads had nothing of the kind, and the count is
+ * the argument for giving them one: preview mode admits every caller, so full
+ * disclosure is the default and each route has to opt out by hand. GET /config,
+ * /integrations/active and four speedtest routes were fixed, then the node
+ * listing and the node proxy - and GET /storage/config was still answering an
+ * anonymous visitor with the admin password hash, every node password and every
+ * integration credential, with the two history downloads and the adapter list
+ * beside it.
+ *
+ * A runtime allowlist would have been the wrong shape: a demo is a working
+ * dashboard, so most of these must answer, several of them redacted rather than
+ * refused, and a blanket rule would either break the demo or say nothing. What
+ * was missing is not a rule but a decision per route - so this asserts the
+ * decision exists. A new `app.get` fails here until it is written down.
+ *
+ * The redactions themselves are held by tests/integration/previewDisclosure.
+ * This is only about there being an answer at all.
+ */
+describe("every read route decides what a demo may have", () => {
+    /**
+     * Served on a demo. Some in full, some redacted - the note says which, and
+     * previewDisclosure holds the redaction.
+     */
+    const READABLE = {
+        "config.js /": "the dashboard's own settings, with the operator's keys withheld",
+        "health.js /": "liveness, which says nothing about the instance",
+        "integrations.js /": "the registry of integration types, not anybody's rows",
+        "integrations.js /active": "the configured rows, with their credentials blanked",
+        "nodes.js /": "answers empty on a demo",
+        "opengraph.js /image": "the measurements as a picture, which is the demo's point",
+        "prometheus.js /metrics": "the measurements again, and the same server labels a viewer sees",
+        "recommendations.js /": "the target values the dashboard grades against",
+        "session.js /": "whether this caller holds a session, which is about them",
+        "speedtests.js /": "the history, with the connection identity stripped",
+        "speedtests.js /statistics": "aggregates, which carry no identity to strip",
+        "speedtests.js /export": "the redacted way to take the measurements away",
+        "speedtests.js /status": "the latest test, stripped, and no countdown",
+        "speedtests.js /:id": "one test, stripped",
+        "storage.js /": "how much disk the database uses",
+        "system.js /version": "the running version, which the footer shows",
+        "system.js /server/:provider": "the public server lists, which are the provider's"
+    };
+
+    /** Refused on a demo, and each must carry the guard that refuses it. */
+    const SEALED = {
+        "storage.js /config": "the full export: the password hash, node passwords and every credential",
+        "storage.js /tests/history/json": "the raw history, which /speedtests/export serves redacted",
+        "storage.js /tests/history/csv": "the same rows in the other format",
+        "system.js /interfaces": "the adapter names GET /config withholds one of"
+    };
+
+    const MOUNT = /^app\.get\(\s*(["'`])(.*?)\1/gm;
+
+    /**
+     * A guard two routes share is bound to a name first, so that one refusal
+     * is worded once. The scan resolves that one level rather than pushing the
+     * routes into repeating themselves to be seen.
+     */
+    const GUARD = /previewReadOnly\.blocking/;
+    const NAMED_GUARD = /const\s+(\w+)\s*=\s*previewReadOnly\.blocking/g;
+
+    const routesDir = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "server", "routes");
+
+    const found = fs.readdirSync(routesDir)
+        .filter((name) => name.endsWith(".js"))
+        .flatMap((name) => {
+            const source = fs.readFileSync(path.join(routesDir, name), "utf8");
+            const named = [...source.matchAll(NAMED_GUARD)].map(([, binding]) => binding);
+
+            return [...source.matchAll(MOUNT)].map(([match, , route]) => {
+                const declaration = source.slice(source.indexOf(match),
+                    source.indexOf("=>", source.indexOf(match)));
+
+                return {
+                    key: `${name} ${route}`,
+                    guarded: GUARD.test(declaration)
+                        || named.some((binding) => new RegExp(`\\b${binding}\\b`).test(declaration))
+                };
+            });
+        });
+
+    it("finds the read routes to check", () => {
+        // Against the scan silently matching nothing, which would make every
+        // assertion below vacuous.
+        assert.ok(found.length >= 18, `only ${found.length} read routes were found`);
+    });
+
+    it("has an answer for every one of them", () => {
+        const unclassified = found
+            .map(({key}) => key)
+            .filter((key) => !Object.hasOwn(READABLE, key) && !Object.hasOwn(SEALED, key));
+
+        assert.deepEqual(unclassified, [],
+            "a read route was added without deciding what a demo visitor may have from it");
+    });
+
+    it("does not answer twice for any of them", () => {
+        const both = Object.keys(SEALED).filter((key) => Object.hasOwn(READABLE, key));
+
+        assert.deepEqual(both, [], "these two lists disagree");
+    });
+
+    // The lists cannot describe routes that are gone, or they go stale as
+    // quietly as the guard they replace.
+    it("describes only routes that exist", () => {
+        const keys = new Set(found.map(({key}) => key));
+        const missing = [...Object.keys(READABLE), ...Object.keys(SEALED)]
+            .filter((key) => !keys.has(key));
+
+        assert.deepEqual(missing, [], "these entries name routes that are no longer mounted");
+    });
+
+    for (const [key, why] of Object.entries(SEALED))
+        it(`${key} is sealed on a demo - ${why}`, () => {
+            const route = found.find((entry) => entry.key === key);
+
+            assert.equal(route.guarded, true, `${key} is listed as sealed and carries no guard`);
+        });
+
+    for (const key of Object.keys(READABLE))
+        it(`${key} still answers on a demo`, () => {
+            const route = found.find((entry) => entry.key === key);
+
+            assert.equal(route.guarded, false, `${key} is listed as readable and is sealed`);
+        });
+});

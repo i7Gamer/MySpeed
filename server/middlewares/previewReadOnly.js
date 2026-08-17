@@ -1,10 +1,12 @@
+import { isPreviewInstance } from "../util/previewMode.js";
+
 // Methods that cannot change anything, and so need no guard.
 const SAFE_METHODS = ["GET", "HEAD", "OPTIONS"];
 
 const DEFAULT_MESSAGE = "You can't change anything on this instance in preview mode";
 
 const refuses = (message, {allowReads = true} = {}) => (req, res, next) => {
-    if (process.env.PREVIEW_MODE !== "true") return next();
+    if (!isPreviewInstance()) return next();
     if (allowReads && SAFE_METHODS.includes(req.method)) return next();
 
     return res.status(403).json({message});
