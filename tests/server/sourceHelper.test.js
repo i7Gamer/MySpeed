@@ -319,3 +319,150 @@ describe("findMounts", () => {
         assert.deepEqual(findMounts("export default app;", ["get", "all"]), []);
     });
 });
+
+/**
+ * Comments inside a mount's argument list, which this codebase writes.
+ *
+ * The bound tracked strings and not comments, so one contraction - "don't" -
+ * opened a quote state that never closed. The mount's own closing paren was
+ * then skipped, the bound collapsed, and the window swallowed the handler body:
+ * a scan asking only whether the guard appears somewhere in that text would be
+ * satisfied by a comment in the body mentioning it. opengraph already puts a
+ * comment inside its argument list, and only the accident that it contains no
+ * apostrophe kept this working.
+ */
+describe("mountText and comments", () => {
+    const AT = (source, mount) => source.indexOf(mount);
+    const HANDLER = "async (req, res) => { body(); });";
+
+    it("survives a contraction in a line comment", () => {
+        const source = `app.get("/a", wrapper(true, (req, res) => {\n`
+            + `    // don't redirect here\n`
+            + `    fallback();\n`
+            + `}), previewReadOnly.blocking("no"), ${HANDLER}`;
+
+        const text = mountText(source, AT(source, "app.get"));
+
+        assert.match(text, /blocking/, "the guard is in the middleware list");
+        assert.doesNotMatch(text, /body\(\)/, "the bound collapsed and swallowed the handler");
+    });
+
+    it("survives one in a block comment", () => {
+        const source = `app.get("/a", /* the operator's own choice */ previewReadOnly.blocking("no"), ${HANDLER}`;
+
+        const text = mountText(source, AT(source, "app.get"));
+
+        assert.match(text, /blocking/);
+        assert.doesNotMatch(text, /body\(\)/);
+    });
+
+    // A comma in prose is not an argument separator.
+    it("does not count a comma inside a comment", () => {
+        const source = `app.get("/a", // first, second, third\n    previewReadOnly.blocking("no"), ${HANDLER}`;
+
+        assert.match(mountText(source, AT(source, "app.get")), /blocking/,
+            "a comma in the comment was taken for the handler's");
+    });
+
+    // Nor a paren in prose the end of the mount.
+    it("does not let a comment close the mount", () => {
+        const source = `app.get("/a", /* see refuses(message) above */ previewReadOnly.blocking("no"), ${HANDLER}`;
+
+        assert.match(mountText(source, AT(source, "app.get")), /blocking/);
+    });
+
+    /**
+     * And a comment marker inside a string is not a comment. The refusals carry
+     * URLs and paths, and treating one as the start of a comment would swallow
+     * the rest of the list.
+     */
+    it("does not start a comment inside a string", () => {
+        const source = `app.get("/a", note("see https://example.invalid/x"), `
+            + `previewReadOnly.blocking("no"), ${HANDLER}`;
+
+        const text = mountText(source, AT(source, "app.get"));
+
+        assert.match(text, /blocking/, "the // inside the url was read as a comment");
+        assert.doesNotMatch(text, /body\(\)/);
+    });
+
+    // The apostrophes the guard messages actually carry, which sit inside a
+    // double-quoted string and must stay ordinary characters.
+    it("leaves an apostrophe inside a string alone", () => {
+        const source = `app.get("/a", previewReadOnly.blocking("you can't do that"), ${HANDLER}`;
+
+        const text = mountText(source, AT(source, "app.get"));
+
+        assert.match(text, /blocking/);
+        assert.doesNotMatch(text, /body\(\)/);
+    });
+});
+
+/**
+ * A handler body is full of commas, and none of them separate arguments.
+ *
+ * Paren depth alone does not say where the argument list ends: once the
+ * handler's own parameter list closes, the scan is back at the mount's depth
+ * and every comma in the body counts. `const { from, to } = req.query` is one,
+ * and it put the bound *inside* the handler - which is how the four speedtest
+ * mounts came back carrying most of their own bodies. Braces and brackets have
+ * to be tracked as well, so a comma only separates arguments where it can.
+ */
+describe("mountText and the handler's own commas", () => {
+    const AT = (source, mount) => source.indexOf(mount);
+
+    it("ignores a comma in a destructuring inside the handler", () => {
+        const source = 'app.get("/a", previewReadOnly.blocking("no"), async (req, res) => {\n'
+            + "    const { from, to } = req.query;\n"
+            + "    body(from, to);\n"
+            + "});";
+
+        assert.equal(mountText(source, AT(source, "app.get")),
+            'app.get("/a", previewReadOnly.blocking("no")',
+            "the bound landed inside the handler body");
+    });
+
+    it("ignores one in an array inside the handler", () => {
+        const source = 'app.get("/a", password(false), async (req, res) => {\n'
+            + "    const order = [first, second];\n"
+            + "});";
+
+        assert.equal(mountText(source, AT(source, "app.get")), 'app.get("/a", password(false)');
+    });
+
+    // An object handed to a middleware is one argument, however many commas it
+    // holds - so its commas must not be counted either.
+    it("treats an object argument as one argument", () => {
+        const source = 'app.get("/a", limit({window: 1, max: 2}), async (req, res) => {\n'
+            + "    body();\n"
+            + "});";
+
+        assert.equal(mountText(source, AT(source, "app.get")),
+            'app.get("/a", limit({window: 1, max: 2})',
+            "the object argument was cut in half");
+    });
+
+    /**
+     * The real mounts, which is where this was found. Nothing in server/routes
+     * may come back carrying its own handler, or a scan that asks whether a
+     * guard appears somewhere in that text can be satisfied by the body.
+     *
+     * Recognised by a declaration keyword rather than by counting arrows: a
+     * middleware may legitimately carry an arrow of its own - opengraph's
+     * fallback does, and its comment even contains the word "return" - but
+     * `const`, `let` and `await` belong to a handler body and appear in no
+     * argument list. The broken window that started this carried
+     * `const { from, to`.
+     */
+    it("leaves every real route's handler out of its middleware list", () => {
+        const VERBS = ["get", "all", "post", "put", "patch", "delete"];
+        const BODY = /\b(const|let|await)\s/;
+
+        const carrying = listSources("server/routes").flatMap((name) =>
+            findMounts(readSource(`server/routes/${name}`), VERBS)
+                .filter(({text}) => BODY.test(text))
+                .map(({route}) => `${name} ${route}`));
+
+        assert.deepEqual(carrying, [], "these mounts came back carrying their own handler body");
+    });
+});

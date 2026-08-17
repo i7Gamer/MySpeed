@@ -24,8 +24,26 @@ export const listSources = (dir) =>
  * Strings are skipped, because the refusal a guard is constructed with carries
  * commas of its own - "For security reasons, you can't ..." - and counting one
  * of those would cut the list in the middle of the very argument being looked
- * for. Comments inside an argument list are not skipped; nothing writes one,
- * and a scanner that handles them is a parser.
+ * for.
+ *
+ * Comments are skipped for a sharper reason. This one first claimed nothing
+ * writes a comment inside an argument list, which opengraph does - and one
+ * contraction in it, "don't", opened a quote state that never closed. The
+ * mount's own closing paren was then skipped, this answered -1, and the window
+ * swallowed the handler body: a scan asking only whether the guard appears
+ * somewhere in that text is satisfied by a comment in the body mentioning it.
+ * Only the accident that opengraph's comment has no apostrophe kept it working.
+ *
+ * A comment marker inside a string is not a comment, which is why the string
+ * check comes first: a refusal carrying a URL would otherwise swallow the rest
+ * of the list at its "//".
+ *
+ * Braces and brackets are counted alongside the parens, because paren depth
+ * alone does not say where the argument list ends: the handler's own parameter
+ * list closes, and from there every comma in its body is back at the mount's
+ * depth. `const { from, to } = req.query` is one of those, and it put the bound
+ * inside the handler - which is how four of the speedtest mounts came back
+ * carrying most of their own bodies while every synthetic test passed.
  *
  * Returns -1 when the mount takes a single argument, or when the parentheses
  * never close - a truncated file, where the caller keeps the whole window
@@ -33,11 +51,27 @@ export const listSources = (dir) =>
  */
 const lastArgumentComma = (text) => {
     let depth = 0;
+    let nested = 0;
     let quote = null;
+    let comment = null;
     let last = -1;
 
     for (let index = 0; index < text.length; index++) {
         const character = text[index];
+        const next = text[index + 1];
+
+        if (comment === "line") {
+            if (character === "\n") comment = null;
+            continue;
+        }
+
+        if (comment === "block") {
+            if (character === "*" && next === "/") {
+                comment = null;
+                index++;
+            }
+            continue;
+        }
 
         if (quote !== null) {
             if (character === "\\") index++;
@@ -45,10 +79,18 @@ const lastArgumentComma = (text) => {
             continue;
         }
 
+        if (character === "/" && (next === "/" || next === "*")) {
+            comment = next === "/" ? "line" : "block";
+            index++;
+            continue;
+        }
+
         if (character === '"' || character === "'" || character === "`") quote = character;
+        else if (character === "{" || character === "[") nested++;
+        else if (character === "}" || character === "]") nested--;
         else if (character === "(") depth++;
         else if (character === ")" && --depth === 0) return last;
-        else if (character === "," && depth === 1) last = index;
+        else if (character === "," && depth === 1 && nested === 0) last = index;
     }
 
     return -1;
