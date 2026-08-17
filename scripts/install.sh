@@ -177,13 +177,51 @@ if [ ! -d "$INSTALLATION_PATH" ]; then
     mkdir -p "$INSTALLATION_PATH"
 fi
 
-cd "$INSTALLATION_PATH"
+# An unwritable path, a read-only mount or a name already taken by a file all
+# leave this failing - and unchecked, the binary was then written into whatever
+# directory the caller happened to be in while the unit still pointed at
+# $INSTALLATION_PATH.
+if ! cd "$INSTALLATION_PATH"; then
+    echo -e "$RED✗ Could not enter $INSTALLATION_PATH.$NORMAL Check that the path exists and is writable."
+    exit 1
+fi
 
 clear
 echo -e "$BLUEℹ Info: $NORMAL Downloading MySpeed binary. Please wait..."
 sleep 2
-wget -O myspeed "$RELEASE_URL"
-chmod +x myspeed
+
+# Downloaded beside the installed binary, never over it.
+#
+# `wget -O` opens and truncates its output file before the transfer starts, so
+# pointing it at `myspeed` destroyed a working install the moment it ran. Nothing
+# checked the result either, and there is no `set -e`, so a download that died
+# mid-transfer - a dropped link, a proxy that blocks the CDN, a full disk - fell
+# straight through to writing the service, restarting it, and printing
+# "Installation completed" over a zero-byte executable in a Restart=always loop,
+# exiting 0 so a pipeline read it as a successful upgrade.
+#
+# This is the same conclusion the AVX2 check above reaches: a permanent crash
+# loop announced as a finished installation is worse than stopping.
+DOWNLOAD_TMP="myspeed.download.$$"
+
+if ! wget -O "$DOWNLOAD_TMP" "$RELEASE_URL"; then
+    rm -f "$DOWNLOAD_TMP"
+    echo -e "$RED✗ Could not download MySpeed from $RELEASE_URL"
+    echo -e "$NORMALℹ Any existing installation has been left untouched."
+    exit 1
+fi
+
+# A 200 carrying an error page, or a transfer that ended at zero bytes, is not a
+# binary - and chmod +x makes it look like one to systemd.
+if [ ! -s "$DOWNLOAD_TMP" ]; then
+    rm -f "$DOWNLOAD_TMP"
+    echo -e "$RED✗ The download produced an empty file.$NORMAL The release may be incomplete."
+    echo -e "$NORMALℹ Any existing installation has been left untouched."
+    exit 1
+fi
+
+chmod +x "$DOWNLOAD_TMP"
+mv -f "$DOWNLOAD_TMP" myspeed
 
 clear
 echo -e "$BLUE🔎 STATUS MESSAGE"

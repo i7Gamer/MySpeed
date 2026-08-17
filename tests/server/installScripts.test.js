@@ -311,3 +311,58 @@ describe("uninstall.sh finds the installation it is removing", () => {
             "the script carries on to its success banner after a removal that did not happen");
     });
 });
+
+/**
+ * A failed download must not leave the box worse than it found it.
+ *
+ * `wget -O myspeed` opens and truncates the output file before the transfer
+ * starts, so on an upgrade the working binary was destroyed the moment wget ran
+ * - and there was no `set -e`, no exit check on the download, and no check on
+ * the `cd` before it. Execution fell straight through to writing a
+ * `Restart=always` unit, running `systemctl restart`, and printing
+ * "✓ Installation completed" over a zero-byte executable in a permanent crash
+ * loop, exiting 0 so a pipeline read it as a successful upgrade.
+ *
+ * The script already reasons about exactly this for the AVX2 fallback - "a
+ * permanent crash loop, announced by the completion banner as a finished
+ * installation. Stopping is the more useful answer" - and for the release
+ * lookup. The download was the sibling left out.
+ */
+describe("install.sh survives a download that fails", () => {
+    const source = read("install.sh");
+
+    // The window from the download to the point the service is written, which is
+    // where a failure has to stop.
+    const downloadBlock = () => {
+        const start = source.indexOf("INSTALLATION_PATH\"");
+        const end = source.indexOf("Registering MySpeed as a background service");
+        assert.ok(start !== -1 && end > start, "the download step is no longer recognisable");
+        return source.slice(start, end);
+    };
+
+    it("does not write over the installed binary until the download succeeded", () => {
+        assert.doesNotMatch(downloadBlock(), /wget\s+(-\S+\s+)*-O\s+myspeed\b/,
+            "wget truncates its output file before the transfer, so this destroys a working install");
+    });
+
+    it("stops when the download fails", () => {
+        const block = downloadBlock();
+
+        const guarded = /set -e/.test(source)
+            || /wget[^\n]*\|\|\s*\{/.test(block)
+            || /if\s+!\s+wget/.test(block)
+            || /\$\?/.test(block);
+
+        assert.ok(guarded, "a failed download carries on to the service and the success banner");
+    });
+
+    it("refuses to continue if it could not reach the installation directory", () => {
+        assert.match(source, /cd\s+"\$INSTALLATION_PATH"\s*\|\||set -e|if\s+!\s+cd\s/,
+            "an unwritable or missing path leaves the binary in whatever directory the caller was in");
+    });
+
+    it("checks that what it downloaded is actually there", () => {
+        assert.match(downloadBlock(), /-s\s+"?\$?\w*|\bstat\b|\bwc -c\b/,
+            "a zero-byte file is chmod +x'd and started as though it were a binary");
+    });
+});
