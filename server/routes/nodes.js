@@ -5,24 +5,31 @@ import previewReadOnly from '../middlewares/previewReadOnly.js';
 import { passwordHeaderNames, writePasswordHeaders } from '../util/passwordHeader.js';
 import { stripTrailingSlashes } from '../util/helpers.js';
 import { checkNodeTarget } from '../util/safeUrl.js';
+import { isUntrustedReader } from '../util/untrustedReader.js';
 import { importBody } from './storage.js';
 
 const app = express.Router();
 
 /**
- * The configured nodes, and on a demo none.
+ * The configured nodes, and to anyone but the operator none.
  *
  * Answered empty rather than refused: the client polls this on every config
  * change and a demo visitor is not in view mode, so a 403 would be an error
  * the node context has no branch for - and "this instance offers you no nodes"
  * is exactly what an empty list already means everywhere else.
  *
- * What it withheld by answering is the operator's own host names and addresses
+ * What it withholds by answering is the operator's own host names and addresses
  * - the same category as the `interface` adapter name the config route keeps
- * back - and the ids the proxy below needs to be asked for.
+ * back - and the ids the proxy below would have to be asked for.
+ *
+ * isUntrustedReader rather than a preview check written out here: only the demo
+ * case is reachable today, since a read-only password holder is refused by
+ * password(false) before this runs, but the guard that gets written out by hand
+ * is the guard that gets forgotten - which is the whole reason previewReadOnly
+ * exists two doors down.
  */
 app.get("/", password(false), async (req, res) => {
-    if (process.env.PREVIEW_MODE === "true") return res.json([]);
+    if (isUntrustedReader(req)) return res.json([]);
 
     return res.json(await nodes.listAll());
 });

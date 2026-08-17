@@ -277,4 +277,22 @@ describe("the node proxy is sealed on a demo", () => {
     it("still lets the listing route answer", () => {
         assert.doesNotMatch(declarationOf('app.get("/", password(false)'), /previewReadOnly\.blocking/);
     });
+
+    /**
+     * And it decides that through the shared predicate.
+     *
+     * A hand-written `process.env.PREVIEW_MODE === "true"` in the handler is
+     * the very shape previewReadOnly was written to replace, and this file's
+     * own history is the argument: the two routes that were missed were the two
+     * nobody remembered to copy the check onto. A copy here would also be
+     * invisible to the scan below, which only walks the mutating verbs.
+     */
+    it("decides the listing through the shared predicate", () => {
+        const listing = source.slice(source.indexOf('app.get("/", password(false)'),
+            source.indexOf('app.put("/"'));
+
+        assert.doesNotMatch(listing, /process\.env/,
+            "the guard is written out by hand again, where nothing scans for it");
+        assert.match(listing, /isUntrustedReader/);
+    });
 });
