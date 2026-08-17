@@ -17,17 +17,51 @@ export const tmpFile = (suffix = '') =>
  */
 export const MAX_DOWNLOAD_REDIRECTS = 10;
 
+/**
+ * How long the transfer may go quiet before it is abandoned.
+ *
+ * `get` arms no timer of its own, so a server that accepted the connection and
+ * then said nothing left the promise unsettled - and with it the boot that
+ * awaits the CLI install, with no error and nothing in the log naming what it
+ * was waiting for. This is an *idle* timeout rather than a deadline for the
+ * whole download: a large archive on a slow line keeps resetting it, and only a
+ * transfer that has genuinely stopped runs it out.
+ */
+export const DOWNLOAD_IDLE_TIMEOUT = 60000;
+
 // `client` is injectable so the redirect handling is testable without the
 // network; callers pass nothing and get node:https.
 export const downloadToFile = (url, destPath, {redirectsLeft = MAX_DOWNLOAD_REDIRECTS, client = get} = {}) =>
     new Promise((resolve, reject) => {
-        client(url, (res) => {
+        const request = client(url, (res) => {
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                 res.resume();
                 if (redirectsLeft <= 0)
                     return reject(new Error(`Download failed: ${url} redirected more than ${MAX_DOWNLOAD_REDIRECTS} times`));
 
-                return resolve(downloadToFile(res.headers.location, destPath,
+                // Resolved against the URL that sent it. A Location header need
+                // not be absolute - RFC 9110 allows a relative reference, and a
+                // CDN answering `Location: /bin/cli.tgz` reached https.get as a
+                // path and died on ERR_INVALID_URL, naming neither the download
+                // nor the redirect.
+                let next;
+                try {
+                    next = new URL(res.headers.location, url);
+                } catch {
+                    return reject(new Error(
+                        `Download failed: ${url} redirected to "${res.headers.location}", which is not a URL`));
+                }
+
+                // This fetches an executable the server then runs, so a
+                // redirect onto plain HTTP is a downgrade that hands anyone on
+                // the path its contents. Refused with a reason: an http:// URL
+                // handed to https.get failed on ERR_INVALID_PROTOCOL instead,
+                // which says nothing about a redirect having happened.
+                if (next.protocol !== "https:")
+                    return reject(new Error(
+                        `Download failed: ${url} redirected to ${next.protocol}//, and only https is followed`));
+
+                return resolve(downloadToFile(next.href, destPath,
                     {redirectsLeft: redirectsLeft - 1, client}));
             }
             if (res.statusCode !== 200) {
@@ -60,7 +94,16 @@ export const downloadToFile = (url, destPath, {redirectsLeft = MAX_DOWNLOAD_REDI
             writeStream.on('finish', () => resolve());
             writeStream.on('error', fail);
             res.on('error', fail);
-        }).on('error', reject);
+        });
+
+        request.on('error', reject);
+
+        // Optional so the scripted clients the tests inject stay two-line
+        // stubs; a real ClientRequest always has it.
+        request.setTimeout?.(DOWNLOAD_IDLE_TIMEOUT, () => {
+            request.destroy(new Error(
+                `Download failed: ${url} sent nothing for ${DOWNLOAD_IDLE_TIMEOUT}ms`));
+        });
     });
 
 /**
