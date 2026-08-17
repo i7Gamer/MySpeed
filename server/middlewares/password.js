@@ -367,7 +367,25 @@ const handleUnconfigured = (req, res, next) => {
 };
 
 export default (allowViewAccess) => async (req, res, next) => {
-    if (process.env.PREVIEW_MODE === "true") return next();
+    /**
+     * A demo admits everyone, and everyone it admits may use it.
+     *
+     * Set explicitly, and set to false. This was the one path out of the
+     * middleware that left the flag alone, so it arrived at the routes as
+     * undefined - falsy, and therefore indistinguishable from the operator to
+     * every `if (req.viewMode)` redaction downstream. That is not what a demo
+     * should disclose, but it is what a demo should *permit*: preview mode
+     * answers a run with a generated result, and marking the caller a viewer
+     * would hide the one button they came to press.
+     *
+     * So the two questions were separated rather than conflated. This flag is
+     * the permission, and it is honest here. What the server will disclose is
+     * isUntrustedReader, which knows about demos.
+     */
+    if (process.env.PREVIEW_MODE === "true") {
+        req.viewMode = false;
+        return next();
+    }
 
     // A session costs no bcrypt comparison and cannot be read by script on the
     // page, which is the whole reason the client no longer keeps the password.

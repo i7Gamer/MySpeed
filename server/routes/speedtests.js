@@ -8,6 +8,7 @@ import previewReadOnly from '../middlewares/previewReadOnly.js';
 import { ALL_TIME_RANGE, parseDateRange } from '../util/dateRange.js';
 import { resolveTimezone } from '../util/timezone.js';
 import { stripConnectionIdentity } from '../util/connectionIdentity.js';
+import { isUntrustedReader } from '../util/untrustedReader.js';
 import { toCsv } from '../util/csv.js';
 import { isFailedTest } from '../util/testOutcome.js';
 import * as timer from '../tasks/timer.js';
@@ -62,9 +63,10 @@ app.get("/", password(true), async (req, res) => {
 
     const entries = await tests.listTests(req.query.afterId, req.query.limit, range, after);
 
-    // A read-only viewer sees the measurements, not who the connection is:
-    // the operator's provider and address are the operator's to see.
-    if (req.viewMode) entries.forEach(stripConnectionIdentity);
+    // A viewer sees the measurements, not who the connection is: the operator's
+    // provider and address are the operator's to see. A demo visitor is the
+    // same kind of caller and was not treated as one - see isUntrustedReader.
+    if (isUntrustedReader(req)) entries.forEach(stripConnectionIdentity);
 
     res.json(entries);
 });
@@ -122,7 +124,7 @@ app.get("/export", password(true), async (req, res) => {
 
     const exportData = await tests.exportTests(range);
 
-    if (req.viewMode) exportData.forEach(stripConnectionIdentity);
+    if (isUntrustedReader(req)) exportData.forEach(stripConnectionIdentity);
 
     if (format === 'csv') {
         res.setHeader('Content-Type', 'text/csv');
@@ -176,7 +178,7 @@ app.get("/status", password(true), async (req, res) => {
      * Null is the answer this route already gives when nothing is scheduled, so
      * the status bar's existing branch for that covers the visitor too.
      */
-    const nextTest = req.viewMode ? null : timer.nextRun(
+    const nextTest = isUntrustedReader(req) ? null : timer.nextRun(
         await config.getValue("cron"),
         {
             // The quiet window too, or the countdown names a test the scheduler
@@ -191,7 +193,7 @@ app.get("/status", password(true), async (req, res) => {
     // normalised here and a failure is told apart by the key being present.
     const lastTest = latest ? {...latest, failed: isFailedTest(latest)} : null;
 
-    if (req.viewMode) stripConnectionIdentity(lastTest);
+    if (isUntrustedReader(req)) stripConnectionIdentity(lastTest);
 
     res.json({
         paused: pauseController.currentState,
@@ -239,7 +241,7 @@ app.get("/:id", password(true), async (req, res) => {
     let test = await tests.getOne(req.params.id);
     if (test === null) return res.status(404).json({message: "Speedtest not found"});
 
-    if (req.viewMode) stripConnectionIdentity(test);
+    if (isUntrustedReader(req)) stripConnectionIdentity(test);
 
     res.json(test);
 });
