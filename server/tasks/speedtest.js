@@ -250,7 +250,15 @@ const execute = async (type, retried) => {
             // error wants, and the setting may have changed by the time they look.
             let testResult = await tests.create({ping: FAILED, download: FAILED, upload: FAILED, time: null,
                 serverId: 0, type, error: message, provider: mode});
-            await sendError(failedPayload({...testResult, provider: mode, error: message}));
+            // Not awaited, the way the success path above does it. triggerEvent
+            // works through the integrations one at a time and each outbound
+            // call has a ten second timeout, so a few endpoints that have gone
+            // unreachable - the very situation this notification describes -
+            // held the run open for the sum of their timeouts. The finally
+            // below still ran, but "the run is over" arrived a minute late, and
+            // the next scheduled test was refused for all of it.
+            sendError(failedPayload({...testResult, provider: mode, error: message})).catch(err =>
+                console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
             console.log(`Test #${testResult.id} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
         } finally {
             setRunning(false, false);
