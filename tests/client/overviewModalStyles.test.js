@@ -31,6 +31,46 @@ describe("the overview chart stylesheet", () => {
         assert.ok(trimming.length > 0, "no container query trims the card at all any more");
     });
 
+    /**
+     * Including whether the row may wrap at all, which is the one that was left
+     * behind.
+     *
+     * The trims were converted from viewport figures to container queries so an
+     * enlarged view would be "simply a wide container" - but `flex-wrap: wrap`
+     * stayed on `@media (max-width: 1500px)`. That combination is the worst of
+     * both: in the modal the list is wide, so no trim matches and every row keeps
+     * its icon and its full description - while the viewport is under 1500px, so
+     * the row is still allowed to wrap. The longest row then put its figure on a
+     * line of its own, left-aligned under the icon, while every other row kept
+     * its value on the right.
+     *
+     * Reported from a real window at 950px and again at 644px, on the Ping row -
+     * "Average latency, between 8 ms and 21 ms" is the longest description the
+     * card carries, and its value is the only one of those wearing a delta.
+     */
+    it("leaves the row's wrapping to the container too", () => {
+        for (const {condition, body} of mediaBlocks(compiled))
+            assert.doesNotMatch(body, /flex-wrap/,
+                `"${condition}" decides whether a row wraps from the viewport, `
+                + "so the modal wraps a value it has room for");
+    });
+
+    it("still lets the tightest card stack its rows", () => {
+        const wrapping = containerBlocks(compiled)
+            .filter(({body}) => /flex-wrap:\s*wrap/.test(body));
+
+        assert.equal(wrapping.length, 1,
+            "no container step allows the wrap, so the narrowest card cannot stack its rows");
+
+        const at = parseFloat(wrapping[0].condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]);
+        const steps = containerBlocks(compiled)
+            .map(({condition}) => parseFloat(condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]))
+            .filter(Number.isFinite);
+
+        assert.equal(at, Math.min(...steps),
+            "the wrap is allowed above the tightest step, where the row still has room to sit on one line");
+    });
+
     it("establishes the list the trims measure", () => {
         const items = rules(compiled).find(({selector}) => selector === ".overview-items");
 

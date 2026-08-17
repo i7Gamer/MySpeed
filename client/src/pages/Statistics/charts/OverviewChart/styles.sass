@@ -28,11 +28,6 @@
   // inline size is the card's (width: 100%), not its contents'.
   container-type: inline-size
 
-@media screen and (max-width: 1500px)
-  .overview-items .panel-row
-    flex-wrap: wrap
-    flex-direction: row
-
 // Card-only trimming, and only this card's. Its labels are the page's longest -
 // "Peak-hour slowdown" over "Between the fastest and slowest hour of the day" -
 // where the other panels name a single measurement in a word. So the row that
@@ -103,6 +98,25 @@ $overview-wrap: 20rem
 // fixed fraction wraps "Total tests" onto two lines to reserve room the number
 // beside it never wanted.
 @container (width < #{$overview-wrap})
+  // And here, finally, the row may break. This was the one rule left keyed on
+  // the viewport - `@media (max-width: 1500px)` - after the trims were converted
+  // to container queries so that "an enlarged view is simply a wide container".
+  //
+  // That combination is the worst of both. In the modal the list is wide, so no
+  // trim matches and every row keeps its icon and its whole description, while
+  // the viewport is under 1500px, so the row is still allowed to wrap. The
+  // longest row then dropped its figure onto a line of its own, left-aligned
+  // under the icon - space-between puts a lone item on a wrapped line at the
+  // start - while every other row kept its value on the right. Reported at 950px
+  // and again at 644px, on Ping: the longest description the card carries, and
+  // the only one of those values wearing a delta.
+  //
+  // Down here the icon is gone and the label already takes two lines, so a row
+  // that still cannot fit both has nowhere left to take the room from, and
+  // stacking is the honest answer rather than an ellipsis over the figure.
+  .overview-items .panel-row
+    flex-wrap: wrap
+
   .overview-items .panel-row .panel-row-icon
     display: none
   .overview-items .panel-row .panel-row-info
