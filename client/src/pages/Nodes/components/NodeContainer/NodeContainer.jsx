@@ -112,6 +112,10 @@ export const NodeContainer = (node) => {
     const updatePassword = () => promptUntilAccepted(
         (previous) => alert.openInput(t("nodes.password_outdated"), {
             inputType: "password",
+            // Required, like the admin login's prompt. Without it an empty
+            // answer reads as a cancel, so a stray Enter closed the prompt with
+            // nothing said and the card left in its error state.
+            required: true,
             description: previous
                 ? <span className="icon-red">{t("dialog.password.wrong")}</span>
                 : t("nodes.update_password"),
@@ -119,7 +123,20 @@ export const NodeContainer = (node) => {
             buttonText: t("dialog.update")
         }),
         async (password) => {
-            const res = await (await baseRequest(`/nodes/${node.id}/password`, "PATCH", {password})).json();
+            let res;
+
+            // promptUntilAccepted catches nothing and this loop is started from
+            // a bare call, so a rejection here was an unhandled rejection and
+            // the prompt simply disappeared. baseRequest rejects on a dropped
+            // connection and on its own ten second abort, and .json() rejects on
+            // any body that is not JSON. Neither is a wrong password, so the
+            // loop ends with the reason on screen rather than asking again.
+            try {
+                res = await (await baseRequest(`/nodes/${node.id}/password`, "PATCH", {password})).json();
+            } catch {
+                updateToast(t("nodes.messages.not_reachable"), "red", faExclamationTriangle);
+                return {ok: true};
+            }
 
             // A node too busy to check the password has not rejected it, and
             // re-asking would tell the operator a correct password is wrong for
