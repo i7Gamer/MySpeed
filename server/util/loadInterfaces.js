@@ -85,27 +85,98 @@ export const probeAddress = (address, family, {request = https.request, Agent = 
     }).finally(() => agent.destroy());
 };
 
-export const requestInterfaces = async () => {
-    let interfacesNode = os.networkInterfaces();
-    let interfacesResult = {};
+/**
+ * Probes every external address an adapter reports, and keeps the ones that
+ * answered.
+ *
+ * All at once, not one after another. Each probe is a network round trip that
+ * ends on an answer or on PROBE_TIMEOUT, and they are independent by
+ * construction - so awaiting them in turn cost a round the number of addresses
+ * times five seconds. index.js awaits this before app.listen(), which makes that
+ * time the port is not open: a Windows host carrying Hyper-V, a VPN and Docker
+ * adapters that answer nothing took the better part of a minute to start
+ * serving, with nothing on screen to say what it was waiting for.
+ *
+ * Promise.all keeps the results in the order the addresses were given, which
+ * resolveInterfaces relies on when it picks one.
+ *
+ * `probe` is injected so this is testable without the network.
+ */
+export const probeAll = async (adapters, probe = probeAddress) => {
+    const pending = [];
 
-    console.log("Looking for network interfaces...");
-    for (let i in interfacesNode) {
-        for (let j in interfacesNode[i]) {
-            let address = interfacesNode[i][j];
-
+    for (const [name, addresses] of Object.entries(adapters))
+        for (const address of addresses) {
             if (address.internal) continue;
 
-            const answered = await probeAddress(address.address, address.family === "IPv4" ? 4 : 6);
-
-            if (answered) {
-                if (!interfacesResult[i]) interfacesResult[i] = [];
-                interfacesResult[i].push(address.address);
-            }
+            pending.push(probe(address.address, address.family === "IPv4" ? 4 : 6)
+                .then((answered) => ({name, address: address.address, answered})));
         }
 
-        if (!interfacesResult[i]) delete interfacesResult[i];
+    const probed = {};
+
+    for (const {name, address, answered} of await Promise.all(pending)) {
+        if (!answered) continue;
+
+        if (!probed[name]) probed[name] = [];
+        probed[name].push(address);
     }
+
+    return probed;
+};
+
+/**
+ * How many consecutive rounds the configured adapter has to be missing before
+ * its absence is written to the configuration.
+ *
+ * The write is one-way - nothing else sets this key, and the guard reads the
+ * replacement as present ever after - so a single round's absence must not
+ * trigger it. One round is what a tunnel being restarted looks like: WireGuard
+ * removes the interface outright, so `wg-quick down` landing on the hourly
+ * refresh permanently repointed every later measurement off the VPN and onto the
+ * bare WAN link, showing the new choice as though the operator had made it.
+ *
+ * Three rounds is three hours at the refresh interval, which no restart lasts
+ * and no genuinely removed adapter comes back from.
+ */
+export const ROUNDS_BEFORE_FALLBACK = 3;
+
+/**
+ * Whether the configured adapter's absence has lasted long enough to act on.
+ *
+ * Pure, so the rule can be read and tested without a database or a network.
+ *
+ * @param currentInterface the configured adapter, if any
+ * @param available        the adapter names this round found usable
+ * @param missingRounds    how many consecutive rounds it has been missing
+ * @returns the new run length, and the adapter to write - or null to leave the
+ *          configuration alone
+ */
+export const resolveFallback = (currentInterface, available, missingRounds) => {
+    if (available.includes(currentInterface)) return {missingRounds: 0, write: null};
+
+    // Nothing pinned is not a choice to protect: a fresh install picks one on
+    // its first round, as it always did.
+    const waited = currentInterface ? missingRounds + 1 : ROUNDS_BEFORE_FALLBACK;
+
+    if (waited < ROUNDS_BEFORE_FALLBACK) return {missingRounds: waited, write: null};
+
+    // With nothing detected there is nothing to move to, and overwriting a good
+    // setting with undefined is worse than leaving it.
+    return {missingRounds: 0, write: available[0] ?? null};
+};
+
+// The run of consecutive rounds the configured adapter has been missing for.
+let missingRounds = 0;
+
+/** Forgets the run of absences. Exists so tests do not carry one between them. */
+export const resetMissingRounds = () => { missingRounds = 0; };
+
+export const requestInterfaces = async () => {
+    const interfacesNode = os.networkInterfaces();
+
+    console.log("Looking for network interfaces...");
+    const interfacesResult = await probeAll(interfacesNode);
 
     const resolved = resolveInterfaces(interfaces, interfacesResult, Object.keys(interfacesNode));
 
@@ -121,22 +192,25 @@ export const requestInterfaces = async () => {
 
     const currentInterface = await config.getValue("interface");
 
-    if (!interfaces[currentInterface]) {
-        if (!currentInterface) {
-            console.warn("No interface set. Falling back to default.");
-        } else {
-            console.warn(`Interface ${currentInterface} not found. Falling back to default.`);
-        }
+    const decision = resolveFallback(currentInterface, Object.keys(interfaces), missingRounds);
+    missingRounds = decision.missingRounds;
 
-        // Only when there is something to fall back to: with nothing detected
-        // this still claimed a fallback had happened and announced a
-        // configUpdated event carrying `undefined` to every integration.
-        const fallback = Object.keys(interfaces)[0];
-        if (fallback === undefined) {
+    if (decision.write === null) {
+        if (!interfaces[currentInterface] && currentInterface)
+            console.warn(`Interface ${currentInterface} was not found this round ` +
+                `(${missingRounds}/${ROUNDS_BEFORE_FALLBACK}). Keeping it for now.`);
+        else if (!currentInterface)
             console.warn("No usable network interface was found; keeping the configured one.");
-            return;
-        }
 
-        await config.updateValue("interface", fallback);
+        return;
     }
+
+    // The old value is named, because this is the one place the operator's own
+    // choice is overwritten by the server and nothing records what it was.
+    console.warn(currentInterface
+        ? `Interface ${currentInterface} has been missing for ${ROUNDS_BEFORE_FALLBACK} rounds. ` +
+          `Falling back to ${decision.write}.`
+        : `No interface set. Falling back to ${decision.write}.`);
+
+    await config.updateValue("interface", decision.write);
 };
