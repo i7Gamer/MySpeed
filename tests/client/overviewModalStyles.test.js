@@ -79,6 +79,45 @@ describe("the overview chart stylesheet", () => {
             `the card keeps its descriptions down to ${trim}rem, where the row breaks under them`);
     });
 
+    /**
+     * And the two steps give up different things.
+     *
+     * They used to go together: the trim step hid the icon along with the
+     * description and pinned the label to a fixed 15rem. The icon costs 52px
+     * and every panel on the page carries one, so a summary without it beside a
+     * stability card with them reads as a different kind of card rather than a
+     * tighter one - and the pin reserved 240px whether the label wanted it or
+     * not, which is more than a ~300px row has once its figure is placed.
+     * Measured, four of five rows put their value under the label at 380px.
+     */
+    it("gives up the description a step before the icon", () => {
+        const steps = containerBlocks(compiled)
+            .map(({condition, body}) => ({
+                at: parseFloat(condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]),
+                body
+            }))
+            .filter(({at}) => Number.isFinite(at))
+            .sort((a, b) => b.at - a.at);
+
+        assert.equal(steps.length, 2, "the card no longer has two steps to order");
+
+        const hides = (step, part) => new RegExp(`\\.panel-row-${part}\\s*\\{[^}]*display:\\s*none`)
+            .test(step.body);
+
+        assert.ok(hides(steps[0], "description"), "the wider step no longer drops the descriptions");
+        assert.ok(!hides(steps[0], "icon"),
+            "the icon goes with the descriptions again, which is 52px given up for nothing");
+        assert.ok(hides(steps[1], "icon"), "nothing ever drops the icon, so the tightest label has no room");
+    });
+
+    // The pin the label used to wear between the two steps, and the rules that
+    // existed only to undo it. The shared row already cuts a label that will
+    // not fit; the pin only ever made the row wider than it had to be.
+    it("leaves the label unpinned between them", () => {
+        assert.doesNotMatch(compiled, /\.panel-row-title\s*\{[^}]*width:\s*15rem/,
+            "the label is pinned to a fixed width again, which pushes its figure onto a second line");
+    });
+
     it("needs no modal guard once geometry decides", () => {
         assert.doesNotMatch(compiled, /chart-modal-body/,
             "the guard is back, which means something other than the card's own width decides");

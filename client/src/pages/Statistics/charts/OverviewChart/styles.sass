@@ -66,20 +66,27 @@
 // where they do not.
 $overview-trim: 30rem
 
-// And where the title wraps rather than cuts - the old 1000px figure's ~340px
-// card, converted the same way. Below this the description is hidden too, so
-// the label is all a row has left.
-$overview-wrap: 18.5rem
+// And where the label gives up its line, and the icon beside it goes.
+//
+// It was 18.5rem, and between it and the trim above, the label was pinned to a
+// fixed 15rem: 240px reserved whether the label wanted it or not, plus the
+// figure beside it, which is more than a row of ~300px has. So the value
+// dropped onto a line of its own under the label, on some rows and not others -
+// measured, four of the five rows at 380px and one at 460, against neighbouring
+// cards drawing theirs perfectly well. The pin bought nothing the shared row
+// does not already do: it ellipsises a label that will not fit, and the value
+// beside it neither wraps nor shrinks.
+//
+// 20rem is where the label and its figure genuinely stop sharing a line -
+// measured at 318px of list with the longest of them, and rounded up for a
+// longer language. Below it the label wraps rather than cutting, which is what
+// the icon's 52px are given up for.
+$overview-wrap: 20rem
 
+// Only the descriptions. The icon costs 52px and is what every panel on the
+// page carries, so a summary that drops it while the stability card beside it
+// keeps its own reads as a different kind of card rather than a tighter one.
 @container (width < #{$overview-trim})
-  .overview-items .panel-row .panel-row-icon
-    display: none
-  .overview-items .panel-row .panel-row-title
-    display: inline-block
-    width: 15rem
-    white-space: nowrap
-    overflow: hidden !important
-    text-overflow: ellipsis
   .overview-items .panel-row .panel-row-description
     display: none
   // One step down with them: the card is carrying five rows in the room it
@@ -87,16 +94,17 @@ $overview-wrap: 18.5rem
   .overview-items .panel-row .panel-row-value
     font-size: row.$panel-value-size-narrow
 
-// Wrapped rather than cut. 15rem holds "Average duration" and stops one letter
-// into "Peak-hour slowdown", and a row label that ends in an ellipsis names a
-// measurement the reader has to guess at - in the tightest cards, where the
-// description under it is hidden too, the label is all there is. A second line
-// costs the card 20px; the ellipsis cost it the row's meaning.
+// Wrapped rather than cut. A row label that ends in an ellipsis names a
+// measurement the reader has to guess at - and down here, where the description
+// under it is hidden too, the label is all there is. A second line costs the
+// card 20px; the ellipsis cost it the row's meaning.
 //
 // The label takes what the value does not, rather than a share of its own: a
 // fixed fraction wraps "Total tests" onto two lines to reserve room the number
 // beside it never wanted.
 @container (width < #{$overview-wrap})
+  .overview-items .panel-row .panel-row-icon
+    display: none
   .overview-items .panel-row .panel-row-info
     flex: 1 1 auto
     min-width: 0
@@ -104,8 +112,10 @@ $overview-wrap: 18.5rem
     // the width of its text. Given the row to grow into, a label that starts in
     // the middle of the card reads as a value that lost its number.
     justify-content: flex-start
+  // The shared row keeps its labels on one line and cuts what will not fit;
+  // this is the one width where a second line is worth more than the ellipsis.
+  // No !important and no width: those undid the 15rem pin the step above used
+  // to set, and there is no pin left to undo.
   .overview-items .panel-row .panel-row-title
-    width: auto
     white-space: normal
-    overflow: visible !important
-    text-overflow: clip
+    overflow: visible
