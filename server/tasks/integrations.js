@@ -2,6 +2,7 @@ import schedule from 'node-schedule';
 import { triggerEvent } from "../controller/integrations.js";
 import { getLatest } from "../controller/speedtests.js";
 import { isFailedTest } from "../util/testOutcome.js";
+import errorHandler from "../util/errorHandler.js";
 
 let currentState = "ping";
 let job;
@@ -67,8 +68,11 @@ export const startTimer = () => {
     // closed, since the signal path closes the handle before the process
     // leaves. Uncaught, that reached index.js's unhandledRejection handler and
     // was reported as a server fault, once a minute.
+    //
+    // Reported through errorHandler rather than console.error, so it still
+    // reaches data/logs/error.log the way the unhandledRejection route did.
     job = schedule.scheduleJob('* * * * *', () => sendCurrent().catch(err =>
-        console.error(`Could not send the keep-alive: ${err?.message ?? err}`)));
+        errorHandler(err, {fatal: false, context: "Could not send the keep-alive"})));
 };
 
 export const stopTimer = () => {

@@ -20,17 +20,19 @@ before(() => {
 
 after(() => fs.rmSync(workingDir, {recursive: true, force: true}));
 
-const runHandler = (options) => new Promise((resolve) => {
+const runHandler = (options, thrown = 'new Error("boom")') => new Promise((resolve) => {
     const script = `
         process.chdir(${JSON.stringify(workingDir)});
         const {default: errorHandler} = await import(${JSON.stringify(HANDLER)});
-        errorHandler(new Error("boom")${options ? `, ${options}` : ""});
+        errorHandler(${thrown}${options ? `, ${options}` : ""});
         setTimeout(() => console.log("survived"), 250);
     `;
 
     execFile(process.execPath, ["--input-type=module", "-e", script], (error, stdout, stderr) =>
         resolve({code: error?.code ?? 0, stdout, stderr}));
 });
+
+const logContents = () => fs.readFileSync(path.join(workingDir, "data", "logs", "error.log"), "utf8");
 
 describe("errorHandler", () => {
     it("logs the message either way", async () => {
@@ -40,8 +42,69 @@ describe("errorHandler", () => {
 
     it("writes the error to the log file", async () => {
         await runHandler("{fatal: false}");
-        const log = fs.readFileSync(path.join(workingDir, "data", "logs", "error.log"), "utf8");
-        assert.match(log, /boom/);
+        assert.match(logContents(), /boom/);
+    });
+
+    /**
+     * What was being attempted, which the message alone does not say.
+     *
+     * The scheduled jobs catch their own rejections now, and a bare
+     * console.error there would have kept them out of this file entirely - the
+     * one an operator is pointed at from the log's own header. Reported through
+     * here instead, with the job's name, so the record is both kept and legible:
+     * "Could not open the database" says nothing about which of the two
+     * schedules was the one that could not.
+     */
+    describe("context", () => {
+        it("names what was happening on the console", async () => {
+            const {stderr} = await runHandler('{fatal: false, context: "The scheduled speedtest failed"}');
+
+            assert.match(stderr, /The scheduled speedtest failed: boom/);
+            assert.doesNotMatch(stderr, /An error occurred/, "the generic wording was kept as well");
+        });
+
+        it("keeps it in the log file too", async () => {
+            await runHandler('{fatal: false, context: "The scheduled speedtest failed"}');
+
+            const entry = logContents();
+            assert.match(entry, /The scheduled speedtest failed/);
+            assert.match(entry, /boom/, "the error itself was replaced rather than introduced");
+        });
+
+        it("falls back to its own wording when given none", async () => {
+            assert.match((await runHandler("{fatal: false}")).stderr, /An error occurred: boom/);
+        });
+    });
+
+    /**
+     * A rejection is not always an Error.
+     *
+     * `throw "…"` and a rejected promise carrying a plain object both reach the
+     * catches that report through here, and `.message` on either is undefined -
+     * so the console line read "An error occurred: undefined" and the log
+     * recorded the same nothing. index.js already normalises before calling
+     * this; the scheduled jobs would each have had to remember to.
+     */
+    describe("something that is not an Error", () => {
+        it("reports a thrown string", async () => {
+            const {stderr} = await runHandler("{fatal: false}", '"a bare string"');
+
+            assert.match(stderr, /a bare string/);
+            assert.doesNotMatch(stderr, /undefined/);
+        });
+
+        it("writes it to the log file rather than nothing", async () => {
+            await runHandler("{fatal: false}", '"a bare string"');
+
+            assert.match(logContents(), /a bare string/);
+        });
+
+        it("survives being handed nothing at all", async () => {
+            const {code, stdout} = await runHandler("{fatal: false}", "undefined");
+
+            assert.equal(code, 0, "the reporter itself threw");
+            assert.match(stdout, /survived/);
+        });
     });
 
     describe("fatal", () => {
