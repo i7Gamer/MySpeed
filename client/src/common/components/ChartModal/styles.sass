@@ -1,5 +1,7 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/layout" as *
+// The sizes only, not the row's rules - see that partial for why.
+@use "@/pages/Statistics/components/PanelRow/variables" as row
 
 // The dialog was capped at 1400px on every display, so opening a chart on a
 // 1440p or 4K screen used barely half the room available - the detail view was
@@ -224,6 +226,13 @@ $overview-gap: 3rem
   .panel-row-description > *
     white-space: normal
 
+  // The label first, which is the one that matters more: a cut description
+  // loses the end of a sentence, where a cut label leaves the reader guessing
+  // which measurement the figure beside it belongs to. Measured on a 375px
+  // screen, the opened value cards cut "Maximum" by 16px and "Minimum" by 2.
+  .panel-row-title
+    white-space: normal
+
   .consistency-container
     gap: 2rem
     flex: none
@@ -385,8 +394,22 @@ $overview-gap: 3rem
 @media screen and (max-width: 500px)
   .chart-modal-content
     border-radius: 0.75rem
-    
+
   .chart-modal-body
+    // And the value cards give their figure back a step, which the wrapping
+    // above cannot do for them: their labels are one word, and a word has
+    // nowhere to break.
+    //
+    // Those cards state the figure one step down and exempt this view, on the
+    // grounds that "opened, the card has the width of the dialog" - true while
+    // the dialog is the wider of the two, and false at the bottom of the range.
+    // At 375px the enlarged card is 317px inside its padding, and the figure at
+    // full size leaves 78px for "Maximum", which wants 94: measured cut by 16,
+    // with "Minimum" beside it cut by 2. The room has to come from the figure,
+    // and the step it takes is the card's own rather than a third size.
+    .value-container .panel-row-value
+      font-size: row.$panel-value-size-narrow
+
     &.modal-body-chart
       .chart-container
         min-height: min(45vh, 280px)

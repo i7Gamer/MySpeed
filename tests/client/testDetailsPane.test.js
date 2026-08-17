@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as sass from "sass";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { mediaBlocks } from "../helpers/sass.mjs";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const CLIENT_SRC = path.join(ROOT, "client", "src");
@@ -369,6 +370,48 @@ describe("the chart modal", () => {
         assert.notEqual(wrap, null,
             "the enlarged view keeps the card's ellipsis, so a description ends in one on a scrolling dialog");
         assert.match(wrap[1], /white-space:\s*normal/);
+    });
+
+    /**
+     * And its labels before its descriptions, which is the order they matter in.
+     *
+     * A cut description loses the end of a sentence; a cut label leaves the
+     * reader guessing which measurement the figure beside it belongs to.
+     * Measured on a 375px screen: the opened value cards cut "Maximum" by 16px
+     * and "Minimum" by 2, so a phone read "Maximu..." over a number.
+     */
+    it("wraps a label there too, rather than leaving a measurement unnamed", () => {
+        const wrap = compiled.match(/\.chart-modal-body \.panel-row-title\s*\{([^}]*)}/);
+
+        assert.notEqual(wrap, null, "the enlarged view cuts a row's label like a card does");
+        assert.match(wrap[1], /white-space:\s*normal/);
+    });
+
+    /**
+     * Which a one-word label cannot use, so on a phone the value cards give
+     * their figure back a step instead.
+     *
+     * Their own stylesheet steps the figure down on the card and exempts the
+     * dialog - "opened, the card has the width of the dialog" - which holds only
+     * while the dialog is the wider of the two. At the bottom of the range it is
+     * not: at 375px the enlarged card is 317px inside its padding, and the
+     * figure at full size leaves 78px for "Maximum", which wants 94. Wrapping
+     * does not save a label with nowhere to break, so the room has to come from
+     * the figure beside it - the same step the card itself takes, at the width
+     * the card would be taking it.
+     */
+    it("gives the value cards' figure back a step where the dialog is that narrow", () => {
+        const stepped = mediaBlocks(compiled)
+            .filter(({body}) => /\.value-container \.panel-row-value\s*\{[^}]*font-size/.test(body));
+
+        assert.equal(stepped.length, 1,
+            "the enlarged value cards state one figure size at every width, including the phone's");
+
+        const at = Number(stepped[0].condition.match(/max-width:\s*(\d+)px/)?.[1]);
+        assert.ok(Number.isFinite(at) && at <= 520,
+            `the figure holds its full size down to ${at}px, past where the label beside it is cut`);
+        assert.match(stepped[0].body, /font-size:\s*1\.4rem/,
+            "the enlarged card steps to a size of its own rather than the one the card uses");
     });
 
     /**
