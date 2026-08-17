@@ -1,11 +1,13 @@
+import { isPreviewInstance } from "../util/previewMode.js";
+
 // Methods that cannot change anything, and so need no guard.
 const SAFE_METHODS = ["GET", "HEAD", "OPTIONS"];
 
 const DEFAULT_MESSAGE = "You can't change anything on this instance in preview mode";
 
-const refuses = (message) => (req, res, next) => {
-    if (process.env.PREVIEW_MODE !== "true") return next();
-    if (SAFE_METHODS.includes(req.method)) return next();
+const refuses = (message, {allowReads = true} = {}) => (req, res, next) => {
+    if (!isPreviewInstance()) return next();
+    if (allowReads && SAFE_METHODS.includes(req.method)) return next();
 
     return res.status(403).json({message});
 };
@@ -39,5 +41,22 @@ const refuses = (message) => (req, res, next) => {
 const previewReadOnly = refuses(DEFAULT_MESSAGE);
 
 previewReadOnly.saying = (message) => refuses(message);
+
+/**
+ * Refuses a route on a demo whatever the method, reads included.
+ *
+ * The exemption above is right for the instance's own data - reading is what a
+ * demo is for - and wrong for a route that reads something else. The node proxy
+ * reaches a *different machine* and substitutes that machine's stored password
+ * on the way, so a GET there is not a read of the demo at all: it is an
+ * authenticated read of somebody's other server, answered by a far end that
+ * cannot tell it is serving a stranger. Every redaction this instance applies
+ * to its own routes was reachable, unredacted, through that one door.
+ *
+ * A separate name rather than a flag on `saying`, so choosing it is a decision
+ * with a word for it: sealing a route costs a demo something real, and it
+ * should only be done where a read is not what it looks like.
+ */
+previewReadOnly.blocking = (message) => refuses(message, {allowReads: false});
 
 export default previewReadOnly;

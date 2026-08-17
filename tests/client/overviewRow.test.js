@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    convertSpeed, formatLatency, formatShortDay, formatShortTime, formatWhole, SPEED_UNIT_MBYTES
+    convertSpeed, formatLatency, formatShortTime, formatWhole, SPEED_UNIT_MBYTES
 } from "@/common/utils/FormatUtil.js";
 import { getIconBySpeed } from "@/common/utils/TestUtil.js";
 import { clickable } from "@/common/utils/Clickable.js";
@@ -287,15 +287,20 @@ describe("the failure line on a stacked row", () => {
  * there is no sentence around it, and nothing in the string says what it
  * prefixes. Shortening it would leave every one of those still wrong.
  *
- * Nothing goes with it. The two formats already say which row is which - a
- * named day where the row stands for a day, a clock time otherwise - and the
- * icon beside them says the cell is a time. The last test below is that
- * distinction, which the word had been the redundant half of.
+ * Nothing goes with it. The cell prints a clock time and the icon beside it
+ * says so, which is the whole of what the word was adding.
+ *
+ * It used to have a second format to tell apart - a named day, for rows that
+ * stood for a whole day - and the preposition switched between "on" and "at" to
+ * match. Those rows have not existed since listAverage was removed from the
+ * speedtest controller in June 2025, so the branch was choosing between one
+ * reachable format and one that nothing could produce. It is gone with the
+ * word; the last two tests below are what keep it gone.
  */
 describe("what the row's date cell prints", () => {
     const CELL = 'className="date-text"';
 
-    const LABEL_START = "let isAverage";
+    const LABEL_START = "let timeString";
     const LABEL_END = "const pingValue";
 
     // The expression the cell draws, taken as written. What is wrong with a
@@ -315,8 +320,8 @@ describe("what the row's date cell prints", () => {
 
     /**
      * The label itself, lifted out and run - the same treatment the printed
-     * figures below get, and for the same reason: which formatter a row reaches
-     * for is only observable by handing it a row.
+     * figures below get, and for the same reason: what a row's label comes out
+     * as is only observable by handing it a row.
      */
     const labelled = (props, preferences = {}) => {
         const start = row.indexOf(LABEL_START);
@@ -325,9 +330,8 @@ describe("what the row's date cell prints", () => {
         const end = row.indexOf(LABEL_END, start);
         assert.notEqual(end, -1, `${LABEL_END} no longer follows it`);
 
-        return new Function("props", "preferences", "formatShortDay", "formatShortTime",
-            `${row.slice(start, end)}\nreturn timeString;`)(
-            props, preferences, formatShortDay, formatShortTime);
+        return new Function("props", "preferences", "formatShortTime",
+            `${row.slice(start, end)}\nreturn timeString;`)(props, preferences, formatShortTime);
     };
 
     it("draws the formatted date alone", () => {
@@ -340,18 +344,34 @@ describe("what the row's date cell prints", () => {
             "the row reads a time.* string again - the prefix that wrapped the cell in half the languages");
     });
 
-    // Asserted against the clock rather than against a month name: the label
-    // goes through toLocaleDateString, so what August is called depends on the
-    // machine the suite runs on. What matters is that the two branches are
-    // still telling two different kinds of row apart.
-    it("still tells a day's average from a single test by its format alone", () => {
-        const afternoon = new Date(2026, 7, 15, 14, 32);
-        const day = labelled({type: "average", time: afternoon});
+    it("prints a clock time", () => {
+        assert.equal(labelled({time: new Date(2026, 7, 15, 14, 32)}), "14:32");
+    });
 
-        assert.equal(labelled({time: afternoon}), "14:32");
-        assert.notEqual(day, "14:32",
-            "an averaged row is labelled with a time, and nothing else on it says it stands for a whole day");
-        assert.match(day, /15/, "the averaged row no longer names the day it covers");
+    /**
+     * And one whatever the row claims to be.
+     *
+     * `type` is a database column, and a row carrying "average" was once drawn
+     * as a named day instead. The controller stopped producing those rows when
+     * listAverage was removed in June 2025 - the importer will not accept the
+     * value either, taking only "auto" and "custom" - so for a year the row
+     * carried a formatter that could not be reached. A stored row saying
+     * otherwise must not bring the second format back.
+     */
+    it("prints one whatever type the row carries", () => {
+        const afternoon = new Date(2026, 7, 15, 14, 32);
+
+        for (const type of ["auto", "custom", "average", undefined])
+            assert.equal(labelled({type, time: afternoon}), "14:32", `failed for type ${String(type)}`);
+    });
+
+    // Both ends of the plumbing, so neither the branch nor the prop feeding it
+    // comes back on its own.
+    it("is handed no row type to branch on", () => {
+        assert.doesNotMatch(row, /props\.type/,
+            "the row reads a type column again - the last one it branched on had no producer for a year");
+        assert.doesNotMatch(area, /type=\{test\.type\}/,
+            "the list passes a type the row does not read");
     });
 });
 
@@ -389,9 +409,8 @@ describe("the room the date column gives its label", () => {
     const source = styles.replace(/\r/g, "");
 
     // Measured, Chrome, at the font size each tier sets on .date-text: 32px at
-    // the base tier and 24px below 1400px. "10:44 AM" is the widest of every
-    // clock time at both, ahead of the widest 24-hour time and the widest named
-    // day the averaged branch would print.
+    // the base tier and 24px below 1400px. "10:44 AM" is the widest of all 1440
+    // clock times at both, and comfortably wider than the widest 24-hour one.
     const WIDEST_LABEL = {base: 147, narrow: 110};
 
     // The clock glyph beside it, which the flex row lays out before the text.

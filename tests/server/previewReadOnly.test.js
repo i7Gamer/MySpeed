@@ -1,9 +1,7 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import previewReadOnly from "../../server/middlewares/previewReadOnly.js";
+import { findMounts, listSources, mountText, readSource } from "../helpers/source.js";
 
 /**
  * What a visitor to a public demo is allowed to change, which is nothing that
@@ -116,8 +114,6 @@ describe("previewReadOnly", () => {
  * which is the failure this list exists to make loud.
  */
 describe("nothing destructive is left open on a demo", () => {
-    const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-    const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
     /**
      * Every route that can change something, found rather than listed.
@@ -132,7 +128,7 @@ describe("nothing destructive is left open on a demo", () => {
      * So the list is derived from the source: every mutating verb mounted in
      * server/routes, minus the one deliberate exemption below.
      */
-    const MUTATING_ROUTE = /^app\.(post|put|patch|delete|all)\((?:\s*)(["'`])(.*?)\2/gm;
+    const MUTATING_VERBS = ["post", "put", "patch", "delete", "all"];
 
     /**
      * The deliberate exemptions, each for a stated reason.
@@ -149,17 +145,12 @@ describe("nothing destructive is left open on a demo", () => {
         {file: "server/routes/session.js", route: "/"}
     ];
 
-    const routeFiles = fs.readdirSync(path.join(root, "server", "routes"))
-        .filter((name) => name.endsWith(".js"))
-        .map((name) => `server/routes/${name}`);
+    const routeFiles = listSources("server/routes").map((name) => `server/routes/${name}`);
 
-    const GUARDED = routeFiles.flatMap((file) => {
-        const source = read(file);
-
-        return [...source.matchAll(MUTATING_ROUTE)]
-            .map(([match, , , route]) => ({file, route, at: source.indexOf(match)}))
-            .filter(({route}) => !ALLOWED.some((allowed) => allowed.file === file && allowed.route === route));
-    });
+    const GUARDED = routeFiles.flatMap((file) =>
+        findMounts(readSource(file), MUTATING_VERBS)
+            .map(({route, text}) => ({file, route, text}))
+            .filter(({route}) => !ALLOWED.some((allowed) => allowed.file === file && allowed.route === route)));
 
     it("finds the mutating routes to check", () => {
         // A guard against the scan itself silently matching nothing - which
@@ -177,25 +168,251 @@ describe("nothing destructive is left open on a demo", () => {
      * visitors come for. Read-only would be the simpler rule and the wrong one.
      */
     it("still lets a visitor run a test", () => {
-        const source = read("server/routes/speedtests.js");
+        const source = readSource("server/routes/speedtests.js");
         const at = source.indexOf('app.post("/run"');
 
         assert.notEqual(at, -1, "the run route is gone");
-        assert.doesNotMatch(source.slice(at, source.indexOf("=>", at)), /previewReadOnly/,
+        assert.doesNotMatch(mountText(source, at), /previewReadOnly/,
             "running a test is what preview mode exists to demonstrate");
     });
 
-    for (const {file, route, at} of GUARDED) {
-        it(`${route} in ${path.basename(file)} is guarded`, () => {
-            const source = read(file);
-
-            // The middleware list, up to the handler - a guard placed after the
-            // work has been done is not a guard. Handlers here are arrow
-            // functions, so the first `=>` after the mount ends the list.
-            const declaration = source.slice(at, source.indexOf("=>", at));
-
-            assert.match(declaration, /previewReadOnly/,
+    for (const {file, route, text} of GUARDED) {
+        it(`${route} in ${file.split("/").pop()} is guarded`, () => {
+            // The middleware list, which is where a guard has to be: one placed
+            // after the work has been done is not a guard. findMounts bounds it
+            // at the next mount and at this route's own last argument, so a
+            // route can never be handed its neighbour's.
+            assert.match(text, /previewReadOnly/,
                 `${route} in ${file} can be called by any visitor to a demo instance`);
         });
     }
+});
+
+/**
+ * The routes a demo must not reach at all, not even to read.
+ *
+ * previewReadOnly lets GET through on purpose - reading is what a demo is for.
+ * That is the right rule for the instance's own data and the wrong one for the
+ * node proxy, which reaches a *different machine* and substitutes that
+ * machine's stored password on the way. A read there is not a read of the demo;
+ * it is an authenticated read of somebody's other server, and it walks straight
+ * past every redaction the demo applies to its own routes.
+ */
+describe("previewReadOnly.blocking", () => {
+    const blocked = (method) => {
+        const res = response();
+        let passedThrough = false;
+
+        previewReadOnly.blocking("no nodes on a demo")(request(method), res, () => { passedThrough = true; });
+        return {res, passedThrough};
+    };
+
+    it("refuses a read as well as a write on a demo", () => {
+        process.env.PREVIEW_MODE = "true";
+
+        for (const method of ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]) {
+            const {res, passedThrough} = blocked(method);
+
+            assert.equal(passedThrough, false, `${method} reached the route on a demo`);
+            assert.equal(res.statusCode, 403);
+        }
+    });
+
+    it("carries the wording it was given", () => {
+        process.env.PREVIEW_MODE = "true";
+
+        assert.equal(blocked("GET").res.body.message, "no nodes on a demo");
+    });
+
+    it("leaves an ordinary instance alone", () => {
+        for (const method of ["GET", "PUT", "DELETE"])
+            assert.equal(blocked(method).passedThrough, true, `${method} was refused off a demo`);
+    });
+
+    it("reads the setting per request", () => {
+        assert.equal(blocked("GET").passedThrough, true);
+
+        process.env.PREVIEW_MODE = "true";
+        assert.equal(blocked("GET").passedThrough, false, "the setting was captured at import");
+    });
+});
+
+/**
+ * And the proxy carries it.
+ *
+ * A source-shape check for the same reason the scan above is one: this guard is
+ * only ever wrong by being forgotten, and the route it guards is an `app.all`
+ * that looks like nothing in particular.
+ */
+describe("the node proxy is sealed on a demo", () => {
+    const source = readSource("server/routes/nodes.js");
+
+    const declarationOf = (mount) => {
+        const at = source.indexOf(mount);
+        assert.notEqual(at, -1, `${mount} is gone from server/routes/nodes.js`);
+
+        return mountText(source, at);
+    };
+
+    it("refuses the proxy whatever the method", () => {
+        assert.match(declarationOf('app.all("/:nodeId/*route"'), /previewReadOnly\.blocking/,
+            "a demo visitor can read another machine with that machine's password");
+    });
+
+    // The listing is answered rather than refused - see the route - so it must
+    // not carry the blocking guard, which would 403 the client's own poll.
+    it("still lets the listing route answer", () => {
+        assert.doesNotMatch(declarationOf('app.get("/", password(false)'), /previewReadOnly\.blocking/);
+    });
+
+    /**
+     * And it decides that through the shared predicate.
+     *
+     * A hand-written `process.env.PREVIEW_MODE === "true"` in the handler is
+     * the very shape previewReadOnly was written to replace, and this file's
+     * own history is the argument: the two routes that were missed were the two
+     * nobody remembered to copy the check onto. A copy here would also be
+     * invisible to the scan below, which only walks the mutating verbs.
+     */
+    it("decides the listing through the shared predicate", () => {
+        const listing = source.slice(source.indexOf('app.get("/", password(false)'),
+            source.indexOf('app.put("/"'));
+
+        assert.doesNotMatch(listing, /process\.env/,
+            "the guard is written out by hand again, where nothing scans for it");
+        assert.match(listing, /isUntrustedReader/);
+    });
+});
+
+/**
+ * And every read route has decided what a demo may have.
+ *
+ * The mutating routes have been held to their guard by the scan above since two
+ * of them were found open. The reads had nothing of the kind, and the count is
+ * the argument for giving them one: preview mode admits every caller, so full
+ * disclosure is the default and each route has to opt out by hand. GET /config,
+ * /integrations/active and four speedtest routes were fixed, then the node
+ * listing and the node proxy - and GET /storage/config was still answering an
+ * anonymous visitor with the admin password hash, every node password and every
+ * integration credential, with the two history downloads and the adapter list
+ * beside it.
+ *
+ * A runtime allowlist would have been the wrong shape: a demo is a working
+ * dashboard, so most of these must answer, several of them redacted rather than
+ * refused, and a blanket rule would either break the demo or say nothing. What
+ * was missing is not a rule but a decision per route - so this asserts the
+ * decision exists. A new `app.get` fails here until it is written down.
+ *
+ * The redactions themselves are held by tests/integration/previewDisclosure.
+ * This is only about there being an answer at all.
+ */
+describe("every read route decides what a demo may have", () => {
+    /**
+     * Served on a demo. Some in full, some redacted - the note says which, and
+     * previewDisclosure holds the redaction.
+     */
+    const READABLE = {
+        "config.js /": "the dashboard's own settings, with the operator's keys withheld",
+        "health.js /": "liveness, which says nothing about the instance",
+        "integrations.js /": "the registry of integration types, not anybody's rows",
+        "integrations.js /active": "the configured rows, with their credentials blanked",
+        "nodes.js /": "answers empty on a demo",
+        "opengraph.js /image": "the measurements as a picture, which is the demo's point",
+        "prometheus.js /metrics": "the measurements again, and the same server labels a viewer sees",
+        "recommendations.js /": "the target values the dashboard grades against",
+        "session.js /": "whether this caller holds a session, which is about them",
+        "speedtests.js /": "the history, with the connection identity stripped",
+        "speedtests.js /statistics": "aggregates, which carry no identity to strip",
+        "speedtests.js /export": "the redacted way to take the measurements away",
+        "speedtests.js /status": "the latest test, stripped, and no countdown",
+        "speedtests.js /:id": "one test, stripped",
+        "storage.js /": "how much disk the database uses",
+        "system.js /version": "the running version, which the footer shows",
+        "system.js /server/:provider": "the public server lists, which are the provider's"
+    };
+
+    /** Refused on a demo, and each must carry the guard that refuses it. */
+    const SEALED = {
+        "nodes.js /:nodeId/*route": "reaches another machine with that machine's password attached",
+        "storage.js /config": "the full export: the password hash, node passwords and every credential",
+        "storage.js /tests/history/json": "the raw history, which /speedtests/export serves redacted",
+        "storage.js /tests/history/csv": "the same rows in the other format",
+        "system.js /interfaces": "the adapter names GET /config withholds one of"
+    };
+
+    /**
+     * `all` as well as `get`. An app.all route answers a GET, and it satisfies
+     * the mutating scan above by carrying plain previewReadOnly - which lets
+     * reads straight through. That is the node proxy exactly: it reached
+     * another machine with that machine's password attached, and took three
+     * passes to find because a read there does not look like a read. A scan
+     * written to stop that recurring has to be able to see the verb it
+     * happened on.
+     */
+    const READ_VERBS = ["get", "all"];
+
+    /**
+     * A guard two routes share is bound to a name first, so that one refusal
+     * is worded once. The scan resolves that one level rather than pushing the
+     * routes into repeating themselves to be seen.
+     */
+    const GUARD = /previewReadOnly\.blocking/;
+    const NAMED_GUARD = /const\s+(\w+)\s*=\s*previewReadOnly\.blocking/g;
+
+    const found = listSources("server/routes")
+        .flatMap((name) => {
+            const source = readSource(`server/routes/${name}`);
+            const named = [...source.matchAll(NAMED_GUARD)].map(([, binding]) => binding);
+
+            return findMounts(source, READ_VERBS).map(({route, text}) => ({
+                key: `${name} ${route}`,
+                guarded: GUARD.test(text)
+                    || named.some((binding) => new RegExp(`\\b${binding}\\b`).test(text))
+            }));
+        });
+
+    it("finds the read routes to check", () => {
+        // Against the scan silently matching nothing, which would make every
+        // assertion below vacuous.
+        assert.ok(found.length >= 18, `only ${found.length} read routes were found`);
+    });
+
+    it("has an answer for every one of them", () => {
+        const unclassified = found
+            .map(({key}) => key)
+            .filter((key) => !Object.hasOwn(READABLE, key) && !Object.hasOwn(SEALED, key));
+
+        assert.deepEqual(unclassified, [],
+            "a read route was added without deciding what a demo visitor may have from it");
+    });
+
+    it("does not answer twice for any of them", () => {
+        const both = Object.keys(SEALED).filter((key) => Object.hasOwn(READABLE, key));
+
+        assert.deepEqual(both, [], "these two lists disagree");
+    });
+
+    // The lists cannot describe routes that are gone, or they go stale as
+    // quietly as the guard they replace.
+    it("describes only routes that exist", () => {
+        const keys = new Set(found.map(({key}) => key));
+        const missing = [...Object.keys(READABLE), ...Object.keys(SEALED)]
+            .filter((key) => !keys.has(key));
+
+        assert.deepEqual(missing, [], "these entries name routes that are no longer mounted");
+    });
+
+    for (const [key, why] of Object.entries(SEALED))
+        it(`${key} is sealed on a demo - ${why}`, () => {
+            const route = found.find((entry) => entry.key === key);
+
+            assert.equal(route.guarded, true, `${key} is listed as sealed and carries no guard`);
+        });
+
+    for (const key of Object.keys(READABLE))
+        it(`${key} still answers on a demo`, () => {
+            const route = found.find((entry) => entry.key === key);
+
+            assert.equal(route.guarded, false, `${key} is listed as readable and is sealed`);
+        });
 });

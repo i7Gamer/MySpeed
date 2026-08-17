@@ -9,6 +9,8 @@ import {
 } from '../middlewares/password.js';
 import { matchesSetupToken } from '../util/setupToken.js';
 import { isFailedTest } from '../util/testOutcome.js';
+import { createQueue } from '../util/serialiseQueue.js';
+import { clientGone } from '../util/clientGone.js';
 
 const app = express.Router();
 
@@ -191,9 +193,24 @@ const clearGauges = () => {
     currentServerGauge.remove();
 };
 
-app.get('/metrics', async (req, res) => {
-    if (!await authorizeMetrics(req, res)) return;
+/**
+ * One scrape at a time.
+ *
+ * Every gauge above is module-level and shared by every request, and a scrape
+ * clears them, reads the latest test, sets them and renders - all but the clear
+ * asynchronous. Two scrapes overlapping across those awaits can leave one of
+ * them rendering gauges the other has just cleared, and an empty exporter reads
+ * as an instance that has never tested rather than as a concurrent scrape. A
+ * Prometheus HA pair scrapes the same target by design.
+ *
+ * The registry is what render reads from, so the values must be in it while it
+ * renders and building them in locals first would not help. Queueing is the
+ * whole of the fix, and the rate limit already in front of this route in
+ * app.js bounds how long the queue can get.
+ */
+const scrapes = createQueue();
 
+const collect = async (res) => {
     const serve = async () => {
         res.set('Content-Type', promClient.register.contentType);
         res.end(await promClient.register.metrics());
@@ -250,6 +267,19 @@ app.get('/metrics', async (req, res) => {
     if (isMeasured(latest.uploadLatency)) uploadLatencyGauge.set(labels, latest.uploadLatency);
 
     return serve();
+};
+
+// Authorised outside the queue: a caller who may not scrape at all has no
+// business waiting behind the ones who may.
+app.get('/metrics', async (req, res) => {
+    if (!await authorizeMetrics(req, res)) return;
+
+    // Checked at the front of the queue rather than on arrival: the wait is
+    // what outlasts the caller. Prometheus drops a scrape at its scrape_timeout
+    // - ten seconds by default - and a queued entry that reaches the front
+    // after that would read the database and render the whole registry into a
+    // socket nobody is listening to.
+    await scrapes(() => clientGone(req, res) ? undefined : collect(res));
 });
 
 export default app;

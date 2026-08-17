@@ -14,6 +14,7 @@ import { initialize as initializeIntegrations } from './controller/integrations.
 import { requestInterfaces } from './util/loadInterfaces.js';
 import { load as loadCli } from './util/loadCli.js';
 import { removeOld } from './tasks/speedtest.js';
+import { terminateActiveProcess } from './util/speedtest.js';
 import { createShutdown } from './util/shutdown.js';
 import {
     clearedReport, noConfigReport, RESET_NO_CONFIG, resetPassword, wantsPasswordReset
@@ -129,7 +130,29 @@ const shutdown = createShutdown({
         for (const interval of intervals) clearInterval(interval);
         timerTask.stopTimer();
         integrationTask.stopTimer();
-    }
+
+        // A speedtest in flight is a child process, and nothing else here can
+        // reach it. Left alone it outlives the server under the Windows
+        // service - there is no namespace to tear it down as docker has - and
+        // finishes by writing its result into a handle onCleanup has closed.
+        terminateActiveProcess();
+    },
+    /**
+     * The same close stopAfterReset makes, for the same reason.
+     *
+     * sqlite runs in WAL mode, so a live connection has a -wal and a -shm
+     * beside the database file, and this is the path every `docker stop`,
+     * `docker restart` and image upgrade takes - it stopped the timers and left
+     * the handle to the exit. The reset command has closed it deliberately for
+     * a while now and this did not, which is the half of the shutdown nobody
+     * had cause to look at.
+     *
+     * After the listeners, never before: a request still being served reads
+     * through this handle. Swallowed, because a database that has already gone
+     * away is exactly when this rejects, and there is nothing left to do about
+     * it at this point.
+     */
+    onCleanup: () => db.close().catch(() => undefined)
 });
 
 // Registering these is also what makes the signals deliverable: the runtime

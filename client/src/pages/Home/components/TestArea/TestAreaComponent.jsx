@@ -242,7 +242,6 @@ const TestArea = () => {
                             up={test.upload}
                             upLevel={getIconBySpeed(test.upload, config.upload, true)}
                             error={test.error}
-                            type={test.type}
                             // The columns above are what the collapsed row draws.
                             // The detail panel reads the stored row itself, so
                             // the fields only it shows are no longer unpacked

@@ -17,7 +17,7 @@ import React, {useContext, useEffect, useState} from "react";
 import {NodeContext} from "@/common/contexts/Node";
 import {useAlert} from "@/common/contexts/Alert";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
-import {assertOk, baseRequest, patchRequest} from "@/common/utils/RequestUtil";
+import {assertOk, baseRequest} from "@/common/utils/RequestUtil";
 import {promptUntilAccepted} from "@/common/utils/PasswordPrompt";
 import {t} from "i18next";
 import {Trans} from "react-i18next";
@@ -182,8 +182,15 @@ export const NodeContainer = (node) => {
             // Checked before reporting success: the mutating helpers return the
             // raw response, so a refused rename used to show the success toast
             // and leave the old name on screen.
+            //
+            // baseRequest, as the password patch and the delete beside it use:
+            // this path already names the node, and patchRequest prepends the
+            // node currently being *viewed*. With any remote node selected the
+            // rename went to /api/nodes/<viewed>/nodes/<renamed>/name and was
+            // answered by nothing. From the local instance the two roots agree,
+            // which is why it looked like it worked.
             try {
-                await assertOk(await patchRequest(`/nodes/${node.id}/name`, {name: newName}), "rename node");
+                await assertOk(await baseRequest(`/nodes/${node.id}/name`, "PATCH", {name: newName}), "rename node");
             } catch (e) {
                 updateToast(e.message || t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
                 return;

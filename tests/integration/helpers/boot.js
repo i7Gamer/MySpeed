@@ -18,8 +18,26 @@ import path from "node:path";
  * its own process.
  */
 let booted = null;
+let closed = false;
 
 export const bootServer = async () => {
+    /**
+     * Booting again after close() is not something this can do, and the guard
+     * below used to hand back the shut-down instance instead of saying so: a
+     * closed database handle, a listener that stopped listening, and a data
+     * directory close() had already deleted. What failed was the third
+     * assertion afterwards, somewhere inside sequelize, describing none of it.
+     *
+     * Clearing the guard would not fix it either. The imports below are ESM and
+     * cached, so a second boot gets that same closed database back and the same
+     * app, while process.chdir has moved out of the directory the storage path
+     * resolves against. The node runner gives each test file its own process
+     * for exactly this reason, so the rule is the answer rather than a retry.
+     */
+    if (closed) throw new Error(
+        "bootServer() was called after close(). The harness boots once per process - " +
+        "the node test runner isolates each test file, so let the file's `after` hook close it.");
+
     if (booted) return booted;
 
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-it-"));
@@ -62,6 +80,8 @@ export const bootServer = async () => {
         tests: tests.default,
         dataDir,
         close: async () => {
+            closed = true;
+
             await new Promise((resolve) => server.close(resolve));
             await db.close().catch(() => undefined);
             process.chdir(originalCwd);

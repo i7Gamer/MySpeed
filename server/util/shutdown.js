@@ -22,23 +22,49 @@ export const SHUTDOWN_GRACE_MS = 5000;
  *
  * @param listeners  the HTTP/HTTPS servers to close
  * @param onStop     stops the timers and anything else holding the loop open
+ * @param onCleanup  closes what is still open once nothing is listening; may
+ *                   be asynchronous, and the deadline below outranks it
  * @param exit       process.exit
  * @param setTimer   setTimeout
  * @param log        console.log
  */
 export const createShutdown = ({
-    listeners = [], onStop = () => undefined, exit = process.exit,
+    listeners = [], onStop = () => undefined, onCleanup = null, exit = process.exit,
     setTimer = setTimeout, log = console.log, graceMs = SHUTDOWN_GRACE_MS
 } = {}) => {
     let started = false;
     let finished = false;
+    let left = false;
 
-    // A second signal must not exit twice, and neither must the deadline
-    // firing after the last listener already closed.
+    // The exit itself, guarded separately from the sequence that leads to it.
+    // The deadline reaches this directly: a cleanup that never comes back must
+    // not be able to hold the container open, which is the exact failure this
+    // module exists to end.
+    const leave = () => {
+        if (left) return;
+        left = true;
+        exit(0);
+    };
+
+    /**
+     * Nothing is listening any more, so whatever is still open can be closed.
+     *
+     * A second signal must not run this twice, and neither must the deadline
+     * firing after the last listener already closed.
+     *
+     * Without a hook this exits in the same tick, which is what every caller
+     * but index.js gets and what the shape of this module was before: an exit
+     * deferred by a promise nobody needed is a behaviour change for no reason.
+     * With one, the failure of the cleanup is not the process's problem - the
+     * handle it could not close is about to be dropped by the exit regardless.
+     */
     const finish = () => {
         if (finished) return;
         finished = true;
-        exit(0);
+
+        if (!onCleanup) return leave();
+
+        Promise.resolve().then(onCleanup).catch(() => undefined).then(leave);
     };
 
     return (signal) => {
@@ -49,7 +75,7 @@ export const createShutdown = ({
 
         onStop();
 
-        const deadline = setTimer(finish, graceMs);
+        const deadline = setTimer(leave, graceMs);
         deadline?.unref?.();
 
         let pending = listeners.length;

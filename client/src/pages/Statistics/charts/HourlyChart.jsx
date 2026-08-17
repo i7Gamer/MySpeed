@@ -109,7 +109,9 @@ const HourlyChart = memo((props) => {
     }), [themeColors, props.hourlyAverages, speedUnit]);
 
     return (
-        <div className="chart-container" {...clickable(props.onClick)}>
+        // Named, like the latency chart beside it, so the two-column stage can
+        // give the two of them a row each - see pages/Statistics/styles.sass.
+        <div className="chart-container hourly-chart" {...clickable(props.onClick)}>
             <div className="chart-header">
                 <h3 className="chart-title">{t("statistics.hourly.title")}</h3>
             </div>

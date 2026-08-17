@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { createRateLimit } from "../../server/middlewares/rateLimit.js";
+import { createRateLimit, MAX_TRACKED_CLIENTS } from "../../server/middlewares/rateLimit.js";
 
 const requestFrom = (ip) => ({ip, socket: {remoteAddress: ip}, headers: {}});
 
@@ -92,6 +92,109 @@ describe("createRateLimit", () => {
 
         limiter.reset();
         assert.equal(call(limiter, req).passed, true);
+    });
+
+    /**
+     * Which client is dropped when the table is full.
+     *
+     * Memory is bounded by evicting a single entry, and the entry chosen is the
+     * one at the front of the Map's iteration order - which is insertion order.
+     * A client whose window resets was written back with hits.set on a key that
+     * was already there, and set() on an existing key keeps its original
+     * position: so the longer a client had been using the instance, the nearer
+     * the front it stayed, permanently. The table filling up therefore evicted
+     * the most established caller rather than an idle one, handing them a fresh
+     * counter and twice the limit, while clients that had gone away hours ago
+     * sat behind them untouched.
+     *
+     * Deleting the key first moves it to the back, which turns "has been here
+     * longest" into "has not been seen for longest".
+     */
+    describe("evicting a client when the table is full", () => {
+        const CAP = 3;
+
+        // A limiter whose clock the test drives, so a window can be expired for
+        // one client without waiting and without expiring it for the others.
+        const limiterAt = (clock) => createRateLimit({
+            limit: 1, windowMs: 100, maxClients: CAP, now: () => clock.value
+        });
+
+        it("keeps the client it has just seen, and drops one that has gone quiet", () => {
+            const clock = {value: 0};
+            const limited = limiterAt(clock);
+
+            // Two clients arrive together. The table is not yet full, which
+            // matters: an eviction here would delete the front entry and the
+            // write that follows would put it straight back, hiding the
+            // ordering entirely.
+            call(limited, requestFrom("1.1.1.1"));
+            call(limited, requestFrom("2.2.2.2"));
+
+            // The first comes back once its window has run out - the write that
+            // used to leave it exactly where it was, at the front of the queue,
+            // while the client behind it had not been seen since.
+            clock.value = 200;
+            assert.equal(call(limited, requestFrom("1.1.1.1")).passed, true, "a fresh window must let it through");
+
+            // Now fill the table, so the arrival after it has to displace
+            // something.
+            call(limited, requestFrom("3.3.3.3"));
+            call(limited, requestFrom("4.4.4.4"));
+
+            // Still inside the window it opened at 200, so a second request is
+            // over the limit - unless it was the one evicted, in which case it
+            // is holding a brand new counter and gets another go.
+            clock.value = 250;
+            assert.equal(call(limited, requestFrom("1.1.1.1")).passed, false,
+                "the client seen most recently was evicted, and was handed a fresh counter for it");
+        });
+
+        it("drops the one that went quiet instead", () => {
+            const clock = {value: 0};
+            const limited = limiterAt(clock);
+
+            call(limited, requestFrom("1.1.1.1"));
+            call(limited, requestFrom("2.2.2.2"));
+
+            clock.value = 200;
+            call(limited, requestFrom("1.1.1.1"));
+            call(limited, requestFrom("3.3.3.3"));
+            call(limited, requestFrom("4.4.4.4"));
+
+            // The client that has not been seen since 0 is the one that should
+            // have gone, so it comes back to a counter that starts again.
+            clock.value = 250;
+            assert.equal(call(limited, requestFrom("2.2.2.2")).passed, true);
+            assert.equal(call(limited, requestFrom("2.2.2.2")).passed, false,
+                "the evicted client was not re-tracked on its way back in");
+        });
+
+        it("still evicts, so the table stays bounded", () => {
+            const clock = {value: 0};
+            const limited = createRateLimit({limit: 1, windowMs: 10000, maxClients: CAP, now: () => clock.value});
+
+            for (const ip of ["1.1.1.1", "2.2.2.2", "3.3.3.3"]) call(limited, requestFrom(ip));
+            call(limited, requestFrom("4.4.4.4"));
+
+            // The oldest, none of the three having been seen since.
+            assert.equal(call(limited, requestFrom("1.1.1.1")).passed, true,
+                "nothing was evicted, so the table grows without bound");
+        });
+
+        it("leaves the clients it did not evict counting", () => {
+            const clock = {value: 0};
+            const limited = createRateLimit({limit: 1, windowMs: 10000, maxClients: CAP, now: () => clock.value});
+
+            for (const ip of ["1.1.1.1", "2.2.2.2", "3.3.3.3"]) call(limited, requestFrom(ip));
+            call(limited, requestFrom("4.4.4.4"));
+
+            assert.equal(call(limited, requestFrom("3.3.3.3")).passed, false,
+                "an entry that should have survived lost its count");
+        });
+
+        it("defaults to a cap rather than tracking clients without limit", () => {
+            assert.ok(MAX_TRACKED_CLIENTS > 0 && Number.isFinite(MAX_TRACKED_CLIENTS));
+        });
     });
 
     it("uses the supplied message", () => {

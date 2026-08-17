@@ -20,17 +20,19 @@ before(() => {
 
 after(() => fs.rmSync(workingDir, {recursive: true, force: true}));
 
-const runHandler = (options) => new Promise((resolve) => {
+const runHandler = (options, thrown = 'new Error("boom")') => new Promise((resolve) => {
     const script = `
         process.chdir(${JSON.stringify(workingDir)});
         const {default: errorHandler} = await import(${JSON.stringify(HANDLER)});
-        errorHandler(new Error("boom")${options ? `, ${options}` : ""});
+        errorHandler(${thrown}${options ? `, ${options}` : ""});
         setTimeout(() => console.log("survived"), 250);
     `;
 
     execFile(process.execPath, ["--input-type=module", "-e", script], (error, stdout, stderr) =>
         resolve({code: error?.code ?? 0, stdout, stderr}));
 });
+
+const logContents = () => fs.readFileSync(path.join(workingDir, "data", "logs", "error.log"), "utf8");
 
 describe("errorHandler", () => {
     it("logs the message either way", async () => {
@@ -40,8 +42,159 @@ describe("errorHandler", () => {
 
     it("writes the error to the log file", async () => {
         await runHandler("{fatal: false}");
-        const log = fs.readFileSync(path.join(workingDir, "data", "logs", "error.log"), "utf8");
-        assert.match(log, /boom/);
+        assert.match(logContents(), /boom/);
+    });
+
+    /**
+     * What was being attempted, which the message alone does not say.
+     *
+     * The scheduled jobs catch their own rejections now, and a bare
+     * console.error there would have kept them out of this file entirely - the
+     * one an operator is pointed at from the log's own header. Reported through
+     * here instead, with the job's name, so the record is both kept and legible:
+     * "Could not open the database" says nothing about which of the two
+     * schedules was the one that could not.
+     */
+    describe("context", () => {
+        it("names what was happening on the console", async () => {
+            const {stderr} = await runHandler('{fatal: false, context: "The scheduled speedtest failed"}');
+
+            assert.match(stderr, /The scheduled speedtest failed: boom/);
+            assert.doesNotMatch(stderr, /An error occurred/, "the generic wording was kept as well");
+        });
+
+        it("keeps it in the log file too", async () => {
+            await runHandler('{fatal: false, context: "The scheduled speedtest failed"}');
+
+            const entry = logContents();
+            assert.match(entry, /The scheduled speedtest failed/);
+            assert.match(entry, /boom/, "the error itself was replaced rather than introduced");
+        });
+
+        it("falls back to its own wording when given none", async () => {
+            assert.match((await runHandler("{fatal: false}")).stderr, /An error occurred: boom/);
+        });
+    });
+
+    /**
+     * A rejection is not always an Error.
+     *
+     * `throw "…"` and a rejected promise carrying a plain object both reach the
+     * catches that report through here, and `.message` on either is undefined -
+     * so the console line read "An error occurred: undefined" and the log
+     * recorded the same nothing. index.js already normalises before calling
+     * this; the scheduled jobs would each have had to remember to.
+     */
+    describe("something that is not an Error", () => {
+        it("reports a thrown string", async () => {
+            const {stderr} = await runHandler("{fatal: false}", '"a bare string"');
+
+            assert.match(stderr, /a bare string/);
+            assert.doesNotMatch(stderr, /undefined/);
+        });
+
+        it("writes it to the log file rather than nothing", async () => {
+            await runHandler("{fatal: false}", '"a bare string"');
+
+            assert.match(logContents(), /a bare string/);
+        });
+
+        it("survives being handed nothing at all", async () => {
+            const {code, stdout} = await runHandler("{fatal: false}", "undefined");
+
+            assert.equal(code, 0, "the reporter itself threw");
+            assert.match(stdout, /survived/);
+        });
+
+        /**
+         * The one input that could take the reporter down with it.
+         *
+         * An object with no prototype cannot be coerced to a string at all -
+         * `String(value)` throws "Cannot convert object to primitive value",
+         * and so did the concatenation that built the log entry before it. This
+         * function is also the uncaughtException handler, so a throw inside it
+         * ends the process with neither the original error nor this one
+         * recorded anywhere. The last line of defence has to be unable to fail.
+         */
+        it("survives an object that cannot be described", async () => {
+            const {code, stdout, stderr} = await runHandler("{fatal: false}", "Object.create(null)");
+
+            assert.equal(code, 0, "the reporter threw and took the process with it");
+            assert.match(stdout, /survived/);
+            assert.match(stderr, /could not be described/, "nothing at all was reported");
+        });
+
+        it("still writes a line to the log for one", async () => {
+            await runHandler("{fatal: false}", "Object.create(null)");
+
+            assert.match(logContents(), /could not be described/);
+        });
+    });
+
+    /**
+     * Where the error came from, which is the whole reason for keeping a file.
+     *
+     * The entry was built by concatenating the Error into a string, and that
+     * calls toString() - "Error: boom", and nothing else. So data/logs/error.log
+     * held exactly what the console line above it already said, and the frames
+     * were discarded at the one point they were being written down for. The
+     * log's own header points bug reports at this file; what arrived was a
+     * message with no indication of which of the callers produced it.
+     *
+     * The stack already begins with "Error: <message>", so recording it is a
+     * substitution rather than an addition - nothing that read the old entry
+     * loses anything.
+     */
+    describe("the stack", () => {
+        // The function name appears in the stack and nowhere else - not in the
+        // message, not in the context - so matching it cannot pass by accident.
+        const thrownFrom = '(function deliberatelyNamedThrower() { return new Error("stacky"); })()';
+
+        it("is written to the log, not just the message", async () => {
+            await runHandler("{fatal: false}", thrownFrom);
+
+            assert.match(logContents(), /deliberatelyNamedThrower/,
+                "the entry is the error's toString(), so every frame was dropped");
+        });
+
+        it("keeps the message that heads it", async () => {
+            await runHandler("{fatal: false}", thrownFrom);
+
+            assert.match(logContents(), /Error: stacky/);
+        });
+
+        it("still records the context beside it", async () => {
+            await runHandler('{fatal: false, context: "The scheduled speedtest failed"}', thrownFrom);
+
+            const entry = logContents();
+            assert.match(entry, /The scheduled speedtest failed/);
+            assert.match(entry, /deliberatelyNamedThrower/, "the context displaced the stack");
+        });
+
+        // The console line is a summary and stays one - a stack on stderr for
+        // every non-fatal integration failure is noise, and the file is where
+        // the detail was always meant to go.
+        it("is not added to the console line", async () => {
+            const {stderr} = await runHandler("{fatal: false}", thrownFrom);
+
+            assert.match(stderr, /An error occurred: stacky/);
+            assert.doesNotMatch(stderr, /deliberatelyNamedThrower/, "stderr now carries a full stack per error");
+        });
+
+        /**
+         * An Error can reach here without one: a cross-realm error, one built
+         * where Error.stackTraceLimit was 0, or a caller that assembled the
+         * object itself. This function is the uncaughtException handler, so
+         * "undefined" is not an acceptable thing to write instead.
+         */
+        it("falls back to the message when the error carries none", async () => {
+            await runHandler("{fatal: false}",
+                'Object.assign(new Error("stackless"), {stack: undefined})');
+
+            const entry = logContents();
+            assert.match(entry, /stackless/);
+            assert.doesNotMatch(entry, /## [^\n]*\nundefined/, "the entry recorded the word undefined");
+        });
     });
 
     describe("fatal", () => {

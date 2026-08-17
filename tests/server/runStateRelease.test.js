@@ -1,8 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { bodyOf, readSource } from "../helpers/source.js";
 
 /**
  * A run that ends says so, however it ended.
@@ -20,23 +18,10 @@ import { fileURLToPath } from "node:url";
  * finally since the last time this bit - which is exactly why the second half
  * of the same guarantee went unnoticed.
  */
-const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-const source = fs.readFileSync(path.join(root, "server/tasks/speedtest.js"), "utf8");
+const source = readSource("server/tasks/speedtest.js");
 
-const bodyFrom = (open) => {
-    const start = source.indexOf(open);
-    assert.notEqual(start, -1, `${open} is no longer in tasks/speedtest.js`);
-
-    const from = source.indexOf("{", start);
-    let depth = 0;
-
-    for (let index = from; index < source.length; index++) {
-        if (source[index] === "{") depth++;
-        else if (source[index] === "}" && --depth === 0) return source.slice(from, index + 1);
-    }
-
-    assert.fail(`${open} is never closed`);
-};
+// Named for what it is here: every slice below is a function in that file.
+const bodyFrom = (declaration) => bodyOf(source, declaration);
 
 describe("the failure handler", () => {
     const handler = bodyFrom("} catch (e) {");
@@ -58,6 +43,55 @@ describe("the failure handler", () => {
 
         assert.match(guarded, /tests\.create\(/);
         assert.match(guarded, /sendError\(/);
+    });
+
+    /**
+     * Released when the run ends, not when the notification does.
+     *
+     * The finally always ran, so the latch was never lost - but it sat behind
+     * an awaited sendError, and that is not a quick call. triggerEvent works
+     * through the configured integrations one at a time, each with the ten
+     * second outbound timeout in util/http.js, so a few endpoints that have
+     * gone unreachable - which is the situation a *failure* notification is
+     * being sent in - held the run open for the sum of their timeouts. The next
+     * scheduled test is refused for all of it, and the progress bar keeps a
+     * phase belonging to a run that is over.
+     *
+     * The success path never had this shape: it clears the flag and lets the
+     * notification go on its own.
+     */
+    it("does not hold the run open while the integrations are told", () => {
+        assert.doesNotMatch(handler, /await\s+sendError\(/,
+            "the run is held open for as long as the notifications take");
+    });
+
+    it("still reports a notification that failed", () => {
+        const notify = handler.slice(handler.indexOf("sendError("));
+
+        assert.match(notify, /\.catch\(/,
+            "an unawaited send with no catch is an unhandled rejection");
+    });
+});
+
+/**
+ * And the two paths out of a run agree about it.
+ *
+ * They had drifted once already - the failure path's release sat at the end
+ * rather than in a finally - and the difference that leaves is invisible until
+ * something is slow or throws. Written as one assertion over both, so a change
+ * to either has to be a change to the pair.
+ */
+describe("both endings", () => {
+    // The run itself. `create` above is only the latch around it; the two
+    // notifications and both releases live in here.
+    const execute = bodyFrom("const execute = async");
+
+    it("tell the integrations without waiting for them", () => {
+        for (const send of ["sendFinished", "sendError"]) {
+            assert.match(execute, new RegExp(`\\b${send}\\(`), `${send} is no longer called`);
+            assert.doesNotMatch(execute, new RegExp(`await\\s+${send}\\(`),
+                `${send} holds the run open until the integrations answer`);
+        }
     });
 });
 

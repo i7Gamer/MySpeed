@@ -2,6 +2,7 @@ import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import * as timer from "../../server/tasks/timer.js";
 import * as integrationTimer from "../../server/tasks/integrations.js";
+import { bodyIn } from "../helpers/source.js";
 
 /**
  * The scheduler's teardown, which had nothing holding it to its own contract.
@@ -61,6 +62,32 @@ describe("the speedtest schedule", () => {
         assert.equal(timer.currentJob(), undefined);
         assert.equal(first.nextInvocation(), null);
     });
+
+    /**
+     * And a run that rejects stays a logged line.
+     *
+     * create() guards its own work, but runTask does a fair amount before it
+     * gets there: the pause state, the quiet hours check and the schedule
+     * offset are three config reads, and any of them can reject on a database
+     * that has gone away or one a shutdown already under way has closed.
+     * Nothing was catching that, so a scheduled run surfaced through index.js's
+     * unhandledRejection handler as a bare server fault with no mention of the
+     * schedule that produced it - and it repeats on every tick of the cron.
+     *
+     * index.js catches the startup run for exactly this reason; the scheduled
+     * one it hands to node-schedule did not.
+     *
+     * Read from the source because what is asserted is the shape of the
+     * callback handed to node-schedule. Firing it needs a database behind it,
+     * which is the thing this is about not having.
+     */
+    it("guards the run it schedules", () => {
+        const startTimer = bodyIn("server/tasks/timer.js", "export const startTimer");
+
+        assert.match(startTimer, /scheduleJob\(/, "the run is no longer scheduled here");
+        assert.match(startTimer, /\.catch\(/,
+            "a rejecting run is an unhandled rejection on every tick of the cron");
+    });
 });
 
 describe("the integration ping schedule", () => {
@@ -74,6 +101,30 @@ describe("the integration ping schedule", () => {
         assert.equal(first.nextInvocation(), null,
             "the replaced ping job is still armed and will double every ping");
         assert.notEqual(integrationTimer.currentJob(), first);
+    });
+
+    /**
+     * And a tick that rejects stays a logged line rather than becoming an
+     * unhandled rejection.
+     *
+     * The tick is not a bare notification any more: it reads the stored tests
+     * to decide where the healthChecks keep-alive should be sent, so it can now
+     * reject on a database that has gone away - or one closed by a shutdown
+     * already in progress, which is a race the signal handler opened when it
+     * started closing the handle. Nothing was catching it, so that surfaced
+     * through index.js's unhandledRejection handler as though the server itself
+     * had faulted, once every minute.
+     *
+     * Read from the source because what is being asserted is the shape of the
+     * callback handed to node-schedule; firing it for real would need a
+     * database behind it, which is the very thing this is about not having.
+     */
+    it("guards the tick it schedules", () => {
+        const startTimer = bodyIn("server/tasks/integrations.js", "export const startTimer");
+
+        assert.match(startTimer, /scheduleJob\(/, "the ping job is no longer scheduled here");
+        assert.match(startTimer, /\.catch\(/,
+            "a rejecting tick is an unhandled rejection every minute");
     });
 });
 

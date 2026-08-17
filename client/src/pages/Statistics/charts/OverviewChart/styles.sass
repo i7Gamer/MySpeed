@@ -2,8 +2,6 @@
 // The sizes only, not the row's rules - see that partial for why.
 @use "@/pages/Statistics/components/PanelRow/variables" as row
 
-// Spread down the card, the way the stability panel beside it spreads its own.
-//
 // The rows used to be held apart by an accident: the value was a bare <h2>, and
 // its default 0.83em margin was the whole of what separated one row from the
 // next. The shared row states its value in a div, as it should, and the five
@@ -11,9 +9,16 @@
 .overview-items
   display: flex
   flex-direction: column
-  justify-content: space-between
-  gap: 0.5rem
-  flex: 1
+  // Centred on a fixed gap rather than spread across whatever height the card
+  // has: spreading gave every card on the row a different gap, and this one the
+  // narrowest of them - see the row's own $panel-row-gap for the measurements.
+  justify-content: center
+  gap: row.$panel-row-gap
+  // And it keeps its rows at that gap rather than being squeezed under them.
+  // Between about 1150 and 1350px the descriptions wrap to a second line and
+  // the list wants more height than the card has: shrinking there is what put
+  // the rows back on the floor, with overflow-y hiding the evidence.
+  flex: 1 0 auto
   width: 100%
   overflow-y: clip
   // What the trims below reflow against. It has to be the list and not the
@@ -43,25 +48,45 @@
 // the old :not(.chart-modal-body *) exemption goes with the viewport figures:
 // an enlarged view is simply a wide container.
 
-// Where the five rows stop affording their icons and descriptions. The old
-// 1400px viewport figure stood for a ~450px card in the three-across grid;
-// minus the card's padding that is ~400px of list, with a digit's slack.
-$overview-trim: 25rem
+// Where the five rows stop affording their icons and descriptions.
+//
+// It was 25rem, converted from a 1400px viewport figure that stood for a ~450px
+// card in the three-across grid. That was never the width the rows actually
+// need: it is where the card *used* to run out, and since the page was capped
+// at 1400px the list only ever reached 409px - nine past the threshold - so the
+// descriptions appeared in a nine-pixel window and wrapped to a second line in
+// all of it. Reported as exactly that.
+//
+// With the summary taking 40% of a 1600px page the list runs to 566px, and the
+// band above the threshold is real: measured across it, "Average across the
+// tests that measured it" needs 473px of list to sit beside its figure, and
+// below that the row broke and put the value under the label instead. So the
+// threshold is that measurement now, with a rem of slack for a longer language:
+// the descriptions are shown where they fit beside the reading, and given up
+// where they do not.
+$overview-trim: 30rem
 
-// And where the title wraps rather than cuts - the old 1000px figure's ~340px
-// card, converted the same way. Below this the description is hidden too, so
-// the label is all a row has left.
-$overview-wrap: 18.5rem
+// And where the label gives up its line, and the icon beside it goes.
+//
+// It was 18.5rem, and between it and the trim above, the label was pinned to a
+// fixed 15rem: 240px reserved whether the label wanted it or not, plus the
+// figure beside it, which is more than a row of ~300px has. So the value
+// dropped onto a line of its own under the label, on some rows and not others -
+// measured, four of the five rows at 380px and one at 460, against neighbouring
+// cards drawing theirs perfectly well. The pin bought nothing the shared row
+// does not already do: it ellipsises a label that will not fit, and the value
+// beside it neither wraps nor shrinks.
+//
+// 20rem is where the label and its figure genuinely stop sharing a line -
+// measured at 318px of list with the longest of them, and rounded up for a
+// longer language. Below it the label wraps rather than cutting, which is what
+// the icon's 52px are given up for.
+$overview-wrap: 20rem
 
+// Only the descriptions. The icon costs 52px and is what every panel on the
+// page carries, so a summary that drops it while the stability card beside it
+// keeps its own reads as a different kind of card rather than a tighter one.
 @container (width < #{$overview-trim})
-  .overview-items .panel-row .panel-row-icon
-    display: none
-  .overview-items .panel-row .panel-row-title
-    display: inline-block
-    width: 15rem
-    white-space: nowrap
-    overflow: hidden !important
-    text-overflow: ellipsis
   .overview-items .panel-row .panel-row-description
     display: none
   // One step down with them: the card is carrying five rows in the room it
@@ -69,16 +94,17 @@ $overview-wrap: 18.5rem
   .overview-items .panel-row .panel-row-value
     font-size: row.$panel-value-size-narrow
 
-// Wrapped rather than cut. 15rem holds "Average duration" and stops one letter
-// into "Peak-hour slowdown", and a row label that ends in an ellipsis names a
-// measurement the reader has to guess at - in the tightest cards, where the
-// description under it is hidden too, the label is all there is. A second line
-// costs the card 20px; the ellipsis cost it the row's meaning.
+// Wrapped rather than cut. A row label that ends in an ellipsis names a
+// measurement the reader has to guess at - and down here, where the description
+// under it is hidden too, the label is all there is. A second line costs the
+// card 20px; the ellipsis cost it the row's meaning.
 //
 // The label takes what the value does not, rather than a share of its own: a
 // fixed fraction wraps "Total tests" onto two lines to reserve room the number
 // beside it never wanted.
 @container (width < #{$overview-wrap})
+  .overview-items .panel-row .panel-row-icon
+    display: none
   .overview-items .panel-row .panel-row-info
     flex: 1 1 auto
     min-width: 0
@@ -86,8 +112,10 @@ $overview-wrap: 18.5rem
     // the width of its text. Given the row to grow into, a label that starts in
     // the middle of the card reads as a value that lost its number.
     justify-content: flex-start
+  // The shared row keeps its labels on one line and cuts what will not fit;
+  // this is the one width where a second line is worth more than the ellipsis.
+  // No !important and no width: those undid the 15rem pin the step above used
+  // to set, and there is no pin left to undo.
   .overview-items .panel-row .panel-row-title
-    width: auto
     white-space: normal
-    overflow: visible !important
-    text-overflow: clip
+    overflow: visible

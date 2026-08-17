@@ -33,11 +33,38 @@ describe("updating the recommendations", () => {
 
         const stored = await controller.getCurrent();
 
-        // Ping to a whole millisecond, the speeds to two decimals - the
-        // precision each is shown at.
-        assert.equal(stored.ping, 12);
+        // All three to two decimals. The ping used to be rounded to a whole
+        // millisecond, by an INTEGER column and a Math.round to match - which
+        // is most of the reading on a fast line, and took anything under half a
+        // millisecond to 0.
+        assert.equal(stored.ping, 12.4);
         assert.equal(stored.download, 512.35);
         assert.equal(stored.upload, 98.77);
+    });
+
+    /**
+     * The damaging case, end to end. 0 reads as the best latency ever measured
+     * on the line, and createRecommendations only ever replaces the stored
+     * figure with something lower - so no later test could beat it and the
+     * recommendation stayed wrong for the life of the database.
+     */
+    it("keeps a sub-millisecond ping rather than storing nothing", async () => {
+        await controller.update(0.3, 940, 880);
+
+        assert.equal((await controller.getCurrent()).ping, 0.3);
+    });
+
+    /**
+     * Migration 0012 deliberately skips sqlite, on the grounds that its INTEGER
+     * affinity is numeric rather than integral and stores a fractional value as
+     * REAL whatever the column says. This suite runs on sqlite, so it is where
+     * that claim is actually checked - the column here was never altered.
+     */
+    it("round-trips a fraction through sqlite, whose column was left alone", async () => {
+        await controller.update(1.25, 100, 50);
+
+        assert.equal((await controller.getCurrent()).ping, 1.25,
+            "sqlite truncated the latency, so migration 0012 cannot skip it after all");
     });
 
     // One row, replaced. A second row would leave getCurrent answering with

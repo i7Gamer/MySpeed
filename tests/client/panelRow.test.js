@@ -186,6 +186,36 @@ describe("the shared panel row", () => {
         assert.match(value, /flex-shrink:\s*0/);
         assert.match(value, /white-space:\s*nowrap/);
     });
+
+    /**
+     * And the sub-lines truncate whoever wrote them.
+     *
+     * The rule that cuts them is written `.panel-row-description > *`, which
+     * matches element children only - so it reached the three panels that hand
+     * this a node and missed the summary, the one panel that hands it a bare
+     * string. That string is a text node with no box of its own: nothing in the
+     * stylesheet can address it, and it wrapped the row taller instead. Whether
+     * a description cuts or wraps was decided by whether its caller had happened
+     * to write a <span>, which is not a decision the stylesheet can even see.
+     *
+     * The row gives a bare description a box of its own, so the rule that was
+     * meant for all four reaches all four.
+     */
+    it("gives a description of its own a box the truncation can reach", () => {
+        assert.match(row, /isValidElement\(description\)/,
+            "a description handed over as a string is a text node the stylesheet cannot address,"
+            + " so it wraps where every other panel's cuts");
+        assert.match(row, /import \{[^}]*isValidElement[^}]*} from "react"/,
+            "isValidElement is used without being imported");
+    });
+
+    // A fragment of several sub-lines is a valid element, and its children are
+    // what the rule has to reach: boxed as one, the two lines a spread and its
+    // range are drawn on would collapse into a single line.
+    it("passes a description that is already elements straight through", () => {
+        assert.match(row, /isValidElement\(description\)\s*\?\s*description\s*:/,
+            "a description that is already elements is boxed again, which stacks its lines into one");
+    });
 });
 
 /**
@@ -300,9 +330,13 @@ describe("the overview card spaces its rows", () => {
             "nothing separates one row from the next");
     });
 
-    it("spreads them down the card the way the panel beside it does", () => {
-        assert.match(container, /justify-content:\s*space-between/);
-        assert.match(container, /flex:\s*1/);
+    // How much room, and that it is the same room every other panel leaves,
+    // belongs with the three cards it is shared with - see panelRowGap.test.js.
+    // It used to spread the rows down the card instead, which is what made this
+    // one the narrowest gap on a row of four cards that were meant to match.
+    it("holds them to that room rather than spreading them", () => {
+        assert.doesNotMatch(container, /justify-content:\s*space-between/,
+            "the rows take whatever height the card has left, so the gap is a floor and not a gap");
     });
 });
 

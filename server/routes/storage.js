@@ -33,7 +33,21 @@ app.get("/", password(false), async (req, res) => {
     res.json(await config.getUsedStorage());
 });
 
-app.get("/tests/history/json", password(false), async (req, res) => {
+/**
+ * The raw history, which is not the redacted one.
+ *
+ * Sealed on a demo whatever the format. These answer with tests.listAll()
+ * untouched, so the provider and external address that /api/speedtests/export
+ * strips for a caller who is not the operator went out in full through here
+ * instead - the same rows by a different controller call. That export is still
+ * open on a demo and is still redacted, so nothing a visitor should have is
+ * lost; this is the backup path, and its PUT and DELETE siblings below have
+ * been guarded all along.
+ */
+const noRawHistoryOnDemo = previewReadOnly.blocking(
+    "For security reasons, you can't download the raw history in preview mode");
+
+app.get("/tests/history/json", password(false), noRawHistoryOnDemo, async (req, res) => {
     res.set({
         "Content-Type": "application/json; charset=utf-8",
         "Content-Disposition": "attachment; filename=\"speedtests.json\""
@@ -46,7 +60,7 @@ app.get("/tests/history/json", password(false), async (req, res) => {
 // succeed dropped the `error` column from the whole export, and it escaped
 // with JSON rules - backslashes instead of RFC 4180's doubled quotes - which
 // no spreadsheet reads back correctly.
-app.get("/tests/history/csv", password(false), async (req, res) => {
+app.get("/tests/history/csv", password(false), noRawHistoryOnDemo, async (req, res) => {
     res.set({
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": "attachment; filename=\"speedtests.csv\""
@@ -65,9 +79,24 @@ app.put("/tests/history", password(false), previewReadOnly, importBody, async (r
     res.status(result ? 200 : 500).json({message: result ? "Tests imported" : "Error importing tests"});
 });
 
-// Credentials are redacted unless explicitly requested, so the common "download
-// my config" path cannot leak them by accident.
-app.get("/config", password(false), async (req, res) => {
+/**
+ * Credentials are redacted unless explicitly requested, so the common "download
+ * my config" path cannot leak them by accident.
+ *
+ * And nobody but the operator may ask at all. `includeSecrets` comes straight
+ * off the query string, and preview mode admits every caller - so `GET
+ * /api/storage/config?includeSecrets=true` handed an anonymous visitor to a
+ * demo the admin password hash, every node password in clear and every
+ * integration credential. The comment below already listed what a full export
+ * carries; the route simply never asked who was asking.
+ *
+ * Sealed rather than forced to the redacted form, because a redacted export is
+ * still the instance's configuration: it carries the cron, the quiet hours and
+ * the adapter name that GET /api/config withholds from exactly this caller.
+ */
+app.get("/config", password(false),
+    previewReadOnly.blocking("For security reasons, you can't export the configuration in preview mode"),
+    async (req, res) => {
     res.set({
         "Content-Disposition": "attachment; filename=\"config.json\"",
         // A full export carries node passwords, integration tokens and the

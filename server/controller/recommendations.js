@@ -6,7 +6,11 @@ export const getCurrent = async () => {
 }
 
 export const update = async (ping, download, upload) => {
-    const configuration = {ping: Math.round(ping), download: parseFloat(download.toFixed(2)),
+    // Two decimals, the same as the speeds beside it. Math.round() here threw
+    // away the fraction that is most of a latency reading on a fast line, and
+    // took anything under half a millisecond down to 0 - a figure no later test
+    // can beat, so the recommendation it poisoned was permanent.
+    const configuration = {ping: parseFloat(ping.toFixed(2)), download: parseFloat(download.toFixed(2)),
         upload: parseFloat(upload.toFixed(2))};
     
     const existing = await recommendations.findOne();

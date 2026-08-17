@@ -22,6 +22,42 @@
   opacity: 0.7
   transition: opacity 0.2s ease
 
+// The page's left-hand column, which is wider than the two beside it.
+//
+// The summary is what asks for the width. Its labels and descriptions are the
+// page's only sentences - "Peak-hour slowdown" over "Slowest around 8:00 PM,
+// fastest around 4:00 AM" - where the stability and latest-test cards name a
+// measurement in a word and qualify it with "±3 Mbps". A row spends 64px on its
+// icon and its two gaps and gives the rest to the label, minus whatever the
+// figure takes: the packet-loss row's reading and delta want 123px against a
+// sentence wanting 271, and the peak-hour row's bare percentage 50 against one
+// wanting 304. At an equal third of the old 1400px page every card held ~409px
+// of list, which left those two rows 222px and 295 - so both wrapped onto a
+// second line while the cards beside them sat on hundreds of spare pixels. An
+// equal third of even this page is 475px, which clears the first of those by
+// two: the summary is simply not asking for the same room as its line-mates.
+//
+// The other two rows follow it, because a column that changes width halfway
+// down the page is not a column. What leads those rows is the latency chart and
+// the hourly one - which is the pairing the card order was chosen for, so the
+// two speed charts stay the same size as each other, as do the two value cards,
+// and every column runs one width from top to bottom.
+//
+// Here rather than on the cards, like the stages below: this is the one
+// stylesheet that knows what else is on the row. Above the stages, deliberately
+// - they restate these selectors at equal specificity, and only source order
+// settles those.
+// The row's two gaps come off this share rather than off the other two,
+// because this is the only one this stylesheet states. They have to come off
+// something: a line is collected from the bases before flex shrinks anything,
+// so three of them summing to the whole 100% overflow by exactly the gaps, and
+// the third card drops to a line of its own with the other two stretched across
+// the row it left. 40% - 2 gaps + 30% + 30% is the row less its gaps, exactly.
+.statistic-area > .container-large,
+.statistic-area > .ping-chart,
+.statistic-area > .hourly-chart
+  flex: 1 1 calc(40% - #{$card-gap * 2})
+
 // Above the stages, deliberately: the stage rules below override this share at
 // equal specificity, which only source order settles.
 .statistic-loading
@@ -54,10 +90,16 @@
 // full width at 900px, and the cards that were being cut kept being cut all the
 // way down.
 //
-// The pairs fall out of the order the cards are already written in, once the
-// summary takes a row of its own - last test beside stability, the two speed
-// charts together, ping beside the hourly average, and the two value cards
-// last. Nothing has to be moved to make it work.
+// The pairs no longer fall out of the order on their own. Three across, the
+// latency chart leads the second row so that each speed chart sits directly
+// over its own value card - which puts the speed charts at positions five and
+// six, and a stage that pairs two at a time pairs five with four and six with
+// seven. No order can have both: whichever card leads that row is the one the
+// download chart gets paired with here.
+//
+// So the two cards without a partner - the latency chart and the hourly one -
+// take a row each, which is what puts the rest back in step: last test beside
+// stability, the two speed charts, the two value cards.
 //
 // The shimmer cards reflow with the content they stand for, or the page loads
 // in one shape and snaps into another the moment the numbers land.
@@ -72,6 +114,24 @@
     // read as a paragraph rather than as a tile. It is the one card that has
     // something to do with a full row.
     > .container-large
+      flex: 1 1 100%
+
+    // And the two charts the pairing leaves over, which take a row each rather
+    // than breaking up a pair to stand beside one. See the note above: the
+    // speed charts hold positions five and six for the sake of the column
+    // above them, and this stage pairs five with four. Spanning these two takes
+    // both odd positions out of the count, and every pair on the page comes
+    // back - stability beside the last test, the two speed charts, the two
+    // value cards.
+    //
+    // They are also the two the width suits: 24 hourly buckets and a latency
+    // line read across a row, where a card of five labelled rows would just
+    // stretch its labels away from its figures.
+    //
+    // After the share above, deliberately - same specificity, and only source
+    // order settles those.
+    > .ping-chart,
+    > .hourly-chart
       flex: 1 1 100%
 
     // The shimmer after the toolbar stands where the summary will, so it

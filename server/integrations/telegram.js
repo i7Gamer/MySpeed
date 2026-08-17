@@ -1,6 +1,17 @@
 import { postJson } from "../util/http.js";
-import { replaceVariables } from "../util/helpers.js";
+import { replaceVariables, truncate } from "../util/helpers.js";
 import { TELEGRAM_MARKDOWN, stripMarkdown as strip } from "../util/markdown.js";
+
+/**
+ * What sendMessage will accept as text.
+ *
+ * A longer one is answered with a 400 and nothing is delivered - the same way
+ * the unbalanced markdown above is refused, and for the same reason it matters:
+ * a failure notification is the one nobody can afford to lose. Neither the
+ * template nor the reason reaches this alone, since validateInput caps a custom
+ * template at 2000 and cliOutput caps a stored reason at 2000; together they do.
+ */
+export const TELEGRAM_MESSAGE_LIMIT = 4096;
 
 const defaults = {
     finished: "✨ *A speedtest is finished*\n🏓 `Ping`: %ping% ms (±%jitter% ms)\n🔼 `Upload`: %upload% Mbps\n🔽 `Download`: %download% Mbps",
@@ -22,9 +33,11 @@ const defaults = {
  */
 export const stripMarkdown = (variables) => strip(variables, TELEGRAM_MARKDOWN);
 
+// Trimmed here rather than at each call site, so a message added later cannot
+// be the one that is sent whole and refused.
 const send = (token, chat_id, text, activity) =>
     postJson(`https://api.telegram.org/bot${token}/sendMessage`,
-        {text, chat_id, parse_mode: "markdown"}, {activity});
+        {text: truncate(text, TELEGRAM_MESSAGE_LIMIT), chat_id, parse_mode: "markdown"}, {activity});
 
 export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {

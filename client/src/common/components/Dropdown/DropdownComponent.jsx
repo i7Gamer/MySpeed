@@ -94,8 +94,12 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
         // refusal (a 403 on a demo, a 401 on an expired session, a 500) was
         // discarded and the menu re-rendered still offering "Resume tests",
         // with nothing on screen to say the request had failed.
+        // Both awaited. assertOk is async, and without the outer await its
+        // rejection was never handed to this catch - it escaped unhandled, no
+        // toast appeared, and updateStatus() below ran regardless, redrawing
+        // the menu still offering "Resume tests" with nothing to say why.
         try {
-            assertOk(await postRequest("/speedtests/continue"), "continue");
+            await assertOk(await postRequest("/speedtests/continue"), "continue");
         } catch (e) {
             updateToast(e.message || t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
             return;

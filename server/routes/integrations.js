@@ -3,12 +3,36 @@ import * as integrations from '../controller/integrations.js';
 import password from '../middlewares/password.js';
 import previewReadOnly from '../middlewares/previewReadOnly.js';
 import { validateInput } from '../controller/integrations.js';
+import { isUntrustedReader } from '../util/untrustedReader.js';
 
 const app = express.Router();
 
 app.get("/", password(false), (req, res) => res.json(integrations.getIntegrations()));
 
-app.get("/active", password(false), async (req, res) => res.json(await integrations.getActive()));
+/**
+ * The stored rows, and on a demo the stored rows without their credentials.
+ *
+ * This answered with them until now: preview mode admits every caller and left
+ * `req.viewMode` unset, so an anonymous visitor to a public demo was handed the
+ * telegram bot token, the discord webhook URL, the influxdb token and the
+ * healthchecks ping URL of whoever configured the instance. withoutSecrets was
+ * already written, for the config export, and reached only that.
+ *
+ * Blanked rather than withheld, for the same reason the export blanks them: the
+ * keys stay, so the dialog still renders the integration a demo is there to
+ * show, and a reader can tell "configured, not shown" from "not configured".
+ *
+ * The read-only *password* holder never reaches this route at all - it is
+ * mounted password(false), and the read-access branch needs password(true) -
+ * so preview mode is the whole of what this covers today. The predicate rather
+ * than an inline preview check regardless: the next route to be mounted
+ * password(true) must not have to rediscover any of this.
+ */
+app.get("/active", password(false), async (req, res) => {
+    const active = await integrations.getActive();
+
+    return res.json(isUntrustedReader(req) ? integrations.withoutSecrets(active) : active);
+});
 
 // Guarded before the lookup, not after it: a refusal that first reports
 // whether an integration name exists tells a demo visitor the registry.

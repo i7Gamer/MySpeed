@@ -15,23 +15,46 @@ import { clientKey } from '../util/clientKey.js';
  * anything precisely.
  */
 const DEFAULT_WINDOW_MS = 60000;
-const MAX_TRACKED_CLIENTS = 10000;
+export const MAX_TRACKED_CLIENTS = 10000;
 const MS_PER_SECOND = 1000;
 
 const DEFAULT_MESSAGE = "Too many requests. Please slow down and try again later";
 
-export const createRateLimit = ({limit, windowMs = DEFAULT_WINDOW_MS, message = DEFAULT_MESSAGE}) => {
+// `maxClients` and `now` are injected by the tests: the eviction policy is only
+// observable at the cap, and a fixed window can only be stepped over with a
+// clock. Both default to the real thing.
+export const createRateLimit = ({limit, windowMs = DEFAULT_WINDOW_MS, message = DEFAULT_MESSAGE,
+    maxClients = MAX_TRACKED_CLIENTS, now: clock = Date.now}) => {
     const hits = new Map();
 
     const middleware = (req, res, next) => {
         const key = clientKey(req);
-        const now = Date.now();
+        const now = clock();
         const entry = hits.get(key);
 
         if (entry === undefined || now >= entry.resetAt) {
+            // Deleted before it is written back, so a client whose window just
+            // reset moves to the back of the queue.
+            //
+            // The eviction below takes the entry at the front of the Map, which
+            // is insertion order - and set() on a key that is already there
+            // keeps its original position. So the longer a client had been
+            // using the instance the nearer the front it stayed, permanently,
+            // and filling the table evicted the most established caller rather
+            // than an idle one: a fresh counter, and twice the limit, handed to
+            // the one client that had earned neither, while callers that went
+            // away hours ago sat behind them untouched. This is what makes the
+            // order "not seen for longest" rather than "here longest".
+            //
+            // Only on this branch. A client under its limit is counted below
+            // without being moved, which costs nothing and loses nothing: an
+            // active client passes through here once a window regardless, and
+            // that is often enough to keep it away from the front.
+            hits.delete(key);
+
             // Evicting the oldest single entry bounds memory without handing an
             // attacker a way to wipe everyone else's counter by rotating IPs.
-            if (hits.size >= MAX_TRACKED_CLIENTS) hits.delete(hits.keys().next().value);
+            if (hits.size >= maxClients) hits.delete(hits.keys().next().value);
 
             hits.set(key, {count: 1, resetAt: now + windowMs});
             return next();

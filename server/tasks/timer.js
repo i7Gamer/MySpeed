@@ -5,6 +5,7 @@ import { isValidCron } from "cron-validator";
 import { CronExpressionParser } from "cron-parser";
 import { create as createSpeedtest } from './speedtest.js';
 import { isQuietHour } from '../util/quietHours.js';
+import errorHandler from "../util/errorHandler.js";
 
 let job;
 let currentCron;
@@ -104,7 +105,21 @@ export const startTimer = (cron) => {
     stopTimer();
 
     currentCron = cron;
-    job = schedule.scheduleJob(cron, () => runTask());
+
+    // Caught here, because nothing else does. create() guards its own work, but
+    // runTask reaches it through the pause state, the quiet hours check and the
+    // schedule offset - three config reads, any of which can reject on a
+    // database that has gone away or one a shutdown already under way has
+    // closed. Uncaught, that reached index.js's unhandledRejection handler as a
+    // bare server fault with no mention of the schedule that produced it, and
+    // it repeats on every tick of the cron. index.js catches the startup run
+    // for the same reason; this one it handed to node-schedule did not.
+    //
+    // Reported through errorHandler rather than console.error, so it still
+    // reaches data/logs/error.log - the file the log's own header points bug
+    // reports at, and where the unhandledRejection route used to put it.
+    job = schedule.scheduleJob(cron, () => runTask().catch(err =>
+        errorHandler(err, {fatal: false, context: "The scheduled speedtest failed"})));
 };
 
 /**

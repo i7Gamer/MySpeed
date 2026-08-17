@@ -1,3 +1,4 @@
+import {isValidElement} from "react";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import "./styles.sass";
 
@@ -37,8 +38,27 @@ export const PanelRow = ({icon, title, description, value, level}) => (
                 {/* Only when there is one. Drawn regardless, the wrapper leaves
                     an empty line under the title, and an empty line where a
                     figure belongs reads as a measurement that went missing
-                    rather than as one that was never taken. */}
-                {description && <div className="panel-row-description">{description}</div>}
+                    rather than as one that was never taken.
+
+                    A description given as a string is boxed on the way in. The
+                    rule that cuts a sub-line too long for its card is written
+                    against the wrapper's children, which matches elements only:
+                    the three panels that hand this a node were cut, and the
+                    summary - the one that hands it a bare sentence - wrapped the
+                    row taller instead, because a text node has no box for the
+                    stylesheet to address. Whether a description cut or wrapped
+                    came down to whether its caller had happened to write a
+                    <span>, which is not something the stylesheet can see.
+
+                    Elements pass through untouched: a description is often a
+                    fragment of two sub-lines - a spread and the range it
+                    summarises - and boxing those as one would draw them on a
+                    single line. */}
+                {description && (
+                    <div className="panel-row-description">
+                        {isValidElement(description) ? description : <span>{description}</span>}
+                    </div>
+                )}
             </div>
         </div>
         <div className="panel-row-value">{value}</div>

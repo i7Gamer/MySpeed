@@ -22,3 +22,22 @@ $panel-value-size-narrow: 1.4rem
 
 $panel-title-size: 1rem
 $panel-description-size: 0.9rem
+
+/// The space between two of these rows, wherever a panel stacks them.
+///
+/// It was two figures and two distributions: 1.75rem with the rows centred on
+/// the latest-test and value cards, 0.5rem with them spread by space-between on
+/// the summary and the stability card. Spread, the gap is only a floor - the
+/// rows take whatever height the card has left - and with four cards stretched
+/// to one height and four different amounts of content, that cannot come out
+/// equal by construction: the card with the least in it gets the widest gaps.
+///
+/// Measured across the three-column band, it was 26px against 28 at the top and
+/// 8px against 29 around 1250px, where the summary's own title wraps to a second
+/// line and takes 24px off the list below it - so its rows fell back on the
+/// floor while the cards beside it spread to four times it.
+///
+/// Fixed, and one value: 24px is what the spread was already settling on at full
+/// width, so the cards read as they did there and stop disagreeing everywhere
+/// else.
+$panel-row-gap: 1.5rem

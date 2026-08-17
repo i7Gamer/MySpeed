@@ -1,13 +1,17 @@
 @use "@/common/styles/colors" as *
+// The sizes only, not the row's rules - see that partial for why.
+@use "@/pages/Statistics/components/PanelRow/variables" as row
 
+// One gap and one distribution across the four panels that stack these rows -
+// see $panel-row-gap. Spread across the card's leftover height, as this was,
+// the gap came out different on every card of the row.
 .consistency-container
   display: flex
   flex-direction: column
-  gap: 0.5rem
-  justify-content: space-between
+  gap: row.$panel-row-gap
+  justify-content: center
   width: 100%
-  flex: 1
-  min-height: 0
+  flex: 1 0 auto
 
 // Oldest to newest, the way time reads - one of the sub-lines under the grade.
 //
