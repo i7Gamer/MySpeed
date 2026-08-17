@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
-import { bodyIn, bodyOf, listSources, mountText, readSource } from "../helpers/source.js";
+import { bodyIn, bodyOf, findMounts, listSources, mountText, readSource } from "../helpers/source.js";
 
 /**
  * The helper several tests read source with, which had been written twice.
@@ -166,11 +166,13 @@ describe("mountText", () => {
         assert.doesNotMatch(text, /body\(\)/);
     });
 
-    // The last route in a file has no mount after it to stop at.
+    // The last route in a file has no mount after it to stop at, so the window
+    // runs to the end - asserted through a guard, since the handler itself is
+    // the last argument and is deliberately not part of the middleware list.
     it("reads to the end of the file for the final mount", () => {
-        const source = 'app.get("/only", password(false), handleOnly);\n';
+        const source = 'app.get("/only", previewReadOnly.blocking("no"), handleOnly);\n';
 
-        assert.match(mountText(source, AT(source, "app.get")), /handleOnly/);
+        assert.match(mountText(source, AT(source, "app.get")), /blocking/);
     });
 
     // A mount indented inside a block is not one this bound recognises, and it
@@ -204,5 +206,116 @@ describe("listSources", () => {
         } finally {
             process.chdir(before);
         }
+    });
+});
+
+/**
+ * The middleware list, bounded by the handler rather than by the first arrow.
+ *
+ * Trimming at the first `=>` is right only while no middleware takes a callback
+ * of its own. opengraph mounts `passwordWrapper(true, (req, res) => {...})`
+ * before its handler, so the trim landed inside that argument and everything
+ * after it - where a guard would sit - was invisible. The handler is the last
+ * argument, so the list is everything before the last comma at the mount's own
+ * paren depth.
+ */
+describe("mountText and the argument list", () => {
+    const AT = (source, mount) => source.indexOf(mount);
+
+    it("keeps a guard that follows a middleware taking a callback", () => {
+        const source = 'app.get("/a", wrapper(true, (req, res) => fallback()), '
+            + 'previewReadOnly.blocking("no"), async (req, res) => { body(); });';
+
+        const text = mountText(source, AT(source, "app.get"));
+
+        assert.match(text, /blocking/, "the trim landed inside the wrapper's own callback");
+        assert.doesNotMatch(text, /body\(\)/, "the handler body is not the middleware list");
+    });
+
+    // The refusal sentences carry commas, and they sit a level down from the
+    // list this counts on.
+    it("is not fooled by a comma inside a guard's message", () => {
+        const source = 'app.get("/a", previewReadOnly.blocking("For security reasons, you can\'t"), '
+            + 'async (req, res) => { body(); });';
+
+        const text = mountText(source, AT(source, "app.get"));
+
+        assert.match(text, /blocking/);
+        assert.doesNotMatch(text, /body\(\)/);
+    });
+
+    it("keeps every middleware when there are several", () => {
+        const source = 'app.get("/a", password(false), first(), second(), async (req, res) => { body(); });';
+
+        const text = mountText(source, AT(source, "app.get"));
+
+        for (const each of ["password", "first", "second"]) assert.match(text, new RegExp(each));
+        assert.doesNotMatch(text, /body\(\)/);
+    });
+
+    it("handles a mount with nothing but a handler", () => {
+        const source = 'app.get("/a", async (req, res) => { body(); });';
+
+        assert.doesNotMatch(mountText(source, AT(source, "app.get")), /body\(\)/);
+    });
+});
+
+/**
+ * Where the mounts are, taken from the match rather than searched for again.
+ *
+ * Both route scans located a mount with source.indexOf(match), which finds the
+ * *first* occurrence of that text - so two mounts sharing a matched prefix
+ * would both be read at the first one's position, and the second would be
+ * judged on the first one's middleware. matchAll already carries the index.
+ */
+describe("findMounts", () => {
+    it("finds every mount of the verbs it is given", () => {
+        const source = [
+            'app.get("/a", handleA);',
+            'app.delete("/b", handleB);',
+            'app.post("/c", handleC);'
+        ].join("\n");
+
+        assert.deepEqual(findMounts(source, ["get", "delete"]).map(({route}) => route), ["/a", "/b"]);
+    });
+
+    it("reports the verb it matched", () => {
+        const source = 'app.all("/:id/*rest", handler);';
+
+        assert.equal(findMounts(source, ["get", "all"])[0].verb, "all");
+    });
+
+    /**
+     * The defect this replaces. Two mounts whose matched text is identical -
+     * the capture stops at the route string, so a repeated path is enough -
+     * were both read at the first one's offset.
+     */
+    it("gives each mount its own position", () => {
+        const source = [
+            'app.get("/same", first, previewReadOnly.blocking("no"), async (req, res) => {});',
+            'app.get("/same", second, async (req, res) => {});'
+        ].join("\n");
+
+        const [one, two] = findMounts(source, ["get"]);
+
+        assert.notEqual(one.at, two.at, "both mounts were located at the same offset");
+        assert.match(one.text, /blocking/);
+        assert.doesNotMatch(two.text, /blocking/, "the second mount was handed the first one's guard");
+    });
+
+    it("carries each mount's own text", () => {
+        const source = [
+            'app.get("/a", password(false), handleA);',
+            'app.get("/b", previewReadOnly.blocking("no"), handleB);'
+        ].join("\n");
+
+        const [a, b] = findMounts(source, ["get"]);
+
+        assert.doesNotMatch(a.text, /blocking/);
+        assert.match(b.text, /blocking/);
+    });
+
+    it("finds nothing in a file that mounts nothing", () => {
+        assert.deepEqual(findMounts("export default app;", ["get", "all"]), []);
     });
 });

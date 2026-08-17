@@ -1,7 +1,7 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import previewReadOnly from "../../server/middlewares/previewReadOnly.js";
-import { listSources, mountText, readSource } from "../helpers/source.js";
+import { findMounts, listSources, mountText, readSource } from "../helpers/source.js";
 
 /**
  * What a visitor to a public demo is allowed to change, which is nothing that
@@ -128,7 +128,7 @@ describe("nothing destructive is left open on a demo", () => {
      * So the list is derived from the source: every mutating verb mounted in
      * server/routes, minus the one deliberate exemption below.
      */
-    const MUTATING_ROUTE = /^app\.(post|put|patch|delete|all)\((?:\s*)(["'`])(.*?)\2/gm;
+    const MUTATING_VERBS = ["post", "put", "patch", "delete", "all"];
 
     /**
      * The deliberate exemptions, each for a stated reason.
@@ -147,13 +147,10 @@ describe("nothing destructive is left open on a demo", () => {
 
     const routeFiles = listSources("server/routes").map((name) => `server/routes/${name}`);
 
-    const GUARDED = routeFiles.flatMap((file) => {
-        const source = readSource(file);
-
-        return [...source.matchAll(MUTATING_ROUTE)]
-            .map(([match, , , route]) => ({file, route, at: source.indexOf(match)}))
-            .filter(({route}) => !ALLOWED.some((allowed) => allowed.file === file && allowed.route === route));
-    });
+    const GUARDED = routeFiles.flatMap((file) =>
+        findMounts(readSource(file), MUTATING_VERBS)
+            .map(({route, text}) => ({file, route, text}))
+            .filter(({route}) => !ALLOWED.some((allowed) => allowed.file === file && allowed.route === route)));
 
     it("finds the mutating routes to check", () => {
         // A guard against the scan itself silently matching nothing - which
@@ -179,17 +176,13 @@ describe("nothing destructive is left open on a demo", () => {
             "running a test is what preview mode exists to demonstrate");
     });
 
-    for (const {file, route, at} of GUARDED) {
+    for (const {file, route, text} of GUARDED) {
         it(`${route} in ${file.split("/").pop()} is guarded`, () => {
-            const source = readSource(file);
-
-            // The middleware list, up to the handler - a guard placed after
-            // the work has been done is not a guard. Bounded at the next mount
-            // before it is trimmed at the handler, so a route with no arrow of
-            // its own cannot be handed the following route's guard.
-            const declaration = mountText(source, at);
-
-            assert.match(declaration, /previewReadOnly/,
+            // The middleware list, which is where a guard has to be: one placed
+            // after the work has been done is not a guard. findMounts bounds it
+            // at the next mount and at this route's own last argument, so a
+            // route can never be handed its neighbour's.
+            assert.match(text, /previewReadOnly/,
                 `${route} in ${file} can be called by any visitor to a demo instance`);
         });
     }
@@ -356,7 +349,7 @@ describe("every read route decides what a demo may have", () => {
      * written to stop that recurring has to be able to see the verb it
      * happened on.
      */
-    const MOUNT = /^app\.(get|all)\(\s*(["'`])(.*?)\2/gm;
+    const READ_VERBS = ["get", "all"];
 
     /**
      * A guard two routes share is bound to a name first, so that one refusal
@@ -371,15 +364,11 @@ describe("every read route decides what a demo may have", () => {
             const source = readSource(`server/routes/${name}`);
             const named = [...source.matchAll(NAMED_GUARD)].map(([, binding]) => binding);
 
-            return [...source.matchAll(MOUNT)].map(([match, , , route]) => {
-                const declaration = mountText(source, source.indexOf(match));
-
-                return {
-                    key: `${name} ${route}`,
-                    guarded: GUARD.test(declaration)
-                        || named.some((binding) => new RegExp(`\\b${binding}\\b`).test(declaration))
-                };
-            });
+            return findMounts(source, READ_VERBS).map(({route, text}) => ({
+                key: `${name} ${route}`,
+                guarded: GUARD.test(text)
+                    || named.some((binding) => new RegExp(`\\b${binding}\\b`).test(text))
+            }));
         });
 
     it("finds the read routes to check", () => {

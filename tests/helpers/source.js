@@ -18,26 +18,88 @@ export const listSources = (dir) =>
     fs.readdirSync(path.join(root, dir)).filter((name) => name.endsWith(".js"));
 
 /**
+ * The last comma at the outermost argument depth, which is where the handler
+ * begins.
+ *
+ * Strings are skipped, because the refusal a guard is constructed with carries
+ * commas of its own - "For security reasons, you can't ..." - and counting one
+ * of those would cut the list in the middle of the very argument being looked
+ * for. Comments inside an argument list are not skipped; nothing writes one,
+ * and a scanner that handles them is a parser.
+ *
+ * Returns -1 when the mount takes a single argument, or when the parentheses
+ * never close - a truncated file, where the caller keeps the whole window
+ * rather than a slice of unknown meaning.
+ */
+const lastArgumentComma = (text) => {
+    let depth = 0;
+    let quote = null;
+    let last = -1;
+
+    for (let index = 0; index < text.length; index++) {
+        const character = text[index];
+
+        if (quote !== null) {
+            if (character === "\\") index++;
+            else if (character === quote) quote = null;
+            continue;
+        }
+
+        if (character === '"' || character === "'" || character === "`") quote = character;
+        else if (character === "(") depth++;
+        else if (character === ")" && --depth === 0) return last;
+        else if (character === "," && depth === 1) last = index;
+    }
+
+    return -1;
+};
+
+/**
  * The middleware list of one route mount, bounded by the mount that follows it.
  *
- * The scans that hold a route to its guard used to slice from the mount to the
+ * The scans that hold a route to its guard first sliced from the mount to the
  * next `=>` in the file, which is sound only while every handler is an arrow. A
  * route mounted with a named function has no arrow of its own, so that search
- * runs on into the *next* route and the slice comes back carrying that route's
+ * ran on into the *next* route and the slice came back carrying that route's
  * middleware - and a neighbour's guard then marks an unguarded route as
  * guarded, which is the one direction a security scan must not fail in.
  *
- * So the window is closed first, at the next mount, and only then trimmed at
- * the handler. A route with no arrow simply keeps its whole mount, which is
- * exactly the text that was being asked about.
+ * Trimming at the first arrow inside the window was no better in the other
+ * direction: opengraph mounts `passwordWrapper(true, (req, res) => …)` ahead of
+ * its handler, so the cut landed inside that argument and everything after it -
+ * where a guard would sit - was invisible.
+ *
+ * So the window is closed at the next mount, and the handler is found for what
+ * it is: the last argument. Everything before the last comma at the mount's own
+ * paren depth is the middleware list.
  */
 export const mountText = (source, at) => {
     const following = source.slice(at + 1).search(/^app\./m);
     const window = source.slice(at, following === -1 ? source.length : at + 1 + following);
 
-    const handler = window.indexOf("=>");
+    const handler = lastArgumentComma(window);
 
     return handler === -1 ? window : window.slice(0, handler);
+};
+
+/**
+ * Every route mount in a file for the given verbs, with its own position.
+ *
+ * The position comes from the match rather than from a second search for the
+ * matched text. `source.indexOf(match)` answers the *first* occurrence, so two
+ * mounts sharing a matched prefix - the capture stops at the route string, so a
+ * repeated path is enough - were both read at the first one's offset, and the
+ * second was judged on the first one's middleware.
+ */
+export const findMounts = (source, verbs) => {
+    const pattern = new RegExp(`^app\\.(${verbs.join("|")})\\(\\s*(["'\`])(.*?)\\2`, "gm");
+
+    return [...source.matchAll(pattern)].map((match) => ({
+        verb: match[1],
+        route: match[3],
+        at: match.index,
+        text: mountText(source, match.index)
+    }));
 };
 
 /**
