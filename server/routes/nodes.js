@@ -9,7 +9,21 @@ import { importBody } from './storage.js';
 
 const app = express.Router();
 
+/**
+ * The configured nodes, and on a demo none.
+ *
+ * Answered empty rather than refused: the client polls this on every config
+ * change and a demo visitor is not in view mode, so a 403 would be an error
+ * the node context has no branch for - and "this instance offers you no nodes"
+ * is exactly what an empty list already means everywhere else.
+ *
+ * What it withheld by answering is the operator's own host names and addresses
+ * - the same category as the `interface` adapter name the config route keeps
+ * back - and the ids the proxy below needs to be asked for.
+ */
 app.get("/", password(false), async (req, res) => {
+    if (process.env.PREVIEW_MODE === "true") return res.json([]);
+
     return res.json(await nodes.listAll());
 });
 
@@ -102,12 +116,22 @@ app.patch("/:nodeId/password", password(false),
 //
 // previewReadOnly matters more here than on any route it guards directly: this
 // one reaches a *different machine*, and it substitutes that machine's stored
-// password on the way, so an unguarded mutating verb would hand an anonymous
-// demo visitor administrative access to a node the operator owns. It was the
-// only mutating route in the app with no preview check of any kind - the four
-// above it each had one, and it was missed because `app.all` looks like
-// nothing in particular. Reads still proxy: the guard passes GET/HEAD/OPTIONS.
-app.all("/:nodeId/*route", password(false), previewReadOnly, importBody, async (req, res) => {
+// password on the way, so an unguarded verb would hand an anonymous demo
+// visitor administrative access to a node the operator owns. It was the only
+// mutating route in the app with no preview check of any kind - the four above
+// it each had one, and it was missed because `app.all` looks like nothing in
+// particular.
+//
+// Sealed rather than made read-only, which is what it was first given and not
+// enough. A read here is not a read of the demo: line 117 attaches the node's
+// own password, so the far end answers as though its operator had asked, and
+// `GET /api/nodes/<id>/integrations/active` came back with that node's telegram
+// token and webhook URLs in clear. Every redaction this instance applies to its
+// own routes was reachable through this one, unredacted, because the machine
+// answering could not tell it was serving a stranger.
+app.all("/:nodeId/*route", password(false),
+    previewReadOnly.blocking("For security reasons, you can't reach other nodes in preview mode"),
+    importBody, async (req, res) => {
     const node = await nodes.getOne(req.params.nodeId);
     if (node === null) return res.status(404).json({message: "Node not found"});
 

@@ -3,9 +3,12 @@ import assert from "node:assert/strict";
 import { bootServer, api, seedTests } from "./helpers/boot.js";
 
 let server;
+let nodeId;
 
 const TELEGRAM_TOKEN = "123456789:AAsupersecrettokenvalue";
 const CHAT_ID = "-1001234567890";
+
+const NODE = {name: "Attic", url: "http://192.168.1.40:5216", password: "TheNodesOwn1!"};
 
 const CONNECTION = {isp: "Deutsche Telekom AG", externalIp: "203.0.113.5", resultId: "9876543210"};
 
@@ -27,6 +30,13 @@ before(async () => {
         headers: {"content-type": "application/json"},
         body: JSON.stringify({token: TELEGRAM_TOKEN, chat_id: CHAT_ID, send_failed: true})
     });
+
+    // Written straight to the model: PUT /nodes checks the URL is safe and then
+    // fetches the node to verify its password, and neither belongs in a test
+    // about what the row discloses once it exists.
+    const {default: Node} = await import("../../server/models/Node.js");
+    await Node.destroy({where: {}});
+    nodeId = (await Node.create(NODE)).id;
 
     await seedTests(server.tests, [CONNECTION]);
 });
@@ -108,6 +118,22 @@ describe("a demo instance", () => {
     });
 
     /**
+     * And the countdown goes with the cron it is derived from.
+     *
+     * Withholding `cron` from the config would be worth nothing on its own:
+     * one poll of this route recovers the schedule's minute field, and polling
+     * across an evening walks out both edges of the quiet window, since the
+     * countdown steps over it. Null is what this route already answers when
+     * nothing is scheduled, so the status bar has a branch for it.
+     */
+    it("does not count down to the next test", async () => {
+        const {body} = await onDemo("/speedtests/status");
+
+        assert.equal(body.nextTest, null,
+            "polling the countdown recovers the schedule the config withholds");
+    });
+
+    /**
      * And the demo is still a demo.
      *
      * `viewMode` is echoed straight back to the client here and drives the
@@ -132,6 +158,56 @@ describe("a demo instance", () => {
 
         for (const key of ["ping", "download", "upload"])
             assert.ok(body[key], `${key} is needed to grade the measurements`);
+    });
+});
+
+/**
+ * And the other machines the operator owns.
+ *
+ * Redacting the local read routes was not enough on its own. The node proxy
+ * reaches a different server entirely and substitutes that server's stored
+ * password on the way, and previewReadOnly lets a GET through by design - so
+ * `GET /api/nodes/<id>/integrations/active` on a demo was answered by the far
+ * end as though the operator had asked, with its credentials in clear. Every
+ * redaction here was reachable through that one door, unredacted, because the
+ * far end could not tell it was serving a stranger.
+ *
+ * The listing is what supplies the id that door needs, and the operator's own
+ * host names and addresses along with it.
+ */
+describe("a demo and the operator's other machines", () => {
+    it("offers a visitor no nodes at all", async () => {
+        const {status, body} = await onDemo("/nodes");
+
+        assert.equal(status, 200, "the client polls this and takes an error badly");
+        assert.deepEqual(body, [], "a demo visitor was given the operator's node list");
+    });
+
+    it("refuses to proxy a read to one", async () => {
+        const {status, body} = await onDemo(`/nodes/${nodeId}/config`);
+
+        assert.equal(status, 403,
+            "a demo visitor read another machine with that machine's stored password");
+        assert.match(body.message, /preview mode/i);
+    });
+
+    // The credential the proxy would have attached. Named explicitly because it
+    // is the thing that makes a proxied read an administrative one.
+    it("refuses whatever is asked of the node", async () => {
+        for (const route of ["integrations/active", "speedtests", "storage/config"]) {
+            const {status} = await onDemo(`/nodes/${nodeId}/${route}`);
+
+            assert.equal(status, 403, `/${route} was proxied to the node on a demo`);
+        }
+    });
+
+    it("still gives the operator their own node list", async () => {
+        const {body} = await asVisitor("/nodes");
+
+        assert.equal(body.length, 1);
+        assert.equal(body[0].name, NODE.name);
+        assert.equal(body[0].url, NODE.url);
+        assert.equal(body[0].password, true, "the listing reports whether a password is set, never the value");
     });
 });
 
@@ -163,5 +239,13 @@ describe("an ordinary instance", () => {
 
         assert.equal(body[0].isp, CONNECTION.isp);
         assert.equal(body[0].externalIp, CONNECTION.externalIp);
+    });
+
+    // The countdown is the status bar's whole job for the operator, so the
+    // demo's null must not be what everyone gets.
+    it("still counts down to the operator's next test", async () => {
+        const {body} = await asVisitor("/speedtests/status");
+
+        assert.notEqual(body.nextTest, null, "the status bar lost its countdown");
     });
 });

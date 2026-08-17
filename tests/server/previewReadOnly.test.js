@@ -199,3 +199,82 @@ describe("nothing destructive is left open on a demo", () => {
         });
     }
 });
+
+/**
+ * The routes a demo must not reach at all, not even to read.
+ *
+ * previewReadOnly lets GET through on purpose - reading is what a demo is for.
+ * That is the right rule for the instance's own data and the wrong one for the
+ * node proxy, which reaches a *different machine* and substitutes that
+ * machine's stored password on the way. A read there is not a read of the demo;
+ * it is an authenticated read of somebody's other server, and it walks straight
+ * past every redaction the demo applies to its own routes.
+ */
+describe("previewReadOnly.blocking", () => {
+    const blocked = (method) => {
+        const res = response();
+        let passedThrough = false;
+
+        previewReadOnly.blocking("no nodes on a demo")(request(method), res, () => { passedThrough = true; });
+        return {res, passedThrough};
+    };
+
+    it("refuses a read as well as a write on a demo", () => {
+        process.env.PREVIEW_MODE = "true";
+
+        for (const method of ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]) {
+            const {res, passedThrough} = blocked(method);
+
+            assert.equal(passedThrough, false, `${method} reached the route on a demo`);
+            assert.equal(res.statusCode, 403);
+        }
+    });
+
+    it("carries the wording it was given", () => {
+        process.env.PREVIEW_MODE = "true";
+
+        assert.equal(blocked("GET").res.body.message, "no nodes on a demo");
+    });
+
+    it("leaves an ordinary instance alone", () => {
+        for (const method of ["GET", "PUT", "DELETE"])
+            assert.equal(blocked(method).passedThrough, true, `${method} was refused off a demo`);
+    });
+
+    it("reads the setting per request", () => {
+        assert.equal(blocked("GET").passedThrough, true);
+
+        process.env.PREVIEW_MODE = "true";
+        assert.equal(blocked("GET").passedThrough, false, "the setting was captured at import");
+    });
+});
+
+/**
+ * And the proxy carries it.
+ *
+ * A source-shape check for the same reason the scan above is one: this guard is
+ * only ever wrong by being forgotten, and the route it guards is an `app.all`
+ * that looks like nothing in particular.
+ */
+describe("the node proxy is sealed on a demo", () => {
+    const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+    const source = fs.readFileSync(path.join(root, "server/routes/nodes.js"), "utf8");
+
+    const declarationOf = (mount) => {
+        const at = source.indexOf(mount);
+        assert.notEqual(at, -1, `${mount} is gone from server/routes/nodes.js`);
+
+        return source.slice(at, source.indexOf("=>", at));
+    };
+
+    it("refuses the proxy whatever the method", () => {
+        assert.match(declarationOf('app.all("/:nodeId/*route"'), /previewReadOnly\.blocking/,
+            "a demo visitor can read another machine with that machine's password");
+    });
+
+    // The listing is answered rather than refused - see the route - so it must
+    // not carry the blocking guard, which would 403 the client's own poll.
+    it("still lets the listing route answer", () => {
+        assert.doesNotMatch(declarationOf('app.get("/", password(false)'), /previewReadOnly\.blocking/);
+    });
+});
