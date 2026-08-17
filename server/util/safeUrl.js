@@ -169,6 +169,32 @@ const embeddedIpv4 = (address) => {
     return [high >> 8, high & 0xff, low >> 8, low & 0xff].join(".");
 };
 
+/**
+ * Just the link-local half of the block list, in every spelling.
+ *
+ * Split out for the outbound notification path, which allows loopback - an
+ * integration on the same host is ordinary - and must still refuse
+ * 169.254.169.254. Shares embeddedIpv4 with the full check, so the IPv6
+ * spellings a URL actually produces are recognised here too.
+ */
+export const isLinkLocalAddress = (address) => {
+    if (typeof address !== "string" || address === "") return false;
+
+    const embedded = embeddedIpv4(address);
+    const dotted = embedded ?? address;
+
+    if (!dotted.includes(":")) {
+        const parts = octets(dotted);
+        if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255))
+            return false;
+
+        return parts[0] === 169 && parts[1] === 254;
+    }
+
+    // fe80::/10 - the second nibble of the second byte only has to fall in 8..b.
+    return /^fe[89ab]/.test(dotted.toLowerCase().split("%")[0]);
+};
+
 export const isBlockedAddress = (address) => {
     if (typeof address !== "string" || address === "") return false;
 
@@ -214,11 +240,78 @@ export const safeLookup = (hostname, options, callback) => {
 };
 
 /**
+ * Whether a URL the operator typed may be fetched at all.
+ *
+ * The address half of the guard, with no node allowlist in it - the part that
+ * is true of every user-supplied destination rather than only of a node.
+ *
+ * This exists because the docstring at the top of this file was wrong. Adding a
+ * node was not "the one place the server fetches a URL the user typed": five
+ * integration modules fetch a stored one too - webhook, healthChecks, gotify,
+ * ntfy and influxdb - and their only gate was the field's own
+ * /^https?:\/\/\S+$/, which matches http://127.0.0.1:9200/ and
+ * http://169.254.169.254/ as happily as anything else. So the machinery
+ * routes/nodes.js sets out at length covered one of the six user-typed URLs in
+ * the app.
+ *
+ * Deliberately narrower than checkNodeTarget, in three ways, and each one is a
+ * decision rather than an omission.
+ *
+ * Loopback is allowed. A node is another machine by definition, so loopback
+ * there is never anything but a mistake or an attack; an integration endpoint on
+ * the same host is ordinary - InfluxDB on 127.0.0.1:8086 and a gotify container
+ * beside MySpeed are how a great many self-hosters run this. Refusing it would
+ * break more working installs than it protected.
+ *
+ * Link-local is not. Nothing legitimate notifies 169.254.0.0/16 or fe80::/10,
+ * and 169.254.169.254 is the cloud metadata service - the one destination in
+ * this space with anything to gain, and the reason routes/nodes.js singles it
+ * out.
+ *
+ * It does not resolve the hostname. A node is added once, by hand, so a lookup
+ * there costs nothing; this runs inside the run lock on every finished test, so
+ * a lookup here would put a DNS round trip in front of every webhook and would
+ * refuse an endpoint that is momentarily unresolvable - a working integration
+ * having a bad minute rather than one pointed somewhere it should not be.
+ *
+ * It also does not consult ALLOWED_NODE_HOSTS. That list names the machines that
+ * may be *nodes*; applying it here would refuse discord on any instance that set
+ * it.
+ *
+ * The residual gap, named rather than hidden: a hostname that resolves to a
+ * link-local address still passes, and the global fetch accepts no `lookup` to
+ * pin it and follows redirects, so a far end answering 302 can still choose a
+ * destination after the check. Closing either needs the node path's node:http
+ * client. What this buys is that a webhook cannot be *pointed* at the metadata
+ * service in the first place, which is the shape the field's regex allowed.
+ *
+ * @returns {{safe: true}|{safe: false, reason: string}}
+ */
+export const checkOutboundTarget = (value) => {
+    let url;
+    try {
+        url = new URL(value);
+    } catch {
+        return {safe: false, reason: "The URL is not a valid URL"};
+    }
+
+    if (!ALLOWED_PROTOCOLS.has(url.protocol))
+        return {safe: false, reason: "A URL has to use http or https"};
+
+    // Strips the brackets an IPv6 literal carries in a URL.
+    const hostname = url.hostname.replace(/^\[|]$/g, "");
+
+    if (isLinkLocalAddress(hostname))
+        return {safe: false, reason: "That address is a link-local one"};
+
+    return {safe: true};
+};
+
+/**
  * Decides whether a node URL may be fetched.
  *
- * The hostname is resolved before the verdict, so a name that points at a
- * blocked address is refused too rather than only a literal one. This is the
- * check that produces a useful message for the operator adding a node; the
+ * The address checks above, plus the allowlist that is specific to nodes. This
+ * is the check that produces a useful message for the operator adding one; the
  * connection itself is pinned separately by safeLookup, which is what makes the
  * verdict impossible to outrun.
  *
@@ -248,6 +341,10 @@ export const checkNodeTarget = async (value) => {
     if (isBlockedAddress(hostname))
         return {safe: false, reason: "A node cannot point at a loopback or link-local address"};
 
+    // Resolved here and not in checkOutboundTarget: a node is added once, by
+    // hand, so the lookup costs nothing and closes the name-to-loopback case
+    // outright. The notification path cannot afford the same round trip - see
+    // the note there.
     let resolved;
     try {
         resolved = await dns.lookup(hostname, {all: true});

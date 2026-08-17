@@ -8,7 +8,34 @@
  * run lock says nothing about a GET, so a caller whose request is slower or
  * more expendable than a webhook is expected to name its own deadline instead.
  */
+import { checkOutboundTarget } from "./safeUrl.js";
+
 const OUTBOUND_TIMEOUT = 10000;
+
+/**
+ * Refuses a destination the server may not reach, as an ordinary send failure.
+ *
+ * Every URL these two helpers post to is one the operator typed into an
+ * integration, and the only check on it was the field's own
+ * /^https?:\/\/\S+$/ - which matches http://127.0.0.1:9200/ and
+ * http://169.254.169.254/ as happily as anything else. The address guard that
+ * covers the node endpoint never covered this path, and routes/nodes.js already
+ * spells out why that matters.
+ *
+ * Reported the way a refused request is, rather than thrown: `activity` is what
+ * turns a failure into "this endpoint is not working" on the integration card,
+ * and a destination that cannot be reached is exactly that. getJson is left
+ * alone deliberately - it fetches the GitHub release list and the provider
+ * server lists, which are the project's own URLs and not the operator's.
+ */
+const refuseBlocked = (url, activity) => {
+    const target = checkOutboundTarget(url);
+    if (target.safe) return false;
+
+    note(activity, true);
+    report(url, target.reason);
+    return true;
+};
 
 const jsonInit = (method, json, headers) => ({
     method,
@@ -103,6 +130,8 @@ const drain = (res) => {
 const outcome = (res) => ({ok: res.ok, status: res.status});
 
 export const postJson = async (url, json, {headers, activity} = {}) => {
+    if (refuseBlocked(url, activity)) return null;
+
     try {
         const res = await fetch(url, jsonInit("POST", json, headers));
         note(activity, res.ok ? undefined : true);
@@ -117,6 +146,8 @@ export const postJson = async (url, json, {headers, activity} = {}) => {
 };
 
 export const postText = async (url, body, {headers, activity} = {}) => {
+    if (refuseBlocked(url, activity)) return null;
+
     try {
         const res = await fetch(url, {
             method: "POST",
