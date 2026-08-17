@@ -17,7 +17,23 @@ import { safeLookup } from './safeUrl.js';
  */
 const DEFAULT_TIMEOUT = 15000;
 
-export const safeRequest = (url, {method = "GET", headers = {}, body, timeout = DEFAULT_TIMEOUT, signal} = {}) =>
+/**
+ * The most of a node's answer this will hold in memory.
+ *
+ * Every chunk went into an array that nothing bounded, so how much the process
+ * allocated was the far end's decision. A node is a machine an admin pointed at
+ * rather than a trusted one, the server is a single process, and the proxy in
+ * controller/node.js hands a caller's own request to it - so one node that has
+ * been compromised, or is simply something else at that address by now, could
+ * be made to take down the scheduler, the API and the database handle together.
+ *
+ * Ten megabytes is far above any real answer: these are JSON config and test
+ * listings, and the largest of them is a few hundred kilobytes.
+ */
+export const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+
+export const safeRequest = (url, {method = "GET", headers = {}, body, timeout = DEFAULT_TIMEOUT, signal,
+    maxBytes = MAX_RESPONSE_BYTES} = {}) =>
     new Promise((resolve, reject) => {
         let target;
         try {
@@ -30,8 +46,21 @@ export const safeRequest = (url, {method = "GET", headers = {}, body, timeout = 
 
         const request = transport.request(target, {method, headers, lookup: safeLookup, timeout}, (response) => {
             const chunks = [];
+            let held = 0;
 
-            response.on("data", (chunk) => chunks.push(chunk));
+            response.on("data", (chunk) => {
+                held += chunk.length;
+
+                // Refused as the body arrives, not once it is assembled: a
+                // check on the finished buffer would reject the request having
+                // already paid the memory the ceiling exists to save.
+                if (held > maxBytes) {
+                    request.destroy(new Error(`Response too large: more than ${maxBytes} bytes`));
+                    return;
+                }
+
+                chunks.push(chunk);
+            });
             response.on("error", reject);
             response.on("end", () => resolve({
                 status: response.statusCode,

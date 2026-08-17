@@ -2,8 +2,12 @@ import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import dns from "node:dns";
-import { safeRequest } from "../../server/util/safeRequest.js";
+import { safeRequest, MAX_RESPONSE_BYTES } from "../../server/util/safeRequest.js";
 import { safeLookup } from "../../server/util/safeUrl.js";
+
+const FLOOD_CHUNK_BYTES = 1024;
+const FLOOD_CHUNKS = 100;
+const FLOOD_TOTAL_BYTES = FLOOD_CHUNK_BYTES * FLOOD_CHUNKS;
 
 let server;
 let port;
@@ -22,6 +26,16 @@ before(async () => {
             }
 
             if (req.url === "/slow") return;    // never answers
+
+            // Far more than the cap the flood test sets, sent in pieces so the
+            // ceiling is crossed part way through the body rather than on the
+            // first chunk. Finite on purpose: an endless stream would hang the
+            // run rather than fail it if the ceiling were ever removed.
+            if (req.url === "/flood") {
+                res.writeHead(200, {"content-type": "application/octet-stream"});
+                for (let i = 0; i < FLOOD_CHUNKS; i++) res.write("x".repeat(FLOOD_CHUNK_BYTES));
+                return res.end();
+            }
 
             res.writeHead(200, {"content-type": "text/plain"});
             res.end("hello");
@@ -89,6 +103,65 @@ describe("safeRequest", () => {
 
     it("rejects a malformed url", async () => {
         await assert.rejects(() => safeRequest("not a url"));
+    });
+});
+
+/**
+ * A node that answers with more than the caller can hold.
+ *
+ * Every chunk went into an array that nothing bounded, so the size of the
+ * response was the far end's choice and the only limit was the heap. A node is
+ * a machine an admin pointed at, not a trusted one - it can be compromised, or
+ * simply be something else at that address by now - and the whole server is a
+ * single process: one hostile answer takes down the scheduler, the API and the
+ * database handle with it. The other half is the proxy at controller/node.js,
+ * which passes a caller's own request through, so a page load is enough to ask
+ * for it.
+ */
+describe("a response larger than the ceiling", () => {
+    it("rejects rather than buffering the whole of it", async () => {
+        await assert.rejects(
+            () => safeRequest(url("/flood"), {maxBytes: FLOOD_TOTAL_BYTES / 4}),
+            /too large/i,
+            "the whole flood was buffered into memory"
+        );
+    });
+
+    it("stops reading part way through rather than at the end", async () => {
+        // Proves the ceiling is enforced as the body arrives. A check on the
+        // assembled buffer would reject the same request having already paid
+        // the memory that the rejection is meant to avoid.
+        let peak = 0;
+        const original = Buffer.concat;
+        Buffer.concat = (chunks) => {
+            peak = Math.max(peak, chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+            return original(chunks);
+        };
+
+        try {
+            await assert.rejects(() => safeRequest(url("/flood"), {maxBytes: FLOOD_TOTAL_BYTES / 4}));
+        } finally {
+            Buffer.concat = original;
+        }
+
+        assert.ok(peak <= FLOOD_TOTAL_BYTES / 2,
+            `the body was assembled anyway: ${peak} bytes reached Buffer.concat`);
+    });
+
+    it("lets a body under the ceiling through untouched", async () => {
+        const response = await safeRequest(url("/flood"), {maxBytes: FLOOD_TOTAL_BYTES * 2});
+
+        assert.equal(response.status, 200);
+        assert.equal(response.body.length, FLOOD_TOTAL_BYTES);
+    });
+
+    it("applies a ceiling by default, without the caller asking for one", async () => {
+        assert.equal(typeof MAX_RESPONSE_BYTES, "number");
+        assert.ok(MAX_RESPONSE_BYTES > 0 && Number.isFinite(MAX_RESPONSE_BYTES),
+            "the default ceiling is not a usable size");
+
+        // Large enough that no answer a real node gives is refused by it.
+        assert.ok(MAX_RESPONSE_BYTES >= 1024 * 1024, "the default ceiling would refuse ordinary responses");
     });
 });
 
