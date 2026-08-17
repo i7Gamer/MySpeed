@@ -1,6 +1,17 @@
 const DEFAULT_STATUS = 500;
 
 /**
+ * The bottom of the 4xx range, and the status body-parser gives a body it could
+ * not parse.
+ *
+ * One constant for both because it is one idea - "this is the caller's fault" -
+ * and because the two have to agree: the status chosen for a SyntaxError below
+ * decides which side of this boundary it lands on, and a malformed body filed
+ * as a server error would be logged as though the instance had broken.
+ */
+const CLIENT_ERROR_STATUS = 400;
+
+/**
  * Terminates the request, whatever went wrong.
  *
  * It was written for body-parser failures and its comment claimed it saw
@@ -17,8 +28,11 @@ export default (err, req, res, next) => {
     // body-parser stamps its own 400 on one, but a SyntaxError raised anywhere
     // else has no status, and defaulting that to 500 would file it as the
     // server's fault in the log below.
-    const status = err instanceof SyntaxError ? 400 : (err.status ?? err.statusCode ?? DEFAULT_STATUS);
-    const isClientError = status >= 400 && status < DEFAULT_STATUS;
+    const status = err instanceof SyntaxError
+        ? CLIENT_ERROR_STATUS
+        : (err.status ?? err.statusCode ?? DEFAULT_STATUS);
+
+    const isClientError = status >= CLIENT_ERROR_STATUS && status < DEFAULT_STATUS;
 
     /**
      * The operator's copy, since the caller's says nothing.
@@ -38,7 +52,7 @@ export default (err, req, res, next) => {
     if (res.headersSent) return next(err);
 
     if (err instanceof SyntaxError)
-        return res.status(400).json({message: "You need to provide a valid JSON body"});
+        return res.status(CLIENT_ERROR_STATUS).json({message: "You need to provide a valid JSON body"});
 
     // Only body-parser's own wording is echoed back, and only for client
     // errors - anything else could carry internals.
