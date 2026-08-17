@@ -28,12 +28,20 @@
 // Its labels and descriptions are the page's only sentences - "Peak-hour
 // slowdown" over "Slowest around 8:00 PM, fastest around 4:00 AM" - where the
 // stability and latest-test cards name a measurement in a word and qualify it
-// with "±3 Mbps". At an equal third of 1400px every card holds ~409px of list,
-// which leaves the packet-loss row ~222px for a sentence wanting 271 and the
-// peak-hour row ~295 for one wanting 304: those two wrapped onto a second line
-// while their line-mates sat on hundreds of spare pixels. At this share the
-// summary holds ~550px and the two beside it ~413, which is more than either
-// has ever needed.
+// with "±3 Mbps".
+//
+// A row spends 64px on its icon and its two gaps and gives the rest to the
+// label, minus whatever the figure takes: the packet-loss row's reading and
+// delta want 123px against a sentence wanting 271, and the peak-hour row's bare
+// percentage 50 against one wanting 304. At an equal third of the old 1400px
+// page every card held ~409px of list, which left those two rows 222px and 295
+// - so both wrapped onto a second line while the cards beside them sat on
+// hundreds of spare pixels.
+//
+// The wider page alone would settle it at full width. This is for the rest of
+// the band: three cards share the row from 1031px up, and at 1200px an equal
+// third is ~331px of list against this share's ~408. It is also the headroom a
+// longer language needs - the sentences above are the short ones.
 //
 // Here rather than on the card, like the stages below: this is the one
 // stylesheet that knows there are two other cards on that row. Above the
@@ -74,16 +82,16 @@
 // full width at 900px, and the cards that were being cut kept being cut all the
 // way down.
 //
-// The pairs fall out of the order the cards are written in, once the summary
-// takes a row of its own: last test beside stability, then latency beside
-// download, upload beside the hourly average, and the two value cards last.
+// The pairs no longer fall out of the order on their own. Three across, the
+// latency chart leads the second row so that each speed chart sits directly
+// over its own value card - which puts the speed charts at positions five and
+// six, and a stage that pairs two at a time pairs five with four and six with
+// seven. No order can have both: whichever card leads that row is the one the
+// download chart gets paired with here.
 //
-// Charts pair with charts and panels with panels, but the two speed charts are
-// not the pair they were - that is what the order costs here. It buys the
-// column above: three across, the latency chart leads the second row so each
-// speed chart sits directly over its own value card, and no order can have
-// both. Position 5 and 6 hold the speed charts for that alignment, and this
-// stage pairs 4-5 and 6-7.
+// So the two cards without a partner - the latency chart and the hourly one -
+// take a row each, which is what puts the rest back in step: last test beside
+// stability, the two speed charts, the two value cards.
 //
 // The shimmer cards reflow with the content they stand for, or the page loads
 // in one shape and snaps into another the moment the numbers land.
@@ -98,6 +106,24 @@
     // read as a paragraph rather than as a tile. It is the one card that has
     // something to do with a full row.
     > .container-large
+      flex: 1 1 100%
+
+    // And the two charts the pairing leaves over, which take a row each rather
+    // than breaking up a pair to stand beside one. See the note above: the
+    // speed charts hold positions five and six for the sake of the column
+    // above them, and this stage pairs five with four. Spanning these two takes
+    // both odd positions out of the count, and every pair on the page comes
+    // back - stability beside the last test, the two speed charts, the two
+    // value cards.
+    //
+    // They are also the two the width suits: 24 hourly buckets and a latency
+    // line read across a row, where a card of five labelled rows would just
+    // stretch its labels away from its figures.
+    //
+    // After the share above, deliberately - same specificity, and only source
+    // order settles those.
+    > .ping-chart,
+    > .hourly-chart
       flex: 1 1 100%
 
     // The shimmer after the toolbar stands where the summary will, so it

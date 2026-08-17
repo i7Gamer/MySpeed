@@ -51,7 +51,7 @@ describe("the statistics page's shape", () => {
      */
     it("reflows the page's own cards and not the modal's", () => {
         const staged = rules(page).filter(({selector}) =>
-            /\.stats-container|\.chart-container/.test(selector));
+            /\.stats-container|\.chart-container|\.ping-chart|\.hourly-chart/.test(selector));
 
         assert.ok(staged.length > 0, "the page no longer sizes the cards at all");
 
@@ -110,10 +110,14 @@ describe("what a card asks for while three share a row", () => {
  * Its labels and descriptions are the page's only sentences - "Peak-hour
  * slowdown" over "Slowest around 8:00 PM, fastest around 4:00 AM" - where the
  * stability and latest-test cards beside it name a measurement in a word and
- * qualify it with "±3 Mbps". At an equal third of 1400px each card holds ~409px
- * of list, which leaves the packet-loss row ~222px for a sentence wanting 271
- * and the peak-hour row ~295 for one wanting 304: those two rows wrapped to two
- * lines while their line-mates sat on hundreds of spare pixels.
+ * qualify it with "±3 Mbps". At an equal third of the old 1400px page each card
+ * held ~409px of list, which left the packet-loss row 222px for a sentence
+ * wanting 271 and the peak-hour row 295 for one wanting 304: those two wrapped
+ * to a second line while their line-mates sat on hundreds of spare pixels.
+ *
+ * The wider page settles that at full width on its own; the share is what holds
+ * from 1031px up, where three cards still share the row, and what leaves a
+ * longer language somewhere to go.
  *
  * Stated here rather than on the card, like the stages below it: this is the
  * one stylesheet that knows there are two other cards on that row.
@@ -180,6 +184,39 @@ describe("the two-column stage", () => {
         assert.ok(spanning, "the summary card takes half a row like the rest, which leaves nine cards unpaired");
         assert.match(spanning.body, /flex:\s*1 1 100%/,
             "the summary does not span the row, so the pairs below it are off by one");
+    });
+
+    /**
+     * And the two charts left without a partner.
+     *
+     * Three across, the latency chart leads the second row so that each speed
+     * chart sits over its own value card - which puts the speed charts at
+     * positions five and six, where a two-column stage pairs five with four and
+     * six with seven. No order can have both: the download and upload charts
+     * were split across rows here for the sake of the column above them.
+     *
+     * Given a row each, the latency and hourly charts take the odd positions
+     * out of the count and every pair on the page comes back - stability beside
+     * the last test, the two speed charts, the two value cards. They are also
+     * the two the width suits: 24 bars and a line read better across a row than
+     * folded into half of one.
+     */
+    it("spans the two charts that have no partner", () => {
+        const spanning = rules(twoColumn())
+            .filter(({body}) => /flex:\s*1 1 100%/.test(body))
+            .map(({selector}) => selector).join(" ");
+
+        for (const card of [".ping-chart", ".hourly-chart"])
+            assert.ok(spanning.includes(card),
+                `${card} takes half a row, which splits the speed charts to pair it off`);
+    });
+
+    // A selector that names no card is a rule that silently does nothing.
+    it("names both of them in their own markup", () => {
+        assert.match(read("pages/Statistics/charts/PingChart.jsx"), /className="chart-container ping-chart"/,
+            "the latency chart no longer carries the class the stage spans");
+        assert.match(read("pages/Statistics/charts/HourlyChart.jsx"), /className="chart-container hourly-chart"/,
+            "the hourly chart no longer carries the class the stage spans");
     });
 });
 
@@ -322,6 +359,55 @@ describe("the columns the second and third rows fall into", () => {
         assert.ok(order.indexOf("PingChart") < order.indexOf("speed:download"),
             "the ping chart follows the speed charts again");
     });
+
+    /**
+     * And the rows the same nine fall into once only two share one.
+     *
+     * That order pairs the download chart with whatever leads its row, so the
+     * two speed charts would be split here - which is why the two cards without
+     * a partner take a row each. Modelled rather than measured: a spanning card
+     * takes the row it starts, whatever is left of it, and everything else
+     * fills two at a time.
+     */
+    const SPANNING = ["OverviewChart", "PingChart", "HourlyChart"];
+
+    const twoColumnRows = () => {
+        const rows = [];
+        let row = [];
+
+        for (const card of cards()) {
+            if (SPANNING.includes(card) && row.length > 0) rows.push(row), row = [];
+
+            row.push(card);
+            if (SPANNING.includes(card) || row.length === 2) rows.push(row), row = [];
+        }
+
+        if (row.length > 0) rows.push(row);
+
+        return rows;
+    };
+
+    // The other half of the model is the stylesheet's, and a card spanning
+    // there but not named here - or the other way about - is two descriptions
+    // of one layout that no longer agree.
+    it("spans as many cards as the stylesheet gives a row to", () => {
+        const stage = mediaBlocks(page).find(({condition}) => condition.includes(`${Math.max(...ceilings(page))}px`));
+        const spanning = rules(stage.body).filter(({body}) => /flex:\s*1 1 100%/.test(body))
+            .flatMap(({selector}) => selector.split(","))
+            // The shimmer that stands in for the summary while the page loads
+            // is the same row, not a tenth card.
+            .filter((one) => !one.includes(".skeleton-chart"));
+
+        assert.equal(spanning.length, SPANNING.length,
+            `the stylesheet gives a row to ${spanning.length} cards, the model to ${SPANNING.length}`);
+    });
+
+    for (const [one, two] of [["speed:download", "speed:upload"], ["average:down", "average:up"],
+        ["LatestTestChart", "ConsistencyChart"]])
+        it(`keeps ${one} beside ${two} once two share a row`, () => {
+            assert.ok(twoColumnRows().some((row) => row.includes(one) && row.includes(two)),
+                `${one} and ${two} are split across rows at the two-column stage`);
+        });
 });
 
 // The summary's own trims - container-keyed now, so its full-row and modal

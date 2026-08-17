@@ -5,7 +5,13 @@
 // a gap that is only written down once cannot drift apart between them.
 
 // The content box every page is sized to, via `main > *` in default.sass.
-$page-max-width: 1400px
+//
+// It was 1400px, which left a 1440p display a 250px gutter either side of a
+// page whose widest row - the statistics' three cards - was the one thing on it
+// still short of room. The overview's own row folds on a measured 1400px of its
+// own and is unaffected: that figure is what its five tracks need, not a mirror
+// of this one, and it is read against the viewport rather than against this box.
+$page-max-width: 1600px
 
 // Between the rows on the overview and between the cards in the statistics.
 $card-gap: 0.75rem
