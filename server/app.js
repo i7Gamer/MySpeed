@@ -44,7 +44,11 @@ const RATE_LIMIT_WINDOW_MS = 60000;
 const API_REQUESTS_PER_MINUTE = 300;
 
 // Rendering the OpenGraph PNG runs a database query, a satori layout pass and a
-// resvg rasterisation, and the range export can walk a year of rows.
+// resvg rasterisation, and the range export can walk a year of rows. So does
+// the statistics aggregation, which reads every row in the range with no limit
+// on the query at all - "all time" on a year of five-minute tests is around a
+// hundred thousand rows materialised per call. Each of these is loaded on
+// demand rather than polled, so twenty a minute is well clear of ordinary use.
 const EXPENSIVE_REQUESTS_PER_MINUTE = 20;
 
 // A scrape every fifteen seconds is four a minute.
@@ -97,6 +101,11 @@ const expensiveLimit = () => createRateLimit({
 app.use("/api/opengraph", expensiveLimit());
 app.use("/api/speedtests/export", expensiveLimit());
 app.use("/api/speedtests/run", expensiveLimit());
+// Beside /export, which reads the same rows for the same page. This one was
+// left on the 300/min backstop alone, and on a demo the password middleware
+// admits everyone - so the heaviest read in the app was the one anonymous
+// callers could ask for most often.
+app.use("/api/speedtests/statistics", expensiveLimit());
 app.use("/api/prometheus", createRateLimit({
     limit: METRICS_REQUESTS_PER_MINUTE,
     windowMs: RATE_LIMIT_WINDOW_MS
