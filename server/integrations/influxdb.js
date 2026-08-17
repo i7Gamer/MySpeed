@@ -16,6 +16,15 @@ import { stripTrailingSlashes } from "../util/helpers.js";
 const escapeTag = (value) => String(value).replace(/[\\ ,=]/g, "\\$&");
 const escapeMeasurement = (value) => String(value).replace(/[\\ ,]/g, "\\$&");
 
+/**
+ * @returns the line, or null when nothing survived the field filter.
+ *
+ * A point with no field set is not a point: the middle section would be empty -
+ * `speedtests,host=x  1786100000`, two spaces where the fields belong - and
+ * influx answers that with a 400, losing the write. Reporting it as "there is
+ * no line to send" lets the caller skip the request rather than make one that
+ * cannot succeed.
+ */
 export const buildLine = (measurement, tags, fields, timestampSeconds) => {
     const tagPart = Object.entries(tags)
         .filter(([, v]) => v !== undefined && v !== null && v !== "")
@@ -26,6 +35,8 @@ export const buildLine = (measurement, tags, fields, timestampSeconds) => {
         .filter(([, v]) => typeof v === "number" && Number.isFinite(v))
         .map(([k, v]) => `${k}=${v}`)
         .join(",");
+
+    if (!fieldPart) return null;
 
     const name = escapeMeasurement(measurement);
     const prefix = tagPart ? `${name},${tagPart}` : name;
@@ -87,6 +98,12 @@ export default (registerEvent) => {
 
         const timestamp = Math.floor(Date.now() / 1000);
         const line = buildLine(c.measurement || "speedtests", tags, fields, timestamp);
+
+        // Nothing measurable in the payload, so there is nothing to write and a
+        // request would only be refused. Returning without touching `activity`
+        // leaves the integration's last-run state as the last real send found
+        // it, which is what it still says about whether this endpoint works.
+        if (line === null) return;
 
         await send(c, line, activity);
     });

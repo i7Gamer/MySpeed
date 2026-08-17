@@ -115,3 +115,39 @@ describe("parseTags", () => {
         assert.deepEqual(parseTags(""), {});
     });
 });
+
+/**
+ * A line with no field set is not a line.
+ *
+ * The field filter keeps only finite numbers, so a payload whose measurements
+ * are all null or NaN left the middle section empty - `speedtests,host=x
+ * 1786100000`, with two spaces where the fields belong. Influx answers that
+ * with a 400, and the write is lost along with any legitimate points batched
+ * beside it.
+ *
+ * Not reachable from the live path today: the only caller is testFinished,
+ * whose payload carries finite download, upload and ping by the time a row has
+ * been written, and jitter falls back to zero. buildLine is exported and
+ * therefore has other callers ahead of it, and it should not be able to produce
+ * something the database refuses - so it says so instead.
+ */
+describe("a line with nothing to record", () => {
+    it("is not built at all when no field survives the filter", () => {
+        assert.equal(buildLine("speedtests", {host: "server1"}, {ping: null, download: NaN}, TIMESTAMP), null);
+    });
+
+    it("is not built for an empty field set either", () => {
+        assert.equal(buildLine("speedtests", {}, {}, TIMESTAMP), null);
+    });
+
+    it("is still built when a single field survives", () => {
+        assert.equal(buildLine("speedtests", {}, {ping: 10, download: null}, TIMESTAMP),
+            `speedtests ping=10 ${TIMESTAMP}`);
+    });
+
+    // Zero is a measurement, not an absence - the filter keeps it and so must
+    // this, or a line that recorded a genuine outage would be dropped.
+    it("is built for a field that is zero", () => {
+        assert.match(buildLine("m", {}, {packetLoss: 0}, TIMESTAMP), /^m packetLoss=0 /);
+    });
+});
