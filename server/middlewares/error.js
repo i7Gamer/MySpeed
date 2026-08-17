@@ -1,23 +1,44 @@
 const DEFAULT_STATUS = 500;
 
 /**
- * Terminates body-parser failures.
+ * Terminates the request, whatever went wrong.
  *
- * Mounted directly after express.json(), so the only errors that reach it come
- * from parsing the request body. It has to answer every one of them: calling
- * bare next() inside an error handler resumes the *normal* middleware chain
- * rather than ending the request, which used to hand anything that was not a
- * SyntaxError (415 unsupported charset, 413 entity too large) straight to the
- * route with req.body undefined.
+ * It was written for body-parser failures and its comment claimed it saw
+ * nothing else - "mounted directly after express.json()" - which stopped being
+ * true: app.js mounts it last, after every route, so it is also the catch-all
+ * for anything a route throws or hands to next(). It has to answer all of it:
+ * calling bare next() inside an error handler resumes the *normal* middleware
+ * chain rather than ending the request, which used to hand anything that was
+ * not a SyntaxError (415 unsupported charset, 413 entity too large) straight to
+ * the route with req.body undefined.
  */
 export default (err, req, res, next) => {
+    // A malformed body is the caller's mistake whatever it arrived carrying.
+    // body-parser stamps its own 400 on one, but a SyntaxError raised anywhere
+    // else has no status, and defaulting that to 500 would file it as the
+    // server's fault in the log below.
+    const status = err instanceof SyntaxError ? 400 : (err.status ?? err.statusCode ?? DEFAULT_STATUS);
+    const isClientError = status >= 400 && status < DEFAULT_STATUS;
+
+    /**
+     * The operator's copy, since the caller's says nothing.
+     *
+     * A 5xx answers with a fixed sentence and no detail, on purpose - and
+     * nothing wrote the detail down either, so an unhandled throw from a route
+     * left no trace at all on a running server. Logged before the headersSent
+     * branch below, which abandons the response rather than answering it: that
+     * is the case with the least to show for itself and the most worth saying.
+     *
+     * Client errors stay out of the log. They are as frequent as anyone cares
+     * to make them, and a stranger who can write to the operator's disk by
+     * sending bad JSON has been handed something they should not have.
+     */
+    if (!isClientError) console.error("Unhandled route error:", err);
+
     if (res.headersSent) return next(err);
 
     if (err instanceof SyntaxError)
         return res.status(400).json({message: "You need to provide a valid JSON body"});
-
-    const status = err.status ?? err.statusCode ?? DEFAULT_STATUS;
-    const isClientError = status >= 400 && status < DEFAULT_STATUS;
 
     // Only body-parser's own wording is echoed back, and only for client
     // errors - anything else could carry internals.

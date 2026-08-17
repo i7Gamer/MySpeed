@@ -1,4 +1,4 @@
-import { describe, it } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import errorMiddleware from "../../server/middlewares/error.js";
 
@@ -82,5 +82,72 @@ describe("error middleware", () => {
         const {nextArgs} = run(err, res);
         assert.deepEqual(nextArgs, [err]);
         assert.equal(res.statusCode, null);
+    });
+});
+
+/**
+ * The other half of not echoing a server error: somebody has to be told.
+ *
+ * This is mounted last in app.js, after every route - the comment above it
+ * saying otherwise had not kept up - so it is the catch-all for anything a
+ * route throws, not only for what body-parser rejects. Those all became "The
+ * request could not be processed" with the cause dropped on the floor: the
+ * caller is told nothing, deliberately, and the operator was told nothing
+ * either. An unhandled throw was invisible in the log of a running server.
+ *
+ * Client errors stay quiet. A malformed body is the caller's mistake, arrives
+ * as often as anyone cares to send one, and logging it hands a stranger the
+ * ability to fill the operator's disk.
+ */
+describe("what the error middleware tells the operator", () => {
+    const realError = console.error;
+    let logged;
+
+    beforeEach(() => {
+        logged = [];
+        console.error = (...args) => logged.push(args);
+    });
+
+    afterEach(() => {
+        console.error = realError;
+    });
+
+    it("logs a server error", () => {
+        const err = new Error("ENOENT: /srv/myspeed/data/storage.db");
+
+        run(err);
+
+        assert.equal(logged.length, 1, "an unhandled route error was swallowed");
+        assert.ok(logged[0].includes(err), "the error itself is what carries the stack");
+    });
+
+    it("logs one with no status at all", () => {
+        run(Object.assign(new Error("boom"), {status: undefined}));
+
+        assert.equal(logged.length, 1);
+    });
+
+    it("says nothing about a malformed body", () => {
+        run(new SyntaxError("Unexpected token"));
+
+        assert.deepEqual(logged, [], "a caller can fill the log by sending bad JSON");
+    });
+
+    it("says nothing about any client error", () => {
+        for (const status of [400, 413, 415, 429, 499])
+            run(Object.assign(new Error("client"), {status}));
+
+        assert.deepEqual(logged, [], "a 4xx is the caller's mistake, not the server's");
+    });
+
+    // Still the server's fault, and still worth a line - the response is being
+    // abandoned rather than answered, so this is the only record of it.
+    it("logs a server error that arrived too late to answer", () => {
+        const res = fakeRes();
+        res.headersSent = true;
+
+        run(new Error("late"), res);
+
+        assert.equal(logged.length, 1);
     });
 });
