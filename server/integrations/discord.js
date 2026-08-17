@@ -1,6 +1,18 @@
 import { postJson } from "../util/http.js";
-import { replaceVariables } from "../util/helpers.js";
+import { replaceVariables, truncate } from "../util/helpers.js";
 import { DISCORD_MARKDOWN, stripMarkdown } from "../util/markdown.js";
+
+/**
+ * What discord will accept as an embed description.
+ *
+ * It answers anything longer with a 400 and delivers nothing. Neither half of
+ * the message can reach this alone - validateInput caps a custom template at
+ * 2000 and cliOutput caps a stored failure reason at 2000 - so it takes both
+ * together, which is an ordinary enough pairing: a template with the server and
+ * provider spelled out, and a CLI that logs one line per candidate server it
+ * could not reach. Pushover was caught by exactly this and trims; this did not.
+ */
+export const DISCORD_DESCRIPTION_LIMIT = 4096;
 
 const defaults = {
     finished: ":sparkles: **A speedtest is finished**\n > :ping_pong: `Ping`: %ping% ms (±%jitter% ms)\n > :arrow_up: `Upload`: %upload% Mbps\n > :arrow_down: `Download`: %download% Mbps",
@@ -16,10 +28,15 @@ const defaults = {
  */
 const USER_AGENT = "MySpeed (https://github.com/i7Gamer/MySpeed)";
 
+// Trimmed here rather than at each call site, so a message added later cannot
+// be the one that is sent whole and refused.
 const send = (url, username, color, description, activity) =>
     postJson(url, {
         content: null, username,
-        embeds: [{description, color, footer: {text: "MySpeed"}, timestamp: new Date().toISOString()}]
+        embeds: [{
+            description: truncate(description, DISCORD_DESCRIPTION_LIMIT),
+            color, footer: {text: "MySpeed"}, timestamp: new Date().toISOString()
+        }]
     }, {headers: {"user-agent": USER_AGENT}, activity});
 
 /**

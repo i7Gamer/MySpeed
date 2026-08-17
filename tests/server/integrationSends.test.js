@@ -1,6 +1,7 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import setupDiscord from "../../server/integrations/discord.js";
+import setupDiscord, { DISCORD_DESCRIPTION_LIMIT } from "../../server/integrations/discord.js";
+import setupTelegram, { TELEGRAM_MESSAGE_LIMIT } from "../../server/integrations/telegram.js";
 import setupGotify from "../../server/integrations/gotify.js";
 import setupPushover, { PUSHOVER_MESSAGE_LIMIT } from "../../server/integrations/pushover.js";
 import setupWebhook from "../../server/integrations/webhook.js";
@@ -335,4 +336,91 @@ describe("every integration", () => {
             }
         }
     });
+});
+
+/**
+ * The other two providers that answer an over-long message with a 400.
+ *
+ * Discord caps an embed description at 4096 characters and telegram caps
+ * sendMessage at the same, and only pushover trimmed - the module that had
+ * already been caught by it. Neither limit is reachable from the defaults:
+ * validateInput caps a custom template at 2000 and cliOutput caps a stored
+ * failure reason at 2000, so it takes a long template *and* a long reason
+ * together. That combination is ordinary enough - a template with the server
+ * and provider spelled out, and a CLI that logs one line per candidate server
+ * it could not reach - and the whole notification is dropped when it happens.
+ *
+ * Trimmed inside each send() rather than at the call sites, the way pushover
+ * does it, so a message added later cannot be the one that goes whole.
+ */
+describe("a message longer than the provider accepts", () => {
+    const LONG_TEMPLATE = `A speedtest has failed. ${"Context. ".repeat(200)}Reason: %error%`;
+    const LONG_ERROR = "Cannot open socket to 2001:db8::1 port 8080. ".repeat(60);
+
+    const providers = [
+        {
+            name: "discord",
+            limit: DISCORD_DESCRIPTION_LIMIT,
+            config: {url: "https://discord.com/api/webhooks/1/token", send_failed: true, send_finished: true},
+            setup: setupDiscord,
+            messageOf: (request) => request.body.embeds[0].description
+        },
+        {
+            name: "telegram",
+            limit: TELEGRAM_MESSAGE_LIMIT,
+            config: {token: "1:abc", chat_id: "-100", send_failed: true, send_finished: true},
+            setup: setupTelegram,
+            messageOf: (request) => request.body.text
+        }
+    ];
+
+    for (const {name, limit, config, setup, messageOf} of providers) {
+        describe(name, () => {
+            const failed = async (overrides = {}) => {
+                const {events} = load(setup);
+                await fire(events, "testFailed", {...config, ...overrides}, failure(LONG_ERROR));
+                return messageOf(sent[0]);
+            };
+
+            it("is 4096, which is what the api documents", () => {
+                assert.equal(limit, 4096);
+            });
+
+            it("trims it to something the api will take", async () => {
+                const message = await failed({error_message: LONG_TEMPLATE});
+
+                assert.ok(message.length <= limit,
+                    `sent ${message.length} characters, which ${name} refuses with a 400`);
+            });
+
+            it("keeps the beginning, which is where the reason is", async () => {
+                assert.match(await failed({error_message: LONG_TEMPLATE}), /^A speedtest has failed\./);
+            });
+
+            // A trimmed message that does not say so reads as the whole of what
+            // the provider said.
+            it("says that it trimmed", async () => {
+                assert.match(await failed({error_message: LONG_TEMPLATE}), /…$/);
+            });
+
+            // The default template plus the longest reason the database will
+            // hold still fits, and must arrive exactly as it was written.
+            it("leaves a message that already fits alone", async () => {
+                const message = await failed();
+
+                assert.ok(message.length < limit);
+                assert.doesNotMatch(message, /…$/);
+                assert.match(message, /Cannot open socket to 2001:db8::1 port 8080\. $/);
+            });
+
+            // The limit is on the message, not on the reason, so a finished
+            // message a template made too long is trimmed just the same.
+            it("trims a finished message too", async () => {
+                const {events} = load(setup);
+                await fire(events, "testFinished", {...config, finished_message: "x".repeat(5000)}, RESULT);
+
+                assert.ok(messageOf(sent[0]).length <= limit);
+            });
+        });
+    }
 });
