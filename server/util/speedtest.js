@@ -35,6 +35,53 @@ export const hasExited = (child) => child.exitCode !== null || child.signalCode 
  * Returns the escalation handle so a child that does close cleanly can cancel
  * it rather than leave the event loop holding a five-second timer.
  */
+/**
+ * The run in flight, so that something other than the run itself can end it.
+ *
+ * The child used to be held in a local, reachable only from the function that
+ * spawned it. Nothing in the shutdown sequence could therefore stop it: the
+ * timers stopped, the listeners closed, the database closed and the process
+ * exited, and the CLI carried on. Under docker the kernel tears the namespace
+ * down and takes the orphan with it, which is why this went unseen - under the
+ * Windows service there is no namespace, so the speedtest outlives the server
+ * and finishes by writing into a database handle that has already been closed.
+ *
+ * Only the newest is held. Runs are serialised by the latch in
+ * tasks/speedtest.js, so there is never more than one.
+ */
+let activeProcess = null;
+
+/** Records the run so a shutdown can reach it, and hands it straight back. */
+export const trackProcess = (child) => {
+    activeProcess = child;
+    return child;
+};
+
+/**
+ * How long a CLI gets to honour SIGTERM while the server is shutting down.
+ *
+ * Shorter than KILL_GRACE, which is the whole of the shutdown's own deadline
+ * (SHUTDOWN_GRACE_MS): escalating on that would send the SIGKILL at the moment
+ * the process was leaving anyway, which is no escalation at all. This has to
+ * land comfortably inside the shutdown, so a CLI that ignores the request is
+ * still gone before the exit rather than orphaned by it.
+ */
+export const SHUTDOWN_KILL_GRACE = 1000;
+
+/**
+ * Ends the speedtest currently running, if one is.
+ *
+ * @returns whether there was anything to end
+ */
+export const terminateActiveProcess = (graceMs = SHUTDOWN_KILL_GRACE) => {
+    if (activeProcess === null || hasExited(activeProcess)) return false;
+
+    // Escalating, as the run's own timeout does - SIGTERM is a request, and a
+    // CLI blocked in a socket read may ignore it.
+    terminate(activeProcess, graceMs);
+    return true;
+};
+
 export const terminate = (child, graceMs = KILL_GRACE) => {
     child.kill();
 
@@ -177,7 +224,7 @@ export default async (mode, serverId, serverUrl, onProgress) => {
     // emits 'error' and 'close' within milliseconds but never clears that timer,
     // and the whole process then stays alive until it fires. Owning it means it
     // is cleared however the run ends.
-    const testProcess = spawn(binaryPath, args, {windowsHide: true});
+    const testProcess = trackProcess(spawn(binaryPath, args, {windowsHide: true}));
 
     let timedOut = false;
     let escalation;
@@ -221,6 +268,7 @@ export default async (mode, serverId, serverUrl, onProgress) => {
         testProcess.on('error', (error) => {
             clearTimeout(timeout);
             clearTimeout(escalation);
+            trackProcess(null);
 
             const missing = missingBinaryMessage(mode, binaryPath, error.code);
             reject(missing ? new Error(missing) : error);
@@ -231,6 +279,7 @@ export default async (mode, serverId, serverUrl, onProgress) => {
         testProcess.on('close', (code) => {
             clearTimeout(timeout);
             clearTimeout(escalation);
+            trackProcess(null);
             result = parseCliOutput(mode, stdout, stderr);
 
             // The exit code has the last word when the streams had nothing to
