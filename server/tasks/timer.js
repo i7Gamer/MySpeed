@@ -104,7 +104,17 @@ export const startTimer = (cron) => {
     stopTimer();
 
     currentCron = cron;
-    job = schedule.scheduleJob(cron, () => runTask());
+
+    // Caught here, because nothing else does. create() guards its own work, but
+    // runTask reaches it through the pause state, the quiet hours check and the
+    // schedule offset - three config reads, any of which can reject on a
+    // database that has gone away or one a shutdown already under way has
+    // closed. Uncaught, that reached index.js's unhandledRejection handler as a
+    // bare server fault with no mention of the schedule that produced it, and
+    // it repeats on every tick of the cron. index.js catches the startup run
+    // for the same reason; this one it handed to node-schedule did not.
+    job = schedule.scheduleJob(cron, () => runTask().catch(err =>
+        console.error(`The scheduled speedtest failed: ${err?.message ?? err}`)));
 };
 
 /**

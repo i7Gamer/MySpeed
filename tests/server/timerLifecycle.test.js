@@ -27,6 +27,34 @@ import * as integrationTimer from "../../server/tasks/integrations.js";
 const DISTANT_CRON = "0 3 1 1 *";
 const OTHER_CRON = "0 4 1 1 *";
 
+const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+
+/**
+ * The balanced body of a declaration, for the two assertions below that are
+ * about the shape of a scheduled callback rather than about firing it.
+ *
+ * Matched brace by brace rather than sliced up to the next export, because the
+ * function that would fill such a gap in timer.js is runTask itself - so a
+ * `.catch` added *there* would satisfy an assertion about startTimer, which is
+ * precisely the confusion these two tests exist to prevent.
+ */
+const bodyOf = (file, declaration) => {
+    const source = fs.readFileSync(path.join(root, file), "utf8");
+
+    const start = source.indexOf(declaration);
+    assert.notEqual(start, -1, `${declaration} is gone from ${file}`);
+
+    const from = source.indexOf("{", start);
+    let depth = 0;
+
+    for (let index = from; index < source.length; index++) {
+        if (source[index] === "{") depth++;
+        else if (source[index] === "}" && --depth === 0) return source.slice(from, index + 1);
+    }
+
+    return assert.fail(`${declaration} is never closed in ${file}`);
+};
+
 afterEach(() => {
     timer.stopTimer();
     integrationTimer.stopTimer();
@@ -64,6 +92,32 @@ describe("the speedtest schedule", () => {
         assert.equal(timer.currentJob(), undefined);
         assert.equal(first.nextInvocation(), null);
     });
+
+    /**
+     * And a run that rejects stays a logged line.
+     *
+     * create() guards its own work, but runTask does a fair amount before it
+     * gets there: the pause state, the quiet hours check and the schedule
+     * offset are three config reads, and any of them can reject on a database
+     * that has gone away or one a shutdown already under way has closed.
+     * Nothing was catching that, so a scheduled run surfaced through index.js's
+     * unhandledRejection handler as a bare server fault with no mention of the
+     * schedule that produced it - and it repeats on every tick of the cron.
+     *
+     * index.js catches the startup run for exactly this reason; the scheduled
+     * one it hands to node-schedule did not.
+     *
+     * Read from the source because what is asserted is the shape of the
+     * callback handed to node-schedule. Firing it needs a database behind it,
+     * which is the thing this is about not having.
+     */
+    it("guards the run it schedules", () => {
+        const startTimer = bodyOf("server/tasks/timer.js", "export const startTimer");
+
+        assert.match(startTimer, /scheduleJob\(/, "the run is no longer scheduled here");
+        assert.match(startTimer, /\.catch\(/,
+            "a rejecting run is an unhandled rejection on every tick of the cron");
+    });
 });
 
 describe("the integration ping schedule", () => {
@@ -96,11 +150,7 @@ describe("the integration ping schedule", () => {
      * database behind it, which is the very thing this is about not having.
      */
     it("guards the tick it schedules", () => {
-        const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-        const source = fs.readFileSync(path.join(root, "server/tasks/integrations.js"), "utf8");
-
-        const startTimer = source.slice(source.indexOf("export const startTimer"),
-            source.indexOf("export const stopTimer"));
+        const startTimer = bodyOf("server/tasks/integrations.js", "export const startTimer");
 
         assert.match(startTimer, /scheduleJob\(/, "the ping job is no longer scheduled here");
         assert.match(startTimer, /\.catch\(/,
