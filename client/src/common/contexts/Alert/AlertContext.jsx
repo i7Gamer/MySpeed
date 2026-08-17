@@ -118,6 +118,20 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
             close();
         }
         if (e.key === "Enter") {
+            // Enter belongs to whatever button has focus - the browser turns it
+            // into a click on that one. Claiming it here submitted the alert
+            // instead, and the preventDefault below suppressed the click that
+            // would have cancelled, so tabbing to Cancel and pressing Enter ran
+            // the very action Cancel refuses. On the destructive confirmations -
+            // "delete all tests", "remove the password" - that is the whole of
+            // the damage.
+            //
+            // e.target is the focused element: this listener sits on the
+            // document and the key bubbles up from wherever it was pressed. The
+            // input an alert focuses on open is not a button, so the shortcut
+            // that makes an alert usable without tabbing to OK is untouched.
+            if (e.target?.tagName === "BUTTON") return;
+
             e.preventDefault();
             handleSubmit();
         }
