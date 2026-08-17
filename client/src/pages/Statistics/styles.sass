@@ -47,8 +47,14 @@
 // stylesheet that knows there are two other cards on that row. Above the
 // stages, deliberately - they restate this selector at equal specificity, and
 // only source order settles those.
+// The row's two gaps come off this share rather than off the other two,
+// because this is the only one this stylesheet states. They have to come off
+// something: a line is collected from the bases before flex shrinks anything,
+// so three of them summing to the whole 100% overflow by exactly the gaps, and
+// the third card drops to a line of its own with the other two stretched across
+// the row it left. 40% - 2 gaps + 30% + 30% is the row less its gaps, exactly.
 .statistic-area > .container-large
-  flex: 1 1 40%
+  flex: 1 1 calc(40% - #{$card-gap * 2})
 
 // Above the stages, deliberately: the stage rules below override this share at
 // equal specificity, which only source order settles.

@@ -31,6 +31,12 @@
 
   > .status-bar
     flex: 1 1 auto
+    // The bar states width: 100% for the block it used to be, and in a row that
+    // can wrap that width is its flex base size - so the line overflowed by the
+    // whole width of the other three controls and the bar was stacked at every
+    // width there is. Sized from its content here, and grown into whatever is
+    // left over, which is what the 100% was standing in for.
+    width: auto
     // What the bar is asking for when it asks for a row of its own: its own
     // line of text, undivided. Its content is the only honest figure here,
     // because the content is what changes - a read-only visitor is told neither

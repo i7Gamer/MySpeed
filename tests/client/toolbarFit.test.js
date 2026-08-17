@@ -368,6 +368,30 @@ describe("where the status bar takes a row of its own", () => {
             "the bar shrinks to nothing beside the other controls instead of asking for a row");
     });
 
+    /**
+     * And it is sized from that content rather than from its own width.
+     *
+     * The bar states `width: 100%` for the block it used to be, and in a row
+     * that can wrap that width is its flex base size - not something flex
+     * shrinks later, but the figure the line is collected on. So the line
+     * overflowed by the whole width of the other three controls and the bar was
+     * stacked at every width there is, which is the fault this stage was added
+     * to fix, arrived at from the other direction. Shipped once.
+     */
+    it("sizes it from that content and not from the bar's own width", () => {
+        const bar = rules(toolbar).find(({selector}) => selector === ".page-toolbar > .status-bar");
+
+        assert.match(bar.body, /width:\s*auto/,
+            "the bar's own width: 100% is its flex base size, so the row wraps at every width");
+    });
+
+    // Which is only load-bearing while the bar's own stylesheet states one.
+    it("is the width the bar would otherwise bring with it", () => {
+        assert.match(compile("common/components/StatusBar/styles.sass"),
+            /\.status-bar\s*\{[^}]*width:\s*100%/,
+            "the bar no longer carries a width of its own, so the override above guards nothing");
+    });
+
     it("stacks it from the wrap stage on", () => {
         for (const stage of ["wrap", "export", "all"]) {
             const stacked = at(stage, ".status-bar");

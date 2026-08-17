@@ -126,20 +126,46 @@ describe("the share the summary takes while three share a row", () => {
     const summary = rules(page.split("@media")[0])
         .find(({selector}) => selector.includes(".container-large"));
 
+    /** The percentage it asks for, and the gap allowance it takes back off it. */
+    const share = () => {
+        const stated = summary?.body.match(/flex:\s*1 1 calc\((\d+)% - ([\d.]+)rem\)/);
+
+        assert.ok(stated, "the summary's share is not a percentage of the row less an allowance");
+        return {percent: Number(stated[1]), allowance: Number(stated[2])};
+    };
+
+    const equalShare = () => Number(rules(statContainer)
+        .find(({selector}) => selector === ".stats-container").body.match(/flex:\s*1 1 (\d+)%/)[1]);
+
     it("asks for more of the row than the cards beside it", () => {
         assert.ok(summary, "the summary takes an equal third again, where its sentences wrap");
-
-        const share = Number(summary.body.match(/flex:\s*1 1 (\d+)%/)?.[1]);
-
-        assert.ok(Number.isFinite(share), "the summary's share is not a percentage of the row");
-        assert.ok(share > 30, `the summary asks for ${share}%, which is no more than an equal third`);
+        assert.ok(share().percent > equalShare(),
+            `the summary asks for ${share().percent}%, which is no more than an equal third`);
     });
 
     // Two of them at that share and the row cannot hold three cards at all.
     it("leaves the two beside it a share each", () => {
-        const share = Number(summary.body.match(/flex:\s*1 1 (\d+)%/)?.[1]);
+        assert.ok(share().percent + 2 * equalShare() <= 100,
+            `the summary's ${share().percent}% and two of ${equalShare()}% ask for more row than there is`);
+    });
 
-        assert.ok(share <= 40, `the summary asks for ${share}%, which squeezes its line-mates below their own`);
+    /**
+     * And it gives the row's gaps back, which is not a rounding nicety.
+     *
+     * A flex line is collected from the items' hypothetical sizes, before flex
+     * shrinks anything: three bases summing to the whole 100% overflow the row
+     * by exactly its two gaps, so the third card drops to a line of its own and
+     * the two left stretch across the row it came from. Shipped once - the
+     * summary and the last test filled the top row while stability sat below
+     * them, leading the row of charts.
+     */
+    it("takes the row's gaps back out of it", () => {
+        const gap = Number(layoutSource.match(/\$card-gap:\s*([\d.]+)rem/)[1]);
+        const gaps = 100 - share().percent - 2 * equalShare() > 0 ? 0 : 2 * gap;
+
+        assert.ok(share().allowance >= gaps,
+            `the summary gives back ${share().allowance}rem where the row's gaps cost ${gaps}rem,`
+            + " so three cards do not fit the line and one wraps");
     });
 
     /**
