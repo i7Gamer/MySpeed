@@ -37,8 +37,12 @@ const EXPENSIVE_PATHS = [
     "/api/speedtests/statistics"
 ];
 
+// Any limiter of its own, whatever the number: what matters is that the path is
+// not left on the general backstop. Statistics deliberately carries a looser one
+// than the other three - it answers an interactive page rather than a download,
+// so being told to slow down for using it would cost more than the load it saved.
 const mountedWith = (path) =>
-    new RegExp(`app\\.use\\(\\s*["'\`]${path}["'\`]\\s*,\\s*expensiveLimit\\(\\)`).test(appSource);
+    new RegExp(`app\\.use\\(\\s*["'\`]${path}["'\`]\\s*,\\s*(expensiveLimit\\(\\)|limited\\()`).test(appSource);
 
 describe("the expensive read limiter", () => {
     for (const path of EXPENSIVE_PATHS) {
@@ -49,12 +53,29 @@ describe("the expensive read limiter", () => {
     }
 
     // The mounts and the list have to stay in step in both directions: a path
-    // given the expensive limit without being written down here is a decision
+    // given a limit of its own without being written down here is a decision
     // nobody recorded, and the next person to read this file would not find it.
-    it("has an entry for every path that is given it", () => {
-        const mounted = [...appSource.matchAll(/app\.use\(\s*["'`]([^"'`]+)["'`]\s*,\s*expensiveLimit\(\)/g)]
-            .map((match) => match[1]);
+    it("has an entry for every path that is given one", () => {
+        const mounted = [...appSource.matchAll(
+            /app\.use\(\s*["'`]([^"'`]+)["'`]\s*,\s*(?:expensiveLimit\(\)|limited\()/g)]
+            .map((match) => match[1])
+            // The general backstop, which is the thing these are narrower than.
+            .filter((path) => path !== "/api");
 
-        assert.deepEqual(mounted.filter((path) => !EXPENSIVE_PATHS.includes(path)), []);
+        assert.deepEqual(mounted.filter((path) => !EXPENSIVE_PATHS.includes(path)),
+            ["/api/prometheus"],
+            "a path was given its own limit without being written down here");
+    });
+
+    /**
+     * Every limit has to be resettable, or adding one silently turns each test
+     * of that route into a test of the limiter - which is what happened when
+     * statistics was first given one: nineteen aggregation assertions started
+     * failing on 429.
+     */
+    it("can be put back as it was, so a suite is not measuring it", () => {
+        assert.match(appSource, /export const resetRateLimits/);
+        assert.doesNotMatch(appSource, /app\.use\([^)]*createRateLimit\(/,
+            "a limiter built outside `limited` is one resetRateLimits cannot reach");
     });
 });

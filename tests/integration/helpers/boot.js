@@ -50,7 +50,7 @@ export const bootServer = async () => {
 
     process.chdir(dataDir);
 
-    const {default: app} = await import("../../../server/app.js");
+    const {default: app, resetRateLimits} = await import("../../../server/app.js");
     const {default: db} = await import("../../../server/config/database.js");
     const {runMigrations} = await import("../../../server/util/migrationRunner.js");
     const config = await import("../../../server/controller/config.js");
@@ -79,6 +79,17 @@ export const bootServer = async () => {
         config,
         tests: tests.default,
         dataDir,
+        /**
+         * Puts the request limiters back as they were.
+         *
+         * A suite drives one endpoint dozens of times from one address in a few
+         * seconds, which is not a shape any caller produces - so without this,
+         * adding a limit to a route quietly turns every test of that route into
+         * a test of the limiter. Call it in a beforeEach where a file exercises
+         * one endpoint hard; the limits themselves are tested directly in
+         * tests/server/rateLimit.test.js.
+         */
+        resetRateLimits,
         close: async () => {
             closed = true;
 
