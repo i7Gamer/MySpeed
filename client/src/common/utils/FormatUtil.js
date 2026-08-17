@@ -53,6 +53,13 @@ export const formatDay = (value) => {
  * people who saw it. The month is named instead, which is unambiguous in every
  * locale; the year stays off because the list is already bounded by the range
  * the reader chose.
+ *
+ * Nothing calls this any more. Those averaged rows were its only caller, and
+ * they have not been produced since listAverage left the speedtest controller
+ * in June 2025; the overview row's dead branch on them was removed with this
+ * note. Kept rather than deleted because it is an exported formatter with a
+ * suite of its own - but it is dead weight until something wants a bare day
+ * again, and worth removing if nothing does.
  */
 export const formatShortDay = (value) => {
     const date = toDate(value);
@@ -77,8 +84,9 @@ export const formatMonth = (value) => {
 
 /**
  * A whole date with its weekday spelled out, for the date pill that floats over
- * the test list. The rows beneath it are formatted by formatShortDay, so the two
- * have to be in the same language.
+ * the test list. The rows beneath it print a clock time, so the pill is the only
+ * place the day itself is named - it used to share that job with formatShortDay
+ * on the averaged rows, which is why both had to agree on a language.
  */
 export const formatFullDay = (value) => {
     const date = toDate(value);

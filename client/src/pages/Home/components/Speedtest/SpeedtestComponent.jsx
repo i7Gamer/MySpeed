@@ -17,7 +17,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {
-    convertSpeed, formatDateTime, formatLatency, formatShortDay, formatShortTime, formatWhole, getSpeedUnit
+    convertSpeed, formatDateTime, formatLatency, formatShortTime, formatWhole, getSpeedUnit
 } from "@/common/utils/FormatUtil";
 import {
     bufferbloatInfo, downloadInfo, jitterInfo, packetLossInfo, pingInfo, uploadInfo
@@ -48,18 +48,16 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
     // which is a wall of JSON.
     const reason = describeError(props.error);
 
-    let isAverage = props.type === "average";
-    // An averaged row stands for a whole day, so it is labelled with the day
-    // rather than a time. Spelled out through the shared formatter: it was the
-    // one date left in the interface written numerically as DD.MM, which half
-    // its readers parse as MM.DD.
+    // The whole label. It used to be prefixed with a translated preposition,
+    // which the cell has no room for outside English - see the date-cell tests
+    // for why the word is gone rather than shortened.
     //
-    // This is the whole label. It used to be prefixed with a translated
-    // preposition, which the cell has no room for outside English - see the
-    // date-cell tests for why the word is gone rather than shortened.
-    let timeString = isAverage
-        ? formatShortDay(props.time)
-        : formatShortTime(props.time, preferences);
+    // It also used to choose between this and a named day, for rows standing
+    // for a whole day. The controller stopped producing those when listAverage
+    // was removed in June 2025, so that branch spent a year unreachable - the
+    // importer does not accept the value either, taking only "auto" and
+    // "custom". Gone with it, rather than left to read as a live choice.
+    let timeString = formatShortTime(props.time, preferences);
 
     /**
      * The three figures the row prints, all of them whole.
