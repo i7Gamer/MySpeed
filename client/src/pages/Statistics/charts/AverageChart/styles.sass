@@ -12,6 +12,30 @@
   justify-content: center
   width: 100%
 
+// What the step below measures - the list's own width, for the reasons the
+// latest-test card's copy of this sets out.
+//
+// Everywhere but the dialog, which measures this card to size itself: a size
+// container contains its inline axis, so it offers an intrinsic pass nothing of
+// its contents, and a shrink-to-fit dialog is nothing but that pass. Measured
+// with the container left on, the enlarged card fell to 402px against the 426
+// its rows want, and to 282 against 351 on a phone, where the floor is
+// min-content rather than the dialog's 400px minimum. The same guard the figure
+// above wears, for the same reason - see .modal-wide, which exists because this
+// class of panel cannot ask a shrink-to-fit dialog for a width.
+//
+// The step is not wanted there in any case: opened, the labels wrap and the
+// figure steps down on a phone, which keeps them whole without losing the glyph.
+.value-container:not(.chart-modal-body *)
+  container-type: inline-size
+
+// The icon, so the label beside it keeps its name - see $panel-icon-drop. Here
+// it is "Самый высокий" over the maximum, which is cut on a phone and again at
+// the three-across stage, where this card holds 324px of list.
+@container (width < #{row.$panel-icon-drop})
+  .value-container .panel-row .panel-row-icon
+    display: none
+
 // A speed is the longest kind of figure the app prints, and these cards state
 // three of them. Measured at the 456px the grid gives them: at the shared size
 // the value takes 180px of the 408 inside the padding and the label column is

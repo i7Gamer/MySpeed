@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as sass from "sass";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { containerBlocks } from "../helpers/sass.mjs";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -318,6 +319,115 @@ describe("the value cards, which state the longest figures", () => {
     it("state that neutral as a colour of its own", () => {
         assert.match(bodyOf(".panel-row-icon"), /color:\s*var\(--grade,\s*var\(--icon-neutral\)\)/,
             "an ungraded glyph falls back to something other than the shared neutral");
+    });
+});
+
+/**
+ * The two cards whose labels run out of room before their figures do.
+ *
+ * The row cuts a label that will not fit, which keeps the figure whole and is
+ * the right trade on a card - but a label cut to "Maximu..." names nothing, and
+ * a reader is then looking at a number with no measurement attached. Measured
+ * across ten languages at every stage of the page, the cut happens in exactly
+ * two states, both of them a list of about 300px: the three-across grid, where
+ * a card holds 324px of list, and a phone, where it holds 293. Between them -
+ * the two-column stage and any display past 1600px - a list is 460px or wider
+ * and nothing is cut in any language.
+ *
+ * What is in those 300px besides the label: the icon and the gap after it,
+ * 52px, which is what the overview card already gives up at its own tightest
+ * step for exactly this reason. It closes all five of the desktop cuts and
+ * fifteen of the eighteen on a phone.
+ */
+describe("the cards that run out of room for a label", () => {
+    const LISTS = [
+        {name: "the latest test", list: ".info-container",
+            styles: "pages/Statistics/charts/LatestTestChart/styles.sass"},
+        {name: "the value cards", list: ".value-container",
+            styles: "pages/Statistics/charts/AverageChart/styles.sass"}
+    ];
+
+    // What the widest label in the app needs of the list to sit beside its
+    // figure *and* its icon. Measured at 324px of list, where Ukrainian's
+    // "Завантаження" beside a speed overflowed by 27px.
+    const LABEL_NEEDS = 351;
+
+    const ruleFor = (sheet, selector) =>
+        sheet.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![-\\w])\\s*\\{([^}]*)}`));
+
+    for (const {name, list, styles} of LISTS) {
+        const sheet = compile(styles);
+
+        // The list and not the viewport: the same card is drawn at a third of a
+        // wide row, at the whole width of a phone, and again inside a dialog,
+        // and one viewport figure cannot tell those apart. The overview card
+        // learned this the hard way - see overviewModalStyles.test.js.
+        it(`lets ${name} measure the room it actually has`, () => {
+            assert.notEqual(ruleFor(sheet, list), null, `${list} has no base rule`);
+
+            // Any rule for this list, not the base one: the value card states
+            // it on a guarded selector of its own, for the reason below.
+            const declaring = [...sheet.matchAll(/([^{}]+)\{([^}]*)}/g)]
+                .filter(([, selector, body]) => new RegExp(`\\${list}(?![-\\w])`).test(selector)
+                    && /container-type:\s*inline-size/.test(body));
+
+            assert.ok(declaring.length > 0,
+                `${list} establishes no container, so nothing can key on its width`);
+        });
+
+        it(`gives up the icon on ${name} where the label cannot sit beside it`, () => {
+            const dropping = containerBlocks(sheet)
+                .filter(({body}) => /\.panel-row-icon\s*\{[^}]*display:\s*none/.test(body));
+
+            assert.equal(dropping.length, 1,
+                `${name} has ${dropping.length} steps that drop the icon, expected one`);
+
+            const at = parseFloat(dropping[0].condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]);
+
+            assert.ok(Number.isFinite(at), `"${dropping[0].condition.trim()}" is not a width step`);
+            assert.ok(at * 16 >= LABEL_NEEDS,
+                `the icon keeps its place down to ${at * 16}px of list, where the label beside it is already cut`);
+        });
+    }
+
+    /**
+     * And the value card establishes its container only where nothing is
+     * measuring it.
+     *
+     * `container-type: inline-size` contains the inline axis, so a size
+     * container contributes nothing of its contents to an intrinsic sizing pass
+     * - and the dialog this card opens into is shrink-to-fit, which is nothing
+     * but that pass. Measured with the container on: the enlarged card fell to
+     * 402px against the 426 its rows want on a desktop, and to 282 against 351
+     * on a phone, where the dialog's floor is min-content rather than its 400px
+     * minimum. Nothing was cut - everything inside is width-relative - it simply
+     * stopped filling the space it was given.
+     *
+     * The step is not wanted there in any case: the enlarged view wraps its
+     * labels and steps its figure down on a phone, which is how it keeps them
+     * whole without giving up the glyphs.
+     *
+     * The latest test needs no such guard - opened, that card renders the whole
+     * test record instead of this list.
+     */
+    it("leaves the enlarged value card measurable by the dialog", () => {
+        const sheet = compile("pages/Statistics/charts/AverageChart/styles.sass");
+        const containers = [...sheet.matchAll(/([^{}]+)\{([^}]*)}/g)]
+            .filter(([, , body]) => /container-type:\s*inline-size/.test(body))
+            .map(([, selector]) => selector.trim());
+
+        assert.ok(containers.length > 0, "the value card establishes no container at all");
+
+        for (const selector of containers)
+            assert.ok(selector.includes(":not(.chart-modal-body *)"),
+                `"${selector}" contains the card inside the dialog too, which then has nothing to measure`);
+    });
+
+    // One figure for both cards, because they are one measurement: what a row
+    // needs before the icon has to go. Two copies is the split that widens.
+    it("names that width once rather than once per card", () => {
+        assert.match(rowSizes, /\$panel-icon-drop:\s*[\d.]+rem/,
+            "the step is a literal in each card, so the two can drift apart");
     });
 });
 

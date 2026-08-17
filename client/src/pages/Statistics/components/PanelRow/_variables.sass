@@ -23,6 +23,32 @@ $panel-value-size-narrow: 1.4rem
 $panel-title-size: 1rem
 $panel-description-size: 0.9rem
 
+/// Where a row gives up its icon, so that its label can keep its name.
+///
+/// The row cuts a label that will not fit, which keeps the figure whole - the
+/// right trade on a card, except that a label cut to "Maximu..." leaves a number
+/// with no measurement attached, and the reader cannot recover it. The icon and
+/// the gap after it are 52px of the row, and it is the one thing there that
+/// carries no information the label does not already give.
+///
+/// Measured across ten languages at every stage of the page. The cut appears in
+/// exactly two states, both a list of about 300px: the three-across grid, where
+/// a card holds 324px of list, and a phone, where it holds 293. Between them -
+/// the two-column stage, and any display past 1600px - a list is 460px or wider
+/// and nothing is cut in any language, which is why this is a step and not a
+/// smaller icon everywhere.
+///
+/// 22rem is the measurement: at 324px of list the widest label in the app,
+/// Ukrainian's "Завантаження" beside a gigabit speed, overflowed by 27px, so it
+/// needs 351px of list to sit beside its figure and its icon both. Below that
+/// the icon goes and the label fits: all five of the desktop cuts and fifteen of
+/// the eighteen on a phone.
+///
+/// Shared by the two cards that hit it. The overview card states its own, lower,
+/// because it gives up its descriptions first and its rows are sentences - see
+/// $overview-wrap.
+$panel-icon-drop: 22rem
+
 /// The space between two of these rows, wherever a panel stacks them.
 ///
 /// It was two figures and two distributions: 1.75rem with the rows centred on
