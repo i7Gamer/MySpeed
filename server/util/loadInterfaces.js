@@ -40,6 +40,51 @@ export const resolveInterfaces = (previous, probed, present) => {
     return next;
 };
 
+/** What the probe asks for: the smallest response Cloudflare will send. */
+const PROBE_HOST = "speed.cloudflare.com";
+const PROBE_PATH = "/__down?bytes=1";
+
+/**
+ * How long an adapter gets to answer before it is taken as unusable. Named
+ * rather than written into the options, so the test can assert the probe is
+ * bounded at all.
+ */
+export const PROBE_TIMEOUT = 5000;
+
+/**
+ * Whether one address can reach the internet, tearing down what it built to ask.
+ *
+ * The agent is the reason this is a function rather than the body of the loop
+ * below. A fresh https.Agent was built for every address on every round and
+ * nothing ever destroyed one - and requestInterfaces runs on an interval for
+ * the life of the process, not only at boot. Node has keep-alive on by default,
+ * so each agent held its idle socket open for its own timeout and the count
+ * only ever went up. Nothing broke; the process simply held more than it needed
+ * to, forever.
+ *
+ * `request` and `Agent` are injected so this is testable without the network.
+ *
+ * @returns whether the address answered
+ */
+export const probeAddress = (address, family, {request = https.request, Agent = https.Agent} = {}) => {
+    const options = {hostname: PROBE_HOST, path: PROBE_PATH, method: "GET", family, timeout: PROBE_TIMEOUT};
+    const agent = new Agent(options);
+
+    return new Promise((resolve) => {
+        const req = request({...options, agent, localAddress: address}, () => {
+            req.destroy();
+            resolve(true);
+        });
+
+        // destroy() with no error still emits one - ECONNRESET, "socket hang
+        // up" - so the timeout lands here too and the probe always settles.
+        req.on('error', () => resolve(false));
+        req.on('timeout', () => req.destroy());
+
+        req.end();
+    }).finally(() => agent.destroy());
+};
+
 export const requestInterfaces = async () => {
     let interfacesNode = os.networkInterfaces();
     let interfacesResult = {};
@@ -51,26 +96,12 @@ export const requestInterfaces = async () => {
 
             if (address.internal) continue;
 
-            let options = {hostname: "speed.cloudflare.com", path: "/__down?bytes=1", method: "GET",
-                family: address.family === "IPv4" ? 4 : 6, timeout: 5000};
+            const answered = await probeAddress(address.address, address.family === "IPv4" ? 4 : 6);
 
-            options.agent = new https.Agent(options);
-            options.localAddress = address.address;
-
-            await new Promise((resolve) => {
-
-                const req = https.request(options, () => {
-                    if (!interfacesResult[i]) interfacesResult[i] = [];
-                    interfacesResult[i].push(address.address);
-                    req.destroy();
-                    resolve();
-                });
-
-                req.on('error', () => resolve());
-                req.on('timeout', () => req.destroy());
-
-                req.end();
-            });
+            if (answered) {
+                if (!interfacesResult[i]) interfacesResult[i] = [];
+                interfacesResult[i].push(address.address);
+            }
         }
 
         if (!interfacesResult[i]) delete interfacesResult[i];
