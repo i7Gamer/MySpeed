@@ -10,27 +10,21 @@
   gap: row.$panel-row-gap
   justify-content: center
   width: 100%
-  // What the step below measures. The list and not the viewport: this card is
-  // ~324px of list in the three-across grid and ~293 on a phone - two states a
-  // viewport figure tells apart only by naming both of them, and by naming them
-  // again the next time the page's stages move. Safe here because the list's
-  // inline size is the card's (width: 100%) rather than its contents'.
+  // What the shared row's steps measure. The list and not the viewport: this
+  // card is ~324px of list in the three-across grid and ~293 on a phone - two
+  // states a viewport figure tells apart only by naming both of them, and by
+  // naming them again the next time the page's stages move. Safe here because
+  // the list's inline size is the card's (width: 100%) rather than its
+  // contents'.
   container-type: inline-size
 
-// One size off the figure, so the label beside it keeps its name - see
-// $panel-figure-step, where both of this card's steps are measured. It carries
-// the cut in nine of the fifteen languages: "Téléchargement", "Вивантаження",
-// "Качване на" and "Downloaden" all name a direction that "Download" fits in
-// half the room, and this is the one card whose figures are speeds.
-@container (width < #{row.$panel-figure-step})
-  .info-container .panel-row .panel-row-value
-    font-size: row.$panel-value-size-narrow
-
-// And the icon after it, where the page is one column and the step above has
-// run out - the glyph carries the grade, so it is what goes last.
-@container (width < #{row.$panel-icon-drop})
-  .info-container .panel-row .panel-row-icon
-    display: none
+// The steps the figure takes as this list narrows are the shared row's, stated
+// once for every panel - see the row's stylesheet. This card is the one that
+// needs them most: it carries the cut in nine of the fifteen languages, because
+// "Téléchargement", "Вивантаження", "Качване на" and "Downloaden" all name a
+// direction that "Download" fits in half the room, and this is the one card
+// whose figures are speeds. Establishing the container above is the whole of
+// what it has to do to take them.
 
 // The jitter's glyph, held against the word it labels. Sized against the
 // description's text rather than against the row's icon: it names a figure

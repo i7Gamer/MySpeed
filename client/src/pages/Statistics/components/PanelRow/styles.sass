@@ -92,3 +92,31 @@
   line-height: 1.1
   white-space: nowrap
   +graded-value($white)
+
+// The two steps the figure takes where the label beside it stops fitting, and
+// the one place they are stated.
+//
+// Written here rather than on each card because "the same width on every panel"
+// is the whole point of them: four cards stating their own steps is four
+// thresholds that agree until one of them is edited, and they had already come
+// apart - the latest test stepped at 22rem, the summary at 30rem with its
+// descriptions, the stability card never, and the value cards were simply a
+// size smaller at every width. On one row of the page that read as one card
+// being wrong rather than as three cards being tight.
+//
+// Unnamed, so each row steps on the width of whichever list it is drawn in: the
+// nearest ancestor container. Every panel that stacks these rows makes its list
+// one - see the four stylesheets - and no other container encloses a row, so
+// the query cannot land on something that is not a card's list. That is what
+// makes the breakpoint the same for cards drawn side by side, whatever stage
+// the page is in: line-mates hold the same width, so they step together.
+//
+// A card drawn inside a dialog has no container above it and takes no step at
+// all, which is right - the dialog is wider than any grid cell.
+@container (width < #{$panel-figure-step})
+  .panel-row .panel-row-value
+    font-size: $panel-value-size-narrow
+
+@container (width < #{$panel-figure-floor})
+  .panel-row .panel-row-value
+    font-size: $panel-value-size-tight

@@ -31,19 +31,20 @@
 // Card-only trimming, and only this card's. Its labels are the page's longest -
 // "Peak-hour slowdown" over "Between the fastest and slowest hour of the day" -
 // where the other panels name a single measurement in a word. So the row that
-// gives up its icon and its description in a tight card is this one, and the
-// stability figures beside it keep the sub-lines they are read for.
+// gives up its description in a tight card is this one, and the stability
+// figures beside it keep the sub-lines they are read for. The icon is nobody's
+// to give up - see the shared row, where the figure carries both concessions.
 //
 // These used to key on the viewport, which knew the card's width only while
 // every card held the same share of a three-across row. The two-column stage
 // broke that: from $stats-two-column down the summary spans its row, so at 1000px the
-// card was ~960px wide and still dressed in the form tuned for ~330 - icons
-// and descriptions gone with hundreds of pixels sitting empty beside the
-// labels. The list is what knows its own room, so it is the container, and
-// the old :not(.chart-modal-body *) exemption goes with the viewport figures:
-// an enlarged view is simply a wide container.
+// card was ~960px wide and still dressed in the form tuned for ~330 -
+// descriptions gone with hundreds of pixels sitting empty beside the labels.
+// The list is what knows its own room, so it is the container, and the old
+// :not(.chart-modal-body *) exemption goes with the viewport figures: an
+// enlarged view is simply a wide container.
 
-// Where the five rows stop affording their icons and descriptions.
+// Where the five rows stop affording their descriptions.
 //
 // It was 25rem, converted from a 1400px viewport figure that stood for a ~450px
 // card in the three-across grid. That was never the width the rows actually
@@ -61,7 +62,7 @@
 // where they do not.
 $overview-trim: 30rem
 
-// And where the label gives up its line, and the icon beside it goes.
+// And where the row gives up on holding its figure beside its label at all.
 //
 // It was 18.5rem, and between it and the trim above, the label was pinned to a
 // fixed 15rem: 240px reserved whether the label wanted it or not, plus the
@@ -74,25 +75,47 @@ $overview-trim: 30rem
 //
 // 20rem is where the label and its figure genuinely stop sharing a line -
 // measured at 318px of list with the longest of them, and rounded up for a
-// longer language. Below it the label wraps rather than cutting, which is what
-// the icon's 52px are given up for.
+// longer language. It is also where the shared row states its figure at its
+// smallest, so by the time a row gets here every size the page can spend has
+// been spent and the two still do not fit.
 $overview-wrap: 20rem
 
-// Only the descriptions. The icon costs 52px and is what every panel on the
-// page carries, so a summary that drops it while the stability card beside it
-// keeps its own reads as a different kind of card rather than a tighter one.
+// The descriptions, and nothing else the reader was relying on.
+//
+// Not the icon: it costs 52px and is what every panel on the page carries, so a
+// summary that drops it while the stability card beside it keeps its own reads
+// as a different kind of card rather than a tighter one - and it is the only
+// part of a row that carries the grade.
+//
+// And not the figure either, which used to step here. That made this the one
+// panel whose figure changed size at a width of its own: measured at 1400px,
+// where this card holds 469px of list and the latest test beside it holds 360,
+// the summary was the only card on the row stating a smaller figure - the same
+// fault as the latest test standing alone with a smaller one at 1300, read from
+// the other end. The step is the shared row's now, at the width every panel
+// takes it.
 @container (width < #{$overview-trim})
   .overview-items .panel-row .panel-row-description
     display: none
-  // One step down with them: the card is carrying five rows in the room it
-  // has, and the figure was sized for more of it.
-  .overview-items .panel-row .panel-row-value
-    font-size: row.$panel-value-size-narrow
 
-// Wrapped rather than cut. A row label that ends in an ellipsis names a
-// measurement the reader has to guess at - and down here, where the description
-// under it is hidden too, the label is all there is. A second line costs the
-// card 20px; the ellipsis cost it the row's meaning.
+  // And the label may take a second line from here, rather than only at the
+  // step below. Cut, it names a measurement the reader has to guess at - and
+  // with the description under it already gone, the label is all there is.
+  //
+  // It costs the row nothing to allow it here: the line the description just
+  // gave up is the line a wrapped label takes, and a label that fits is still
+  // drawn on one. What it buys is the whole of this card's remaining cut band -
+  // measured across fifteen languages, "Fehlgeschlagene Tests" and
+  // "Неуспешни тестове" were cut from 380px of list down to the 320 where the
+  // step below used to allow this, at every size the figure could be stated at.
+  .overview-items .panel-row .panel-row-title
+    white-space: normal
+    overflow: visible
+
+// Stacked rather than squeezed. The label already wraps by the step above and
+// the figure is already at its smallest, so a row that still cannot hold both on
+// one line has nothing left to give up - and the two are worth more one under
+// the other than either is worth cut.
 //
 // The label takes what the value does not, rather than a share of its own: a
 // fixed fraction wraps "Total tests" onto two lines to reserve room the number
@@ -111,14 +134,13 @@ $overview-wrap: 20rem
   // and again at 644px, on Ping: the longest description the card carries, and
   // the only one of those values wearing a delta.
   //
-  // Down here the icon is gone and the label already takes two lines, so a row
-  // that still cannot fit both has nowhere left to take the room from, and
-  // stacking is the honest answer rather than an ellipsis over the figure.
+  // Down here the label already takes two lines and the figure is already at the
+  // smallest size the page states one at, so a row that still cannot fit both
+  // has nowhere left to take the room from, and stacking is the honest answer
+  // rather than an ellipsis over the figure.
   .overview-items .panel-row
     flex-wrap: wrap
 
-  .overview-items .panel-row .panel-row-icon
-    display: none
   .overview-items .panel-row .panel-row-info
     flex: 1 1 auto
     min-width: 0
@@ -126,10 +148,3 @@ $overview-wrap: 20rem
     // the width of its text. Given the row to grow into, a label that starts in
     // the middle of the card reads as a value that lost its number.
     justify-content: flex-start
-  // The shared row keeps its labels on one line and cuts what will not fit;
-  // this is the one width where a second line is worth more than the ellipsis.
-  // No !important and no width: those undid the 15rem pin the step above used
-  // to set, and there is no pin left to undo.
-  .overview-items .panel-row .panel-row-title
-    white-space: normal
-    overflow: visible

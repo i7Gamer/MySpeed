@@ -15,53 +15,70 @@
 // heading, so the figure is what the eye should land on.
 $panel-value-size: 1.75rem
 
-// One step down, for where the page grid squeezes the cards. Applied by the
-// cards that ask for it rather than by the row - see the overview card's
-// stylesheet, the only one whose labels and descriptions are sentences.
+// One step down, and one more, for where the page grid squeezes the cards.
+// Applied by the row itself against the width of whichever list it is drawn in
+// - see $panel-figure-step, where the two widths are measured, and the row's
+// stylesheet, where they are spent. Every panel takes them from there rather
+// than reaching for these directly, so no card can step at a width of its own.
 $panel-value-size-narrow: 1.4rem
+$panel-value-size-tight: 1.2rem
 
 $panel-title-size: 1rem
 $panel-description-size: 0.9rem
 
-/// The two concessions a row makes when its label stops fitting, in the order
-/// it makes them, and the list widths they are measured at.
+/// The two steps a row's figure takes when its label stops fitting, and the
+/// list widths they are measured at.
 ///
 /// The row cuts a label that will not fit, which keeps the figure whole - the
 /// right trade in general, except that a label cut to "Maximu..." or
 /// "Téléchargem..." leaves a number with no measurement attached, and unlike a
 /// description there is nothing left to infer it from.
 ///
-/// Measured across ten languages at every stage of the page, the cut appears in
-/// exactly two states, both a list of about 300px: the three-across grid, where
-/// a card holds 324px of list, and a phone, where it holds 293. Between them -
-/// the two-column stage, and any display past 1600px - a list is 460px or wider
-/// and nothing is cut in any language. So these are steps and not a permanent
-/// trim.
+/// Both steps come off the figure, and nothing else is given up. The icon used
+/// to be the last concession, and it was the wrong thing to spend: it is the
+/// only part of the row that carries the grade - the glyph wears it, the figure
+/// beside it is white whatever the reading - so a row without its icon states a
+/// number with no verdict on it. It also went at a width the cards do not
+/// reach together, so the latest test stood glyphless between two cards that
+/// kept theirs on exactly the same list. The figure is the one thing here that
+/// can be spent without losing anything a reader can read: it is stated larger
+/// than everything else in the card, and the band where it is spent is the band
+/// where French, Ukrainian and Russian are cut and English is not.
 ///
-/// The figure goes first, and on most widths it is the only one that goes.
-/// It is stated a size larger than anything else in the card, one step down
-/// frees more room than the icon would, and it costs a reader nothing: the
-/// three-across band is where French, Ukrainian and Russian are cut and English
-/// is not, so whatever is given up there is given up for readers who were never
-/// short of room. 22rem is the measurement - at 324px of list Ukrainian's
-/// "Завантаження" beside a gigabit speed overflowed by 27px, and a step down
-/// frees 34.
+/// Measured across fifteen languages with the glyph kept, as the widest list
+/// that still cuts a label - which is what each step has to clear:
+///
+///                    1.75rem   1.4rem   1.2rem
+///   summary            380px    360px    350px
+///   latest test        350px    316px    290px
+///   stability          270px    250px    240px
+///   value cards        360px    328px    300px
+///
+/// 22rem clears the latest test's 350, which is the card that carries the cut in
+/// nine of the fifteen languages, and 20rem clears what the first step leaves
+/// it - 316. What each leaves behind on the value cards is 8px wide: "Самый
+/// высокий" is cut between 352 and 360px of list, and again between 320 and 328.
+/// A step for either would cost every panel a size across the whole band above
+/// it, which is a great deal of page to move for two 8px slivers of one card.
+///
+/// Below the second step there is nothing left to spend, and the figure is not
+/// what is short: at 290px of list "Téléchargement" does not sit beside a glyph
+/// and a speed at any size a figure could be stated at, so the latest test is
+/// cut below 290 and the value cards below 300 - a phone narrower than 375px.
+/// The summary is not cut at all: it answers those widths by wrapping its label
+/// rather than cutting it, from the width its descriptions go. See the overview
+/// card, where that trade is set out - it can make it because its labels are
+/// two words where these are one.
 $panel-figure-step: 22rem
 
-/// The icon goes last, and only where the whole page is down to one column.
+/// And the second step, which is the width the icon used to be given up at.
 ///
-/// It is the only thing in the row that carries the grade - the glyph wears it,
-/// the figure beside it is white whatever the reading - so a row without its
-/// icon states a number with no verdict on it. That is a steep price for 52px,
-/// and it buys nothing the step above has not already bought at the width where
-/// the cards still stand three to a row.
-///
-/// 20rem is where the overview card already gives its own up, so on a phone the
-/// cards lose their glyphs together and the page reads as one thing. Taken at
-/// the three-across stage instead - measured, and looked at - this card stood
-/// glyphless between two that kept theirs on exactly the same 324px of list,
-/// which reads as a fault rather than as a tighter card.
-$panel-icon-drop: 20rem
+/// Same width, different thing spent: what was bought there by taking the glyph
+/// off every row is bought now by stating the figure one size smaller, which
+/// frees comparable room and costs the reader nothing but size. 1.2rem is still
+/// larger than the label beside it, so the figure is what the eye lands on at
+/// every width the card is ever drawn at.
+$panel-figure-floor: 20rem
 
 /// The space between two of these rows, wherever a panel stacks them.
 ///
