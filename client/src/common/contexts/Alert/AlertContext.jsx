@@ -163,14 +163,20 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
             //
             // Only the alert's *own* buttons, which is what areaRef answers.
             // Bailing out for any focused button anywhere was the wrong rule in
-            // the other direction: an alert is portaled to the body with no
-            // focus trap and only the input variant autofocuses, so one opened
-            // by a click leaves focus on the page button that opened it.
-            // Declining the key there does not hand it to Cancel - it hands it
-            // to the browser, which turns an unclaimed Enter on a focused
-            // button into a click, and the trigger pushes a second copy of the
-            // alert being answered. Enter then never dismissed an alert at all;
-            // holding it stacked them.
+            // the other direction: declining the key on a page button does not
+            // hand it to Cancel, it hands it to the browser, which turns an
+            // unclaimed Enter on a focused button into a click - so the trigger
+            // pushed a second copy of the alert being answered. Enter then never
+            // dismissed an alert at all; holding it stacked them.
+            //
+            // That case is now unreachable, and the rule stays anyway. The alert
+            // takes focus when it opens - onto its primary button, or onto the
+            // input it autofocuses - so a focused button outside the alert is no
+            // longer a state this can be in. What the guard is *for* now is the
+            // first clause above: Enter on Cancel, or on the close X, belongs to
+            // that control and not to handleSubmit. Seating focus on the X
+            // rather than the primary button is exactly how a confirmation came
+            // to answer Enter by cancelling - see initialFocus above.
             if (e.target?.tagName === "BUTTON" && areaRef.current?.contains(e.target)) return;
 
             e.preventDefault();
@@ -245,7 +251,7 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
                 </div>
                 <div className="dialog-buttons">
                     {alert.clearButton && (
-                        <button className="dialog-btn dialog-secondary" onClick={() => {
+                        <button type="button" className="dialog-btn dialog-secondary" onClick={() => {
                             alert.onClear?.();
                             close();
                         }}>
@@ -253,11 +259,11 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
                         </button>
                     )}
                     {alert.type === "confirm" && (
-                        <button className="dialog-btn dialog-secondary" onClick={() => close(false)}>
+                        <button type="button" className="dialog-btn dialog-secondary" onClick={() => close(false)}>
                             {alert.cancelText || "Cancel"}
                         </button>
                     )}
-                    <button ref={submitRef} className={`dialog-btn${alert.danger ? " dialog-danger" : ""}`}
+                    <button type="button" ref={submitRef} className={`dialog-btn${alert.danger ? " dialog-danger" : ""}`}
                             onClick={handleSubmit}>
                         {alert.buttonText || "OK"}
                     </button>

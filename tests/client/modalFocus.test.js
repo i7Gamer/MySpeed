@@ -230,6 +230,17 @@ describe("the overlays announce themselves and hold focus", () => {
             assert.match(source, /<button\s+type="button"[\s\S]{0,200}?aria-label=\{t\("dialog\.close"\)}/,
                 `${what} closes from an unfocusable, unnamed glyph`);
         });
+
+        // Every one of them, not just the one this range added. A button left
+        // untyped defaults to submit, and typing one of four is the state where
+        // the next reader cannot tell which way the file means to go.
+        it(`declares an explicit type on every button ${what} draws`, () => {
+            const opened = (source.match(/<button\b/g) ?? []).length;
+            const typed = (source.match(/<button\s+type="button"/g) ?? []).length;
+
+            assert.notEqual(opened, 0, `${what} draws no buttons at all`);
+            assert.equal(typed, opened, `a button in ${what} leaves its type to the browser`);
+        });
     }
 
     // The alert has its title to hand, so it says what it is; the dialog's
@@ -282,7 +293,9 @@ describe("the overlays announce themselves and hold focus", () => {
 
         assert.match(source, /initialFocus:\s*submitRef/,
             "the alert takes focus on whatever comes first, which is the close X");
-        assert.match(source, /<button ref=\{submitRef}/,
+        // Order-independent: the type attribute is stated first on every button
+        // in this file, so the ref is not the tag's opening token.
+        assert.match(source, /<button[^>]*\bref=\{submitRef}/,
             "nothing marks the primary button for focus");
     });
 
