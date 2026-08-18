@@ -37,6 +37,24 @@ const configDefaults = {
 
 const MAX_RETENTION_DAYS = 10000;
 
+/**
+ * A speed or latency threshold, in the two shapes a reader writes one: whole,
+ * or whole with a fraction.
+ *
+ * Anchored, for the reason retentionDays states where it does the same thing. A
+ * bare negated class - `/[^0-9.]/` - only asks whether every character is a
+ * digit or a dot, so "1.2.3", ".." and "." were all numbers to it.
+ *
+ * What that cost was quiet rather than loud. No server code reads these three
+ * keys, so the value was stored behind a 200 and handed to the client, where
+ * `Number("1.2.3")` is NaN and getIconBySpeed answers neutral for a threshold
+ * it cannot read: every speed on the page went grey and stayed grey, with
+ * nothing on screen naming the value that did it. "." was worse - the ping
+ * branch below splits on the dot, so what reached the column was the empty
+ * string.
+ */
+const THRESHOLD_NUMBER = /^[0-9]+(\.[0-9]+)?$/;
+
 // The value stored when no password is configured. It is a sentinel, not a
 // password: password.js waves every request through when it sees this.
 export const NO_PASSWORD = "none";
@@ -209,7 +227,8 @@ export const getUsedStorage = async () => {
 export const validateInput = async (key, value) => {
     if (!value?.toString()) return "You need to provide the new value";
 
-    if ((key === "ping" || key === "download" || key === "upload") && /[^0-9.]/.test(value))
+    if ((key === "ping" || key === "download" || key === "upload")
+        && !THRESHOLD_NUMBER.test(value.toString()))
         return "You need to provide a number in order to change this";
 
     if ((key === "ooklaId" || key === "libreId") && (/[^0-9]/.test(value) && value !== "none"))

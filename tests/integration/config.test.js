@@ -51,6 +51,32 @@ describe("validateInput", () => {
         it("truncates a fractional ping to whole milliseconds", async () => {
             assert.equal(await accepts("ping", "25.9"), "25");
         });
+
+        /**
+         * Anchored, like retentionDays below it - and for the reason stated
+         * there. A bare negated class asks only whether every character is a
+         * digit or a dot, so "1.2.3", ".." and "." are all numbers to it.
+         *
+         * What that costs is invisible rather than loud: nothing on the server
+         * reads these three keys, so the value is stored with a 200 and the
+         * client is left with it. `Number("1.2.3")` is NaN, and the guard in
+         * getIconBySpeed answers neutral for a threshold it cannot read - so
+         * every speed on the page goes grey and stays grey, with nothing on
+         * screen saying which value did it. "." is worse still: the ping branch
+         * splits on the dot and stores the empty string.
+         */
+        it("rejects a value that is only digits and dots", async () => {
+            for (const key of ["ping", "download", "upload"])
+                for (const bad of ["1.2.3", "..", ".", "1.", ".5"])
+                    await rejects(key, bad);
+        });
+
+        // The shapes a reader actually types, held against the rule above so
+        // that tightening it cannot quietly refuse them.
+        it("still accepts a whole and a fractional threshold", async () => {
+            assert.equal(await accepts("download", "250"), "250");
+            assert.equal(await accepts("upload", "12.5"), "12.5");
+        });
     });
 
     /**

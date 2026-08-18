@@ -259,6 +259,47 @@ describe("validateInput", () => {
                 `${JSON.stringify(value)} was accepted as a textarea value`);
     });
 
+    /**
+     * The display name, which is the one value here that no module declares.
+     *
+     * Every type and length cap lives inside the loop over `integration.fields`,
+     * and integration_name is not one of them - it was copied onto the result
+     * afterwards, unread. So it reached `displayName`, a bare Sequelize.STRING,
+     * which is VARCHAR(255) on MySQL: an over-long name was ER_DATA_TOO_LONG
+     * and a 500 there, while sqlite stored it whole. The two supported backends
+     * answered the same request differently, and the one that failed did it
+     * with a stack in the operator's log rather than the 400 every declared
+     * field earns.
+     *
+     * A non-string was a 500 on both - sequelize's own validator refuses an
+     * object outright.
+     */
+    describe("the display name", () => {
+        it("accepts a name a text field would accept", () => {
+            assert.notEqual(validateInput("telegram", telegram({integration_name: "Home line"})), false);
+            assert.notEqual(validateInput("telegram", telegram({integration_name: "x".repeat(250)})), false);
+        });
+
+        // Optional, and it has to stay optional: the column names its own
+        // default, and patch() reads undefined as "leave the name alone".
+        it("accepts a configuration that names nothing", () => {
+            const validated = validateInput("telegram", telegram());
+
+            assert.notEqual(validated, false);
+            assert.equal(validated.integration_name, undefined);
+        });
+
+        it("rejects a name past the length the column holds", () => {
+            assert.equal(validateInput("telegram", telegram({integration_name: "x".repeat(251)})), false);
+        });
+
+        it("rejects a name that is not text", () => {
+            for (const value of [42, {}, [], true, null])
+                assert.equal(validateInput("telegram", telegram({integration_name: value})), false,
+                    `${JSON.stringify(value)} was accepted as a display name`);
+        });
+    });
+
     // A text field with no declared pattern has nothing else standing in the
     // way - the pattern check is what happened to catch the others.
     it("requires a short text field to actually be a string", () => {

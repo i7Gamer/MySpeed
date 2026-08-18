@@ -344,6 +344,16 @@ export const getIntegration = (name) =>
  * An explicit null or "" is still a rejection either way: that is not "leave it
  * alone", it is "clear a field that is required".
  */
+/**
+ * The caps a declared text field wears.
+ *
+ * Named rather than written at the comparison, because the display name below
+ * is held to the same one and is not a declared field of any module - so the
+ * two have to move together or they disagree about the same column type.
+ */
+const MAX_TEXT_LENGTH = 250;
+const MAX_TEXTAREA_LENGTH = 2000;
+
 export const validateInput = (module, data, isPatch = false) => {
     const integration = getIntegration(module);
     if (!integration) return false;
@@ -366,8 +376,8 @@ export const validateInput = (module, data, isPatch = false) => {
             if ((field.type === "text" || field.type === "textarea")
                 && typeof data[field.name] !== "string") return false;
 
-            if (field.type === "text" && data[field.name].length > 250) return false;
-            if (field.type === "textarea" && data[field.name].length > 2000) return false;
+            if (field.type === "text" && data[field.name].length > MAX_TEXT_LENGTH) return false;
+            if (field.type === "textarea" && data[field.name].length > MAX_TEXTAREA_LENGTH) return false;
             if (field.type === "boolean" && typeof data[field.name] !== "boolean") return false;
             if (field.type === "number") {
                 // Checked before coercing, for the same reason the text branch
@@ -389,9 +399,29 @@ export const validateInput = (module, data, isPatch = false) => {
         }
     }
 
+    /**
+     * The display name, which is the one value here no module declares - so
+     * the loop above, where every type and length cap lives, never saw it. It
+     * was copied onto the result unread and assigned straight to `displayName`,
+     * a bare Sequelize.STRING: VARCHAR(255) on MySQL, where an over-long name
+     * was ER_DATA_TOO_LONG and a 500 with a stack in the operator's log, while
+     * sqlite stored it whole behind a 201. The two supported backends answered
+     * the same request differently. A non-string reached sequelize's own
+     * validator and was a 500 on both.
+     *
+     * Held to the text cap rather than to 255, so it wears the limit a declared
+     * text field wears and stays inside the column either way.
+     *
+     * undefined stays allowed, and has to: the column names its own default for
+     * create(), and patch() reads undefined as "leave the name alone".
+     */
+    const displayName = data["integration_name"];
+    if (displayName !== undefined
+        && (typeof displayName !== "string" || displayName.length > MAX_TEXT_LENGTH)) return false;
+
     const result = {};
     for (const field of integration.fields) result[field.name] = data[field.name];
-    result["integration_name"] = data["integration_name"];
+    result["integration_name"] = displayName;
 
     return result;
 }
