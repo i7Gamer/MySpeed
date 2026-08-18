@@ -1,5 +1,7 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/layout" as *
+// The sizes only, not the row's rules - see that partial for why.
+@use "@/pages/Statistics/components/PanelRow/variables" as row
 
 // The dialog was capped at 1400px on every display, so opening a chart on a
 // 1440p or 4K screen used barely half the room available - the detail view was
@@ -17,20 +19,56 @@ $modal-breakpoint-wide: 1600px
 $modal-breakpoint-ultrawide: 2100px
 
 // Where the opened overview has room for its items in two columns rather than
-// one tall stack: 2 x 32rem of track, a 3rem gap, the body's padding and the
-// dialog's gutter, with a little slack.
-$modal-breakpoint-two-column: 1200px
+// one tall stack: two of the widest rows, the 3rem gap between the columns, the
+// body's padding and the content's, and the dialog's own gutter.
+//
+// Measured from the row and not from the cap below, which is a maximum rather
+// than a width: gated on the cap the second column would arrive 130px later
+// than the rows can use it, leaving a 480px-tall single column on a screen with
+// room for two side by side.
+$modal-breakpoint-two-column: 1220px
 
-// What one of the overview's rows needs to stay on one line. Measured from the
-// single-column layout, where the widest of them - a description reading
-// "Average latency, between 4 ms and 38 ms" beside its value - settled at just
-// over 500px. Narrower tracks buy the second column by wrapping every long
-// description and breaking "11 ms" across two lines.
-$overview-column: 32rem
+// What one of the overview's rows needs to stay on one line: its icon, the two
+// gaps, its description, and the figure beside it. Measured across the fifteen
+// languages on the widest row the card carries - "Average latency, between 4.8
+// ms and 21 ms" beside "10.6 ms" and its delta - which wants 534px in English
+// and 601 in German, the only other language whose overview strings are
+// translated at all.
+//
+// It was 32rem, which was measured before those descriptions carried a range
+// and a delta. On a shrink-to-fit dialog a cap is also the width the dialog
+// settles at, so that figure was not a ceiling the layout approached - it was
+// the layout: measured at every viewport from 768px to 1920px the track came
+// out at exactly 512px, and the Ping row was cut by the same 22px on a 4K
+// display as on a laptop, with 798px of screen sitting empty beside the dialog.
+// An enlarged view that refuses the room it was opened for.
+//
+// Still a maximum, and `minmax(0, ...)` still lets the track shrink into a
+// viewport that cannot give it this much - where the description wraps instead
+// of being cut. See the description rule in .chart-modal-body.
+$overview-column: 38rem
 
 // Height follows the viewport separately from width: a tall 16:10 display has
 // room for a much deeper plot than the 500px the single tier allowed.
 $modal-breakpoint-tall: 900px
+
+// What the dialog spends on itself before the overview's columns get any of the
+// screen: the backdrop's gutter, the dialog's border, the body's padding and
+// the card's own. 48 + 2 + 40 + 8, and 24 + 2 + 24 + 8 once the narrow tier
+// halves the two paddings.
+//
+// A column has to be clamped against the viewport rather than left as a bare
+// length, and this is what the clamp measures from: the dialog shrinks to fit
+// its contents, so the grid inside it is sized in a pass where there is no
+// dialog width to fit into yet. A fixed track takes its whole cap there
+// whatever the screen, the dialog is clamped to the viewport around it
+// afterwards, and everything past that edge is cut off by its overflow: hidden
+// - which on a phone was every figure the panel is read for.
+$modal-chrome: 98px
+$modal-chrome-narrow: 58px
+
+// Between two columns of it, and so what the second one costs beyond the first.
+$overview-gap: 3rem
 
 .chart-modal-backdrop
   position: fixed
@@ -174,82 +212,63 @@ $modal-breakpoint-tall: 900px
     overflow: visible
     padding: 0 0.25rem 0.5rem
 
+  // A second line rather than an ellipsis, wherever this view still runs out.
+  //
+  // The shared row cuts its sub-lines, and on a card that is right: a row grown
+  // taller than its line-mates is what pushes a card past the height the grid
+  // gave it, which is the fault the rules above spend their length undoing.
+  // Nothing here has that height - the body scrolls - so the line costs the
+  // dialog nothing, where the ellipsis costs the reader the end of the
+  // sentence: "Average latency, between 4.8 ms and ..." states an average and
+  // withholds the range it is quoting from. Reported against the German
+  // overview and then against the English one, which is cut on that row at
+  // every viewport, the widest included.
+  .panel-row-description > *
+    white-space: normal
+
+  // The label first, which is the one that matters more: a cut description
+  // loses the end of a sentence, where a cut label leaves the reader guessing
+  // which measurement the figure beside it belongs to. Measured on a 375px
+  // screen, the opened value cards cut "Maximum" by 16px and "Minimum" by 2.
+  .panel-row-title
+    white-space: normal
+
   .consistency-container
     gap: 2rem
     flex: none
     height: auto
     min-height: 0
-        
-    .consistency-item
-      svg
-        width: 3rem
-        height: 3rem
-      .consistency-info
-        h2
-          font-size: 1.25rem
-        p
-          font-size: 1.25rem
-        .consistency-detail
-          font-size: 0.95rem
 
   // Eight items, each a single line, stacked into a column taller than most
   // screens. Two columns halve that without crowding either one.
   //
-  // The tracks are given a definite maximum rather than a share of the width:
-  // the dialog is shrink-to-fit, so `1fr` would have nothing to take a fraction
-  // of, and a track that grows without limit puts a hand's width between each
-  // label and its value on a wide display.
+  // The tracks are given a maximum rather than a share of the width: the dialog
+  // is shrink-to-fit, so `1fr` would have nothing to take a fraction of, and a
+  // track that grows without limit puts a hand's width between each label and
+  // its value on a wide display.
+  //
+  // A maximum and not a length, though - see $modal-chrome. Written as one, the
+  // track is taken whole in the pass that has no dialog width to answer with,
+  // and whatever the viewport cannot hold is then cut off rather than reflowed.
   .overview-items
     display: grid
-    grid-template-columns: minmax(0, #{$overview-column})
+    grid-template-columns: minmax(0, min(#{$overview-column}, calc(100vw - #{$modal-chrome})))
     width: auto
-    gap: 1.5rem 3rem
+    gap: 1.5rem $overview-gap
 
-    // Two columns only where two fit at their full width. Below the threshold
-    // the second column would be bought by squeezing both - wrapped
-    // descriptions and a value broken across two lines - which is worse than
-    // the tall single column it replaces.
+    // Two columns only where two of them fit as they read. Below the threshold
+    // the second column is bought by squeezing both - wrapped descriptions and
+    // a value broken across two lines - which is worse than the tall single
+    // column it replaces. Above it they share what the screen has left after the
+    // gap between them, up to the same cap a single column stops at.
     @media screen and (min-width: $modal-breakpoint-two-column)
-      grid-template-columns: repeat(2, minmax(0, #{$overview-column}))
-
-    .overview-item
-      .info-area
-        svg
-          width: 3rem
-          height: 3rem
-        .text-area
-          h2
-            font-size: 1.25rem
-          p
-            font-size: 0.9rem
-      h2
-        font-size: 1.75rem
+      grid-template-columns: repeat(2, minmax(0, min(#{$overview-column}, calc((100vw - #{$modal-chrome} - #{$overview-gap}) / 2))))
 
   .info-container
     gap: 2rem
-        
-    .test-container
-      svg
-        width: 3rem
-        height: 3rem
-      .test-info
-        h2
-          font-size: 1.25rem
-        p
-          font-size: 1.1rem
 
   .value-container
     gap: 2rem
-        
-    .value-item
-      svg
-        width: 3rem
-        height: 3rem
-      .value-info
-        h2
-          font-size: 1.25rem
-        p
-          font-size: 1.1rem
 
 .chart-modal-toolbar
   display: flex
@@ -309,12 +328,20 @@ $modal-breakpoint-tall: 900px
   
   .chart-modal-body
     padding: 0.75rem
-    
+
+    // Which is 40px the column above gets back, this tier having halved both
+    // the gutter and that padding. Not worth restating for its own sake - on a
+    // 375px screen it is a tenth of the width, and the difference between a
+    // dialog that reaches the edges of the phone and one that stops short of
+    // them for no reason a reader can see.
+    .overview-items
+      grid-template-columns: minmax(0, min(#{$overview-column}, calc(100vw - #{$modal-chrome-narrow})))
+
     &.modal-body-chart
       .chart-container
         min-height: min(50vh, 300px)
         max-height: 60vh
-              
+
       .chart-body
         min-height: min(40vh, 250px)
         max-height: 50vh
@@ -322,8 +349,22 @@ $modal-breakpoint-tall: 900px
 @media screen and (max-width: 500px)
   .chart-modal-content
     border-radius: 0.75rem
-    
+
   .chart-modal-body
+    // And the value cards give their figure back a step, which the wrapping
+    // above cannot do for them: their labels are one word, and a word has
+    // nowhere to break.
+    //
+    // Those cards state the figure one step down and exempt this view, on the
+    // grounds that "opened, the card has the width of the dialog" - true while
+    // the dialog is the wider of the two, and false at the bottom of the range.
+    // At 375px the enlarged card is 317px inside its padding, and the figure at
+    // full size leaves 78px for "Maximum", which wants 94: measured cut by 16,
+    // with "Minimum" beside it cut by 2. The room has to come from the figure,
+    // and the step it takes is the card's own rather than a third size.
+    .value-container .panel-row-value
+      font-size: row.$panel-value-size-narrow
+
     &.modal-body-chart
       .chart-container
         min-height: min(45vh, 280px)

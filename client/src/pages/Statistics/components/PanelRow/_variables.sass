@@ -23,6 +23,46 @@ $panel-value-size-narrow: 1.4rem
 $panel-title-size: 1rem
 $panel-description-size: 0.9rem
 
+/// The two concessions a row makes when its label stops fitting, in the order
+/// it makes them, and the list widths they are measured at.
+///
+/// The row cuts a label that will not fit, which keeps the figure whole - the
+/// right trade in general, except that a label cut to "Maximu..." or
+/// "Téléchargem..." leaves a number with no measurement attached, and unlike a
+/// description there is nothing left to infer it from.
+///
+/// Measured across ten languages at every stage of the page, the cut appears in
+/// exactly two states, both a list of about 300px: the three-across grid, where
+/// a card holds 324px of list, and a phone, where it holds 293. Between them -
+/// the two-column stage, and any display past 1600px - a list is 460px or wider
+/// and nothing is cut in any language. So these are steps and not a permanent
+/// trim.
+///
+/// The figure goes first, and on most widths it is the only one that goes.
+/// It is stated a size larger than anything else in the card, one step down
+/// frees more room than the icon would, and it costs a reader nothing: the
+/// three-across band is where French, Ukrainian and Russian are cut and English
+/// is not, so whatever is given up there is given up for readers who were never
+/// short of room. 22rem is the measurement - at 324px of list Ukrainian's
+/// "Завантаження" beside a gigabit speed overflowed by 27px, and a step down
+/// frees 34.
+$panel-figure-step: 22rem
+
+/// The icon goes last, and only where the whole page is down to one column.
+///
+/// It is the only thing in the row that carries the grade - the glyph wears it,
+/// the figure beside it is white whatever the reading - so a row without its
+/// icon states a number with no verdict on it. That is a steep price for 52px,
+/// and it buys nothing the step above has not already bought at the width where
+/// the cards still stand three to a row.
+///
+/// 20rem is where the overview card already gives its own up, so on a phone the
+/// cards lose their glyphs together and the page reads as one thing. Taken at
+/// the three-across stage instead - measured, and looked at - this card stood
+/// glyphless between two that kept theirs on exactly the same 324px of list,
+/// which reads as a fault rather than as a tighter card.
+$panel-icon-drop: 20rem
+
 /// The space between two of these rows, wherever a panel stacks them.
 ///
 /// It was two figures and two distributions: 1.75rem with the rows centred on

@@ -70,7 +70,10 @@ describe("the migration itself", () => {
 
         const body = requestUtilSource.slice(start, requestUtilSource.indexOf("\n}", start));
 
-        assert.match(body, /finally\s*\{[\s\S]*removeItem/,
+        // removeStored rather than localStorage.removeItem: a blocked or
+        // partitioned store throws on the property access itself, and this runs
+        // at the top level of index.jsx where nothing can catch it.
+        assert.match(body, /finally\s*\{[\s\S]*removeStored/,
             "a migration that fails would be retried, identically, on every load after it");
     });
 });

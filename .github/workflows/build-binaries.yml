@@ -158,18 +158,27 @@ jobs:
         include:
           # Default Bun x64 target needs AVX2. Older CPUs (e.g. Bay Trail
           # Celeron) SIGILL on startup — ship a baseline build for them.
+          # `verify` says per leg whether the compiled binary is booted before it
+          # is uploaded. Both x64 legs are, because install.sh picks between them
+          # automatically on the user's behalf - and the baseline one is chosen
+          # silently, on exactly the CPUs whose owner is least placed to debug a
+          # binary that will not start. arm64 is not: pwsh, which
+          # verify-binary.ps1 needs, is not on the arm runner image.
           - label: x64
             target: bun-linux-x64
             runner: ubuntu-latest
             artifact_name: MySpeed-linux-x64
+            verify: true
           - label: x64-baseline
             target: bun-linux-x64-baseline
             runner: ubuntu-latest
             artifact_name: MySpeed-linux-x64-baseline
+            verify: true
           - label: arm64
             target: bun-linux-arm64
             runner: ubuntu-24.04-arm
             artifact_name: MySpeed-linux-arm64
+            verify: false
 
     steps:
       - name: Checkout project
@@ -210,6 +219,19 @@ jobs:
 
       - name: Rename binary
         run: mv MySpeed ${{ matrix.artifact_name }}
+
+      # The same gate the Windows job carries, for the same reason: a green
+      # compile says nothing about whether the binary runs, and the crash this
+      # matrix exists for happens at startup long after the compiler is happy.
+      # Before the upload, so a binary that never boots fails the release rather
+      # than being attached to it.
+      #
+      # The runner has AVX2, so for the baseline leg this proves the binary is
+      # not broken - not that it fixes a machine without AVX2.
+      - name: Verify binary boots and serves
+        if: ${{ matrix.verify }}
+        shell: pwsh
+        run: ./scripts/verify-binary.ps1 -Binary ./${{ matrix.artifact_name }}
 
       - name: Upload to Release
         uses: actions/github-script@v9

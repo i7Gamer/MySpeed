@@ -26,10 +26,16 @@ jobs:
           fetch-depth: 0
           ref: v${{ inputs.version }}
 
+      # Through env like the rest, so no workflow expression is substituted into
+      # a shell body anywhere in the chain. This one arrives already checked by
+      # create-release's semver guard; the rule is uniform so that staying safe
+      # does not depend on remembering which values were checked upstream.
       - name: Get previous tag
         id: prev
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          CUR="v${{ inputs.version }}"
+          CUR="v$VERSION"
           PREV=$(git tag --sort=-creatordate | grep -v "^$CUR$" | head -1)
           echo "tag=$PREV" >> $GITHUB_OUTPUT
 

@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import setupDiscord, { DISCORD_DESCRIPTION_LIMIT } from "../../server/integrations/discord.js";
+import setupDiscord, { DISCORD_DESCRIPTION_LIMIT, DISCORD_USERNAME_LIMIT } from "../../server/integrations/discord.js";
 import setupTelegram, { TELEGRAM_MESSAGE_LIMIT } from "../../server/integrations/telegram.js";
 import setupGotify from "../../server/integrations/gotify.js";
 import setupPushover, { PUSHOVER_MESSAGE_LIMIT } from "../../server/integrations/pushover.js";
@@ -353,6 +353,53 @@ describe("every integration", () => {
  * Trimmed inside each send() rather than at the call sites, the way pushover
  * does it, so a message added later cannot be the one that goes whole.
  */
+/**
+ * The name beside the message is bounded by the same request.
+ *
+ * The description was trimmed inside send() "so a message added later cannot be
+ * the one that is sent whole and refused" - and `username`, one property away in
+ * the same object, was not. Discord validates the override at 1-80 characters
+ * and answers a longer one with a 400, delivering nothing at all: worse than an
+ * over-long description, because it kills every notification unconditionally
+ * rather than only the ones whose text happens to run long.
+ *
+ * Nothing upstream bounds it either. `display_name` declares no regex, so the
+ * only gate is validateInput's generic 250-character cap on a text field - three
+ * times what discord will take - and the dialog sets no maxlength.
+ */
+describe("a discord display name longer than the api accepts", () => {
+    const LONG_NAME = "Home fibre line - Frankfurt PoP, monitored by MySpeed on the basement NUC (do not delete)";
+    const config = {url: "https://discord.com/api/webhooks/1/token", send_finished: true, send_failed: true};
+
+    it("is 80, which is what the api documents", () => {
+        assert.equal(DISCORD_USERNAME_LIMIT, 80);
+    });
+
+    it("trims it to something the api will take", async () => {
+        const {events} = load(setupDiscord);
+        await fire(events, "testFinished", {...config, display_name: LONG_NAME}, RESULT);
+
+        assert.ok(sent[0].body.username.length <= DISCORD_USERNAME_LIMIT,
+            `sent ${sent[0].body.username.length} characters, which discord refuses with a 400`);
+    });
+
+    // The failure notification is the one that matters most, and it goes through
+    // the same send().
+    it("trims it on a failure too", async () => {
+        const {events} = load(setupDiscord);
+        await fire(events, "testFailed", {...config, display_name: LONG_NAME}, failure("boom"));
+
+        assert.ok(sent[0].body.username.length <= DISCORD_USERNAME_LIMIT);
+    });
+
+    it("leaves an ordinary name exactly as it was", async () => {
+        const {events} = load(setupDiscord);
+        await fire(events, "testFinished", {...config, display_name: "Basement NUC"}, RESULT);
+
+        assert.equal(sent[0].body.username, "Basement NUC");
+    });
+});
+
 describe("a message longer than the provider accepts", () => {
     const LONG_TEMPLATE = `A speedtest has failed. ${"Context. ".repeat(200)}Reason: %error%`;
     const LONG_ERROR = "Cannot open socket to 2001:db8::1 port 8080. ".repeat(60);

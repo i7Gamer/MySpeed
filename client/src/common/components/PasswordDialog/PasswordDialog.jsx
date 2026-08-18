@@ -109,7 +109,13 @@ export const PasswordDialog = ({open, onClose}) => {
             if (!response.ok) throw new Error(`Removing the password failed with status ${response.status}`);
 
             if (currentNode !== 0) {
-                await baseRequest("/nodes/" + currentNode + "/password", "PATCH", {password: "none"});
+                // Checked, like the save path above. The answer was thrown away,
+                // so a refusal here left the parent holding a credential the
+                // node no longer has while this reported success in green - and
+                // the next poll turned the card red with no way to connect the
+                // two.
+                await assertOk(await baseRequest("/nodes/" + currentNode + "/password", "PATCH",
+                    {password: "none"}), "node password");
                 updateNodes();
             } else {
                 await logout();
@@ -118,8 +124,11 @@ export const PasswordDialog = ({open, onClose}) => {
             reloadConfig();
             updateToast(t("update.password_removed"), "green", faCheck);
             close();
-        } catch {
-            updateToast(t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
+        } catch (e) {
+            // The server's refusal names what went wrong; only a network
+            // failure falls back to the generic line, as the save path does.
+            updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
+                "red", faExclamationTriangle);
         }
     };
 

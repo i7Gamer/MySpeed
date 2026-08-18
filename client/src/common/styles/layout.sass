@@ -37,7 +37,15 @@ $toolbar-text-size: 1.1rem
 //
 // Measured against the widest labels the cards carry, in MB/s, where every
 // figure gains a decimal and a wider unit.
-$stats-two-column: 1030px
+//
+// The two-column figure is where three cards stop *reading* well, not where they
+// stop fitting. It was 1030px - the geometric floor - and the band just above it
+// was the problem: at around 1050 the page is still three across, each card near
+// 330px, and the summary is dressed in a form tuned for a third of a much wider
+// row. Five labelled rows at tile width is a paragraph in a box meant for a
+// figure. So the summary takes its own row while there is still room for it to
+// read as one.
+$stats-two-column: 1250px
 $stats-one-column: 720px
 
 // And the space above and below that text. The toolbar wraps on a narrow

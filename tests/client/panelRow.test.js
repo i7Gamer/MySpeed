@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as sass from "sass";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { containerBlocks } from "../helpers/sass.mjs";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -57,6 +58,12 @@ const PANELS = [
 // keeps "overview-item" off "overview-items" in both.
 const asClassName = (name) => new RegExp(`["'\\s]${name}(?![-\\w])`);
 const asSelector = (name) => new RegExp(`\\.${name}(?![-\\w])`);
+
+// Every stylesheet the client has, which is the question the guard above puts
+// to four of them.
+const STYLESHEETS = fs.readdirSync(CLIENT_SRC, {recursive: true})
+    .filter((file) => file.endsWith(".sass"))
+    .map((file) => file.split(path.sep).join("/"));
 
 const bodyOf = (selector) => {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -316,6 +323,172 @@ describe("the value cards, which state the longest figures", () => {
 });
 
 /**
+ * The two cards whose labels run out of room before their figures do.
+ *
+ * The row cuts a label that will not fit, which keeps the figure whole and is
+ * the right trade on a card - but a label cut to "Maximu..." names nothing, and
+ * a reader is then looking at a number with no measurement attached. Measured
+ * across ten languages at every stage of the page, the cut happens in exactly
+ * two states, both of them a list of about 300px: the three-across grid, where
+ * a card holds 324px of list, and a phone, where it holds 293. Between them -
+ * the two-column stage and any display past 1600px - a list is 460px or wider
+ * and nothing is cut in any language.
+ *
+ * What is in those 300px besides the label: the icon and the gap after it,
+ * 52px, which is what the overview card already gives up at its own tightest
+ * step for exactly this reason. It closes all five of the desktop cuts and
+ * fifteen of the eighteen on a phone.
+ */
+describe("the cards that run out of room for a label", () => {
+    const LISTS = [
+        {name: "the latest test", list: ".info-container",
+            styles: "pages/Statistics/charts/LatestTestChart/styles.sass"},
+        {name: "the value cards", list: ".value-container",
+            styles: "pages/Statistics/charts/AverageChart/styles.sass"}
+    ];
+
+    // The two states a card is cut in, as list widths: the three-across grid,
+    // where the cards beside it have exactly the same room, and a phone, where
+    // the whole page is down to one column.
+    const THREE_ACROSS_LIST = 324;
+    const PHONE_LIST = 293;
+
+    const ruleFor = (sheet, selector) =>
+        sheet.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![-\\w])\\s*\\{([^}]*)}`));
+
+    for (const {name, list, styles} of LISTS) {
+        const sheet = compile(styles);
+
+        // The list and not the viewport: the same card is drawn at a third of a
+        // wide row, at the whole width of a phone, and again inside a dialog,
+        // and one viewport figure cannot tell those apart. The overview card
+        // learned this the hard way - see overviewModalStyles.test.js.
+        it(`lets ${name} measure the room it actually has`, () => {
+            assert.notEqual(ruleFor(sheet, list), null, `${list} has no base rule`);
+
+            // Any rule for this list, not the base one: the value card states
+            // it on a guarded selector of its own, for the reason below.
+            const declaring = [...sheet.matchAll(/([^{}]+)\{([^}]*)}/g)]
+                .filter(([, selector, body]) => new RegExp(`\\${list}(?![-\\w])`).test(selector)
+                    && /container-type:\s*inline-size/.test(body));
+
+            assert.ok(declaring.length > 0,
+                `${list} establishes no container, so nothing can key on its width`);
+        });
+
+        /**
+         * And the icon goes only where the whole page is down to one column.
+         *
+         * It is the last thing a row gives up, because it is the only thing in
+         * the row that carries the grade: the glyph wears it - see graded-glyph
+         * - and the figure beside it is white whatever the reading. A row
+         * without its icon states a number with no verdict on it.
+         *
+         * So it is given up at the width the overview card already gives it up
+         * at, which is a phone: there the page is one column, every card is
+         * equally tight, and they lose their glyphs together. Taken at the
+         * three-across stage instead, this card would stand glyphless beside two
+         * that kept theirs on exactly the same 324px of list - which reads as a
+         * fault rather than as a tighter card, and costs the grade at a width
+         * where an English reader was never cut at all.
+         */
+        it(`gives up the icon on ${name} only where every card is that tight`, () => {
+            const dropping = containerBlocks(sheet)
+                .filter(({body}) => /\.panel-row-icon\s*\{[^}]*display:\s*none/.test(body));
+
+            assert.equal(dropping.length, 1,
+                `${name} has ${dropping.length} steps that drop the icon, expected one`);
+
+            const at = parseFloat(dropping[0].condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]);
+
+            assert.ok(Number.isFinite(at), `"${dropping[0].condition.trim()}" is not a width step`);
+            assert.ok(at * 16 > PHONE_LIST,
+                `the icon survives ${at * 16}px of list, so a phone keeps a glyph it has no room for`);
+            assert.ok(at * 16 <= THREE_ACROSS_LIST,
+                `the icon goes at ${at * 16}px of list, which strips this card `
+                + "beside two that keep theirs on the same room");
+        });
+    }
+
+    /**
+     * And the value card establishes its container only where nothing is
+     * measuring it.
+     *
+     * `container-type: inline-size` contains the inline axis, so a size
+     * container contributes nothing of its contents to an intrinsic sizing pass
+     * - and the dialog this card opens into is shrink-to-fit, which is nothing
+     * but that pass. Measured with the container on: the enlarged card fell to
+     * 402px against the 426 its rows want on a desktop, and to 282 against 351
+     * on a phone, where the dialog's floor is min-content rather than its 400px
+     * minimum. Nothing was cut - everything inside is width-relative - it simply
+     * stopped filling the space it was given.
+     *
+     * The step is not wanted there in any case: the enlarged view wraps its
+     * labels and steps its figure down on a phone, which is how it keeps them
+     * whole without giving up the glyphs.
+     *
+     * The latest test needs no such guard - opened, that card renders the whole
+     * test record instead of this list.
+     */
+    it("leaves the enlarged value card measurable by the dialog", () => {
+        const sheet = compile("pages/Statistics/charts/AverageChart/styles.sass");
+        const containers = [...sheet.matchAll(/([^{}]+)\{([^}]*)}/g)]
+            .filter(([, , body]) => /container-type:\s*inline-size/.test(body))
+            .map(([, selector]) => selector.trim());
+
+        assert.ok(containers.length > 0, "the value card establishes no container at all");
+
+        for (const selector of containers)
+            assert.ok(selector.includes(":not(.chart-modal-body *)"),
+                `"${selector}" contains the card inside the dialog too, which then has nothing to measure`);
+    });
+
+    /**
+     * What the three-across stage gets instead: one size off the figure.
+     *
+     * That band is where French, Ukrainian and Russian are cut and English is
+     * not, so the concession has to be one that costs a reader nothing - and the
+     * figure is already stated a size larger than anything else in the card. One
+     * step down frees more than the icon would and keeps the grade beside it.
+     *
+     * The latest test only. The value cards state their figure a step down
+     * already, on every card at every width, so there is no step of theirs left
+     * to take here.
+     */
+    it("steps the latest test's figure down before it touches the icon", () => {
+        const sheet = compile("pages/Statistics/charts/LatestTestChart/styles.sass");
+        const stepping = containerBlocks(sheet)
+            .filter(({body}) => /\.panel-row-value\s*\{[^}]*font-size/.test(body));
+
+        assert.equal(stepping.length, 1,
+            `the card has ${stepping.length} steps that resize the figure, expected one`);
+
+        const at = parseFloat(stepping[0].condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]);
+
+        assert.ok(at * 16 > THREE_ACROSS_LIST,
+            `the figure holds its size down to ${at * 16}px of list, where the label beside it is cut`);
+        assert.match(stepping[0].body, /font-size:\s*1\.4rem/,
+            "the figure steps to a size of its own rather than the one the value cards use");
+
+        const dropping = containerBlocks(sheet)
+            .filter(({body}) => /\.panel-row-icon\s*\{[^}]*display:\s*none/.test(body));
+        const iconAt = parseFloat(dropping[0].condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]);
+
+        assert.ok(at > iconAt,
+            "the icon goes before the figure shrinks, which spends the grade to save a size");
+    });
+
+    // One figure for both cards, because they are one measurement: what a row
+    // needs before the icon has to go. Two copies is the split that widens.
+    it("names those widths once rather than once per card", () => {
+        assert.match(rowSizes, /\$panel-icon-drop:\s*[\d.]+rem/,
+            "the icon step is a literal in each card, so the two can drift apart");
+        assert.match(rowSizes, /\$panel-figure-step:\s*[\d.]+rem/,
+            "the figure step has no shared name");
+    });
+});
+
+/**
  * The overview card's rows used to be spaced by an accident: its value was a
  * bare <h2> whose default margin - 0.83em top and bottom - pushed the rows
  * apart. The shared row states its value in a div, as it should, and the five
@@ -379,5 +552,41 @@ describe("the panels that state readings", () => {
     it("does not mistake the overview's row container for a retired row", () => {
         assert.doesNotMatch('<div className="overview-items">', asClassName("overview-item"));
         assert.doesNotMatch(".overview-items\n  display: flex", asSelector("overview-item"));
+    });
+
+    /**
+     * And the sheet that dressed all four of them at once.
+     *
+     * The guard above asks each panel's own stylesheet, and each of the four
+     * answered honestly. The shared dialog's sheet was not on the list: it
+     * sized the svg and the font of every one of these rows for the enlarged
+     * view, and four blocks of rules for classes no component had drawn since
+     * the refactor sat there with the suite green over them.
+     *
+     * Rules nothing can match are not merely inert. They are the next reader's
+     * evidence that the class is still in use, and the enlarged view is exactly
+     * where someone would look to find out how these rows are meant to grow.
+     *
+     * Naming one more file would leave the same hole one file over, so the
+     * question is put to every stylesheet the client has.
+     */
+    it("keeps no retired row in any stylesheet, not only the panel's own", () => {
+        for (const file of STYLESHEETS) {
+            const sheet = read(file);
+
+            for (const {retired} of PANELS)
+                assert.doesNotMatch(sheet, asSelector(retired),
+                    `${file} still dresses .${retired}`);
+        }
+    });
+
+    // The sweep is only worth its runtime if it reaches past the four files the
+    // guard above already reads - the shared dialog's sheet being the one that
+    // held these rules while every listed file was clean.
+    it("sweeps the shared dialog's sheet, which held them", () => {
+        assert.ok(STYLESHEETS.includes("common/components/ChartModal/styles.sass"),
+            "the enlarged view's stylesheet is outside the sweep, which is where the dead rules were");
+        assert.ok(STYLESHEETS.length > PANELS.length,
+            "the sweep reads no more than the panels' own sheets");
     });
 });

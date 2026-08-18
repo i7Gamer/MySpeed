@@ -20,6 +20,8 @@ let hangClosed = 0;
 
 const CSV_BODY = "id,ping,download\r\n1,10,100";
 
+const NODE_PASSWORD = "childsecret";
+
 /**
  * A stand-in for a child MySpeed instance. It answers the handshake
  * checkStatus() performs and serves one JSON and one CSV endpoint, which is
@@ -30,6 +32,18 @@ const startUpstream = () => new Promise((resolve) => {
         received.push({url: req.url, method: req.method, headers: req.headers});
 
         if (req.url.startsWith("/api/config")) {
+            // A node with a password refuses a caller presenting the wrong one.
+            // That is what makes "check the password before storing it"
+            // meaningful - and what makes checking the sentinel for *clearing*
+            // it wrong, since no node ever accepts "none" as a password.
+            if (req.headers["x-password"] !== encodeURIComponent(NODE_PASSWORD)) {
+                res.writeHead(401, {"content-type": "application/json"});
+                return res.end(JSON.stringify({
+                    message: "Please provide the correct password in the header",
+                    type: "PASSWORD_REQUIRED"
+                }));
+            }
+
             res.writeHead(200, {"content-type": "application/json"});
             return res.end(JSON.stringify({ping: "25", download: "100", viewMode: false}));
         }
@@ -45,6 +59,27 @@ const startUpstream = () => new Promise((resolve) => {
         if (req.url.startsWith("/api/redirect-me")) {
             res.writeHead(302, {location: "http://169.254.169.254/latest/meta-data"});
             return res.end();
+        }
+
+        // A revalidated read. Express answers a conditional request with a bare
+        // 304 while the caller's validator still matches, which is what the
+        // dashboard's polling produces as soon as a node's answer stops
+        // changing - i.e. for the whole gap between two speedtests.
+        if (req.url.startsWith("/api/cached")) {
+            if (req.headers["if-none-match"]) {
+                res.writeHead(304, {etag: 'W/"same"'});
+                return res.end();
+            }
+
+            res.writeHead(200, {"content-type": "application/json", etag: 'W/"same"'});
+            return res.end(JSON.stringify({fresh: true}));
+        }
+
+        // A node that has stopped being a MySpeed instance: compromised, or a
+        // hostname that changed hands. It answers a document rather than an API.
+        if (req.url.startsWith("/api/hostile")) {
+            res.writeHead(200, {"content-type": "text/html"});
+            return res.end("<script>fetch('/api/storage/config?includeSecrets=true')</script>");
         }
 
         if (req.url.startsWith("/api/speedtests/status")) {
@@ -95,7 +130,7 @@ before(async () => {
     const {body} = await api(server.baseUrl, "/nodes", {
         method: "PUT",
         headers: {"content-type": "application/json"},
-        body: JSON.stringify({name: "child", url: upstreamUrl, password: "childsecret"})
+        body: JSON.stringify({name: "child", url: upstreamUrl, password: NODE_PASSWORD})
     });
 
     nodeId = body.id;
@@ -140,6 +175,54 @@ describe("node proxy", () => {
         assert.match(headers.get("content-type"), /text\/csv/);
     });
 
+    /**
+     * 304 sits in the 3xx range and is not a redirect: it carries no Location
+     * and means "your copy is still good".
+     *
+     * The proxy classified it by range alone and answered 502 "The node
+     * redirected the request". The browser gets an ETag on every proxied 200 -
+     * Express generates one - and revalidates on the next poll, so a node whose
+     * answer had stopped changing turned the node view into an error until the
+     * next speedtest landed.
+     */
+    it("passes a revalidated 304 back rather than calling it a redirect", async () => {
+        const {status} = await api(server.baseUrl, `/nodes/${nodeId}/cached`, {
+            headers: {"if-none-match": 'W/"same"'}
+        });
+
+        assert.equal(status, 304);
+    });
+
+    it("still answers the unconditional read in full", async () => {
+        const {status, body} = await api(server.baseUrl, `/nodes/${nodeId}/cached`);
+
+        assert.equal(status, 200);
+        assert.deepEqual(body, {fresh: true});
+    });
+
+    /**
+     * A node is a machine an admin pointed at, not a trusted one, and the proxy
+     * serves its answer from the *parent's* origin.
+     *
+     * Copying the node's content-type through let it choose that answer's type.
+     * `text/html` renders as a document on the parent origin, and the CSP that
+     * would otherwise stop it says `script-src 'self'` - which the node's own
+     * scripts satisfy, because they are proxied through the parent too. From
+     * there a script reads GET /api/storage/config?includeSecrets=true with the
+     * operator's HttpOnly session riding along: the admin hash, every node
+     * password in clear, every integration token. The whole point of stripping
+     * the caller's credentials at this boundary is undone by handing the far end
+     * the parent's origin instead.
+     */
+    it("does not let a node serve a document on the parent's origin", async () => {
+        const {status, headers, text} = await api(server.baseUrl, `/nodes/${nodeId}/hostile`);
+
+        assert.equal(status, 200, "the body is still delivered, just not as a document");
+        assert.doesNotMatch(headers.get("content-type") ?? "", /text\/html/,
+            "a hostile node chose the content type of a same-origin response");
+        assert.match(text, /includeSecrets/, "the body itself must still pass through unchanged");
+    });
+
     it("forwards the download filename", async () => {
         const {headers} = await api(server.baseUrl,
             `/nodes/${nodeId}/speedtests/export?from=2026-08-01&to=2026-08-07&format=csv`);
@@ -154,8 +237,52 @@ describe("node proxy", () => {
         });
 
         const proxied = received.at(-1);
-        assert.equal(proxied.headers["x-password"], encodeURIComponent("childsecret"));
+        assert.equal(proxied.headers["x-password"], encodeURIComponent(NODE_PASSWORD));
         assert.doesNotMatch(JSON.stringify(proxied.headers), /the-callers-own-password/);
+    });
+
+    /**
+     * Clearing the parent's stored credential for a node is not a password
+     * change and needs no proof the node still accepts one.
+     *
+     * The route checked "none" the way it checks a real password: it asked the
+     * node to authenticate with the sentinel. No node ever accepts that, and
+     * the node whose password has just been removed - which is the only reason
+     * anyone sends this - answers 401 loudest of all. So the parent refused the
+     * clear 400 and kept the stale credential, while the client, which never
+     * looked at the response, toasted "Password removed" in green. Every poll
+     * afterwards authenticated with a password the node no longer has.
+     */
+    it("clears a stored node password without asking the node to accept it", async () => {
+        const {body: created} = await api(server.baseUrl, "/nodes", {
+            method: "PUT",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify({name: "retiring", url: upstreamUrl, password: NODE_PASSWORD})
+        });
+
+        const {status} = await api(server.baseUrl, `/nodes/${created.id}/password`, {
+            method: "PATCH",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify({password: "none"})
+        });
+
+        assert.equal(status, 200, "the parent refused to forget a password it no longer needs");
+
+        const stored = await nodeModelFor().findOne({where: {id: created.id}});
+        assert.equal(stored.password, null, "the stale credential is still stored");
+    });
+
+    // The other half: a password that is genuinely wrong is still refused, so
+    // the check has not simply been dropped.
+    it("still refuses a node password the node does not accept", async () => {
+        const {status, body} = await api(server.baseUrl, `/nodes/${nodeId}/password`, {
+            method: "PATCH",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify({password: "not-the-childs-password"})
+        });
+
+        assert.equal(status, 400);
+        assert.equal(body.type, "PASSWORD_REQUIRED");
     });
 
     /**

@@ -14,6 +14,20 @@ import { DISCORD_MARKDOWN, stripMarkdown } from "../util/markdown.js";
  */
 export const DISCORD_DESCRIPTION_LIMIT = 4096;
 
+/**
+ * What discord will accept as a username override.
+ *
+ * 1-80 characters; a longer one is answered with a 400 and nothing is
+ * delivered. Worse than an over-long description, because it is the same value
+ * on every request - so it kills the finished *and* the failed notification
+ * unconditionally, rather than only the ones whose text happens to run long.
+ *
+ * Nothing upstream bounds it: `display_name` declares no regex, so the only
+ * gate is validateInput's generic 250-character cap on a text field, which is
+ * three times what discord will take.
+ */
+export const DISCORD_USERNAME_LIMIT = 80;
+
 const defaults = {
     finished: ":sparkles: **A speedtest is finished**\n > :ping_pong: `Ping`: %ping% ms (±%jitter% ms)\n > :arrow_up: `Upload`: %upload% Mbps\n > :arrow_down: `Download`: %download% Mbps",
     failed: ":x: **A speedtest has failed**\n > `Reason`: %error%"
@@ -32,7 +46,7 @@ const USER_AGENT = "MySpeed (https://github.com/i7Gamer/MySpeed)";
 // be the one that is sent whole and refused.
 const send = (url, username, color, description, activity) =>
     postJson(url, {
-        content: null, username,
+        content: null, username: truncate(username, DISCORD_USERNAME_LIMIT),
         embeds: [{
             description: truncate(description, DISCORD_DESCRIPTION_LIMIT),
             color, footer: {text: "MySpeed"}, timestamp: new Date().toISOString()

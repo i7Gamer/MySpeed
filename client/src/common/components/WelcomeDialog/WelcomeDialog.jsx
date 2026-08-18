@@ -11,6 +11,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {faExclamationTriangle} from "@fortawesome/free-solid-svg-icons";
 import {t} from "i18next";
+import {writeStored} from "@/common/utils/Storage";
 
 export const WelcomeDialog = ({open, onClose}) => {
     const [config, reloadConfig] = useContext(ConfigContext);
@@ -44,10 +45,20 @@ export const WelcomeDialog = ({open, onClose}) => {
         const patch = async (path, value) => assertOk(await patchRequest(path, {value}), path);
 
         try {
-            await patch("/config/provider", provider);
+            // The branch has to come first, not after the provider write. A
+            // demo refuses every PATCH - previewReadOnly sits on
+            // /api/config/:key whoever is asking - so the provider call threw,
+            // toasted and returned before reaching the line below that records
+            // the wizard as shown. ConfigContext reopens it whenever previewMode
+            // is set and welcomeShown is absent, and nothing else writes that
+            // key, so the box was unclosable for every visitor on every load.
+            //
+            // Nothing to save on a demo in any case: its configuration is fixed
+            // by the operator who published it.
             if (config.previewMode) {
-                localStorage.setItem("welcomeShown", "true");
+                writeStored("welcomeShown", "true");
             } else {
+                await patch("/config/provider", provider);
                 await patch("/config/ping", ping);
                 await patch("/config/download", download);
                 await patch("/config/upload", upload);

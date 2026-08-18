@@ -1,7 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
-import { bodyIn, bodyOf, findMounts, listSources, mountText, readSource } from "../helpers/source.js";
+import {
+    bodyIn, bodyOf, findMounts, listSources, mountText, readSource, unreadableMountCount
+} from "../helpers/source.js";
 
 /**
  * The helper several tests read source with, which had been written twice.
@@ -464,5 +466,84 @@ describe("mountText and the handler's own commas", () => {
                 .map(({route}) => `${name} ${route}`));
 
         assert.deepEqual(carrying, [], "these mounts came back carrying their own handler body");
+    });
+});
+
+/**
+ * What the strict pattern cannot read, said out loud instead of skipped.
+ *
+ * findMounts needs `app.` at the start of a line and a quoted first argument.
+ * Everything derived from it - the whole of previewReadOnly.test.js - is a list
+ * of what it found, so a mount it cannot parse is not unguarded or exempt in
+ * those scans: it is absent, and no assertion built on the list can see it. The
+ * only defence was a floor on the count, and a floor with slack in it cannot
+ * notice one route going quiet.
+ *
+ * That is the one direction a security scan must not fail in, and it is the same
+ * failure previewReadOnly exists to end: a rule reproduced by hand is a rule
+ * something forgets, and a scan that quietly drops what it cannot parse forgets
+ * the same way.
+ */
+describe("unreadableMountCount", () => {
+    const VERBS = ["get", "post", "put", "patch", "delete", "all"];
+
+    it("counts nothing when every mount is in the shape the scan expects", () => {
+        const source = [
+            `app.get("/", password(false), handler);`,
+            `app.delete("/:id", password(false), previewReadOnly, handler);`
+        ].join("\n");
+
+        assert.equal(unreadableMountCount(source, VERBS), 0);
+        assert.equal(findMounts(source, VERBS).length, 2);
+    });
+
+    // Inside an `if`, a loop or a helper - the anchored pattern never matches an
+    // indented line.
+    it("counts an indented mount, which findMounts cannot see at all", () => {
+        const source = [
+            `app.get("/", password(false), handler);`,
+            `if (process.env.ENABLE_DEBUG) {`,
+            `    app.get("/debug/config", handler);`,
+            `}`
+        ].join("\n");
+
+        assert.equal(findMounts(source, VERBS).length, 1, "the indented mount was somehow found");
+        assert.equal(unreadableMountCount(source, VERBS), 1);
+    });
+
+    // A path held in a binding rather than written at the call.
+    it("counts a mount whose path is not a literal", () => {
+        const source = [
+            `const RAW_HISTORY = "/tests/history/raw";`,
+            `app.get(RAW_HISTORY, password(false), handler);`
+        ].join("\n");
+
+        assert.equal(findMounts(source, VERBS).length, 0);
+        assert.equal(unreadableMountCount(source, VERBS), 1);
+    });
+
+    /**
+     * Prose that names a verb without calling it is not a mount. The node proxy's
+     * own comment says "`app.all` looks like nothing in particular", and counting
+     * that would make this assertion fire on a file that is entirely readable -
+     * a scan that cries wolf is turned off, which is worse than one with a gap.
+     */
+    it("does not count a comment that merely names a verb", () => {
+        const source = [
+            `// it was missed because \`app.all\` looks like nothing in particular`,
+            `app.get("/", handler);`
+        ].join("\n");
+
+        assert.equal(unreadableMountCount(source, VERBS), 0);
+    });
+
+    it("only counts the verbs it was asked about", () => {
+        const source = [
+            `app.get("/", handler);`,
+            `    app.post("/thing", handler);`
+        ].join("\n");
+
+        assert.equal(unreadableMountCount(source, ["get"]), 0, "an indented post was counted against get");
+        assert.equal(unreadableMountCount(source, ["get", "post"]), 1);
     });
 });

@@ -6,10 +6,11 @@ import {languages} from "@/i18n";
 import {useContext, useState} from "react";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
+import {readStored} from "@/common/utils/Storage";
 
 export const LanguageDialog = ({open, onClose}) => {
     const updateToast = useContext(ToastNotificationContext);
-    const [selectedLanguage, setSelectedLanguage] = useState(localStorage.getItem("language") || "en");
+    const [selectedLanguage, setSelectedLanguage] = useState(readStored("language") || "en");
 
     const updateLanguage = (close) => {
         changeLanguage(selectedLanguage);

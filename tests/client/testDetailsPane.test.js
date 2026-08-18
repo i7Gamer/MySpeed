@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as sass from "sass";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { mediaBlocks } from "../helpers/sass.mjs";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const CLIENT_SRC = path.join(ROOT, "client", "src");
@@ -259,12 +260,20 @@ describe("the chart modal", () => {
     /**
      * Eight rows in one column made the opened overview taller than most
      * screens, each row being a single line. Two columns halve it - but only
-     * where two fit at their full width. Bought by squeezing, the second column
-     * wraps every description and breaks "11 ms" across two lines, which is
-     * worse than the tall column it replaced.
+     * where two of them fit as they read. Bought below that, the second column
+     * is paid for by wrapping every description and breaking "11 ms" across two
+     * lines, which is worse than the tall column it replaced.
      */
     describe("the opened overview's two columns", () => {
         const TWO_COLUMNS = /grid-template-columns:\s*repeat\(2,/;
+
+        // What the widest row of the enlarged overview measures, on the line it
+        // reads on: the icon, the two gaps, "Average latency, between 4.8 ms and
+        // 21 ms", and "10.6 ms" with its delta beside it. English; German wants
+        // 601 for the same row and is the only other language whose overview
+        // strings are translated at all.
+        const WIDEST_ROW = 534;
+        const WIDEST_ROW_TRANSLATED = 601;
 
         it("is one column before any width is known", () => {
             const base = compiled.match(/\.chart-modal-body \.overview-items \{([^}]*)}/);
@@ -272,6 +281,55 @@ describe("the chart modal", () => {
             assert.notEqual(base, null, "the modal no longer lays the overview out");
             assert.match(base[1], /display:\s*grid/);
             assert.doesNotMatch(base[1], TWO_COLUMNS, "the second column is not gated on width at all");
+        });
+
+        /**
+         * And a column is as wide as its longest row reads, not as wide as a
+         * figure picked before those rows had descriptions.
+         *
+         * The cap was 32rem, and on a shrink-to-fit dialog a cap is also the
+         * width the dialog settles at: measured from 768px to 1920px the track
+         * came out at exactly 512px at every one of them, so the Ping row was
+         * cut by 22px on a 4K display with 798px of screen sitting empty beside
+         * the dialog. It is a maximum, not a width - the track still shrinks
+         * into a narrow viewport - so raising it costs the small screens
+         * nothing.
+         */
+        it("caps a column where its widest row stops needing the room", () => {
+            // The fixed arm of the clamp below: what the column reaches when
+            // the screen can give it that much.
+            const cap = Number(compiled.match(/grid-template-columns:\s*minmax\(0,\s*min\(([\d.]+)rem/)?.[1]);
+
+            assert.ok(Number.isFinite(cap), "the overview's column has no width to check");
+            assert.ok(cap * 16 >= WIDEST_ROW_TRANSLATED,
+                `a column stops at ${cap * 16}px, where its longest description needs ${WIDEST_ROW_TRANSLATED}`);
+        });
+
+        /**
+         * And it asks for that width against the screen, not against nothing.
+         *
+         * A track given a bare length is sized in an intrinsic pass, where the
+         * shrink-to-fit dialog has no width to offer yet - so the track takes
+         * its full cap whatever the screen, the dialog is then clamped to the
+         * viewport around it, and the difference is clipped by the dialog's own
+         * overflow: hidden. Measured on a phone before this: a 512px grid inside
+         * a 351px dialog, with every figure on the right-hand edge - the whole
+         * point of the panel - drawn outside it and unreachable, since the body
+         * scrolls vertically only.
+         *
+         * The cap stays a cap; it is the room actually available that decides
+         * whether the track reaches it.
+         */
+        it("clamps a column against the screen rather than the dialog's guess", () => {
+            const tracks = [...compiled.matchAll(/grid-template-columns:([^;}]*)/g)]
+                .map(([, value]) => value.trim());
+
+            assert.ok(tracks.length > 0, "the overview declares no columns at all");
+
+            for (const track of tracks)
+                assert.match(track, /100vw/,
+                    `"${track}" sizes a column with no reference to the screen, `
+                    + "so a narrow dialog clips whatever it cannot hold");
         });
 
         it("takes the second column only above a width that fits both", () => {
@@ -285,9 +343,75 @@ describe("the chart modal", () => {
 
             const minWidth = gate.match(/min-width:\s*(\d+)px/);
             assert.notEqual(minWidth, null, `two columns are gated on "${gate.trim()}", not a minimum width`);
-            assert.ok(Number(minWidth[1]) >= 1200,
-                `gated at ${minWidth[1]}px, which is narrower than two full columns plus the dialog's own chrome`);
+
+            // Two of those rows, the 3rem grid gap, the body's 1.25rem padding,
+            // the content's 0.25rem and the dialog's 3rem gutter.
+            const fits = 2 * WIDEST_ROW + 48 + 40 + 8 + 48;
+            assert.ok(Number(minWidth[1]) >= fits,
+                `gated at ${minWidth[1]}px, where two columns are bought by wrapping both of them`);
         });
+    });
+
+    /**
+     * And where a column still cannot hold a description, a second line rather
+     * than an ellipsis.
+     *
+     * The shared row cuts its sub-lines: on a card that is right, since a row
+     * grown taller than its line-mates is what pushes a card past the height the
+     * grid gave it. The enlarged view has no such height - it scrolls - so a
+     * second line costs it nothing, while the ellipsis costs the reader the end
+     * of the sentence. Reported against the German overview and then against the
+     * English one: "Average latency, between 4.8 ms and ..." is where a reader
+     * is told the average and not the range.
+     */
+    it("wraps a description the enlarged view cannot fit rather than cutting it", () => {
+        const wrap = compiled.match(/\.chart-modal-body \.panel-row-description > \*\s*\{([^}]*)}/);
+
+        assert.notEqual(wrap, null,
+            "the enlarged view keeps the card's ellipsis, so a description ends in one on a scrolling dialog");
+        assert.match(wrap[1], /white-space:\s*normal/);
+    });
+
+    /**
+     * And its labels before its descriptions, which is the order they matter in.
+     *
+     * A cut description loses the end of a sentence; a cut label leaves the
+     * reader guessing which measurement the figure beside it belongs to.
+     * Measured on a 375px screen: the opened value cards cut "Maximum" by 16px
+     * and "Minimum" by 2, so a phone read "Maximu..." over a number.
+     */
+    it("wraps a label there too, rather than leaving a measurement unnamed", () => {
+        const wrap = compiled.match(/\.chart-modal-body \.panel-row-title\s*\{([^}]*)}/);
+
+        assert.notEqual(wrap, null, "the enlarged view cuts a row's label like a card does");
+        assert.match(wrap[1], /white-space:\s*normal/);
+    });
+
+    /**
+     * Which a one-word label cannot use, so on a phone the value cards give
+     * their figure back a step instead.
+     *
+     * Their own stylesheet steps the figure down on the card and exempts the
+     * dialog - "opened, the card has the width of the dialog" - which holds only
+     * while the dialog is the wider of the two. At the bottom of the range it is
+     * not: at 375px the enlarged card is 317px inside its padding, and the
+     * figure at full size leaves 78px for "Maximum", which wants 94. Wrapping
+     * does not save a label with nowhere to break, so the room has to come from
+     * the figure beside it - the same step the card itself takes, at the width
+     * the card would be taking it.
+     */
+    it("gives the value cards' figure back a step where the dialog is that narrow", () => {
+        const stepped = mediaBlocks(compiled)
+            .filter(({body}) => /\.value-container \.panel-row-value\s*\{[^}]*font-size/.test(body));
+
+        assert.equal(stepped.length, 1,
+            "the enlarged value cards state one figure size at every width, including the phone's");
+
+        const at = Number(stepped[0].condition.match(/max-width:\s*(\d+)px/)?.[1]);
+        assert.ok(Number.isFinite(at) && at <= 520,
+            `the figure holds its full size down to ${at}px, past where the label beside it is cut`);
+        assert.match(stepped[0].body, /font-size:\s*1\.4rem/,
+            "the enlarged card steps to a size of its own rather than the one the card uses");
     });
 
     /**

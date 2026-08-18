@@ -31,8 +31,19 @@ const STATUS_TIMEOUT = 8000;
  * one meant a node whose URL passed the address check could still hand the
  * server an internal destination of the remote host's choosing - and, through
  * the proxy, hand the body back to the caller. safeRequest never follows one.
+ *
+ * 304 is excluded, because it is not one. It carries no Location and means "the
+ * copy you already have is still good" - the ordinary answer to a conditional
+ * read. Classifying by range alone turned every revalidated proxied GET into
+ * "The node redirected the request": Express puts an ETag on each proxied 200,
+ * so the browser revalidates on its next poll, and a node whose answer had
+ * stopped changing - i.e. for the whole gap between two speedtests - answered
+ * 304 and the node view errored out.
  */
-const isRedirect = (response) => response.status >= 300 && response.status < 400;
+const NOT_MODIFIED = 304;
+
+const isRedirect = (response) =>
+    response.status >= 300 && response.status < 400 && response.status !== NOT_MODIFIED;
 
 export const listAll = async () => await nodes.findAll()
     .then((result) => result.map((node) => ({...node, password: node.password !== null})));
@@ -112,6 +123,36 @@ const SKIP_HEADERS = new Set(["host", "content-length", "connection", "cookie", 
 // child sends is the child's business and is dropped.
 const FORWARDED_HEADERS = ["content-type", "content-disposition"];
 
+/**
+ * The content types a node is allowed to pick for a response served from *this*
+ * origin.
+ *
+ * The type was copied through unchecked, which let the far end choose what the
+ * parent's own origin serves. `text/html` renders as a document there, and the
+ * CSP that would otherwise stop it says `script-src 'self'` - which the node's
+ * scripts satisfy, because they are proxied through the parent too. A script
+ * that runs as the parent can read GET /api/storage/config?includeSecrets=true
+ * with the operator's HttpOnly session attached: the admin password hash, every
+ * node password in clear, every integration token. Stripping the caller's
+ * credentials at this boundary is undone by handing the far end the origin.
+ *
+ * These three are what the proxy is actually used for - the API answers JSON,
+ * both exports answer CSV, and the binary fallback covers anything else a
+ * future endpoint streams. Everything else is delivered, and delivered as
+ * bytes: the body still passes through untouched, it just stops being something
+ * the browser will execute.
+ */
+const SAFE_CONTENT_TYPES = ["application/json", "text/csv", "application/octet-stream"];
+const OPAQUE_CONTENT_TYPE = "application/octet-stream";
+
+const safeContentType = (value) => {
+    // The media type on its own: "text/csv; charset=utf-8" is the ordinary
+    // spelling and the parameters are not what is being decided here.
+    const media = String(value).split(";")[0].trim().toLowerCase();
+
+    return SAFE_CONTENT_TYPES.includes(media) ? value : OPAQUE_CONTENT_TYPE;
+};
+
 const serverError = (res) => res.status(500).json({message: "Internal server error"});
 
 export const proxyRequest = async (url, req, res) => {
@@ -173,7 +214,7 @@ export const proxyRequest = async (url, req, res) => {
 
         for (const name of FORWARDED_HEADERS) {
             const value = response.headers[name];
-            if (value) res.setHeader(name, value);
+            if (value) res.setHeader(name, name === "content-type" ? safeContentType(value) : value);
         }
 
         // Handed on verbatim. Forcing the body through JSON.parse turned every

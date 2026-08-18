@@ -243,7 +243,11 @@ describe("the MSI a release publishes", () => {
     it("says which variant is installed", () => {
         const names = matrixValues(installer, "product_name");
 
-        assert.match(installer, /Name="\$\{\{ matrix\.product_name \}\}"/,
+        // Read through the environment rather than spliced from `${{ matrix
+        // .product_name }}`: no workflow expression reaches a script body
+        // anywhere in the release chain now, which binaryVerification.test.js
+        // holds the whole chain to. What it names is unchanged.
+        assert.match(installer, /Name="\$\(\$env:PRODUCT_NAME\)"/,
             "both installers register under one name, so nothing tells the two apart once installed");
         assert.equal(new Set(names).size, 2, "the two installers no longer carry distinct product names");
     });

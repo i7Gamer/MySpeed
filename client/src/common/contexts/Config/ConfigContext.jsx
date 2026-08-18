@@ -11,6 +11,7 @@ import WelcomeDialog from "@/common/components/WelcomeDialog";
 import LockedNotice from "@/common/components/LockedNotice";
 import {useNavigate} from "react-router-dom";
 import {configOutcome, failureOutcome} from "@/common/contexts/Config/configOutcome";
+import {readStored} from "@/common/utils/Storage";
 
 export const ConfigContext = createContext({});
 
@@ -61,12 +62,12 @@ export const ConfigProvider = (props) => {
             // and the redirect took the config with it, leaving every consumer
             // reading {} for the rest of the session. Where to be and what to
             // hold are two separate answers.
-            const {config: loaded, redirectToNodes} = configOutcome(result, localStorage.getItem("currentNode"));
+            const {config: loaded, redirectToNodes} = configOutcome(result, readStored("currentNode"));
 
             setConfig(loaded);
             if (redirectToNodes) navigate("/nodes");
         }).catch((reason) => {
-            if (failureOutcome(localStorage.getItem("currentNode")).redirectToNodes) return navigate("/nodes");
+            if (failureOutcome(readStored("currentNode")).redirectToNodes) return navigate("/nodes");
 
             showErrorDialog(reason);
         });
@@ -171,7 +172,7 @@ export const ConfigProvider = (props) => {
     useEffect(reloadConfig, []);
 
     useEffect(() => {
-        if (config.previewMode && !localStorage.getItem("welcomeShown")) setWelcomeShown(true);
+        if (config.previewMode && !readStored("welcomeShown")) setWelcomeShown(true);
         if (!config.previewMode && config.provider === "none") setWelcomeShown(true);
     }, [config]);
 

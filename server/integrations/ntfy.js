@@ -70,10 +70,18 @@ export default (registerEvent) => {
             // WHATWG url parsing strips that newline out before it resolves the
             // host - so "https://good\n@evil.com" read as one host and reached
             // another. \S+$ leaves no room for either.
-            {name: "url", type: "text", required: true, regex: /^https?:\/\/\S+$/},
+            // Both secret, and for the reason discord's plain `url` is: send()
+            // posts to `<url>/<topic>` and only attaches an Authorization
+            // header when a token is set - and `token` is not required, so on
+            // the ntfy.sh default the topic name is the entire publish and
+            // subscribe control, exactly as an unguessable webhook path is.
+            // Flagged singly they were left in the clear by withoutSecrets,
+            // which handed the whole capability to any visitor of a public demo
+            // and to anyone sent a config export marked `secretsRedacted`.
+            {name: "url", type: "text", required: true, secret: true, regex: /^https?:\/\/\S+$/},
             // The hyphen is last in the class, where it is a literal already -
             // escaping it there reads as a range that got away.
-            {name: "topic", type: "text", required: true, regex: /^[A-Za-z0-9_-]{1,64}$/},
+            {name: "topic", type: "text", required: true, secret: true, regex: /^[A-Za-z0-9_-]{1,64}$/},
             {name: "token", type: "text", required: false, secret: true},
             {name: "title", type: "text", required: false},
             {name: "tags", type: "text", required: false},

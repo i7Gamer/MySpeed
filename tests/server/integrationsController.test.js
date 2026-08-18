@@ -58,6 +58,64 @@ describe("secretFieldNames", () => {
 });
 
 /**
+ * What each integration has to withhold to stop a stranger reaching its
+ * endpoint.
+ *
+ * Written down per module rather than inferred, because the answer is not
+ * "the field called token" - it is "whatever, together, is enough to send".
+ * That differs by provider, and getting it wrong is silent: withoutSecrets
+ * blanks exactly what a module flagged, so an unflagged field is disclosed by
+ * both paths that call it - GET /api/integrations/active on a public demo, and
+ * the config export that stamps itself `secretsRedacted: true` and is the file
+ * people attach to bug reports.
+ *
+ * The two shapes:
+ *
+ *   A separate credential guards the address, so only the credential is
+ *   withheld. gotify posts to `<url>/message?token=<key>` and influx to
+ *   `<url>/api/v2/write` under a bearer token - the address alone sends
+ *   nothing, and disclosing it costs the operator nothing an address does not
+ *   already cost.
+ *
+ *   The address *is* the credential, so all of it is withheld. discord,
+ *   webhook and healthChecks each carry an unguessable URL and nothing else,
+ *   which is why their plain `url` was flagged. ntfy is the same capability
+ *   split across two fields: send() posts to `<url>/<topic>` and only attaches
+ *   an Authorization header when a token is set, and `token` is not required -
+ *   so on the ntfy.sh default the topic name is the whole of the publish and
+ *   subscribe control, exactly as an unguessable webhook path is.
+ */
+const ADDRESSING_FIELDS = {
+    discord: ["url"],
+    webhook: ["url"],
+    healthChecks: ["url"],
+    ntfy: ["token", "topic", "url"],
+    gotify: ["key"],
+    pushover: ["token", "user_key"],
+    telegram: ["token"],
+    influxdb: ["token"]
+};
+
+describe("what each integration withholds", () => {
+    for (const [name, fields] of Object.entries(ADDRESSING_FIELDS)) {
+        it(`${name} declares every field needed to reach it`, () => {
+            assert.deepEqual(secretFieldNames(name)?.sort(), [...fields].sort());
+        });
+    }
+
+    // The table is the decision, so a module that is not in it has not had one
+    // made. Same rule as the read routes in previewReadOnly.test.js: a new
+    // integration fails here until somebody says what it may disclose.
+    it("has an answer for every integration that is loaded", () => {
+        const undecided = Object.keys(getIntegrations())
+            .filter((name) => !Object.hasOwn(ADDRESSING_FIELDS, name));
+
+        assert.deepEqual(undecided, [],
+            "an integration was added without deciding what a demo may disclose about it");
+    });
+});
+
+/**
  * Regression: every read of the `data` column went through JSON.parse
  * unconditionally. sqlite hands the JSON column back as the string it stored,
  * but mysql2 parses JSON columns on the wire - so on MySQL every read arrived

@@ -44,8 +44,27 @@ const RATE_LIMIT_WINDOW_MS = 60000;
 const API_REQUESTS_PER_MINUTE = 300;
 
 // Rendering the OpenGraph PNG runs a database query, a satori layout pass and a
-// resvg rasterisation, and the range export can walk a year of rows.
+// resvg rasterisation, and the range export can walk a year of rows. Both are
+// deliberate one-off actions - a download, a link being unfurled - so twenty a
+// minute is well clear of ordinary use.
 const EXPENSIVE_REQUESTS_PER_MINUTE = 20;
+
+/**
+ * The statistics aggregation reads every row in the range, with no limit on the
+ * query at all: "all time" on a year of five-minute tests is around a hundred
+ * thousand rows materialised per call, and on a demo the password middleware
+ * admits everyone. It sat behind the 300/min backstop alone while /export, which
+ * reads the same rows to answer the same page, sat behind 20.
+ *
+ * Its own number rather than the expensive one, because it is not the same kind
+ * of request. Export is a download somebody clicks; this is what the statistics
+ * page reads, and it re-reads on every timeframe and range change - so twenty a
+ * minute is a limit an interested reader can reach by clicking around, and being
+ * told to slow down for using the page is worse than the load it saves. Sixty is
+ * a request a second sustained, which no one does by hand and which still cuts
+ * the worst case by five.
+ */
+const STATISTICS_REQUESTS_PER_MINUTE = 60;
 
 // A scrape every fifteen seconds is four a minute.
 const METRICS_REQUESTS_PER_MINUTE = 60;
@@ -87,20 +106,34 @@ app.use((req, res, next) => isLargeBodyPath(req.path) ? next() : smallJsonBody(r
 // container healthcheck must never be throttled out of existence.
 app.use("/api/health", healthRoutes);
 
-app.use("/api", createRateLimit({limit: API_REQUESTS_PER_MINUTE, windowMs: RATE_LIMIT_WINDOW_MS}));
+/**
+ * Every limiter this module builds, so a test can put them back as they were.
+ *
+ * A rate limiter measured by a suite is measuring the wrong thing: the
+ * integration files drive one endpoint dozens of times from one address in a few
+ * seconds, which is not a shape any caller produces and not what the limit is
+ * about. Without a way to clear them, adding a limit to a route silently turns
+ * every test of that route into a test of the limiter.
+ */
+const rateLimiters = [];
 
-const expensiveLimit = () => createRateLimit({
-    limit: EXPENSIVE_REQUESTS_PER_MINUTE,
-    windowMs: RATE_LIMIT_WINDOW_MS
-});
+const limited = (options) => {
+    const middleware = createRateLimit({windowMs: RATE_LIMIT_WINDOW_MS, ...options});
+    rateLimiters.push(middleware);
+    return middleware;
+};
+
+export const resetRateLimits = () => rateLimiters.forEach((limiter) => limiter.reset());
+
+app.use("/api", limited({limit: API_REQUESTS_PER_MINUTE}));
+
+const expensiveLimit = () => limited({limit: EXPENSIVE_REQUESTS_PER_MINUTE});
 
 app.use("/api/opengraph", expensiveLimit());
 app.use("/api/speedtests/export", expensiveLimit());
 app.use("/api/speedtests/run", expensiveLimit());
-app.use("/api/prometheus", createRateLimit({
-    limit: METRICS_REQUESTS_PER_MINUTE,
-    windowMs: RATE_LIMIT_WINDOW_MS
-}));
+app.use("/api/speedtests/statistics", limited({limit: STATISTICS_REQUESTS_PER_MINUTE}));
+app.use("/api/prometheus", limited({limit: METRICS_REQUESTS_PER_MINUTE}));
 
 app.use("/api/session", sessionRoutes);
 app.use("/api/config", configRoutes);

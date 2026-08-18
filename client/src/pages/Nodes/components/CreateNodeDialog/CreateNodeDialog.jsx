@@ -35,6 +35,10 @@ export const CreateNodeDialog = ({open, onClose}) => {
     const runPasswordProcess = () => promptUntilAccepted(
         (previous) => alert.openInput(t("dialog.password.title"), {
             inputType: "password",
+            // Required, like the admin login's prompt. Without it an empty
+            // answer reads as a cancel, so a stray Enter closed the prompt with
+            // nothing said and no node created.
+            required: true,
             description: previous
                 ? <span className="icon-red">{t("dialog.password.wrong")}</span>
                 : t("nodes.password_required"),
@@ -42,9 +46,24 @@ export const CreateNodeDialog = ({open, onClose}) => {
             buttonText: t("nodes.create")
         }),
         async (password) => {
-            const body = await (await baseRequest("/nodes", "PUT", {
-                name: serverName, url: serverUrl, password
-            })).json();
+            let body;
+
+            // promptUntilAccepted catches nothing and this loop is started from
+            // a bare call, so a rejection here was an unhandled rejection and
+            // the prompt simply disappeared. Both halves can reject: baseRequest
+            // on a dropped connection or its own ten second abort, and .json()
+            // on any body that is not JSON - a reverse proxy's HTML error page
+            // being the ordinary one. Neither is a wrong password, so the loop
+            // ends with the reason on screen rather than asking again.
+            try {
+                body = await (await baseRequest("/nodes", "PUT", {
+                    name: serverName, url: serverUrl, password
+                })).json();
+            } catch {
+                updateToast(t("nodes.messages.not_reachable"), "red", faExclamationTriangle);
+                return {ok: true};
+            }
+
             const outcome = describeNodeOutcome(body);
 
             if (outcome.kind === OUTCOME_CREATED) {

@@ -61,7 +61,7 @@ globalThis.window = {
     }
 };
 
-const { jsonRequest, downloadRequest, RequestError, filenameFromDisposition } =
+const { jsonRequest, downloadRequest, RequestError, filenameFromDisposition, migrateStoredPassword } =
     await import("../../client/src/common/utils/RequestUtil.js");
 
 beforeEach(() => {
@@ -166,6 +166,56 @@ describe("request timeout", () => {
         await jsonRequest("/speedtests");
 
         assert.equal(lastRequest.options.signal.aborted, false);
+    });
+});
+
+/**
+ * The boot migration is awaited at the top level of index.jsx, so whether it
+ * settles decides whether React mounts at all.
+ *
+ * A `.catch()` was put on it for the rejecting case. That covers a refusal and
+ * a dropped connection and misses the one this has to survive: a request that
+ * is accepted and then never answered - a reverse proxy holding the call while
+ * the backend restarts, which is exactly when an upgrading user reloads. A
+ * fetch that never settles is neither fulfilled nor rejected, so no catch can
+ * run, the top-level await never returns, and root.render below it never
+ * executes. The page is blank, which is the symptom the catch was added to
+ * remove.
+ *
+ * login() was the only fetch in the file with no abort signal on it.
+ */
+describe("the boot password migration", () => {
+    const REQUEST_TIMEOUT_MS = 10000;
+
+    it("settles when the sign-in is accepted and never answered", async () => {
+        mock.timers.enable({apis: ["setTimeout"]});
+        const originalFetch = globalThis.fetch;
+        store.set("password", "hunter2");
+
+        try {
+            let signal = null;
+
+            globalThis.fetch = (url, options) => new Promise((resolve, reject) => {
+                signal = options?.signal ?? null;
+                signal?.addEventListener("abort",
+                    () => reject(new Error("The operation was aborted")));
+            });
+
+            const settled = migrateStoredPassword().then(() => "resolved", () => "rejected");
+
+            assert.ok(signal instanceof AbortSignal,
+                "the sign-in carries no abort signal, so a stalled boot never mounts the app");
+
+            mock.timers.tick(REQUEST_TIMEOUT_MS);
+
+            assert.equal(await settled, "rejected",
+                "the migration never settled, so the top-level await below it never returns");
+            assert.equal(store.get("password"), undefined,
+                "the stored password survived, so every later load repeats the same stall");
+        } finally {
+            globalThis.fetch = originalFetch;
+            mock.timers.reset();
+        }
     });
 });
 

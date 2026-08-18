@@ -1,5 +1,6 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { format } from "node:util";
 import errorMiddleware from "../../server/middlewares/error.js";
 
 /**
@@ -112,13 +113,54 @@ describe("what the error middleware tells the operator", () => {
         console.error = realError;
     });
 
+    // What console.error would actually have printed. String() on an Error is
+    // just "Error: <message>", so asserting on that would miss the whole
+    // failure: the leak is in the enumerable properties util.inspect adds
+    // beside the frames, and console.error formats with util.format.
+    const wrote = () => logged.map((args) => format(...args)).join(" ");
+
     it("logs a server error", () => {
         const err = new Error("ENOENT: /srv/myspeed/data/storage.db");
 
         run(err);
 
         assert.equal(logged.length, 1, "an unhandled route error was swallowed");
-        assert.ok(logged[0].includes(err), "the error itself is what carries the stack");
+        assert.ok(wrote().includes(err.stack), "the frames are what the log is for");
+    });
+
+    /**
+     * The stack, not the error object.
+     *
+     * console.error on an Error runs util.inspect, which prints the error's own
+     * enumerable properties beside the frames. Sequelize's DatabaseError copies
+     * the failed statement's bind parameters onto itself, and the integrations
+     * table's `data` column is where every downstream credential lives - so a
+     * database failure on an integration write printed the telegram bot token
+     * into the log. On the Windows service that log is a file on disk, and it is
+     * the first thing anyone attaches to a bug report.
+     *
+     * util/errorHandler.js already records `reported.stack` for this reason,
+     * which is why the same error never leaked through that path.
+     */
+    it("keeps a failed query's bind parameters out of the log", () => {
+        const err = Object.assign(new Error("SQLITE_CONSTRAINT: UNIQUE constraint failed"), {
+            sql: "INSERT INTO `integration_data` (`name`,`data`) VALUES ($1,$2)",
+            parameters: ["telegram", '{"token":"7123456789:AAHsupersecret","chat_id":"-100"}'],
+            parent: {sqlMessage: "Duplicate entry", sql: 'VALUES (\'{"token":"7123456789:AAHsupersecret"}\')'}
+        });
+
+        run(err);
+
+        assert.equal(logged.length, 1);
+        assert.doesNotMatch(wrote(), /AAHsupersecret/,
+            "an integration credential reached the operator's log through a database failure");
+    });
+
+    it("still says something about a value that is not an Error at all", () => {
+        run("something threw a string");
+
+        assert.equal(logged.length, 1);
+        assert.match(wrote(), /something threw a string/);
     });
 
     it("logs one with no status at all", () => {
