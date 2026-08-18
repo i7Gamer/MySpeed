@@ -165,7 +165,7 @@ export const DialogHeader = ({children, onClose, disableClose}) => (
             announced as nothing and could not be reached - a reader was never
             told it existed and had to know to press Escape. */}
         {!disableClose && (
-            <button type="button" className="dialog-icon-button" aria-label={t("dialog.close")} onClick={onClose}>
+            <button type="button" className="dialog-icon-button" data-overlay-dismiss aria-label={t("dialog.close")} onClick={onClose}>
                 <FontAwesomeIcon icon={faClose} className="dialog-text dialog-icon"/>
             </button>
         )}

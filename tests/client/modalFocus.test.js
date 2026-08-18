@@ -154,6 +154,33 @@ describe("initialFocusTarget", () => {
         assert.equal(initialFocusTarget(dialog, undefined, control()), other);
     });
 
+    /**
+     * But never the close control. The header comes first in both overlays, so
+     * the first focusable in document order is the X - and opening on it is how
+     * an alert came to answer Enter by cancelling a confirmation. On a Dialog it
+     * is milder and still wrong: Enter closes a settings dialog the moment it
+     * opens, and a reader has to Tab past the dismiss button to reach the first
+     * field.
+     */
+    it("skips the close control when choosing for itself", () => {
+        const dismiss = control({"data-overlay-dismiss": ""});
+        const field = control();
+        const withDismissFirst = {
+            ...container(dismiss, field),
+            contains: (node) => [dismiss, field].includes(node)
+        };
+
+        assert.equal(initialFocusTarget(withDismissFirst, undefined, control()), field);
+    });
+
+    // Unless it is the only thing there - an alert with no buttons but its X.
+    it("takes the close control when it is the only one", () => {
+        const dismiss = control({"data-overlay-dismiss": ""});
+        const only = {...container(dismiss), contains: (node) => node === dismiss};
+
+        assert.equal(initialFocusTarget(only, undefined, control()), dismiss);
+    });
+
     // The input variant of an alert autoFocuses its field, and moving that to a
     // button would put the caret nowhere.
     it("leaves focus alone when it is already inside", () => {
@@ -229,6 +256,12 @@ describe("the overlays announce themselves and hold focus", () => {
         it(`offers a real close control on ${what}`, () => {
             assert.match(source, /<button\s+type="button"[\s\S]{0,200}?aria-label=\{t\("dialog\.close"\)}/,
                 `${what} closes from an unfocusable, unnamed glyph`);
+        });
+
+        // Marked, so the seating rule can skip it without knowing its class.
+        it(`marks the close control on ${what} as the one not to open on`, () => {
+            assert.match(source, /data-overlay-dismiss/,
+                `${what} opens on its own close button, which Enter then presses`);
         });
 
         // Every one of them, not just the one this range added. A button left

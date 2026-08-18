@@ -223,7 +223,7 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
                         its svg aria-hidden and an svg is not in the tab order,
                         so this announced as nothing and could not be reached. */}
                     {!alert.disableClose && (
-                        <button type="button" className="dialog-icon-button"
+                        <button type="button" className="dialog-icon-button" data-overlay-dismiss
                                 aria-label={t("dialog.close")} onClick={() => close()}>
                             <FontAwesomeIcon icon={faClose} className="dialog-text dialog-icon"/>
                         </button>

@@ -49,22 +49,40 @@ export const nextFocus = (container, {shiftKey} = {}, active) => {
 };
 
 /**
+ * The close control, which is never what an overlay should open on.
+ *
+ * Marked rather than recognised by class, so the rule says what it means and
+ * does not follow the styling around.
+ */
+const DISMISS = "data-overlay-dismiss";
+
+/**
  * What should take focus when an overlay opens, or null to leave it alone.
  *
  * Null when focus is already inside: the input variant of an alert autoFocuses
  * its field, and moving that to a button would put the caret nowhere.
  *
- * `preferred` exists because "the first focusable" is the wrong answer for an
- * alert. Its close X is the first thing in the header, so seating focus there
- * put it on the one control that answers Enter by resolving the alert with
- * null - and the document handler declines a key aimed at a button inside the
- * alert, so the browser turned Enter into a click on the X. A confirmation
- * answered Enter by cancelling. The primary button is what an alert opens on.
+ * Never the close control, and that is the whole of why this is a function
+ * rather than `focusableWithin(...)[0]`. The header comes first in both
+ * overlays, so the first focusable in document order is the X - and seating
+ * focus there is how an alert came to answer Enter by cancelling a
+ * confirmation, since the document handler declines a key aimed at a button
+ * inside the alert and the browser then clicks whatever holds focus. On a
+ * Dialog it is milder and still wrong: Enter closes a settings dialog the
+ * moment it opens, and a keyboard reader has to Tab past the dismiss button to
+ * reach the first field.
+ *
+ * `preferred` is for the caller that knows better still - the alert names its
+ * primary button. The X is taken only when it is the sole control there.
  */
 export const initialFocusTarget = (container, preferred, active) => {
     if (container?.contains?.(active)) return null;
+    if (preferred) return preferred;
 
-    return preferred ?? focusableWithin(container)[0] ?? container ?? null;
+    const focusable = focusableWithin(container);
+
+    return focusable.find((element) => element.getAttribute?.(DISMISS) === null)
+        ?? focusable[0] ?? container ?? null;
 };
 
 /** Every overlay's backdrop, of either kind - see isTopmostOverlay. */
