@@ -230,6 +230,46 @@ echo -e ""
 echo -e ""
 sleep 2
 
+# The account the service runs as, which used to be root.
+#
+# Nothing MySpeed does needs a privilege: it listens on 5216, which is above the
+# reserved range, and it writes its database and its logs inside its own
+# installation directory. What it also does is download a third-party speedtest
+# CLI at first boot and spawn it - so as root, a replaced upstream asset or any
+# remote-code flaw in the server ran with full access to the host. The Docker
+# path for the same code already drops to an unprivileged user.
+#
+# The home directory is the installation path rather than nothing: the Ookla CLI
+# writes its licence acceptance under $HOME, and a service account with no
+# writable home would re-prompt for it on every run.
+SERVICE_USER="myspeed"
+
+if ! id -u "$SERVICE_USER" > /dev/null 2>&1 && command -v useradd &> /dev/null; then
+    useradd --system --no-create-home --home-dir "$INSTALLATION_PATH" \
+        --shell /usr/sbin/nologin "$SERVICE_USER" > /dev/null 2>&1 || true
+fi
+
+# Falling back rather than failing. A system with no useradd - or one where it
+# refused - still gets a working install: a unit naming an account that does not
+# exist starts nothing at all, which is worse than the privilege being dropped
+# here. Said out loud, because it is the one case where the install is less safe
+# than it reads.
+if id -u "$SERVICE_USER" > /dev/null 2>&1; then
+    SERVICE_ACCOUNT="$SERVICE_USER"
+    # Before the service is registered, not after: on an upgrade every file here
+    # is owned by root because that is what installed it, and the first thing
+    # the new account would otherwise do is fail to open its own database.
+    #
+    # The user only, not user:group - useradd --system creates a matching group
+    # on Debian and RHEL but not everywhere, and a chown that names a group that
+    # does not exist changes nothing at all.
+    chown -R "$SERVICE_USER" "$INSTALLATION_PATH"
+else
+    SERVICE_ACCOUNT="root"
+    echo -e "$YELLOW⚠ Warning: $NORMAL Could not create the \"$SERVICE_USER\" account, so MySpeed will run as root."
+    sleep 2
+fi
+
 if command -v systemctl &> /dev/null; then
   cat << EOF > /etc/systemd/system/myspeed.service
 [Unit]
@@ -240,8 +280,16 @@ After=network.target
 Type=simple
 ExecStart=$INSTALLATION_PATH/myspeed
 Restart=always
-User=root
+User=$SERVICE_ACCOUNT
 WorkingDirectory=$INSTALLATION_PATH
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
 
 [Install]
 WantedBy=multi-user.target

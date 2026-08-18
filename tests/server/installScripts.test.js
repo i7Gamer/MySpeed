@@ -366,3 +366,75 @@ describe("install.sh survives a download that fails", () => {
             "a zero-byte file is chmod +x'd and started as though it were a binary");
     });
 });
+
+/**
+ * The service the installer registers, which ran as uid 0.
+ *
+ * MySpeed listens on 5216, writes its database and logs under its own
+ * installation directory, and downloads a third-party speedtest CLI at first
+ * boot which it then spawns - none of which needs any privilege at all. Running
+ * the whole of that as root meant a replaced upstream asset, or any remote-code
+ * flaw in the server, executed with full access to the host filesystem. The
+ * Docker path for the same code already drops to an unprivileged user.
+ *
+ * The account is created before the unit names it, and the installation is
+ * handed over before the service is started - otherwise the first thing the new
+ * user does is fail to open a root-owned database, which is what an upgrade of
+ * an existing install would hit.
+ */
+describe("install.sh registers a service that is not root", () => {
+    const source = read("install.sh");
+    const unitStart = source.indexOf("[Unit]");
+    const unit = source.slice(unitStart, source.indexOf("EOF", unitStart));
+
+    it("does not run the service as root", () => {
+        assert.doesNotMatch(unit, /User=root\b/,
+            "the service still runs as uid 0, with the downloaded CLI under it");
+    });
+
+    it("runs it as an account chosen before the unit is written", () => {
+        assert.match(unit, /User=\$SERVICE_ACCOUNT\b/,
+            "the unit names no account of its own");
+
+        const chosen = source.indexOf("SERVICE_ACCOUNT=");
+
+        assert.notEqual(chosen, -1, "nothing ever decides which account the service runs as");
+        assert.ok(chosen < unitStart,
+            "the account is chosen after the unit that names it has already been written");
+    });
+
+    it("creates the account before it hands anything to it", () => {
+        assert.match(source, /useradd/, "the installer never creates a service account");
+        assert.ok(source.indexOf("useradd") < source.indexOf("chown"),
+            "the installation is handed to an account that does not exist yet");
+    });
+
+    /**
+     * An upgrade is the case this exists for: the files are there already, and
+     * they are owned by root because that is what installed them.
+     */
+    it("hands the installation to the account that will run it", () => {
+        assert.match(source, /chown -R "\$SERVICE_USER" "\$INSTALLATION_PATH"/,
+            "the new account cannot write the database it inherits");
+        assert.ok(source.indexOf("chown") < unitStart,
+            "the service is registered before it can read its own directory");
+    });
+
+    /**
+     * And a system with no useradd still gets a working install. Refusing to
+     * install at all, or writing a unit naming an account that was never
+     * created, are both worse than the privilege this is trying to drop.
+     */
+    it("falls back to root rather than leaving a service that cannot start", () => {
+        assert.match(source, /SERVICE_ACCOUNT="root"/,
+            "a system that cannot create the account gets a unit naming one that does not exist");
+    });
+
+    // The baseline set: none of it restricts a userspace HTTP server that
+    // spawns a CLI and writes inside its own directory.
+    it("sandboxes what the service can reach", () => {
+        for (const directive of ["NoNewPrivileges=true", "PrivateTmp=true",
+            "ProtectSystem=full", "ProtectHome=true"])
+            assert.ok(unit.includes(directive), `the unit does not set ${directive}`);
+    });
+});
