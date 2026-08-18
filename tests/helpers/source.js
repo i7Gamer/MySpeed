@@ -8,61 +8,6 @@ const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 export const readSource = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
 /**
- * A source file with its comments blanked out, for assertions about code.
- *
- * A scan that says a construct is *absent* is satisfied by prose, and this file
- * is written in a house style that explains what a change replaced - so a
- * comment naming the old form is exactly what an assertion against the old form
- * finds. The rule then holds the prose hostage: the comment has to be reworded
- * to keep the test green, which is the test dictating the explanation.
- *
- * Blanked rather than deleted, so offsets and line numbers still line up with
- * the file on disk and a failure can be read against it.
- *
- * Strings are skipped, or a URL's "//" would swallow the rest of a line. Regex
- * literals are not tracked: a comment can only open at "//" or "/*", and both
- * are escaped inside a pattern that contains them, so the cases this would get
- * wrong are ones nothing here writes.
- */
-export const withoutComments = (text) => {
-    let out = "";
-    let quote = null;
-    let comment = null;
-
-    for (let index = 0; index < text.length; index++) {
-        const character = text[index];
-        const next = text[index + 1];
-
-        if (comment) {
-            const ends = comment === "line" ? character === "\n" : character === "*" && next === "/";
-            if (comment === "line" && ends) { comment = null; out += character; continue; }
-            if (comment === "block" && ends) { comment = null; out += "  "; index++; continue; }
-            out += character === "\n" ? "\n" : " ";
-            continue;
-        }
-
-        if (quote) {
-            out += character;
-            if (character === "\\") { out += next ?? ""; index++; }
-            else if (character === quote) quote = null;
-            continue;
-        }
-
-        if (character === "/" && (next === "/" || next === "*")) {
-            comment = next === "/" ? "line" : "block";
-            out += "  ";
-            index++;
-            continue;
-        }
-
-        if (character === '"' || character === "'" || character === "`") quote = character;
-        out += character;
-    }
-
-    return out;
-};
-
-/**
  * The javascript files in a directory under the repository root.
  *
  * Resolved from this module rather than the working directory, like readSource

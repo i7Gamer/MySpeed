@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { withoutComments } from "../helpers/source.js";
 import { isThresholdNumber } from "../../client/src/common/utils/TestUtil.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
@@ -96,7 +95,7 @@ describe("the optimal values dialog", () => {
      * this file exists to catch.
      */
     it("asks the shared rule for each of its three fields", () => {
-        const calls = withoutComments(read(DIALOG)).match(/isThresholdNumber\(/g) ?? [];
+        const calls = read(DIALOG).match(/isThresholdNumber\(/g) ?? [];
 
         assert.equal(calls.length, 3,
             `the dialog makes ${calls.length} threshold checks, one per field expected`);
@@ -106,13 +105,14 @@ describe("the optimal values dialog", () => {
      * The negated class itself, because that is the defect: it reads as "every
      * character is a digit or a dot", which is not what a number is.
      *
-     * Against the code rather than the file. The comment beside the fix names
-     * the form it replaced - that is what the comment is for - and an assertion
-     * that the form is gone finds it there and fails, which would leave the
-     * prose written to suit the scan.
+     * The whole file, comments included, which is why the comment beside the
+     * fix describes the class in words rather than writing it out. A scan for
+     * something's absence is answered by prose, and the alternative - teaching
+     * the scan to skip comments - needs a lexer that can tell a regex from a
+     * division, which in JSX nothing short of a parser does.
      */
     it("no longer asks whether every character is a digit or a dot", () => {
-        assert.doesNotMatch(withoutComments(read(DIALOG)), /\[\^0-9\.]/,
+        assert.doesNotMatch(read(DIALOG), /\[\^0-9\.]/,
             "the dialog still carries the unanchored check the server replaced");
     });
 });

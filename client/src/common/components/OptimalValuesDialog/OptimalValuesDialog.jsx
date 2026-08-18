@@ -51,13 +51,16 @@ export const OptimalValuesDialog = ({open, onClose}) => {
     };
 
     const update = async (close) => {
-        // The shared rule, not a second copy of it. This check asked
-        // `/[^0-9.]/` - "is every character a digit or a dot" - which "1.2.3",
-        // ".." and "." all satisfy, so the dialog waved them through to a server
-        // that refuses them. The three fields are patched one after another, so
-        // a bad third value arrived only after the first two had been written,
-        // and the operator was shown an error over a change that had partly
-        // happened.
+        // The shared rule, not a second copy of it. This asked a negated
+        // character class - whether every character was a digit or a dot -
+        // which is not what a number is: "1.2.3", ".." and "." all satisfy it.
+        // The dialog waved them through to a server that refuses them, and the
+        // three fields are patched one after another, so a bad third value
+        // arrived only after the first two had been written: an error reported
+        // over a change that had partly happened.
+        //
+        // The class itself is named in the test rather than here, because the
+        // assertion that it is gone would otherwise find it in this sentence.
         if ((ping && !isThresholdNumber(ping)) || (download && !isThresholdNumber(download))
             || (upload && !isThresholdNumber(upload))) {
             updateToast(t("dropdown.invalid"), "red", faExclamationTriangle);
