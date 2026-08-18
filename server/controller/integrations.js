@@ -330,6 +330,17 @@ export const getIntegration = (name) =>
     Object.hasOwn(integrations, name) ? integrations[name] : undefined;
 
 /**
+ * The caps a declared text field wears.
+ *
+ * Named rather than written at the comparison, because the display name in
+ * validateInput is held to the same one and is not a declared field of any
+ * module - so the two have to move together or they disagree about the same
+ * column type.
+ */
+const MAX_TEXT_LENGTH = 250;
+const MAX_TEXTAREA_LENGTH = 2000;
+
+/**
  * @param isPatch  whether this body is changing some settings rather than
  *                 supplying all of them.
  *
@@ -344,16 +355,6 @@ export const getIntegration = (name) =>
  * An explicit null or "" is still a rejection either way: that is not "leave it
  * alone", it is "clear a field that is required".
  */
-/**
- * The caps a declared text field wears.
- *
- * Named rather than written at the comparison, because the display name below
- * is held to the same one and is not a declared field of any module - so the
- * two have to move together or they disagree about the same column type.
- */
-const MAX_TEXT_LENGTH = 250;
-const MAX_TEXTAREA_LENGTH = 2000;
-
 export const validateInput = (module, data, isPatch = false) => {
     const integration = getIntegration(module);
     if (!integration) return false;
