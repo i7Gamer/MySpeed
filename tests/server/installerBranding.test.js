@@ -58,4 +58,30 @@ describe("where the installed entry points back to", () => {
         assert.match(workflow, new RegExp(`Id="ARPHELPLINK" Value="${REPOSITORY}/issues"`),
             "someone whose service never starts has no link to follow");
     });
+
+    /**
+     * And where to find a newer one. The third of the three was written and
+     * then left unheld, which is the state a property reaches just before
+     * someone tidies it away as unused - the other two say what they are for,
+     * and this one said nothing.
+     */
+    it("offers where to look for a newer version", () => {
+        assert.match(workflow, new RegExp(`Id="ARPURLUPDATEINFO" Value="${REPOSITORY}/releases"`),
+            "the installed entry does not say where updates come from");
+    });
+
+    /**
+     * All three point at this project. A property that kept an old owner's URL
+     * would be the same fault the Manufacturer above was fixed for, and harder
+     * to notice: nothing renders these until someone opens the entry's details.
+     */
+    it("points every link at the project's own repository", () => {
+        const links = [...workflow.matchAll(/Id="(ARP\w*(?:URL|LINK)\w*)" Value="([^"]*)"/g)];
+
+        assert.equal(links.length, 3, `expected three links, found ${links.length}`);
+
+        for (const [, property, value] of links)
+            assert.ok(value.startsWith(`${REPOSITORY}/`) || value === REPOSITORY,
+                `${property} points at ${value}, which is not this project`);
+    });
 });

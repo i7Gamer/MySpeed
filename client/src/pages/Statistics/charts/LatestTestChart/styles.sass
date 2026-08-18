@@ -11,11 +11,12 @@
   justify-content: center
   width: 100%
   // What the shared row's steps measure. The list and not the viewport: this
-  // card is ~324px of list in the three-across grid and ~293 on a phone - two
-  // states a viewport figure tells apart only by naming both of them, and by
-  // naming them again the next time the page's stages move. Safe here because
-  // the list's inline size is the card's (width: 100%) rather than its
-  // contents'.
+  // card holds 348-404px of list where the page is three equal columns, 366-430
+  // above that where it is 40/30/30, and ~293 on a phone - three states a
+  // viewport figure tells apart only by naming all of them, and by naming them
+  // again the next time the page's stages move, as $stats-equal-thirds has just
+  // done. Safe here because the list's inline size is the card's (width: 100%)
+  // rather than its contents'.
   container-type: inline-size
 
 // The steps the figure takes as this list narrows are the shared row's, stated

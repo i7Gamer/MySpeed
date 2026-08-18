@@ -63,9 +63,15 @@ $toolbar-text-size: 1.1rem
 // 28px against 19.2 on exactly the room the rule says it should have.
 //
 // Equal thirds there, and the disagreement has nothing left to stand on. It is
-// also the better page: the two tight cards gain 36px of list each, which is
-// enough to hold every figure at full size down to the two-column stage instead
-// of dropping them two steps.
+// also the better page: the two tight cards gain 36px of list each, which holds
+// every figure at full size across almost the whole of this stage instead of
+// dropping them two steps.
+//
+// Almost, and not all: a card here holds (viewport - 32) / 3 - 58 of list, so
+// the first step at 22rem is reached at 1262px. Between there and the
+// two-column stage below - eleven pixels, 1251 to 1261 - all three cards state
+// 1.4rem. They state it together, which is the point of the stage; it is simply
+// not true that nothing steps inside it.
 //
 // 1417px is where the summary's list falls to $overview-trim, so the card gives
 // up the width in the same movement as the sentences it was for, rather than

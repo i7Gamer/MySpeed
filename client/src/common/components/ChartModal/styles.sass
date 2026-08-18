@@ -351,17 +351,26 @@ $overview-gap: 3rem
     border-radius: 0.75rem
 
   .chart-modal-body
-    // And the value cards give their figure back a step, which the wrapping
-    // above cannot do for them: their labels are one word, and a word has
-    // nowhere to break.
+    // And the value cards step their figure down, which the wrapping above
+    // cannot do for them: their labels are one word, and a word has nowhere to
+    // break.
     //
-    // Those cards state the figure one step down and exempt this view, on the
-    // grounds that "opened, the card has the width of the dialog" - true while
-    // the dialog is the wider of the two, and false at the bottom of the range.
-    // At 375px the enlarged card is 317px inside its padding, and the figure at
-    // full size leaves 78px for "Maximum", which wants 94: measured cut by 16,
-    // with "Minimum" beside it cut by 2. The room has to come from the figure,
-    // and the step it takes is the card's own rather than a third size.
+    // This is the only place in the app a figure size is stated against the
+    // viewport, and the only one outside the shared row that states one at all.
+    // Both are for the same reason: the value cards withhold their container
+    // inside the dialog - deliberately, so a shrink-to-fit dialog has something
+    // to size itself by - so none of the row's own steps can fire in here, and
+    // there is no list left to key a step on. The viewport is what is left.
+    //
+    // Why a step is needed at all, when the dialog is the wider of the two
+    // everywhere else: at 375px the enlarged card is 317px inside its padding,
+    // and the figure at full size leaves 78px for "Maximum", which wants 94 -
+    // measured cut by 16, with "Minimum" beside it cut by 2.
+    //
+    // The size is the row's first step, not a third one of this view's own, so
+    // the enlarged card and a card in the grid state the same sizes as each
+    // other. See $panel-value-size-narrow, which names this rule as its one
+    // caller outside the row.
     .value-container .panel-row-value
       font-size: row.$panel-value-size-narrow
 

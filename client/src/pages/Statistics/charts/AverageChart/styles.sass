@@ -24,9 +24,14 @@
 // exists because this class of panel cannot ask a shrink-to-fit dialog for a
 // width.
 //
-// No step is wanted there in any case, and none is taken: with no container
-// above them the rows measure nothing, and the enlarged card states its figures
-// at full size in a dialog that is wider than any cell of the grid.
+// None of the shared steps is taken there, then: with no container above them
+// the rows measure nothing. On a desktop that is also what is wanted, because
+// the dialog is wider than any cell of the grid - at 375px it is still wider,
+// 317px of card against the 293 the one-column stage gives it, but it is no
+// longer wide enough for a full-size figure beside a one-word label. So the
+// dialog states a step of its own down there, keyed on the viewport because
+// there is no list left to key on: see the value-card rule in ChartModal, where
+// the 16px cut on "Maximum" that it exists for is measured.
 .value-container:not(.chart-modal-body *)
   container-type: inline-size
 

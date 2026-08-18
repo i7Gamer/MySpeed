@@ -231,14 +231,20 @@ describe("the shared panel row", () => {
  * A speed is the longest kind of figure the app prints, and these are the
  * narrowest cards on the page - `small`, which the grid gives 340px, 293 of them
  * inside the padding. Everything they ask of the shared row is a consequence of
- * that: the figures are rounded whole, the delta stacks under the value instead
- * of sitting beside anything, and the figure itself takes one step down from the
- * shared size.
+ * that: the figures are rounded whole, and the delta stacks under the value
+ * instead of sitting beside anything.
+ *
+ * The figure is not among them any more. It used to be stated a step down here,
+ * at every width and on this card alone, which is what the test below exists to
+ * keep out - it takes the shared steps at the shared widths now, like every
+ * panel.
  *
  * Their width is the page's to spend, not this card's: the row they sit in also
  * holds the hourly chart, and every pixel they take is one the chart loses.
  *
- * Opened, the same card has the width of the dialog and takes the full size back.
+ * Opened, the card withholds its container so the dialog has something to size
+ * itself by, so none of the shared steps reaches it - and the dialog states one
+ * of its own below 500px of viewport, which is measured in ChartModal.
  */
 describe("the value cards, which state the longest figures", () => {
     const css = compile("pages/Statistics/charts/AverageChart/styles.sass");

@@ -18,8 +18,15 @@ $panel-value-size: 1.75rem
 // One step down, and one more, for where the page grid squeezes the cards.
 // Applied by the row itself against the width of whichever list it is drawn in
 // - see $panel-figure-step, where the two widths are measured, and the row's
-// stylesheet, where they are spent. Every panel takes them from there rather
-// than reaching for these directly, so no card can step at a width of its own.
+// stylesheet, where they are spent. No card states a figure size of its own, so
+// none of them can step at a width of its own either.
+//
+// One rule outside this component reaches for the first of them, and it is not a
+// card: the dialog does, at a viewport of 500px, for the enlarged value card -
+// which withholds its container inside the dialog and so takes none of the steps
+// below. See ChartModal, where the measurement is. It is the one place a figure
+// size is stated against the viewport rather than against a list, because in the
+// dialog there is no list to state it against.
 $panel-value-size-narrow: 1.4rem
 $panel-value-size-tight: 1.2rem
 
@@ -64,7 +71,15 @@ $panel-description-size: 0.9rem
 /// Below the second step there is nothing left to spend, and the figure is not
 /// what is short: at 290px of list "Téléchargement" does not sit beside a glyph
 /// and a speed at any size a figure could be stated at, so the latest test is
-/// cut below 290 and the value cards below 300 - a phone narrower than 375px.
+/// cut below 290 of list and the value cards below 300.
+///
+/// As viewports, since that is what a phone is described by: a card at the
+/// one-column stage holds the viewport less 82px - 32 of page margin, 2 of
+/// border and 48 of the content's padding - so those two are a viewport of about
+/// 372px and 382px. The common 375px phone is therefore already inside the value
+/// cards' band, and the 360px Android width is inside both. That is the residual
+/// cut this trade accepts, and it is wider than a reading of "below 300" alone
+/// suggests: 76 rows across fifteen languages, most of them at 320px.
 /// The summary is not cut at all: it answers those widths by wrapping its label
 /// rather than cutting it, from the width its descriptions go. See the overview
 /// card, where that trade is set out - it can make it because its labels are
@@ -73,11 +88,16 @@ $panel-figure-step: 22rem
 
 /// And the second step, which is the width the icon used to be given up at.
 ///
-/// Same width, different thing spent: what was bought there by taking the glyph
-/// off every row is bought now by stating the figure one size smaller, which
-/// frees comparable room and costs the reader nothing but size. 1.2rem is still
-/// larger than the label beside it, so the figure is what the eye lands on at
-/// every width the card is ever drawn at.
+/// Same width, different thing spent - and less of it. Taking the glyph off
+/// every row bought 52px; stating the figure one size smaller buys 26, which is
+/// the distance between the second and third columns of the table above on the
+/// card that needs it most. So this is half the room the icon freed, in exchange
+/// for a grade that is still stated on every row: the trade is worth making, but
+/// it is not a like-for-like swap, and the band the table's last column leaves
+/// cut is the price of it.
+///
+/// 1.2rem is still larger than the label beside it, so the figure is what the
+/// eye lands on at every width the card is ever drawn at.
 $panel-figure-floor: 20rem
 
 /// The space between two of these rows, wherever a panel stacks them.
