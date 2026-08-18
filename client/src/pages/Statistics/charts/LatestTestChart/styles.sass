@@ -17,10 +17,17 @@
   // inline size is the card's (width: 100%) rather than its contents'.
   container-type: inline-size
 
-// The icon, so that the label beside it keeps its name - see $panel-icon-drop,
-// where the two states this fires in are measured. This card carries the cut in
-// nine of the fifteen languages: "Téléchargement", "Вивантаження", "Качване на"
-// and "Downloaden" all name a direction that "Download" fits in half the room.
+// One size off the figure, so the label beside it keeps its name - see
+// $panel-figure-step, where both of this card's steps are measured. It carries
+// the cut in nine of the fifteen languages: "Téléchargement", "Вивантаження",
+// "Качване на" and "Downloaden" all name a direction that "Download" fits in
+// half the room, and this is the one card whose figures are speeds.
+@container (width < #{row.$panel-figure-step})
+  .info-container .panel-row .panel-row-value
+    font-size: row.$panel-value-size-narrow
+
+// And the icon after it, where the page is one column and the step above has
+// run out - the glyph carries the grade, so it is what goes last.
 @container (width < #{row.$panel-icon-drop})
   .info-container .panel-row .panel-row-icon
     display: none

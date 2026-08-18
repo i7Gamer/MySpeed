@@ -347,10 +347,11 @@ describe("the cards that run out of room for a label", () => {
             styles: "pages/Statistics/charts/AverageChart/styles.sass"}
     ];
 
-    // What the widest label in the app needs of the list to sit beside its
-    // figure *and* its icon. Measured at 324px of list, where Ukrainian's
-    // "Завантаження" beside a speed overflowed by 27px.
-    const LABEL_NEEDS = 351;
+    // The two states a card is cut in, as list widths: the three-across grid,
+    // where the cards beside it have exactly the same room, and a phone, where
+    // the whole page is down to one column.
+    const THREE_ACROSS_LIST = 324;
+    const PHONE_LIST = 293;
 
     const ruleFor = (sheet, selector) =>
         sheet.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![-\\w])\\s*\\{([^}]*)}`));
@@ -375,7 +376,23 @@ describe("the cards that run out of room for a label", () => {
                 `${list} establishes no container, so nothing can key on its width`);
         });
 
-        it(`gives up the icon on ${name} where the label cannot sit beside it`, () => {
+        /**
+         * And the icon goes only where the whole page is down to one column.
+         *
+         * It is the last thing a row gives up, because it is the only thing in
+         * the row that carries the grade: the glyph wears it - see graded-glyph
+         * - and the figure beside it is white whatever the reading. A row
+         * without its icon states a number with no verdict on it.
+         *
+         * So it is given up at the width the overview card already gives it up
+         * at, which is a phone: there the page is one column, every card is
+         * equally tight, and they lose their glyphs together. Taken at the
+         * three-across stage instead, this card would stand glyphless beside two
+         * that kept theirs on exactly the same 324px of list - which reads as a
+         * fault rather than as a tighter card, and costs the grade at a width
+         * where an English reader was never cut at all.
+         */
+        it(`gives up the icon on ${name} only where every card is that tight`, () => {
             const dropping = containerBlocks(sheet)
                 .filter(({body}) => /\.panel-row-icon\s*\{[^}]*display:\s*none/.test(body));
 
@@ -385,8 +402,11 @@ describe("the cards that run out of room for a label", () => {
             const at = parseFloat(dropping[0].condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]);
 
             assert.ok(Number.isFinite(at), `"${dropping[0].condition.trim()}" is not a width step`);
-            assert.ok(at * 16 >= LABEL_NEEDS,
-                `the icon keeps its place down to ${at * 16}px of list, where the label beside it is already cut`);
+            assert.ok(at * 16 > PHONE_LIST,
+                `the icon survives ${at * 16}px of list, so a phone keeps a glyph it has no room for`);
+            assert.ok(at * 16 <= THREE_ACROSS_LIST,
+                `the icon goes at ${at * 16}px of list, which strips this card `
+                + "beside two that keep theirs on the same room");
         });
     }
 
@@ -423,11 +443,48 @@ describe("the cards that run out of room for a label", () => {
                 `"${selector}" contains the card inside the dialog too, which then has nothing to measure`);
     });
 
+    /**
+     * What the three-across stage gets instead: one size off the figure.
+     *
+     * That band is where French, Ukrainian and Russian are cut and English is
+     * not, so the concession has to be one that costs a reader nothing - and the
+     * figure is already stated a size larger than anything else in the card. One
+     * step down frees more than the icon would and keeps the grade beside it.
+     *
+     * The latest test only. The value cards state their figure a step down
+     * already, on every card at every width, so there is no step of theirs left
+     * to take here.
+     */
+    it("steps the latest test's figure down before it touches the icon", () => {
+        const sheet = compile("pages/Statistics/charts/LatestTestChart/styles.sass");
+        const stepping = containerBlocks(sheet)
+            .filter(({body}) => /\.panel-row-value\s*\{[^}]*font-size/.test(body));
+
+        assert.equal(stepping.length, 1,
+            `the card has ${stepping.length} steps that resize the figure, expected one`);
+
+        const at = parseFloat(stepping[0].condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]);
+
+        assert.ok(at * 16 > THREE_ACROSS_LIST,
+            `the figure holds its size down to ${at * 16}px of list, where the label beside it is cut`);
+        assert.match(stepping[0].body, /font-size:\s*1\.4rem/,
+            "the figure steps to a size of its own rather than the one the value cards use");
+
+        const dropping = containerBlocks(sheet)
+            .filter(({body}) => /\.panel-row-icon\s*\{[^}]*display:\s*none/.test(body));
+        const iconAt = parseFloat(dropping[0].condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]);
+
+        assert.ok(at > iconAt,
+            "the icon goes before the figure shrinks, which spends the grade to save a size");
+    });
+
     // One figure for both cards, because they are one measurement: what a row
     // needs before the icon has to go. Two copies is the split that widens.
-    it("names that width once rather than once per card", () => {
+    it("names those widths once rather than once per card", () => {
         assert.match(rowSizes, /\$panel-icon-drop:\s*[\d.]+rem/,
-            "the step is a literal in each card, so the two can drift apart");
+            "the icon step is a literal in each card, so the two can drift apart");
+        assert.match(rowSizes, /\$panel-figure-step:\s*[\d.]+rem/,
+            "the figure step has no shared name");
     });
 });
 
