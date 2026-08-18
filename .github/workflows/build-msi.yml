@@ -89,7 +89,7 @@ jobs:
           $wxsContent = @"
           <?xml version="1.0" encoding="UTF-8"?>
           <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-            <Product Id="*" Name="$($env:PRODUCT_NAME)" Language="1033" Version="$($env:VERSION).0" Manufacturer="Timo" UpgradeCode="A1B2C3D4-5E6F-7890-ABCD-EF1234567890">
+            <Product Id="*" Name="$($env:PRODUCT_NAME)" Language="1033" Version="$($env:VERSION).0" Manufacturer="i7Gamer" UpgradeCode="A1B2C3D4-5E6F-7890-ABCD-EF1234567890">
               <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
           
               <!-- The two installers share this product's UpgradeCode on purpose:
@@ -107,6 +107,16 @@ jobs:
                    the existing data survives it. -->
               <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
               <MediaTemplate EmbedCab="yes" />
+
+              <!-- Add/Remove Programs reads these; the UAC prompt reads none of
+                   them. That prompt says "Unknown publisher" because the MSI
+                   carries no Authenticode signature, and nothing but a signature
+                   changes it. What these reach is the installed entry, which
+                   until now credited a bare given name with no link to the
+                   project standing behind it. -->
+              <Property Id="ARPURLINFOABOUT" Value="https://github.com/i7Gamer/MySpeed" />
+              <Property Id="ARPHELPLINK" Value="https://github.com/i7Gamer/MySpeed/issues" />
+              <Property Id="ARPURLUPDATEINFO" Value="https://github.com/i7Gamer/MySpeed/releases" />
           
               <Feature Id="ProductFeature" Title="MySpeed" Level="1">
                 <ComponentGroupRef Id="ProductComponents" />
