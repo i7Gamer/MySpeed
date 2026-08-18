@@ -9,6 +9,22 @@ const layoutSource = read("common/styles/layout.sass");
 const statisticsSource = read("pages/Statistics/Statistics.jsx");
 
 /**
+ * The width a named stage is declared at.
+ *
+ * Every suite here used to find its stage by taking the widest ceiling in the
+ * stylesheet, which held only while the two-column stage was the widest thing
+ * on the page. It is not: the stage that squares the top row sits above it - see
+ * equalThirds.test.js - and four suites silently retargeted onto a stage that
+ * pairs nothing the moment it was added.
+ */
+const stageAt = (name) => {
+    const at = Number(layoutSource.match(new RegExp(`\\$${name}:\\s*(\\d+)px`))?.[1]);
+
+    assert.ok(Number.isFinite(at), `$${name} is not declared in the layout partial`);
+    return at;
+};
+
+/**
  * The nine cards had two shapes and one figure deciding between them.
  *
  * Three to a row down to 900px and then one to a row, with that 900 written out
@@ -58,12 +74,17 @@ describe("the statistics page's shape", () => {
                 `the ${name} cards still change width at their own hardcoded 900px`);
     });
 
-    it("declares the two-column stage above the one-column stage", () => {
+    /**
+     * Three stages, widest first. They restate the same selectors at equal
+     * specificity, so only source order settles which share holds - a narrower
+     * stage declared above a wider one loses at every width they share.
+     */
+    it("declares each stage above the narrower one", () => {
         const declared = ceilings(page);
 
-        assert.equal(declared.length, 2, `the page declares ${declared.length} stages, expected two`);
+        assert.equal(declared.length, 3, `the page declares ${declared.length} stages, expected three`);
         assert.deepEqual(declared, [...declared].sort((a, b) => b - a),
-            "the narrower stage is declared first, so the wider one wins at every width they share");
+            "a narrower stage is declared first, so the wider one wins at every width they share");
     });
 
     /**
@@ -234,14 +255,16 @@ describe("the share the left-hand column takes while three share a row", () => {
  * 1+2+2+2+2 from 1000px to 760, with nothing cut on any card.
  */
 describe("the two-column stage", () => {
-    // Anchored to the widest ceiling rather than to "the first @media": an
-    // unrelated query added above the stages must not silently retarget this.
+    // Anchored to the constant that names it rather than to the widest ceiling
+    // or the first @media. It was the widest once; the stage that squares the
+    // top row is wider, and anchoring on that silently retargeted this whole
+    // suite onto a stage that pairs nothing.
     const twoColumn = () => {
-        const declared = ceilings(page);
-        assert.ok(declared.length > 0, "the page declares no stages at all");
+        const at = stageAt("stats-two-column");
+        const block = mediaBlocks(page).find(({condition}) => condition.includes(`${at}px`));
 
-        const widest = Math.max(...declared);
-        return mediaBlocks(page).find(({condition}) => condition.includes(`${widest}px`)).body;
+        assert.ok(block, `nothing reflows at the ${at}px the two-column stage is declared at`);
+        return block.body;
     };
 
     it("puts two cards on a row", () => {
@@ -327,11 +350,8 @@ describe("the loading skeletons follow the page's stages", () => {
         return block.body;
     };
 
-    const declared = () => {
-        const widths = ceilings(page);
-        assert.equal(widths.length, 2, "the page no longer declares exactly two stages");
-        return {two: Math.max(...widths), one: Math.min(...widths)};
-    };
+    // By name, for the reason the two-column suite above sets out.
+    const declared = () => ({two: stageAt("stats-two-column"), one: stageAt("stats-one-column")});
 
     it("pairs the shimmers at the two-column stage", () => {
         const paired = rules(stage(declared().two)).filter(({selector, body}) =>
@@ -462,7 +482,8 @@ describe("the columns the second and third rows fall into", () => {
     // there but not named here - or the other way about - is two descriptions
     // of one layout that no longer agree.
     it("spans as many cards as the stylesheet gives a row to", () => {
-        const stage = mediaBlocks(page).find(({condition}) => condition.includes(`${Math.max(...ceilings(page))}px`));
+        const stage = mediaBlocks(page)
+            .find(({condition}) => condition.includes(`${stageAt("stats-two-column")}px`));
         const spanning = rules(stage.body).filter(({body}) => /flex:\s*1 1 100%/.test(body))
             .flatMap(({selector}) => selector.split(","))
             // The shimmer that stands in for the summary while the page loads
