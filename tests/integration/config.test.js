@@ -67,15 +67,26 @@ describe("validateInput", () => {
          */
         it("rejects a value that is only digits and dots", async () => {
             for (const key of ["ping", "download", "upload"])
-                for (const bad of ["1.2.3", "..", ".", "1.", ".5"])
+                for (const bad of ["1.2.3", "..", "."])
                     await rejects(key, bad);
         });
 
-        // The shapes a reader actually types, held against the rule above so
-        // that tightening it cannot quietly refuse them.
-        it("still accepts a whole and a fractional threshold", async () => {
+        /**
+         * And accepts every shape that is a number, which is wider than the
+         * three above are narrow.
+         *
+         * ".5" and "1." both read as numbers - 0.5 and 1 - and both were
+         * accepted by the check this replaced, so an instance can be holding one
+         * right now. That matters more than the typing: importConfig runs every
+         * stored key back through this validator and abandons the whole restore
+         * on the first refusal, so a threshold saved as ".5" would take the
+         * nodes and the integrations down with it, naming no key.
+         */
+        it("still accepts every shape that is a number", async () => {
             assert.equal(await accepts("download", "250"), "250");
             assert.equal(await accepts("upload", "12.5"), "12.5");
+            assert.equal(await accepts("download", ".5"), ".5");
+            assert.equal(await accepts("upload", "1."), "1.");
         });
     });
 

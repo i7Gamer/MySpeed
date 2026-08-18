@@ -38,8 +38,8 @@ const configDefaults = {
 const MAX_RETENTION_DAYS = 10000;
 
 /**
- * A speed or latency threshold, in the two shapes a reader writes one: whole,
- * or whole with a fraction.
+ * A speed or latency threshold: anything that reads as a number, and nothing
+ * that does not.
  *
  * Anchored, for the reason retentionDays states where it does the same thing. A
  * bare negated class - `/[^0-9.]/` - only asks whether every character is a
@@ -47,13 +47,19 @@ const MAX_RETENTION_DAYS = 10000;
  *
  * What that cost was quiet rather than loud. No server code reads these three
  * keys, so the value was stored behind a 200 and handed to the client, where
- * `Number("1.2.3")` is NaN and getIconBySpeed answers neutral for a threshold
- * it cannot read: every speed on the page went grey and stayed grey, with
- * nothing on screen naming the value that did it. "." was worse - the ping
- * branch below splits on the dot, so what reached the column was the empty
- * string.
+ * `Number("1.2.3")` is NaN and getIconBySpeed answers `blue` for a threshold it
+ * cannot read - the colour this interface uses for a figure nobody measured, so
+ * every speed on the page reads as ungraded and nothing on screen names the
+ * value that did it. "." was worse: the ping branch below splits on the dot, so
+ * what reached the column was the empty string.
+ *
+ * Wide on purpose either side of the dot. ".5" and "1." are 0.5 and 1, the old
+ * check took both, and an instance can be holding one now - and importConfig
+ * runs every stored key back through here and abandons the whole restore on the
+ * first refusal, naming no key. Refusing a value that was legal when it was
+ * saved would take the nodes and the integrations down with a threshold.
  */
-const THRESHOLD_NUMBER = /^[0-9]+(\.[0-9]+)?$/;
+const THRESHOLD_NUMBER = /^(?:[0-9]+\.?[0-9]*|\.[0-9]+)$/;
 
 // The value stored when no password is configured. It is a sentinel, not a
 // password: password.js waves every request through when it sees this.

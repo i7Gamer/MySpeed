@@ -147,6 +147,17 @@ describe("the delta states its direction in words", () => {
             "the direction is not named from a translated string");
     });
 
+    /**
+     * On an element that may carry a name. A bare span maps to role=generic,
+     * which ARIA prohibits naming - the label is dropped and the announcement
+     * falls back to the visible text, which is the bare magnitude again with the
+     * arrow still hidden. The fix would have looked present and done nothing.
+     */
+    it("puts the label on an element ARIA lets it name", () => {
+        assert.match(source, /role="img"/,
+            "the label sits on a role-less span, where ARIA prohibits it and readers ignore it");
+    });
+
     // The glyph stays hidden: announced as well as labelled, a reader hears the
     // direction twice, once as an unpronounceable triangle.
     it("keeps the glyph itself out of the announcement", () => {

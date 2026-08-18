@@ -242,6 +242,18 @@ sleep 2
 # The home directory is the installation path rather than nothing: the Ookla CLI
 # writes its licence acceptance under $HOME, and a service account with no
 # writable home would re-prompt for it on every run.
+#
+# The sandbox below is written against $INSTALLATION_PATH rather than against
+# /opt, because -d puts it anywhere. ReadWritePaths names it explicitly, so
+# ProtectSystem=full cannot make the one directory the service writes read-only
+# - which is what "-d /usr/local/myspeed" would otherwise do, leaving a service
+# that starts, fails to create its data folders, and restarts for ever behind a
+# banner saying the install completed.
+#
+# ProtectHome is deliberately not among them for the same reason: it makes /home
+# and /root inaccessible, and "-d /root/myspeed" is a path a root user typing
+# this command will reach for. A dedicated unprivileged account already cannot
+# read other users' home directories.
 SERVICE_USER="myspeed"
 
 if ! id -u "$SERVICE_USER" > /dev/null 2>&1 && command -v useradd &> /dev/null; then
@@ -256,6 +268,23 @@ fi
 # than it reads.
 if id -u "$SERVICE_USER" > /dev/null 2>&1; then
     SERVICE_ACCOUNT="$SERVICE_USER"
+
+    # Only over a directory this script has just installed into. -d takes
+    # whatever it is given and mkdir -p's it, so "-d /opt" is one slip away from
+    # "-d /opt/myspeed" - and a recursive chown over that hands every other
+    # application under /opt to an unprivileged account, silently and with
+    # nothing that reverses it. Before this the installer changed no ownership
+    # at all, so a mistyped path cost a stray binary; it must not now cost the
+    # rest of the filesystem.
+    #
+    # The binary is the proof: it was written a few lines above, so a path
+    # holding it is a path we own.
+    if [ ! -f "$INSTALLATION_PATH/myspeed" ]; then
+        echo -e "$RED✗ $INSTALLATION_PATH does not hold the binary this script just installed."
+        echo -e "$NORMALℹ Refusing to change ownership of a directory that is not a MySpeed installation."
+        exit 1
+    fi
+
     # Before the service is registered, not after: on an upgrade every file here
     # is owned by root because that is what installed it, and the first thing
     # the new account would otherwise do is fail to open its own database.
@@ -285,7 +314,7 @@ WorkingDirectory=$INSTALLATION_PATH
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
-ProtectHome=true
+ReadWritePaths=$INSTALLATION_PATH
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

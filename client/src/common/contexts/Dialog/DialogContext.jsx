@@ -60,7 +60,14 @@ export const isTopmostOverlay = (area) => {
  */
 export const hasOpenOverlay = () => document.querySelectorAll(OVERLAY_AREA_SELECTOR).length > 0;
 
-export const Dialog = ({open, onClose, className, disableClose, children}) => {
+/**
+ * @param label a name for a dialog that draws no DialogHeader. Every other one
+ *              is named after its own heading, by id - but an aria-labelledby
+ *              pointing at an element nobody rendered resolves to nothing, and
+ *              an empty name is worse than no role at all, so the one dialog
+ *              with a banner instead of a header says its name outright.
+ */
+export const Dialog = ({open, onClose, className, disableClose, label, children}) => {
     const areaRef = useRef();
     const dialogRef = useRef();
     const [visible, setVisible] = useState(false);
@@ -136,7 +143,8 @@ export const Dialog = ({open, onClose, className, disableClose, children}) => {
                 page behind the backdrop is announced as inert, which it already
                 behaves as. */}
             <div className={`dialog${className ? ` ${className}` : ""}`} ref={dialogRef}
-                 role="dialog" aria-modal="true" aria-labelledby={labelId} tabIndex={-1}
+                 role="dialog" aria-modal="true" tabIndex={-1}
+                 aria-label={label} aria-labelledby={label ? undefined : labelId}
                  onAnimationEnd={handleAnimationEnd}>
                 <DialogLabelContext.Provider value={labelId}>
                     {typeof children === "function" ? children({close: handleClose, forceClose}) : children}

@@ -33,7 +33,7 @@ export const Delta = ({current, previous, higherIsBetter, mode, unit}) => {
          * glyph's colour states them for a reader who can see it. The direction
          * is the measurement, and it is what a reader needs to hear.
          */
-        <span className={`stat-delta stat-delta-${delta.tone}`}
+        <span className={`stat-delta stat-delta-${delta.tone}`} role="img"
               aria-label={t(`statistics.delta.${delta.direction}`, {value: delta.label})}>
             <span className="stat-delta-arrow" aria-hidden="true">{delta.direction === "up" ? "▲" : "▼"}</span>
             {delta.label}

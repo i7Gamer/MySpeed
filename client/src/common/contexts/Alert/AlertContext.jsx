@@ -23,7 +23,12 @@ export const AlertProvider = ({children}) => {
         return new Promise((resolve) => {
             const id = ++alertIdRef.current;
             resolversRef.current.set(id, resolve);
-            setAlerts(prev => [...prev, {...config, id}]);
+            // Recorded here rather than read when the overlay mounts: focus is
+            // moved into the alert during commit - autoFocus on the input
+            // variant - so by the time a passive effect looks, the answer is
+            // the alert's own field, and giving focus back would mean giving it
+            // to an element that has just been unmounted.
+            setAlerts(prev => [...prev, {...config, id, openedFrom: document.activeElement}]);
         });
     }, []);
 
@@ -88,9 +93,19 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
     const closeResultRef = useRef(null);
     const isClosingRef = useRef(false);
 
-    // Only the alert on top takes focus. A stacked one below it has given up
-    // its turn, and pulling focus back into it would fight the one above.
-    useModalFocus(dialogRef, isTop);
+    const submitRef = useRef();
+
+    /*
+     * Only the alert on top takes focus. A stacked one below it has given up its
+     * turn, and pulling focus back into it would fight the one above.
+     *
+     * On the primary button, not on whatever comes first in the markup. The
+     * close X is the first thing in the header, and Enter on it resolves the
+     * alert with null - the document handler declines a key aimed at a button
+     * inside the alert, so the browser turns Enter into a click on whatever has
+     * focus. Seated on the X, a confirmation answered Enter by cancelling.
+     */
+    useModalFocus(dialogRef, isTop, {initialFocus: submitRef, restoreTo: alert.openedFrom});
 
     const close = useCallback((result = null) => {
         if (alert.disableClose && result === null) return;
@@ -233,7 +248,8 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
                             {alert.cancelText || "Cancel"}
                         </button>
                     )}
-                    <button className={`dialog-btn${alert.danger ? " dialog-danger" : ""}`} onClick={handleSubmit}>
+                    <button ref={submitRef} className={`dialog-btn${alert.danger ? " dialog-danger" : ""}`}
+                            onClick={handleSubmit}>
                         {alert.buttonText || "OK"}
                     </button>
                 </div>

@@ -433,8 +433,43 @@ describe("install.sh registers a service that is not root", () => {
     // The baseline set: none of it restricts a userspace HTTP server that
     // spawns a CLI and writes inside its own directory.
     it("sandboxes what the service can reach", () => {
-        for (const directive of ["NoNewPrivileges=true", "PrivateTmp=true",
-            "ProtectSystem=full", "ProtectHome=true"])
+        for (const directive of ["NoNewPrivileges=true", "PrivateTmp=true", "ProtectSystem=full"])
             assert.ok(unit.includes(directive), `the unit does not set ${directive}`);
+    });
+
+    /**
+     * And the sandbox is written against the path the operator chose.
+     *
+     * -d puts the installation anywhere, and everything the service writes -
+     * the database, the logs, the downloaded CLI - is under it. A read-only
+     * hierarchy with no exception for that path gives a service that starts,
+     * fails to create its own folders and restarts for ever, behind a banner
+     * saying the install completed.
+     */
+    it("leaves the installation writable inside the sandbox", () => {
+        assert.ok(unit.includes("ReadWritePaths=$INSTALLATION_PATH"),
+            "ProtectSystem is applied with no exception for the directory the service writes");
+    });
+
+    // ProtectHome would make /home and /root inaccessible, and "-d /root/myspeed"
+    // is a path a root user typing this command reaches for.
+    it("does not cut off a home directory the installation may live in", () => {
+        assert.ok(!unit.includes("ProtectHome"),
+            "an installation under /home or /root cannot be reached by its own service");
+    });
+
+    /**
+     * And the recursive chown only runs over a directory this script installed
+     * into. "-d /opt" is one slip from "-d /opt/myspeed", and before this commit
+     * a mistyped path cost a stray binary; a chown -R over it would hand every
+     * other application under /opt to an unprivileged account.
+     */
+    it("refuses to change ownership of a directory it did not install into", () => {
+        const guard = source.slice(0, source.indexOf("chown -R"));
+
+        assert.match(guard, /if \[ ! -f "\$INSTALLATION_PATH\/myspeed" \]/,
+            "chown -R runs over whatever -d was given, with nothing checking it is an installation");
+        assert.match(guard.slice(guard.lastIndexOf("if [ ! -f")), /exit 1/,
+            "the check does not stop the script");
     });
 });

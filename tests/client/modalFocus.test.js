@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { focusableWithin, nextFocus } from "../../client/src/common/hooks/useModalFocus.js";
+import {
+    focusableWithin, initialFocusTarget, nextFocus
+} from "../../client/src/common/hooks/useModalFocus.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -93,6 +95,40 @@ describe("nextFocus", () => {
 });
 
 /**
+ * Where focus goes when an overlay opens.
+ *
+ * "The first focusable" is the wrong answer for an alert, and wrong in a way
+ * that changes what a key does: its close X is the first thing in the header,
+ * and the document-level Enter handler declines a key aimed at a button inside
+ * the alert - so the browser turns Enter into a click on whatever holds focus.
+ * Seated on the X, a confirmation answered Enter by cancelling.
+ */
+describe("initialFocusTarget", () => {
+    const primary = control(), other = control();
+    const dialog = {...container(other, primary), contains: (node) => [other, primary].includes(node)};
+
+    it("prefers the control the overlay names", () => {
+        assert.equal(initialFocusTarget(dialog, primary, control()), primary);
+    });
+
+    it("falls back to the first focusable when none is named", () => {
+        assert.equal(initialFocusTarget(dialog, undefined, control()), other);
+    });
+
+    // The input variant of an alert autoFocuses its field, and moving that to a
+    // button would put the caret nowhere.
+    it("leaves focus alone when it is already inside", () => {
+        assert.equal(initialFocusTarget(dialog, primary, other), null);
+    });
+
+    it("falls back to the dialog when it holds nothing focusable", () => {
+        const empty = {...container(), contains: () => false};
+
+        assert.equal(initialFocusTarget(empty, undefined, control()), empty);
+    });
+});
+
+/**
  * Both overlays, held to the same rules.
  *
  * Neither told assistive technology that a modal had opened, neither moved
@@ -157,5 +193,56 @@ describe("the overlays announce themselves and hold focus", () => {
 
         assert.match(source, /aria-labelledby=/, "the dialog is announced as an unnamed dialog");
         assert.match(source, /useId\(/, "the label is wired by a fixed id, which repeats when two dialogs mount");
+    });
+
+    /**
+     * And the one dialog that draws no header names itself outright.
+     *
+     * An aria-labelledby pointing at an element nobody rendered resolves to
+     * nothing, and role="dialog" does not fall back to the content - so the
+     * first-run wizard, which is also the only modal that cannot be dismissed,
+     * would announce as an unnamed dialog.
+     */
+    it("does not point the label at an id no header will carry", () => {
+        const source = read("common/contexts/Dialog/DialogContext.jsx");
+
+        assert.match(source, /aria-labelledby=\{label \? undefined : labelId}/,
+            "a dialog with no DialogHeader still claims a label that nothing carries");
+    });
+
+    it("names the one dialog that draws a banner instead of a header", () => {
+        const welcome = read("common/components/WelcomeDialog/WelcomeDialog.jsx");
+
+        // The rendered element, not the word: the comment beside the fix names
+        // DialogHeader to say what this dialog does instead of one.
+        assert.equal(welcome.includes("<DialogHeader"), false,
+            "the welcome dialog draws a header now, so this rule has the wrong subject");
+        assert.match(welcome, /label=\{t\("welcome\.title"\)}/,
+            "the welcome dialog is announced as an unnamed dialog it cannot be dismissed from");
+    });
+
+    /**
+     * The alert opens on its primary button rather than on whatever the markup
+     * happens to put first - which is the close X, and Enter on that resolves
+     * the alert with null. A confirmation would answer Enter by cancelling.
+     */
+    it("opens an alert on the button that answers it", () => {
+        const source = read("common/contexts/Alert/AlertContext.jsx");
+
+        assert.match(source, /initialFocus:\s*submitRef/,
+            "the alert takes focus on whatever comes first, which is the close X");
+        assert.match(source, /<button ref=\{submitRef}/,
+            "nothing marks the primary button for focus");
+    });
+
+    // And it gives focus back to the control it was opened from, recorded then
+    // rather than read on mount - by then autoFocus has already moved it.
+    it("remembers where an alert was opened from", () => {
+        const source = read("common/contexts/Alert/AlertContext.jsx");
+
+        assert.match(source, /openedFrom: document\.activeElement/,
+            "the alert records no opener, so focus is restored to its own field");
+        assert.match(source, /restoreTo:\s*alert\.openedFrom/,
+            "the recorded opener is never handed to the hook");
     });
 });
