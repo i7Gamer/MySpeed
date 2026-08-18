@@ -156,14 +156,31 @@ export const resolveFallback = (currentInterface, available, missingRounds) => {
     if (available.includes(currentInterface)) return {missingRounds: 0, write: null};
 
     // Nothing pinned is not a choice to protect: a fresh install picks one on
-    // its first round, as it always did.
-    const waited = currentInterface ? missingRounds + 1 : ROUNDS_BEFORE_FALLBACK;
+    // its first round, as it always did. It has no run of absences either -
+    // there is nothing there to be absent - so the count stays at zero rather
+    // than being carried into whatever is chosen next. Counted, a host that
+    // spent its first rounds with no adapters at all would treat the first blink
+    // after one is finally chosen as the third, and rewrite it.
+    if (!currentInterface) return {missingRounds: 0, write: available[0] ?? null};
+
+    const waited = missingRounds + 1;
 
     if (waited < ROUNDS_BEFORE_FALLBACK) return {missingRounds: waited, write: null};
 
+    const fallback = available[0];
+
     // With nothing detected there is nothing to move to, and overwriting a good
     // setting with undefined is worse than leaving it.
-    return {missingRounds: 0, write: available[0] ?? null};
+    //
+    // The run carries on rather than starting again. It measures how long the
+    // adapter has been missing, and it has been missing on these rounds too - so
+    // a host that lost every adapter and brought them back one at a time used to
+    // begin the three rounds afresh from the moment there was finally something
+    // to move to, leaving the measurement pointed at an adapter six rounds gone
+    // instead of three.
+    if (fallback === undefined) return {missingRounds: waited, write: null};
+
+    return {missingRounds: 0, write: fallback};
 };
 
 // The run of consecutive rounds the configured adapter has been missing for.
@@ -197,8 +214,15 @@ export const requestInterfaces = async () => {
 
     if (decision.write === null) {
         if (!interfaces[currentInterface] && currentInterface)
-            console.warn(`Interface ${currentInterface} was not found this round ` +
-                `(${missingRounds}/${ROUNDS_BEFORE_FALLBACK}). Keeping it for now.`);
+            // Two different states, and the count tells them apart: still inside
+            // the wait, or past it with nothing usable to move to. One reads as
+            // progress towards a decision, the other as a decision that cannot
+            // be made - and printing the first as "(4/3)" describes neither.
+            console.warn(missingRounds >= ROUNDS_BEFORE_FALLBACK
+                ? `Interface ${currentInterface} has been missing for ${missingRounds} rounds and `
+                    + `nothing usable was found to move to. Keeping it.`
+                : `Interface ${currentInterface} was not found this round ` +
+                    `(${missingRounds}/${ROUNDS_BEFORE_FALLBACK}). Keeping it for now.`);
         else if (!currentInterface)
             console.warn("No usable network interface was found; keeping the configured one.");
 

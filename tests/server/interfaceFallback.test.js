@@ -140,10 +140,47 @@ describe("deciding whether to fall back", () => {
     });
 
     // With nothing detected there is nothing to fall back to, and overwriting a
-    // good setting with undefined is worse than leaving it.
+    // good setting with undefined is worse than leaving it. The run carries on
+    // rather than starting again - see below for why that matters.
     it("keeps the configured one when there is nothing to move to", () => {
         assert.deepEqual(resolveFallback("wg0", [], ROUNDS_BEFORE_FALLBACK - 1),
-            {missingRounds: 0, write: null});
+            {missingRounds: ROUNDS_BEFORE_FALLBACK, write: null});
+    });
+
+    /**
+     * And the wait it already served still counts once there is somewhere to go.
+     *
+     * The run used to be cleared on the round the threshold was reached, whether
+     * or not anything was written - so a host that lost every adapter and then
+     * brought them back one at a time started the three rounds again from the
+     * moment there was finally something to move to, leaving the measurement
+     * pointed at an adapter that had by then been gone for six rounds rather
+     * than three. The count is "how long it has been missing", and it has been
+     * missing on the rounds where nothing could be done about it too.
+     */
+    it("falls back as soon as something appears, however long the wait ran", () => {
+        const held = resolveFallback("wg0", [], ROUNDS_BEFORE_FALLBACK - 1);
+
+        assert.equal(held.write, null, "it moved to an adapter that was not there");
+        assert.deepEqual(resolveFallback("wg0", available, held.missingRounds),
+            {missingRounds: 0, write: "eth0"});
+    });
+
+    /**
+     * But a run belongs to the adapter that was pinned, not to the host.
+     *
+     * Carrying one forward from the rounds before anything was configured would
+     * hand a freshly chosen adapter a spent wait: the operator picks an
+     * interface, it blinks once - which is all `wg-quick down` looks like - and
+     * it is rewritten immediately, which is the failure the whole rule exists to
+     * stop.
+     */
+    it("gives a newly chosen adapter the whole wait, whatever came before it", () => {
+        const bare = resolveFallback("", [], 0);
+
+        assert.equal(bare.missingRounds, 0, "a run was counted while nothing was pinned to miss");
+        assert.deepEqual(resolveFallback("wg0", available, bare.missingRounds),
+            {missingRounds: 1, write: null});
     });
 
     it("does not invent one when nothing is configured either", () => {
