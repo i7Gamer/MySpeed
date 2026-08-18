@@ -402,6 +402,10 @@
     "export": {
       "button": "Exportieren"
     },
+    "delta": {
+      "up": "{{value}} höher",
+      "down": "{{value}} niedriger"
+    },
     "overview": {
       "total_title": "Insgesamte Tests",
       "total_description": "Die Anzahl der ausgeführten Tests",
@@ -471,6 +475,10 @@
     "all_time": "Gesamter Zeitraum",
     "select_start": "Startdatum auswählen",
     "select_end": "Enddatum auswählen",
+    "previous_year": "Vorheriges Jahr",
+    "previous_month": "Vorheriger Monat",
+    "next_month": "Nächster Monat",
+    "next_year": "Nächstes Jahr",
     "from": "Von",
     "to": "An",
     "last_7_days": "Letzte 7 Tage",

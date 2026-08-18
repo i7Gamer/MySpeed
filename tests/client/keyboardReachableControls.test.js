@@ -13,6 +13,11 @@ const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
 const pagination = read("common/components/Header/components/Pagination/Pagination.jsx");
 const paginationStyles = read("common/components/Header/components/Pagination/styles.sass");
 const dropdown = read("common/components/DropdownSelect/DropdownSelect.jsx");
+const datePicker = read("common/components/DateRangePicker/DateRangePicker.jsx");
+const datePickerStyles = read("common/components/DateRangePicker/styles.sass");
+const settingsMenu = read("common/components/Dropdown/DropdownComponent.jsx");
+const exportMenu = read("common/components/ExportButton/ExportButton.jsx");
+const exportStyles = read("common/components/ExportButton/styles.sass");
 
 /**
  * The element that carries `marker` in its className, named.
@@ -259,6 +264,110 @@ describe("every clickable card answers the keyboard", () => {
 
         assert.notEqual(rule, null, "a card can be focused with nothing on screen to say so");
         assert.match(rule[1], /outline:/, "the focus rule draws no outline");
+    });
+});
+
+/**
+ * The control that decides what every figure on /statistics is about.
+ *
+ * Its trigger was a bare div with an onClick, so Tab walked past it and Enter
+ * did nothing if focus were forced onto it. That is the only way to change the
+ * range from the interface - the presets live inside the popover it opens - so
+ * a keyboard-only reader was left with whatever range the page loaded with, on
+ * both toolbars that draw one.
+ *
+ * A real <button> rather than `clickable`, for the reason the pagination gives:
+ * the trigger holds an icon and a span, which a button may contain, and a real
+ * button brings focus, Enter, Space and its own announcement with it.
+ */
+describe("the date range picker answers the keyboard", () => {
+    it("opens from a button rather than a bare div", () => {
+        assert.deepEqual(elementsCarrying(datePicker, "date-range-trigger"), ["button"],
+            "the trigger is not a button, so no keyboard can open the picker");
+    });
+
+    it("declares an explicit type on every button it draws", () => {
+        everyButtonIsTyped(datePicker, "the date range picker");
+    });
+
+    // What it opens and whether it is open now: without these a screen reader
+    // announces a button that appears to do nothing.
+    it("says what it opens and whether it is open", () => {
+        assert.match(datePicker, /aria-haspopup="dialog"/,
+            "nothing tells a screen reader the trigger opens a dialog");
+        assert.match(datePicker, /aria-expanded=\{isOpen}/,
+            "nothing tells a screen reader whether the picker is already open");
+    });
+
+    /**
+     * The four month and year arrows were buttons already - reachable, and
+     * announced as nothing. Each holds a single FontAwesome glyph, which
+     * renders `aria-hidden`, so the accessible name of all four was empty.
+     */
+    it("names each calendar arrow", () => {
+        const nav = datePicker.slice(datePicker.indexOf('className="calendar-nav"'),
+            datePicker.indexOf('className="calendar-grid"'));
+
+        assert.equal((nav.match(/nav-btn/g) ?? []).length, (nav.match(/aria-label=/g) ?? []).length,
+            "a calendar arrow carries no accessible name, so it announces as an empty button");
+
+        for (const key of ["previous_year", "previous_month", "next_month", "next_year"])
+            assert.match(datePicker, new RegExp(`aria-label=\\{t\\("calendar\\.${key}"\\)}`),
+                `no arrow is named by calendar.${key}`);
+    });
+
+    // A button brings its own font and centres its text; the trigger already
+    // states its own background and border, so those two are what is left.
+    it("clears the styling a button arrives with", () => {
+        const trigger = datePickerStyles.slice(datePickerStyles.indexOf(".date-range-trigger"),
+            datePickerStyles.indexOf(".calendar-icon"));
+
+        for (const reset of [/font-family: inherit/, /text-align: left/])
+            assert.match(trigger, reset, `the trigger keeps the button's own ${reset.source}`);
+    });
+});
+
+/**
+ * The settings menu, which is the only route to nine of the app's dialogs.
+ *
+ * Every entry was a div with an onClick and nothing else: optimal values, the
+ * provider, storage, the password, the schedule, pause, integrations, the
+ * language and the preferences. Tab walked past all of them, so a keyboard-only
+ * operator could not open a single one, and a screen reader announced each as an
+ * image next to a heading with no hint that it does anything.
+ *
+ * `clickable` rather than a <button>, for the reason it documents: the entry
+ * holds an <h3>, which a button may not contain.
+ */
+describe("the settings menu answers the keyboard", () => {
+    it("makes each entry a control", () => {
+        const item = settingsMenu.slice(settingsMenu.indexOf('"dropdown-item"'));
+
+        assert.match(item.slice(0, item.indexOf("</div>")), /\.\.\.clickable\(/,
+            "a settings entry is a click-only div: no tab stop, no key handler, nothing announced");
+    });
+});
+
+/**
+ * And the export menu, whose two formats were the same click-only divs. The
+ * button that opens it was already named and already said whether it was open -
+ * the options behind it could not be reached at all.
+ */
+describe("the export menu answers the keyboard", () => {
+    it("offers its formats as buttons rather than bare divs", () => {
+        assert.deepEqual(elementsCarrying(exportMenu, "export-option"), ["button", "button"],
+            "an export format is not a button, so no keyboard can choose one");
+    });
+
+    it("declares an explicit type on them", () => {
+        everyButtonIsTyped(exportMenu, "the export menu");
+    });
+
+    it("clears the styling a button arrives with", () => {
+        const option = exportStyles.slice(exportStyles.indexOf(".export-option"));
+
+        for (const reset of [/background: none/, /border: none/, /font-family: inherit/, /width: 100%/])
+            assert.match(option, reset, `an export option keeps the button's own ${reset.source}`);
     });
 });
 

@@ -402,6 +402,10 @@
     "export": {
       "button": "Export"
     },
+    "delta": {
+      "up": "up {{value}}",
+      "down": "down {{value}}"
+    },
     "overview": {
       "total_title": "Total tests",
       "total_description": "The number of executed tests",
@@ -471,6 +475,10 @@
     "all_time": "All time",
     "select_start": "Select start date",
     "select_end": "Select end date",
+    "previous_year": "Previous year",
+    "previous_month": "Previous month",
+    "next_month": "Next month",
+    "next_year": "Next year",
     "from": "From",
     "to": "To",
     "last_7_days": "Last 7 days",

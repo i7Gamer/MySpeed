@@ -51,6 +51,7 @@ export const ExportButton = ({ dateRange, allTime = false }) => {
                 download glyph with no accessible name - the same collapse the
                 start button beside it makes, and the same fix. */}
             <button
+                type="button"
                 className="export-button"
                 ref={buttonRef}
                 onClick={() => setIsOpen(!isOpen)}
@@ -63,16 +64,21 @@ export const ExportButton = ({ dateRange, allTime = false }) => {
                 <FontAwesomeIcon icon={faChevronDown} className={`chevron-icon ${isOpen ? 'open' : ''}`} />
             </button>
 
+            {/* Buttons, like the one that opens them. The trigger above was
+                already named and already said whether it was open, while the two
+                formats behind it were click-only divs - so a keyboard reached
+                the menu, opened it, and then had nothing to press. Each holds an
+                icon and a span, which a button may contain. */}
             {isOpen && (
                 <div className="export-dropdown" ref={dropdownRef}>
-                    <div className="export-option" onClick={() => handleExport('csv')}>
+                    <button type="button" className="export-option" onClick={() => handleExport('csv')}>
                         <FontAwesomeIcon icon={faFileLines} />
                         <span>{t("storage.csv")}</span>
-                    </div>
-                    <div className="export-option" onClick={() => handleExport('json')}>
+                    </button>
+                    <button type="button" className="export-option" onClick={() => handleExport('json')}>
                         <FontAwesomeIcon icon={faCode} />
                         <span>{t("storage.json")}</span>
-                    </div>
+                    </button>
                 </div>
             )}
         </div>
