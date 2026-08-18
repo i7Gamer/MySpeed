@@ -219,13 +219,22 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                 loaded with, on both toolbars that draw one.
 
                 It needs no aria-label: its own text is its name, and that text
-                is the current range, which is what a reader wants to hear. */}
+                is the current range, which is what a reader wants to hear.
+
+                aria-expanded and nothing more. A trigger that announces a
+                pop-up dialog promises one behind it, and what is behind this one
+                is the popover below: no role, no name, and nothing that moves
+                focus into it or holds focus there. A reader told they had opened
+                a dialog would press Enter, hear "expanded", and then be told
+                nothing at all. What the markup actually is - a control that
+                reveals content immediately after itself, dismissed with Escape -
+                is a disclosure, which aria-expanded states on its own and
+                correctly. */}
             <button
                 type="button"
                 className="date-range-trigger"
                 ref={triggerRef}
                 onClick={() => isOpen ? closePicker() : setIsOpen(true)}
-                aria-haspopup="dialog"
                 aria-expanded={isOpen}
             >
                 <FontAwesomeIcon icon={faCalendar} className="calendar-icon" />

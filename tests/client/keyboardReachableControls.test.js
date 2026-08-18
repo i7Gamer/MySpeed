@@ -290,13 +290,26 @@ describe("the date range picker answers the keyboard", () => {
         everyButtonIsTyped(datePicker, "the date range picker");
     });
 
-    // What it opens and whether it is open now: without these a screen reader
-    // announces a button that appears to do nothing.
-    it("says what it opens and whether it is open", () => {
-        assert.match(datePicker, /aria-haspopup="dialog"/,
-            "nothing tells a screen reader the trigger opens a dialog");
+    // Whether it is open now: without it a screen reader announces a button
+    // that appears to do nothing.
+    it("says whether it is open", () => {
         assert.match(datePicker, /aria-expanded=\{isOpen}/,
             "nothing tells a screen reader whether the picker is already open");
+    });
+
+    /**
+     * And promises no more than that. aria-haspopup="dialog" says a dialog is
+     * behind the trigger; what is behind this one is a popover with no role, no
+     * name, and nothing that moves focus into it - so a reader would be told
+     * "has pop-up dialog", press Enter, hear "expanded", and then be told
+     * nothing. The markup is a disclosure, and aria-expanded states that on its
+     * own. Either the attribute goes or the popover becomes a real dialog; what
+     * cannot stand is the attribute alone.
+     */
+    it("does not announce a dialog it does not open", () => {
+        assert.ok(!datePicker.includes('aria-haspopup="dialog"')
+            || /className="date-range-popover"[^>]*role="dialog"/.test(datePicker),
+            "the trigger promises a dialog, and the popover behind it is not one");
     });
 
     /**

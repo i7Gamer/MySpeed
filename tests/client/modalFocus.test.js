@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-    focusableWithin, initialFocusTarget, nextFocus
+    focusEscaped, focusableWithin, initialFocusTarget, nextFocus
 } from "../../client/src/common/hooks/useModalFocus.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
@@ -18,7 +18,10 @@ const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
  */
 const control = (attributes = {}) => ({
     ...attributes,
-    getAttribute: (name) => attributes[name] ?? null
+    getAttribute: (name) => attributes[name] ?? null,
+    // Whether this element sits inside some overlay's backdrop, which is the
+    // one question focusEscaped asks of the DOM.
+    closest: () => attributes.inOverlay ? {} : null
 });
 
 const container = (...children) => ({querySelectorAll: () => children});
@@ -95,6 +98,42 @@ describe("nextFocus", () => {
 });
 
 /**
+ * Whether focus leaving the dialog is an escape, or something to allow.
+ *
+ * The Tab trap is a listener on the dialog, so it only ever hears keys pressed
+ * inside it. That is enough while focus stays in - and focus can leave without
+ * pressing anything: a mousedown on the backdrop blurs to the body, and so does
+ * a control that unmounts itself, like the back arrow inside the storage
+ * dialog. On a dialog whose backdrop click is a no-op - the welcome wizard,
+ * which is also the only one with no Escape - that state was permanent: the trap
+ * went inert, and Tab walked the page behind a backdrop advertising aria-modal.
+ *
+ * An overlay opened over this one is not an escape. Pulling focus back from a
+ * stacked alert would fight the alert for it.
+ */
+describe("focusEscaped", () => {
+    const inside = control();
+    const dialog = {contains: (node) => node === inside};
+
+    it("counts focus that went nowhere", () => {
+        assert.equal(focusEscaped(dialog, null), true);
+        assert.equal(focusEscaped(dialog, undefined), true);
+    });
+
+    it("counts focus that landed on the page behind", () => {
+        assert.equal(focusEscaped(dialog, control()), true);
+    });
+
+    it("allows focus that stayed inside", () => {
+        assert.equal(focusEscaped(dialog, inside), false);
+    });
+
+    it("allows an overlay opened over this one to take it", () => {
+        assert.equal(focusEscaped(dialog, control({inOverlay: true})), false);
+    });
+});
+
+/**
  * Where focus goes when an overlay opens.
  *
  * "The first focusable" is the wrong answer for an alert, and wrong in a way
@@ -167,6 +206,18 @@ describe("the overlays announce themselves and hold focus", () => {
         it(`keeps focus inside ${what} and gives it back`, () => {
             assert.match(source, /useModalFocus\(/,
                 `${what} manages no focus at all: none on open, none trapped, none restored`);
+        });
+
+        /**
+         * Being open and holding focus are two different states, and only an
+         * alert can be in one without the other. Keying the restore on the
+         * second gave focus back to the page the moment another alert stacked
+         * over this one - under two backdrops, scrolling the page to reach it -
+         * and the alert above then recorded that as its own place to return to.
+         */
+        it(`tells ${what} apart from ${what} that also holds focus`, () => {
+            assert.match(source, /useModalFocus\(dialogRef, \{/,
+                `${what} still passes a bare flag, so open and focused are one state`);
         });
 
         /**

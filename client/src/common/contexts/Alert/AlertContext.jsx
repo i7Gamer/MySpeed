@@ -105,7 +105,16 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
      * inside the alert, so the browser turns Enter into a click on whatever has
      * focus. Seated on the X, a confirmation answered Enter by cancelling.
      */
-    useModalFocus(dialogRef, isTop, {initialFocus: submitRef, restoreTo: alert.openedFrom});
+    useModalFocus(dialogRef, {
+        // Mounted means open: this renderer only exists while its alert does.
+        // Holding focus is the narrower state - an alert stacked over has given
+        // up its turn, and giving focus back to the page while the one above is
+        // taking it scrolls the page under two backdrops.
+        open: true,
+        holdsFocus: isTop,
+        initialFocus: submitRef,
+        restoreTo: alert.openedFrom
+    });
 
     const close = useCallback((result = null) => {
         if (alert.disableClose && result === null) return;

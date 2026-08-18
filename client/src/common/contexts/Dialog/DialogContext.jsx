@@ -74,7 +74,9 @@ export const Dialog = ({open, onClose, className, disableClose, label, children}
     const isClosingRef = useRef(false);
     const labelId = useId();
 
-    useModalFocus(dialogRef, visible);
+    // A Dialog is never stacked under another Dialog, so open and focused are
+    // the same state for it - unlike an alert, which can be either.
+    useModalFocus(dialogRef, {open: visible});
 
     useEffect(() => {
         if (open && !visible) {

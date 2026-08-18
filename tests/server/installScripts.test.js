@@ -473,3 +473,54 @@ describe("install.sh registers a service that is not root", () => {
             "the check does not stop the script");
     });
 });
+
+/**
+ * And the account install.sh creates is taken back out again.
+ *
+ * The installer now adds a `myspeed` system account whose home directory is the
+ * installation path. An uninstall that removes the binary, the unit and the
+ * directory and then reports "MySpeed has been uninstalled" while leaving that
+ * account in /etc/passwd - pointing at a directory it has just deleted - is
+ * reporting something it did not do.
+ *
+ * Not under --keep-data, though, and that is the whole of why this is a
+ * condition rather than a line. That flag exists to leave the database on disk
+ * for a later reinstall, and those files are owned by this account: delete the
+ * account and they belong to a free uid, which the next account created on that
+ * host may be given. Data that is being kept keeps its owner.
+ */
+describe("uninstall.sh removes the account install.sh creates", () => {
+    const source = read("uninstall.sh");
+    const installer = read("install.sh");
+
+    it("knows the account by the same name the installer uses", () => {
+        const named = installer.match(/SERVICE_USER="(\w+)"/)?.[1];
+
+        assert.equal(named, "myspeed", "the installer's account name has moved");
+        assert.match(source, new RegExp(`"?${named}"?`),
+            "the uninstaller never mentions the account the installer creates");
+    });
+
+    it("deletes it", () => {
+        assert.match(source, /userdel/,
+            "the account outlives every uninstall, pointing at a directory that was just removed");
+    });
+
+    // Guarded on both sides: a system with no userdel must not fail the
+    // uninstall over it, and an account that was never created is not an error.
+    it("does not fail the uninstall when it cannot", () => {
+        const removal = source.slice(source.indexOf("userdel") - 400, source.indexOf("userdel") + 200);
+
+        assert.match(removal, /command -v userdel/,
+            "userdel is called without checking the system has it");
+        assert.match(removal, /id -u/,
+            "the account is deleted without checking it exists");
+    });
+
+    it("keeps the account whenever it keeps the data it owns", () => {
+        const removal = source.slice(0, source.indexOf("userdel"));
+
+        assert.match(removal.slice(removal.lastIndexOf("KEEP_DATA")), /KEEP_DATA/,
+            "the account is removed even under --keep-data, orphaning the files it owns");
+    });
+});

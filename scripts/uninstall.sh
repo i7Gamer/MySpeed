@@ -124,6 +124,30 @@ else
       exit 1
     fi
   fi
+
+  # The account install.sh creates, taken back out with the files it owned.
+  #
+  # Without this, an uninstall that removes the binary, the unit and the whole
+  # directory still reports "MySpeed has been uninstalled" while leaving a
+  # `myspeed` entry in /etc/passwd whose home directory is the path just
+  # deleted - and it survives every later uninstall too, because the installer
+  # only runs useradd when the account is missing.
+  #
+  # Not under --keep-data, and that is the whole reason this is a condition
+  # rather than a line: that flag exists to leave the database on disk for a
+  # later reinstall, and those files belong to this account. Delete it and they
+  # belong to a free uid, which the next account created on this host may be
+  # given. Data that is being kept keeps its owner.
+  #
+  # Guarded on both sides, and never fatal: a system without userdel must not
+  # fail an uninstall over it, and an install that fell back to root created no
+  # account to remove.
+  SERVICE_USER="myspeed"
+
+  if [ "$KEEP_DATA" != "--keep-data" ] && command -v userdel &> /dev/null \
+      && id -u "$SERVICE_USER" > /dev/null 2>&1; then
+    userdel "$SERVICE_USER" > /dev/null 2>&1 || true
+  fi
 fi
 
 clear

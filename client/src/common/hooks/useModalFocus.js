@@ -1,4 +1,4 @@
-import {useEffect} from "react";
+import {useEffect, useRef} from "react";
 
 /**
  * What the browser's own Tab visits, as a selector.
@@ -67,6 +67,30 @@ export const initialFocusTarget = (container, preferred, active) => {
     return preferred ?? focusableWithin(container)[0] ?? container ?? null;
 };
 
+/** Every overlay's backdrop, of either kind - see isTopmostOverlay. */
+const OVERLAY_AREA = ".dialog-area";
+
+/**
+ * Whether focus leaving the dialog is an escape, or something to allow.
+ *
+ * The Tab trap is a listener on the dialog, so it hears only keys pressed inside
+ * it - which is enough while focus stays in, and focus can leave without
+ * pressing anything. A mousedown on the backdrop blurs to the body, and so does
+ * a control that unmounts itself. On a dialog whose backdrop click is a no-op -
+ * the welcome wizard, which is also the only one with no Escape - that state was
+ * permanent: the trap went inert and Tab walked the page behind a backdrop
+ * advertising aria-modal.
+ *
+ * An overlay opened over this one is not an escape. Pulling focus back out of a
+ * stacked alert would fight the alert for it.
+ */
+export const focusEscaped = (container, next) => {
+    if (!next) return true;
+    if (container?.contains?.(next)) return false;
+
+    return !next.closest?.(OVERLAY_AREA);
+};
+
 /**
  * Moves focus into an overlay, keeps it there, and gives it back on close.
  *
@@ -75,33 +99,58 @@ export const initialFocusTarget = (container, preferred, active) => {
  * before reaching the dialog, and closing it dropped focus to the top of the
  * document rather than to the control that had opened it.
  *
- * The listener sits on the dialog rather than on the document, so the overlay on
- * top is whichever one holds focus and no isTopmostOverlay question arises -
- * unlike Escape, which the document has to arbitrate because it is pressed at
- * the page level. An overlay stacked over another records the focus it found
- * inside that one, so closing the alert hands the dialog back its own control.
+ * Being open and holding focus are two states, and only an alert is ever in one
+ * without the other. So they are two effects:
+ *
+ *   - `open` owns the restore. Keying it on the other one handed focus back to
+ *     the page the moment a second alert stacked over the first - under two
+ *     backdrops, scrolling the page to reach it - and the alert above then
+ *     recorded that page control as its own place to return to.
+ *   - `holdsFocus` owns the seating and the trap. An alert that is stacked over
+ *     has given up its turn; when the one above closes it takes its turn back,
+ *     and returns focus to the control it was last on rather than to its first.
  *
  * Focus already inside is left alone: the input variant of an alert autoFocuses
- * its field, and moving that to the first button would put the caret nowhere.
+ * its field, and moving that to a button would put the caret nowhere.
  */
-export const useModalFocus = (dialogRef, active, {initialFocus, restoreTo} = {}) => {
+export const useModalFocus = (dialogRef, {open, holdsFocus = open, initialFocus, restoreTo} = {}) => {
+    const lastInside = useRef(null);
+
     useEffect(() => {
-        const dialog = active ? dialogRef.current : null;
-        if (!dialog) return;
+        if (!open) return;
 
         /*
          * Given rather than read, where the caller knows it.
          *
          * This runs as a passive effect, which is after React has already
          * applied autoFocus - so for an alert that opens on an input, reading
-         * document.activeElement here answers with the alert's own field and
-         * restoring it later focuses an element that no longer exists. The
-         * alert records the control it was opened from instead, at the moment
-         * it was asked for.
+         * document.activeElement here answers with the alert's own field, and
+         * restoring it later focuses an element that no longer exists. The alert
+         * records the control it was opened from instead, at the moment it was
+         * asked for.
          */
         const returnTo = restoreTo ?? document.activeElement;
 
-        initialFocusTarget(dialog, initialFocus?.current, document.activeElement)?.focus?.();
+        return () => {
+            // Only if it is still on screen: the control that opened the overlay
+            // may have been unmounted by whatever the overlay did.
+            if (returnTo?.isConnected) returnTo.focus?.();
+        };
+        // restoreTo is read once, when the overlay opens.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open]);
+
+    useEffect(() => {
+        const dialog = open && holdsFocus ? dialogRef.current : null;
+        if (!dialog) return;
+
+        // Where the reader was, if they have been here before - which is the
+        // case an alert stacked over this one and then closed again.
+        const seat = () => initialFocusTarget(dialog,
+            lastInside.current?.isConnected ? lastInside.current : initialFocus?.current,
+            document.activeElement)?.focus?.();
+
+        seat();
 
         const onKeyDown = (event) => {
             if (event.key !== "Tab") return;
@@ -113,16 +162,35 @@ export const useModalFocus = (dialogRef, active, {initialFocus, restoreTo} = {})
             target.focus?.();
         };
 
+        const onFocusIn = (event) => {
+            if (dialog.contains(event.target)) lastInside.current = event.target;
+        };
+
+        let recovery;
+        const onFocusOut = (event) => {
+            if (!focusEscaped(dialog, event.relatedTarget)) return;
+
+            // On the next turn, not now: focus is still settling during
+            // focusout, and the element it is leaving for is only sometimes the
+            // relatedTarget. Re-checked then, so a dialog that is closing - or
+            // one focus has already come back to - is left alone.
+            recovery = setTimeout(() => {
+                if (dialog.isConnected && !dialog.contains(document.activeElement)) seat();
+            }, 0);
+        };
+
         dialog.addEventListener("keydown", onKeyDown);
+        dialog.addEventListener("focusin", onFocusIn);
+        dialog.addEventListener("focusout", onFocusOut);
 
         return () => {
+            clearTimeout(recovery);
             dialog.removeEventListener("keydown", onKeyDown);
-            // Only if it is still on screen: the control that opened the overlay
-            // may have been unmounted by whatever the overlay did.
-            if (returnTo?.isConnected) returnTo.focus?.();
+            dialog.removeEventListener("focusin", onFocusIn);
+            dialog.removeEventListener("focusout", onFocusOut);
         };
-        // initialFocus and restoreTo are read once, when the overlay opens -
-        // listing them would re-seat focus on every render that rebuilt either.
+        // initialFocus is read when the overlay takes its turn; listing it would
+        // re-seat focus on every render that rebuilt the ref object.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dialogRef, active]);
+    }, [dialogRef, open, holdsFocus]);
 };
