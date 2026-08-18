@@ -1,8 +1,22 @@
-import React, {useCallback, useEffect, useRef, useState} from "react";
+import React, {createContext, useCallback, useContext, useEffect, useId, useRef, useState} from "react";
 import {createPortal} from "react-dom";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faClose} from "@fortawesome/free-solid-svg-icons";
+import {t} from "i18next";
+import {useModalFocus} from "@/common/hooks/useModalFocus";
 import "./styles.sass";
+
+/**
+ * The id the dialog points `aria-labelledby` at, handed to whoever draws the
+ * heading.
+ *
+ * The two halves are written apart - Dialog owns the box, DialogHeader owns the
+ * title, and consumers compose them - so the only way to name the dialog after
+ * its own heading is for the id to travel between them. Generated per dialog
+ * rather than fixed, because two of these can be mounted at once and a repeated
+ * id names the wrong one.
+ */
+const DialogLabelContext = createContext(undefined);
 
 /**
  * Every overlay in the app - a Dialog, and every alert - paints this same
@@ -51,6 +65,9 @@ export const Dialog = ({open, onClose, className, disableClose, children}) => {
     const dialogRef = useRef();
     const [visible, setVisible] = useState(false);
     const isClosingRef = useRef(false);
+    const labelId = useId();
+
+    useModalFocus(dialogRef, visible);
 
     useEffect(() => {
         if (open && !visible) {
@@ -114,9 +131,16 @@ export const Dialog = ({open, onClose, className, disableClose, children}) => {
 
     return createPortal(
         <div className="dialog-area" ref={areaRef} onClick={handleBackdropClick}>
+            {/* tabIndex so focus can be placed on the box itself, which is where
+                it goes when nothing inside is focusable - and aria-modal so the
+                page behind the backdrop is announced as inert, which it already
+                behaves as. */}
             <div className={`dialog${className ? ` ${className}` : ""}`} ref={dialogRef}
+                 role="dialog" aria-modal="true" aria-labelledby={labelId} tabIndex={-1}
                  onAnimationEnd={handleAnimationEnd}>
-                {typeof children === "function" ? children({close: handleClose, forceClose}) : children}
+                <DialogLabelContext.Provider value={labelId}>
+                    {typeof children === "function" ? children({close: handleClose, forceClose}) : children}
+                </DialogLabelContext.Provider>
             </div>
         </div>,
         document.body
@@ -125,8 +149,16 @@ export const Dialog = ({open, onClose, className, disableClose, children}) => {
 
 export const DialogHeader = ({children, onClose, disableClose}) => (
     <div className="dialog-header">
-        <h4 className="dialog-text">{children}</h4>
-        {!disableClose && <FontAwesomeIcon icon={faClose} className="dialog-text dialog-icon" onClick={onClose}/>}
+        <h4 className="dialog-text" id={useContext(DialogLabelContext)}>{children}</h4>
+        {/* A button, not the glyph on its own. FontAwesome renders its svg
+            aria-hidden and an svg is not in the tab order, so the close control
+            announced as nothing and could not be reached - a reader was never
+            told it existed and had to know to press Escape. */}
+        {!disableClose && (
+            <button type="button" className="dialog-icon-button" aria-label={t("dialog.close")} onClick={onClose}>
+                <FontAwesomeIcon icon={faClose} className="dialog-text dialog-icon"/>
+            </button>
+        )}
     </div>
 );
 

@@ -2,7 +2,9 @@ import React, {createContext, useCallback, useContext, useEffect, useMemo, useRe
 import {createPortal} from "react-dom";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faClose} from "@fortawesome/free-solid-svg-icons";
+import {t} from "i18next";
 import {isTopmostOverlay} from "@/common/contexts/Dialog";
+import {useModalFocus} from "@/common/hooks/useModalFocus";
 
 const AlertContext = createContext(null);
 
@@ -85,6 +87,10 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
     const [inputError, setInputError] = useState(false);
     const closeResultRef = useRef(null);
     const isClosingRef = useRef(false);
+
+    // Only the alert on top takes focus. A stacked one below it has given up
+    // its turn, and pulling focus back into it would fight the one above.
+    useModalFocus(dialogRef, isTop);
 
     const close = useCallback((result = null) => {
         if (alert.disableClose && result === null) return;
@@ -176,11 +182,22 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
 
     return createPortal(
         <div className="dialog-area" ref={areaRef} onClick={handleBackdropClick}>
-            <div className="dialog" ref={dialogRef} onAnimationEnd={handleAnimationEnd}>
+            {/* Named by its own title, which the alert has to hand - the Dialog
+                beside it has to wire an id instead, because its heading is
+                written by whoever renders the header. */}
+            <div className="dialog" ref={dialogRef} onAnimationEnd={handleAnimationEnd}
+                 role="dialog" aria-modal="true" aria-label={alert.title} tabIndex={-1}>
                 <div className="dialog-header">
                     <h4 className="dialog-text">{alert.title}</h4>
-                    {!alert.disableClose &&
-                        <FontAwesomeIcon icon={faClose} className="dialog-text dialog-icon" onClick={() => close()}/>}
+                    {/* A button, not the glyph on its own: FontAwesome renders
+                        its svg aria-hidden and an svg is not in the tab order,
+                        so this announced as nothing and could not be reached. */}
+                    {!alert.disableClose && (
+                        <button type="button" className="dialog-icon-button"
+                                aria-label={t("dialog.close")} onClick={() => close()}>
+                            <FontAwesomeIcon icon={faClose} className="dialog-text dialog-icon"/>
+                        </button>
+                    )}
                 </div>
                 <div className="dialog-main">
                     {alert.description && <p className="dialog-description">{alert.description}</p>}
