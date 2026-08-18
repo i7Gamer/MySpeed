@@ -320,6 +320,32 @@ export function isFailedTest(test) {
     return test.ping === FAILED_TEST && test.download === FAILED_TEST && test.upload === FAILED_TEST;
 }
 
+/**
+ * Whether a value reads as one of the three speed or latency thresholds.
+ *
+ * Beside getIconBySpeed because that is what breaks without it: the function
+ * below divides by this value, and `Number("1.2.3")` is NaN, so a threshold
+ * that is not a number takes every speed on the dashboard to "blue" - the
+ * colour for a figure nobody measured - with nothing on screen naming the value
+ * that did it.
+ *
+ * Anchored, which is the whole of the rule. `/[^0-9.]/` asks whether every
+ * character is a digit or a dot, and "1.2.3", ".." and "." all pass that while
+ * being no number at all.
+ *
+ * Wide on purpose either side of the dot: ".5" and "1." are 0.5 and 1, and the
+ * check this replaced took both, so an instance can be holding one now.
+ *
+ * The server asks the same question in server/controller/config.js, and the two
+ * are pinned to the same table by tests/client/thresholdInput.test.js - neither
+ * side can import the other, and this copy is the one that was left behind when
+ * the server's was anchored.
+ */
+const THRESHOLD_NUMBER = /^(?:[0-9]+\.?[0-9]*|\.[0-9]+)$/;
+
+export const isThresholdNumber = (value) =>
+    value !== null && value !== undefined && THRESHOLD_NUMBER.test(value.toString());
+
 export function getIconBySpeed(current, optional, higherIsBetter) {
     if (current === FAILED_TEST) return "error";
     if (isMissing(current) || isMissing(optional)) return "blue";

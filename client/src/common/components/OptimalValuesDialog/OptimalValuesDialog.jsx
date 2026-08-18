@@ -9,6 +9,7 @@ import {assertOk, jsonRequest, patchRequest, RequestError} from "@/common/utils/
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
+import {isThresholdNumber} from "@/common/utils/TestUtil";
 
 const NOT_ENOUGH_TESTS_STATUS = 501;
 
@@ -50,7 +51,15 @@ export const OptimalValuesDialog = ({open, onClose}) => {
     };
 
     const update = async (close) => {
-        if ((ping && /[^0-9.]/.test(ping)) || (download && /[^0-9.]/.test(download)) || (upload && /[^0-9.]/.test(upload))) {
+        // The shared rule, not a second copy of it. This check asked
+        // `/[^0-9.]/` - "is every character a digit or a dot" - which "1.2.3",
+        // ".." and "." all satisfy, so the dialog waved them through to a server
+        // that refuses them. The three fields are patched one after another, so
+        // a bad third value arrived only after the first two had been written,
+        // and the operator was shown an error over a change that had partly
+        // happened.
+        if ((ping && !isThresholdNumber(ping)) || (download && !isThresholdNumber(download))
+            || (upload && !isThresholdNumber(upload))) {
             updateToast(t("dropdown.invalid"), "red", faExclamationTriangle);
             return;
         }
