@@ -107,11 +107,17 @@ const OVERLAY_PORTAL = "[data-overlay-portal]";
  *
  * The Tab trap is a listener on the dialog, so it hears only keys pressed inside
  * it - which is enough while focus stays in, and focus can leave without
- * pressing anything. A mousedown on the backdrop blurs to the body, and so does
- * a control that unmounts itself. On a dialog whose backdrop click is a no-op -
- * the welcome wizard, which is also the only one with no Escape - that state was
- * permanent: the trap went inert and Tab walked the page behind a backdrop
- * advertising aria-modal.
+ * pressing anything. A mousedown on the backdrop blurs to the body. On a dialog
+ * whose backdrop click is a no-op - the welcome wizard, which is also the only
+ * one with no Escape - that state was permanent: the trap went inert and Tab
+ * walked the page behind a backdrop advertising aria-modal.
+ *
+ * A control that unmounts itself is not one of the cases this answers, though
+ * focus does go to the body there as well. Chrome fires no event at all when a
+ * focused element is removed, and none when one is disabled - measured, not
+ * assumed - so there is nothing here to hear, and the component doing the
+ * removing is the only place that knows it is about to. IntegrationDialog and
+ * ExportButton are where that comes up, and each answers for its own.
  *
  * An overlay opened over this one is not an escape. Pulling focus back out of a
  * stacked alert would fight the alert for it.

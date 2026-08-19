@@ -19,6 +19,7 @@ const datePickerStyles = read("common/components/DateRangePicker/styles.sass");
 const settingsMenu = read("common/components/Dropdown/DropdownComponent.jsx");
 const exportMenu = read("common/components/ExportButton/ExportButton.jsx");
 const exportStyles = read("common/components/ExportButton/styles.sass");
+const integrationDialog = read("common/components/IntegrationDialog/IntegrationDialog.jsx");
 
 /**
  * The element that carries `marker` in its className, named.
@@ -492,8 +493,8 @@ describe("the integration menu answers the keyboard", () => {
      * pressed, given as an index into them, or null for focus that is
      * elsewhere.
      */
-    const open = ({active = null, menu = true} = {}) => {
-        const options = ["first", "middle", "last"].map((name) =>
+    const open = ({active = null, menu = true, holding = ["first", "middle", "last"]} = {}) => {
+        const options = holding.map((name) =>
             ({name, focused: 0, focus() { this.focused++; }}));
         const state = {open: true, focused: false};
 
@@ -586,6 +587,24 @@ describe("the integration menu answers the keyboard", () => {
 
             assert.equal(event.defaultPrevented, false, "the menu re-implements the browser's own tab order");
             assert.deepEqual(options.map((option) => option.focused), [0, 0, 0]);
+        });
+
+        /*
+         * A menu with nothing in it has nowhere to send Tab, and nextFocus
+         * answers for that case by handing back the container - which is what a
+         * dialog wants, having a tabIndex of its own to be focused by, and not
+         * what this menu wants. Claiming the key there would swallow it against
+         * a div that cannot take focus: Tab would do nothing at all, with
+         * nothing on screen to say why.
+         */
+        it("leaves the key alone when the menu holds no options", () => {
+            const {press} = open({holding: []});
+            const event = keyPress("Tab");
+
+            press(event);
+
+            assert.equal(event.defaultPrevented, false,
+                "Tab is claimed by a menu with nothing to give it to, and then simply does nothing");
         });
 
         // Closed, the menu is unmounted and its ref is null - and the trigger
@@ -879,5 +898,79 @@ describe("the integration create menu inside a dialog", () => {
         assert.equal(state.open, false, "the menu stays open after a choice");
         assert.equal(state.focused, true,
             "choosing an item unmounts the focused option and drops focus to the document");
+    });
+});
+
+/**
+ * And the first integration added, which unmounts the button it was added from.
+ *
+ * Handing focus back to its own trigger is enough for the menu every time but
+ * the first. Adding the first integration takes the dialog out of its empty
+ * state, and the two branches hold two different DropdownSelects - so the button
+ * the menu has just focused is removed in the same commit that draws its
+ * replacement.
+ *
+ * Nothing catches that. Chrome fires no event at all when a focused element is
+ * removed: focus becomes <body> in silence, so the modal trap's recovery, which
+ * is a focusout listener, never hears it. The one person this whole menu exists
+ * for - somebody adding their first integration without a mouse - is left behind
+ * the backdrop with the next Tab at the top of the document.
+ */
+describe("the first integration added", () => {
+    const adding = (holding) => {
+        const owedFocus = {current: false};
+        const state = {active: null};
+        const add = handlerIn(integrationDialog, "const addIntegration", {
+            owedFocus,
+            renderable: new Array(holding).fill({}),
+            active: [],
+            setActive: (value) => state.active = value,
+            uuid: () => "an-id"
+        });
+
+        return {add, owedFocus, state};
+    };
+
+    it("still adds the integration", () => {
+        const {add, state} = adding(0);
+
+        add({key: "discord"});
+
+        assert.deepEqual(state.active, [{uuid: "an-id", name: "discord", data: {}, isNew: true}]);
+    });
+
+    it("records that the menu is owed its focus back", () => {
+        const {add, owedFocus} = adding(0);
+
+        add({key: "discord"});
+
+        assert.equal(owedFocus.current, true,
+            "the button focus was just handed to is unmounted, and nothing puts it anywhere else");
+    });
+
+    // Every later one keeps the same menu on the page, and DropdownSelect has
+    // already given focus back to the trigger that survived.
+    it("leaves focus alone when the menu will still be there", () => {
+        const {add, owedFocus} = adding(2);
+
+        add({key: "discord"});
+
+        assert.equal(owedFocus.current, false,
+            "focus is moved a second time on an add that never disturbed it");
+    });
+
+    // The same control in its new place, so the first add ends where every
+    // later one does.
+    it("puts focus on the create menu once it has been redrawn", () => {
+        const paid = integrationDialog.indexOf("owedFocus.current = false;");
+        assert.notEqual(paid, -1, "nothing pays the debt, so the reader is left on the document");
+
+        const effect = integrationDialog.slice(integrationDialog.lastIndexOf("useEffect(", paid));
+
+        assert.match(effect.slice(0, effect.indexOf("}, [")),
+            /wrapperRef\.current\?\.querySelector\("\.dropdown-select-btn"\)\?\.focus\(\)/,
+            "the debt is paid to something other than the menu the choice was made in");
+        assert.match(effect.slice(effect.indexOf("}, [")), /^}, \[renderable\.length]/,
+            "the effect does not run when the dialog leaves its empty state, which is the only moment this happens");
     });
 });

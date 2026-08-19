@@ -129,11 +129,18 @@ export const DropdownSelect = ({
 
         if (e.key !== "Tab") return;
 
-        // A closed menu leaves its ref null, and nextFocus answers null for a
-        // container with nothing focusable in it - so this is the trigger's own
-        // Tab, and it belongs to the dialog around it.
+        /*
+         * Only a Tab this menu has an option to answer with.
+         *
+         * A closed menu leaves its ref null, so nextFocus answers null and the
+         * key is the trigger's own - which belongs to the dialog around it. A
+         * menu holding nothing answers with the container instead, because that
+         * is what a dialog wants: it has a tabIndex to be focused by. This does
+         * not, so claiming the key there would swallow it against an element
+         * that cannot take focus and Tab would do nothing at all.
+         */
         const target = nextFocus(menuRef.current, e, document.activeElement);
-        if (!target) return;
+        if (!target || target === menuRef.current) return;
 
         e.preventDefault();
         target.focus?.();
