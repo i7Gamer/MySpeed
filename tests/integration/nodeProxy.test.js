@@ -385,6 +385,32 @@ describe("node proxy", () => {
     });
 
     /**
+     * And it does that before reading the body, not after.
+     *
+     * The import paths are deliberately exempted from the 100kb parser and given
+     * a 50mb one instead, and isLargeBodyPath rewrites the node prefix away - so
+     * `/api/nodes/<anything>/storage/config` gets the large parser whether or not
+     * that node exists. With the parser ahead of the lookup, a 50mb body was
+     * buffered, decoded and parsed into ~194 MiB of heap before the 404 threw all
+     * of it away: roughly 300 MB resident per in-flight request, for a node id
+     * nobody has to guess right.
+     *
+     * Asked with a body that cannot be parsed rather than a large one, so the
+     * answer is a fact and not a measurement: whichever ran first is the one that
+     * gets to reply. A parser that has already run answers 400.
+     */
+    it("does not read the body of a request for a node that does not exist", async () => {
+        const {status} = await api(server.baseUrl, "/nodes/999999/storage/config", {
+            method: "PUT",
+            headers: {"Content-Type": "application/json"},
+            body: "{ this is not json"
+        });
+
+        assert.equal(status, 404,
+            "the 50mb parser ran before the node lookup, so an unknown node still costs a whole body");
+    });
+
+    /**
      * Regression: the abort wiring passed `req.signal` to the upstream request,
      * but an Express request carries no such property - the signal was always
      * undefined, and a caller that gave up left the proxy holding its upstream

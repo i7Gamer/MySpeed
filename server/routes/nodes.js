@@ -153,11 +153,31 @@ app.patch("/:nodeId/password", password(false),
 // token and webhook URLs in clear. Every redaction this instance applies to its
 // own routes was reachable through this one, unredacted, because the machine
 // answering could not tell it was serving a stranger.
-app.all("/:nodeId/*route", password(false),
-    previewReadOnly.blocking("For security reasons, you can't reach other nodes in preview mode"),
-    importBody, async (req, res) => {
+/**
+ * The node this request is for, resolved before its body is read.
+ *
+ * Ahead of importBody, and that is the whole point of it being a middleware
+ * rather than the first line of the handler. The import paths are deliberately
+ * exempted from the 100kb parser and given a 50mb one, and isLargeBodyPath
+ * rewrites the node prefix away before deciding - so
+ * `/api/nodes/<anything>/storage/config` is handed the large parser whether or
+ * not that node exists. With the parser first, a 50mb body was buffered,
+ * decoded and parsed into around 194 MiB of heap - some 300 MB resident once the
+ * raw buffer and the decoded string are counted - and then thrown away by a 404
+ * for an id nobody had to guess right.
+ */
+const resolveNode = async (req, res, next) => {
     const node = await nodes.getOne(req.params.nodeId);
     if (node === null) return res.status(404).json({message: "Node not found"});
+
+    req.node = node;
+    next();
+};
+
+app.all("/:nodeId/*route", password(false),
+    previewReadOnly.blocking("For security reasons, you can't reach other nodes in preview mode"),
+    resolveNode, importBody, async (req, res) => {
+    const node = req.node;
 
     const url = node.url + req.originalUrl.replace("/api/nodes/" + req.params.nodeId, "/api");
 
