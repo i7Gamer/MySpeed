@@ -25,6 +25,10 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
     const [currentMonth, setCurrentMonth] = useState(() => monthToShow(to));
     const popoverRef = useRef(null);
     const triggerRef = useRef(null);
+    // The arrow that is never disabled, and whether a forward step has just
+    // been made - both for recoverFromDisabledStep.
+    const prevMonthRef = useRef(null);
+    const steppedForward = useRef(false);
 
     const today = new Date();
     today.setHours(23, 59, 59, 999);
@@ -210,16 +214,61 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
 
     const prevMonth = () => setCurrentMonth(monthBack(currentMonth));
 
-    const nextMonth = () => setCurrentMonth(monthForward(currentMonth));
+    // Recorded because both forward arrows carry disabled={isCurrentMonthView()},
+    // and pressing one is the way to reach that view - see the recovery below.
+    const nextMonth = () => {
+        steppedForward.current = true;
+        setCurrentMonth(monthForward(currentMonth));
+    };
 
     const prevYear = () => setCurrentMonth(yearBack(currentMonth));
 
     // Clamped rather than disabled short of the boundary: from December a
     // hard-disabled jump would strand the view a year back with only the
     // month arrow to walk out on - see calendarNav.
-    const nextYear = () => setCurrentMonth(yearForward(currentMonth, new Date()));
+    const nextYear = () => {
+        steppedForward.current = true;
+        setCurrentMonth(yearForward(currentMonth, new Date()));
+    };
 
     const isCurrentMonthView = () => isCurrentMonth(currentMonth, new Date());
+
+    /**
+     * Focus back into the calendar after a step that disabled the arrow it was
+     * made on.
+     *
+     * Stepping forward from the month before the current one turns both forward
+     * arrows off, and one of them is the control that was just pressed. Chrome
+     * fires nothing when a focused element is disabled - focus becomes <body> in
+     * silence, and re-enabling the arrow later does not bring it back - so
+     * there is no event for the modal trap or anything else to answer, and this
+     * has to be recorded by the step itself.
+     *
+     * Only reachable because the popover can be opened without a pointer at all
+     * now: before, a keyboard never got in here to lose anything.
+     *
+     * The step back, because at the boundary it is the only direction left, and
+     * it is the one arrow that is never disabled.
+     *
+     * Guarded on <body>, which is precisely the state the browser's focus fixup
+     * leaves behind. Safari does not focus a button that is clicked, so there
+     * the step never held focus and there is nothing to give back.
+     */
+    const recoverFromDisabledStep = () => {
+        if (!steppedForward.current) return;
+
+        steppedForward.current = false;
+
+        if (isCurrentMonthView() && document.activeElement === document.body)
+            prevMonthRef.current?.focus();
+    };
+
+    useEffect(() => {
+        recoverFromDisabledStep();
+        // A step is what this answers and currentMonth is what a step changes.
+        // Listing the function would run it again on every render.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentMonth]);
 
     const weekDays = [
         t("calendar.mon"),
@@ -317,7 +366,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                                     aria-label={t("calendar.previous_year")}>
                                 <FontAwesomeIcon icon={faAnglesLeft} />
                             </button>
-                            <button type="button" className="nav-btn" onClick={prevMonth}
+                            <button type="button" className="nav-btn" onClick={prevMonth} ref={prevMonthRef}
                                     aria-label={t("calendar.previous_month")}>
                                 <FontAwesomeIcon icon={faChevronLeft} />
                             </button>

@@ -823,6 +823,95 @@ describe("the date range picker's focus on close", () => {
 });
 
 /**
+ * And the calendar's forward arrows, which disable the button under the finger.
+ *
+ * Both of them carry `disabled={isCurrentMonthView()}`, and the way to reach
+ * that view is to press one: stepping forward from the month before the current
+ * one disables the very control that was just activated. Chrome fires nothing
+ * when a focused element is disabled - focus becomes <body> in silence, and
+ * re-enabling it later does not bring it back - so the reader is dropped out of
+ * an open popover with the next Tab at the top of the document.
+ *
+ * Reachable because this branch made the popover openable without a pointer at
+ * all. The step back is where focus goes, because at the boundary it is the only
+ * direction left.
+ */
+describe("the calendar's step into the current month", () => {
+    const stepping = ({stepped = true, atBoundary = true, focus = "body"} = {}) => {
+        const body = {name: "body"};
+        const state = {focused: 0};
+        const steppedForward = {current: stepped};
+
+        const recover = handlerIn(datePicker, "const recoverFromDisabledStep", {
+            steppedForward,
+            isCurrentMonthView: () => atBoundary,
+            prevMonthRef: {current: {focus: () => state.focused++}},
+            document: {body, activeElement: focus === "body" ? body : {name: focus}}
+        });
+
+        return {recover, state, steppedForward};
+    };
+
+    it("puts focus on the step back", () => {
+        const {recover, state} = stepping();
+
+        recover();
+
+        assert.equal(state.focused, 1, "the arrow disables itself and leaves the reader on the document");
+    });
+
+    it("leaves it alone short of the boundary", () => {
+        const {recover, state} = stepping({atBoundary: false});
+
+        recover();
+
+        assert.equal(state.focused, 0, "focus is moved off an arrow that is still there to press again");
+    });
+
+    // A render the arrows had nothing to do with - a new range, a resize - must
+    // not pull focus into the calendar.
+    it("leaves it alone when no arrow was pressed", () => {
+        const {recover, state} = stepping({stepped: false});
+
+        recover();
+
+        assert.equal(state.focused, 0, "any render at the boundary drags focus into the calendar");
+    });
+
+    // Safari does not focus a button that is clicked, so the step never had
+    // focus to lose and there is nothing to give back.
+    it("leaves it alone when focus was never dropped", () => {
+        const {recover, state} = stepping({focus: "somewhere else"});
+
+        recover();
+
+        assert.equal(state.focused, 0, "focus is taken from whatever else was holding it");
+    });
+
+    it("answers one step, not every render after it", () => {
+        const {recover, state, steppedForward} = stepping();
+
+        recover();
+        recover();
+
+        assert.equal(steppedForward.current, false);
+        assert.equal(state.focused, 1, "focus is dragged back to the arrow on every later render");
+    });
+
+    // Named with their parameter list, because the month arithmetic inside
+    // calendarDays holds locals of the same two names.
+    for (const arrow of ["const nextMonth = () =>", "const nextYear = () =>"]) {
+        it(`is recorded when ${arrow.split(" ")[1]} steps`, () => {
+            const at = datePicker.indexOf(arrow);
+            assert.notEqual(at, -1, `${arrow} is no longer in this component`);
+
+            assert.match(datePicker.slice(at, at + 200), /steppedForward\.current = true/,
+                "a step that disables the arrow it was made on says nothing about it");
+        });
+    }
+});
+
+/**
  * The create-integration menu, which the modal focus trap had shut out.
  *
  * DropdownSelect portals its menu to the body - it has to, because the dialog it
