@@ -184,64 +184,142 @@ export const deleteTests = async () => {
     return true;
 }
 
+/**
+ * How many rows go into one transaction, and therefore how often the import
+ * lets the server answer anything else.
+ *
+ * The write used to be one statement per row inside one transaction for the
+ * whole file. The transaction was for speed and says so: sqlite commits - and
+ * fsyncs - at the end of every statement not already inside one, so a restore
+ * paid that once per test, and 10 000 rows took 5.9 s instead of 1.6 s.
+ *
+ * What that shape also did was stop the server dead. node:sqlite's DatabaseSync
+ * is synchronous and the shim resolves it through process.nextTick, so `await`
+ * between rows never leaves the microtask queue: measured over 20 000 rows, the
+ * event loop turned zero times - no other request, no timer, and not the
+ * container healthcheck, which then times out and restarts the container in the
+ * middle of the write. A 50mb body is around 610 000 rows, and an ordinary
+ * multi-year history is hundreds of thousands, so this is what a real restore
+ * did and not only what an attacker could ask for.
+ *
+ * Batched and chunked instead, which buys both halves. bulkCreate writes a
+ * chunk in one statement: 175us per row became 22us, measured against this
+ * model through this shim. And a chunk is its own transaction, so between them
+ * there is a turn of the event loop to hand out.
+ *
+ * Between them, and never inside one, which is the part that had to be
+ * measured rather than assumed. sqlite refuses a second writer while a
+ * transaction holds the lock - not by waiting, but with "database is locked"
+ * straight away - so yielding *inside* the transaction would have turned a
+ * frozen server into a responsive one that drops a scheduled speedtest's
+ * result. That collision is unreachable today precisely because nothing yields;
+ * with the yield in the gap it stays unreachable, and 40 000 rows imported
+ * under a write every 10ms produced 79 successful writes and no refusals.
+ *
+ * 1000 is where the throughput curve flattens - 100 rows a chunk costs 45us a
+ * row against 22, because the commits stop being amortised - while still
+ * turning the loop once per chunk, roughly every 22ms.
+ *
+ * The cost of the change is that the file is no longer written all-or-nothing.
+ * It never was, in the way that matters: the counts below already report a
+ * partly-usable file as partly imported, and the comment above the transaction
+ * called it a speed measure rather than an atomicity one. What is genuinely
+ * given up is that a crash mid-import now leaves the rows already committed -
+ * and the crash this most often was, the healthcheck killing a frozen
+ * container, is the thing being fixed.
+ */
+const IMPORT_CHUNK_ROWS = 1000;
+
+/**
+ * One chunk, in one transaction, with the tolerance the row-by-row write had.
+ *
+ * bulkCreate is a single statement, so a row the database refuses takes the
+ * whole chunk with it. Everything a payload can get wrong is already caught
+ * above - the type, the timestamp, a value that is not a number - and counted
+ * without reaching the database, so this is for the other kind, and it is rare.
+ * Rare is what makes the retry affordable: the chunk is rewritten a row at a
+ * time only when the batch was refused, and one refusal then costs one row.
+ */
+const writeImportBatch = async (rows) => {
+    try {
+        await db.transaction(async (transaction) => {
+            await tests.bulkCreate(rows, {transaction});
+        });
+
+        return {imported: rows.length, skipped: 0};
+    } catch {
+        let imported = 0;
+        let skipped = 0;
+
+        await db.transaction(async (transaction) => {
+            for (const row of rows) {
+                try {
+                    await tests.create(row, {transaction});
+                    imported++;
+                } catch (e) {
+                    skipped++;
+                    console.error(`Could not import the speedtest from ${row.created}: ${e.message}`);
+                }
+            }
+        });
+
+        return {imported, skipped};
+    }
+};
+
 export const importTests = async (data) => {
     if (!Array.isArray(data)) return false;
 
     let imported = 0;
     let skipped = 0;
 
-    /*
-     * One transaction for the whole file, rather than one per row.
-     *
-     * sqlite commits - and fsyncs - at the end of every statement that is not
-     * already inside a transaction, so restoring a history paid that once per
-     * test: 10 000 rows took 5.9 s, and the request is held open for all of it.
-     * The same inserts inside a single transaction take 1.6 s.
-     *
-     * Still row by row inside it, and still tolerant of a row the database
-     * refuses: a failed statement does not abandon the transaction on either
-     * backend the project supports, so the rest of the file is written.
-     */
-    await db.transaction(async (transaction) => {
-        for (let entry of data) {
-            // Before the two deletes below, which read through `entry` and are
-            // outside the per-row try/catch: a null element threw a TypeError
-            // out of this callback rather than being skipped, and the
-            // transaction that wraps the whole import then rolled back every
-            // good row already written. One hole in a backup restored nothing.
-            if (entry === null || typeof entry !== "object") { skipped++; continue; }
+    const batch = [];
 
-            if (entry.error === null) delete entry.error;
-            if (entry.resultId === null) delete entry.resultId;
+    const flush = async () => {
+        if (batch.length === 0) return;
 
-            if (!["custom", "auto"].includes(entry.type)) { skipped++; continue; }
-            if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(entry.created)) { skipped++; continue; }
+        const written = await writeImportBatch(batch.splice(0, batch.length));
+        imported += written.imported;
+        skipped += written.skipped;
 
-            // sqlite stores whatever it is handed, so an imported "fast" in the
-            // download column survives the write and then poisons every average
-            // and chart built on top of it.
-            if (!NUMERIC_COLUMNS.every((column) => isImportableNumber(entry[column]))) { skipped++; continue; }
+        // The one place this whole loop gives the event loop a turn - see
+        // IMPORT_CHUNK_ROWS for why it is here and not inside the transaction.
+        await new Promise((resolve) => setImmediate(resolve));
+    };
 
-            try {
-                // Without the backup's own id. Those are the ids of the
-                // instance that wrote the file and mean nothing on the one
-                // reading it - written through, every id already taken raised a
-                // UNIQUE violation, which the catch below counted as an
-                // unusable row and the route still reported as a success. The
-                // shape that costs the most is the ordinary one: a disk dies,
-                // MySpeed is reinstalled and runs for a week before anyone gets
-                // to the backup, and the restore then silently discards exactly
-                // the overlapping week. Left to the database, nothing collides.
-                const {id, ...row} = entry;
+    for (let entry of data) {
+        // Before the two deletes below, which read through `entry`: a null
+        // element threw a TypeError out of the import rather than being
+        // skipped, and the transaction wrapping it then rolled back every good
+        // row already written. One hole in a backup restored nothing.
+        if (entry === null || typeof entry !== "object") { skipped++; continue; }
 
-                await tests.create(row, {transaction});
-                imported++;
-            } catch (e) {
-                skipped++;
-                console.error(`Could not import the speedtest from ${entry.created}: ${e.message}`);
-            }
-        }
-    });
+        if (entry.error === null) delete entry.error;
+        if (entry.resultId === null) delete entry.resultId;
+
+        if (!["custom", "auto"].includes(entry.type)) { skipped++; continue; }
+        if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(entry.created)) { skipped++; continue; }
+
+        // sqlite stores whatever it is handed, so an imported "fast" in the
+        // download column survives the write and then poisons every average
+        // and chart built on top of it.
+        if (!NUMERIC_COLUMNS.every((column) => isImportableNumber(entry[column]))) { skipped++; continue; }
+
+        // Without the backup's own id. Those are the ids of the instance that
+        // wrote the file and mean nothing on the one reading it - written
+        // through, every id already taken raised a UNIQUE violation, which was
+        // counted as an unusable row while the route still reported success.
+        // The shape that costs the most is the ordinary one: a disk dies,
+        // MySpeed is reinstalled and runs for a week before anyone gets to the
+        // backup, and the restore then silently discards exactly the
+        // overlapping week. Left to the database, nothing collides.
+        const {id, ...row} = entry;
+
+        batch.push(row);
+        if (batch.length >= IMPORT_CHUNK_ROWS) await flush();
+    }
+
+    await flush();
 
     if (skipped > 0) console.warn(`Skipped ${skipped} unusable row(s) while importing ${data.length}`);
 
