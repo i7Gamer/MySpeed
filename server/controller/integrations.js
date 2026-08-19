@@ -366,8 +366,6 @@ export const validateInput = (module, data, isPatch = false) => {
             && (omitted || data[field.name] === null || data[field.name] === "")) return false;
 
         if (data[field.name] !== undefined && data[field.name] !== null && data[field.name] !== "") {
-            if (field.regex && !new RegExp(field.regex).test(data[field.name])) return false;
-
             // Checked before the lengths, which read `.length`: `undefined >
             // 250` is false, so a number, an object or an array sailed past
             // them and was whitelisted into the stored data column. At send
@@ -379,6 +377,29 @@ export const validateInput = (module, data, isPatch = false) => {
 
             if (field.type === "text" && data[field.name].length > MAX_TEXT_LENGTH) return false;
             if (field.type === "textarea" && data[field.name].length > MAX_TEXTAREA_LENGTH) return false;
+
+            /*
+             * And the pattern last of the three, because it is the one whose
+             * cost depends on how long the value is.
+             *
+             * This ran first, against the raw request value, whose only bound is
+             * app.js's 100kb body parser - so every pattern a module declares
+             * was handed up to 100,000 characters. All eleven shipped patterns
+             * are linear and were timed to 80,000 characters, so nothing was
+             * wrong; what this changes is that the next module to declare one
+             * cannot be handed more than its column takes. The threshold check
+             * in the config controller is what happens when that is left to
+             * whoever writes the pattern.
+             *
+             * Every branch here answers `false`, so moving it changes no
+             * answer - only which check gets there first.
+             *
+             * Still ahead of the number branch below, which ends by writing the
+             * coerced value back: past that, this would be testing a number
+             * rather than what arrived.
+             */
+            if (field.regex && !new RegExp(field.regex).test(data[field.name])) return false;
+
             if (field.type === "boolean" && typeof data[field.name] !== "boolean") return false;
             if (field.type === "number") {
                 // Checked before coercing, for the same reason the text branch
