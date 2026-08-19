@@ -31,16 +31,36 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
     const effectiveMaxDate = maxDate || today;
     const todayDateString = new Date().toDateString();
 
+    /**
+     * Focus back on the trigger, whenever the popover is what was holding it.
+     *
+     * The popover is rendered only while it is open, so every way of closing it
+     * unmounts the control focus is on - Escape, the trigger toggle, choosing a
+     * preset, and the second click of a day range. That leaves focus on <body>
+     * and the next Tab at the top of the document.
+     *
+     * Reachable only because the trigger and the presets answer a keyboard now:
+     * a pointer has no focus to lose. Returning it to the trigger is also the
+     * whole of what a disclosure owes when it is dismissed.
+     *
+     * Guarded, because closing is not always the popover's doing: a click
+     * outside closes it too, and focus there belongs to whatever was clicked.
+     */
+    const returnFocusToTrigger = useCallback(() => {
+        if (popoverRef.current?.contains(document.activeElement)) triggerRef.current?.focus();
+    }, []);
+
     // Closing halfway through a selection used to leave `selecting` on "to" and
     // a dangling tempFrom, so the next open started mid-range and the first
     // click was read as the end date.
     const closePicker = useCallback(() => {
+        returnFocusToTrigger();
         setIsOpen(false);
         setSelecting("from");
         setHoverDate(null);
         setTempFrom(from);
         setTempTo(to);
-    }, [from, to]);
+    }, [from, to, returnFocusToTrigger]);
 
     useClickOutside(isOpen, [popoverRef, triggerRef], closePicker);
 
@@ -140,6 +160,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
             const finalTo = tempFrom && date < tempFrom ? tempFrom : date;
             onChange(finalFrom, finalTo);
             setSelecting("from");
+            returnFocusToTrigger();
             setIsOpen(false);
         }
     };
@@ -266,6 +287,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                                     onClick={() => {
                                         onTimeframeChange(preset.id);
                                         setSelecting("from");
+                                        returnFocusToTrigger();
                                         setIsOpen(false);
                                     }}
                                 >

@@ -19,8 +19,26 @@ export const ExportButton = ({ dateRange, allTime = false }) => {
     useClickOutside(isOpen, [dropdownRef, buttonRef], () => setIsOpen(false));
 
     const handleExport = async (format) => {
+        /*
+         * Read before the menu closes, because closing unmounts the control
+         * this was called from.
+         *
+         * The two formats are real buttons now, which is what lets a keyboard
+         * choose one at all - and the button holding focus is exactly what
+         * setIsOpen(false) takes off the page. A pointer never noticed, having
+         * nothing focused to lose; a keyboard is left on <body>, so the next Tab
+         * restarts at the top of the document. The trigger is what a menu owes
+         * its focus back to.
+         *
+         * Only when the menu holds it: a click outside closes this too, and
+         * there focus belongs to whatever was clicked.
+         */
+        const held = dropdownRef.current?.contains(document.activeElement);
+
         setExporting(true);
         setIsOpen(false);
+
+        if (held) buttonRef.current?.focus();
 
         const fromParam = formatDateParam(dateRange.from);
         const toParam = formatDateParam(dateRange.to);

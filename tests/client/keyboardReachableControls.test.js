@@ -565,3 +565,81 @@ describe("the dialogs' own buttons", () => {
     for (const [what, file] of Object.entries(overlays))
         it(`states the type of every button in ${what}`, () => everyButtonIsTyped(read(file), what));
 });
+
+/**
+ * And the export menu gives focus back when it closes over its own control.
+ *
+ * Its two formats became real buttons here, which is what made them reachable -
+ * and choosing one calls setIsOpen(false), which unmounts the very button that
+ * holds focus. A pointer never noticed: it had nothing focused to lose. A
+ * keyboard lands on <body>, so the next Tab restarts at the top of the document,
+ * and this is only reachable at all because the options can now be activated
+ * without a mouse.
+ *
+ * The trigger is already held in a ref for the click-outside, so there is
+ * something to give it back to.
+ */
+describe("the export menu", () => {
+    it("returns focus to its trigger when a format is chosen", () => {
+        const handler = exportMenu.slice(exportMenu.indexOf("const handleExport"));
+        const body = handler.slice(0, handler.indexOf("\n    };"));
+
+        assert.match(body, /buttonRef\.current\?\.focus\(\)/,
+            "choosing a format unmounts the focused button and leaves focus on the document");
+    });
+
+    // Not on a click outside, where focus belongs to whatever was clicked.
+    it("only takes focus back when the menu is the thing that had it", () => {
+        const handler = exportMenu.slice(exportMenu.indexOf("const handleExport"));
+        const body = handler.slice(0, handler.indexOf("\n    };"));
+
+        assert.match(body, /dropdownRef\.current\?\.contains\(document\.activeElement\)/,
+            "focus is pulled to the trigger even when the menu never held it");
+    });
+});
+
+/**
+ * And the date picker, which closes over its own focus in three different ways.
+ *
+ * The popover is rendered only while it is open, so every path that closes it
+ * unmounts whatever holds focus: Escape and the trigger toggle both run
+ * closePicker, a preset button closes it from inside itself, and so does the
+ * second click of a day range. Each leaves focus on <body>.
+ *
+ * All three are reachable only because this branch made the trigger and the
+ * presets answer a keyboard at all - before it, the popover could not be opened
+ * without a pointer, and a pointer has no focus to lose. Escape is the one that
+ * matters most: returning focus to the trigger is the whole of what a
+ * disclosure owes when it is dismissed.
+ */
+describe("the date range picker's focus on close", () => {
+    const returning = () => {
+        const at = datePicker.indexOf("const returnFocusToTrigger");
+
+        assert.notEqual(at, -1,
+            "nothing puts focus back on the trigger, so every way of closing the popover drops it to the document");
+
+        return datePicker.slice(at, datePicker.indexOf("\n    }", at));
+    };
+
+    it("only takes focus back when the popover is what had it", () => {
+        assert.match(returning(), /popoverRef\.current\?\.contains\(document\.activeElement\)/,
+            "focus is pulled to the trigger even when the popover never held it");
+    });
+
+    for (const [what, marker] of [
+        ["dismissed with Escape", "const closePicker"],
+        ["a preset is chosen", "onTimeframeChange(preset.id)"],
+        ["a day range is completed", "onChange(finalFrom, finalTo)"]
+    ]) {
+        it(`gives focus back when ${what}`, () => {
+            const at = datePicker.indexOf(marker);
+            assert.notEqual(at, -1, `${marker} is no longer in this component`);
+
+            const window = datePicker.slice(at, at + 400);
+
+            assert.match(window, /returnFocusToTrigger\(\)/,
+                `closing after ${what} leaves focus on a control that has been unmounted`);
+        });
+    }
+});
