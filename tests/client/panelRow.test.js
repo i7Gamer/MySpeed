@@ -519,6 +519,25 @@ describe("what a panel gives up as its list narrows", () => {
         });
 
         /**
+         * And neither step takes the figure below the label beside it.
+         *
+         * Which is the reason a step is spent on the figure at all: it is the
+         * thing the eye lands on, and it stays that at every width the card is
+         * drawn at. The two sizes are a judgement and are left as one - what is
+         * held here is the rank, which is not.
+         */
+        it("keeps the figure larger than its own label", () => {
+            const label = parseFloat(rowSizes.match(/\$panel-title-size:\s*([\d.]+)rem/)?.[1]);
+
+            assert.ok(Number.isFinite(label), "the row no longer names the size of a label");
+
+            for (const {at, size} of steps)
+                assert.ok(Number(size) > label,
+                    `below ${at}rem of list the figure is stated at ${size}rem, `
+                    + `which is no larger than the ${label}rem label beside it`);
+        });
+
+        /**
          * And the first is taken before a label is cut: 350px of list is the
          * widest the latest test is cut at with its glyph kept, and that is the
          * card carrying the cut in nine of the fifteen languages.
