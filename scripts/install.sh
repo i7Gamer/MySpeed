@@ -239,9 +239,17 @@ sleep 2
 # remote-code flaw in the server ran with full access to the host. The Docker
 # path for the same code already drops to an unprivileged user.
 #
-# The home directory is the installation path rather than nothing: the Ookla CLI
-# writes its licence acceptance under $HOME, and a service account with no
-# writable home would re-prompt for it on every run.
+# The home directory is the installation path rather than nothing, and it is not
+# load-bearing: the account needs no writable home, because the Ookla CLI is
+# spawned with --accept-license and --accept-gdpr on every run - see the argument
+# list in server/util/speedtest.js - so there is no acceptance for it to store
+# and nothing for it to re-prompt about. Which matters here, because the
+# installation root stays with root below and this $HOME is therefore not
+# writable by the account that names it.
+#
+# What the coupling does cost is a stale $HOME: useradd only runs when the
+# account is missing, so reinstalling at a different -d path leaves the home
+# pointing at the old one.
 #
 # The sandbox below is written against $INSTALLATION_PATH rather than against
 # /opt, because -d puts it anywhere. ReadWritePaths names it explicitly, so
