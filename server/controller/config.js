@@ -404,13 +404,24 @@ const asRows = (value) => Array.isArray(value) ? value : null;
  * `nodes` key destroyed every node, integration and recommendation with no way
  * back - there is no soft delete and nothing else holds a copy.
  */
+/**
+ * What a refused import answers with when no single value is to blame - a
+ * payload that is not a backup, or a write the database turned down.
+ *
+ * An object rather than a boolean, because the useful half of a refusal is
+ * *which* key it was: the import abandons everything on the first value it
+ * cannot read, so an operator was left holding a file that would not go back
+ * and sixteen stored values to bisect by hand.
+ */
+const REFUSED = {ok: false};
+
 export const importConfig = async (obj) => {
-    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return REFUSED;
 
     const rows = {};
     for (const {key} of IMPORTED_TABLES) {
         const value = asRows(obj[key]);
-        if (value === null) return false;
+        if (value === null) return REFUSED;
         rows[key] = value;
     }
 
@@ -422,7 +433,7 @@ export const importConfig = async (obj) => {
             data: typeof entry?.data === "string" ? JSON.parse(entry.data) : entry?.data
         }));
     } catch {
-        return false;
+        return REFUSED;
     }
 
     const updates = [];
@@ -436,7 +447,7 @@ export const importConfig = async (obj) => {
         // would accept no password at all. A redacted export carries no
         // password key, so this simply leaves the current one alone.
         if (key === "password") {
-            if (!isStoredPassword(obj.config[key])) return false;
+            if (!isStoredPassword(obj.config[key])) return {ok: false, key};
             updates.push({key, value: obj.config[key]});
             continue;
         }
@@ -483,7 +494,7 @@ export const importConfig = async (obj) => {
              * server acts on, and guessing at one of those would restore an
              * instance that is not the one that was backed up.
              */
-            if (!THRESHOLD_KEYS.includes(key)) return false;
+            if (!THRESHOLD_KEYS.includes(key)) return {ok: false, key};
 
             updates.push({key, value: configDefaults[key]});
             continue;
@@ -510,7 +521,7 @@ export const importConfig = async (obj) => {
                 await model.bulkCreate(rows[key], {transaction});
         });
     } catch {
-        return false;
+        return REFUSED;
     }
 
     // Restoring a backup is usually the remediation, so a session issued
@@ -528,7 +539,7 @@ export const importConfig = async (obj) => {
         timer.startTimer(cron.value.toString());
     }
 
-    return true;
+    return {ok: true};
 }
 
 export const factoryReset = async () => {

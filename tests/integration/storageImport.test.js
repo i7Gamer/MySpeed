@@ -285,3 +285,42 @@ describe("PUT /api/storage/config with a threshold an older version accepted", (
             "a value the check accepts was replaced by the default anyway");
     });
 });
+
+/**
+ * And a refused restore says which value it refused.
+ *
+ * The import walks every stored key back through the validator and abandons the
+ * whole thing on the first refusal - the nodes, the integrations and the
+ * recorded history with it - and answered "Error importing config" and nothing
+ * else. The operator is holding a file they cannot import, with no way to learn
+ * which of sixteen values is the problem short of bisecting it by hand.
+ *
+ * Only where there is a key to name: a payload that is not an object, or a
+ * database that refused the write, have no one value to blame and still say so
+ * plainly.
+ */
+describe("PUT /api/storage/config names what it refused", () => {
+    const restore = (config) => importConfig({config, nodes: [], integrations: [], recommendations: []});
+
+    it("names the key whose value was rejected", async () => {
+        const {status, body} = await restore({cron: "every second tuesday"});
+
+        assert.equal(status, 500);
+        assert.match(body.message, /cron/,
+            "the restore fails without saying which of the stored values it could not read");
+    });
+
+    it("names a password that is not a stored one", async () => {
+        const {status, body} = await restore({password: "hunter2"});
+
+        assert.equal(status, 500);
+        assert.match(body.message, /password/);
+    });
+
+    it("still answers plainly when nothing in particular is to blame", async () => {
+        const {status, body} = await importConfig([]);
+
+        assert.equal(status, 500);
+        assert.match(body.message, /Error importing config/);
+    });
+});

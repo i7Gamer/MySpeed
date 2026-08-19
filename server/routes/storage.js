@@ -119,8 +119,17 @@ app.get("/config", password(false),
 });
 
 app.put("/config", password(false), previewReadOnly, importBody, async (req, res) => {
-    let result = await config.importConfig(req.body);
-    res.status(result ? 200 : 500).json({message: result ? "Config imported" : "Error importing config"});
+    const result = await config.importConfig(req.body);
+
+    // Naming the key where there is one to name. A restore is abandoned whole on
+    // the first value it cannot read, so "Error importing config" on its own
+    // left the operator holding a file that would not go back and every stored
+    // value to bisect by hand.
+    const refusal = result.key
+        ? `Error importing config: the stored value for "${result.key}" is not valid`
+        : "Error importing config";
+
+    res.status(result.ok ? 200 : 500).json({message: result.ok ? "Config imported" : refusal});
 });
 
 app.delete("/config", password(false), previewReadOnly, async (req, res) => {
