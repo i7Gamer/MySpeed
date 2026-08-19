@@ -494,3 +494,37 @@ describe("the integration menu answers the keyboard", () => {
         });
     });
 });
+
+/**
+ * And the settings menu gives focus back to the gear that opened it.
+ *
+ * The menu is not unmounted when it closes - DropdownComponent toggles
+ * `dropdown-invisible`, which is `visibility: hidden` - and every entry is a
+ * `clickable` div that takes focus when it is activated. So the element focus
+ * sits on after an entry is chosen is one the same click has just hidden, and
+ * `focus()` on an element inside a `visibility: hidden` ancestor does nothing at
+ * all while `isConnected` stays true.
+ *
+ * That is the state the nine dialogs behind this menu open in, so the focus
+ * restore they were given records an element it can never focus and leaves the
+ * reader on <body> - the exact thing it exists to prevent. The gear is the right
+ * answer anyway: it is what a menu returns focus to.
+ */
+describe("the settings menu", () => {
+    const header = read("common/components/Header/HeaderComponent.jsx");
+
+    it("holds a reference to the control that opens it", () => {
+        assert.match(header, /ref=\{triggerRef}/,
+            "nothing can put focus back on the gear, because nothing holds it");
+    });
+
+    it("returns focus there when the menu closes over a focused entry", () => {
+        const closing = header.slice(header.indexOf("const switchDropdown"));
+        const body = closing.slice(0, closing.indexOf("\n    }"));
+
+        assert.match(body, /triggerRef\.current\?\.focus\(\)/,
+            "closing the menu leaves focus on the entry it has just hidden");
+        assert.match(body, /closest\?\.\(["'`]\.dropdown["'`]\)/,
+            "focus is taken back even when it was never inside the menu");
+    });
+});
