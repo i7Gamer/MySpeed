@@ -192,6 +192,12 @@ export const useModalFocus = (dialogRef, {open, holdsFocus = open, initialFocus,
             // focusout, and the element it is leaving for is only sometimes the
             // relatedTarget. Re-checked then, so a dialog that is closing - or
             // one focus has already come back to - is left alone.
+            //
+            // Only the first half of that decides anything. seat() goes through
+            // initialFocusTarget, which answers null for focus that is already
+            // inside, so the second half is an early-out saying what this means
+            // rather than a guard - removing it changes no behaviour, and no
+            // test can tell the two apart.
             recovery = setTimeout(() => {
                 if (dialog.isConnected && !dialog.contains(document.activeElement)) seat();
             }, 0);

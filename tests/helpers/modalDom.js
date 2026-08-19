@@ -66,9 +66,19 @@ class Element {
     }
 
     remove() {
+        // Read before detaching, because contains() walks upwards.
+        const heldFocus = this.contains(activeElement);
+
         if (this.parent) this.parent.children = this.parent.children.filter((c) => c !== this);
         this.parent = null;
         this.setConnected(false);
+
+        // A browser moves focus to the body when the focused element leaves the
+        // document. Leaving activeElement pointing at a detached node is a state
+        // no browser produces, and it is the one that hides the `isConnected`
+        // half of the recovery's re-check: with focus still apparently inside a
+        // dialog that has gone, neither conjunct ever decides anything.
+        if (heldFocus) activeElement = body;
     }
 
     setConnected(connected) {
@@ -140,17 +150,38 @@ class Element {
         if (previous) previous.dispatch("focusout", {relatedTarget: null});
     }
 
-    dispatch(type, event) {
+    /**
+     * One event object for the whole propagation, as a browser dispatches it.
+     *
+     * Handing each listener its own copy makes preventDefault unobservable: it
+     * sets a flag on something thrown away the moment the listener returns. A
+     * trap that claimed every Tab - the state where a reader can never move off
+     * the control the dialog opened on - was indistinguishable from one that
+     * claimed none, because both leave focus where it was.
+     */
+    dispatch(type, init = {}) {
+        const event = {
+            ...init,
+            type,
+            target: this,
+            currentTarget: null,
+            defaultPrevented: false,
+            preventDefault() { this.defaultPrevented = true; }
+        };
+
         let current = this;
         while (current) {
-            (current.listeners[type] || []).slice()
-                .forEach((listener) => listener({...event, type, target: this, currentTarget: current}));
+            event.currentTarget = current;
+            (current.listeners[type] || []).slice().forEach((listener) => listener(event));
             current = current.parent;
         }
+
+        return event;
     }
 
+    /** Returns the event, so a test can ask whether the key was claimed. */
     press(key, init = {}) {
-        this.dispatch("keydown", {key, preventDefault() { this.defaultPrevented = true; }, ...init});
+        return this.dispatch("keydown", {key, ...init});
     }
 
     addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
@@ -218,8 +249,21 @@ const load = async () => {
 
     if (patched === source) throw new Error("useModalFocus no longer imports useEffect and useRef from react");
 
-    const file = path.join(os.tmpdir(), `myspeed-useModalFocus-${process.pid}.mjs`);
+    /*
+     * A directory of its own, removed when the run ends.
+     *
+     * A fixed name under a world-writable /tmp is a file another user can
+     * pre-create as a symlink, and writeFileSync follows one - so on a shared
+     * runner this wrote the patched module through to whatever it pointed at.
+     * mkdtemp creates with 0700 and a name nothing can predict. It also stops
+     * the leak: one module per run was left behind for ever, and this machine
+     * had eighty-two of them.
+     */
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-modal-focus-"));
+    const file = path.join(directory, "useModalFocus.mjs");
+
     fs.writeFileSync(file, patched);
+    process.on("exit", () => fs.rmSync(directory, {recursive: true, force: true}));
 
     return import(pathToFileURL(file).href);
 };

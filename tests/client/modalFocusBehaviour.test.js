@@ -17,6 +17,26 @@ import {
  * So these run it, against the fake DOM in the helper. Each case is a sequence a
  * reader can actually produce.
  */
+
+/**
+ * One mounted component, holding the ref across every render.
+ *
+ * The ref has to be stable, because it is a dependency of the trap effect: both
+ * real callers hold theirs in a useRef, and a fresh `{current: dialog}` per
+ * render makes the dependency list compare unequal every time. The effect then
+ * re-runs whatever else changed, so `holdsFocus` decides nothing and the whole
+ * stacked-alert suite passes with it removed from the dependencies.
+ */
+const modal = (dialog, options) => {
+    const ref = {current: dialog};
+    const component = new Component();
+    const render = (extra) => component.render(() => useModalFocus(ref, {...options, ...extra}));
+
+    render();
+
+    return {component, render, ref};
+};
+
 describe("an overlay taking and giving back focus", () => {
     beforeEach(() => resetWorld());
 
@@ -24,7 +44,7 @@ describe("an overlay taking and giving back focus", () => {
         const dialog = overlay();
         mount(dialog.area);
 
-        new Component().render(() => useModalFocus({current: dialog.dialog}, {open: true}));
+        modal(dialog.dialog, {open: true});
 
         assert.equal(activeName(), "field",
             "the header comes first, so the first focusable is the X - opening there closes the dialog on Enter");
@@ -36,7 +56,7 @@ describe("an overlay taking and giving back focus", () => {
         const dialog = overlay();
         mount(dialog.area);
 
-        const component = new Component().render(() => useModalFocus({current: dialog.dialog}, {open: true}));
+        const {component} = modal(dialog.dialog, {open: true});
         assert.equal(activeName(), "field");
 
         component.unmount();
@@ -49,7 +69,7 @@ describe("an overlay taking and giving back focus", () => {
         const dialog = overlay();
         mount(dialog.area);
 
-        const component = new Component().render(() => useModalFocus({current: dialog.dialog}, {open: true}));
+        const {component} = modal(dialog.dialog, {open: true});
         row.remove();
         component.unmount();
 
@@ -60,7 +80,7 @@ describe("an overlay taking and giving back focus", () => {
         const dialog = overlay({fields: [], buttons: []});
         mount(dialog.area);
 
-        new Component().render(() => useModalFocus({current: dialog.dialog}, {open: true}));
+        modal(dialog.dialog, {open: true});
 
         assert.equal(activeName(), "closeX");
     });
@@ -69,7 +89,7 @@ describe("an overlay taking and giving back focus", () => {
         const dialog = overlay({dismiss: false, fields: [], buttons: []});
         mount(dialog.area);
 
-        new Component().render(() => useModalFocus({current: dialog.dialog}, {open: true}));
+        modal(dialog.dialog, {open: true});
 
         assert.equal(activeName(), "dialog");
     });
@@ -84,7 +104,7 @@ describe("an overlay taking and giving back focus", () => {
         );
         mount(area.append(dialog));
 
-        new Component().render(() => useModalFocus({current: dialog}, {open: true}));
+        modal(dialog, {open: true});
 
         assert.equal(activeName(), "real");
     });
@@ -105,9 +125,7 @@ describe("an alert that autofocuses its own field", () => {
         mount(alert.area);
         alert.get("textbox").focus();
 
-        new Component().render(() => useModalFocus({current: alert.dialog}, {
-            open: true, initialFocus: {current: alert.get("submit")}, restoreTo: opener
-        }));
+        modal(alert.dialog, {open: true, initialFocus: {current: alert.get("submit")}, restoreTo: opener});
 
         assert.equal(activeName(), "textbox");
     });
@@ -123,9 +141,8 @@ describe("an alert that autofocuses its own field", () => {
         mount(alert.area);
         alert.get("textbox").focus();
 
-        const component = new Component().render(() => useModalFocus({current: alert.dialog}, {
-            open: true, initialFocus: {current: alert.get("submit")}, restoreTo: opener
-        }));
+        const {component} = modal(alert.dialog,
+            {open: true, initialFocus: {current: alert.get("submit")}, restoreTo: opener});
         component.unmount();
 
         assert.equal(activeName(), "opener");
@@ -135,9 +152,7 @@ describe("an alert that autofocuses its own field", () => {
         const alert = overlay({fields: [], buttons: ["cancel", "confirm"]});
         mount(alert.area);
 
-        new Component().render(() => useModalFocus({current: alert.dialog}, {
-            open: true, holdsFocus: true, initialFocus: {current: alert.get("confirm")}
-        }));
+        modal(alert.dialog, {open: true, holdsFocus: true, initialFocus: {current: alert.get("confirm")}});
 
         assert.equal(activeName(), "confirm",
             "seated anywhere else, Enter answers the confirmation with whatever holds focus");
@@ -150,7 +165,7 @@ describe("the tab trap", () => {
     it("wraps at both ends and leaves the middle to the browser", () => {
         const dialog = overlay({fields: ["a", "b"], buttons: ["ok"]});
         mount(dialog.area);
-        new Component().render(() => useModalFocus({current: dialog.dialog}, {open: true}));
+        modal(dialog.dialog, {open: true});
 
         dialog.get("ok").focus();
         dialog.get("ok").press("Tab");
@@ -162,8 +177,7 @@ describe("the tab trap", () => {
         /*
          * That focus has not moved, rather than that this control was not
          * focused again: a trap which wrongly claimed the key would move focus
-         * somewhere else entirely, and leave this control's own count alone
-         * while doing it.
+         * somewhere else entirely, and leave this control's own count alone.
          */
         const middle = dialog.get("a");
         middle.focus();
@@ -171,6 +185,52 @@ describe("the tab trap", () => {
 
         assert.equal(activeName(), "a",
             "a Tab in the middle was claimed, which means re-implementing tab order rather than closing it");
+    });
+
+    /**
+     * And whether the key was claimed, which is not the same question.
+     *
+     * Where the trap wraps, the browser must not also act on the key or focus
+     * moves twice. Where it declines, the key has to reach the browser at all -
+     * a trap that called preventDefault and then returned would leave focus
+     * where it was, exactly as a correct one does, while making Tab dead in the
+     * middle of every dialog in the app.
+     */
+    it("claims the key only where it moves focus", () => {
+        const dialog = overlay({fields: ["a", "b"], buttons: ["ok"]});
+        mount(dialog.area);
+        modal(dialog.dialog, {open: true});
+
+        dialog.get("ok").focus();
+        assert.equal(dialog.get("ok").press("Tab").defaultPrevented, true,
+            "the browser is left to act on a Tab the trap has already answered, so focus moves twice");
+
+        const middle = dialog.get("a");
+        middle.focus();
+        assert.equal(middle.press("Tab").defaultPrevented, false,
+            "Tab is claimed in the middle of the dialog, so a reader can never leave the control it opened on");
+    });
+
+    /**
+     * And the listeners come off again.
+     *
+     * An alert that is stacked over gives up the trap and takes it back when the
+     * one above closes. Without the detach, it holds the old set and attaches a
+     * second - and a later focusout then schedules two recoveries while the
+     * effect tracks only the newer, so the cleanup clears one and the other
+     * fires into a dialog that has closed.
+     */
+    it("detaches them when it gives up its turn", () => {
+        const dialog = overlay({fields: [], buttons: ["ok", "other"]});
+        mount(dialog.area);
+        const {render} = modal(dialog.dialog, {open: true, holdsFocus: true});
+
+        render({holdsFocus: false});
+        render({holdsFocus: true});
+
+        ["keydown", "focusin", "focusout"].forEach((type) =>
+            assert.equal(dialog.dialog.listeners[type].length, 1,
+                `${type} is attached ${dialog.dialog.listeners[type].length} times over`));
     });
 });
 
@@ -185,7 +245,7 @@ describe("focus that leaves without a key being pressed", () => {
     it("is brought back when it lands on the page", async () => {
         const dialog = overlay();
         mount(dialog.area);
-        new Component().render(() => useModalFocus({current: dialog.dialog}, {open: true}));
+        modal(dialog.dialog, {open: true});
 
         dialog.get("field").blurToBody();
         assert.equal(activeName(), "body");
@@ -197,7 +257,7 @@ describe("focus that leaves without a key being pressed", () => {
     it("is left alone when it lands in an overlay opened above", async () => {
         const below = overlay();
         mount(below.area);
-        new Component().render(() => useModalFocus({current: below.dialog}, {open: true}));
+        modal(below.dialog, {open: true});
 
         const above = overlay({fields: ["upperField"]});
         mount(above.area);
@@ -219,12 +279,42 @@ describe("focus that leaves without a key being pressed", () => {
         const dialog = overlay();
         mount(dialog.area);
 
-        const component = new Component().render(() => useModalFocus({current: dialog.dialog}, {open: true}));
+        const {component} = modal(dialog.dialog, {open: true});
         component.unmount();
         assert.equal(activeName(), "opener");
 
         await settle();
         assert.equal(activeName(), "opener");
+    });
+
+    /**
+     * Both halves of the recovery's own re-check, which is made a turn after the
+     * focusout because focus is still settling during one.
+     */
+    it("leaves a dialog that has been taken off the page alone", async () => {
+        const dialog = overlay();
+        mount(dialog.area);
+        modal(dialog.dialog, {open: true});
+
+        dialog.get("field").blurToBody();          // schedules the recovery
+        dialog.area.remove();                      // and the overlay goes before it runs
+
+        await settle();
+        assert.equal(activeName(), "body",
+            "focus was seated into a dialog that is no longer in the document");
+    });
+
+    it("leaves focus where the reader has already put it back", async () => {
+        const dialog = overlay({fields: ["field"], buttons: ["ok"]});
+        mount(dialog.area);
+        modal(dialog.dialog, {open: true});
+
+        dialog.get("field").blurToBody();          // schedules the recovery
+        dialog.get("ok").focus();                  // and the reader clicks back in first
+
+        await settle();
+        assert.equal(activeName(), "ok",
+            "the recovery moved focus off the control the reader had just chosen");
     });
 });
 
@@ -237,27 +327,25 @@ describe("two alerts stacked", () => {
 
         const lower = overlay({fields: [], buttons: ["lowerOk", "lowerAlt"]});
         mount(lower.area);
-        const lowerComponent = new Component();
-        const renderLower = (isTop) => lowerComponent.render(() => useModalFocus({current: lower.dialog}, {
-            open: true, holdsFocus: isTop,
+        const {render: renderLower} = modal(lower.dialog, {
+            open: true, holdsFocus: true,
             initialFocus: {current: lower.get("lowerOk")}, restoreTo: pageButton
-        }));
+        });
 
-        renderLower(true);
         assert.equal(activeName(), "lowerOk");
 
         lower.get("lowerAlt").focus();
-        renderLower(false);
+        renderLower({holdsFocus: false});
         assert.equal(activeName(), "lowerAlt",
             "stacking a second alert handed focus back to the page, under two backdrops");
 
         const upper = overlay({fields: [], buttons: ["upperOk"]});
         mount(upper.area);
         const goneByNow = mount(element("button", {name: "deletedRow"}));
-        const upperComponent = new Component().render(() => useModalFocus({current: upper.dialog}, {
+        const {component: upperComponent} = modal(upper.dialog, {
             open: true, holdsFocus: true,
             initialFocus: {current: upper.get("upperOk")}, restoreTo: goneByNow
-        }));
+        });
         assert.equal(activeName(), "upperOk");
 
         // The row it was confirming the deletion of is gone, so nothing restores
@@ -267,7 +355,7 @@ describe("two alerts stacked", () => {
         upper.area.remove();
         await settle();
 
-        renderLower(true);
+        renderLower({holdsFocus: true});
         await settle();
 
         assert.equal(activeName(), "lowerAlt",
