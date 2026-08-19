@@ -131,6 +131,22 @@ const expensiveLimit = () => limited({limit: EXPENSIVE_REQUESTS_PER_MINUTE});
 
 app.use("/api/opengraph", expensiveLimit());
 app.use("/api/speedtests/export", expensiveLimit());
+
+/*
+ * The raw history, which is the export's unbounded sibling.
+ *
+ * /json and /csv under here answer with tests.listAll() - a findAll with no
+ * limit - and hand the whole thing to res.send. At 200 000 rows that is 2.0 s to
+ * read and 0.5 s to serialise, for a 122 MiB string Express then buffers. The
+ * export above answers the same rows for a *date range* and has been held to 20
+ * a minute all along, so the bounded reader was capped four times more tightly
+ * than the two unbounded ones.
+ *
+ * The prefix rather than the two leaves: the PUT that restores a history and the
+ * DELETE that empties it are the other two expensive things on this path, and
+ * neither is something to do twenty times a minute either.
+ */
+app.use("/api/storage/tests/history", expensiveLimit());
 app.use("/api/speedtests/run", expensiveLimit());
 app.use("/api/speedtests/statistics", limited({limit: STATISTICS_REQUESTS_PER_MINUTE}));
 app.use("/api/prometheus", limited({limit: METRICS_REQUESTS_PER_MINUTE}));

@@ -20,6 +20,12 @@ after(async () => {
 
 beforeEach(async () => {
     await setConfig(server.config, "retentionDays", "365");
+
+    // This file restores a history once per assertion, which no caller does, and
+    // /api/storage/tests/history carries a limit of its own - see app.js and the
+    // list in expensiveRoutes.test.js. What is under test here is the import's
+    // validation, not the limiter.
+    server.resetRateLimits();
 });
 
 describe("retention sweep", () => {
