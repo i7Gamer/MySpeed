@@ -336,12 +336,20 @@ export function isFailedTest(test) {
  * Wide on purpose either side of the dot: ".5" and "1." are 0.5 and 1, and the
  * check this replaced took both, so an instance can be holding one now.
  *
+ * The dot lives inside the optional group rather than beside it. Written
+ * `[0-9]+\.?[0-9]*`, the two digit runs sit on either side of something
+ * optional, so a run of digits that fails at the end can be divided between them
+ * in as many ways as it is long and the engine tries every one - quadratic in
+ * the length of the value. Only the server's copy is reachable with an input
+ * worth that, but the two are one rule and drift is what this file's history is
+ * about. The values accepted are unchanged.
+ *
  * The server asks the same question in server/controller/config.js, and the two
  * are pinned to the same table by tests/client/thresholdInput.test.js - neither
  * side can import the other, and this copy is the one that was left behind when
  * the server's was anchored.
  */
-const THRESHOLD_NUMBER = /^(?:[0-9]+\.?[0-9]*|\.[0-9]+)$/;
+const THRESHOLD_NUMBER = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/;
 
 export const isThresholdNumber = (value) =>
     value !== null && value !== undefined && THRESHOLD_NUMBER.test(value.toString());

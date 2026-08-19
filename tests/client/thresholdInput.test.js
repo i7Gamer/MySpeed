@@ -12,6 +12,20 @@ const read = (file) => fs.readFileSync(path.join(ROOT, file), "utf8");
 const DIALOG = "client/src/common/components/OptimalValuesDialog/OptimalValuesDialog.jsx";
 
 /**
+ * The server's copy of the rule, read out of its source.
+ *
+ * Restating it here would let the two drift and still agree with the test.
+ */
+const serverPattern = () => {
+    const source = read("server/controller/config.js");
+    const match = source.match(/const THRESHOLD_NUMBER = \/(.+)\/;/);
+
+    assert.notEqual(match, null, "the server no longer declares THRESHOLD_NUMBER as a literal");
+
+    return new RegExp(match[1]);
+};
+
+/**
  * Everything the three threshold fields can be handed, and what a number is.
  *
  * The dotted entries are the whole point: `/[^0-9.]/` asks whether every
@@ -69,21 +83,65 @@ describe("a speed or latency threshold", () => {
  * drift again without this failing.
  */
 describe("the client's threshold rule and the server's", () => {
-    const serverPattern = () => {
-        const source = read("server/controller/config.js");
-        const match = source.match(/const THRESHOLD_NUMBER = \/(.+)\/;/);
-
-        assert.notEqual(match, null, "the server no longer declares THRESHOLD_NUMBER as a literal");
-
-        return new RegExp(match[1]);
-    };
-
     it("agree on every value either could be given", () => {
         const server = serverPattern();
 
         [...NUMBERS, ...NOT_NUMBERS].forEach((value) =>
             assert.equal(isThresholdNumber(value), server.test(value),
                 `the client and the server disagree about ${JSON.stringify(value)}`));
+    });
+});
+
+/**
+ * And both answer a long value in linear time.
+ *
+ * `[0-9]+\.?[0-9]*` puts two digit runs on either side of an optional dot, so a
+ * run of digits that fails at the end can be divided between them in as many
+ * ways as it is long - and the engine tries every one before giving up. That is
+ * quadratic: doubling the input quadruples the work.
+ *
+ * It is reachable with nothing but a request. importConfig runs every stored key
+ * back through this validator, and the import body is parsed at a 50mb limit -
+ * so one restore carrying a long enough threshold blocks the event loop for as
+ * long as it takes to finish, and a default install has no password to stop
+ * anyone sending it. CodeQL flags it as js/polynomial-redos.
+ *
+ * The fix is to require the dot inside the optional group, which leaves the two
+ * runs unable to trade characters. The language is unchanged - the table above
+ * is what says so.
+ *
+ * Timed rather than reasoned about, and with four orders of magnitude of margin:
+ * unambiguous, this answers in well under a millisecond; ambiguous, in seconds.
+ */
+describe("a threshold rule handed a long value", () => {
+    // Enough to be unmistakable and still quick to build. The ambiguous form
+    // takes seconds on this; the budget is what separates the two.
+    const ATTACK = "0".repeat(100_000) + "!";
+    const BUDGET_MS = 500;
+
+    const millisecondsFor = (run) => {
+        const started = process.hrtime.bigint();
+        run();
+
+        return Number(process.hrtime.bigint() - started) / 1e6;
+    };
+
+    for (const [whose, test] of [
+        ["client", (value) => isThresholdNumber(value)],
+        ["server", (value) => serverPattern().test(value)]
+    ]) {
+        it(`answers the ${whose}'s copy without stalling`, () => {
+            const spent = millisecondsFor(() => test(ATTACK));
+
+            assert.ok(spent < BUDGET_MS,
+                `the ${whose}'s rule spent ${spent.toFixed(0)}ms on ${ATTACK.length} characters, `
+                + "so a longer one blocks for as long as the caller cares to make it");
+        });
+    }
+
+    it("still refuses it", () => {
+        assert.equal(isThresholdNumber(ATTACK), false);
+        assert.equal(serverPattern().test(ATTACK), false);
     });
 });
 

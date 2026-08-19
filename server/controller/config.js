@@ -58,8 +58,20 @@ const MAX_RETENTION_DAYS = 10000;
  * runs every stored key back through here and abandons the whole restore on the
  * first refusal, naming no key. Refusing a value that was legal when it was
  * saved would take the nodes and the integrations down with a threshold.
+ *
+ * The dot lives inside the optional group rather than beside it, and that is
+ * not a matter of taste. Written `[0-9]+\.?[0-9]*`, the two digit runs sit on
+ * either side of something optional, so a run of digits that fails at the end
+ * can be divided between them in as many ways as it is long - and the engine
+ * tries every one before giving up. Doubling the input quadruples the work.
+ * importConfig is handed its body at a 50mb limit and puts every stored key
+ * through here, so one restore carrying a long enough threshold blocks the
+ * event loop for as long as it takes, and a default install has no password to
+ * stop anyone sending it. Requiring the dot leaves the two runs unable to trade
+ * characters; the values accepted are exactly the same, which the table in
+ * thresholdInput.test.js is what says.
  */
-const THRESHOLD_NUMBER = /^(?:[0-9]+\.?[0-9]*|\.[0-9]+)$/;
+const THRESHOLD_NUMBER = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/;
 
 /**
  * The three keys that rule is for, named once because importConfig treats them
