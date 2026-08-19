@@ -1,10 +1,15 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SCRIPTS = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "scripts");
+
+// Long enough for a shell to start on a loaded runner, short enough that a walk
+// which never terminates is reported rather than waited on.
+const WALK_TIMEOUT = 10_000;
 
 /**
  * Comments stripped before anything is asserted against a script.
@@ -404,7 +409,16 @@ describe("install.sh registers a service that is not root", () => {
     });
 
     it("creates the account before it hands anything to it", () => {
-        assert.match(source, /useradd/, "the installer never creates a service account");
+        // The invocation, not the word. `command -v useradd` guards the call and
+        // carries the same name, so a script that only ever asks whether useradd
+        // exists satisfies any test written against /useradd/ - and then falls
+        // back to root on every host, having created nothing.
+        const created = source.replace(/\\\r?\n\s*/g, " ")
+            .split("\n").find((line) => /^\s*useradd\s/.test(line));
+
+        assert.ok(created, "nothing runs useradd - the only mention of it is the check for whether the host has it");
+        assert.match(created, /--system\b/, "the account is created as a login account rather than a system one");
+        assert.match(created, /"\$SERVICE_USER"/, "useradd is given some other name than the one the unit holds");
         assert.ok(source.indexOf("useradd") < source.indexOf("chown"),
             "the installation is handed to an account that does not exist yet");
     });
@@ -418,6 +432,72 @@ describe("install.sh registers a service that is not root", () => {
             "the new account cannot write the database it inherits");
         assert.ok(source.indexOf("chown") < unitStart,
             "the service is registered before it can read its own directory");
+    });
+
+    /**
+     * The reachability check, run rather than read.
+     *
+     * systemd chdirs to WorkingDirectory and execs ExecStart after dropping to
+     * User=, so every directory above the installation has to be enterable by
+     * that account. "-d /root/myspeed" is the case it exists for: /root is 0700
+     * root:root, handing over the installation never touches /root itself, and
+     * the service then fails chdir with EACCES under Restart=always - a
+     * permanent loop behind a banner saying the install completed.
+     *
+     * Reading the script cannot tell whether the walk is right, and every
+     * assertion written against its text passed with the permission test
+     * replaced by `:` - which is the whole function saying yes to everything.
+     */
+    describe("whether an unprivileged account can reach the installation", () => {
+        const walk = (() => {
+            const at = source.indexOf("reachable_by_service() {");
+            assert.notEqual(at, -1, "nothing asks whether the account can reach the installation");
+
+            return source.slice(at, source.indexOf("\n}", at) + 2);
+        })();
+
+        /**
+         * `find` answers from a list rather than from the filesystem. The mode
+         * bits this reads do not exist on the machine the suite runs on, and
+         * what is being tested is the walk up the tree, not the syscall.
+         */
+        const reaches = (target, enterable) => {
+            const script = [
+                walk,
+                'find() { case " $ENTERABLE " in *" $1 "*) echo "$1";; esac; }',
+                'if reachable_by_service "$TARGET"; then echo yes; else echo no; fi'
+            ].join("\n");
+
+            // Bounded, because the thing being run is a `while :` loop: a walk
+            // that stops climbing never terminates, and without this the suite
+            // does not fail, it hangs - which is the one failure nobody reads.
+            return execFileSync("sh", ["-c", script], {
+                encoding: "utf8",
+                timeout: WALK_TIMEOUT,
+                env: {...process.env, ENTERABLE: enterable.join(" "), TARGET: target}
+            }).trim() === "yes";
+        };
+
+        it("accepts a path every directory above it can be entered through", () => {
+            assert.equal(reaches("/opt/myspeed", ["/", "/opt", "/opt/myspeed"]), true,
+                "the usual install falls back to root, so nothing this branch does takes effect at all");
+        });
+
+        it("refuses one behind a directory that cannot", () => {
+            assert.equal(reaches("/root/myspeed", ["/", "/root/myspeed"]), false,
+                "-d /root/myspeed writes a unit whose service cannot chdir into its own directory");
+        });
+
+        // Its own bits count too: a root umask of 077 makes the directory this
+        // script creates 0700, and then nothing under it is reachable either.
+        it("refuses one that cannot be entered itself", () => {
+            assert.equal(reaches("/opt/myspeed", ["/", "/opt"]), false,
+                "the installation directory's own permissions are never looked at");
+        });
+
+        it("stops at the root rather than walking above it", () => {
+            assert.equal(reaches("/", ["/"]), true, "the walk never terminates, or terminates the wrong way");
+        });
     });
 
     /**
@@ -564,7 +644,12 @@ describe("uninstall.sh removes the account install.sh creates", () => {
     });
 
     it("deletes it", () => {
-        assert.match(source, /userdel/,
+        // A line that runs userdel, not the `command -v userdel` guarding it -
+        // which carries the same word and satisfies any test written against it
+        // while the account outlives every uninstall.
+        const removes = source.split("\n").some((line) => /^\s*userdel\s+"\$SERVICE_USER"/.test(line));
+
+        assert.ok(removes,
             "the account outlives every uninstall, pointing at a directory that was just removed");
     });
 
