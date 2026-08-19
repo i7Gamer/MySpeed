@@ -144,3 +144,33 @@ describe("no workflow interpolates untrusted input into a shell body", () => {
         });
     }
 });
+
+/**
+ * And the client is compiled before a release exists, not after.
+ *
+ * Nothing else in the test workflow builds it. The suite reads the client's
+ * modules as text - node cannot parse JSX - and lint parses each file on its
+ * own, so neither resolves an import: a component importing a sibling whose
+ * filename differs only in case builds on a case-insensitive filesystem and
+ * fails on CI, and the failure names the service worker rather than the import
+ * that caused it.
+ *
+ * Until this step existed the only workflow that compiled the client was
+ * build-binaries, which runs on `release` - so the first build of the thing
+ * every user installs happened after the release was already published.
+ */
+describe("CI compiles the client", () => {
+    const tests = withoutComments(readSource(".github/workflows/test.yml"));
+
+    it("builds it", () => {
+        assert.match(tests, /working-directory: client\r?\n\s*run: bun run build/,
+            "no job compiles the client, so a build-only failure is first seen by whoever installs it");
+    });
+
+    // After the suite: the tests are the cheaper signal and the one that says
+    // more about a failure, so they should be what fails first.
+    it("does so after the tests have run", () => {
+        assert.ok(tests.indexOf("npm run test:all") < tests.indexOf("run: bun run build"),
+            "the build runs before the suite, so a broken test is reported as a broken build");
+    });
+});

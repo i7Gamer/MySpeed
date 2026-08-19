@@ -68,3 +68,17 @@ jobs:
       # suite ever having executed.
       - name: Run tests
         run: npm run test:all
+
+      # Nothing above compiles the client. The suite reads its modules as text -
+      # node cannot parse JSX - and lint parses each file alone, so neither sees
+      # a build that resolves its imports: a component importing a sibling whose
+      # filename differs only in case builds on a case-insensitive filesystem and
+      # fails here, and the error it fails with names the service worker rather
+      # than the import.
+      #
+      # Until now the only workflow that built the client was build-binaries, on
+      # `release` - so the first run of the thing every user installs happened
+      # after the release existed.
+      - name: Build the client
+        working-directory: client
+        run: bun run build
