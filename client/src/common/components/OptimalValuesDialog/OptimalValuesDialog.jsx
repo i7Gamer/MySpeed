@@ -61,8 +61,17 @@ export const OptimalValuesDialog = ({open, onClose}) => {
         //
         // The class itself is named in the test rather than here, because the
         // assertion that it is gone would otherwise find it in this sentence.
-        if ((ping && !isThresholdNumber(ping)) || (download && !isThresholdNumber(download))
-            || (upload && !isThresholdNumber(upload))) {
+        // Each field is patched below only when it differs from what is stored,
+        // so this asks the same question the send does. Validating all three
+        // regardless made a malformed value already on the instance - and every
+        // MySpeed up to 1.3.4 stored whatever the unanchored check let through -
+        // refuse the whole save, including the field that was actually edited.
+        // The operator could not even see the culprit: a number input drops a
+        // value it cannot parse, so the offending field reads empty.
+        const invalid = (value, stored) => value !== stored && value && !isThresholdNumber(value);
+
+        if (invalid(ping, config.ping) || invalid(download, config.download)
+            || invalid(upload, config.upload)) {
             updateToast(t("dropdown.invalid"), "red", faExclamationTriangle);
             return;
         }

@@ -95,10 +95,14 @@ describe("the optimal values dialog", () => {
      * this file exists to catch.
      */
     it("asks the shared rule for each of its three fields", () => {
-        const calls = read(DIALOG).match(/isThresholdNumber\(/g) ?? [];
+        const source = read(DIALOG);
 
-        assert.equal(calls.length, 3,
-            `the dialog makes ${calls.length} threshold checks, one per field expected`);
+        assert.match(source, /isThresholdNumber\(/,
+            "the dialog validates thresholds with something other than the shared rule");
+
+        ["ping", "download", "upload"].forEach((field) =>
+            assert.match(source, new RegExp(`invalid\\(${field}, config\\.${field}\\)`),
+                `${field} is not put through the guard, so a bad value in it reaches the server`));
     });
 
     /*
@@ -114,5 +118,34 @@ describe("the optimal values dialog", () => {
     it("no longer asks whether every character is a digit or a dot", () => {
         assert.doesNotMatch(read(DIALOG), /\[\^0-9\.]/,
             "the dialog still carries the unanchored check the server replaced");
+    });
+});
+
+/**
+ * And only the fields it is going to send.
+ *
+ * `update` patches a field only when it differs from the stored config, so a
+ * malformed value already on the instance - every MySpeed up to 1.3.4 stored
+ * whatever the same unanchored check let through - is seeded into the form and
+ * then never sent. Validating it anyway turns it into a refusal of the whole
+ * save, including the field the operator did change, and the offending input
+ * reads empty on screen because a number input drops what it cannot parse.
+ */
+describe("the optimal values dialog only refuses what it would send", () => {
+    const guard = () => {
+        const source = read(DIALOG);
+        const start = source.indexOf("const update = async");
+
+        return source.slice(start, source.indexOf("updateToast", start));
+    };
+
+    it("checks each field against the stored value before validating it", () => {
+        assert.match(guard(), /value !== stored/,
+            "a stored value the dialog never sends can still refuse the whole save");
+    });
+
+    it("still refuses a bad value in a field that has changed", () => {
+        assert.match(guard(), /!isThresholdNumber/,
+            "the dialog no longer validates anything at all");
     });
 });
