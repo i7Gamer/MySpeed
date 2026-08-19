@@ -212,7 +212,7 @@ if ! wget -O "$DOWNLOAD_TMP" "$RELEASE_URL"; then
 fi
 
 # A 200 carrying an error page, or a transfer that ended at zero bytes, is not a
-# binary - and chmod +x makes it look like one to systemd.
+# binary - and making it executable below makes it look like one to systemd.
 if [ ! -s "$DOWNLOAD_TMP" ]; then
     rm -f "$DOWNLOAD_TMP"
     echo -e "$RED✗ The download produced an empty file.$NORMAL The release may be incomplete."
@@ -220,7 +220,16 @@ if [ ! -s "$DOWNLOAD_TMP" ]; then
     exit 1
 fi
 
-chmod +x "$DOWNLOAD_TMP"
+# Stated rather than added to. `chmod +x` is masked by the umask - POSIX says so
+# - and wget creates the file at 666 less that mask, so on a host where root runs
+# with 077 this left the binary at 700. That did not matter while the whole
+# installation was handed to the service account, because it then owned the
+# binary; root keeps it now, so 700 is a binary the service can neither read nor
+# execute, under a unit with Restart=always. The install directory is created
+# under the same mask, so the usual way in is an upgrade: the directory is
+# already there and traversable, nothing falls back to root, and only the new
+# binary comes out unreadable.
+chmod 755 "$DOWNLOAD_TMP"
 mv -f "$DOWNLOAD_TMP" myspeed
 
 clear

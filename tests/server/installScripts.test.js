@@ -486,6 +486,24 @@ describe("install.sh registers a service that is not root", () => {
         });
     });
 
+    /**
+     * And the binary is left in a mode the account can actually run.
+     *
+     * `chmod +x` is masked by the umask - POSIX says so, and root on a hardened
+     * host runs with 077 - so it can leave a downloaded file at 700. That was
+     * invisible while the installation was handed over whole, because the
+     * account then owned the binary; now that root keeps it, 700 means the
+     * service cannot read or execute the thing it is pointed at, and
+     * Restart=always makes a loop of it. Reachable on an upgrade, where the
+     * directory already exists and is traversable so nothing falls back to root.
+     */
+    it("leaves the binary readable by the account that runs it", () => {
+        assert.doesNotMatch(source, /chmod \+x/,
+            "the binary's mode is left to the umask, so a hardened host installs one the service cannot execute");
+        assert.match(source, /chmod 755 "\$DOWNLOAD_TMP"/,
+            "nothing states the mode of a binary root owns and another account has to run");
+    });
+
     it("creates those directories itself, so the service never writes the root", () => {
         const made = source.slice(0, source.lastIndexOf("chown"));
 
