@@ -517,6 +517,38 @@ describe("an overlay whose control stops being one", () => {
             "a redraw behind the menu pulls focus out of it, which is the trap's own bug from the other side");
     });
 
+    /**
+     * And a dialog under an alert does not take focus off it.
+     *
+     * A Dialog holds focus for as long as it is open - it has no idea an alert
+     * has stacked over it - so both watchers are live at once, and a mutation
+     * behind the alert arrives while focus is momentarily on the body. The
+     * watcher is a microtask and the focusout recovery is a timeout, so the
+     * dialog underneath does win the first move: what has to hold is that it
+     * does not keep it.
+     */
+    it("does not leave focus under an alert stacked over it", async () => {
+        const lower = overlay({fields: [], buttons: ["lowerOk", "lowerRow"]});
+        mount(lower.area);
+        modal(lower.dialog, {open: true});
+
+        const upper = overlay({fields: [], buttons: ["upperOk"]});
+        mount(upper.area);
+        modal(upper.dialog, {open: true, initialFocus: {current: upper.get("upperOk")}});
+
+        assert.equal(activeName(), "upperOk");
+
+        // The alert loses focus to the backdrop, and the dialog behind it
+        // redraws in the same turn.
+        upper.get("upperOk").blurToBody();
+        lower.get("lowerRow").remove();
+
+        await settle();
+
+        assert.equal(activeName(), "upperOk",
+            "focus is left in the dialog underneath, behind the alert's own backdrop");
+    });
+
     it("stops watching when the overlay closes", async () => {
         const dialog = saving();
 
