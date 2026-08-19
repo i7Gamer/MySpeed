@@ -414,7 +414,7 @@ describe("install.sh registers a service that is not root", () => {
      * they are owned by root because that is what installed them.
      */
     it("hands the installation to the account that will run it", () => {
-        assert.match(source, /chown -R "\$SERVICE_USER" "\$INSTALLATION_PATH"/,
+        assert.match(source, /chown -R "\$SERVICE_USER" "\$INSTALLATION_PATH\/data" "\$INSTALLATION_PATH\/bin"/,
             "the new account cannot write the database it inherits");
         assert.ok(source.indexOf("chown") < unitStart,
             "the service is registered before it can read its own directory");
@@ -459,18 +459,58 @@ describe("install.sh registers a service that is not root", () => {
     });
 
     /**
-     * And the recursive chown only runs over a directory this script installed
-     * into. "-d /opt" is one slip from "-d /opt/myspeed", and before this commit
-     * a mistyped path cost a stray binary; a chown -R over it would hand every
-     * other application under /opt to an unprivileged account.
+     * And ownership is only ever taken of directories this script creates.
+     *
+     * "-d /opt" is one slip from "-d /opt/myspeed". Guarding that by asking
+     * whether the installation path holds a `myspeed` file cannot work: the
+     * script writes that file itself a few lines earlier, so the test passes for
+     * every path on a host that has none - including "/opt" and "/". It fired
+     * only when `myspeed` was a *directory*, which is a genuine prior install
+     * one level down: exactly backwards.
+     *
+     * So there is nothing to guard any more. The server writes `data` and `bin`
+     * and nothing else at the installation root, so those two are created here
+     * and given away, and the root and the binary stay with root - which also
+     * means the service account cannot rewrite the binary it runs.
      */
-    it("refuses to change ownership of a directory it did not install into", () => {
-        const guard = source.slice(0, source.indexOf("chown -R"));
+    it("takes ownership of nothing but the directories the server writes", () => {
+        const targets = [...source.matchAll(/^[ \t]*chown.*$/gm)].map((m) => m[0]);
 
-        assert.match(guard, /if \[ ! -f "\$INSTALLATION_PATH\/myspeed" \]/,
-            "chown -R runs over whatever -d was given, with nothing checking it is an installation");
-        assert.match(guard.slice(guard.lastIndexOf("if [ ! -f")), /exit 1/,
-            "the check does not stop the script");
+        assert.notEqual(targets.length, 0, "the installation is never handed to the service account");
+
+        targets.forEach((line) => {
+            assert.doesNotMatch(line, /"\$INSTALLATION_PATH"\s*$/,
+                `chown runs over the whole of whatever -d was given: ${line.trim()}`);
+            assert.match(line, /\$INSTALLATION_PATH\/(data|bin)/,
+                `chown names something other than the directories the server writes: ${line.trim()}`);
+        });
+    });
+
+    it("creates those directories itself, so the service never writes the root", () => {
+        const made = source.slice(0, source.lastIndexOf("chown"));
+
+        assert.match(made, /mkdir -p "\$INSTALLATION_PATH\/data" "\$INSTALLATION_PATH\/bin"/,
+            "the service is expected to create its own folders in a directory it does not own");
+    });
+
+    /**
+     * And an installation the account cannot reach falls back to root.
+     *
+     * systemd chdirs to WorkingDirectory and execs ExecStart after dropping to
+     * User=, so every directory above the installation has to be traversable by
+     * that account. "-d /root/myspeed" is the case the comments reach for, and
+     * /root is 0700: the chown reaches the installation, never /root itself, so
+     * the service fails chdir with EACCES and Restart=always turns that into a
+     * permanent loop behind a banner saying the install completed.
+     */
+    it("runs as root rather than producing a service that cannot start", () => {
+        assert.match(source, /reachable_by_service/,
+            "nothing checks the service account can reach the installation it is given");
+
+        const decision = source.slice(source.indexOf("SERVICE_ACCOUNT"));
+
+        assert.match(decision, /reachable_by_service "\$INSTALLATION_PATH"/,
+            "the reachability of the chosen path is never actually tested");
     });
 });
 
@@ -497,8 +537,12 @@ describe("uninstall.sh removes the account install.sh creates", () => {
         const named = installer.match(/SERVICE_USER="(\w+)"/)?.[1];
 
         assert.equal(named, "myspeed", "the installer's account name has moved");
-        assert.match(source, new RegExp(`"?${named}"?`),
-            "the uninstaller never mentions the account the installer creates");
+
+        // The declaration, not the name anywhere: "myspeed" is the service, the
+        // directory and the unit too, so asking whether the word appears is
+        // answered by every line of this script.
+        assert.match(source, new RegExp(`SERVICE_USER="${named}"`),
+            "the uninstaller removes an account by some other name than the one the installer creates");
     });
 
     it("deletes it", () => {
@@ -517,10 +561,20 @@ describe("uninstall.sh removes the account install.sh creates", () => {
             "the account is deleted without checking it exists");
     });
 
+    /*
+     * Slicing from the last KEEP_DATA and then asserting KEEP_DATA is in the
+     * slice says nothing - the slice begins with it. What has to hold is that
+     * the flag is part of the condition guarding userdel.
+     */
     it("keeps the account whenever it keeps the data it owns", () => {
-        const removal = source.slice(0, source.indexOf("userdel"));
+        const line = source.split("\n").find((text) => text.includes("userdel"));
+        const condition = source.slice(0, source.indexOf("userdel"));
+        const guard = condition.slice(condition.lastIndexOf("if "));
 
-        assert.match(removal.slice(removal.lastIndexOf("KEEP_DATA")), /KEEP_DATA/,
+        assert.match(guard, /KEEP_DATA/,
             "the account is removed even under --keep-data, orphaning the files it owns");
+        assert.match(guard, /!=\s*"--keep-data"/,
+            "the --keep-data check does not read as \"only when data is not kept\"");
+        assert.ok(line, "userdel is no longer called");
     });
 });
