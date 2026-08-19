@@ -13,6 +13,19 @@
   width: 100%
   flex: 1 0 auto
 
+// What the shared row's steps measure, which this card had none of: its figures
+// held one size at every width, so on the two-column stage it stood beside the
+// latest test with the same list and a figure a size larger. The list and not
+// the viewport, for the reasons the latest-test card's copy of this sets out.
+//
+// Everywhere but the dialog, which measures this card to size itself - the same
+// exemption the value cards carry, and for the same reason: a size container
+// offers an intrinsic sizing pass nothing of its contents, and a shrink-to-fit
+// dialog is nothing but that pass. Opened, the card has the width of the dialog
+// and states its figures at full size.
+.consistency-container:not(.chart-modal-body *)
+  container-type: inline-size
+
 // Oldest to newest, the way time reads - one of the sub-lines under the grade.
 //
 // The shared row stacks its description as a column; this line is the one that

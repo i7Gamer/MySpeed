@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describeDelta, hasPreviousData } from "../../client/src/common/components/Delta/deltas.js";
+
+const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 
 /**
  * The comparison against the previous period, reduced to one honest sentence
@@ -114,5 +119,55 @@ describe("hasPreviousData", () => {
     it("rejects an answer with no previous window at all", () => {
         for (const previous of [null, undefined, {}])
             assert.equal(hasPreviousData(previous), false);
+    });
+});
+
+/**
+ * And the direction reaches a reader who cannot see the arrow.
+ *
+ * The whole of the direction was the glyph - "▲" or "▼" - inside a span marked
+ * aria-hidden, which is right for the glyph and wrong for the annotation around
+ * it: what was announced was a bare magnitude. "5%" is not a reading. On ping
+ * and packet loss the two directions are opposite verdicts, so a screen-reader
+ * user was handed the number that distinguishes an improvement from a
+ * regression with the part that says which one removed.
+ *
+ * A source scan, like the other rendering rules here: node cannot parse JSX.
+ */
+describe("the delta states its direction in words", () => {
+    const source = fs.readFileSync(
+        path.join(ROOT, "client/src/common/components/Delta/Delta.jsx"), "utf8");
+    const english = JSON.parse(fs.readFileSync(
+        path.join(ROOT, "client/public/assets/locales/en.json"), "utf8"));
+
+    it("labels the annotation with the direction and the figure", () => {
+        assert.match(source, /aria-label=/,
+            "the delta is announced as a bare magnitude, with nothing saying which way it went");
+        assert.match(source, /statistics\.delta\./,
+            "the direction is not named from a translated string");
+    });
+
+    /**
+     * On an element that may carry a name. A bare span maps to role=generic,
+     * which ARIA prohibits naming - the label is dropped and the announcement
+     * falls back to the visible text, which is the bare magnitude again with the
+     * arrow still hidden. The fix would have looked present and done nothing.
+     */
+    it("puts the label on an element ARIA lets it name", () => {
+        assert.match(source, /role="img"/,
+            "the label sits on a role-less span, where ARIA prohibits it and readers ignore it");
+    });
+
+    // The glyph stays hidden: announced as well as labelled, a reader hears the
+    // direction twice, once as an unpronounceable triangle.
+    it("keeps the glyph itself out of the announcement", () => {
+        assert.match(source, /stat-delta-arrow" aria-hidden="true"/,
+            "the arrow glyph is announced as well as the label");
+    });
+
+    it("carries both directions in the source locale", () => {
+        for (const direction of ["up", "down"])
+            assert.equal(typeof english.statistics?.delta?.[direction], "string",
+                `statistics.delta.${direction} is missing, so the label renders as its own key`);
     });
 });

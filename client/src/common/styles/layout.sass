@@ -45,6 +45,42 @@ $toolbar-text-size: 1.1rem
 // row. Five labelled rows at tile width is a paragraph in a box meant for a
 // figure. So the summary takes its own row while there is still room for it to
 // read as one.
+// And one stage above those, where the page stops being one wide column and two
+// narrow ones and becomes three equal ones.
+//
+// The left column is 40% because of the summary: its labels and descriptions are
+// the page's only sentences, and a row of them needs 473px of list to sit beside
+// its figure - see $overview-trim, where that is measured. Below the width where
+// that stops fitting the card gives the sentences up, and from there it is
+// holding 100px it has nothing to put in: five labels of a word or two, in a card
+// half again as wide as the two beside it.
+//
+// It cost more than the space. Every panel steps its figure down on its own list
+// width - which is the only rule that can hold at all three stages, since the
+// cards' shares of the row change between them - so a card 100px wider than its
+// line-mates steps later than they do, and the summary stood beside two cards
+// stating a smaller figure than its own for the whole band. Measured at 1263px:
+// 28px against 19.2 on exactly the room the rule says it should have.
+//
+// Equal thirds there, and the disagreement has nothing left to stand on. It is
+// also the better page: the two tight cards gain 36px of list each, which holds
+// every figure at full size across almost the whole of this stage instead of
+// dropping them two steps.
+//
+// Almost, and not all: a card here holds (viewport - 32) / 3 - 58 of list, so
+// the first step at 22rem is reached at 1262px. Between there and the
+// two-column stage below - eleven pixels, 1251 to 1261 - all three cards state
+// 1.4rem. They state it together, which is the point of the stage; it is simply
+// not true that nothing steps inside it.
+//
+// 1417px is where the summary's list falls to $overview-trim, so the card gives
+// up the width in the same movement as the sentences it was for, rather than
+// twice at two widths. Derived: a list is 40% of the content box less the row's
+// two gaps, its own border and its padding - 0.40 x (viewport - 32px) - 74px -
+// and 480px of that is 1417. Re-derive it if any of those move; equalThirds.test.js
+// checks it still lands where the sentences do.
+$stats-equal-thirds: 1417px
+
 $stats-two-column: 1250px
 $stats-one-column: 720px
 

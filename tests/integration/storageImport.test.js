@@ -239,3 +239,88 @@ describe("PUT /api/storage/config", () => {
         });
     });
 });
+
+/**
+ * A backup carrying a threshold that is no longer a legal value.
+ *
+ * ping, download and upload were guarded by a negated character class until
+ * 1.3.5 - "is every character a digit or a dot" - so "1.2.3", ".." and a lone
+ * "." were all stored behind a 200 by `PATCH /api/config/:key`. Anchoring that
+ * check is right, and it made every one of those backups unrestorable: the
+ * validate loop refuses the first one it meets and abandons the whole import,
+ * so the nodes, the integrations and the recommendations are all left behind by
+ * a display preference no server code even reads.
+ *
+ * The default is written instead. It is the same trade the check itself already
+ * makes for ".5" and "1." - a value that was legal when it was saved must not
+ * take the rest of a restore down - except that these cannot be kept, because
+ * Number() cannot read them and a threshold it cannot read greys every speed on
+ * the dashboard. So the restore completes and the unreadable preference is the
+ * one thing that does not survive it.
+ */
+describe("PUT /api/storage/config with a threshold an older version accepted", () => {
+    const restore = (config) => importConfig({
+        config, nodes: [{name: "new", url: "http://10.0.0.9:5216"}], integrations: [], recommendations: []
+    });
+
+    ["1.2.3", "..", ".", "1..2"].forEach((stored) => {
+        it(`restores everything else when download is ${JSON.stringify(stored)}`, async () => {
+            const {status} = await restore({download: stored});
+
+            assert.equal(status, 200, "the whole backup is refused over one unreadable threshold");
+            assert.equal(await server.config.getValue("download"), "100",
+                "the unreadable threshold was kept, so every speed on the dashboard stays grey");
+            assert.equal((await counts()).nodes, 1, "the nodes were not restored");
+        });
+    });
+
+    it("still refuses a value that is not a threshold at all", async () => {
+        assert.equal((await restore({cron: "every second tuesday"})).status, 500,
+            "any invalid value now passes, not only the three thresholds");
+    });
+
+    it("keeps a threshold it can still read", async () => {
+        assert.equal((await restore({download: ".5"})).status, 200);
+        assert.equal(await server.config.getValue("download"), ".5",
+            "a value the check accepts was replaced by the default anyway");
+    });
+});
+
+/**
+ * And a refused restore says which value it refused.
+ *
+ * The import walks every stored key back through the validator and abandons the
+ * whole thing on the first refusal - the nodes, the integrations and the
+ * recorded history with it - and answered "Error importing config" and nothing
+ * else. The operator is holding a file they cannot import, with no way to learn
+ * which of sixteen values is the problem short of bisecting it by hand.
+ *
+ * Only where there is a key to name: a payload that is not an object, or a
+ * database that refused the write, have no one value to blame and still say so
+ * plainly.
+ */
+describe("PUT /api/storage/config names what it refused", () => {
+    const restore = (config) => importConfig({config, nodes: [], integrations: [], recommendations: []});
+
+    it("names the key whose value was rejected", async () => {
+        const {status, body} = await restore({cron: "every second tuesday"});
+
+        assert.equal(status, 500);
+        assert.match(body.message, /cron/,
+            "the restore fails without saying which of the stored values it could not read");
+    });
+
+    it("names a password that is not a stored one", async () => {
+        const {status, body} = await restore({password: "hunter2"});
+
+        assert.equal(status, 500);
+        assert.match(body.message, /password/);
+    });
+
+    it("still answers plainly when nothing in particular is to blame", async () => {
+        const {status, body} = await importConfig([]);
+
+        assert.equal(status, 500);
+        assert.match(body.message, /Error importing config/);
+    });
+});

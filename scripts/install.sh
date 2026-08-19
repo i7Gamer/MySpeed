@@ -212,7 +212,7 @@ if ! wget -O "$DOWNLOAD_TMP" "$RELEASE_URL"; then
 fi
 
 # A 200 carrying an error page, or a transfer that ended at zero bytes, is not a
-# binary - and chmod +x makes it look like one to systemd.
+# binary - and making it executable below makes it look like one to systemd.
 if [ ! -s "$DOWNLOAD_TMP" ]; then
     rm -f "$DOWNLOAD_TMP"
     echo -e "$RED✗ The download produced an empty file.$NORMAL The release may be incomplete."
@@ -220,7 +220,16 @@ if [ ! -s "$DOWNLOAD_TMP" ]; then
     exit 1
 fi
 
-chmod +x "$DOWNLOAD_TMP"
+# Stated rather than added to. `chmod +x` is masked by the umask - POSIX says so
+# - and wget creates the file at 666 less that mask, so on a host where root runs
+# with 077 this left the binary at 700. That did not matter while the whole
+# installation was handed to the service account, because it then owned the
+# binary; root keeps it now, so 700 is a binary the service can neither read nor
+# execute, under a unit with Restart=always. The install directory is created
+# under the same mask, so the usual way in is an upgrade: the directory is
+# already there and traversable, nothing falls back to root, and only the new
+# binary comes out unreadable.
+chmod 755 "$DOWNLOAD_TMP"
 mv -f "$DOWNLOAD_TMP" myspeed
 
 clear
@@ -229,6 +238,116 @@ echo -e "$NORMAL Registering MySpeed as a background service..."
 echo -e ""
 echo -e ""
 sleep 2
+
+# The account the service runs as, which used to be root.
+#
+# Nothing MySpeed does needs a privilege: it listens on 5216, which is above the
+# reserved range, and it writes its database and its logs inside its own
+# installation directory. What it also does is download a third-party speedtest
+# CLI at first boot and spawn it - so as root, a replaced upstream asset or any
+# remote-code flaw in the server ran with full access to the host. The Docker
+# path for the same code already drops to an unprivileged user.
+#
+# The home directory is the installation path rather than nothing, and it is not
+# load-bearing: the account needs no writable home, because the Ookla CLI is
+# spawned with --accept-license and --accept-gdpr on every run - see the argument
+# list in server/util/speedtest.js - so there is no acceptance for it to store
+# and nothing for it to re-prompt about. Which matters here, because the
+# installation root stays with root below and this $HOME is therefore not
+# writable by the account that names it.
+#
+# What the coupling does cost is a stale $HOME: useradd only runs when the
+# account is missing, so reinstalling at a different -d path leaves the home
+# pointing at the old one.
+#
+# The sandbox below is written against $INSTALLATION_PATH rather than against
+# /opt, because -d puts it anywhere. ReadWritePaths names it explicitly, so
+# ProtectSystem=full cannot make the one directory the service writes read-only
+# - which is what "-d /usr/local/myspeed" would otherwise do, leaving a service
+# that starts, fails to create its data folders, and restarts for ever behind a
+# banner saying the install completed.
+#
+# ProtectHome is deliberately not among them: it makes /home and /root
+# inaccessible, and "-d /root/myspeed" is a path a root user typing this command
+# will reach for. That path is handled below by falling back to root rather than
+# by the sandbox, but a directive that would break it for the fallback too is
+# still the wrong thing to add.
+SERVICE_USER="myspeed"
+
+if ! id -u "$SERVICE_USER" > /dev/null 2>&1 && command -v useradd &> /dev/null; then
+    useradd --system --no-create-home --home-dir "$INSTALLATION_PATH" \
+        --shell /usr/sbin/nologin "$SERVICE_USER" > /dev/null 2>&1 || true
+fi
+
+# Whether an unprivileged account could reach the installation at all.
+#
+# systemd chdirs to WorkingDirectory and execs ExecStart *after* dropping to
+# User=, so every directory above the installation has to be traversable by that
+# account. "-d /root/myspeed" is the case: /root is 0700 root:root, and handing
+# over the installation never touches /root itself, so the service fails chdir
+# with EACCES and Restart=always turns that into a permanent loop behind a banner
+# saying the install completed. Asked rather than assumed, because that failure
+# is invisible until somebody opens the port.
+#
+# The other-execute bit is what decides it: this account is in no group of the
+# directories above it, so group permissions cannot help.
+reachable_by_service() {
+    local directory="$1"
+
+    while :; do
+        [ -n "$(find "$directory" -maxdepth 0 -perm -o=x 2>/dev/null)" ] || return 1
+        [ "$directory" = "/" ] && return 0
+        directory=$(dirname "$directory")
+    done
+}
+
+# Falling back rather than failing, in both directions. A system with no useradd,
+# and a path the account cannot reach, each still get a working install: a unit
+# naming an account that does not exist, or one that cannot chdir to its own
+# directory, starts nothing at all - which is worse than the privilege being
+# dropped here. Said out loud, because these are the cases where the install is
+# less safe than it reads.
+SERVICE_ACCOUNT="root"
+SERVICE_FALLBACK=""
+
+if ! id -u "$SERVICE_USER" > /dev/null 2>&1; then
+    SERVICE_FALLBACK="the \"$SERVICE_USER\" account could not be created"
+elif ! reachable_by_service "$INSTALLATION_PATH"; then
+    SERVICE_FALLBACK="$INSTALLATION_PATH cannot be reached by an unprivileged account"
+else
+    SERVICE_ACCOUNT="$SERVICE_USER"
+fi
+
+if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]; then
+    # These two and nothing else. The server writes its database, its logs and
+    # the CLI it downloads under `data` and `bin`, and writes nothing at the
+    # installation root - so creating them here means the account never needs
+    # the root, and a recursive chown never leaves the directories this script
+    # made.
+    #
+    # It used to hand over $INSTALLATION_PATH whole, behind a check that the
+    # path held a `myspeed` file. That check could not work: the script writes
+    # that file itself a few lines above, so it passed for any path on a host
+    # that had none - "-d /opt" re-owned every other application under /opt, and
+    # "-d /" the filesystem. It fired only when `myspeed` was a *directory*,
+    # which is a real prior install one level down: exactly the wrong way round.
+    #
+    # Leaving the binary with root is worth having for itself: the account that
+    # runs it cannot rewrite it.
+    #
+    # Before the service is registered, not after - on an upgrade these are
+    # owned by root because that is what installed them, and the first thing the
+    # new account would otherwise do is fail to open its own database.
+    #
+    # The user only, not user:group - useradd --system creates a matching group
+    # on Debian and RHEL but not everywhere, and a chown that names a group that
+    # does not exist changes nothing at all.
+    mkdir -p "$INSTALLATION_PATH/data" "$INSTALLATION_PATH/bin"
+    chown -R "$SERVICE_USER" "$INSTALLATION_PATH/data" "$INSTALLATION_PATH/bin"
+else
+    echo -e "$YELLOW⚠ Warning: $NORMAL $SERVICE_FALLBACK, so MySpeed will run as root."
+    sleep 2
+fi
 
 if command -v systemctl &> /dev/null; then
   cat << EOF > /etc/systemd/system/myspeed.service
@@ -240,8 +359,16 @@ After=network.target
 Type=simple
 ExecStart=$INSTALLATION_PATH/myspeed
 Restart=always
-User=root
+User=$SERVICE_ACCOUNT
 WorkingDirectory=$INSTALLATION_PATH
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=$INSTALLATION_PATH
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
 
 [Install]
 WantedBy=multi-user.target

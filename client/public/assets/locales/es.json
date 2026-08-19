@@ -218,7 +218,7 @@
     "ping": "Ping",
     "ping_unit": "ms",
     "jitter": "Jitter",
-    "jitter_unit": "m",
+    "jitter_unit": "ms",
     "down": "Descarga",
     "speed_unit": "Mbps",
     "byte_speed_unit": "MB/s",

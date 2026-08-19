@@ -216,7 +216,7 @@
   },
   "latest": {
     "ping": "Пинг",
-    "ping_unit": "ms",
+    "ping_unit": "мс",
     "jitter": "Jitter",
     "jitter_unit": "мс",
     "down": "Скачать",

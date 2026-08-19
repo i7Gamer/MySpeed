@@ -1,6 +1,6 @@
 import {Dialog, DialogHeader, DialogBody} from "@/common/contexts/Dialog";
 import "./styles.sass";
-import React, {useContext, useEffect, useState} from "react";
+import React, {useContext, useEffect, useLayoutEffect, useRef, useState} from "react";
 import {t} from "i18next";
 import i18n from "i18next";
 import {faCheck, faCircleNodes, faExclamationTriangle, faFloppyDisk, faTrash, faTrashArrowUp} from "@fortawesome/free-solid-svg-icons";
@@ -13,7 +13,7 @@ import FormField from "@/common/components/FormField";
 import ExpandableCard from "@/common/components/ExpandableCard";
 import DropdownSelect from "@/common/components/DropdownSelect";
 import {renderableIntegrations} from "@/common/components/IntegrationDialog/renderableIntegrations";
-import {integrationPayload, isValidFieldValue} from "@/common/components/IntegrationDialog/integrationPayload";
+import {integrationPayload, isValidDisplayName, isValidFieldValue} from "@/common/components/IntegrationDialog/integrationPayload";
 import {appendVariable, variableToken} from "@/common/components/IntegrationDialog/templateVariables";
 
 const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, config}) => {
@@ -137,20 +137,26 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
         <ExpandableCard icon={integrationDef.icon} title={displayName} subtitle={getStatusText()} statusDot={getStatusClass()}
             actions={<>
                 {!config.previewMode && unsavedChanges && !saveConfirmed && (
-                    <button className="card-action-btn save-btn" onClick={(e) => {e.stopPropagation(); handleSave();}}>
+                    <button type="button" className="card-action-btn save-btn" onClick={(e) => {e.stopPropagation(); handleSave();}}>
                         <FontAwesomeIcon icon={faFloppyDisk}/>
                     </button>
                 )}
                 {saveConfirmed && <span className="card-action-btn success-indicator"><FontAwesomeIcon icon={faCheck}/></span>}
                 {!config.previewMode && (
-                    <button className={`card-action-btn delete-btn ${deleteConfirmed ? "confirm" : ""}`}
+                    <button type="button" className={`card-action-btn delete-btn ${deleteConfirmed ? "confirm" : ""}`}
                             onClick={(e) => {e.stopPropagation(); handleDelete();}}>
                         <FontAwesomeIcon icon={deleteConfirmed ? faTrashArrowUp : faTrash}/>
                     </button>
                 )}
             </>}
             defaultExpanded={integration.isNew || false} error={error} success={saveConfirmed}>
+            {/* Marked like every declared field. Without this the one value on
+                the form that no module declares was also the one nothing could
+                point at: the card resends it on every save, so an over-long
+                name stored before the server capped it failed each one with a
+                generic error over a field the operator never touched. */}
             <FormField label={t("integrations.display_name")} type="text" value={displayName}
+                error={!isValidDisplayName(displayName)}
                 onChange={(v) => { setDisplayName(v); setUnsavedChanges(true); }} placeholder={t("integrations.display_name")}/>
             {integrationDef.fields.map((field) => (
                 <div key={field.name} className="integration-field">
@@ -194,16 +200,6 @@ export const IntegrationDialog = ({open, onClose}) => {
         }).catch((error) => console.error("Failed to load the integrations:", error));
     }, [open]);
 
-    const addIntegration = (item) => setActive([...active, {uuid: uuid(), name: item.key, data: {}, isNew: true}]);
-    const removeIntegration = (id) => setActive(active.filter(item => item.uuid !== id));
-    const updateIntegration = (id, updates) => setActive(active.map(item => item.uuid === id ? {...item, ...updates} : item));
-
-    const dropdownItems = integrations ? Object.entries(integrations).map(([name, def]) => ({
-        key: name, label: t(`integrations.${name}.title`), icon: def.icon
-    })) : [];
-
-    const loading = !integrations || !active;
-
     // The rows this dialog can actually draw. A stored row whose integration
     // has since been removed has no definition, and IntegrationCard reads
     // `integrationDef.fields` in a state initialiser - so one of those did not
@@ -211,6 +207,59 @@ export const IntegrationDialog = ({open, onClose}) => {
     // with it. Counted from here too, so a list of nothing but stale rows shows
     // the empty state rather than an empty list.
     const renderable = renderableIntegrations(active, integrations);
+
+    // The wrapper the create menu is drawn in, whichever of the two branches
+    // below drew it, and whether the create menu is owed its focus back.
+    const wrapperRef = useRef(null);
+    const owedFocus = useRef(false);
+
+    const addIntegration = (item) => {
+        // Only the first, which is the add that replaces the menu it was made
+        // in - see the effect below.
+        owedFocus.current = renderable.length === 0;
+        setActive([...active, {uuid: uuid(), name: item.key, data: {}, isNew: true}]);
+    };
+
+    const removeIntegration = (id) => setActive(active.filter(item => item.uuid !== id));
+    const updateIntegration = (id, updates) => setActive(active.map(item => item.uuid === id ? {...item, ...updates} : item));
+
+    /*
+     * Focus back on the create menu, when the choice replaced the one it was
+     * made in.
+     *
+     * DropdownSelect hands focus to its own trigger when an item is chosen,
+     * which is enough every time but the first. Adding the first integration
+     * takes this dialog out of its empty state, and the two branches below hold
+     * two different DropdownSelects - so the button just focused is removed in
+     * the same commit that draws its replacement.
+     *
+     * Nothing else catches that. Chrome fires no event at all when a focused
+     * element is removed: focus becomes <body> in silence, so the modal trap's
+     * recovery, which is a focusout listener, never hears it. The one person
+     * this menu exists for - somebody adding their first integration without a
+     * mouse - was left behind the backdrop with the next Tab at the top of the
+     * document.
+     *
+     * The same control in its new place, so the first add ends where every
+     * later one does.
+     *
+     * A layout effect, so it runs before the microtask the trap's own watcher
+     * is delivered on: the watcher would otherwise see focus on the body first
+     * and seat it on the new card, and a reader would hear that control named
+     * before this one. Both end here; only one of them is announced.
+     */
+    useLayoutEffect(() => {
+        if (!owedFocus.current) return;
+
+        owedFocus.current = false;
+        wrapperRef.current?.querySelector(".dropdown-select-btn")?.focus();
+    }, [renderable.length]);
+
+    const dropdownItems = integrations ? Object.entries(integrations).map(([name, def]) => ({
+        key: name, label: t(`integrations.${name}.title`), icon: def.icon
+    })) : [];
+
+    const loading = !integrations || !active;
 
     return (
         <Dialog open={open} onClose={onClose} className="integration-dialog">
@@ -221,7 +270,7 @@ export const IntegrationDialog = ({open, onClose}) => {
                         {loading ? (
                             <div className="lds-ellipsis"><div/><div/><div/><div/></div>
                         ) : (
-                            <div className="integrations-wrapper">
+                            <div className="integrations-wrapper" ref={wrapperRef}>
                                 {config.previewMode && renderable.length > 0 && (
                                     <div className="preview-warning">
                                         <FontAwesomeIcon icon={faExclamationTriangle}/>

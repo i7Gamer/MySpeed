@@ -7,7 +7,7 @@ import {
     faClose,
     faServer
 } from "@fortawesome/free-solid-svg-icons";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import DropdownComponent from "../Dropdown/DropdownComponent";
 import { useAlert } from "@/common/contexts/Alert";
 import { jsonRequest, login } from "@/common/utils/RequestUtil";
@@ -38,9 +38,37 @@ const HeaderComponent = () => {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [showAboutDialog, setShowAboutDialog] = useState(false);
 
+    // The gear, so closing the menu can put focus back on it.
+    const triggerRef = useRef();
+
+    /*
+     * Closing gives focus back to the gear, when the menu had it.
+     *
+     * The menu is not unmounted when it closes - DropdownComponent toggles
+     * `dropdown-invisible`, which is visibility: hidden - and every entry is a
+     * `clickable` div that takes focus when it is activated. So without this,
+     * the element focus sits on after an entry is chosen is one this same call
+     * has just hidden: `isConnected` stays true, and `focus()` on it does
+     * nothing at all.
+     *
+     * That is the state each of the nine dialogs behind this menu opens in, so
+     * the focus each records to return to is one it can never give back - and
+     * the reader is left on <body>, which is what that restore exists to
+     * prevent. Answered here rather than there, because a hidden element is not
+     * something a modal can do anything sensible with, and returning focus to
+     * its trigger is what a menu owes anyway.
+     *
+     * Only when the menu holds it: this also runs for a click outside, where
+     * focus belongs to whatever was clicked.
+     */
     const switchDropdown = () => {
+        const closingOverItsOwnFocus = isDropdownOpen
+            && document.activeElement?.closest?.(".dropdown");
+
         setIsDropdownOpen(!isDropdownOpen);
         setIcon(isDropdownOpen ? faGear : faClose);
+
+        if (closingOverItsOwnFocus) triggerRef.current?.focus();
     }
 
     const showDemoDialog = () => alert.openAlert(
@@ -196,7 +224,7 @@ const HeaderComponent = () => {
                             closest("#open-header") whether a mousedown was the
                             opener rather than an outside click. */}
                         <div id="open-header">
-                            <button type="button" className="header-icon"
+                            <button type="button" className="header-icon" ref={triggerRef}
                                     aria-label={t("dropdown.settings")}
                                     aria-expanded={isDropdownOpen} onClick={switchDropdown}>
                                 <FontAwesomeIcon icon={icon}/>

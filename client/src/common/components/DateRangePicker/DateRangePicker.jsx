@@ -25,22 +25,46 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
     const [currentMonth, setCurrentMonth] = useState(() => monthToShow(to));
     const popoverRef = useRef(null);
     const triggerRef = useRef(null);
+    // The arrow that is never disabled, and whether a forward step has just
+    // been made - both for recoverFromDisabledStep.
+    const prevMonthRef = useRef(null);
+    const steppedForward = useRef(false);
 
     const today = new Date();
     today.setHours(23, 59, 59, 999);
     const effectiveMaxDate = maxDate || today;
     const todayDateString = new Date().toDateString();
 
+    /**
+     * Focus back on the trigger, whenever the popover is what was holding it.
+     *
+     * The popover is rendered only while it is open, so every way of closing it
+     * unmounts the control focus is on - Escape, the trigger toggle, choosing a
+     * preset, and the second click of a day range. That leaves focus on <body>
+     * and the next Tab at the top of the document.
+     *
+     * Reachable only because the trigger and the presets answer a keyboard now:
+     * a pointer has no focus to lose. Returning it to the trigger is also the
+     * whole of what a disclosure owes when it is dismissed.
+     *
+     * Guarded, because closing is not always the popover's doing: a click
+     * outside closes it too, and focus there belongs to whatever was clicked.
+     */
+    const returnFocusToTrigger = useCallback(() => {
+        if (popoverRef.current?.contains(document.activeElement)) triggerRef.current?.focus();
+    }, []);
+
     // Closing halfway through a selection used to leave `selecting` on "to" and
     // a dangling tempFrom, so the next open started mid-range and the first
     // click was read as the end date.
     const closePicker = useCallback(() => {
+        returnFocusToTrigger();
         setIsOpen(false);
         setSelecting("from");
         setHoverDate(null);
         setTempFrom(from);
         setTempTo(to);
-    }, [from, to]);
+    }, [from, to, returnFocusToTrigger]);
 
     useClickOutside(isOpen, [popoverRef, triggerRef], closePicker);
 
@@ -140,6 +164,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
             const finalTo = tempFrom && date < tempFrom ? tempFrom : date;
             onChange(finalFrom, finalTo);
             setSelecting("from");
+            returnFocusToTrigger();
             setIsOpen(false);
         }
     };
@@ -189,16 +214,61 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
 
     const prevMonth = () => setCurrentMonth(monthBack(currentMonth));
 
-    const nextMonth = () => setCurrentMonth(monthForward(currentMonth));
+    // Recorded because both forward arrows carry disabled={isCurrentMonthView()},
+    // and pressing one is the way to reach that view - see the recovery below.
+    const nextMonth = () => {
+        steppedForward.current = true;
+        setCurrentMonth(monthForward(currentMonth));
+    };
 
     const prevYear = () => setCurrentMonth(yearBack(currentMonth));
 
     // Clamped rather than disabled short of the boundary: from December a
     // hard-disabled jump would strand the view a year back with only the
     // month arrow to walk out on - see calendarNav.
-    const nextYear = () => setCurrentMonth(yearForward(currentMonth, new Date()));
+    const nextYear = () => {
+        steppedForward.current = true;
+        setCurrentMonth(yearForward(currentMonth, new Date()));
+    };
 
     const isCurrentMonthView = () => isCurrentMonth(currentMonth, new Date());
+
+    /**
+     * Focus back into the calendar after a step that disabled the arrow it was
+     * made on.
+     *
+     * Stepping forward from the month before the current one turns both forward
+     * arrows off, and one of them is the control that was just pressed. Chrome
+     * fires nothing when a focused element is disabled - focus becomes <body> in
+     * silence, and re-enabling the arrow later does not bring it back - so
+     * there is no event for the modal trap or anything else to answer, and this
+     * has to be recorded by the step itself.
+     *
+     * Only reachable because the popover can be opened without a pointer at all
+     * now: before, a keyboard never got in here to lose anything.
+     *
+     * The step back, because at the boundary it is the only direction left, and
+     * it is the one arrow that is never disabled.
+     *
+     * Guarded on <body>, which is precisely the state the browser's focus fixup
+     * leaves behind. Safari does not focus a button that is clicked, so there
+     * the step never held focus and there is nothing to give back.
+     */
+    const recoverFromDisabledStep = () => {
+        if (!steppedForward.current) return;
+
+        steppedForward.current = false;
+
+        if (isCurrentMonthView() && document.activeElement === document.body)
+            prevMonthRef.current?.focus();
+    };
+
+    useEffect(() => {
+        recoverFromDisabledStep();
+        // A step is what this answers and currentMonth is what a step changes.
+        // Listing the function would run it again on every render.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentMonth]);
 
     const weekDays = [
         t("calendar.mon"),
@@ -212,10 +282,30 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
 
     return (
         <div className="date-range-picker">
-            <div 
-                className="date-range-trigger" 
+            {/* A real button, not a div with an onClick: this is the only way
+                to change the range from the interface - the presets live inside
+                the popover it opens - and as a div Tab walked straight past it,
+                so a keyboard-only reader was left with whatever range the page
+                loaded with, on both toolbars that draw one.
+
+                It needs no aria-label: its own text is its name, and that text
+                is the current range, which is what a reader wants to hear.
+
+                aria-expanded and nothing more. A trigger that announces a
+                pop-up dialog promises one behind it, and what is behind this one
+                is the popover below: no role, no name, and nothing that moves
+                focus into it or holds focus there. A reader told they had opened
+                a dialog would press Enter, hear "expanded", and then be told
+                nothing at all. What the markup actually is - a control that
+                reveals content immediately after itself, dismissed with Escape -
+                is a disclosure, which aria-expanded states on its own and
+                correctly. */}
+            <button
+                type="button"
+                className="date-range-trigger"
                 ref={triggerRef}
                 onClick={() => isOpen ? closePicker() : setIsOpen(true)}
+                aria-expanded={isOpen}
             >
                 <FontAwesomeIcon icon={faCalendar} className="calendar-icon" />
                 {/* A chosen preset names itself: "Last 7 days" says more than
@@ -232,7 +322,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                         t("calendar.select_range")
                     )}
                 </span>
-            </div>
+            </button>
 
             {isOpen && (
                 <div className="date-range-popover" ref={popoverRef}>
@@ -240,12 +330,13 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                         <div className="timeframe-presets">
                             {PICKER_TIMEFRAMES.map((preset) => (
                                 <button
-                                    key={preset.id}
                                     type="button"
+                                    key={preset.id}
                                     className={`timeframe-preset${timeframe === preset.id ? " preset-active" : ""}`}
                                     onClick={() => {
                                         onTimeframeChange(preset.id);
                                         setSelecting("from");
+                                        returnFocusToTrigger();
                                         setIsOpen(false);
                                     }}
                                 >
@@ -262,13 +353,21 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                     {/* Double chevrons step a year, single ones a month, so a
                         window from last spring is one click away instead of
                         twelve. Both forward buttons disable together: the
-                        calendar never shows a month after the current one. */}
+                        calendar never shows a month after the current one.
+
+                        Each is named, because each holds nothing but a
+                        FontAwesome glyph and that renders aria-hidden - so all
+                        four announced as an empty button, and which one stepped
+                        a year rather than a month was carried entirely by how
+                        many chevrons the reader could see. */}
                     <div className="calendar-nav">
                         <div className="calendar-nav-group">
-                            <button className="nav-btn" onClick={prevYear}>
+                            <button type="button" className="nav-btn" onClick={prevYear}
+                                    aria-label={t("calendar.previous_year")}>
                                 <FontAwesomeIcon icon={faAnglesLeft} />
                             </button>
-                            <button className="nav-btn" onClick={prevMonth}>
+                            <button type="button" className="nav-btn" onClick={prevMonth} ref={prevMonthRef}
+                                    aria-label={t("calendar.previous_month")}>
                                 <FontAwesomeIcon icon={faChevronLeft} />
                             </button>
                         </div>
@@ -277,16 +376,20 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                         </span>
                         <div className="calendar-nav-group">
                             <button
+                                type="button"
                                 className="nav-btn"
                                 onClick={nextMonth}
                                 disabled={isCurrentMonthView()}
+                                aria-label={t("calendar.next_month")}
                             >
                                 <FontAwesomeIcon icon={faChevronRight} />
                             </button>
                             <button
+                                type="button"
                                 className="nav-btn"
                                 onClick={nextYear}
                                 disabled={isCurrentMonthView()}
+                                aria-label={t("calendar.next_year")}
                             >
                                 <FontAwesomeIcon icon={faAnglesRight} />
                             </button>
@@ -302,6 +405,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                         <div className="days">
                             {calendarDays.map((item, index) => (
                                 <button
+                                    type="button"
                                     key={index}
                                     className={`day-btn ${!item.isCurrentMonth ? "other-month" : ""} ${isInRange(item.date) ? "in-range" : ""} ${isRangeStart(item.date) ? "range-start" : ""} ${isRangeEnd(item.date) ? "range-end" : ""} ${isSelected(item.date) ? "selected" : ""} ${isToday(item.date) ? "today" : ""} ${isDisabled(item.date) ? "disabled" : ""}`}
                                     onClick={() => !isDisabled(item.date) && handleDayClick(item.date)}

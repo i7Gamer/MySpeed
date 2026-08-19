@@ -72,6 +72,10 @@
     opacity: 1
     transform: translateY(0) scale(1)
 
+// A real button now, so the styling one arrives with is cleared here. width is
+// among them: a button shrinks to its text, where the div it replaces filled the
+// menu - which is what keeps the two options the same width and their hover
+// backgrounds aligned with the menu's edges.
 .export-option
   display: flex
   align-items: center
@@ -81,6 +85,12 @@
   color: $subtext
   cursor: pointer
   transition: all 0.15s ease
+  background: none
+  border: none
+  font-family: inherit
+  font-size: inherit
+  width: 100%
+  text-align: left
 
   &:hover
     background-color: $darker-gray

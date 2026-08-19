@@ -81,13 +81,26 @@ describe("the overview chart stylesheet", () => {
 
     it("still trims the card itself when the list is tight", () => {
         assert.match(compiled,
-            /\.overview-items \.panel-row \.panel-row-icon\s*\{[^}]*display:\s*none/);
-        assert.match(compiled,
             /\.overview-items \.panel-row \.panel-row-description\s*\{[^}]*display:\s*none/);
     });
 
-    // Two steps, the wrap inside the trim: a label that wraps while its icon
-    // and description still show is a step order gone backwards.
+    /**
+     * And the glyph is not among what it trims, at either step.
+     *
+     * It is the only part of a row that carries the grade, and it was given up
+     * at a width no other card gives anything up at - so the summary stood
+     * glyphless beside panels holding their own, which reads as a fault rather
+     * than as a tighter card. See panelRow.test.js, where the same rule is held
+     * against all four panels.
+     */
+    it("never gives up the glyph", () => {
+        assert.doesNotMatch(compiled,
+            /\.panel-row-icon\s*\{[^}]*display:\s*none/,
+            "the icon goes again, which takes the grade off five readings with it");
+    });
+
+    // Two steps, the stack inside the trim: a row that stacks while its
+    // description still shows is a step order gone backwards.
     it("keys the wrap step inside the trim step", () => {
         const steps = containerBlocks(compiled)
             .map(({condition}) => parseFloat(condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]))
@@ -95,7 +108,7 @@ describe("the overview chart stylesheet", () => {
 
         assert.equal(steps.length, 2, "the trim and wrap steps are not both container-keyed");
         assert.ok(steps[0] > steps[1],
-            "the wrap step is not inside the trim step, so a label wraps while its icon still shows");
+            "the wrap step is not inside the trim step, so a row stacks while its description still shows");
     });
 
     /**
@@ -120,17 +133,23 @@ describe("the overview chart stylesheet", () => {
     });
 
     /**
-     * And the two steps give up different things.
+     * And the two steps give up different things, in the order a reader can
+     * afford to lose them.
      *
-     * They used to go together: the trim step hid the icon along with the
-     * description and pinned the label to a fixed 15rem. The icon costs 52px
-     * and every panel on the page carries one, so a summary without it beside a
-     * stability card with them reads as a different kind of card rather than a
-     * tighter one - and the pin reserved 240px whether the label wanted it or
+     * The wider step hides the descriptions and lets the label take a second
+     * line in the room they leave: cut, a label names a measurement the reader
+     * has to guess at, and with the description gone the label is all there is.
+     * Measured across fifteen languages, that is the whole of this card's cut
+     * band - "Fehlgeschlagene Tests" and "Неуспешни тестове" were cut from 380px
+     * of list down to 320, at every size the figure could be stated at.
+     *
+     * The tighter step is where the row gives up holding its figure beside its
+     * label at all. Both used to be one step that also hid the icon and pinned
+     * the label to a fixed 15rem - 240px reserved whether the label wanted it or
      * not, which is more than a ~300px row has once its figure is placed.
      * Measured, four of five rows put their value under the label at 380px.
      */
-    it("gives up the description a step before the icon", () => {
+    it("wraps the label a step before it stacks the row", () => {
         const steps = containerBlocks(compiled)
             .map(({condition, body}) => ({
                 at: parseFloat(condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]),
@@ -141,13 +160,15 @@ describe("the overview chart stylesheet", () => {
 
         assert.equal(steps.length, 2, "the card no longer has two steps to order");
 
-        const hides = (step, part) => new RegExp(`\\.panel-row-${part}\\s*\\{[^}]*display:\\s*none`)
-            .test(step.body);
+        assert.match(steps[0].body, /\.panel-row-description\s*\{[^}]*display:\s*none/,
+            "the wider step no longer drops the descriptions");
+        assert.match(steps[0].body, /\.panel-row-title\s*\{[^}]*white-space:\s*normal/,
+            "the label is still cut where its description has already gone, so it names nothing");
+        assert.doesNotMatch(steps[0].body, /flex-wrap:\s*wrap/,
+            "the row stacks its figure as soon as the descriptions go, with room still beside them");
 
-        assert.ok(hides(steps[0], "description"), "the wider step no longer drops the descriptions");
-        assert.ok(!hides(steps[0], "icon"),
-            "the icon goes with the descriptions again, which is 52px given up for nothing");
-        assert.ok(hides(steps[1], "icon"), "nothing ever drops the icon, so the tightest label has no room");
+        assert.match(steps[1].body, /flex-wrap:\s*wrap/,
+            "nothing ever lets the tightest row stack, so its figure has nowhere to go");
     });
 
     // The pin the label used to wear between the two steps, and the rules that

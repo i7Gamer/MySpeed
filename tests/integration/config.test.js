@@ -51,6 +51,43 @@ describe("validateInput", () => {
         it("truncates a fractional ping to whole milliseconds", async () => {
             assert.equal(await accepts("ping", "25.9"), "25");
         });
+
+        /**
+         * Anchored, like retentionDays below it - and for the reason stated
+         * there. A bare negated class asks only whether every character is a
+         * digit or a dot, so "1.2.3", ".." and "." are all numbers to it.
+         *
+         * What that costs is invisible rather than loud: nothing on the server
+         * reads these three keys, so the value is stored with a 200 and the
+         * client is left with it. `Number("1.2.3")` is NaN, and the guard in
+         * getIconBySpeed answers neutral for a threshold it cannot read - so
+         * every speed on the page goes grey and stays grey, with nothing on
+         * screen saying which value did it. "." is worse still: the ping branch
+         * splits on the dot and stores the empty string.
+         */
+        it("rejects a value that is only digits and dots", async () => {
+            for (const key of ["ping", "download", "upload"])
+                for (const bad of ["1.2.3", "..", "."])
+                    await rejects(key, bad);
+        });
+
+        /**
+         * And accepts every shape that is a number, which is wider than the
+         * three above are narrow.
+         *
+         * ".5" and "1." both read as numbers - 0.5 and 1 - and both were
+         * accepted by the check this replaced, so an instance can be holding one
+         * right now. That matters more than the typing: importConfig runs every
+         * stored key back through this validator and abandons the whole restore
+         * on the first refusal, so a threshold saved as ".5" would take the
+         * nodes and the integrations down with it, naming no key.
+         */
+        it("still accepts every shape that is a number", async () => {
+            assert.equal(await accepts("download", "250"), "250");
+            assert.equal(await accepts("upload", "12.5"), "12.5");
+            assert.equal(await accepts("download", ".5"), ".5");
+            assert.equal(await accepts("upload", "1."), "1.");
+        });
     });
 
     /**

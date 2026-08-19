@@ -92,3 +92,48 @@
   line-height: 1.1
   white-space: nowrap
   +graded-value($white)
+
+// The two steps the figure takes where the label beside it stops fitting, and
+// the one place they are stated.
+//
+// Written here rather than on each card because "the same width on every panel"
+// is the whole point of them: four cards stating their own steps is four
+// thresholds that agree until one of them is edited, and they had already come
+// apart - the latest test stepped at 22rem, the summary at 30rem with its
+// descriptions, the stability card never, and the value cards were simply a
+// size smaller at every width. On one row of the page that read as one card
+// being wrong rather than as three cards being tight.
+//
+// Unnamed, so each row steps on the width of whichever list it is drawn in: the
+// nearest ancestor container. Every panel that stacks these rows makes its list
+// one - see the four stylesheets - and no panel row is ever drawn inside another
+// container, so the query cannot land on something that is not a card's list.
+// (.test-details is a container too, and is the one other in the app; it renders
+// the whole test record and no panel row at all.) That is what makes the
+// breakpoint the same for cards drawn side by side, whatever stage the page is
+// in: line-mates hold the same width, so they step together.
+//
+// Inside the dialog, three of the four take no step - but not for one reason,
+// and it is worth having the three separately:
+//
+//   - the value cards and the stability card withhold their container there, on
+//     purpose, so their rows measure nothing. See either stylesheet for why: a
+//     size container offers a shrink-to-fit dialog nothing to size itself by.
+//   - the latest test leaves its container unguarded, and it does not matter,
+//     because opened it renders the whole test record instead of this list.
+//   - the summary keeps its container in the dialog deliberately - "an enlarged
+//     view is simply a wide container", as its own sheet puts it - so it is the
+//     one panel whose rows do step there, and on a phone-width dialog they take
+//     both steps.
+//
+// So "the dialog is wider than any grid cell" holds on a desktop and stops
+// holding at the bottom of the range: at 375px the enlarged card is 317px inside
+// its padding. ChartModal answers that for the value cards with a step of its
+// own, keyed on the viewport because in the dialog there is no list to key on.
+@container (width < #{$panel-figure-step})
+  .panel-row .panel-row-value
+    font-size: $panel-value-size-narrow
+
+@container (width < #{$panel-figure-floor})
+  .panel-row .panel-row-value
+    font-size: $panel-value-size-tight

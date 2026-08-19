@@ -137,3 +137,44 @@ describe("the Ukrainian optimal-speed labels", () => {
             `dropdown.upload reads "${uk.dropdown.upload}", which is the word for ${uk.latest.down}`);
     });
 });
+
+/**
+ * Jitter and ping are both milliseconds, and every locale has to say so twice.
+ *
+ * latest.jitter_unit read "M" in German, "m" in Spanish and "Mms" in French -
+ * three translations of a symbol that should never have been translated at all,
+ * so the stability card printed "0.8 M" where every other locale printed
+ * "0.8 ms". Reported from a real card in German.
+ *
+ * Nothing could catch it. germanLocale.test.js already names latest.jitter_unit
+ * in its SHARED set - the values a German reader sees in the same shape an
+ * English one does - but that set is only ever used to *exempt* keys from the
+ * copied-English check, so the one assertion built on it fires when de equals
+ * en, which is the case that is correct. "M" differs from "ms", so it passed.
+ *
+ * Read out of the same file rather than against a literal "ms", for the reason
+ * the Ukrainian check above gives: ru.json says "мс" and zh.json says "毫秒",
+ * and both are right. What cannot be right is one of the two being mangled while
+ * the other survives - they are the same unit, two lines apart.
+ *
+ * This is a CI pin rather than a nicety: crowdin.yml maps every non-English file
+ * here as a translation of en.json, so the next sync can bring all three back.
+ */
+describe("the millisecond units", () => {
+    const read = (code) => JSON.parse(fs.readFileSync(path.join(LOCALES, `${code}.json`), "utf8"));
+
+    for (const {name, code} of registered) {
+        it(`${name} names jitter in the same unit as ping`, () => {
+            const latest = read(code).latest ?? {};
+
+            // uk.json carries no jitter_unit at all and falls back to English,
+            // which is a missing translation rather than a broken one - Crowdin's
+            // to fill, not this check's to fail.
+            if (latest.jitter_unit === undefined) return;
+
+            assert.equal(latest.jitter_unit, latest.ping_unit,
+                `${code}.json reads "${latest.jitter_unit}" for jitter and "${latest.ping_unit}" for ping, `
+                + "which are the same unit");
+        });
+    }
+});

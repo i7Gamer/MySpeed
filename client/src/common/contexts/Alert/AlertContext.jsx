@@ -2,7 +2,9 @@ import React, {createContext, useCallback, useContext, useEffect, useMemo, useRe
 import {createPortal} from "react-dom";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faClose} from "@fortawesome/free-solid-svg-icons";
+import {t} from "i18next";
 import {isTopmostOverlay} from "@/common/contexts/Dialog";
+import {useModalFocus} from "@/common/hooks/useModalFocus";
 
 const AlertContext = createContext(null);
 
@@ -21,7 +23,12 @@ export const AlertProvider = ({children}) => {
         return new Promise((resolve) => {
             const id = ++alertIdRef.current;
             resolversRef.current.set(id, resolve);
-            setAlerts(prev => [...prev, {...config, id}]);
+            // Recorded here rather than read when the overlay mounts: focus is
+            // moved into the alert during commit - autoFocus on the input
+            // variant - so by the time a passive effect looks, the answer is
+            // the alert's own field, and giving focus back would mean giving it
+            // to an element that has just been unmounted.
+            setAlerts(prev => [...prev, {...config, id, openedFrom: document.activeElement}]);
         });
     }, []);
 
@@ -86,6 +93,29 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
     const closeResultRef = useRef(null);
     const isClosingRef = useRef(false);
 
+    const submitRef = useRef();
+
+    /*
+     * Only the alert on top takes focus. A stacked one below it has given up its
+     * turn, and pulling focus back into it would fight the one above.
+     *
+     * On the primary button, not on whatever comes first in the markup. The
+     * close X is the first thing in the header, and Enter on it resolves the
+     * alert with null - the document handler declines a key aimed at a button
+     * inside the alert, so the browser turns Enter into a click on whatever has
+     * focus. Seated on the X, a confirmation answered Enter by cancelling.
+     */
+    useModalFocus(dialogRef, {
+        // Mounted means open: this renderer only exists while its alert does.
+        // Holding focus is the narrower state - an alert stacked over has given
+        // up its turn, and giving focus back to the page while the one above is
+        // taking it scrolls the page under two backdrops.
+        open: true,
+        holdsFocus: isTop,
+        initialFocus: submitRef,
+        restoreTo: alert.openedFrom
+    });
+
     const close = useCallback((result = null) => {
         if (alert.disableClose && result === null) return;
         if (isClosingRef.current) return;
@@ -133,14 +163,20 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
             //
             // Only the alert's *own* buttons, which is what areaRef answers.
             // Bailing out for any focused button anywhere was the wrong rule in
-            // the other direction: an alert is portaled to the body with no
-            // focus trap and only the input variant autofocuses, so one opened
-            // by a click leaves focus on the page button that opened it.
-            // Declining the key there does not hand it to Cancel - it hands it
-            // to the browser, which turns an unclaimed Enter on a focused
-            // button into a click, and the trigger pushes a second copy of the
-            // alert being answered. Enter then never dismissed an alert at all;
-            // holding it stacked them.
+            // the other direction: declining the key on a page button does not
+            // hand it to Cancel, it hands it to the browser, which turns an
+            // unclaimed Enter on a focused button into a click - so the trigger
+            // pushed a second copy of the alert being answered. Enter then never
+            // dismissed an alert at all; holding it stacked them.
+            //
+            // That case is now unreachable, and the rule stays anyway. The alert
+            // takes focus when it opens - onto its primary button, or onto the
+            // input it autofocuses - so a focused button outside the alert is no
+            // longer a state this can be in. What the guard is *for* now is the
+            // first clause above: Enter on Cancel, or on the close X, belongs to
+            // that control and not to handleSubmit. Seating focus on the X
+            // rather than the primary button is exactly how a confirmation came
+            // to answer Enter by cancelling - see initialFocus above.
             if (e.target?.tagName === "BUTTON" && areaRef.current?.contains(e.target)) return;
 
             e.preventDefault();
@@ -176,11 +212,22 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
 
     return createPortal(
         <div className="dialog-area" ref={areaRef} onClick={handleBackdropClick}>
-            <div className="dialog" ref={dialogRef} onAnimationEnd={handleAnimationEnd}>
+            {/* Named by its own title, which the alert has to hand - the Dialog
+                beside it has to wire an id instead, because its heading is
+                written by whoever renders the header. */}
+            <div className="dialog" ref={dialogRef} onAnimationEnd={handleAnimationEnd}
+                 role="dialog" aria-modal="true" aria-label={alert.title} tabIndex={-1}>
                 <div className="dialog-header">
                     <h4 className="dialog-text">{alert.title}</h4>
-                    {!alert.disableClose &&
-                        <FontAwesomeIcon icon={faClose} className="dialog-text dialog-icon" onClick={() => close()}/>}
+                    {/* A button, not the glyph on its own: FontAwesome renders
+                        its svg aria-hidden and an svg is not in the tab order,
+                        so this announced as nothing and could not be reached. */}
+                    {!alert.disableClose && (
+                        <button type="button" className="dialog-icon-button" data-overlay-dismiss
+                                aria-label={t("dialog.close")} onClick={() => close()}>
+                            <FontAwesomeIcon icon={faClose} className="dialog-text dialog-icon"/>
+                        </button>
+                    )}
                 </div>
                 <div className="dialog-main">
                     {alert.description && <p className="dialog-description">{alert.description}</p>}
@@ -204,7 +251,7 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
                 </div>
                 <div className="dialog-buttons">
                     {alert.clearButton && (
-                        <button className="dialog-btn dialog-secondary" onClick={() => {
+                        <button type="button" className="dialog-btn dialog-secondary" onClick={() => {
                             alert.onClear?.();
                             close();
                         }}>
@@ -212,11 +259,12 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
                         </button>
                     )}
                     {alert.type === "confirm" && (
-                        <button className="dialog-btn dialog-secondary" onClick={() => close(false)}>
+                        <button type="button" className="dialog-btn dialog-secondary" onClick={() => close(false)}>
                             {alert.cancelText || "Cancel"}
                         </button>
                     )}
-                    <button className={`dialog-btn${alert.danger ? " dialog-danger" : ""}`} onClick={handleSubmit}>
+                    <button type="button" ref={submitRef} className={`dialog-btn${alert.danger ? " dialog-danger" : ""}`}
+                            onClick={handleSubmit}>
                         {alert.buttonText || "OK"}
                     </button>
                 </div>

@@ -9,6 +9,7 @@ import {assertOk, jsonRequest, patchRequest, RequestError} from "@/common/utils/
 import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
+import {isThresholdNumber} from "@/common/utils/TestUtil";
 
 const NOT_ENOUGH_TESTS_STATUS = 501;
 
@@ -50,7 +51,28 @@ export const OptimalValuesDialog = ({open, onClose}) => {
     };
 
     const update = async (close) => {
-        if ((ping && /[^0-9.]/.test(ping)) || (download && /[^0-9.]/.test(download)) || (upload && /[^0-9.]/.test(upload))) {
+        // The shared rule, not a second copy of it. This asked a negated
+        // character class - whether every character was a digit or a dot -
+        // which is not what a number is: "1.2.3", ".." and "." all satisfy it.
+        // The dialog waved them through to a server that refuses them, and the
+        // three fields are patched one after another, so a bad third value
+        // arrived only after the first two had been written: an error reported
+        // over a change that had partly happened.
+        //
+        // The class itself is named in the test rather than here, because the
+        // assertion that it is gone would otherwise find it in this sentence.
+        //
+        // Each field is patched below only when it differs from what is stored,
+        // so this asks the same question the send does. Validating all three
+        // regardless made a malformed value already on the instance - and every
+        // MySpeed up to 1.3.4 stored whatever the unanchored check let through -
+        // refuse the whole save, including the field that was actually edited.
+        // The operator could not even see the culprit: a number input drops a
+        // value it cannot parse, so the offending field reads empty.
+        const invalid = (value, stored) => value !== stored && value && !isThresholdNumber(value);
+
+        if (invalid(ping, config.ping) || invalid(download, config.download)
+            || invalid(upload, config.upload)) {
             updateToast(t("dropdown.invalid"), "red", faExclamationTriangle);
             return;
         }
@@ -132,12 +154,12 @@ export const OptimalValuesDialog = ({open, onClose}) => {
                     </DialogBody>
                     <DialogFooter>
                         {recommendations && (
-                            <button className="dialog-btn" onClick={applyRecommendations}>
+                            <button type="button" className="dialog-btn" onClick={applyRecommendations}>
                                 <FontAwesomeIcon icon={faWandMagicSparkles}/>
                                 <span>{t("optimal_values.use_recommended")}</span>
                             </button>
                         )}
-                        <button className="dialog-btn" onClick={() => update(close)}>{t("dialog.update")}</button>
+                        <button type="button" className="dialog-btn" onClick={() => update(close)}>{t("dialog.update")}</button>
                     </DialogFooter>
                 </>
             )}

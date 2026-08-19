@@ -12,44 +12,43 @@
   justify-content: center
   width: 100%
 
-// What the step below measures - the list's own width, for the reasons the
-// latest-test card's copy of this sets out.
+// What the shared row's steps measure - the list's own width, for the reasons
+// the latest-test card's copy of this sets out.
 //
 // Everywhere but the dialog, which measures this card to size itself: a size
 // container contains its inline axis, so it offers an intrinsic pass nothing of
 // its contents, and a shrink-to-fit dialog is nothing but that pass. Measured
 // with the container left on, the enlarged card fell to 402px against the 426
 // its rows want, and to 282 against 351 on a phone, where the floor is
-// min-content rather than the dialog's 400px minimum. The same guard the figure
-// above wears, for the same reason - see .modal-wide, which exists because this
-// class of panel cannot ask a shrink-to-fit dialog for a width.
+// min-content rather than the dialog's 400px minimum. See .modal-wide, which
+// exists because this class of panel cannot ask a shrink-to-fit dialog for a
+// width.
 //
-// The step is not wanted there in any case: opened, the labels wrap and the
-// figure steps down on a phone, which keeps them whole without losing the glyph.
+// None of the shared steps is taken there, then: with no container above them
+// the rows measure nothing. On a desktop that is also what is wanted, because
+// the dialog is wider than any cell of the grid - at 375px it is still wider,
+// 317px of card against the 293 the one-column stage gives it, but it is no
+// longer wide enough for a full-size figure beside a one-word label. So the
+// dialog states a step of its own down there, keyed on the viewport because
+// there is no list left to key on: see the value-card rule in ChartModal, where
+// the 16px cut on "Maximum" that it exists for is measured.
 .value-container:not(.chart-modal-body *)
   container-type: inline-size
 
-// The icon, so the label beside it keeps its name - see $panel-icon-drop. Here
-// it is "Самый высокий" over the maximum, cut by 35px on a phone.
+// The figure this card states was a step down at every width, on the reasoning
+// that a speed is the longest kind of figure the app prints and these cards
+// state three of them. What that missed is that the card is not read on its own:
+// held to a size no other panel used, it was the odd card on the page at the
+// widths where it had as much room as any of them, and it still had nothing left
+// to give at the widths where it ran out - "Самый высокий" was cut over the
+// maximum with no step remaining to spend on it.
 //
-// Only that step: the figure the other card steps down here is already stepped
-// down on this one, at every width, so there is nothing left of it to give. What
-// that leaves is the same label cut by 4px at the three-across stage, where
-// taking the glyph and its grade off five rows to recover four pixels is the
-// worse of the two.
-@container (width < #{row.$panel-icon-drop})
-  .value-container .panel-row .panel-row-icon
-    display: none
-
-// A speed is the longest kind of figure the app prints, and these cards state
-// three of them. Measured at the 456px the grid gives them: at the shared size
-// the value takes 180px of the 408 inside the padding and the label column is
-// left too narrow for "84% of your target" under it; one step down fits both,
-// with the figure still a quarter larger than the 1.1rem it used to be.
-//
-// Opened, the card has the width of the dialog and takes the full size back.
-.value-container .panel-row-value:not(.chart-modal-body *)
-  font-size: row.$panel-value-size-narrow
+// So it takes the shared steps like every other panel, and takes them at the
+// same widths - see the row's stylesheet. Measured across ten languages, the
+// full size costs this card 6px of height at the widths it is now stated at, and
+// no sub-line that was one line becomes two: the target sentence already wraps
+// where the grid is tight, and the value beside it is already two lines there -
+// the figure over its delta - so the room comes out of a column that had it.
 
 // The label column takes the row's free space so the target bar below it spans
 // the card rather than stopping at the width of the longest word above.

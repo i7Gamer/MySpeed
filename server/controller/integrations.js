@@ -330,6 +330,17 @@ export const getIntegration = (name) =>
     Object.hasOwn(integrations, name) ? integrations[name] : undefined;
 
 /**
+ * The caps a declared text field wears.
+ *
+ * Named rather than written at the comparison, because the display name in
+ * validateInput is held to the same one and is not a declared field of any
+ * module - so the two have to move together or they disagree about the same
+ * column type.
+ */
+const MAX_TEXT_LENGTH = 250;
+const MAX_TEXTAREA_LENGTH = 2000;
+
+/**
  * @param isPatch  whether this body is changing some settings rather than
  *                 supplying all of them.
  *
@@ -355,8 +366,6 @@ export const validateInput = (module, data, isPatch = false) => {
             && (omitted || data[field.name] === null || data[field.name] === "")) return false;
 
         if (data[field.name] !== undefined && data[field.name] !== null && data[field.name] !== "") {
-            if (field.regex && !new RegExp(field.regex).test(data[field.name])) return false;
-
             // Checked before the lengths, which read `.length`: `undefined >
             // 250` is false, so a number, an object or an array sailed past
             // them and was whitelisted into the stored data column. At send
@@ -366,8 +375,31 @@ export const validateInput = (module, data, isPatch = false) => {
             if ((field.type === "text" || field.type === "textarea")
                 && typeof data[field.name] !== "string") return false;
 
-            if (field.type === "text" && data[field.name].length > 250) return false;
-            if (field.type === "textarea" && data[field.name].length > 2000) return false;
+            if (field.type === "text" && data[field.name].length > MAX_TEXT_LENGTH) return false;
+            if (field.type === "textarea" && data[field.name].length > MAX_TEXTAREA_LENGTH) return false;
+
+            /*
+             * And the pattern last of the three, because it is the one whose
+             * cost depends on how long the value is.
+             *
+             * This ran first, against the raw request value, whose only bound is
+             * app.js's 100kb body parser - so every pattern a module declares
+             * was handed up to 100,000 characters. All eleven shipped patterns
+             * are linear and were timed to 80,000 characters, so nothing was
+             * wrong; what this changes is that the next module to declare one
+             * cannot be handed more than its column takes. The threshold check
+             * in the config controller is what happens when that is left to
+             * whoever writes the pattern.
+             *
+             * Every branch here answers `false`, so moving it changes no
+             * answer - only which check gets there first.
+             *
+             * Still ahead of the number branch below, which ends by writing the
+             * coerced value back: past that, this would be testing a number
+             * rather than what arrived.
+             */
+            if (field.regex && !new RegExp(field.regex).test(data[field.name])) return false;
+
             if (field.type === "boolean" && typeof data[field.name] !== "boolean") return false;
             if (field.type === "number") {
                 // Checked before coercing, for the same reason the text branch
@@ -389,9 +421,35 @@ export const validateInput = (module, data, isPatch = false) => {
         }
     }
 
+    /**
+     * The display name, which is the one value here no module declares - so
+     * the loop above, where every type and length cap lives, never saw it. It
+     * was copied onto the result unread and assigned straight to `displayName`,
+     * a bare Sequelize.STRING: VARCHAR(255) on MySQL, where an over-long name
+     * was ER_DATA_TOO_LONG and a 500 with a stack in the operator's log, while
+     * sqlite stored it whole behind the 200 the create route answers with. The
+     * two supported backends answered the same request differently.
+     *
+     * A non-string did not simply fail. Sequelize's STRING validator lets a
+     * number through - `42` was stored as the text "42" on both backends, with
+     * nothing said - and threw only for a boolean, an object or an array, which
+     * is where the 500 came from. So the type half of this check is not
+     * belt-and-braces beside the length: it is the only thing standing between
+     * a numeric display name and a silently coerced one.
+     *
+     * Held to the text cap rather than to 255, so it wears the limit a declared
+     * text field wears and stays inside the column either way.
+     *
+     * undefined stays allowed, and has to: the column names its own default for
+     * create(), and patch() reads undefined as "leave the name alone".
+     */
+    const displayName = data["integration_name"];
+    if (displayName !== undefined
+        && (typeof displayName !== "string" || displayName.length > MAX_TEXT_LENGTH)) return false;
+
     const result = {};
     for (const field of integration.fields) result[field.name] = data[field.name];
-    result["integration_name"] = data["integration_name"];
+    result["integration_name"] = displayName;
 
     return result;
 }

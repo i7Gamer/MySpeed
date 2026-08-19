@@ -37,6 +37,57 @@ const configDefaults = {
 
 const MAX_RETENTION_DAYS = 10000;
 
+/**
+ * A speed or latency threshold: anything that reads as a number, and nothing
+ * that does not.
+ *
+ * Anchored, for the reason retentionDays states where it does the same thing. A
+ * bare negated class - `/[^0-9.]/` - only asks whether every character is a
+ * digit or a dot, so "1.2.3", ".." and "." were all numbers to it.
+ *
+ * What that cost was quiet rather than loud. No server code reads these three
+ * keys, so the value was stored behind a 200 and handed to the client, where
+ * `Number("1.2.3")` is NaN and getIconBySpeed answers `blue` for a threshold it
+ * cannot read - the colour this interface uses for a figure nobody measured, so
+ * every speed on the page reads as ungraded and nothing on screen names the
+ * value that did it. "." was worse: the ping branch below splits on the dot, so
+ * what reached the column was the empty string.
+ *
+ * Wide on purpose either side of the dot. ".5" and "1." are 0.5 and 1, the old
+ * check took both, and an instance can be holding one now - and importConfig
+ * runs every stored key back through here and abandons the whole restore on the
+ * first refusal, naming no key. Refusing a value that was legal when it was
+ * saved would take the nodes and the integrations down with a threshold.
+ *
+ * The dot lives inside the optional group rather than beside it, and that is
+ * not a matter of taste. Written `[0-9]+\.?[0-9]*`, the two digit runs sit on
+ * either side of something optional, so a run of digits that fails at the end
+ * can be divided between them in as many ways as it is long - and the engine
+ * tries every one before giving up. Doubling the input quadruples the work.
+ * importConfig is handed its body at a 50mb limit and puts every stored key
+ * through here, so one restore carrying a long enough threshold blocks the
+ * event loop for as long as it takes.
+ *
+ * Behind the password, and it matters anyway: an operator restoring a backup
+ * they were given is the ordinary way to hold a value nobody typed, the two
+ * write routes are reachable from a session as well as a header, and a
+ * single-threaded server stalled by one request is stalled for every caller.
+ * (Not from a demo, where previewReadOnly refuses the method, and not from a
+ * passwordless instance on a routable address, where handleUnconfigured
+ * requires the setup token.)
+ *
+ * Requiring the dot leaves the two runs unable to trade characters; the values
+ * accepted are exactly the same, which the table in thresholdInput.test.js is
+ * what says.
+ */
+const THRESHOLD_NUMBER = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/;
+
+/**
+ * The three keys that rule is for, named once because importConfig treats them
+ * apart from every other value it restores - see the fallback there.
+ */
+const THRESHOLD_KEYS = ["ping", "download", "upload"];
+
 // The value stored when no password is configured. It is a sentinel, not a
 // password: password.js waves every request through when it sees this.
 export const NO_PASSWORD = "none";
@@ -209,7 +260,7 @@ export const getUsedStorage = async () => {
 export const validateInput = async (key, value) => {
     if (!value?.toString()) return "You need to provide the new value";
 
-    if ((key === "ping" || key === "download" || key === "upload") && /[^0-9.]/.test(value))
+    if (THRESHOLD_KEYS.includes(key) && !THRESHOLD_NUMBER.test(value.toString()))
         return "You need to provide a number in order to change this";
 
     if ((key === "ooklaId" || key === "libreId") && (/[^0-9]/.test(value) && value !== "none"))
@@ -366,6 +417,17 @@ export const exportConfig = async ({includeSecrets = false} = {}) => {
 const asRows = (value) => Array.isArray(value) ? value : null;
 
 /**
+ * What a refused import answers with when no single value is to blame - a
+ * payload that is not a backup, or a write the database turned down.
+ *
+ * An object rather than a boolean, because the useful half of a refusal is
+ * *which* key it was: the import abandons everything on the first value it
+ * cannot read, so an operator was left holding a file that would not go back
+ * and sixteen stored values to bisect by hand.
+ */
+const REFUSED = {ok: false};
+
+/**
  * Replaces the stored configuration with an exported one.
  *
  * The whole payload is checked before a single row is touched, and the
@@ -375,12 +437,12 @@ const asRows = (value) => Array.isArray(value) ? value : null;
  * back - there is no soft delete and nothing else holds a copy.
  */
 export const importConfig = async (obj) => {
-    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return REFUSED;
 
     const rows = {};
     for (const {key} of IMPORTED_TABLES) {
         const value = asRows(obj[key]);
-        if (value === null) return false;
+        if (value === null) return REFUSED;
         rows[key] = value;
     }
 
@@ -392,7 +454,7 @@ export const importConfig = async (obj) => {
             data: typeof entry?.data === "string" ? JSON.parse(entry.data) : entry?.data
         }));
     } catch {
-        return false;
+        return REFUSED;
     }
 
     const updates = [];
@@ -406,7 +468,7 @@ export const importConfig = async (obj) => {
         // would accept no password at all. A redacted export carries no
         // password key, so this simply leaves the current one alone.
         if (key === "password") {
-            if (!isStoredPassword(obj.config[key])) return false;
+            if (!isStoredPassword(obj.config[key])) return {ok: false, key};
             updates.push({key, value: obj.config[key]});
             continue;
         }
@@ -427,7 +489,37 @@ export const importConfig = async (obj) => {
         }
 
         const validated = await validateInput(key, obj.config[key]);
-        if (typeof validated === "string") return false;
+
+        if (typeof validated === "string") {
+            /*
+             * A threshold that can no longer be read takes the default rather
+             * than the whole restore.
+             *
+             * These three were guarded by a negated character class until this
+             * check was anchored - "is every character a digit or a dot" - so
+             * "1.2.3", ".." and a lone "." were all stored behind a 200 by an
+             * older version. Every backup carrying one would otherwise be
+             * refused here in full, and the refusal names no key: the nodes,
+             * the integrations and the recorded history are all left behind by
+             * a display preference no server code even reads.
+             *
+             * The same trade this rule already makes for ".5" and "1." - a
+             * value that was legal when it was saved must not take a restore
+             * down with it - except that these cannot be kept as they are,
+             * because Number() cannot read them and a threshold it cannot read
+             * greys every speed on the dashboard. So the restore completes and
+             * the unreadable preference is the one thing that does not survive
+             * it, which is the direction with something left to fix afterwards.
+             *
+             * Only these three. Anything else refused here is a value the
+             * server acts on, and guessing at one of those would restore an
+             * instance that is not the one that was backed up.
+             */
+            if (!THRESHOLD_KEYS.includes(key)) return {ok: false, key};
+
+            updates.push({key, value: configDefaults[key]});
+            continue;
+        }
 
         updates.push({key, value: validated.value});
     }
@@ -450,7 +542,7 @@ export const importConfig = async (obj) => {
                 await model.bulkCreate(rows[key], {transaction});
         });
     } catch {
-        return false;
+        return REFUSED;
     }
 
     // Restoring a backup is usually the remediation, so a session issued
@@ -468,7 +560,7 @@ export const importConfig = async (obj) => {
         timer.startTimer(cron.value.toString());
     }
 
-    return true;
+    return {ok: true};
 }
 
 export const factoryReset = async () => {

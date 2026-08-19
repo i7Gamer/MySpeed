@@ -17,6 +17,7 @@ import {
 import {ConfigContext} from "@/common/contexts/Config";
 import {takePasswordUnsetMark} from "@/common/utils/PasswordSetup";
 import {useClickOutside} from "@/common/hooks/useClickOutside";
+import {clickable} from "@/common/utils/Clickable";
 import {StatusContext} from "@/common/contexts/Status";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {useAlert} from "@/common/contexts/Alert";
@@ -177,13 +178,29 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
                                 if (!entry.hr) {
                                     const blocked = entry.previewDisabled && config.previewMode;
 
+                                    /*
+                                     * A control, not a div that happens to
+                                     * answer a click. This menu is the only
+                                     * route to nine of the app's dialogs -
+                                     * optimal values, the provider, storage,
+                                     * the password, the schedule, pause,
+                                     * integrations, the language and the
+                                     * preferences - and every entry was a bare
+                                     * onClick, so Tab walked past all of them
+                                     * and a keyboard-only operator could not
+                                     * open a single one.
+                                     *
+                                     * `clickable` rather than a <button>, for
+                                     * the reason it documents: the entry holds
+                                     * an <h3>, which a button may not contain.
+                                     */
                                     return (<div className={"dropdown-item" + (blocked ? " dropdown-item-disabled" : "")}
-                                                 onClick={() => {
+                                                 {...clickable(() => {
                                         switchDropdown();
                                         // The explanation instead of the dialog:
                                         // the save behind it would be refused.
                                         (blocked ? explainPreview : entry.run)();
-                                    }} key={entry.run}>
+                                    })} key={entry.run}>
                                         <FontAwesomeIcon icon={entry.icon}/>
                                         <h3>{entry.text}</h3>
                                     </div>);

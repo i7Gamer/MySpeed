@@ -75,6 +75,38 @@
     &.skeleton-visible
       animation: skeleton-shimmer 1.5s infinite, skeleton-fade-in 0.3s ease forwards
 
+// The first stage: three equal columns, once the summary has given up the
+// sentences its extra width was for.
+//
+// See $stats-equal-thirds for the width and why it is that width. What it fixes
+// is a disagreement the cards could not settle between them: every panel steps
+// its figure down on its own list width, which is the only rule that holds at
+// all three stages, so the card holding 100px more than its line-mates steps
+// later than they do and stands beside them stating a larger figure. Measured at
+// 1263px, 28px against 19.2. Equal thirds leaves nothing for that to stand on.
+//
+// Every card, not only the three that show it. The left column runs the whole
+// page - the summary over the latency chart over the hourly one - so a stage
+// that narrowed the top card alone would put a kink in a column three rows deep,
+// which is the same reason those two charts take the 40% in the first place.
+//
+// Three cards and two gaps make the row, so the gap comes off each share rather
+// than off one of them: 100% - 2 gaps, in thirds. The base rule above puts both
+// gaps on the summary because it is the only share that stylesheet states; here
+// all three are stated, so they can carry a third of the row's gaps each.
+//
+// Above the two stages below it, deliberately - they restate these same
+// selectors at equal specificity, and only source order settles those.
+@media screen and (max-width: $stats-equal-thirds)
+  .statistic-area
+    > .container-large,
+    > .ping-chart,
+    > .hourly-chart,
+    > .stats-container,
+    > .chart-container,
+    > .skeleton-chart
+      flex: 1 1 calc(33.3333% - #{$card-gap} * 2 / 3)
+
 // The page's three shapes, decided here because this is the only stylesheet
 // that knows about all nine cards. It used to be a `max-width: 900px` written
 // out twice - once in the stat cards' container, once in the chart cards' - and

@@ -124,12 +124,28 @@
   color: $accent-primary
   font-weight: 600
 
+// The close control is a button now rather than the bare glyph, so this clears
+// everything the browser draws around one and leaves the glyph looking exactly
+// as it did. display: flex so the button is the size of the icon rather than of
+// a line box, which is what kept the header's own alignment.
+.dialog-icon-button
+  display: flex
+  align-items: center
+  justify-content: center
+  padding: 0
+  background: none
+  border: none
+  font-family: inherit
+  cursor: pointer
+  flex-shrink: 0
+
 .dialog-icon
   cursor: pointer
   color: $subtext
   transition: color 0.15s ease
   font-size: 1.1rem
 
+.dialog-icon-button:hover .dialog-icon,
 .dialog-icon:hover
   color: $accent-danger
 

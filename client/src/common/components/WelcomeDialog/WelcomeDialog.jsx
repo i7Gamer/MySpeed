@@ -83,8 +83,15 @@ export const WelcomeDialog = ({open, onClose}) => {
         }
     };
 
+    /*
+     * Named outright rather than by id: this is the one dialog that draws a
+     * banner instead of a DialogHeader, so there is no heading for the usual
+     * aria-labelledby to point at - and it is also the one nobody can dismiss,
+     * so an unnamed modal is the worst place to leave one.
+     */
     return (
-        <Dialog open={open} onClose={onClose} className="welcome-dialog" disableClose>
+        <Dialog open={open} onClose={onClose} className="welcome-dialog" disableClose
+                label={t("welcome.title")}>
             {({forceClose}) => (
                 <div className="welcome-banner">
                     <div className={`welcome-inner ${animating ? 'slide-in' : ''}`}>
@@ -96,7 +103,7 @@ export const WelcomeDialog = ({open, onClose}) => {
                     </div>
                     <div className="welcome-actions">
                         <h3>{t("welcome.step")} {step}/{provider === "ookla" ? 4 : 3}</h3>
-                        <button className="dialog-btn" onClick={() => continueStep(forceClose)}>
+                        <button type="button" className="dialog-btn" onClick={() => continueStep(forceClose)}>
                             {step === (provider === "ookla" ? 4 : 3) ? t("dialog.done") : t("dialog.continue")}
                         </button>
                     </div>

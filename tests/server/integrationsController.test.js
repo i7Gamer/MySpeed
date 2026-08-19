@@ -1,8 +1,13 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
     initialize, secretFieldNames, withoutSecrets, validateInput, getIntegrations, asDataObject
 } from "../../server/controller/integrations.js";
+
+const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 
 /**
  * withoutSecrets is what stands between a downloadable config.json and every
@@ -259,6 +264,49 @@ describe("validateInput", () => {
                 `${JSON.stringify(value)} was accepted as a textarea value`);
     });
 
+    /**
+     * The display name, which is the one value here that no module declares.
+     *
+     * Every type and length cap lives inside the loop over `integration.fields`,
+     * and integration_name is not one of them - it was copied onto the result
+     * afterwards, unread. So it reached `displayName`, a bare Sequelize.STRING,
+     * which is VARCHAR(255) on MySQL: an over-long name was ER_DATA_TOO_LONG
+     * and a 500 there, while sqlite stored it whole. The two supported backends
+     * answered the same request differently, and the one that failed did it
+     * with a stack in the operator's log rather than the 400 every declared
+     * field earns.
+     *
+     * A non-string went two ways, and only one of them was loud. Sequelize's
+     * STRING validator refuses a boolean, an object or an array - the 500 - but
+     * lets a number through, so `42` was stored as the text "42" with nothing
+     * said at all. The quiet one is what the type check here is for.
+     */
+    describe("the display name", () => {
+        it("accepts a name a text field would accept", () => {
+            assert.notEqual(validateInput("telegram", telegram({integration_name: "Home line"})), false);
+            assert.notEqual(validateInput("telegram", telegram({integration_name: "x".repeat(250)})), false);
+        });
+
+        // Optional, and it has to stay optional: the column names its own
+        // default, and patch() reads undefined as "leave the name alone".
+        it("accepts a configuration that names nothing", () => {
+            const validated = validateInput("telegram", telegram());
+
+            assert.notEqual(validated, false);
+            assert.equal(validated.integration_name, undefined);
+        });
+
+        it("rejects a name past the length the column holds", () => {
+            assert.equal(validateInput("telegram", telegram({integration_name: "x".repeat(251)})), false);
+        });
+
+        it("rejects a name that is not text", () => {
+            for (const value of [42, {}, [], true, null])
+                assert.equal(validateInput("telegram", telegram({integration_name: value})), false,
+                    `${JSON.stringify(value)} was accepted as a display name`);
+        });
+    });
+
     // A text field with no declared pattern has nothing else standing in the
     // way - the pattern check is what happened to catch the others.
     it("requires a short text field to actually be a string", () => {
@@ -345,5 +393,54 @@ describe("validateInput on a partial update", () => {
 
     it("is strict by default, so a create cannot reach the lenient path by accident", () => {
         assert.equal(validateInput("ntfy", {topic: "myspeed"}), false);
+    });
+});
+
+/**
+ * The order the field checks run in, which is the one thing about them a
+ * functional test cannot see: every branch answers `false`, so a value refused
+ * by the length cap and one refused by the regex are the same answer.
+ *
+ * It matters anyway. `field.regex` is compiled and run against the raw request
+ * value, and the only bound on that value is app.js's 100kb body parser - so
+ * with the regex first, every pattern a module declares is handed up to 100,000
+ * characters. All eleven shipped patterns are linear and were timed to 80,000
+ * characters, so nothing is wrong today; what this holds is that the next module
+ * to declare one cannot be handed more than the column takes. The threshold
+ * check in the config controller is what happens when that assumption is left
+ * to whoever writes the pattern.
+ *
+ * Before the number branch, not merely last: that branch ends in
+ * `data[field.name] = num`, so a regex moved past it would be testing the
+ * coerced number rather than what arrived.
+ */
+describe("the order validateInput checks a field in", () => {
+    const source = fs.readFileSync(
+        path.join(ROOT, "server", "controller", "integrations.js"), "utf8");
+
+    const at = (needle) => {
+        const found = source.indexOf(needle);
+        assert.notEqual(found, -1, `"${needle}" is no longer in validateInput`);
+
+        return found;
+    };
+
+    it("bounds the value before compiling a pattern against it", () => {
+        assert.ok(at("MAX_TEXT_LENGTH) return false") < at("new RegExp(field.regex)"),
+            "a module's pattern is run against the whole request body rather than against a capped value");
+        assert.ok(at("MAX_TEXTAREA_LENGTH) return false") < at("new RegExp(field.regex)"),
+            "the textarea cap is applied after the pattern that already read the value");
+    });
+
+    it("still reads the value before the number branch rewrites it", () => {
+        assert.ok(at("new RegExp(field.regex)") < at("data[field.name] = num"),
+            "the pattern is tested against the coerced number rather than against what arrived");
+    });
+
+    // The reason the type check leads: the caps below it read `.length`, and
+    // `undefined > 250` is false.
+    it("checks the type before anything reads a length", () => {
+        assert.ok(at('typeof data[field.name] !== "string"') < at("MAX_TEXT_LENGTH) return false"),
+            "a non-string reaches a length comparison that silently passes it");
     });
 });

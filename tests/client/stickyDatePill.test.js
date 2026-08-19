@@ -49,26 +49,33 @@ describe("the floating date pill", () => {
 /**
  * "Peak-hour slowdown" against a 10rem label, cut one letter in.
  *
- * The row's description is hidden at that width and its icon with it, so the
- * label is the whole of what names the number beside it - and an ellipsis there
- * leaves the reader guessing which measurement they are looking at.
+ * The row's description is hidden at that width, so the label is the whole of
+ * what names the number beside it - and an ellipsis there leaves the reader
+ * guessing which measurement they are looking at.
  */
 describe("the overview card's row labels", () => {
     const css = compile("pages/Statistics/charts/OverviewChart/styles.sass");
 
-    // The trims key on the card's own list now - @container, not viewport -
-    // so the narrowest step is the smallest list width touching the title.
-    const narrow = containerBlocks(css)
+    // The trims key on the card's own list - @container, not viewport - and the
+    // two steps no longer dress the same parts of the row: the label is allowed
+    // its second line where the descriptions go, and the row is allowed to stack
+    // a step below that. So each rule is read from the narrowest step that
+    // states it rather than from one step for all of them.
+    const steps = containerBlocks(css)
         .map(({condition, body}) => ({width: parseFloat(condition.match(/width\s*<\s*([\d.]+)rem/)?.[1]), body}))
-        .filter(({width, body}) => Number.isFinite(width) && /\.panel-row-title/.test(body))
-        .sort((a, b) => a.width - b.width)[0];
+        .filter(({width}) => Number.isFinite(width))
+        .sort((a, b) => a.width - b.width);
 
     // The row itself is shared with three other panels now; these rules are the
     // overview card's own, which is why they are read out of its stylesheet.
-    const ruleFor = (part) => narrow.body.match(new RegExp(`\\.panel-row-${part}\\s*\\{([^}]*)}`))?.[1] ?? "";
+    const ruleFor = (part) => {
+        const pattern = new RegExp(`\\.panel-row-${part}\\s*\\{([^}]*)}`);
+
+        return steps.map(({body}) => body.match(pattern)?.[1]).find((rule) => rule !== undefined) ?? "";
+    };
 
     it("finds the narrowest rule for them", () => {
-        assert.notEqual(narrow, undefined, "no width-specific rule for the labels any more");
+        assert.ok(steps.length > 0, "no width-specific rule for the labels any more");
     });
 
     it("wraps rather than truncating", () => {
