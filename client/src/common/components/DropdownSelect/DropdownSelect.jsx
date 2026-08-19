@@ -120,6 +120,19 @@ export const DropdownSelect = ({
      * options alike.
      */
     const handleMenuKey = (e) => {
+        /*
+         * Nothing at all while the menu is closed.
+         *
+         * This handler sits on the container, which is mounted whether or not
+         * the menu is - so with focus on the trigger it claimed Escape and
+         * closed a menu that was already closed. Dialog's own Escape declines a
+         * key whose default has been prevented, which is what stops a stacked
+         * alert taking the dialog under it down as well, so what this actually
+         * swallowed was the one key that dismisses the dialog: on the create
+         * button, inside the only dialog that draws one, Escape did nothing.
+         */
+        if (!isOpen) return;
+
         if (e.key === "Escape") {
             e.preventDefault();
             setIsOpen(false);

@@ -46,6 +46,30 @@ export const ExportButton = ({ dateRange, allTime = false }) => {
         if (!exporting) returnFocusToTrigger();
     }, [exporting, returnFocusToTrigger]);
 
+    /**
+     * Escape dismisses the menu and hands focus back to the trigger.
+     *
+     * What every other menu in the app already does - the settings menu, the
+     * context menu, the date picker, the create menu - and the only one this had
+     * nothing for. A reader who opened it and wanted neither format could only
+     * Tab past both or reach for the pointer.
+     *
+     * Reachable because the two formats answer a keyboard now: before, opening
+     * the menu was as far as anyone got without one.
+     *
+     * Nothing at all while the menu is closed. The handler is on the container,
+     * which is always mounted, and claiming a key nothing was pressed against is
+     * how the create menu came to swallow the one that dismisses the dialog
+     * around it.
+     */
+    const handleMenuKey = (e) => {
+        if (!isOpen || e.key !== "Escape") return;
+
+        e.preventDefault();
+        setIsOpen(false);
+        buttonRef.current?.focus();
+    };
+
     const handleExport = async (format) => {
         /*
          * Read before the menu closes, because closing unmounts the control
@@ -89,7 +113,7 @@ export const ExportButton = ({ dateRange, allTime = false }) => {
     };
 
     return (
-        <div className="export-button-container">
+        <div className="export-button-container" onKeyDown={handleMenuKey}>
             {/* Named for a screen reader as well as for the eye: below 480px
                 the label span is hidden and the button was left as a bare
                 download glyph with no accessible name - the same collapse the

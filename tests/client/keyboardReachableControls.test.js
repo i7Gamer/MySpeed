@@ -42,6 +42,21 @@ const elementsCarrying = (source, marker) => {
     return found;
 };
 
+/**
+ * The opening tag of the element carrying `marker`, attributes and all.
+ *
+ * Walking back to the nearest `<` for the reason elementsCarrying does, and
+ * forward to the first `>` after the marker - which is the end of the tag only
+ * while its attributes hold no arrow function. Both callers are containers whose
+ * handlers are named rather than written inline.
+ */
+const tagHolding = (source, marker) => {
+    const at = source.indexOf(marker);
+    assert.notEqual(at, -1, `${marker} is no longer in this component`);
+
+    return source.slice(source.lastIndexOf("<", at), source.indexOf(">", at) + 1);
+};
+
 // Every <button …> in a component says which kind it is, since a button left
 // untyped defaults to submit. The same reason HelpButton gives.
 const everyButtonIsTyped = (source, what) => {
@@ -500,6 +515,7 @@ describe("the integration menu answers the keyboard", () => {
 
         const press = handlerIn(dropdown, "const handleMenuKey", {
             nextFocus,
+            isOpen: menu,
             setIsOpen: (value) => state.open = value,
             menuRef: {current: menu ? {querySelectorAll: () => options} : null},
             containerRef: {current: {querySelector: () => ({focus: () => state.focused = true})}},
@@ -530,12 +546,49 @@ describe("the integration menu answers the keyboard", () => {
             assert.equal(state.focused, true, "focus is left on a menu that has just been unmounted");
         });
 
+        /*
+         * And leaves the key alone when there is no menu to dismiss.
+         *
+         * The handler sits on the container, which is mounted whether or not the
+         * menu is - so with focus on the trigger it claimed Escape and closed a
+         * menu that was already closed. The Dialog's own Escape declines a key
+         * whose default has been prevented, which is what keeps a stacked alert
+         * from taking the dialog under it down as well, so this swallowed the
+         * one key that dismisses the dialog: on the create button, inside the
+         * only dialog that draws one, Escape did nothing at all.
+         *
+         * The branch is what makes that easy to reach - the trap now seats focus
+         * inside the dialog and keeps it there, so the create button is part of
+         * the ordinary cycle rather than a long Tab away.
+         */
+        it("leaves it to the dialog when the menu is closed", () => {
+            const {press, state} = open({menu: false});
+            const event = keyPress("Escape");
+
+            press(event);
+
+            assert.equal(event.defaultPrevented, false,
+                "the trigger swallows the key that dismisses the dialog around it");
+            assert.equal(state.focused, false, "focus is moved for a menu that was never open");
+        });
+
         it("leaves every other key alone", () => {
             const {press, state} = open();
 
             for (const key of ["Enter", " ", "Tab", "ArrowDown", "Esc"]) press(keyPress(key));
 
             assert.equal(state.open, true);
+        });
+
+        /*
+         * On the container, not on the menu. A React portal bubbles its events
+         * through the tree it was declared in, so this sees keys pressed on the
+         * options as well as on the trigger - and the container is the half that
+         * is still mounted when the menu is not.
+         */
+        it("is held by the element that wraps the trigger and the menu", () => {
+            assert.match(tagHolding(dropdown, "dropdown-select-container"), /onKeyDown={handleMenuKey}/,
+                "the key handler is never reached, so neither Escape nor Tab is answered");
         });
     });
 
@@ -730,6 +783,69 @@ describe("the export menu", () => {
             "the debt is recorded and never paid, so the reader is left on the document");
         assert.match(effect.slice(closed), /^}, \[exporting\b/,
             "the effect does not run when the export ends, so the trigger never gets its focus back");
+    });
+
+    /**
+     * And Escape gets out of it, which is what every other menu here does.
+     *
+     * The settings menu, the context menu, the date picker and the create menu
+     * all dismiss on Escape and hand focus back to what opened them. This one
+     * had nothing: a reader who opened it and did not want either format could
+     * only Tab past both of them or reach for the pointer. Reachable at all
+     * because this branch made the two formats answer a keyboard - before it,
+     * opening the menu was as far as anyone got.
+     */
+    describe("Escape", () => {
+        const open = (isOpen = true) => {
+            const state = {open: isOpen, focused: false};
+            const press = handlerIn(exportMenu, "const handleMenuKey", {
+                isOpen,
+                setIsOpen: (value) => state.open = value,
+                buttonRef: {current: {focus: () => state.focused = true}}
+            });
+
+            return {press, state};
+        };
+
+        it("closes the menu and gives focus back", () => {
+            const {press, state} = open();
+            const event = keyPress("Escape");
+
+            press(event);
+
+            assert.equal(state.open, false, "the menu stays open, with no way out but the pointer");
+            assert.equal(state.focused, true, "focus is left on an option that is about to be unmounted");
+            assert.equal(event.defaultPrevented, true);
+        });
+
+        // The trigger is in the toolbar, not in an overlay, but claiming a key
+        // nothing was pressed against is how the create menu came to swallow the
+        // one that dismisses the dialog around it.
+        it("leaves the key alone when the menu is closed", () => {
+            const {press, state} = open(false);
+            const event = keyPress("Escape");
+
+            press(event);
+
+            assert.equal(event.defaultPrevented, false, "the trigger claims a key with no menu to dismiss");
+            assert.equal(state.focused, false);
+        });
+
+        it("leaves every other key alone", () => {
+            const {press, state} = open();
+
+            for (const key of ["Enter", " ", "Tab", "ArrowDown", "Esc"]) press(keyPress(key));
+
+            assert.equal(state.open, true);
+        });
+
+        // A handler nothing calls is not a handler. The container is where it
+        // goes rather than the menu, because the menu is only mounted while it
+        // is open and the trigger is what focus is on when it is not.
+        it("is held by the element that wraps the trigger and the menu", () => {
+            assert.match(tagHolding(exportMenu, "export-button-container"), /onKeyDown={handleMenuKey}/,
+                "the key handler is never reached, so Escape does nothing at all");
+        });
     });
 
     /*
