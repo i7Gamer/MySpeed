@@ -89,6 +89,20 @@ export const initialFocusTarget = (container, preferred, active) => {
 const OVERLAY_AREA = ".dialog-area";
 
 /**
+ * A popover an overlay opened and then rendered somewhere else.
+ *
+ * DropdownSelect portals its menu to the body, and has to: the dialog it opens
+ * inside carries a backdrop-filter, which makes that dialog a containing block
+ * for anything positioned fixed within it, so a menu rendered in place would be
+ * positioned against the dialog rather than the viewport.
+ *
+ * What that costs here is that every question this trap asks by containment
+ * answers "outside" for a control the reader has just deliberately opened. So
+ * the popover says what it is, and is read as part of the overlay that owns it.
+ */
+const OVERLAY_PORTAL = "[data-overlay-portal]";
+
+/**
  * Whether focus leaving the dialog is an escape, or something to allow.
  *
  * The Tab trap is a listener on the dialog, so it hears only keys pressed inside
@@ -105,6 +119,7 @@ const OVERLAY_AREA = ".dialog-area";
 export const focusEscaped = (container, next) => {
     if (!next) return true;
     if (container?.contains?.(next)) return false;
+    if (next.closest?.(OVERLAY_PORTAL)) return false;
 
     return !next.closest?.(OVERLAY_AREA);
 };

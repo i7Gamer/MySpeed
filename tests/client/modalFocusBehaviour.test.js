@@ -362,3 +362,53 @@ describe("two alerts stacked", () => {
             "the alert underneath came back to its first control rather than to where the reader was");
     });
 });
+
+/**
+ * A popover the dialog opened and rendered outside itself.
+ *
+ * DropdownSelect portals its menu to the body, because the dialog it opens
+ * inside carries a backdrop-filter - which makes that dialog a containing block
+ * for anything positioned fixed within it, so a menu rendered in place would be
+ * positioned against the dialog rather than the viewport.
+ *
+ * Everything this trap decides by containment therefore answers "outside" for a
+ * control the reader has just deliberately opened. Left alone, the recovery
+ * pulls focus straight back out of the menu, and the integration dialog's create
+ * menu - the only way to add one at all - could be opened and then not used.
+ */
+describe("a portalled popover the overlay owns", () => {
+    beforeEach(() => resetWorld());
+
+    const withPortal = () => {
+        const dialog = overlay();
+        mount(dialog.area);
+
+        const menu = element("div", {class: "dropdown-select-menu", "data-overlay-portal": ""});
+        const option = element("button", {name: "menuOption"});
+        mount(menu.append(option));
+
+        return {dialog, option};
+    };
+
+    it("keeps focus that has moved into it", async () => {
+        const {dialog, option} = withPortal();
+        modal(dialog.dialog, {open: true});
+
+        option.focus();
+        await settle();
+
+        assert.equal(activeName(), "menuOption",
+            "the trap recovered focus out of a menu the dialog itself opened");
+    });
+
+    it("still recovers focus that lands on the page behind", async () => {
+        const {dialog} = withPortal();
+        modal(dialog.dialog, {open: true});
+
+        dialog.get("field").blurToBody();
+        await settle();
+
+        assert.equal(activeName(), "field",
+            "marking a popover as owned stopped the trap recovering from a real escape");
+    });
+});

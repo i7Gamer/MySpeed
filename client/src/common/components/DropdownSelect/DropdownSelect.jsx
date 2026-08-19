@@ -36,6 +36,20 @@ export const DropdownSelect = ({
         };
 
         place();
+
+        /*
+         * And focus the first option, because Tab cannot get here.
+         *
+         * This menu is portalled to the body, so inside a dialog it is a sibling
+         * of the backdrop rather than a descendant of the dialog - and the modal
+         * focus trap reads the DOM by containment, so it wraps Tab within the
+         * dialog and never reaches these. Placing focus is what a menu does
+         * anyway, and it is the only way in: this is the sole route to adding an
+         * integration, and without it a keyboard could open the menu and then had
+         * nothing to press.
+         */
+        menuRef.current?.querySelector("button")?.focus();
+
         window.addEventListener("resize", place);
         window.addEventListener("scroll", place, true);
 
@@ -53,6 +67,11 @@ export const DropdownSelect = ({
     const handleSelect = (item) => {
         onSelect(item);
         setIsOpen(false);
+        // The option this was called from is about to be unmounted, so without
+        // this focus lands on the document - the same thing Escape below has
+        // always had to answer for. Written out rather than shared with it,
+        // because each handler is lifted out and run on its own by the tests.
+        containerRef.current?.querySelector(".dropdown-select-btn")?.focus();
     };
 
     const switchOpen = () => {
@@ -92,7 +111,7 @@ export const DropdownSelect = ({
             </button>
 
             {isOpen && createPortal(
-                <div className="dropdown-select-menu" ref={menuRef} style={position}>
+                <div className="dropdown-select-menu" ref={menuRef} style={position} data-overlay-portal>
                     {/* Buttons, not focusable divs: tabIndex={0} put focus on
                         an option and then nothing answered Enter or Space
                         there, and this menu is the only way to add an

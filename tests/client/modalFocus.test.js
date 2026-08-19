@@ -19,9 +19,12 @@ const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
 const control = (attributes = {}) => ({
     ...attributes,
     getAttribute: (name) => attributes[name] ?? null,
-    // Whether this element sits inside some overlay's backdrop, which is the
-    // one question focusEscaped asks of the DOM.
-    closest: () => attributes.inOverlay ? {} : null
+    // Answered per selector, because focusEscaped asks the DOM two different
+    // questions: whether this sits inside some overlay's backdrop, and whether
+    // it sits inside a popover an overlay has rendered outside itself.
+    closest: (selector) => selector === "[data-overlay-portal]"
+        ? (attributes.inPortal ? {} : null)
+        : (attributes.inOverlay ? {} : null)
 });
 
 const container = (...children) => ({querySelectorAll: () => children});
@@ -341,5 +344,30 @@ describe("the overlays announce themselves and hold focus", () => {
             "the alert records no opener, so focus is restored to its own field");
         assert.match(source, /restoreTo:\s*alert\.openedFrom/,
             "the recorded opener is never handed to the hook");
+    });
+});
+
+/**
+ * A popover the overlay opened but rendered somewhere else.
+ *
+ * DropdownSelect portals its menu to the body, because the dialog it sits in
+ * carries a backdrop-filter and that makes the dialog a containing block for
+ * anything positioned fixed inside it. So the menu is a sibling of the
+ * backdrop rather than a descendant of the dialog - and every question the trap
+ * asks by containment answers "outside".
+ *
+ * Left alone rather than recovered from: the menu belongs to the dialog even
+ * though it is not inside it, and pulling focus back out of it is the trap
+ * fighting the control the reader just opened.
+ */
+describe("focusEscaped and a portalled popover", () => {
+    const dialog = {contains: () => false};
+
+    it("does not count focus that landed in one", () => {
+        assert.equal(focusEscaped(dialog, control({inPortal: true})), false);
+    });
+
+    it("still counts focus that landed on the page behind", () => {
+        assert.equal(focusEscaped(dialog, control()), true);
     });
 });

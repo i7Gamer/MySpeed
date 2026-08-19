@@ -110,12 +110,20 @@ class Element {
         return false;
     }
 
-    /** Only the one selector the hook asks for: an overlay's backdrop, by class. */
+    /**
+     * The two shapes the hook asks for: an overlay's backdrop by class, and a
+     * portalled popover by attribute.
+     */
     closest(selector) {
+        const attribute = selector.match(/^\[([a-z-]+)]$/)?.[1];
         const wanted = selector.replace(/^\./, "");
+
         let current = this;
         while (current) {
-            if (String(current.attributes.class || "").split(/\s+/).includes(wanted)) return current;
+            if (attribute) {
+                if (current.getAttribute(attribute) !== null) return current;
+            } else if (String(current.attributes.class || "").split(/\s+/).includes(wanted)) return current;
+
             current = current.parent;
         }
         return null;

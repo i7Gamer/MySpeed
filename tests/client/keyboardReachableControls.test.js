@@ -424,10 +424,15 @@ const handlerIn = (source, named, closure) => {
     const start = source.indexOf(named);
     assert.notEqual(start, -1, `${named} is not in this component`);
 
-    const body = source.slice(source.indexOf("{", source.indexOf("=>", start)));
+    const arrow = source.indexOf("=>", start);
+    // The handler's own parameter list, rather than assuming it is called `e`:
+    // the body refers to it by name, so a key handler and one taking a chosen
+    // item cannot both be wrapped in the same signature.
+    const parameter = source.slice(source.indexOf("(", start), arrow).trim();
+    const body = source.slice(source.indexOf("{", arrow));
     const names = Object.keys(closure);
 
-    return new Function(...names, `return (e) => ${body.slice(0, blockEnd(body, 0) + 1)};`)(
+    return new Function(...names, `return ${parameter} => ${body.slice(0, blockEnd(body, 0) + 1)};`)(
         ...names.map((name) => closure[name]));
 };
 
@@ -642,4 +647,58 @@ describe("the date range picker's focus on close", () => {
                 `closing after ${what} leaves focus on a control that has been unmounted`);
         });
     }
+});
+
+/**
+ * The create-integration menu, which the modal focus trap had shut out.
+ *
+ * DropdownSelect portals its menu to the body - it has to, because the dialog it
+ * opens inside carries a backdrop-filter and that makes the dialog a containing
+ * block for anything positioned fixed inside it. So the menu is a sibling of the
+ * backdrop, not a descendant of the dialog.
+ *
+ * The trap added on this branch reads the DOM by containment, so the menu is
+ * "outside": Tab wraps within the dialog and never reaches it, and focus that
+ * does land there is treated as an escape and pulled back. This is the only way
+ * to add an integration at all, so a keyboard could open the menu and then had
+ * nothing to press - the same shape as the export menu's own bug, reintroduced
+ * from the other direction.
+ *
+ * Focus is placed in the menu when it opens, rather than tabbed into, which is
+ * how a menu behaves anyway.
+ */
+describe("the integration create menu inside a dialog", () => {
+    it("says its menu belongs to the overlay that opened it", () => {
+        assert.match(dropdown, /data-overlay-portal/,
+            "the trap reads the portalled menu as the page behind the dialog and recovers focus out of it");
+    });
+
+    it("puts focus in the menu when it opens", () => {
+        const effect = dropdown.slice(dropdown.indexOf("useLayoutEffect"));
+        const body = effect.slice(0, effect.indexOf("}, [isOpen"));
+
+        assert.notEqual(body.length, 0, "the effect that runs when the menu opens has moved");
+        assert.match(body, /menuRef\.current\?\.querySelector\([^)]*\)\?\.focus\(\)/,
+            "the menu can only be reached by a Tab the dialog's trap will not allow");
+    });
+
+    /*
+     * Run rather than read, which is the shape the Escape case above uses: the
+     * assertion is then about what the handler does, not how it is spelled.
+     */
+    it("gives focus back to its button when an item is chosen", () => {
+        const state = {open: true, focused: false, selected: null};
+        const choose = handlerIn(dropdown, "const handleSelect", {
+            onSelect: (item) => state.selected = item,
+            setIsOpen: (value) => state.open = value,
+            containerRef: {current: {querySelector: () => ({focus: () => state.focused = true})}}
+        });
+
+        choose("discord");
+
+        assert.equal(state.selected, "discord", "the chosen item is no longer passed on");
+        assert.equal(state.open, false, "the menu stays open after a choice");
+        assert.equal(state.focused, true,
+            "choosing an item unmounts the focused option and drops focus to the document");
+    });
 });
