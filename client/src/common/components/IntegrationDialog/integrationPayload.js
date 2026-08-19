@@ -8,6 +8,22 @@ const TEXTAREA_LIMIT = 2000;
 const isEmpty = (value) => value === undefined || value === null || value === "";
 
 /**
+ * The display name, which no module declares and which therefore fell outside
+ * the check below along with every other guard on this form.
+ *
+ * The card resends it on every save whether or not it was touched, so an
+ * integration created before the server capped it - sqlite stored a name of any
+ * length - fails every later save with nothing marked: a generic error on a
+ * card, over a field the operator never edited. The same ceiling as a declared
+ * text field, because that is exactly what the server holds it to.
+ *
+ * Length only. Empty is left alone: the card falls back to the integration's
+ * own title for the label, and the server reads a name it was not given as
+ * "leave it as it is".
+ */
+export const isValidDisplayName = (value) => isEmpty(value) || String(value).length <= TEXT_LIMIT;
+
+/**
  * Whether the card should mark this value as bad before trying to save it.
  *
  * Lifted out of IntegrationCard so it can be exercised without a renderer. It

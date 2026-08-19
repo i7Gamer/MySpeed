@@ -46,3 +46,40 @@ describe("integration field limits", () => {
         assert.equal(limitOf(clientSource, "textarea"), limitOf(serverSource, "textarea"));
     });
 });
+
+/**
+ * And the display name, which is the one value on this form that no module
+ * declares - so it fell outside both halves of that parity.
+ *
+ * The server caps it at the same 250 a declared text field wears. The client
+ * checked nothing, and the dialog always resends it whether or not the user
+ * touched it: an integration created against sqlite before that cap existed can
+ * hold a longer name, and every later save of it is then a 400 whose only sign
+ * is the card's generic error. No field is marked, nothing names the length,
+ * and the name in question is one the user never edited - so there is nothing
+ * on screen to act on.
+ *
+ * The same dead end meets anyone who simply types a 251st character.
+ */
+describe("the integration display name", () => {
+    const dialogSource = read("client", "src", "common", "components", "IntegrationDialog", "IntegrationDialog.jsx");
+
+    it("is checked against a limit on the client too", () => {
+        assert.match(clientSource, /export const isValidDisplayName/,
+            "nothing on the client judges the display name, so an over-long one fails with no field marked");
+    });
+
+    it("uses the same ceiling as a declared text field", () => {
+        const check = clientSource.match(/export const isValidDisplayName[^\n]*\n?[^\n]*/)?.[0] ?? "";
+
+        assert.match(check, /TEXT_LIMIT/,
+            "the display name carries a ceiling of its own, which is the drift this file exists to catch");
+    });
+
+    it("marks the field when it is too long", () => {
+        const field = dialogSource.slice(dialogSource.indexOf("integrations.display_name"));
+
+        assert.match(field.slice(0, field.indexOf("/>")), /error=\{!isValidDisplayName\(displayName\)}/,
+            "the display name is the one field on this form rendered without an error state");
+    });
+});

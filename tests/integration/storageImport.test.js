@@ -239,3 +239,49 @@ describe("PUT /api/storage/config", () => {
         });
     });
 });
+
+/**
+ * A backup carrying a threshold that is no longer a legal value.
+ *
+ * ping, download and upload were guarded by a negated character class until
+ * 1.3.5 - "is every character a digit or a dot" - so "1.2.3", ".." and a lone
+ * "." were all stored behind a 200 by `PATCH /api/config/:key`. Anchoring that
+ * check is right, and it made every one of those backups unrestorable: the
+ * validate loop refuses the first one it meets and abandons the whole import,
+ * so the nodes, the integrations and the recommendations are all left behind by
+ * a display preference no server code even reads.
+ *
+ * The default is written instead. It is the same trade the check itself already
+ * makes for ".5" and "1." - a value that was legal when it was saved must not
+ * take the rest of a restore down - except that these cannot be kept, because
+ * Number() cannot read them and a threshold it cannot read greys every speed on
+ * the dashboard. So the restore completes and the unreadable preference is the
+ * one thing that does not survive it.
+ */
+describe("PUT /api/storage/config with a threshold an older version accepted", () => {
+    const restore = (config) => importConfig({
+        config, nodes: [{name: "new", url: "http://10.0.0.9:5216"}], integrations: [], recommendations: []
+    });
+
+    ["1.2.3", "..", ".", "1..2"].forEach((stored) => {
+        it(`restores everything else when download is ${JSON.stringify(stored)}`, async () => {
+            const {status} = await restore({download: stored});
+
+            assert.equal(status, 200, "the whole backup is refused over one unreadable threshold");
+            assert.equal(await server.config.getValue("download"), "100",
+                "the unreadable threshold was kept, so every speed on the dashboard stays grey");
+            assert.equal((await counts()).nodes, 1, "the nodes were not restored");
+        });
+    });
+
+    it("still refuses a value that is not a threshold at all", async () => {
+        assert.equal((await restore({cron: "every second tuesday"})).status, 500,
+            "any invalid value now passes, not only the three thresholds");
+    });
+
+    it("keeps a threshold it can still read", async () => {
+        assert.equal((await restore({download: ".5"})).status, 200);
+        assert.equal(await server.config.getValue("download"), ".5",
+            "a value the check accepts was replaced by the default anyway");
+    });
+});

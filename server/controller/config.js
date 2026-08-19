@@ -61,6 +61,12 @@ const MAX_RETENTION_DAYS = 10000;
  */
 const THRESHOLD_NUMBER = /^(?:[0-9]+\.?[0-9]*|\.[0-9]+)$/;
 
+/**
+ * The three keys that rule is for, named once because importConfig treats them
+ * apart from every other value it restores - see the fallback there.
+ */
+const THRESHOLD_KEYS = ["ping", "download", "upload"];
+
 // The value stored when no password is configured. It is a sentinel, not a
 // password: password.js waves every request through when it sees this.
 export const NO_PASSWORD = "none";
@@ -233,8 +239,7 @@ export const getUsedStorage = async () => {
 export const validateInput = async (key, value) => {
     if (!value?.toString()) return "You need to provide the new value";
 
-    if ((key === "ping" || key === "download" || key === "upload")
-        && !THRESHOLD_NUMBER.test(value.toString()))
+    if (THRESHOLD_KEYS.includes(key) && !THRESHOLD_NUMBER.test(value.toString()))
         return "You need to provide a number in order to change this";
 
     if ((key === "ooklaId" || key === "libreId") && (/[^0-9]/.test(value) && value !== "none"))
@@ -452,7 +457,37 @@ export const importConfig = async (obj) => {
         }
 
         const validated = await validateInput(key, obj.config[key]);
-        if (typeof validated === "string") return false;
+
+        if (typeof validated === "string") {
+            /*
+             * A threshold that can no longer be read takes the default rather
+             * than the whole restore.
+             *
+             * These three were guarded by a negated character class until this
+             * check was anchored - "is every character a digit or a dot" - so
+             * "1.2.3", ".." and a lone "." were all stored behind a 200 by an
+             * older version. Every backup carrying one would otherwise be
+             * refused here in full, and the refusal names no key: the nodes,
+             * the integrations and the recorded history are all left behind by
+             * a display preference no server code even reads.
+             *
+             * The same trade this rule already makes for ".5" and "1." - a
+             * value that was legal when it was saved must not take a restore
+             * down with it - except that these cannot be kept as they are,
+             * because Number() cannot read them and a threshold it cannot read
+             * greys every speed on the dashboard. So the restore completes and
+             * the unreadable preference is the one thing that does not survive
+             * it, which is the direction with something left to fix afterwards.
+             *
+             * Only these three. Anything else refused here is a value the
+             * server acts on, and guessing at one of those would restore an
+             * instance that is not the one that was backed up.
+             */
+            if (!THRESHOLD_KEYS.includes(key)) return false;
+
+            updates.push({key, value: configDefaults[key]});
+            continue;
+        }
 
         updates.push({key, value: validated.value});
     }

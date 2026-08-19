@@ -13,7 +13,7 @@ import FormField from "@/common/components/FormField";
 import ExpandableCard from "@/common/components/ExpandableCard";
 import DropdownSelect from "@/common/components/DropdownSelect";
 import {renderableIntegrations} from "@/common/components/IntegrationDialog/renderableIntegrations";
-import {integrationPayload, isValidFieldValue} from "@/common/components/IntegrationDialog/integrationPayload";
+import {integrationPayload, isValidDisplayName, isValidFieldValue} from "@/common/components/IntegrationDialog/integrationPayload";
 import {appendVariable, variableToken} from "@/common/components/IntegrationDialog/templateVariables";
 
 const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, config}) => {
@@ -150,7 +150,13 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
                 )}
             </>}
             defaultExpanded={integration.isNew || false} error={error} success={saveConfirmed}>
+            {/* Marked like every declared field. Without this the one value on
+                the form that no module declares was also the one nothing could
+                point at: the card resends it on every save, so an over-long
+                name stored before the server capped it failed each one with a
+                generic error over a field the operator never touched. */}
             <FormField label={t("integrations.display_name")} type="text" value={displayName}
+                error={!isValidDisplayName(displayName)}
                 onChange={(v) => { setDisplayName(v); setUnsavedChanges(true); }} placeholder={t("integrations.display_name")}/>
             {integrationDef.fields.map((field) => (
                 <div key={field.name} className="integration-field">
