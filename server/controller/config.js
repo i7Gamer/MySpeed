@@ -66,10 +66,19 @@ const MAX_RETENTION_DAYS = 10000;
  * tries every one before giving up. Doubling the input quadruples the work.
  * importConfig is handed its body at a 50mb limit and puts every stored key
  * through here, so one restore carrying a long enough threshold blocks the
- * event loop for as long as it takes, and a default install has no password to
- * stop anyone sending it. Requiring the dot leaves the two runs unable to trade
- * characters; the values accepted are exactly the same, which the table in
- * thresholdInput.test.js is what says.
+ * event loop for as long as it takes.
+ *
+ * Behind the password, and it matters anyway: an operator restoring a backup
+ * they were given is the ordinary way to hold a value nobody typed, the two
+ * write routes are reachable from a session as well as a header, and a
+ * single-threaded server stalled by one request is stalled for every caller.
+ * (Not from a demo, where previewReadOnly refuses the method, and not from a
+ * passwordless instance on a routable address, where handleUnconfigured
+ * requires the setup token.)
+ *
+ * Requiring the dot leaves the two runs unable to trade characters; the values
+ * accepted are exactly the same, which the table in thresholdInput.test.js is
+ * what says.
  */
 const THRESHOLD_NUMBER = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/;
 

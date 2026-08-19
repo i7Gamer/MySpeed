@@ -100,11 +100,14 @@ describe("the client's threshold rule and the server's", () => {
  * ways as it is long - and the engine tries every one before giving up. That is
  * quadratic: doubling the input quadruples the work.
  *
- * It is reachable with nothing but a request. importConfig runs every stored key
- * back through this validator, and the import body is parsed at a 50mb limit -
- * so one restore carrying a long enough threshold blocks the event loop for as
- * long as it takes to finish, and a default install has no password to stop
- * anyone sending it. CodeQL flags it as js/polynomial-redos.
+ * importConfig runs every stored key back through this validator, and the import
+ * body is parsed at a 50mb limit, so one restore carrying a long enough
+ * threshold blocks the event loop for as long as it takes to finish. That is
+ * behind the password - a demo refuses the method, and a passwordless instance
+ * on a routable address wants the setup token - and it matters anyway:
+ * restoring a backup somebody handed you is the ordinary way to hold a value
+ * nobody typed, and a single-threaded server stalled by one request is stalled
+ * for everyone. CodeQL flags it as js/polynomial-redos.
  *
  * The fix is to require the dot inside the optional group, which leaves the two
  * runs unable to trade characters. The language is unchanged - the table above
