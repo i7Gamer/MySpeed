@@ -44,7 +44,10 @@ const elementsCarrying = (source, marker) => {
 // untyped defaults to submit. The same reason HelpButton gives.
 const everyButtonIsTyped = (source, what) => {
     const opened = (source.match(/<button\b/g) ?? []).length;
-    const typed = (source.match(/<button\s+type="button"/g) ?? []).length;
+    // Anywhere in the tag, not only first. Requiring it immediately after
+    // `<button` made the rule depend on attribute order, so moving a `ref` or a
+    // `key` in front of it failed a component that had lost nothing.
+    const typed = (source.match(/<button\b[^>]*\btype="button"/g) ?? []).length;
 
     assert.notEqual(opened, 0, `${what} contains no buttons at all`);
     assert.equal(typed, opened, `a button in ${what} leaves its type to the browser`);
@@ -541,4 +544,24 @@ describe("the settings menu", () => {
         assert.match(body, /closest\?\.\(["'`]\.dropdown["'`]\)/,
             "focus is taken back even when it was never inside the menu");
     });
+});
+
+/**
+ * And the same rule over the overlays' own buttons.
+ *
+ * An untyped button defaults to submit. Nothing in this client renders a form,
+ * so today that costs nothing - but the rule is worth holding where it is cheap
+ * rather than meeting the exception on the day a form appears, and these three
+ * are the dialogs whose buttons were left as they were found while every other
+ * one this branch touched was typed.
+ */
+describe("the dialogs' own buttons", () => {
+    const overlays = {
+        "the optimal values dialog": "common/components/OptimalValuesDialog/OptimalValuesDialog.jsx",
+        "the integration dialog": "common/components/IntegrationDialog/IntegrationDialog.jsx",
+        "the welcome dialog": "common/components/WelcomeDialog/WelcomeDialog.jsx"
+    };
+
+    for (const [what, file] of Object.entries(overlays))
+        it(`states the type of every button in ${what}`, () => everyButtonIsTyped(read(file), what));
 });

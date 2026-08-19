@@ -103,7 +103,7 @@ export const WelcomeDialog = ({open, onClose}) => {
                     </div>
                     <div className="welcome-actions">
                         <h3>{t("welcome.step")} {step}/{provider === "ookla" ? 4 : 3}</h3>
-                        <button className="dialog-btn" onClick={() => continueStep(forceClose)}>
+                        <button type="button" className="dialog-btn" onClick={() => continueStep(forceClose)}>
                             {step === (provider === "ookla" ? 4 : 3) ? t("dialog.done") : t("dialog.continue")}
                         </button>
                     </div>

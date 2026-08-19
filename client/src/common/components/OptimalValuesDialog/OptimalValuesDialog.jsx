@@ -61,6 +61,7 @@ export const OptimalValuesDialog = ({open, onClose}) => {
         //
         // The class itself is named in the test rather than here, because the
         // assertion that it is gone would otherwise find it in this sentence.
+        //
         // Each field is patched below only when it differs from what is stored,
         // so this asks the same question the send does. Validating all three
         // regardless made a malformed value already on the instance - and every
@@ -153,12 +154,12 @@ export const OptimalValuesDialog = ({open, onClose}) => {
                     </DialogBody>
                     <DialogFooter>
                         {recommendations && (
-                            <button className="dialog-btn" onClick={applyRecommendations}>
+                            <button type="button" className="dialog-btn" onClick={applyRecommendations}>
                                 <FontAwesomeIcon icon={faWandMagicSparkles}/>
                                 <span>{t("optimal_values.use_recommended")}</span>
                             </button>
                         )}
-                        <button className="dialog-btn" onClick={() => update(close)}>{t("dialog.update")}</button>
+                        <button type="button" className="dialog-btn" onClick={() => update(close)}>{t("dialog.update")}</button>
                     </DialogFooter>
                 </>
             )}

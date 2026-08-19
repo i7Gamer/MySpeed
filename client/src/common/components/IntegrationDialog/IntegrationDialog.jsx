@@ -137,13 +137,13 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
         <ExpandableCard icon={integrationDef.icon} title={displayName} subtitle={getStatusText()} statusDot={getStatusClass()}
             actions={<>
                 {!config.previewMode && unsavedChanges && !saveConfirmed && (
-                    <button className="card-action-btn save-btn" onClick={(e) => {e.stopPropagation(); handleSave();}}>
+                    <button type="button" className="card-action-btn save-btn" onClick={(e) => {e.stopPropagation(); handleSave();}}>
                         <FontAwesomeIcon icon={faFloppyDisk}/>
                     </button>
                 )}
                 {saveConfirmed && <span className="card-action-btn success-indicator"><FontAwesomeIcon icon={faCheck}/></span>}
                 {!config.previewMode && (
-                    <button className={`card-action-btn delete-btn ${deleteConfirmed ? "confirm" : ""}`}
+                    <button type="button" className={`card-action-btn delete-btn ${deleteConfirmed ? "confirm" : ""}`}
                             onClick={(e) => {e.stopPropagation(); handleDelete();}}>
                         <FontAwesomeIcon icon={deleteConfirmed ? faTrashArrowUp : faTrash}/>
                     </button>
