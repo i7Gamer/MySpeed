@@ -1,6 +1,6 @@
 import {Dialog, DialogHeader, DialogBody} from "@/common/contexts/Dialog";
 import "./styles.sass";
-import React, {useContext, useEffect, useRef, useState} from "react";
+import React, {useContext, useEffect, useLayoutEffect, useRef, useState} from "react";
 import {t} from "i18next";
 import i18n from "i18next";
 import {faCheck, faCircleNodes, faExclamationTriangle, faFloppyDisk, faTrash, faTrashArrowUp} from "@fortawesome/free-solid-svg-icons";
@@ -242,8 +242,13 @@ export const IntegrationDialog = ({open, onClose}) => {
      *
      * The same control in its new place, so the first add ends where every
      * later one does.
+     *
+     * A layout effect, so it runs before the microtask the trap's own watcher
+     * is delivered on: the watcher would otherwise see focus on the body first
+     * and seat it on the new card, and a reader would hear that control named
+     * before this one. Both end here; only one of them is announced.
      */
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!owedFocus.current) return;
 
         owedFocus.current = false;

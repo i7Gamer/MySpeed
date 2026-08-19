@@ -42,6 +42,63 @@ const parseSelector = (selector) => selector.split(",").map((part) => {
 
 let activeElement = null;
 
+/* ---------------------------------------------------------------- observers */
+
+/**
+ * Enough of MutationObserver for the one thing the trap asks it: did anything
+ * change inside this dialog.
+ *
+ * Delivered on a microtask, as the real one is, and with no records - nothing
+ * reads them, and building them would be inventing an interface to test against
+ * rather than the one the hook uses. What has to be faithful is the timing and
+ * the fact that a mutation is the *only* notice a browser gives for the two
+ * cases below.
+ */
+const observers = [];
+
+/**
+ * Whether this observer asked about this change.
+ *
+ * The options are honoured rather than ignored, because they are the half a
+ * caller most easily gets wrong: an observer registered without `attributes`
+ * hears nothing about a button being disabled, and one without `childList`
+ * nothing about a control being removed, which are the two cases the trap exists
+ * for. Ignoring them here would pass a watcher that watches neither.
+ */
+const asked = (entry, node, kind, attribute) => {
+    if (!entry.options?.[kind]) return false;
+    if (kind === "attributes" && entry.options.attributeFilter
+        && !entry.options.attributeFilter.includes(attribute)) return false;
+
+    return entry.target === node || (!!entry.options.subtree && !!entry.target?.contains(node));
+};
+
+const notify = (node, kind, attribute) => {
+    const waiting = observers.filter((entry) => asked(entry, node, kind, attribute));
+    if (waiting.length === 0) return;
+
+    queueMicrotask(() => waiting.forEach((entry) => {
+        if (observers.includes(entry)) entry.callback([], entry.observer);
+    }));
+};
+
+globalThis.MutationObserver = class {
+    constructor(callback) {
+        this.callback = callback;
+        this.entry = null;
+    }
+
+    observe(target, options = {}) {
+        this.entry = {target, options, callback: this.callback, observer: this};
+        observers.push(this.entry);
+    }
+
+    disconnect() {
+        const at = observers.indexOf(this.entry);
+        if (at !== -1) observers.splice(at, 1);
+    }
+};
+
 class Element {
     constructor(tag, attributes = {}) {
         this.tagName = String(tag).toUpperCase();
@@ -66,8 +123,11 @@ class Element {
     }
 
     remove() {
-        // Read before detaching, because contains() walks upwards.
+        // Read before detaching, because contains() walks upwards - and told
+        // before, for the same reason: an observer on an ancestor no longer
+        // contains a node that has left.
         const heldFocus = this.contains(activeElement);
+        notify(this.parent, "childList");
 
         if (this.parent) this.parent.children = this.parent.children.filter((c) => c !== this);
         this.parent = null;
@@ -84,6 +144,21 @@ class Element {
     setConnected(connected) {
         this.isConnected = connected;
         this.children.forEach((child) => child.setConnected(connected));
+    }
+
+    /**
+     * What a primary button does to itself while it saves.
+     *
+     * Measured in Chrome 148: disabling the focused element moves focus to the
+     * body and fires nothing at all, and enabling it again does not bring focus
+     * back. So no focusout here either - the mutation is the whole of the
+     * notice a browser gives.
+     */
+    setDisabled(disabled) {
+        this.attributes.disabled = disabled;
+
+        if (disabled && activeElement === this) activeElement = body;
+        notify(this, "attributes", "disabled");
     }
 
     getAttribute(name) {
@@ -142,6 +217,12 @@ class Element {
     }
 
     focus() {
+        // A browser refuses focus to anything that is not a focusable area, and
+        // says nothing about refusing it. Counted only when it lands, so a test
+        // asking how often focus was placed here is not answered by a call that
+        // did nothing.
+        if (!this.isConnected || this.disabled) return;
+
         this.focusCount++;
         if (activeElement === this) return;
 
@@ -224,6 +305,11 @@ export const settle = () => new Promise((resolve) => setTimeout(resolve, 1));
 export const resetWorld = () => {
     body.children.slice().forEach((child) => child.remove());
     activeElement = body;
+    // And no watcher from the last one. A test that deliberately leaves an
+    // overlay mounted would otherwise have it answering the next scenario's
+    // mutations; that a closing overlay disconnects its own is asserted, not
+    // assumed, in modalFocusBehaviour.test.js.
+    observers.length = 0;
 };
 
 /* ------------------------------------------------------------------- react  */

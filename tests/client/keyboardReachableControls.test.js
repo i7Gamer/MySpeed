@@ -1054,7 +1054,9 @@ describe("the first integration added", () => {
         const paid = integrationDialog.indexOf("owedFocus.current = false;");
         assert.notEqual(paid, -1, "nothing pays the debt, so the reader is left on the document");
 
-        const effect = integrationDialog.slice(integrationDialog.lastIndexOf("useEffect(", paid));
+        // A layout effect, so it settles before the trap's own watcher is
+        // delivered - see the comment there.
+        const effect = integrationDialog.slice(integrationDialog.lastIndexOf("useLayoutEffect(", paid));
 
         assert.match(effect.slice(0, effect.indexOf("}, [")),
             /wrapperRef\.current\?\.querySelector\("\.dropdown-select-btn"\)\?\.focus\(\)/,

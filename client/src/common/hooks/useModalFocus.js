@@ -183,11 +183,21 @@ export const useModalFocus = (dialogRef, {open, holdsFocus = open, initialFocus,
         const dialog = open && holdsFocus ? dialogRef.current : null;
         if (!dialog) return;
 
-        // Where the reader was, if they have been here before - which is the
-        // case an alert stacked over this one and then closed again.
-        const seat = () => initialFocusTarget(dialog,
-            lastInside.current?.isConnected ? lastInside.current : initialFocus?.current,
-            document.activeElement)?.focus?.();
+        const seat = () => {
+            /*
+             * Where the reader was, if they have been here before - which is the
+             * case an alert stacked over this one and then closed again.
+             *
+             * Only while it is still somewhere to be. A control disabled while
+             * it held focus is still connected and can no longer take focus, so
+             * offering it back would be a silent no-op and leave the reader on
+             * the body - and that is exactly the state the watcher below runs in.
+             */
+            const last = lastInside.current;
+            const preferred = last?.isConnected && !last.disabled ? last : initialFocus?.current;
+
+            initialFocusTarget(dialog, preferred, document.activeElement)?.focus?.();
+        };
 
         seat();
 
@@ -224,12 +234,48 @@ export const useModalFocus = (dialogRef, {open, holdsFocus = open, initialFocus,
             }, 0);
         };
 
+        /*
+         * And the losses nothing announces at all.
+         *
+         * Chrome fires no event when the focused element is removed from the
+         * document, and none when it is disabled - measured, not assumed - and
+         * in both cases it moves focus to the body, where enabling the control
+         * again does not bring it back. So neither reaches the handler above:
+         * focusout is the only notice a listener gets, and it never comes.
+         *
+         * That is not an edge. Every dialog here has a primary button that
+         * disables itself while it saves - the retention save, the schedule, the
+         * pause window, creating a node - so the commonest thing a reader does
+         * inside a dialog is also the one that empties it of focus, behind a
+         * backdrop still announcing aria-modal.
+         *
+         * Watched rather than listened for, because there is nothing to listen
+         * to. Only the body: focus that has properly moved somewhere - a stacked
+         * alert, another control in here - is not something to take back, and
+         * focusout already answers for that.
+         */
+        const watcher = new MutationObserver(() => {
+            if (document.activeElement && document.activeElement !== document.body) return;
+
+            // Only the first half decides anything: a dialog that has gone
+            // holds nothing a browser will focus, so every branch of seat()
+            // ends in a call that does nothing. Said out loud rather than left
+            // to that, and no test can tell the two apart - the same shape as
+            // the re-check in onFocusOut below.
+            if (dialog.isConnected) seat();
+        });
+
+        watcher.observe(dialog, {
+            childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"]
+        });
+
         dialog.addEventListener("keydown", onKeyDown);
         dialog.addEventListener("focusin", onFocusIn);
         dialog.addEventListener("focusout", onFocusOut);
 
         return () => {
             clearTimeout(recovery);
+            watcher.disconnect();
             dialog.removeEventListener("keydown", onKeyDown);
             dialog.removeEventListener("focusin", onFocusIn);
             dialog.removeEventListener("focusout", onFocusOut);

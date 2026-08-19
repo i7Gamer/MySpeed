@@ -412,3 +412,119 @@ describe("a portalled popover the overlay owns", () => {
             "marking a popover as owned stopped the trap recovering from a real escape");
     });
 });
+
+/**
+ * Focus taken off the page by a change nothing announces.
+ *
+ * Chrome fires no event when the focused element is removed from the document,
+ * and none when it is disabled - measured in 148, not assumed. In both cases
+ * focus becomes <body>, and enabling the control again does not bring it back.
+ * So neither is reachable from a listener: focusout is the only thing the trap
+ * had, and it never runs.
+ *
+ * That is not an edge. Every dialog in the app has a primary button that
+ * disables itself while it saves - the storage retention save, the schedule, the
+ * pause window, creating a node - so the commonest thing a reader does inside a
+ * dialog is also the one that empties it of focus, behind a backdrop still
+ * announcing aria-modal. The next Tab starts at the top of the document.
+ *
+ * Watched rather than listened for, because there is nothing to listen to.
+ */
+describe("an overlay whose control stops being one", () => {
+    beforeEach(() => resetWorld());
+
+    const saving = () => {
+        const dialog = overlay({fields: ["field"], buttons: ["save"]});
+        mount(dialog.area);
+
+        return {...dialog, ...modal(dialog.dialog, {open: true})};
+    };
+
+    it("takes focus back when a control disables itself", async () => {
+        const dialog = saving();
+        const save = dialog.get("save");
+
+        save.focus();
+        save.setDisabled(true);
+        await settle();
+
+        assert.notEqual(activeName(), "body",
+            "pressing save empties the dialog of focus and nothing puts it back");
+        assert.equal(activeName(), "field", "focus did not come back to a control the reader can use");
+    });
+
+    // The seat a reader was last in is only a seat while it is still one.
+    // Without this the recovery hands focus straight back to the button that
+    // has just been disabled, where focus() is a silent no-op.
+    it("does not hand it back to the control that was disabled", async () => {
+        const dialog = saving();
+        const save = dialog.get("save");
+
+        dialog.get("field").focus();
+        save.focus();
+        save.setDisabled(true);
+        await settle();
+
+        assert.equal(activeName(), "field",
+            "focus is offered to a disabled button, which cannot take it, and stays on the document");
+    });
+
+    it("takes focus back when a control removes itself", async () => {
+        const dialog = saving();
+        const save = dialog.get("save");
+
+        save.focus();
+        save.remove();
+        await settle();
+
+        assert.equal(activeName(), "field", "a control that unmounts itself leaves the reader on the document");
+    });
+
+    /*
+     * Only the body. Focus that has properly moved - into a stacked alert, or
+     * onto another control in this dialog - is not something to take back, and
+     * that is what focusout already answers for.
+     */
+    it("leaves focus alone when it is somewhere real", async () => {
+        const dialog = saving();
+
+        dialog.get("save").focus();
+        dialog.get("field").focus();
+        dialog.get("save").setDisabled(true);
+        await settle();
+
+        assert.equal(activeName(), "field", "a change anywhere in the dialog drags focus back to its first control");
+    });
+
+    /*
+     * Including somewhere outside the dialog it belongs to. The create menu is
+     * portalled to the body, so a reader choosing an integration is out there
+     * while the dialog behind them redraws its list - and every change to that
+     * list is a mutation this watcher sees.
+     */
+    it("leaves focus alone when it is in a popover the overlay opened", async () => {
+        const dialog = saving();
+
+        const menu = element("div", {class: "dropdown-select-menu", "data-overlay-portal": ""});
+        const option = element("button", {name: "menuOption"});
+        mount(menu.append(option));
+
+        option.focus();
+        dialog.get("save").setDisabled(true);
+        await settle();
+
+        assert.equal(activeName(), "menuOption",
+            "a redraw behind the menu pulls focus out of it, which is the trap's own bug from the other side");
+    });
+
+    it("stops watching when the overlay closes", async () => {
+        const dialog = saving();
+
+        dialog.render({open: false});
+        dialog.get("field").setDisabled(true);
+        await settle();
+
+        assert.equal(activeName(), "body",
+            "a closed overlay still pulls focus back into itself whenever anything in it changes");
+    });
+});
