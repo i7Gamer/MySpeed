@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as sass from "sass";
 import { clickable } from "@/common/utils/Clickable.js";
+import { nextFocus } from "@/common/hooks/useModalFocus.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -428,7 +429,11 @@ const handlerIn = (source, named, closure) => {
     // The handler's own parameter list, rather than assuming it is called `e`:
     // the body refers to it by name, so a key handler and one taking a chosen
     // item cannot both be wrapped in the same signature.
-    const parameter = source.slice(source.indexOf("(", start), arrow).trim();
+    //
+    // The last bracket before the arrow rather than the first, so a handler
+    // wrapped in useCallback - which puts a bracket of its own in front of the
+    // parameter list - lifts out the same way a bare arrow does.
+    const parameter = source.slice(source.lastIndexOf("(", arrow), arrow).trim();
     const body = source.slice(source.indexOf("{", arrow));
     const names = Object.keys(closure);
 
@@ -436,8 +441,9 @@ const handlerIn = (source, named, closure) => {
         ...names.map((name) => closure[name]));
 };
 
-const keyPress = (key) => ({
+const keyPress = (key, shiftKey = false) => ({
     key,
+    shiftKey,
     defaultPrevented: false,
     preventDefault() {
         this.defaultPrevented = true;
@@ -476,17 +482,33 @@ describe("the integration menu answers the keyboard", () => {
             "a menu option still pins its own tab index");
     });
 
+    /**
+     * The menu's key handler, lifted out and given a menu to act on.
+     *
+     * `options` are what the portalled menu holds - plain objects, because
+     * nextFocus is the real one and asks a container for its focusable
+     * children, filters the ones a browser would skip, and hands back the
+     * element it wants focused. `active` is where focus is when the key is
+     * pressed, given as an index into them, or null for focus that is
+     * elsewhere.
+     */
+    const open = ({active = null, menu = true} = {}) => {
+        const options = ["first", "middle", "last"].map((name) =>
+            ({name, focused: 0, focus() { this.focused++; }}));
+        const state = {open: true, focused: false};
+
+        const press = handlerIn(dropdown, "const handleMenuKey", {
+            nextFocus,
+            setIsOpen: (value) => state.open = value,
+            menuRef: {current: menu ? {querySelectorAll: () => options} : null},
+            containerRef: {current: {querySelector: () => ({focus: () => state.focused = true})}},
+            document: {activeElement: active === null ? null : options[active]}
+        });
+
+        return {press, state, options};
+    };
+
     describe("Escape", () => {
-        const open = () => {
-            const state = {open: true, focused: false};
-            const press = handlerIn(dropdown, "const handleMenuKey", {
-                setIsOpen: (value) => state.open = value,
-                containerRef: {current: {querySelector: () => ({focus: () => state.focused = true})}}
-            });
-
-            return {press, state};
-        };
-
         it("closes the menu", () => {
             const {press, state} = open();
             const event = keyPress("Escape");
@@ -513,6 +535,69 @@ describe("the integration menu answers the keyboard", () => {
             for (const key of ["Enter", " ", "Tab", "ArrowDown", "Esc"]) press(keyPress(key));
 
             assert.equal(state.open, true);
+        });
+    });
+
+    /**
+     * Tab cycles the options rather than walking out of the dialog behind them.
+     *
+     * The menu is portalled to the body, so it is a sibling of the backdrop and
+     * not a descendant of the dialog. The modal trap is a keydown listener on
+     * the dialog, and it never hears a key pressed in here - so a Tab off the
+     * last option went wherever document order said, which is past the end of
+     * the menu and back to the page underneath. The blur then closed the menu,
+     * and the reader was left on a control behind a backdrop still announcing
+     * aria-modal. That is the one thing the trap exists to prevent, reached
+     * through the one control it cannot see.
+     *
+     * Held here rather than in the trap, because the trap works by containment
+     * and this menu is deliberately not contained. Escape is the way out, and it
+     * already gives focus back to the button that opened it - which is inside
+     * the dialog, where the trap picks it up again.
+     */
+    describe("Tab", () => {
+        it("wraps from the last option to the first", () => {
+            const {press, options} = open({active: 2});
+            const event = keyPress("Tab");
+
+            press(event);
+
+            assert.equal(event.defaultPrevented, true, "the browser is left to take Tab out of the dialog");
+            assert.equal(options[0].focused, 1, "focus lands on the page behind the backdrop");
+        });
+
+        it("wraps backwards from the first option to the last", () => {
+            const {press, options} = open({active: 0});
+            const event = keyPress("Tab", true);
+
+            press(event);
+
+            assert.equal(event.defaultPrevented, true);
+            assert.equal(options[2].focused, 1, "Shift+Tab leaves the menu through the top");
+        });
+
+        // A Tab in the middle is the browser's own to answer: claiming it would
+        // mean re-implementing tab order rather than closing it into a loop.
+        it("leaves a step between two options alone", () => {
+            const {press, options} = open({active: 0});
+            const event = keyPress("Tab");
+
+            press(event);
+
+            assert.equal(event.defaultPrevented, false, "the menu re-implements the browser's own tab order");
+            assert.deepEqual(options.map((option) => option.focused), [0, 0, 0]);
+        });
+
+        // Closed, the menu is unmounted and its ref is null - and the trigger
+        // sits inside the dialog, where the modal trap answers for it.
+        it("leaves the key alone when the menu is closed", () => {
+            const {press, options} = open({menu: false});
+            const event = keyPress("Tab");
+
+            press(event);
+
+            assert.equal(event.defaultPrevented, false, "Tab is trapped in a menu that is not on the page");
+            assert.deepEqual(options.map((option) => option.focused), [0, 0, 0]);
         });
     });
 });
@@ -585,21 +670,90 @@ describe("the dialogs' own buttons", () => {
  * something to give it back to.
  */
 describe("the export menu", () => {
-    it("returns focus to its trigger when a format is chosen", () => {
+    const exported = () => {
         const handler = exportMenu.slice(exportMenu.indexOf("const handleExport"));
-        const body = handler.slice(0, handler.indexOf("\n    };"));
 
-        assert.match(body, /buttonRef\.current\?\.focus\(\)/,
-            "choosing a format unmounts the focused button and leaves focus on the document");
+        return handler.slice(0, handler.indexOf("\n    };"));
+    };
+
+    /*
+     * And it cannot hand it back in the same breath, because the same call
+     * disables the button it would hand it to.
+     *
+     * `disabled={exporting}` is set in the very commit this would focus in, and
+     * a disabled control is not a focusable area: the browser's focus fixup rule
+     * takes focus off it and puts it on the viewport. Focusing the trigger and
+     * disabling it together is exactly as good as never focusing it - the
+     * reader still ends on <body> - so what is recorded here is the debt, and it
+     * is paid when the button can hold focus again.
+     */
+    it("does not hand focus to the button it is about to disable", () => {
+        assert.doesNotMatch(exported(), /buttonRef\.current\?\.focus\(\)/,
+            "focus is placed on the trigger in the commit that disables it, and the browser drops it straight to the document");
     });
 
     // Not on a click outside, where focus belongs to whatever was clicked.
-    it("only takes focus back when the menu is the thing that had it", () => {
-        const handler = exportMenu.slice(exportMenu.indexOf("const handleExport"));
-        const body = handler.slice(0, handler.indexOf("\n    };"));
-
-        assert.match(body, /dropdownRef\.current\?\.contains\(document\.activeElement\)/,
+    it("only takes the debt on when the menu is the thing that had focus", () => {
+        assert.match(exported(),
+            /dropdownRef\.current\?\.contains\(document\.activeElement\)\)\s*owedFocus\.current = true/,
             "focus is pulled to the trigger even when the menu never held it");
+    });
+
+    // The export is what disables it, so the export ending is what re-enables
+    // it - and nothing before that can give focus back.
+    it("pays it when the export is over", () => {
+        const effect = exportMenu.slice(exportMenu.indexOf("useEffect("));
+        const closed = effect.indexOf("}, [");
+
+        assert.match(effect.slice(0, closed), /!exporting/,
+            "nothing waits for the button to be enabled again");
+        assert.match(effect.slice(0, closed), /returnFocusToTrigger\(\)/,
+            "the debt is recorded and never paid, so the reader is left on the document");
+        assert.match(effect.slice(closed), /^}, \[exporting\b/,
+            "the effect does not run when the export ends, so the trigger never gets its focus back");
+    });
+
+    /*
+     * Run rather than read, which is the shape the menus above use: what is
+     * wrong with a debt is what happens when it is settled.
+     */
+    describe("settling it", () => {
+        const paying = (owed) => {
+            const state = {focused: 0};
+            const owedFocus = {current: owed};
+            const pay = handlerIn(exportMenu, "const returnFocusToTrigger", {
+                owedFocus,
+                buttonRef: {current: {focus: () => state.focused++}}
+            });
+
+            return {pay, state, owedFocus};
+        };
+
+        it("puts focus back on the trigger", () => {
+            const {pay, state} = paying(true);
+
+            pay();
+
+            assert.equal(state.focused, 1, "the trigger is never given the focus the menu took off the page");
+        });
+
+        it("leaves focus alone when the menu never had it", () => {
+            const {pay, state} = paying(false);
+
+            pay();
+
+            assert.equal(state.focused, 0, "focus is pulled to the trigger out of whatever else was holding it");
+        });
+
+        // Every later export, and every render between them, runs this again.
+        it("settles it once", () => {
+            const {pay, state} = paying(true);
+
+            pay();
+            pay();
+
+            assert.equal(state.focused, 1, "focus is dragged back to the trigger long after the export it belonged to");
+        });
     });
 });
 
@@ -673,13 +827,38 @@ describe("the integration create menu inside a dialog", () => {
             "the trap reads the portalled menu as the page behind the dialog and recovers focus out of it");
     });
 
-    it("puts focus in the menu when it opens", () => {
-        const effect = dropdown.slice(dropdown.indexOf("useLayoutEffect"));
-        const body = effect.slice(0, effect.indexOf("}, [isOpen"));
+    /**
+     * The effect that seats focus, from `useLayoutEffect` to its dependencies.
+     */
+    const seating = () => {
+        const at = dropdown.search(/menuRef\.current\?\.querySelector\([^)]*\)\?\.focus\(\)/);
 
-        assert.notEqual(body.length, 0, "the effect that runs when the menu opens has moved");
-        assert.match(body, /menuRef\.current\?\.querySelector\([^)]*\)\?\.focus\(\)/,
-            "the menu can only be reached by a Tab the dialog's trap will not allow");
+        assert.notEqual(at, -1, "the menu can only be reached by a Tab the dialog's trap will not allow");
+
+        const opened = dropdown.lastIndexOf("useLayoutEffect(", at);
+        assert.notEqual(opened, -1, "focus is placed by nothing that says when it runs");
+
+        return dropdown.slice(opened, dropdown.indexOf("]", at) + 1);
+    };
+
+    it("puts focus in the menu when it opens", () => {
+        assert.match(seating(), /if \(!isOpen\) return;/,
+            "focus is placed by an effect that does not first ask whether the menu is open");
+    });
+
+    /*
+     * And only then.
+     *
+     * The effect that positions the menu depends on `items` as well, because a
+     * different set of options is a different height. Seating focus from the
+     * same effect borrows that dependency - and the array is built inline by the
+     * dialog above, so it is a new one on every render of that dialog. Any of
+     * them while the menu is open drags focus back to the first option, out of
+     * whichever one the reader had moved to.
+     */
+    it("seats it when the menu opens and not on every change to the options", () => {
+        assert.match(seating(), /}, \[isOpen]$/,
+            "the effect that seats focus runs again whenever the dialog above it re-renders");
     });
 
     /*

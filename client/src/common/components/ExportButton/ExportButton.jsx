@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDownload, faChevronDown, faFileLines, faCode } from "@fortawesome/free-solid-svg-icons";
 import { t } from "i18next";
@@ -18,6 +18,34 @@ export const ExportButton = ({ dateRange, allTime = false }) => {
 
     useClickOutside(isOpen, [dropdownRef, buttonRef], () => setIsOpen(false));
 
+    // Whether the menu took focus off the page on its way out, and the trigger
+    // is therefore owed it back. A ref rather than state: paying the debt is not
+    // something to render, and recording it must not schedule a render of its
+    // own in the middle of an export.
+    const owedFocus = useRef(false);
+
+    /**
+     * Focus back on the trigger, once the trigger is a control that can hold it.
+     *
+     * Not in handleExport, though that is where the debt is taken on. The same
+     * call disables this button for the length of the export, and a disabled
+     * element is not a focusable area: the browser's focus fixup rule takes
+     * focus off it in the very commit that would have placed it there. Focusing
+     * and disabling together is exactly as good as never focusing at all.
+     */
+    const returnFocusToTrigger = useCallback(() => {
+        if (!owedFocus.current) return;
+
+        owedFocus.current = false;
+        buttonRef.current?.focus();
+    }, []);
+
+    // The export ending is what re-enables the button, so it is also the first
+    // moment there is anything to give focus back to.
+    useEffect(() => {
+        if (!exporting) returnFocusToTrigger();
+    }, [exporting, returnFocusToTrigger]);
+
     const handleExport = async (format) => {
         /*
          * Read before the menu closes, because closing unmounts the control
@@ -33,12 +61,10 @@ export const ExportButton = ({ dateRange, allTime = false }) => {
          * Only when the menu holds it: a click outside closes this too, and
          * there focus belongs to whatever was clicked.
          */
-        const held = dropdownRef.current?.contains(document.activeElement);
+        if (dropdownRef.current?.contains(document.activeElement)) owedFocus.current = true;
 
         setExporting(true);
         setIsOpen(false);
-
-        if (held) buttonRef.current?.focus();
 
         const fromParam = formatDateParam(dateRange.from);
         const toParam = formatDateParam(dateRange.to);

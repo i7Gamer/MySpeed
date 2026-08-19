@@ -396,15 +396,6 @@ export const exportConfig = async ({includeSecrets = false} = {}) => {
 const asRows = (value) => Array.isArray(value) ? value : null;
 
 /**
- * Replaces the stored configuration with an exported one.
- *
- * The whole payload is checked before a single row is touched, and the
- * replacement runs in one transaction. Previously the three tables were
- * emptied first and validated afterwards, so a payload missing so much as the
- * `nodes` key destroyed every node, integration and recommendation with no way
- * back - there is no soft delete and nothing else holds a copy.
- */
-/**
  * What a refused import answers with when no single value is to blame - a
  * payload that is not a backup, or a write the database turned down.
  *
@@ -415,6 +406,15 @@ const asRows = (value) => Array.isArray(value) ? value : null;
  */
 const REFUSED = {ok: false};
 
+/**
+ * Replaces the stored configuration with an exported one.
+ *
+ * The whole payload is checked before a single row is touched, and the
+ * replacement runs in one transaction. Previously the three tables were
+ * emptied first and validated afterwards, so a payload missing so much as the
+ * `nodes` key destroyed every node, integration and recommendation with no way
+ * back - there is no soft delete and nothing else holds a copy.
+ */
 export const importConfig = async (obj) => {
     if (!obj || typeof obj !== "object" || Array.isArray(obj)) return REFUSED;
 
