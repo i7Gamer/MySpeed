@@ -27,11 +27,18 @@ $dialog-secondary-text: 0.85rem
   transition: all 0.2s ease-in-out
   min-width: 0
   max-width: 100%
-  // The two the browser brings that this rule does not already state. It is a
-  // real button now - the only control that changes the range, and unreachable
-  // as the div it used to be - and a button arrives with the system font and
-  // centred text. The background and the border above already answer for
+  // Two of the four the browser brings that this rule does not already state.
+  // It is a real button now - the only control that changes the range, and
+  // unreachable as the div it used to be - and a button arrives with the system
+  // font and centred text. The background and the border above answer for
   // themselves.
+  //
+  // The other two are font-size and font-weight, which a button also brings
+  // and this rule also leaves alone: as a div it computed 16px/600, as a button
+  // 13.3px/400. Nothing shows it, because every child states its own - the text
+  // and the icon both do - and every box measurement here is in rem. Named
+  // rather than added, so the next thing put in this trigger is known to need
+  // its own size: a bare text node, or a padding in em, takes the 13.3px.
   font-family: inherit
   text-align: left
   

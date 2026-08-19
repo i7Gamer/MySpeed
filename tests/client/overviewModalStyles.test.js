@@ -108,7 +108,7 @@ describe("the overview chart stylesheet", () => {
 
         assert.equal(steps.length, 2, "the trim and wrap steps are not both container-keyed");
         assert.ok(steps[0] > steps[1],
-            "the wrap step is not inside the trim step, so a label wraps while its icon still shows");
+            "the wrap step is not inside the trim step, so a row stacks while its description still shows");
     });
 
     /**

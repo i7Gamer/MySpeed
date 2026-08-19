@@ -406,9 +406,15 @@ export const validateInput = (module, data, isPatch = false) => {
      * was copied onto the result unread and assigned straight to `displayName`,
      * a bare Sequelize.STRING: VARCHAR(255) on MySQL, where an over-long name
      * was ER_DATA_TOO_LONG and a 500 with a stack in the operator's log, while
-     * sqlite stored it whole behind a 201. The two supported backends answered
-     * the same request differently. A non-string reached sequelize's own
-     * validator and was a 500 on both.
+     * sqlite stored it whole behind the 200 the create route answers with. The
+     * two supported backends answered the same request differently.
+     *
+     * A non-string did not simply fail. Sequelize's STRING validator lets a
+     * number through - `42` was stored as the text "42" on both backends, with
+     * nothing said - and threw only for a boolean, an object or an array, which
+     * is where the 500 came from. So the type half of this check is not
+     * belt-and-braces beside the length: it is the only thing standing between
+     * a numeric display name and a silently coerced one.
      *
      * Held to the text cap rather than to 255, so it wears the limit a declared
      * text field wears and stays inside the column either way.

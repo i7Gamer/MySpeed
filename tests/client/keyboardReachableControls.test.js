@@ -318,10 +318,24 @@ describe("the date range picker answers the keyboard", () => {
      * renders `aria-hidden`, so the accessible name of all four was empty.
      */
     it("names each calendar arrow", () => {
-        const nav = datePicker.slice(datePicker.indexOf('className="calendar-nav"'),
-            datePicker.indexOf('className="calendar-grid"'));
+        const start = datePicker.indexOf('className="calendar-nav"');
+        const end = datePicker.indexOf('className="calendar-grid"');
 
-        assert.equal((nav.match(/nav-btn/g) ?? []).length, (nav.match(/aria-label=/g) ?? []).length,
+        /*
+         * Both markers, before anything is sliced between them. A missing first
+         * one makes indexOf answer -1, which slice reads as one character from
+         * the end - so the window comes back empty, the parity below compares
+         * nothing with nothing, and a fifth unnamed arrow is invisible to it.
+         */
+        assert.ok(start !== -1 && end > start,
+            "the calendar's navigation row is not where this scan looks for it, so it is scanning nothing");
+
+        const nav = datePicker.slice(start, end);
+        const arrows = nav.match(/nav-btn/g) ?? [];
+
+        assert.ok(arrows.length >= 4,
+            `only ${arrows.length} arrows are inside that window, so the parity check below is empty`);
+        assert.equal(arrows.length, (nav.match(/aria-label=/g) ?? []).length,
             "a calendar arrow carries no accessible name, so it announces as an empty button");
 
         for (const key of ["previous_year", "previous_month", "next_month", "next_year"])

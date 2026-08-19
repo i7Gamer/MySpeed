@@ -271,8 +271,10 @@ describe("validateInput", () => {
      * with a stack in the operator's log rather than the 400 every declared
      * field earns.
      *
-     * A non-string was a 500 on both - sequelize's own validator refuses an
-     * object outright.
+     * A non-string went two ways, and only one of them was loud. Sequelize's
+     * STRING validator refuses a boolean, an object or an array - the 500 - but
+     * lets a number through, so `42` was stored as the text "42" with nothing
+     * said at all. The quiet one is what the type check here is for.
      */
     describe("the display name", () => {
         it("accepts a name a text field would accept", () => {
