@@ -46,10 +46,14 @@ describe("validateInput", () => {
             await rejects("upload", "50mb");
         });
 
-        // The column is an integer, so the fractional part is dropped rather
-        // than silently rounded by the database.
-        it("truncates a fractional ping to whole milliseconds", async () => {
-            assert.equal(await accepts("ping", "25.9"), "25");
+        // Like its two siblings. The value lands in the config table's string
+        // column - there is no integer column to respect - and the pings it is
+        // compared against have been DOUBLE since 0010, the recommended ping
+        // since 0012. Cutting it at the dot turned "use recommended" on a
+        // fibre line into a stored threshold of 0, and ".5" into the empty
+        // string - see thresholdFraction.test.js.
+        it("keeps a fractional ping whole", async () => {
+            assert.equal(await accepts("ping", "25.9"), "25.9");
         });
 
         /**

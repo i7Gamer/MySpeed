@@ -1,7 +1,9 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faXmark } from "@fortawesome/free-solid-svg-icons";
+import { t } from "i18next";
 import { hasOpenOverlay } from "@/common/contexts/Dialog";
+import { useModalFocus } from "@/common/hooks/useModalFocus";
 import "./styles.sass";
 
 /**
@@ -9,8 +11,20 @@ import "./styles.sass";
  * @param wide    a panel that wants the room but is not a plot - see
  *                .modal-wide, which exists because a responsive grid cannot ask
  *                a shrink-to-fit dialog for the width it needs
+ * @param label   the dialog's accessible name. This overlay is rendered inline
+ *                rather than through the Dialog context, so no DialogHeader is
+ *                ever there to name it - the caller says outright which chart
+ *                was expanded.
  */
-export const ChartModal = ({ isOpen, onClose, isChart = false, wide = false, toolbar, children }) => {
+export const ChartModal = ({ isOpen, onClose, isChart = false, wide = false, toolbar, label, children }) => {
+    const contentRef = useRef(null);
+
+    // The same three promises every Dialog makes, from the same hook: focus
+    // moves in when the modal opens, Tab stays inside while it is, and focus
+    // returns to the card that opened it on close. Without them the backdrop
+    // was purely visual - Tab walked the inert page underneath.
+    useModalFocus(contentRef, {open: isOpen});
+
     /**
      * Only while this is the overlay the key belongs to.
      *
@@ -55,8 +69,16 @@ export const ChartModal = ({ isOpen, onClose, isChart = false, wide = false, too
 
     return (
         <div className="chart-modal-backdrop" onClick={handleBackdropClick}>
-            <div className={`chart-modal-content${isChart ? ' modal-chart' : ''}${wide ? ' modal-wide' : ''}`}>
-                <button className="chart-modal-close" onClick={onClose}>
+            {/* tabIndex so focus can be placed on the box itself when nothing
+                inside is focusable, and aria-modal so the page behind the
+                backdrop is announced as inert - the pair every Dialog carries. */}
+            <div className={`chart-modal-content${isChart ? ' modal-chart' : ''}${wide ? ' modal-wide' : ''}`}
+                 ref={contentRef} role="dialog" aria-modal="true" tabIndex={-1} aria-label={label}>
+                {/* Named, because the glyph renders aria-hidden and an unnamed
+                    button announces as nothing. data-overlay-dismiss keeps the
+                    trap from seating focus here on open. */}
+                <button type="button" className="chart-modal-close" data-overlay-dismiss
+                        aria-label={t("dialog.close")} onClick={onClose}>
                     <FontAwesomeIcon icon={faXmark} />
                 </button>
                 <div className={`chart-modal-body${isChart ? ' modal-body-chart' : ''}`}>

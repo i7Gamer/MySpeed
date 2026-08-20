@@ -37,6 +37,8 @@ export const moduleName = (file) => file.replace(/\.js$/, '');
 export const migrationIdentifier = (file, index) => `m${index}_${moduleName(file).replace(IDENTIFIER_UNSAFE, '_')}`;
 
 // Prefixed as well, so a filename starting with a digit - or one that sanitises
-// down to a reserved word - still yields something the parser accepts. The
+// down to a reserved word - still yields something the parser accepts. And
+// indexed for the reason the migrations are: "a-b.js" and "a_b.js" sanitise to
+// one name, and a duplicate binding takes the server down at boot. The
 // identifier is local to the generated file; only `name` is load-bearing.
-export const integrationIdentifier = (file) => `i_${moduleName(file).replace(IDENTIFIER_UNSAFE, '_')}`;
+export const integrationIdentifier = (file, index) => `i${index}_${moduleName(file).replace(IDENTIFIER_UNSAFE, '_')}`;

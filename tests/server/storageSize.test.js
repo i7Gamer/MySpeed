@@ -1,11 +1,12 @@
-import { describe, it, before, after } from "node:test";
+import { describe, it, before, after, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { sqliteBytes } from "../../server/controller/config.js";
-import { SQLITE_STORAGE_PATH } from "../../server/config/database.js";
+import { getUsedStorage, sqliteBytes } from "../../server/controller/config.js";
+import db, { SQLITE_STORAGE_PATH } from "../../server/config/database.js";
+import speedtests from "../../server/models/Speedtests.js";
 
 /**
  * What the storage dialog reports as "used".
@@ -62,6 +63,56 @@ describe("sqliteBytes", () => {
     it("ignores a sidecar that is not there", () => {
         write("d.db", 512);
         assert.equal(sqliteBytes(path.join(directory, "d.db")), 512);
+    });
+});
+
+/**
+ * The MySQL half of the same figure.
+ *
+ * information_schema.TABLES lists views beside the base tables, and a view's
+ * data_length is NULL - so one view anywhere in the schema (a DBA's reporting
+ * view is enough; MySpeed creates none itself) fed parseFloat a NULL, the
+ * running sum became NaN, and the dialog was answered {size: null}. The query
+ * now asks only for base tables, and the sum keeps a guard beside it: the
+ * figure a row cannot contribute must not poison what the others already said.
+ */
+describe("getUsedStorage on MySQL", () => {
+    const TEST_COUNT = 42;
+
+    let asked;
+
+    const withTables = (rows) => {
+        asked = null;
+        mock.method(db, "query", async (sql) => { asked = sql; return rows; });
+        mock.method(speedtests, "count", async () => TEST_COUNT);
+        process.env.DB_TYPE = "mysql";
+    };
+
+    afterEach(() => {
+        mock.restoreAll();
+        delete process.env.DB_TYPE;
+    });
+
+    it("sums the tables it is told about", async () => {
+        withTables([{Table: "speedtests", size: "2048"}, {Table: "config", size: 1024}]);
+
+        assert.deepEqual(await getUsedStorage(), {size: 3072, testCount: TEST_COUNT});
+    });
+
+    it("survives a row that reports no size", async () => {
+        withTables([{Table: "speedtests", size: "2048"}, {Table: "a_view", size: null}]);
+
+        const {size} = await getUsedStorage();
+
+        assert.equal(size, 2048, "one NULL row poisoned the whole sum");
+    });
+
+    it("asks only for base tables, which are the ones that have a size", async () => {
+        withTables([]);
+        await getUsedStorage();
+
+        assert.match(asked, /TABLE_TYPE\s*=\s*'BASE TABLE'/,
+            "the query still lists views, whose NULL sizes the sum then has to survive");
     });
 });
 

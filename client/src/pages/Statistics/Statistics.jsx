@@ -50,6 +50,24 @@ import "./styles.sass";
 // buckets and the rest are not time series at all.
 const LINE_CHARTS = ['download', 'upload', 'ping'];
 
+/**
+ * What the expanded chart's dialog announces as, one entry per case in
+ * renderChart - chartModalDialog.test.js holds the two lists to each other.
+ * Each key is the one the chart already draws as its own visible title, so the
+ * dialog and its content answer to the same name.
+ */
+const CHART_MODAL_LABELS = {
+    overview: "page.overview",
+    latest: "latest.latest",
+    consistency: "statistics.consistency.title",
+    download: "latest.down",
+    upload: "latest.up",
+    ping: "latest.ping",
+    hourly: "statistics.hourly.title",
+    avgDownload: "statistics.values.down",
+    avgUpload: "statistics.values.up"
+};
+
 const FULL_HEIGHT_CHARTS = [...LINE_CHARTS, 'hourly'];
 
 // Panels that are a responsive grid rather than a plot: they need the dialog to
@@ -465,6 +483,7 @@ export const Statistics = () => {
                 isChart={FULL_HEIGHT_CHARTS.includes(expandedChart)}
                 wide={WIDE_PANELS.includes(expandedChart)}
                 toolbar={detailToolbar}
+                label={expandedChart ? t(CHART_MODAL_LABELS[expandedChart]) : undefined}
             >
                 {expandedChart && renderChart(expandedChart, detailStatistics ?? deferredStatistics)}
             </ChartModal>

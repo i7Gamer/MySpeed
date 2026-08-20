@@ -32,6 +32,19 @@ const DEFAULT_TIMEOUT = 15000;
  */
 export const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 
+/**
+ * Names the one failure a caller can honestly explain, the way safeUrl's
+ * EBLOCKEDADDRESS does: the proxy answers a too-large export differently from
+ * a node that fell over, and a bare message string is nothing to branch on.
+ */
+export const RESPONSE_TOO_LARGE = "ERESPONSETOOLARGE";
+
+const tooLargeError = (maxBytes) => {
+    const error = new Error(`Response too large: more than ${maxBytes} bytes`);
+    error.code = RESPONSE_TOO_LARGE;
+    return error;
+};
+
 export const safeRequest = (url, {method = "GET", headers = {}, body, timeout = DEFAULT_TIMEOUT, signal,
     maxBytes = MAX_RESPONSE_BYTES} = {}) =>
     new Promise((resolve, reject) => {
@@ -55,7 +68,7 @@ export const safeRequest = (url, {method = "GET", headers = {}, body, timeout = 
                 // check on the finished buffer would reject the request having
                 // already paid the memory the ceiling exists to save.
                 if (held > maxBytes) {
-                    request.destroy(new Error(`Response too large: more than ${maxBytes} bytes`));
+                    request.destroy(tooLargeError(maxBytes));
                     return;
                 }
 

@@ -96,6 +96,26 @@ describe("both endings", () => {
 });
 
 /**
+ * The start of a run makes the same promise its two endings do.
+ *
+ * sendRunning was sent as `.then(undefined)`, which handles nothing: a
+ * rejection - the same database read that can fail in triggerEvent's fan-out -
+ * escaped to the process-level unhandledRejection hook and was logged as a
+ * bare server fault, with nothing naming the notification that produced it.
+ * sendFinished and sendError have carried a contextual catch all along.
+ */
+describe("the start of a run", () => {
+    const start = bodyFrom("const setRunning");
+
+    it("reports a notification that failed, the way both endings do", () => {
+        assert.match(start, /sendRunning\(\)\.catch\(/,
+            "the start notice has no handler, so its failure is a context-less server fault");
+        assert.doesNotMatch(start, /\.then\(undefined\)/,
+            "then(undefined) handles nothing and reads as though it did");
+    });
+});
+
+/**
  * And the latch it shares the job with, which was already right - so that the
  * two halves of "this run is over" cannot drift apart again.
  */

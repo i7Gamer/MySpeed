@@ -21,10 +21,9 @@ after(async () => {
 beforeEach(async () => {
     await setConfig(server.config, "retentionDays", "365");
 
-    // This file restores a history once per assertion, which no caller does, and
-    // /api/storage/tests/history carries a limit of its own - see app.js and the
-    // list in expensiveRoutes.test.js. What is under test here is the import's
-    // validation, not the limiter.
+    // This file drives the storage imports and exports far harder than any
+    // caller would, and /api/storage carries a limit of its own - see app.js.
+    // What is under test here is the retention and the export, not the limiter.
     server.resetRateLimits();
 });
 

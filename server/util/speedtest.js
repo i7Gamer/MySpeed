@@ -69,6 +69,28 @@ export const trackProcess = (child) => {
 export const SHUTDOWN_KILL_GRACE = 1000;
 
 /**
+ * Whether the process has begun leaving, for the one reader that must care:
+ * the failure handler's automatic retry in tasks/speedtest.js.
+ *
+ * terminateActiveProcess ends the run in flight, but to the run that looks
+ * like any other failure - and a failed first attempt answers by starting a
+ * second. That fresh child spawns after the only moment the shutdown could
+ * reach it, which rebuilds exactly the orphan trackProcess exists to prevent.
+ *
+ * A flag the shutdown sets rather than something the kill implies: ending the
+ * active run is not the same statement as "the process is leaving", and a
+ * future caller ending a run for its own reasons must not turn retries off
+ * for the life of the process. One-way, because nothing un-shuts-down.
+ */
+let shuttingDown = false;
+
+export const markShutdown = () => {
+    shuttingDown = true;
+};
+
+export const isShuttingDown = () => shuttingDown;
+
+/**
  * Ends the speedtest currently running, if one is.
  *
  * @returns whether there was anything to end

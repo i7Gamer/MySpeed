@@ -1,4 +1,4 @@
-import speedTest from '../util/speedtest.js';
+import speedTest, { isShuttingDown } from '../util/speedtest.js';
 import * as tests from '../controller/speedtests.js';
 import * as config from '../controller/config.js';
 import * as controller from "../controller/recommendations.js";
@@ -6,7 +6,7 @@ import * as parseData from '../util/providers/parseData.js';
 import { setState, sendRunning, sendError, sendFinished } from "./integrations.js";
 import * as serverController from "../controller/servers.js";
 import { toErrorMessage } from '../util/helpers.js';
-import { PHASE_START, overallProgress } from '../util/providers/progress.js';
+import { PHASE_ORDER, PHASE_START, overallProgress } from '../util/providers/progress.js';
 import { failedPayload, finishedPayload } from '../util/notificationPayload.js';
 import { FAILED_TEST } from '../util/testOutcome.js';
 
@@ -49,7 +49,13 @@ const setRunning = (running, sendRequest = true) => {
     if (running) {
         _progress = {...NO_PROGRESS, phase: PHASE_START, startedAt: new Date().toISOString()};
         setState("running");
-        if (sendRequest) sendRunning().then(undefined);
+        // Caught with context, the way sendFinished and sendError are. This
+        // used to be sent through a bare then with no handler - which handles
+        // nothing - so a rejection here, the same database read that can fail
+        // inside triggerEvent, escaped to the process-level hook and was
+        // logged as a bare server fault naming nothing.
+        if (sendRequest) sendRunning().catch(err =>
+            console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
     } else {
         _progress = {...NO_PROGRESS};
         setState("ping");
@@ -103,6 +109,35 @@ export const createRecommendations = async () => {
 
     await controller.update(recommendations.ping, recommendations.down, recommendations.up);
 }
+
+/** How long the demo pretends a test takes. */
+export const PREVIEW_RUN_MS = 5000;
+
+// Enough steps that the bar visibly glides, spaced widely enough that the
+// simulation is not busywork - previewProgress.test.js holds the two apart.
+const PREVIEW_STEPS_PER_PHASE = 4;
+
+/**
+ * The march the demo bar makes, as data. Exported for its tests.
+ *
+ * The real phases in their real order, each walked to completion, with no
+ * speed - a figure for a measurement that never happened would be the bar
+ * lying rather than pretending. The latency phase of a real run reports the
+ * same null.
+ */
+export const previewProgressSteps = () =>
+    PHASE_ORDER.flatMap((phase) => Array.from({length: PREVIEW_STEPS_PER_PHASE},
+        (_, step) => ({phase, progress: (step + 1) / PREVIEW_STEPS_PER_PHASE, speed: null})));
+
+const simulatePreviewRun = async () => {
+    const steps = previewProgressSteps();
+    const stepMs = PREVIEW_RUN_MS / steps.length;
+
+    for (const step of steps) {
+        await new Promise(resolve => setTimeout(resolve, stepMs));
+        updateProgress(step);
+    }
+};
 
 export const run = async (retryAuto = false) => {
     // The retry is the same logical test, so integrations are told it started
@@ -187,7 +222,15 @@ const execute = async (type, retried) => {
     try {
         let test;
         if (process.env.PREVIEW_MODE === "true") {
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            // The same latch a real run sets - run() is the only other caller
+            // of setRunning(true), and this branch skips run(), so the demo's
+            // whole test used to answer {running: true, phase: null,
+            // startedAt: null} on the status endpoint: the instance whose job
+            // is showing the interface showed a run reporting nothing. Minus
+            // the integration notice, which a pretended test has no business
+            // sending.
+            setRunning(true, false);
+            await simulatePreviewRun();
             test = {
                 ping: {latency: Math.floor(Math.random() * 25) + 5, jitter: Math.random() * 5 + 0.5},
                 download: {bandwidth: 125 * 100000 * (Math.random() + 0.5), elapsed: 10000},
@@ -224,7 +267,11 @@ const execute = async (type, retried) => {
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
     } catch (e) {
         console.log(e)
-        if (!retried) return await create(type, true);
+        // Not while the process is leaving: the shutdown has just killed the
+        // child this failure reports, and a retry would spawn a fresh one after
+        // the only moment terminateActiveProcess could reach it - the orphan
+        // trackProcess exists to prevent, rebuilt one line further down.
+        if (!retried && !isShuttingDown()) return await create(type, true);
 
         // A thrown string or a plain object has no `message`, and storing
         // undefined writes NULL - which marks the row as *successful* and lets

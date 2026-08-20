@@ -71,14 +71,39 @@ export const getOne = async (id) => {
     return speedtest
 }
 
-export const listAll = async () => {
-    let dbEntries = await tests.findAll({order: [["created", "DESC"]]});
-    for (let dbEntry of dbEntries) {
-        if (dbEntry.error === null) delete dbEntry.error;
-        if (dbEntry.resultId === null) delete dbEntry.resultId;
-    }
+/**
+ * The whole history, one page at a time, newest first.
+ *
+ * This is the backup export, and it used to be listAll(): every row in memory
+ * at once, for the one table whose size grows with faithful use - the export
+ * of a healthy two-year history was the largest allocation this server ever
+ * made. The walk pages by (created, id), which is listFilter's own cursor and
+ * LIST_ORDER's own sort, rather than by offset: offsets drift under a
+ * concurrent insert, and ids stop agreeing with time on any imported history.
+ *
+ * Each page keeps the shape listAll gave every download so far: a null error
+ * means a successful test and the column is dropped, resultId the same.
+ */
+export const EXPORT_PAGE_ROWS = 2500;
 
-    return dbEntries;
+export const listPages = async function* (pageSize = EXPORT_PAGE_ROWS) {
+    let after;
+
+    for (;;) {
+        const rows = await tests.findAll({where: listFilter({after}), order: LIST_ORDER, limit: pageSize});
+        if (rows.length === 0) return;
+
+        for (const row of rows) {
+            if (row.error === null) delete row.error;
+            if (row.resultId === null) delete row.resultId;
+        }
+
+        yield rows;
+
+        if (rows.length < pageSize) return;
+        const last = rows[rows.length - 1];
+        after = {created: last.created, id: last.id};
+    }
 }
 
 /**

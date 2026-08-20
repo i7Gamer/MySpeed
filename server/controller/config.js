@@ -240,12 +240,19 @@ export const getUsedStorage = async () => {
     let size = 0;
 
     if (process.env.DB_TYPE === "mysql") {
-        const sizes = await db.query("SELECT table_name AS `Table`, ROUND((data_length + index_length), 2) AS `size` FROM information_schema.TABLES WHERE table_schema = ?;", {
+        // Base tables only: information_schema lists views beside them, and a
+        // view's data_length is NULL - one anywhere in the schema (a DBA's
+        // reporting view is enough) fed the sum a NaN and the dialog was
+        // answered {size: null}.
+        const sizes = await db.query("SELECT table_name AS `Table`, ROUND((data_length + index_length), 2) AS `size` FROM information_schema.TABLES WHERE table_schema = ? AND TABLE_TYPE = 'BASE TABLE';", {
             replacements: [process.env.DB_NAME],
             type: db.QueryTypes.SELECT
         });
         for (let i = 0; i < sizes.length; i++) {
-            size += parseFloat(sizes[i].size);
+            // Guarded as well as filtered: a figure one row cannot contribute
+            // must not poison what the others already said.
+            const bytes = parseFloat(sizes[i].size);
+            if (Number.isFinite(bytes)) size += bytes;
         }
     } else {
         // The path the database is actually opened with, rather than a second
@@ -279,9 +286,6 @@ export const validateInput = async (key, value) => {
 
     if (key === "provider" && !["ookla", "libre", "cloudflare"].includes(value))
         return "You need to provide a valid provider";
-
-    if (key === "ping")
-        value = value.toString().split(".")[0];
 
     // "none" is the stored sentinel for "no password configured". Letting it
     // through as a chosen password stored the literal string, which
@@ -603,22 +607,28 @@ export const factoryReset = async () => {
     // everything below, including the session revocation. It also never
     // restored a default whose row was missing altogether.
     //
-    // Both halves in one transaction: an unwrapped destroy commits on its own,
-    // so a failure in the re-seed would leave the table empty - which is worse
-    // than the half-default state this replaced, because "no row" is not a
-    // value any reader has a fallback for.
+    // Every table in one transaction: an unwrapped destroy commits on its own,
+    // so a failure in the re-seed would leave the config table empty - which is
+    // worse than the half-default state this replaced, because "no row" is not
+    // a value any reader has a fallback for. The other three tables used to be
+    // cleared afterwards, each on its own commit, and a failure among them left
+    // a configuration that says "factory fresh" beside nodes still polling and
+    // integrations still firing - behind a 500 that invites retrying a reset
+    // that half-happened.
     await db.transaction(async (transaction) => {
         await config.destroy({where: {}, transaction});
         await insertDefaults(transaction);
+        await node.destroy({where: {}, transaction});
+        await recommendations.destroy({where: {}, transaction});
+        await integration.destroy({where: {}, transaction});
     });
 
     // The reset put the password back to the unprotected sentinel without going
     // through updateValue, which is the only place that revoked sessions.
+    // After the commit, never inside it: thrown out of the transaction the old
+    // password still stands, and logging everyone out of an instance that did
+    // not reset revokes access it still guards.
     destroyAllSessions();
-
-    await node.destroy({where: {}});
-    await recommendations.destroy({where: {}});
-    await integration.destroy({where: {}});
 
     timer.stopTimer();
     timer.startTimer(configDefaults.cron);

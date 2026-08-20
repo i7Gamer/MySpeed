@@ -45,28 +45,27 @@ const withoutComments = (source) => source
  *                           same page, sat behind 20 - and on a demo, where the
  *                           password middleware admits everyone, it is reachable
  *                           without a credential.
- *
- *   /api/storage/tests/history
- *                           the export's unbounded sibling. /json and /csv
- *                           under here answer with tests.listAll(), a findAll
- *                           with no limit at all, and hand the whole result to
- *                           res.send - at 200 000 rows, 2.0 s to read and 0.5 s
- *                           to serialise into a 122 MiB string. So the two that
- *                           read *every* row sat behind the 300/min backstop
- *                           while /export, which reads a date range, sat behind
- *                           20. The prefix rather than the two leaves: the PUT
- *                           that restores a history and the DELETE that empties
- *                           it are the other expensive things on this path.
+ *   /api/storage            the whole-history downloads (streamed now, but a
+ *                           full table walk per request all the same), the PUT
+ *                           that restores a history and the DELETE that
+ *                           empties it, a 50 MB body parse on the imports, and
+ *                           the factory reset. The heaviest family in the API
+ *                           sat behind the backstop alone while lighter reads
+ *                           sat behind 20 - a merge briefly held a second,
+ *                           narrower cap on /tests/history, which this prefix
+ *                           subsumes: nested limiters would take two tickets
+ *                           per history request.
  *
  * The page loads statistics on demand rather than on a poll, so the expensive
- * limit is not something ordinary use can reach.
+ * limit is not something ordinary use can reach - and the storage dialog asks
+ * for its size once per open, far under the same ceiling.
  */
 const EXPENSIVE_PATHS = [
     "/api/opengraph",
     "/api/speedtests/export",
     "/api/speedtests/run",
     "/api/speedtests/statistics",
-    "/api/storage/tests/history"
+    "/api/storage"
 ];
 
 // Any limiter of its own, whatever the number: what matters is that the path is
@@ -126,28 +125,29 @@ describe("the expensive read limiter", () => {
     });
 
     /**
-     * And the list is complete for the shape that keeps recurring: a route that
-     * serialises the entire table in one response.
+     * And the list is complete for the shape that keeps recurring: a route
+     * that walks the entire table per request.
      *
-     * Both entries above that read everything were found by asking which
-     * handlers reach for a findAll with no limit, rather than by remembering to
-     * write them down. Asked here so the next one has to answer too - the list
-     * is a record of decisions, and this is the check that no decision was
-     * skipped.
+     * The walk used to be tests.listAll() into one string; the streaming
+     * rewrite replaced it with tests.listPages(), which bounds the memory and
+     * not the work - every request still reads every row there is, which is
+     * what earns the limit. Asked here so the next such route has to answer
+     * too: the list is a record of decisions, and this is the check that no
+     * decision was skipped.
      */
-    it("covers every route that serialises a whole table", () => {
+    it("covers every route that walks the whole table", () => {
         const storage = withoutComments(readSource("server/routes/storage.js"));
         const declarations = [...storage.matchAll(/app\.(?:get|put|post|delete|all)\("([^"]*)"/g)];
 
         const unbounded = declarations
             .filter((declaration, index) => storage
                 .slice(declaration.index, declarations[index + 1]?.index ?? storage.length)
-                .includes("tests.listAll()"))
+                .includes("tests.listPages()"))
             .map((declaration) => `/api/storage${declaration[1]}`);
 
         assert.deepEqual(unbounded.sort(),
             ["/api/storage/tests/history/csv", "/api/storage/tests/history/json"],
-            "a storage route reads the whole table that this file has not been told about");
+            "a storage route walks the whole table that this file has not been told about");
 
         for (const route of unbounded)
             assert.ok(EXPENSIVE_PATHS.some((path) => route.startsWith(path)),

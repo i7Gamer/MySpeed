@@ -31,5 +31,9 @@ const cell = (value) => {
     return `"${sanitized.replaceAll('"', '""')}"`;
 };
 
-export const toCsv = (entries) =>
-    CSV_HEADER + entries.map(entry => CSV_COLUMNS.map(column => cell(entry[column])).join(",")).join("\n");
+// The rows without the header, so the streaming export can write them page by
+// page while the rendering keeps this one home.
+export const csvLines = (entries) =>
+    entries.map(entry => CSV_COLUMNS.map(column => cell(entry[column])).join(","));
+
+export const toCsv = (entries) => CSV_HEADER + csvLines(entries).join("\n");

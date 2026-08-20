@@ -34,9 +34,15 @@ export const WelcomeDialog = ({open, onClose}) => {
      * metric rendering blue forever and no target bar anywhere.
      */
     useSyncOnOpen(open, () => {
-        setPing(parseInt(config.ping) || 0);
-        setDownload(parseInt(config.download) || 0);
-        setUpload(parseInt(config.upload) || 0);
+        // parseFloat, because finish() writes all three back unconditionally:
+        // an integer parse rewrote any fractional threshold the wizard was
+        // merely clicked past - "25.9" went back as 25, and "0.4", the
+        // recommended ping on a fast line, went back as 0, a threshold no
+        // latency is ever under. The wizard opens by itself while the provider
+        // is unset, which is exactly when thresholds are being set first.
+        setPing(parseFloat(config.ping) || 0);
+        setDownload(parseFloat(config.download) || 0);
+        setUpload(parseFloat(config.upload) || 0);
     });
 
     const finish = async (close) => {

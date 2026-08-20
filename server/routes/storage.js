@@ -3,7 +3,7 @@ import * as tests from '../controller/speedtests.js';
 import * as config from '../controller/config.js';
 import password from '../middlewares/password.js';
 import previewReadOnly from '../middlewares/previewReadOnly.js';
-import { toCsv } from '../util/csv.js';
+import { streamCsv, streamJsonArray } from '../util/exportStream.js';
 
 const app = express.Router();
 
@@ -11,9 +11,27 @@ const app = express.Router();
 // endpoints allowed a large body - and only once the caller has authenticated.
 // app.js keeps its own 100kb parser off these paths so this one gets the chance
 // to run; the two lists have to stay in step.
-const IMPORT_BODY_LIMIT = '50mb';
+//
+// One figure spelled twice, from one number: express takes the suffixed string,
+// the node proxy takes the bytes - see BACKUP_EXPORT_PATHS below.
+const IMPORT_BODY_LIMIT_MB = 50;
+
+export const IMPORT_BODY_LIMIT_BYTES = IMPORT_BODY_LIMIT_MB * 1024 * 1024;
+
+const IMPORT_BODY_LIMIT = `${IMPORT_BODY_LIMIT_MB}mb`;
 
 export const LARGE_BODY_PATHS = ["/api/storage/tests/history", "/api/storage/config"];
+
+/**
+ * The reads that answer with a whole backup, which is the import's size in the
+ * other direction. The node proxy holds every relayed answer to a ceiling, and
+ * these are the endpoints legitimately above its default: a node with a year of
+ * history exports more than ten megabytes by being used, not by being hostile.
+ * They get the import limit as their allowance, because the two are one round
+ * trip - an export too large to ever restore is not a backup.
+ */
+export const BACKUP_EXPORT_PATHS =
+    ["/api/storage/tests/history/json", "/api/storage/tests/history/csv", "/api/storage/config"];
 
 export const importBody = express.json({limit: IMPORT_BODY_LIMIT});
 
@@ -23,11 +41,19 @@ export const importBody = express.json({limit: IMPORT_BODY_LIMIT});
 // real history - the case the large limit exists for - failed with 413.
 const NODE_PREFIX = /^\/api\/nodes\/[^/]+/;
 
-export const isLargeBodyPath = (path) => {
-    const trimmed = path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+// The query is stripped because the proxy asks with req.originalUrl, which
+// keeps it - req.path is rewritten relative to the router's mount by the time
+// the proxy handler runs, so it no longer names these paths at all.
+const asParentPath = (path) => {
+    const bare = path.split("?")[0];
+    const trimmed = bare.length > 1 && bare.endsWith("/") ? bare.slice(0, -1) : bare;
 
-    return LARGE_BODY_PATHS.includes(trimmed.replace(NODE_PREFIX, "/api"));
+    return trimmed.replace(NODE_PREFIX, "/api");
 };
+
+export const isLargeBodyPath = (path) => LARGE_BODY_PATHS.includes(asParentPath(path));
+
+export const isBackupExportPath = (path) => BACKUP_EXPORT_PATHS.includes(asParentPath(path));
 
 app.get("/", password(false), async (req, res) => {
     res.json(await config.getUsedStorage());
@@ -36,13 +62,19 @@ app.get("/", password(false), async (req, res) => {
 /**
  * The raw history, which is not the redacted one.
  *
- * Sealed on a demo whatever the format. These answer with tests.listAll()
- * untouched, so the provider and external address that /api/speedtests/export
- * strips for a caller who is not the operator went out in full through here
- * instead - the same rows by a different controller call. That export is still
- * open on a demo and is still redacted, so nothing a visitor should have is
- * lost; this is the backup path, and its PUT and DELETE siblings below have
- * been guarded all along.
+ * Sealed on a demo whatever the format. These answer with the rows untouched,
+ * so the provider and external address that /api/speedtests/export strips for
+ * a caller who is not the operator went out in full through here instead - the
+ * same rows by a different controller call. That export is still open on a
+ * demo and is still redacted, so nothing a visitor should have is lost; this
+ * is the backup path, and its PUT and DELETE siblings below have been guarded
+ * all along.
+ *
+ * Streamed page by page rather than built as one string: the backup of an
+ * instance that has simply been running is the largest thing this server ever
+ * produces, and holding every row beside the whole rendered document was how
+ * exporting a healthy history could take the process down with it. The bytes
+ * on the wire are exactly what the one-string versions answered.
  */
 const noRawHistoryOnDemo = previewReadOnly.blocking(
     "For security reasons, you can't download the raw history in preview mode");
@@ -52,7 +84,7 @@ app.get("/tests/history/json", password(false), noRawHistoryOnDemo, async (req, 
         "Content-Type": "application/json; charset=utf-8",
         "Content-Disposition": "attachment; filename=\"speedtests.json\""
     });
-    res.send(JSON.stringify(await tests.listAll(), null, 4));
+    await streamJsonArray(res, tests.listPages());
 });
 
 // Uses the shared writer rather than a hand-rolled one. The old version took
@@ -66,7 +98,7 @@ app.get("/tests/history/csv", password(false), noRawHistoryOnDemo, async (req, r
         "Content-Disposition": "attachment; filename=\"speedtests.csv\""
     });
 
-    res.send(toCsv(await tests.listAll()));
+    await streamCsv(res, tests.listPages());
 });
 
 app.delete("/tests/history", password(false), previewReadOnly, async (req, res) => {

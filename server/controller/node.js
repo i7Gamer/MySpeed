@@ -1,12 +1,17 @@
 import nodes from '../models/Node.js';
 import { writePasswordHeaders } from '../util/passwordHeader.js';
 import { checkNodeTarget } from '../util/safeUrl.js';
-import { safeRequest } from '../util/safeRequest.js';
+import { RESPONSE_TOO_LARGE, safeRequest } from '../util/safeRequest.js';
 import { SERVER_BUSY } from '../util/authOutcome.js';
+import { IMPORT_BODY_LIMIT_BYTES, isBackupExportPath } from '../routes/storage.js';
 
 // The child answers this while it already has as many password comparisons
 // running for this caller as it will run at once. Transient by construction.
 const SERVICE_UNAVAILABLE = 503;
+
+// The far end produced something this relay will not pass on - a redirect, or
+// an answer past the ceiling. The failure is the upstream's, not this server's.
+const BAD_GATEWAY = 502;
 
 /**
  * Whether a 503 came from MySpeed's own throttle rather than from whatever
@@ -181,10 +186,23 @@ export const proxyRequest = async (url, req, res) => {
     });
 
     try {
-        const response = await safeRequest(url, {method: req.method, headers, body, signal: disconnect.signal});
+        /*
+         * The backup exports get the import limit as their ceiling; everything
+         * else keeps safeRequest's default. A node with a year of history
+         * legitimately exports more than the default allows - the one endpoint
+         * whose size grows with faithful use was the one this relay refused -
+         * and the import limit is the natural bound, because an export too
+         * large to ever restore is not a backup.
+         *
+         * req.originalUrl rather than req.path: by the time this handler runs,
+         * req.path has been rewritten relative to the router's mount and no
+         * longer names these paths.
+         */
+        const response = await safeRequest(url, {method: req.method, headers, body, signal: disconnect.signal,
+            maxBytes: isBackupExportPath(req.originalUrl) ? IMPORT_BODY_LIMIT_BYTES : undefined});
 
         if (isRedirect(response))
-            return res.status(502).json({message: "The node redirected the request", type: "INVALID_URL"});
+            return res.status(BAD_GATEWAY).json({message: "The node redirected the request", type: "INVALID_URL"});
 
         /*
          * A busy child is not a broken one.
@@ -220,8 +238,18 @@ export const proxyRequest = async (url, req, res) => {
         // Handed on verbatim. Forcing the body through JSON.parse turned every
         // non-JSON response - both CSV export endpoints - into a literal null.
         res.status(response.status).send(response.body);
-    } catch {
+    } catch (error) {
         // Nothing to answer when the failure is the caller having left.
-        if (!disconnect.signal.aborted) serverError(res);
+        if (disconnect.signal.aborted) return;
+
+        // The one failure worth naming: it looks exactly like a broken node
+        // from the outside, and the fix - a smaller export, a direct download
+        // from the child - is nothing "Internal server error" would suggest.
+        if (error?.code === RESPONSE_TOO_LARGE)
+            return res.status(BAD_GATEWAY).json({message: "The node's answer was too large to relay"});
+
+        // Everything else stays a 500, but no longer a silent one.
+        console.error(`Proxying to the node failed: ${error?.message ?? error}`);
+        serverError(res);
     }
 }

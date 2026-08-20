@@ -132,22 +132,21 @@ const expensiveLimit = () => limited({limit: EXPENSIVE_REQUESTS_PER_MINUTE});
 app.use("/api/opengraph", expensiveLimit());
 app.use("/api/speedtests/export", expensiveLimit());
 app.use("/api/speedtests/run", expensiveLimit());
-
 /*
- * The raw history, which is the export's unbounded sibling.
+ * The heaviest family in the API, which sat behind the 300/min backstop alone
+ * while lighter reads sat behind 20.
  *
- * /json and /csv under here answer with tests.listAll() - a findAll with no
- * limit - and hand the whole thing to res.send. At 200 000 rows that is 2.0 s to
- * read and 0.5 s to serialise, for a 122 MiB string Express then buffers. The
- * export above answers the same rows for a *date range* and has been held to 20
- * a minute all along, so the bounded reader was capped four times more tightly
- * than the two unbounded ones.
- *
- * The prefix rather than the two leaves: the PUT that restores a history and the
- * DELETE that empties it are the other two expensive things on this path, and
- * neither is something to do twenty times a minute either.
+ * Both sides of a merge drew the same conclusion at different widths - a cap
+ * on /api/storage/tests/history for the whole-history downloads, and this one
+ * for the family - and one mount has to win: nested limiters would take two
+ * tickets per history request and quietly halve the allowance. The prefix
+ * covers everything that made either cap right: the history downloads
+ * (streamed now, but a full table walk per request all the same), the PUT
+ * that restores a history and the DELETE that empties it, the 50 MB import
+ * parses, and the factory reset. The dialog asks for its size once per open,
+ * far under this ceiling.
  */
-app.use("/api/storage/tests/history", expensiveLimit());
+app.use("/api/storage", expensiveLimit());
 app.use("/api/speedtests/statistics", limited({limit: STATISTICS_REQUESTS_PER_MINUTE}));
 app.use("/api/prometheus", limited({limit: METRICS_REQUESTS_PER_MINUTE}));
 
