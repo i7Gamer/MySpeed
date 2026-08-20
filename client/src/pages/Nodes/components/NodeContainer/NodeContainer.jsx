@@ -174,7 +174,20 @@ export const NodeContainer = (node) => {
         const interval = setInterval(() => {
             if (!document.hidden) load();
         }, POLL_INTERVAL_MS);
-        return () => clearInterval(interval);
+        // The other half of the skip, and what makes it safe: a node that went
+        // down while the tab was hidden would otherwise still be green on
+        // return, and switchNode is gated on nodeError - so a click navigates
+        // the whole app to a node that is down. Chrome throttles background
+        // timers, so the tick that would correct it can be a minute away. Every
+        // sibling that skips hidden ticks pairs it with this.
+        const onVisibilityChange = () => {
+            if (!document.hidden) load();
+        };
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+        };
         // One poller for the life of the card. `updateData` is rebuilt on every
         // render, so listing it would tear the interval down and start a new one
         // each time - and since updateData sets state, the ten seconds would

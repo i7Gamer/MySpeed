@@ -2,7 +2,9 @@ import React, {createContext, useEffect, useState} from "react";
 import {useAlert} from "../Alert";
 import {login, request} from "@/common/utils/RequestUtil";
 import {promptUntilAccepted} from "@/common/utils/PasswordPrompt";
-import {promptFor, PROMPT_BUSY, PROMPT_SETUP_TOKEN, PROMPT_THROTTLED, SERVER_BUSY} from "@/common/utils/AuthOutcome";
+import {
+    NODE_REFUSAL_HEADER, promptFor, PROMPT_BUSY, PROMPT_SETUP_TOKEN, PROMPT_THROTTLED, SERVER_BUSY
+} from "@/common/utils/AuthOutcome";
 import {markPasswordUnset} from "@/common/utils/PasswordSetup";
 import {
     apiErrorDialog, busyDialog, passwordRequiredDialog, setupTokenDialog, throttledDialog
@@ -35,7 +37,13 @@ export const ConfigProvider = (props) => {
             // for "your password".
             if (res.status === 401 || res.status === 429) {
                 const body = await res.json().catch(() => ({}));
-                throw {credential: true, type: body?.type};
+                // And who refused, which the body cannot say: the proxy relays a
+                // node's answer verbatim, so a child rejecting its stored
+                // password is byte for byte this instance's own session
+                // expiring. Only one of the two is answered by the password box
+                // in front of the visitor - see failureOutcome.
+                throw {credential: true, type: body?.type,
+                    node: res.headers.get(NODE_REFUSAL_HEADER) !== null};
             }
 
             // A 503 only counts when the body says it is ours. A reverse proxy

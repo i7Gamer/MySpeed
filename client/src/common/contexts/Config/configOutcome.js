@@ -34,15 +34,23 @@ export const configOutcome = (config, storedNode) => ({
  * config to store, but a visitor who was looking at a remote node still belongs
  * on the node list rather than in front of an error about this instance.
  *
- * Except when the refusal wants a credential, which is not the same failure.
- * The redirect was written for a node that has gone away - the list is then the
- * only useful place to be - but every request made while a remote node is
- * selected travels through the parent, so the parent's own session expiring
- * refuses them too. Redirecting that pre-empted the password prompt, and the
- * node list refuses for the same reason and swallows it: the visitor landed on
- * an empty page with no error, no prompt, and a reload that returned them to
- * it. A credential failure belongs in front of a password box wherever it was
- * raised.
+ * Except when the refusal wants a credential *this instance* can be given. The
+ * redirect was written for a node that has gone away - the list is then the only
+ * useful place to be - but every request made while a remote node is selected
+ * travels through the parent, so the parent's own session expiring refuses them
+ * too. Redirecting that pre-empted the password prompt, and the node list
+ * refuses for the same reason and swallows it: the visitor landed on an empty
+ * page with no error, no prompt, and a reload that returned them to it.
+ *
+ * A refusal the parent only relayed is the opposite case, and looks identical
+ * from here - which is why the parent marks it. When a child rejects the
+ * password stored for it, the box in front of the visitor is the wrong box:
+ * login() posts to this instance's /api/session, the parent accepts its own
+ * password, the page reloads, and the child refuses again. The right password
+ * is called right for ever. The one thing that fixes it is updatePassword() on
+ * the node list, so a node's own refusal goes back to being a redirect.
  */
+const answerableHere = (reason) => reason?.credential && !reason.node;
+
 export const failureOutcome = (storedNode, reason) =>
-    ({redirectToNodes: isRemoteNode(storedNode) && !reason?.credential});
+    ({redirectToNodes: isRemoteNode(storedNode) && !answerableHere(reason)});

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readSource, tagHolding } from "../helpers/source.js";
+import { readSource, tagHolding, withoutJsComments } from "../helpers/source.js";
 
 /**
  * The schedule offset switch, which a pointer could set and a keyboard could
@@ -59,9 +59,29 @@ describe("loading the statistics page", () => {
             "the two loads are not settled independently");
     });
 
+    // The rejected branch itself, not the name of the setter: updateStats opens
+    // with setLoadError(null) to clear the last attempt, so a bare
+    // /setLoadError\(/ matched that reset and passed with this whole branch
+    // deleted - the one path that can still tell the visitor anything.
     it("still blanks the page when the statistics themselves fail", () => {
-        assert.match(page, /setLoadError\(/,
+        assert.match(page, /stats\.status === "rejected"[\s\S]{0,400}setLoadError\(stats\.reason\)/,
             "a statistics failure no longer reports anything at all");
+    });
+
+    /**
+     * And a throw inside the handler still reaches the same place.
+     *
+     * The trailing .catch went out with Promise.all, on the reading that
+     * allSettled cannot reject. It cannot - but the .then body can, and then
+     * setLoading(false) never runs: the page spins for ever with nothing on it
+     * and nothing logged. A .catch on an allSettled chain guards the handler,
+     * not the requests.
+     */
+    it("still catches a throw from its own handler", () => {
+        const chain = page.slice(page.indexOf("Promise.allSettled("));
+
+        assert.match(chain.slice(0, chain.indexOf("}, [dateRange]);")), /\.catch\(/,
+            "anything the handler throws is now an unhandled rejection and the page spins for ever");
     });
 
     // The recent tests feed the latest-test card and the deltas beside it.
@@ -85,16 +105,43 @@ describe("loading the statistics page", () => {
  * comment exists to protect. StatusContext has skipped hidden ticks all along.
  */
 describe("the node card's poll", () => {
-    const card = readSource("client/src/pages/Nodes/components/NodeContainer/NodeContainer.jsx");
+    // Without the comments, which is how the sibling suites read a source for
+    // this: the paragraph above the effect explains the skip in prose, so
+    // /document\.hidden/ matched the explanation whether or not the code did it.
+    const card = withoutJsComments(readSource("client/src/pages/Nodes/components/NodeContainer/NodeContainer.jsx"));
 
+    // Inside the interval callback, not merely somewhere in the file. Moved onto
+    // the mount load instead it would still match a looser pattern while polling
+    // a hidden tab exactly as hard as before.
     it("skips a tick while the tab is hidden", () => {
-        assert.match(card, /document\.hidden/,
+        assert.match(card, /setInterval\(\(\) => \{\s*if \(!document\.hidden\) load\(\);\s*\}/,
             "the card polls a background tab as hard as a visible one");
     });
 
+    /**
+     * And catches up the moment somebody looks.
+     *
+     * The skip alone leaves the card showing a pre-hide reading with no idea
+     * how old it is: a node that went down while the tab was hidden is still
+     * green on return, and switchNode is gated on nodeError, so a click
+     * navigates the whole app to a node that is down. Chrome throttles
+     * background timers, so the tick that would correct it can be a minute
+     * away. Every sibling that skips hidden ticks pairs it with this listener -
+     * StatusContext, StatusBarComponent and SpeedtestContext - and
+     * StatusContext's own comment names the pairing as what makes the skip safe.
+     */
+    it("catches the card up when the tab comes back", () => {
+        assert.match(card, /addEventListener\("visibilitychange"/,
+            "a card hidden while its node went down stays green until the next tick");
+        assert.match(card, /removeEventListener\("visibilitychange"/,
+            "the listener outlives the card that registered it");
+    });
+
     it("still polls on the interval it always did", () => {
-        assert.match(card, /setInterval\(/);
-        assert.match(card, /10000|POLL_INTERVAL/);
+        assert.match(card, /setInterval\([\s\S]{0,80}, POLL_INTERVAL_MS\)/,
+            "the poll no longer runs on the shared interval");
+        assert.match(card, /POLL_INTERVAL_MS = 10000/,
+            "the interval the card polls on has changed");
     });
 
     // The first load is not a tick: opening the page has to fill the card in

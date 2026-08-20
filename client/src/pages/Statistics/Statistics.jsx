@@ -251,6 +251,19 @@ export const Statistics = () => {
                 setRecentTests(tests.status === "fulfilled" && Array.isArray(tests.value) ? tests.value : []);
                 setLoading(false);
             });
+        }).catch(error => {
+            // allSettled cannot reject; the handler above it can. Without this
+            // that throw was terminal - setLoading(false) never ran, so the page
+            // span for ever with nothing on it and nothing logged. The old
+            // .catch went out with Promise.all on the reading that it had become
+            // redundant, and what it actually guards is this handler.
+            if (!isCurrent()) return;
+
+            console.error("Failed to render the statistics:", error);
+            startTransition(() => {
+                setLoadError(error);
+                setLoading(false);
+            });
         });
     }, [dateRange]);
 

@@ -28,3 +28,19 @@ export const TOO_MANY_ATTEMPTS = "TOO_MANY_ATTEMPTS";
  * two counters was meant to end, reintroduced one layer further out.
  */
 export const SERVER_BUSY = "SERVER_BUSY";
+
+/**
+ * Set on a refusal this instance relayed rather than raised.
+ *
+ * Every request made while a remote node is selected travels through here, so
+ * the parent's own session expiring and the child rejecting its stored password
+ * both arrive at the client as a 401 with the same body - the proxy hands the
+ * child's answer on verbatim, which is what makes CSV exports work. The two
+ * want opposite things: the first wants the password box, and the second wants
+ * the node list, because the credential it refused is the one only
+ * PATCH /api/nodes/:id/password can change. Told apart by the body they would
+ * be indistinguishable; told apart by who answered, they are not.
+ *
+ * Mirrored in client/src/common/utils/AuthOutcome.js, which reads it.
+ */
+export const NODE_REFUSAL_HEADER = "x-myspeed-node-refused";

@@ -118,6 +118,32 @@ describe("failureOutcome", () => {
     it("shows a credential failure on this instance as before", () => {
         assert.equal(failureOutcome("0", {credential: true}).redirectToNodes, false);
     });
+
+    /**
+     * And the other credential failure, which the one above cannot be told from
+     * without asking who refused.
+     *
+     * Rotate the password on a child node and the parent proxies its 401 back
+     * verbatim. That is a credential failure, so the rule above keeps the
+     * visitor where they are and opens the password box - and login() posts to
+     * this instance's /api/session, which is not the credential that was
+     * refused. The parent accepts its own password, the page reloads, the child
+     * refuses again, and the box comes back: a loop in which the right password
+     * is called right and nothing changes. The only thing that fixes it is
+     * updatePassword() on the node list, so that is where this one belongs.
+     *
+     * The parent marks a refusal it relayed rather than raised - see
+     * NODE_REFUSAL_HEADER - because the two are identical from here otherwise.
+     */
+    it("sends a node's own refusal to the list, where the password can be changed", () => {
+        assert.equal(failureOutcome("1", {credential: true, node: true}).redirectToNodes, true,
+            "a rotated node password loops the parent's password prompt for ever");
+    });
+
+    // The same refusal about this instance still has nowhere to go.
+    it("keeps a node refusal on this instance where it is", () => {
+        assert.equal(failureOutcome("0", {credential: true, node: true}).redirectToNodes, false);
+    });
 });
 
 describe("the config context", () => {
@@ -133,5 +159,41 @@ describe("the config context", () => {
      */
     it("no longer pretends to compare the new config against the old", () => {
         assert.doesNotMatch(context, /config\s*!==\s*result/);
+    });
+
+    // The refusal it throws has to carry who refused, or failureOutcome has
+    // nothing to decide on and the loop above comes back.
+    it("records whether the node or this instance refused", () => {
+        assert.match(context, /NODE_REFUSAL_HEADER/,
+            "every 401 looks like this instance's own, so a node's refusal reopens the wrong prompt");
+        assert.match(context, /node:\s*res\.headers\.get\(/,
+            "the refusal travels without saying who raised it");
+    });
+});
+
+/**
+ * And the two ends of that header agree on its name.
+ *
+ * It is a string in two files that never import each other; the client reading
+ * a header the server does not set is indistinguishable, from the client, from
+ * a node that did not refuse - which is the loop, silently back.
+ */
+describe("the node refusal header", () => {
+    const SERVER_ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "server");
+    const read = (file) => fs.readFileSync(path.join(SERVER_ROOT, file), "utf8");
+
+    const nameIn = (source) => source.match(/NODE_REFUSAL_HEADER\s*=\s*"([^"]+)"/)?.[1];
+
+    it("is spelled the same on both sides", () => {
+        const server = nameIn(read("util/authOutcome.js"));
+        const client = nameIn(fs.readFileSync(path.join(CLIENT_SRC, "common/utils/AuthOutcome.js"), "utf8"));
+
+        assert.ok(server, "the server no longer names the header");
+        assert.equal(client, server, "the client reads a header the server does not set");
+    });
+
+    it("is set on a refusal the proxy relayed", () => {
+        assert.match(read("controller/node.js"), /NODE_REFUSAL_HEADER/,
+            "the parent relays a node's 401 without marking it as the node's");
     });
 });
