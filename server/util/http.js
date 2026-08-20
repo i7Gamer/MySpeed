@@ -37,10 +37,20 @@ const refuseBlocked = (url, activity) => {
     return true;
 };
 
+/**
+ * Never follows a redirect, exactly as safeRequest never does for a node: the
+ * address guard above runs on the stored URL, so a redirect is the far end
+ * choosing a fresh destination - method and body intact - after that check has
+ * passed. fetch's default is to follow; "error" turns the redirect into the
+ * ordinary send failure the catch below already reports.
+ */
+const REFUSE_REDIRECTS = "error";
+
 const jsonInit = (method, json, headers) => ({
     method,
     headers: {"content-type": "application/json", ...headers},
     body: JSON.stringify(json),
+    redirect: REFUSE_REDIRECTS,
     signal: AbortSignal.timeout(OUTBOUND_TIMEOUT)
 });
 
@@ -153,6 +163,7 @@ export const postText = async (url, body, {headers, activity} = {}) => {
             method: "POST",
             headers: {"content-type": "text/plain; charset=utf-8", ...headers},
             body,
+            redirect: REFUSE_REDIRECTS,
             signal: AbortSignal.timeout(OUTBOUND_TIMEOUT)
         });
         note(activity, res.ok ? undefined : true);
