@@ -239,6 +239,14 @@ const IMPORT_CHUNK_ROWS = 1000;
  * without reaching the database, so this is for the other kind, and it is rare.
  * Rare is what makes the retry affordable: the chunk is rewritten a row at a
  * time only when the batch was refused, and one refusal then costs one row.
+ *
+ * Deliberately without {validate: true}, which is the obvious worry here since
+ * create() validates and bulkCreate does not. Measured rather than assumed: on
+ * every value either would take, the two agree about what is refused, and they
+ * agree about what is stored for everything NUMERIC_COLUMNS does not already
+ * cover - so validation changes nothing that can actually arrive, and costs 51%.
+ * What it was standing in for is that list, and the coupling is pinned by
+ * historyImport.test.js rather than paid for on every row.
  */
 const writeImportBatch = async (rows) => {
     try {

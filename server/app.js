@@ -131,6 +131,7 @@ const expensiveLimit = () => limited({limit: EXPENSIVE_REQUESTS_PER_MINUTE});
 
 app.use("/api/opengraph", expensiveLimit());
 app.use("/api/speedtests/export", expensiveLimit());
+app.use("/api/speedtests/run", expensiveLimit());
 
 /*
  * The raw history, which is the export's unbounded sibling.
@@ -147,7 +148,6 @@ app.use("/api/speedtests/export", expensiveLimit());
  * neither is something to do twenty times a minute either.
  */
 app.use("/api/storage/tests/history", expensiveLimit());
-app.use("/api/speedtests/run", expensiveLimit());
 app.use("/api/speedtests/statistics", limited({limit: STATISTICS_REQUESTS_PER_MINUTE}));
 app.use("/api/prometheus", limited({limit: METRICS_REQUESTS_PER_MINUTE}));
 

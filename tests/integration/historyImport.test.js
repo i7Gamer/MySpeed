@@ -1,6 +1,11 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { bootServer, api } from "./helpers/boot.js";
+
+const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 
 let server;
 let testModel;
@@ -28,6 +33,43 @@ const importHistory = (payload) => api(server.baseUrl, "/storage/tests/history",
     method: "PUT",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify(payload)
+});
+
+/**
+ * The check that stands in for the model's own validation.
+ *
+ * create() validates before it writes and bulkCreate() does not, so batching the
+ * import moved the only guard onto NUMERIC_COLUMNS - the list the loop tests
+ * every row against before the row is ever queued. Measured, that costs nothing
+ * today: every DOUBLE column in the model is on that list, so a value the model
+ * would have refused is skipped before the write either way, and turning
+ * validation back on for the batch was 51% slower for no change in what is
+ * stored.
+ *
+ * What it does cost is a coupling between two lists that have to stay in step.
+ * A DOUBLE column added to the model and forgotten here would be the jitter bug
+ * again, which the list's own comment describes: the series is filtered on null
+ * rather than on being a number, so a text value is summed and the whole range's
+ * average comes back NaN.
+ */
+describe("the columns a restore checks before writing", () => {
+    it("covers every measurement column the model has", () => {
+        const source = fs.readFileSync(
+            path.join(ROOT, "server", "controller", "speedtests.js"), "utf8");
+        const declared = source.match(/const NUMERIC_COLUMNS = \[([\s\S]*?)];/);
+
+        assert.notEqual(declared, null, "NUMERIC_COLUMNS is no longer a literal list");
+
+        const checked = [...declared[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+        const doubles = Object.entries(testModel.rawAttributes)
+            .filter(([, attribute]) => /DOUBLE|FLOAT|DECIMAL/.test(attribute.type.constructor.key ?? ""))
+            .map(([name]) => name);
+
+        assert.notEqual(doubles.length, 0, "the model declares no measurement columns at all");
+        assert.deepEqual(doubles.filter((column) => !checked.includes(column)), [],
+            "a measurement column is written without being checked for being a number, "
+            + "and bulkCreate does not validate - so a text value reaches the column and every average over it is NaN");
+    });
 });
 
 describe("importing a history", () => {

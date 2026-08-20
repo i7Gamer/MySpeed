@@ -100,6 +100,32 @@ describe("the expensive read limiter", () => {
     });
 
     /**
+     * And each limiter is registered before the router that answers the path.
+     *
+     * Express runs middleware in the order it was mounted and a router that
+     * handles the request ends the chain, so a limiter mounted after one never
+     * runs at all - it would sit in this file looking correct and metering
+     * nothing. Every entry above happens to be in the same block today; this is
+     * what keeps the next one there.
+     */
+    it("registers each limit before the router that serves the path", () => {
+        const routers = [...appSource.matchAll(/app\.use\(\s*["'`](\/api[^"'`]*)["'`]\s*,\s*\w+Routes\)/g)];
+
+        assert.notEqual(routers.length, 0, "no routers are mounted the way this expects");
+
+        for (const path of EXPENSIVE_PATHS) {
+            const limiter = appSource.search(
+                new RegExp(`app\\.use\\(\\s*["'\`]${path}["'\`]\\s*,\\s*(?:expensiveLimit\\(\\)|limited\\()`));
+            const router = routers.find((match) => path.startsWith(match[1]));
+
+            assert.notEqual(limiter, -1, `${path} has no limit to order`);
+            assert.notEqual(router, undefined, `nothing serves ${path}, so this entry is stale`);
+            assert.ok(limiter < router.index,
+                `${path} is limited after ${router[1]} is mounted, so the limiter never runs`);
+        }
+    });
+
+    /**
      * And the list is complete for the shape that keeps recurring: a route that
      * serialises the entire table in one response.
      *
