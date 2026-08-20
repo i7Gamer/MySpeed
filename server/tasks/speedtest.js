@@ -1,4 +1,4 @@
-import speedTest from '../util/speedtest.js';
+import speedTest, { isShuttingDown } from '../util/speedtest.js';
 import * as tests from '../controller/speedtests.js';
 import * as config from '../controller/config.js';
 import * as controller from "../controller/recommendations.js";
@@ -224,7 +224,11 @@ const execute = async (type, retried) => {
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
     } catch (e) {
         console.log(e)
-        if (!retried) return await create(type, true);
+        // Not while the process is leaving: the shutdown has just killed the
+        // child this failure reports, and a retry would spawn a fresh one after
+        // the only moment terminateActiveProcess could reach it - the orphan
+        // trackProcess exists to prevent, rebuilt one line further down.
+        if (!retried && !isShuttingDown()) return await create(type, true);
 
         // A thrown string or a plain object has no `message`, and storing
         // undefined writes NULL - which marks the row as *successful* and lets

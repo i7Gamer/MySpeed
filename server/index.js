@@ -14,7 +14,7 @@ import { initialize as initializeIntegrations } from './controller/integrations.
 import { requestInterfaces } from './util/loadInterfaces.js';
 import { load as loadCli } from './util/loadCli.js';
 import { removeOld } from './tasks/speedtest.js';
-import { terminateActiveProcess } from './util/speedtest.js';
+import { markShutdown, terminateActiveProcess } from './util/speedtest.js';
 import { createShutdown } from './util/shutdown.js';
 import {
     clearedReport, noConfigReport, RESET_NO_CONFIG, resetPassword, wantsPasswordReset
@@ -135,6 +135,12 @@ const shutdown = createShutdown({
         // reach it. Left alone it outlives the server under the Windows
         // service - there is no namespace to tear it down as docker has - and
         // finishes by writing its result into a handle onCleanup has closed.
+        //
+        // Latched first, because the kill itself surfaces to the run as an
+        // ordinary failure - and a failed first attempt answers those with a
+        // retry, spawning a fresh child after the only moment this could
+        // reach it.
+        markShutdown();
         terminateActiveProcess();
     },
     /**
