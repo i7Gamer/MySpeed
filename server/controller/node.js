@@ -2,6 +2,7 @@ import nodes from '../models/Node.js';
 import { writePasswordHeaders } from '../util/passwordHeader.js';
 import { checkNodeTarget } from '../util/safeUrl.js';
 import { RESPONSE_TOO_LARGE, safeRequest } from '../util/safeRequest.js';
+import { stripTrailingSlashes } from '../util/helpers.js';
 import { SERVER_BUSY } from '../util/authOutcome.js';
 import { isBackupExportPath, relayPolicy } from '../util/backupPolicy.js';
 
@@ -70,7 +71,11 @@ export const checkStatus = async (url, password) => {
     if (!(await checkNodeTarget(url)).safe) return "INVALID_URL";
 
     try {
-        const res = await safeRequest(url + "/api/config", {
+        // Normalised for the reason the proxy normalises it: a stored address
+        // ending in a slash otherwise asks for //api/config, which the child's
+        // router does not match - so adding a perfectly good node reported it
+        // as unreachable.
+        const res = await safeRequest(stripTrailingSlashes(url) + "/api/config", {
             headers: writePasswordHeaders(password),
             timeout: STATUS_TIMEOUT
         });

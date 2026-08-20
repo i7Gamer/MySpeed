@@ -142,6 +142,15 @@ export const probeAll = async (adapters, probe = probeAddress) => {
 export const ROUNDS_BEFORE_FALLBACK = 3;
 
 /**
+ * The stored value meaning no adapter was ever chosen.
+ *
+ * insertDefaults seeds it when the probe came up empty, and validateInput
+ * refuses it from an operator - so wherever it appears it means "unset", never
+ * "this one".
+ */
+export const NO_INTERFACE = "none";
+
+/**
  * Whether the configured adapter's absence has lasted long enough to act on.
  *
  * Pure, so the rule can be read and tested without a database or a network.
@@ -161,7 +170,16 @@ export const resolveFallback = (currentInterface, available, missingRounds) => {
     // than being carried into whatever is chosen next. Counted, a host that
     // spent its first rounds with no adapters at all would treat the first blink
     // after one is finally chosen as the third, and rewrite it.
-    if (!currentInterface) return {missingRounds: 0, write: available[0] ?? null};
+    //
+    // NO_INTERFACE is nothing pinned as much as an empty value is. It is what
+    // insertDefaults seeds when the probe found nothing usable - a boot while
+    // the network is still coming up, which under docker is ordinary - and
+    // validateInput refuses it as a choice, so it can only mean unset. Read as
+    // a real adapter it earned the three-round wait meant for protecting a
+    // deliberate choice, and every scheduled test in those three hours failed
+    // with `interface "none" has no usable address` first.
+    if (!currentInterface || currentInterface === NO_INTERFACE)
+        return {missingRounds: 0, write: available[0] ?? null};
 
     const waited = missingRounds + 1;
 
