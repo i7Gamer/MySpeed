@@ -1,5 +1,10 @@
-import { describe, it, beforeEach, mock } from "node:test";
+import { describe, it, beforeEach, after, mock } from "node:test";
 import assert from "node:assert/strict";
+
+const realLocalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+const realFetch = Object.getOwnPropertyDescriptor(globalThis, "fetch");
+const realDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+const realWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
 
 // RequestUtil targets the browser; stub the globals it reaches for before the
 // module graph is loaded so the request logic can be exercised under Node.
@@ -68,6 +73,17 @@ beforeEach(() => {
     store.clear();
     lastRequest = null;
     blobEvents = [];
+});
+
+after(() => {
+    if (realLocalStorage) Object.defineProperty(globalThis, "localStorage", realLocalStorage);
+    else delete globalThis.localStorage;
+    if (realFetch) Object.defineProperty(globalThis, "fetch", realFetch);
+    else delete globalThis.fetch;
+    if (realDocument) Object.defineProperty(globalThis, "document", realDocument);
+    else delete globalThis.document;
+    if (realWindow) Object.defineProperty(globalThis, "window", realWindow);
+    else delete globalThis.window;
 });
 
 describe("jsonRequest", () => {

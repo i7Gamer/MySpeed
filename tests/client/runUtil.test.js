@@ -1,7 +1,9 @@
-import { describe, it, beforeEach, afterEach } from "node:test";
+import { describe, it, beforeEach, afterEach, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+
+const realLocalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
 
 // RequestUtil reads the selected node out of localStorage on every call, so the
 // stub has to exist before its module graph is loaded.
@@ -22,6 +24,12 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    globalThis.fetch = realFetch;
+});
+
+after(() => {
+    if (realLocalStorage) Object.defineProperty(globalThis, "localStorage", realLocalStorage);
+    else delete globalThis.localStorage;
     globalThis.fetch = realFetch;
 });
 
