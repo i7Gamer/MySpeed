@@ -240,12 +240,19 @@ export const getUsedStorage = async () => {
     let size = 0;
 
     if (process.env.DB_TYPE === "mysql") {
-        const sizes = await db.query("SELECT table_name AS `Table`, ROUND((data_length + index_length), 2) AS `size` FROM information_schema.TABLES WHERE table_schema = ?;", {
+        // Base tables only: information_schema lists views beside them, and a
+        // view's data_length is NULL - one anywhere in the schema (a DBA's
+        // reporting view is enough) fed the sum a NaN and the dialog was
+        // answered {size: null}.
+        const sizes = await db.query("SELECT table_name AS `Table`, ROUND((data_length + index_length), 2) AS `size` FROM information_schema.TABLES WHERE table_schema = ? AND TABLE_TYPE = 'BASE TABLE';", {
             replacements: [process.env.DB_NAME],
             type: db.QueryTypes.SELECT
         });
         for (let i = 0; i < sizes.length; i++) {
-            size += parseFloat(sizes[i].size);
+            // Guarded as well as filtered: a figure one row cannot contribute
+            // must not poison what the others already said.
+            const bytes = parseFloat(sizes[i].size);
+            if (Number.isFinite(bytes)) size += bytes;
         }
     } else {
         // The path the database is actually opened with, rather than a second
@@ -279,9 +286,6 @@ export const validateInput = async (key, value) => {
 
     if (key === "provider" && !["ookla", "libre", "cloudflare"].includes(value))
         return "You need to provide a valid provider";
-
-    if (key === "ping")
-        value = value.toString().split(".")[0];
 
     // "none" is the stored sentinel for "no password configured". Letting it
     // through as a chosen password stored the literal string, which
