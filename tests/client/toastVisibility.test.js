@@ -6,22 +6,14 @@ import { fileURLToPath } from "node:url";
 import {
     TOAST_HIDDEN, toastClassName
 } from "../../client/src/common/contexts/ToastNotification/toastState.js";
+import { withoutJsComments } from "../helpers/source.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
-/**
- * Comments stripped before anything is asserted against the source.
- *
- * These files explain the bug they were fixed for in prose sitting right beside
- * the fix, so an assertion that the code no longer does X matches the sentence
- * saying it used to. What is being asserted is what the module does, not what
- * it says about itself.
- */
-const withoutComments = (source) => source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
-
-const provider = withoutComments(fs.readFileSync(path.join(CLIENT_SRC,
+// Comments stripped before anything is asserted against the source, for the
+// reason the shared helper states: an assertion that the code no longer does X
+// otherwise matches the sentence saying it used to.
+const provider = withoutJsComments(fs.readFileSync(path.join(CLIENT_SRC,
     "common/contexts/ToastNotification/ToastNotificationContext.jsx"), "utf8"));
 
 const RED_TOAST = {text: "Something failed", color: "red"};

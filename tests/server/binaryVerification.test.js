@@ -1,21 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readSource } from "../helpers/source.js";
+import { readSource, withoutHashComments } from "../helpers/source.js";
 
-/**
- * Comments stripped before anything is asserted, as installScripts.test.js does
- * and for the same reason: these workflows explain the bug they were fixed for
- * right beside the fix, so a comment naming verify-binary.ps1 is found by an
- * indexOf looking for the step that runs it - and the ordering assertion then
- * compares a sentence with a command. What is asserted is what the workflow
- * runs, not what it says about itself.
- */
-const withoutComments = (source) => source
-    .split("\n")
-    .filter((line) => !/^\s*#/.test(line))
-    .join("\n");
-
-const workflow = withoutComments(readSource(".github/workflows/build-binaries.yml"));
+// Comments stripped before anything is asserted, for the reason the shared
+// helper states: a comment naming verify-binary.ps1 is found by an indexOf
+// looking for the step that runs it. What is asserted is what the workflow
+// runs, not what it says about itself.
+const workflow = withoutHashComments(readSource(".github/workflows/build-binaries.yml"));
 
 /**
  * One job's block, bounded by the job that follows it.
@@ -135,7 +126,7 @@ describe("no workflow interpolates untrusted input into a shell body", () => {
 
     for (const file of FILES) {
         it(`${file} keeps it out of every run: body`, () => {
-            const offending = runBodies(withoutComments(readSource(`.github/workflows/${file}`)))
+            const offending = runBodies(withoutHashComments(readSource(`.github/workflows/${file}`)))
                 .filter((line) => UNTRUSTED.test(line))
                 .map((line) => line.trim());
 
@@ -160,7 +151,7 @@ describe("no workflow interpolates untrusted input into a shell body", () => {
  * every user installs happened after the release was already published.
  */
 describe("CI compiles the client", () => {
-    const tests = withoutComments(readSource(".github/workflows/test.yml"));
+    const tests = withoutHashComments(readSource(".github/workflows/test.yml"));
 
     it("builds it", () => {
         assert.match(tests, /working-directory: client\r?\n\s*run: bun run build/,

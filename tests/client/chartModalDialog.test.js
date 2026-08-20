@@ -1,8 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { readSource, tagHolding } from "../helpers/source.js";
 
 /**
  * The expanded chart is a modal in every visual sense and was none of it to a
@@ -20,20 +18,8 @@ import { fileURLToPath } from "node:url";
  * components: nothing here needs a DOM, only the promise that the markup says
  * what the styling implies.
  */
-const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-
-const read = (file) => fs.readFileSync(path.join(ROOT, file), "utf8");
-
-const chartModal = read("client/src/common/components/ChartModal/ChartModal.jsx");
-const statistics = read("client/src/pages/Statistics/Statistics.jsx");
-
-/** The opening tag of the element carrying `marker`, attributes and all. */
-const tagHolding = (source, marker) => {
-    const at = source.indexOf(marker);
-    assert.notEqual(at, -1, `${marker} is no longer in this component`);
-
-    return source.slice(source.lastIndexOf("<", at), source.indexOf(">", at) + 1);
-};
+const chartModal = readSource("client/src/common/components/ChartModal/ChartModal.jsx");
+const statistics = readSource("client/src/pages/Statistics/Statistics.jsx");
 
 describe("the chart modal is a dialog", () => {
     const content = tagHolding(chartModal, "chart-modal-content");
@@ -48,9 +34,27 @@ describe("the chart modal is a dialog", () => {
             "focus has nowhere to sit when nothing inside is focusable");
     });
 
+    // The second assertion reads the props destructuring, not the file at
+    // large: the old /label[,}]/ was satisfied by the aria-label attribute the
+    // first assertion requires, so dropping the prop kept both green.
     it("is named", () => {
         assert.match(content, /aria-label=\{label\}/, "the dialog announces as nothing");
-        assert.match(chartModal, /label[,}]/, "the component no longer takes a name");
+        assert.match(chartModal, /export const ChartModal = \(\{[^}]*\blabel\b[^}]*\}/,
+            "the component no longer takes a name");
+    });
+});
+
+/**
+ * The overlays settle stacked Escapes with defaultPrevented - Dialog declines
+ * a claimed key, DropdownSelect and the date picker prevent when they claim.
+ * This modal checked only the Dialog-context overlays, so a picker left open
+ * under it (reachable by keyboard) answered the same press: one Escape, two
+ * overlays gone.
+ */
+describe("the chart modal's Escape", () => {
+    it("declines a key something else has already answered", () => {
+        assert.match(chartModal, /if \(e\.key !== "Escape" \|\| e\.defaultPrevented \|\| hasOpenOverlay\(\)\) return;/,
+            "the modal is the one overlay outside the defaultPrevented treaty");
     });
 });
 
@@ -105,7 +109,7 @@ describe("the expanded chart's name", () => {
 
     it("names them in keys both translations carry", () => {
         for (const locale of ["en", "de"]) {
-            const messages = JSON.parse(read(`client/public/assets/locales/${locale}.json`));
+            const messages = JSON.parse(readSource(`client/public/assets/locales/${locale}.json`));
             const carried = (key) => key.split(".").reduce((node, part) => node?.[part], messages);
 
             for (const key of Object.values(labelMap()))
@@ -118,5 +122,25 @@ describe("the expanded chart's name", () => {
     it("hands the name to the modal", () => {
         assert.match(statistics, /label=\{expandedChart \? t\(CHART_MODAL_LABELS\[expandedChart\]\) : undefined\}/,
             "the map exists but the dialog is never named from it");
+    });
+
+    /**
+     * And wherever a chart takes its title as a prop, the title IS the map
+     * entry - one authority, not two copies. The charts that draw their own
+     * internal titles (ping, hourly, consistency, latest, overview) cannot be
+     * held this way without threading a prop through five components; for
+     * them the map alone still carries the dialog's name.
+     */
+    it("names the prop-titled charts from the same map", () => {
+        for (const key of ["download", "upload"])
+            assert.equal((statistics.match(new RegExp(`titleKey=\\{CHART_MODAL_LABELS\\.${key}\\}`, "g")) ?? []).length, 2,
+                `a ${key} chart names itself apart from the map the dialog reads`);
+
+        for (const key of ["avgDownload", "avgUpload"])
+            assert.equal((statistics.match(new RegExp(`title=\\{t\\(CHART_MODAL_LABELS\\.${key}\\)\\}`, "g")) ?? []).length, 2,
+                `an average chart names itself apart from the map the dialog reads`);
+
+        assert.doesNotMatch(statistics, /titleKey="latest\./,
+            "a literal titleKey can drift from the dialog's name for the same chart");
     });
 });

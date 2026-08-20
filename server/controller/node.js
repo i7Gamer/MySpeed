@@ -3,7 +3,7 @@ import { writePasswordHeaders } from '../util/passwordHeader.js';
 import { checkNodeTarget } from '../util/safeUrl.js';
 import { RESPONSE_TOO_LARGE, safeRequest } from '../util/safeRequest.js';
 import { SERVER_BUSY } from '../util/authOutcome.js';
-import { IMPORT_BODY_LIMIT_BYTES, isBackupExportPath } from '../routes/storage.js';
+import { isBackupExportPath, relayPolicy } from '../util/backupPolicy.js';
 
 // The child answers this while it already has as many password comparisons
 // running for this caller as it will run at once. Transient by construction.
@@ -199,7 +199,7 @@ export const proxyRequest = async (url, req, res) => {
          * longer names these paths.
          */
         const response = await safeRequest(url, {method: req.method, headers, body, signal: disconnect.signal,
-            maxBytes: isBackupExportPath(req.originalUrl) ? IMPORT_BODY_LIMIT_BYTES : undefined});
+            maxBytes: isBackupExportPath(req.originalUrl) ? relayPolicy.backupAllowanceBytes : undefined});
 
         if (isRedirect(response))
             return res.status(BAD_GATEWAY).json({message: "The node redirected the request", type: "INVALID_URL"});

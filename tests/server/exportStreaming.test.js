@@ -42,13 +42,19 @@ const pagesOf = (...pages) => {
     return {iterator, pulled};
 };
 
-/** A response that records what was streamed at it. */
+/**
+ * A response that records what was streamed at it.
+ *
+ * write invokes the completion callback the way a real ServerResponse does,
+ * because that callback is part of the contract the writers may rely on for
+ * backpressure - a fake that swallowed it would hang them.
+ */
 const capturingResponse = () => {
     const res = new EventEmitter();
     const written = [];
 
     res.destroyed = false;
-    res.write = (chunk) => { written.push(chunk); return true; };
+    res.write = (chunk, callback) => { written.push(chunk); callback?.(); return true; };
     res.end = () => { res.writableEnded = true; };
     res.text = () => written.join("");
 
@@ -99,15 +105,70 @@ describe("a client that leaves mid-export", () => {
         const {iterator, pulled} = pagesOf(ROWS.slice(0, 1), ROWS.slice(1, 2), ROWS.slice(2));
         const res = capturingResponse();
 
-        res.write = () => {
+        res.write = (chunk, callback) => {
             res.destroyed = true;
-            setImmediate(() => res.emit("close"));
+            setImmediate(() => {
+                res.emit("close");
+                callback?.();
+            });
             return false;
         };
 
         await streamJsonArray(res, iterator);
 
         assert.equal(pulled.count, 1, "the export kept reading for a caller that had left");
+    });
+});
+
+/**
+ * A slow but present client: the buffer refuses every chunk and accepts it a
+ * beat later. This is the path every large export over a real network takes,
+ * and the one a bug in the wait would silently truncate.
+ */
+describe("a client that reads slowly", () => {
+    it("waits out each refusal and still delivers the whole document", async () => {
+        const res = capturingResponse();
+        res.write = (chunk, callback) => {
+            res.emit("written", chunk);
+            setImmediate(() => {
+                res.emit("drain");
+                callback?.();
+            });
+            return false;
+        };
+        const written = [];
+        res.on("written", (chunk) => written.push(chunk));
+        res.text = () => written.join("");
+
+        await streamJsonArray(res, pagesOf(ROWS.slice(0, 2), ROWS.slice(2)).iterator);
+
+        assert.equal(res.text(), JSON.stringify(ROWS, null, JSON_INDENT),
+            "backpressure truncated the export for a client that was merely slow");
+        assert.equal(res.writableEnded, true);
+    });
+});
+
+/**
+ * A database that fails mid-walk - the realistic failure for a walk of the
+ * largest table. The rejection has to reach the route (express hands it to
+ * the error middleware, which abandons a response whose headers are sent),
+ * and the truncated document must not be closed as though it were complete:
+ * the missing closing bracket is how a client can tell.
+ */
+describe("a database that fails mid-walk", () => {
+    it("surfaces the failure instead of ending the document", async () => {
+        const res = capturingResponse();
+        const failing = (async function* () {
+            yield ROWS.slice(0, 1);
+            throw new Error("database has gone away");
+        })();
+
+        await assert.rejects(() => streamJsonArray(res, failing), /gone away/);
+
+        assert.notEqual(res.writableEnded, true,
+            "the truncated document was closed as though it were complete");
+        assert.match(res.text(), /^\[\n/, "nothing at all was flushed before the failure");
+        assert.doesNotMatch(res.text(), /\n\]$/, "the document claims to be whole");
     });
 });
 

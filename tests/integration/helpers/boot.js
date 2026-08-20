@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { beforeEach } from "node:test";
 
 /**
  * Boots the real Express app against a throwaway sqlite database and a real
@@ -19,6 +20,21 @@ import path from "node:path";
  */
 let booted = null;
 let closed = false;
+
+/**
+ * Every file that boots gets its limiters put back between tests, from here
+ * rather than by each file remembering to. A suite drives one endpoint dozens
+ * of times from one address in seconds - not a shape any caller produces - so
+ * a route gaining a limit used to turn every test of that route into a test
+ * of the limiter, one file at a time, until its author rediscovered the
+ * per-file reset idiom. That happened twice in one review cycle. No
+ * integration test exercises these limiters live; the limits themselves are
+ * tested directly in tests/server/rateLimit.test.js.
+ *
+ * Registered at import, which node:test reads as a file-level hook for
+ * whichever test file imported this helper.
+ */
+beforeEach(() => booted?.resetRateLimits());
 
 export const bootServer = async () => {
     /**
@@ -80,14 +96,9 @@ export const bootServer = async () => {
         tests: tests.default,
         dataDir,
         /**
-         * Puts the request limiters back as they were.
-         *
-         * A suite drives one endpoint dozens of times from one address in a few
-         * seconds, which is not a shape any caller produces - so without this,
-         * adding a limit to a route quietly turns every test of that route into
-         * a test of the limiter. Call it in a beforeEach where a file exercises
-         * one endpoint hard; the limits themselves are tested directly in
-         * tests/server/rateLimit.test.js.
+         * Puts the request limiters back as they were. The file-level
+         * beforeEach above already calls it between tests; the handle stays
+         * exposed for a test that needs a reset mid-case.
          */
         resetRateLimits,
         close: async () => {

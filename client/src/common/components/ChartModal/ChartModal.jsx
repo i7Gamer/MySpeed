@@ -42,7 +42,11 @@ export const ChartModal = ({ isOpen, onClose, isChart = false, wide = false, too
      * that is open is above it.
      */
     const handleEscape = useCallback((e) => {
-        if (e.key !== "Escape" || hasOpenOverlay()) return;
+        // defaultPrevented beside the overlay check: hasOpenOverlay sees only
+        // the Dialog-context overlays, and a claimed key is how everything
+        // outside that context - the date picker's popover - says it already
+        // answered. Without it one Escape closed both.
+        if (e.key !== "Escape" || e.defaultPrevented || hasOpenOverlay()) return;
 
         e.preventDefault();
         onClose();

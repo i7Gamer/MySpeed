@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readSource } from "../helpers/source.js";
+import { bodyOf, readSource, withoutHashComments } from "../helpers/source.js";
 
 /**
  * The installer on a machine that is not the one it was written on.
@@ -17,12 +17,7 @@ import { readSource } from "../helpers/source.js";
  * so by using apt-get at all. What it owes everyone else is an honest message
  * instead of a broken half-install.
  */
-const withoutComments = (source) => source
-    .split("\n")
-    .filter((line) => !/^\s*#/.test(line))
-    .join("\n");
-
-const install = withoutComments(readSource("scripts/install.sh"));
+const install = withoutHashComments(readSource("scripts/install.sh"));
 
 describe("the installer on a machine without apt-get", () => {
     it("asks whether apt-get exists before calling it", () => {
@@ -36,8 +31,14 @@ describe("the installer on a machine without apt-get", () => {
             "an apt-get call sits at top level, outside any guard");
     });
 
+    /**
+     * Anchored to check()'s own body: matched against the whole script, the
+     * pattern reached from the update guard to any of the six unrelated
+     * exit 1 lines below it, so deleting the refusal kept the test green -
+     * the exact blindness a review pass caught.
+     */
     it("refuses honestly when a dependency is missing and nothing can install it", () => {
-        assert.match(install, /command -v apt-get[^]*?exit 1/,
+        assert.match(bodyOf(install, "function check()"), /command -v apt-get[^]*?exit 1/,
             "a machine that cannot install the missing dependency carries on into a broken install");
     });
 });
@@ -59,10 +60,24 @@ describe("the installer's network calls", () => {
             assert.match(line, /--timeout=\d+/, `a wget carries no stall deadline: ${line.trim()}`);
     });
 
-    // The address is a convenience; a host that cannot reach ifconfig.me still
-    // deserves its closing message, with a placeholder where the address goes.
-    it("still prints the closing message when the address lookup fails", () => {
-        assert.match(install, /ifconfig\.me[^)]*\|\|/,
-            "a failed address lookup leaves a hole in the final message, or stalls it");
+    /**
+     * The address is a convenience; a host that cannot reach ifconfig.me
+     * still deserves its closing message with a placeholder. And the failure
+     * has to be judged on the whole lookup, not curl's exit code alone: -s
+     * without -f answers an HTTP error page as output with rc 0, and command
+     * substitution keeps whatever partial bytes arrived before a timeout - so
+     * a bare `|| echo fallback` printed http://:5216 for a captive portal and
+     * spliced the placeholder onto half an address for a slow link.
+     */
+    it("discards a failed or partial address lookup whole", () => {
+        assert.match(install, /curl -sf --max-time \d+ ifconfig\.me\)\s*\|\|\s*PUBLIC_ADDRESS=""/,
+            "a lookup that failed part-way still leaks its output into the address");
+    });
+
+    it("still prints the closing message with a placeholder", () => {
+        assert.match(install, /\[ -z "\$PUBLIC_ADDRESS" \]/,
+            "an empty answer from the lookup leaves a hole in the final message");
+        assert.match(install, /http:\/\/\$PUBLIC_ADDRESS:5216/,
+            "the closing message no longer uses the checked address at all");
     });
 });
