@@ -114,4 +114,19 @@ describe("the storage tabs say what they are", () => {
         assert.doesNotMatch(tagHolding(dialog, "reset-cursor"), /role="tab"/,
             "the size display announces as a tab a reader can never select");
     });
+
+    /**
+     * The readout is styled by the same rule as the tab labels, so it has to
+     * be the same element. When the labels became spans the stylesheet's rule
+     * followed them - and the readout, still a paragraph, silently lost its
+     * margin, size and weight on every desktop viewport. Three independent
+     * review passes found it; this holds the whole dialog to one label
+     * element so the rule cannot orphan part of it again.
+     */
+    it("style the size readout with the element the stylesheet names", () => {
+        assert.match(dialog, /<span>\{Math\.round/,
+            "the size readout is not a span, so the tab-label rule does not reach it");
+        assert.doesNotMatch(dialog, /<p>/,
+            "a paragraph in this dialog is styled by nothing and carries browser default margins");
+    });
 });

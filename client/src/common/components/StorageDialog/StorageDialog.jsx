@@ -69,8 +69,8 @@ export const StorageDialog = ({open, onClose}) => {
                                     and Enter did nothing there, so the
                                     configuration half of this dialog - factory
                                     reset included - did not exist for a
-                                    keyboard. Spans inside, because a <p> may
-                                    not sit in a button - the pagination
+                                    keyboard. Spans inside, because a paragraph
+                                    may not sit in a button - the pagination
                                     documents the same trap. */}
                                 <div className="storage-top" role="tablist" onKeyDown={moveTab}>
                                     {TABS.map((tab) => (
@@ -88,7 +88,11 @@ export const StorageDialog = ({open, onClose}) => {
                                 <div className="storage-bottom">
                                     <div className="storage-tab reset-cursor">
                                         <FontAwesomeIcon icon={faDatabase}/>
-                                        <p>{Math.round((storageSize?.size ?? 0) / 1024)} KB</p>
+                                        {/* A span like the tab labels above: the stylesheet
+                                            styles one label element for the whole dialog, and
+                                            a paragraph here silently fell out of that rule
+                                            when the labels moved. */}
+                                        <span>{Math.round((storageSize?.size ?? 0) / 1024)} KB</span>
                                     </div>
                                 </div>
                             </div>
