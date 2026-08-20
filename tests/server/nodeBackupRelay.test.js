@@ -2,8 +2,11 @@ import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { safeRequest, MAX_RESPONSE_BYTES, RESPONSE_TOO_LARGE } from "../../server/util/safeRequest.js";
-import { isBackupExportPath, IMPORT_BODY_LIMIT_BYTES } from "../../server/routes/storage.js";
+import { isBackupExportPath, IMPORT_BODY_LIMIT_BYTES, relayPolicy } from "../../server/util/backupPolicy.js";
 import { proxyRequest } from "../../server/controller/node.js";
 
 /**
@@ -26,8 +29,19 @@ const MB = 1024 * 1024;
 /** Above the default ceiling, within the backup allowance. */
 const RELAY_BYTES = MAX_RESPONSE_BYTES + MB;
 
-/** One chunk past even the backup allowance. */
-const OVER_BYTES = IMPORT_BODY_LIMIT_BYTES + MB;
+/**
+ * The allowance the over-limit case runs under, through the policy seam.
+ *
+ * Flooding one chunk past the real 50 MB allowance proved a comparison the
+ * 1 MB safeRequest case already proves, at fifty times the cost - and the
+ * cost scaled with the production constant. The seam shrinks the allowance
+ * for one case; what stays real is the wiring: the proxy reads the policy,
+ * refuses past it, and names the refusal.
+ */
+const SHRUNK_ALLOWANCE = 3 * MB;
+
+/** One chunk past the shrunken allowance. */
+const OVER_BYTES = SHRUNK_ALLOWANCE + MB;
 
 const WRITE_CHUNK = MB;
 
@@ -133,6 +147,26 @@ describe("the backup allowance itself", () => {
     it("actually raises the default ceiling rather than restating it", () => {
         assert.ok(IMPORT_BODY_LIMIT_BYTES > MAX_RESPONSE_BYTES);
     });
+
+    it("is what the relay policy grants by default", () => {
+        assert.equal(relayPolicy.backupAllowanceBytes, IMPORT_BODY_LIMIT_BYTES);
+    });
+});
+
+/**
+ * Transport policy lives in util, beside the ceiling it raises. The proxy
+ * importing it from a routes module was the one controller-to-routes import
+ * in the codebase - a layering inversion a refactor of the route file would
+ * trip over.
+ */
+describe("where the policy lives", () => {
+    it("is not imported into the controller from a routes module", () => {
+        const controller = fs.readFileSync(path.resolve(fileURLToPath(import.meta.url),
+            "..", "..", "..", "server", "controller", "node.js"), "utf8");
+
+        assert.doesNotMatch(controller, /from '\.\.\/routes\//,
+            "the proxy reaches into route wiring for what is transport policy");
+    });
 });
 
 describe("a history export bigger than the default ceiling", () => {
@@ -146,11 +180,16 @@ describe("a history export bigger than the default ceiling", () => {
 
 describe("an answer too large even for a backup", () => {
     it("is refused as what it is, not as a bare server error", {timeout: CASE_TIMEOUT}, async () => {
-        const answered = await proxied("/api/storage/config");
+        relayPolicy.backupAllowanceBytes = SHRUNK_ALLOWANCE;
+        try {
+            const answered = await proxied("/api/storage/config");
 
-        assert.equal(answered.status, 502);
-        assert.match(answered.json?.message ?? "", /too large/i,
-            "the refusal does not say what was refused");
+            assert.equal(answered.status, 502);
+            assert.match(answered.json?.message ?? "", /too large/i,
+                "the refusal does not say what was refused");
+        } finally {
+            relayPolicy.backupAllowanceBytes = IMPORT_BODY_LIMIT_BYTES;
+        }
     });
 });
 
@@ -164,7 +203,9 @@ describe("an ordinary route that floods", () => {
 });
 
 describe("the ceiling's rejection", () => {
-    it("carries a code a caller can branch on", async () => {
+    // The timeout every sibling that touches the flooding server carries: a
+    // rejection that stops rejecting must fail the case, not hang the run.
+    it("carries a code a caller can branch on", {timeout: CASE_TIMEOUT}, async () => {
         await assert.rejects(() => safeRequest(`${nodeUrl}/api/config`, {maxBytes: MB}),
             (error) => error.code === RESPONSE_TOO_LARGE,
             "the too-large failure is indistinguishable from any other");
