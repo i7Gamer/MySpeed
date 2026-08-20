@@ -1,10 +1,34 @@
 // How often the status is asked for. A progress bar driven by the old fixed
 // five seconds stepped through a run in fifths; polling that fast forever is
 // pointless for a page sitting idle overnight.
+//
+// The fast full poll is the fallback only: a run is normally followed on the
+// live route below, and RUNNING_POLL_MS survives for a server that does not
+// answer it - a remote node on an older version, reached through the proxy.
 export const IDLE_POLL_MS = 5000;
 export const RUNNING_POLL_MS = 1000;
 
-export const pollIntervalFor = (status) => status?.running ? RUNNING_POLL_MS : IDLE_POLL_MS;
+/**
+ * How often a run is sampled from /status/live, which answers from memory.
+ *
+ * Any faster runs into the server's own arithmetic: the general API backstop
+ * admits 300 requests a minute and cannot tell a progress poll from a person,
+ * so the sampling has to leave most of that for the person - 500ms is 120 a
+ * minute, which fits under the backstop twice over beside the idle poll. The
+ * fill's transition is pinned to this figure, so the bar is always mid-glide
+ * when the next sample lands and never visibly waits.
+ */
+export const LIVE_POLL_MS = 500;
+
+/**
+ * How often the *full* status is asked for. With the live route watching the
+ * run, the full poll has nothing to hurry for - the last test, the failure
+ * count and the schedule cannot change mid-run, and the falling edge refreshes
+ * them the moment one ends - so it hurries only for a server without the
+ * route.
+ */
+export const pollIntervalFor = (status, liveCarriesRun = false) =>
+    status?.running && !liveCarriesRun ? RUNNING_POLL_MS : IDLE_POLL_MS;
 
 /**
  * Whether a polled status says anything the last one did not.
@@ -24,6 +48,21 @@ export const pollIntervalFor = (status) => status?.running ? RUNNING_POLL_MS : I
  * added to the route.
  */
 export const sameStatus = (previous, next) => JSON.stringify(previous) === JSON.stringify(next);
+
+/**
+ * A live sample, landed on the polled status: over it, without disturbing what
+ * only the full route knows - the last test, the failure count, the schedule.
+ *
+ * The previous object is kept when the sample says nothing new, for the same
+ * reason sameStatus exists at all: a fresh object twice a second would
+ * re-render the whole tree to show what is already on screen. The merge keeps
+ * the previous key order, so the serialised comparison holds.
+ */
+export const withLive = (previous, live) => {
+    const next = {...previous, ...live};
+
+    return sameStatus(previous, next) ? previous : next;
+};
 
 /**
  * Whether a run ended between two polled statuses.

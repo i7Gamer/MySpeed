@@ -110,8 +110,11 @@ $status-detail-size: 1.05rem
 .status-progress-fill
   height: 100%
   background: var(--accent-primary)
-  // Matches the one-second poll: without it the fill jumps between readings.
-  transition: width 1s linear
+  // Exactly LIVE_POLL_MS, and held to it by tests/client/statusLivePoll.test.js:
+  // the fill is told a new width every sample and takes one sample to get
+  // there, so it is always mid-glide when the next reading lands. Shorter
+  // stalls between samples; longer queues readings up behind the ease.
+  transition: width 0.5s linear
 
 // For a provider that reports no progress. A sliver travelling the track says
 // "still working, cannot say how far" - which a bar held at zero does not.
