@@ -14,6 +14,7 @@ import path from 'node:path';
 import * as interfaces from '../util/loadInterfaces.js';
 import { destroyAllSessions } from '../util/session.js';
 import { isValidTimeOfDay } from '../util/quietHours.js';
+import { withoutUrlCredentials } from '../util/urlCredentials.js';
 
 const configDefaults = {
     ping: "25",
@@ -87,6 +88,16 @@ const THRESHOLD_NUMBER = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/;
  * apart from every other value it restores - see the fallback there.
  */
 const THRESHOLD_KEYS = ["ping", "download", "upload"];
+
+/**
+ * Stored values that are URLs an operator may have put a credential in.
+ *
+ * libreUrl is the librespeed backend, and it is already withheld from an
+ * untrusted reader by GET /api/config - so shipping it verbatim in a redacted
+ * backup handed that same caller a value the live API refuses them. A URL is
+ * allowed userinfo, so the credential travels in the address itself.
+ */
+const CREDENTIAL_BEARING_KEYS = ["libreUrl"];
 
 // The value stored when no password is configured. It is a sentinel, not a
 // password: password.js waves every request through when it sees this.
@@ -395,11 +406,20 @@ export const exportConfig = async ({includeSecrets = false} = {}) => {
         // original state nobody would think to check.
         if (configValues[i].key === "password" && !includeSecrets) continue;
 
-        obj.config[configValues[i].key] = configValues[i].value;
+        const value = !includeSecrets && CREDENTIAL_BEARING_KEYS.includes(configValues[i].key)
+            ? withoutUrlCredentials(configValues[i].value)
+            : configValues[i].value;
+
+        obj.config[configValues[i].key] = value;
     }
 
+    // The node's password column, and the credential a node URL is allowed to
+    // carry in its userinfo - `http://admin:hunter2@node.lan` is a working
+    // address that http.request honours, so nulling the column alone left the
+    // real credential in a file stamped secretsRedacted.
     const nodeRows = await node.findAll();
-    obj.nodes = includeSecrets ? nodeRows : nodeRows.map((row) => ({...row, password: null}));
+    obj.nodes = includeSecrets ? nodeRows
+        : nodeRows.map((row) => ({...row, password: null, url: withoutUrlCredentials(row.url)}));
 
     obj.recommendations = await recommendations.findAll();
 
