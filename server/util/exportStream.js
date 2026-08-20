@@ -24,27 +24,26 @@ const jsonRow = (row) =>
 /**
  * One chunk, honouring backpressure without hanging on a caller that left.
  *
- * 'drain' never fires on a destroyed response, so the wait listens for 'close'
- * beside it. Answers whether writing can continue, which is also the callers'
- * signal to stop pulling pages - the pages are database reads, and a client
- * that is gone must stop the walk, not merely the writing.
+ * res.write's own completion callback reports both outcomes this needs: it
+ * fires when the chunk has been handed to the transport, and it still fires -
+ * carrying the error nobody here reads - once the response is destroyed. So
+ * the stream's own machinery replaces the drain/close listener race this
+ * used to hand-roll, which was the part of this file most likely to break
+ * under a future edit.
+ *
+ * Answers whether writing can continue, which is also the callers' signal to
+ * stop pulling pages - the pages are database reads, and a client that is
+ * gone must stop the walk, not merely the writing.
+ *
+ * The stated tradeoff: the callback settles per chunk where 'drain' settles
+ * per full buffer, so every page waits for the transport once. At page-sized
+ * chunks that is noise.
  */
-const flush = async (res, chunk) => {
-    if (res.destroyed) return false;
-    if (res.write(chunk)) return true;
+const flush = (res, chunk) => new Promise((resolve) => {
+    if (res.destroyed) return resolve(false);
 
-    await new Promise((resolve) => {
-        const settled = () => {
-            res.off("drain", settled);
-            res.off("close", settled);
-            resolve();
-        };
-        res.once("drain", settled);
-        res.once("close", settled);
-    });
-
-    return !res.destroyed;
-};
+    res.write(chunk, () => resolve(!res.destroyed));
+});
 
 export const streamJsonArray = async (res, pages) => {
     let opened = false;
