@@ -2,12 +2,6 @@ import {defineConfig, createLogger} from "vite";
 import react from "@vitejs/plugin-react";
 import {VitePWA} from "vite-plugin-pwa";
 import * as path from "node:path";
-import {fileURLToPath} from "node:url";
-
-// Not the CommonJS directory global, which exists only while this file is
-// loaded as CommonJS - true today solely because client/package.json declares
-// no "type". This spelling says the same thing in both module systems.
-const configDir = path.dirname(fileURLToPath(import.meta.url));
 
 const logger = createLogger();
 const originalError = logger.error.bind(logger);
@@ -43,7 +37,16 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            "@": path.resolve(configDir, "./src"),
+            // From import.meta rather than from the CommonJS directory global
+            // this used to read, which is not defined in an ES module: it
+            // resolved only because Vite bundles the config before running it,
+            // and under the native loader the alias every client import depends
+            // on would have resolved against nothing.
+            //
+            // The old global is named in viteConfigModule.test.js rather than
+            // here, because the assertion that it is gone searches this file and
+            // would otherwise find it in this sentence.
+            "@": path.resolve(import.meta.dirname, "./src"),
         },
     },
     server: {
