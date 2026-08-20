@@ -288,10 +288,12 @@ describe("uninstall.sh finds the installation it is removing", () => {
     });
 
     // Read before the systemd block deletes it, or there is nothing left to
-    // read it from.
+    // read it from. The deletion walks SERVICE_FILES with a guarded rm now -
+    // it used to spell both paths out, and removed the one install.sh never
+    // creates unguarded - so the ordering is measured against that loop.
     it("reads it before deleting the unit file", () => {
         const recovered = source.indexOf("WorkingDirectory");
-        const deleted = source.search(/rm\s+"?\/etc\/systemd/);
+        const deleted = source.search(/rm -f "\$unit"/);
 
         assert.ok(recovered !== -1 && deleted !== -1, "the script no longer does both");
         assert.ok(recovered < deleted,

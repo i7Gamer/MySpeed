@@ -16,6 +16,14 @@ while getopts "d:" o > /dev/null 2>&1; do
     esac
 done
 
+# Made absolute before anything is written with it. systemd refuses a relative
+# WorkingDirectory, so `-d myspeed` recorded a unit that could not start - and
+# the same relative path is what sent the reachability walk climbing for ever.
+case "$INSTALLATION_PATH" in
+    /*) ;;
+    *) INSTALLATION_PATH="$(pwd)/$INSTALLATION_PATH" ;;
+esac
+
 if [ $EUID -ne 0 ]; then
   echo -e "$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-"
   echo -e "$RED✗ ABORTED"
@@ -309,11 +317,18 @@ fi
 # directories above it, so group permissions cannot help.
 reachable_by_service() {
     local directory="$1"
+    local parent
 
     while :; do
         [ -n "$(find "$directory" -maxdepth 0 -perm -o=x 2>/dev/null)" ] || return 1
-        [ "$directory" = "/" ] && return 0
-        directory=$(dirname "$directory")
+
+        # Stop where the walk stops moving, rather than at "/" alone. Only an
+        # absolute path ever reaches "/": `dirname "."` is ".", so a relative
+        # one - which `-d myspeed` gives - climbed for ever, hanging the
+        # installer in a loop no message explained and only Ctrl-C ended.
+        parent=$(dirname "$directory")
+        [ "$parent" = "$directory" ] && return 0
+        directory="$parent"
     done
 }
 

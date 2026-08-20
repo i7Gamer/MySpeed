@@ -1,5 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { bodyOf, readSource, withoutHashComments } from "../helpers/source.js";
 
 /**
@@ -79,5 +83,94 @@ describe("the installer's network calls", () => {
             "an empty answer from the lookup leaves a hole in the final message");
         assert.match(install, /http:\/\/\$PUBLIC_ADDRESS:5216/,
             "the closing message no longer uses the checked address at all");
+    });
+});
+
+/**
+ * The walk that decides whether an unprivileged account could reach the
+ * installation directory, run rather than read.
+ *
+ * It climbed with `directory=$(dirname "$directory")` and stopped only at "/",
+ * which is a termination condition an absolute path has and a relative one does
+ * not: `dirname "."` is ".", for ever. So `install.sh -d myspeed` hung the
+ * installer in a loop that no message explained and only Ctrl-C ended.
+ *
+ * A source scan cannot catch that - the loop looked fine - so this executes the
+ * function with a deadline. Reaching the deadline is the failure.
+ */
+const bash = (() => {
+    for (const candidate of ["bash", "/usr/bin/bash", "C:/Program Files/Git/bin/bash.exe"]) {
+        try {
+            if (execFileSync(candidate, ["-c", "echo ok"], {encoding: "utf8", stdio: ["pipe", "pipe", "ignore"]})
+                .trim() === "ok") return candidate;
+        } catch {
+            // Not there, or not usable.
+        }
+    }
+
+    return null;
+})();
+
+describe("the reachability walk", {skip: bash ? false : "No bash available"}, () => {
+    // The function on its own, lifted out of the script it lives in: sourcing
+    // the whole installer would start installing.
+    const walk = () => {
+        const source = readSource("scripts/install.sh");
+        const start = source.indexOf("reachable_by_service() {");
+        assert.notEqual(start, -1, "the installer no longer decides reachability this way");
+
+        const end = source.indexOf("\n}", start);
+        assert.notEqual(end, -1, "the function is never closed");
+
+        return source.slice(start, end + 2);
+    };
+
+    // Long enough for a shell to start, short enough that a loop which never
+    // ends is reported rather than waited on.
+    const WALK_TIMEOUT = 10_000;
+
+    const run = (directory, cwd) => execFileSync(bash, ["-c",
+        `${walk()}\nreachable_by_service "${directory}" && echo reachable || echo unreachable`],
+    {encoding: "utf8", cwd, timeout: WALK_TIMEOUT, stdio: ["pipe", "pipe", "ignore"]}).trim();
+
+    it("answers for an absolute path", () => {
+        assert.match(run("/"), /reachable|unreachable/);
+    });
+
+    /*
+     * The shell runs in the temp root rather than in the directory being
+     * removed: Windows holds a directory for a while after a process that had
+     * it as its working directory exits, so deleting it here raced the
+     * cleanup rather than the walk.
+     */
+    it("answers for a relative one rather than climbing for ever", () => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-walk-"));
+
+        try {
+            fs.mkdirSync(path.join(directory, "myspeed"));
+
+            assert.match(run(`${path.basename(directory)}/myspeed`, os.tmpdir()), /reachable|unreachable/,
+                "the walk never terminates on a relative path, so -d myspeed hangs the installer");
+        } finally {
+            fs.rmSync(directory, {recursive: true, force: true});
+        }
+    });
+
+    // The shortest relative path there is, and the one dirname never shortens.
+    it("answers for the working directory itself", () => {
+        assert.match(run(".", os.tmpdir()), /reachable|unreachable/);
+    });
+});
+
+/**
+ * And the path the unit records is absolute however it was given.
+ *
+ * systemd refuses a relative WorkingDirectory, so `-d myspeed` wrote a unit
+ * that could not start - the other half of the same relative-path gap.
+ */
+describe("the installation path", () => {
+    it("is made absolute before anything is written with it", () => {
+        assert.match(install, /INSTALLATION_PATH="\$\(pwd\)\/\$INSTALLATION_PATH"/,
+            "a relative -d reaches the unit file, and systemd refuses a relative WorkingDirectory");
     });
 });
