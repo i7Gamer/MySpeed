@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bodyOf, readSource } from "../helpers/source.js";
+import { bodyOf, readSource, withoutHashComments } from "../helpers/source.js";
 
 /**
  * The installer on a machine that is not the one it was written on.
@@ -17,12 +17,7 @@ import { bodyOf, readSource } from "../helpers/source.js";
  * so by using apt-get at all. What it owes everyone else is an honest message
  * instead of a broken half-install.
  */
-const withoutComments = (source) => source
-    .split("\n")
-    .filter((line) => !/^\s*#/.test(line))
-    .join("\n");
-
-const install = withoutComments(readSource("scripts/install.sh"));
+const install = withoutHashComments(readSource("scripts/install.sh"));
 
 describe("the installer on a machine without apt-get", () => {
     it("asks whether apt-get exists before calling it", () => {

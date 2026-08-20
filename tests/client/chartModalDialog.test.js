@@ -1,8 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { readSource, tagHolding } from "../helpers/source.js";
 
 /**
  * The expanded chart is a modal in every visual sense and was none of it to a
@@ -20,20 +18,8 @@ import { fileURLToPath } from "node:url";
  * components: nothing here needs a DOM, only the promise that the markup says
  * what the styling implies.
  */
-const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-
-const read = (file) => fs.readFileSync(path.join(ROOT, file), "utf8");
-
-const chartModal = read("client/src/common/components/ChartModal/ChartModal.jsx");
-const statistics = read("client/src/pages/Statistics/Statistics.jsx");
-
-/** The opening tag of the element carrying `marker`, attributes and all. */
-const tagHolding = (source, marker) => {
-    const at = source.indexOf(marker);
-    assert.notEqual(at, -1, `${marker} is no longer in this component`);
-
-    return source.slice(source.lastIndexOf("<", at), source.indexOf(">", at) + 1);
-};
+const chartModal = readSource("client/src/common/components/ChartModal/ChartModal.jsx");
+const statistics = readSource("client/src/pages/Statistics/Statistics.jsx");
 
 describe("the chart modal is a dialog", () => {
     const content = tagHolding(chartModal, "chart-modal-content");
@@ -123,7 +109,7 @@ describe("the expanded chart's name", () => {
 
     it("names them in keys both translations carry", () => {
         for (const locale of ["en", "de"]) {
-            const messages = JSON.parse(read(`client/public/assets/locales/${locale}.json`));
+            const messages = JSON.parse(readSource(`client/public/assets/locales/${locale}.json`));
             const carried = (key) => key.split(".").reduce((node, part) => node?.[part], messages);
 
             for (const key of Object.values(labelMap()))

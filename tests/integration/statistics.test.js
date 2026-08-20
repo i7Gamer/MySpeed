@@ -15,11 +15,6 @@ after(async () => {
 
 beforeEach(async () => {
     await seedTests(server.tests, []);
-
-    // This file drives one endpoint far harder than any caller would, and
-    // /api/speedtests/statistics carries a limit of its own - see app.js. What
-    // is under test here is the aggregation, not the limiter.
-    server.resetRateLimits();
 });
 
 const statistics = (query) => api(server.baseUrl, `/speedtests/statistics?${query}`);

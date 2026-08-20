@@ -1,8 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { readSource } from "../helpers/source.js";
 
 /**
  * The build config's own address, spelled so it survives becoming a module.
@@ -14,12 +12,8 @@ import { fileURLToPath } from "node:url";
  * fileURLToPath(import.meta.url) says the same thing in both module systems,
  * and the bundled config shims it either way.
  */
-const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-
-const read = (file) => fs.readFileSync(path.join(ROOT, file), "utf8");
-
 describe("the vite config", () => {
-    const config = read("client/vite.config.js");
+    const config = readSource("client/vite.config.js");
 
     it("derives its own directory instead of assuming CommonJS", () => {
         assert.match(config, /fileURLToPath\(import\.meta\.url\)/,
