@@ -413,7 +413,17 @@ fi
 clear
 echo -e "$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-"
 echo -e "$GREEN✓ Installation completed: $NORMAL MySpeed has been installed under $INSTALLATION_PATH."
-echo -e "You can access the web interface in your browser at$BLUE http://$(curl -s --max-time 5 ifconfig.me || echo "<this-server's-address>"):5216$NORMAL."
+# The address is a convenience, and the lookup is judged whole: -f turns an
+# HTTP error page into a failure instead of an address, and a failed or timed
+# out lookup is discarded outright - command substitution keeps whatever
+# partial bytes arrived before a timeout, so splicing a fallback onto curl's
+# output would print half an address for a slow link.
+PUBLIC_ADDRESS=$(curl -sf --max-time 5 ifconfig.me) || PUBLIC_ADDRESS=""
+if [ -z "$PUBLIC_ADDRESS" ]; then
+  PUBLIC_ADDRESS="<this-server's-address>"
+fi
+
+echo -e "You can access the web interface in your browser at$BLUE http://$PUBLIC_ADDRESS:5216$NORMAL."
 if [ -d "$INSTALLATION_PATH" ]; then
   echo -e "$BLUEℹ Info:$NORMAL To restart MySpeed:$BLUE systemctl restart myspeed"
 fi
