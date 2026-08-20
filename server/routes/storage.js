@@ -11,9 +11,27 @@ const app = express.Router();
 // endpoints allowed a large body - and only once the caller has authenticated.
 // app.js keeps its own 100kb parser off these paths so this one gets the chance
 // to run; the two lists have to stay in step.
-const IMPORT_BODY_LIMIT = '50mb';
+//
+// One figure spelled twice, from one number: express takes the suffixed string,
+// the node proxy takes the bytes - see BACKUP_EXPORT_PATHS below.
+const IMPORT_BODY_LIMIT_MB = 50;
+
+export const IMPORT_BODY_LIMIT_BYTES = IMPORT_BODY_LIMIT_MB * 1024 * 1024;
+
+const IMPORT_BODY_LIMIT = `${IMPORT_BODY_LIMIT_MB}mb`;
 
 export const LARGE_BODY_PATHS = ["/api/storage/tests/history", "/api/storage/config"];
+
+/**
+ * The reads that answer with a whole backup, which is the import's size in the
+ * other direction. The node proxy holds every relayed answer to a ceiling, and
+ * these are the endpoints legitimately above its default: a node with a year of
+ * history exports more than ten megabytes by being used, not by being hostile.
+ * They get the import limit as their allowance, because the two are one round
+ * trip - an export too large to ever restore is not a backup.
+ */
+export const BACKUP_EXPORT_PATHS =
+    ["/api/storage/tests/history/json", "/api/storage/tests/history/csv", "/api/storage/config"];
 
 export const importBody = express.json({limit: IMPORT_BODY_LIMIT});
 
@@ -23,11 +41,19 @@ export const importBody = express.json({limit: IMPORT_BODY_LIMIT});
 // real history - the case the large limit exists for - failed with 413.
 const NODE_PREFIX = /^\/api\/nodes\/[^/]+/;
 
-export const isLargeBodyPath = (path) => {
-    const trimmed = path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+// The query is stripped because the proxy asks with req.originalUrl, which
+// keeps it - req.path is rewritten relative to the router's mount by the time
+// the proxy handler runs, so it no longer names these paths at all.
+const asParentPath = (path) => {
+    const bare = path.split("?")[0];
+    const trimmed = bare.length > 1 && bare.endsWith("/") ? bare.slice(0, -1) : bare;
 
-    return LARGE_BODY_PATHS.includes(trimmed.replace(NODE_PREFIX, "/api"));
+    return trimmed.replace(NODE_PREFIX, "/api");
 };
+
+export const isLargeBodyPath = (path) => LARGE_BODY_PATHS.includes(asParentPath(path));
+
+export const isBackupExportPath = (path) => BACKUP_EXPORT_PATHS.includes(asParentPath(path));
 
 app.get("/", password(false), async (req, res) => {
     res.json(await config.getUsedStorage());
