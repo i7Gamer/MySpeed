@@ -211,6 +211,24 @@ app.get("/status", password(true), async (req, res) => {
     });
 });
 
+/**
+ * The hot half of /status: the four fields a run actually moves, from memory.
+ *
+ * The client samples a run twice a second to drive the progress bar, and the
+ * full route above does two database queries, three config reads and a cron
+ * computation per call - none of which can change mid-run. This answers from
+ * what tasks/speedtest.js already keeps, so the sampling rate costs the server
+ * nothing but the request itself; the client falls back to polling the full
+ * route at RUNNING_POLL_MS against a server - an older node - without this.
+ *
+ * Behind the same read gate as /status, and deliberately nothing async: the
+ * moment this route has something to await is the moment it has stopped being
+ * the cheap one, and tests/server/statusLiveRoute.test.js holds it to that.
+ */
+app.get("/status/live", password(true), (req, res) => {
+    res.json({running: testTask.isRunning(), ...testTask.getProgress()});
+});
+
 // Guarded, unlike /run above: the schedule belongs to the instance rather than
 // to the visitor looking at it, so one anonymous caller pausing a public demo
 // stops the tests for everyone else - and leaves them stopped, since nobody

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { controlsWrapped, nextStage, resumeStage } from "@/common/hooks/useFitStages.js";
+import { controlsWrapped, geometryShift, nextStage, resumeStage, walkResponse } from "@/common/hooks/useFitStages.js";
 import { TOOLBAR_CONTROLS, TOOLBAR_STAGES } from "@/common/components/PageToolbar/fit.js";
 import { compile, mediaBlocks, read, rules } from "../helpers/sass.mjs";
 
@@ -432,5 +432,106 @@ describe("where the status bar takes a row of its own", () => {
     it("has no viewport figure deciding the wrap any more", () => {
         assert.equal(mediaBlocks(toolbar).length, 0,
             "the toolbar reflows on a width again, which cannot see who is looking at it");
+    });
+});
+
+/**
+ * What a mutation is allowed to cost.
+ *
+ * The status bar lives in the measured row and commits new text on every
+ * status poll - the live speed, the phase, the age of the last test - so the
+ * subtree observer fired once a second for the length of every run, and each
+ * firing walked the whole ladder from the top with forced layout in between.
+ * The observer is load-bearing (the bar's min-width is max-content, so its
+ * text is exactly what decides when the row wraps); the waste was answering
+ * every mutation with the most expensive walk there is.
+ *
+ * The geometry the fit depends on is readable without walking: the row's
+ * width, and each child's used width and scroll width. The bar is the row's
+ * only grower, so a text change inside its slack moves none of them - and one
+ * that outgrows the slack cannot hide, because min-width: max-content widens
+ * the bar's own box.
+ */
+describe("what a mutation is allowed to cost", () => {
+
+    const geometry = (row, ...children) => ({
+        row,
+        children: children.map(([used, content]) => ({used, content}))
+    });
+
+    it("sees no shift in identical geometry", () => {
+        assert.equal(geometryShift(
+            geometry(900, [300, 300], [400, 380], [120, 120]),
+            geometry(900, [300, 300], [400, 380], [120, 120])), "none");
+    });
+
+    // The first measurement has nothing to compare against, and a child
+    // mounting or unmounting - the start button, once /config resolves - can
+    // cut either way. Both must re-prove from the top.
+    it("treats a first measurement and a changed child count as a shrink", () => {
+        assert.equal(geometryShift(null, geometry(900, [300, 300])), "shrink");
+        assert.equal(geometryShift(
+            geometry(900, [300, 300], [120, 120]),
+            geometry(900, [300, 300])), "shrink");
+        assert.equal(geometryShift(
+            geometry(900, [300, 300]),
+            geometry(900, [300, 300], [120, 120])), "shrink");
+    });
+
+    it("reads growth in a used width, at the sub-pixel", () => {
+        assert.equal(geometryShift(
+            geometry(900, [300, 300], [400, 380]),
+            geometry(900, [300.4, 300], [400, 380])), "growth");
+    });
+
+    // The bar clipping is content outgrowing its box, which its used width
+    // cannot say while flex is holding the box still.
+    it("reads growth in a scroll width the used width hides", () => {
+        assert.equal(geometryShift(
+            geometry(900, [300, 300], [400, 380]),
+            geometry(900, [300, 300], [400, 402])), "growth");
+    });
+
+    it("reads any loss as a shrink, even beside a growth", () => {
+        assert.equal(geometryShift(
+            geometry(900, [300, 300], [400, 380]),
+            geometry(900, [299, 300], [400, 380])), "shrink");
+        assert.equal(geometryShift(
+            geometry(900, [300, 300], [400, 380]),
+            geometry(900, [299, 300], [401, 380])), "shrink",
+            "a mixed change resumed instead of re-proving the wider stages");
+    });
+
+    // The row's own width belongs to the ResizeObserver, which re-proves from
+    // the top when it grows - a mutation seeing it move at all is out of its
+    // depth and must do the same.
+    it("treats a moved row width as a shrink, whichever way it moved", () => {
+        assert.equal(geometryShift(
+            geometry(900, [300, 300]), geometry(920, [300, 300])), "shrink");
+        assert.equal(geometryShift(
+            geometry(900, [300, 300]), geometry(880, [300, 300])), "shrink");
+    });
+
+    /**
+     * The decision table the observer answers with.
+     *
+     * "none" may only be skipped at the widest stage: at any narrower one the
+     * bar sits on a line of its own, where its text can change - and shrink -
+     * without moving a single measurable box, and a shrink is what lets a
+     * wider stage fit again. Growth resumes rather than re-proving: the ladder
+     * only ever takes things away, so a stage that did not fit before the row
+     * grew fuller still does not.
+     */
+    it("skips an unchanged row only at the widest stage", () => {
+        assert.equal(walkResponse("none", true), "skip");
+        assert.equal(walkResponse("none", false), "top",
+            "an invisible shrink behind the stacked bar never un-stacks it");
+    });
+
+    it("resumes on growth and re-proves on shrink, at any stage", () => {
+        assert.equal(walkResponse("growth", true), "resume");
+        assert.equal(walkResponse("growth", false), "resume");
+        assert.equal(walkResponse("shrink", true), "top");
+        assert.equal(walkResponse("shrink", false), "top");
     });
 });

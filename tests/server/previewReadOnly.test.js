@@ -355,6 +355,7 @@ describe("every read route decides what a demo may have", () => {
         "speedtests.js /statistics": "aggregates, which carry no identity to strip",
         "speedtests.js /export": "the redacted way to take the measurements away",
         "speedtests.js /status": "the latest test, stripped, and no countdown",
+        "speedtests.js /status/live": "the run's four moving fields, which carry no identity and no schedule",
         "speedtests.js /:id": "one test, stripped",
         "storage.js /": "how much disk the database uses",
         "system.js /version": "the running version, which the footer shows",

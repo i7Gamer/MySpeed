@@ -92,8 +92,18 @@
 // transitions; the attribute is gone before the frame paints, so nothing
 // visible ever misses its animation. !important because this must outrank
 // every control's own transition rule, whatever its specificity.
+//
+// Except what the row does not lay out. The walk is triggered by a subtree
+// MutationObserver, and the status bar commits new text into that subtree on
+// every poll - so once a second, in the microtask after React had set the
+// progress fill's new width, the row wore data-measuring and forced a recalc.
+// A recalc that reads `transition: none` does not start the transition and does
+// not defer it; it commits the new width outright, and the bar hard-stepped
+// through every run. An element marked data-fit-exempt is out of the row's
+// flow - the progress track is absolutely positioned inside the bar - so no
+// stage's fit can depend on it and there is nothing for the walk to protect.
 .page-toolbar[data-measuring]
-  &, *
+  &, *:not([data-fit-exempt], [data-fit-exempt] *)
     transition: none !important
 
 // How much of itself the row draws, chosen by measuring it rather than by

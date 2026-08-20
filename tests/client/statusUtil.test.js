@@ -1,8 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    IDLE_POLL_MS, RUNNING_POLL_MS, START_BLOCKED_PAUSED, START_BLOCKED_RUNNING, START_BLOCKED_VIEW_MODE,
-    pollIntervalFor, progressPercent, runJustFinished, sameStatus, startBlockedReason
+    IDLE_POLL_MS, LIVE_POLL_MS, RUNNING_POLL_MS, START_BLOCKED_PAUSED, START_BLOCKED_RUNNING,
+    START_BLOCKED_VIEW_MODE, pollIntervalFor, progressPercent, runJustFinished, sameStatus, startBlockedReason,
+    withLive
 } from "@/common/utils/StatusUtil.js";
 
 // showsStatusBar is gone with the header's own start button: every page with
@@ -59,6 +60,81 @@ describe("pollIntervalFor", () => {
 
     it("is the faster of the two while running", () => {
         assert.ok(RUNNING_POLL_MS < IDLE_POLL_MS);
+    });
+
+    /**
+     * With the live route watching the run, the full poll has nothing to hurry
+     * for: the last test, the failure count and the schedule cannot change
+     * mid-run, and the falling edge refreshes them the moment one ends. The
+     * fast full poll survives only as the fallback for a server - a remote
+     * node on an older version - that does not answer the live route.
+     */
+    it("stays backed off during a run the live poll is watching", () => {
+        assert.equal(pollIntervalFor({running: true}, true), IDLE_POLL_MS);
+    });
+
+    it("hurries during a run only when there is no live route to watch it", () => {
+        assert.equal(pollIntervalFor({running: true}, false), RUNNING_POLL_MS);
+        assert.equal(pollIntervalFor({running: true}), RUNNING_POLL_MS,
+            "the fallback is not the default, so a caller that never learned of the live route polls slowly");
+    });
+
+    it("ignores the live route while nothing runs", () => {
+        assert.equal(pollIntervalFor({running: false}, true), IDLE_POLL_MS);
+    });
+
+    it("samples a run faster than the poll it replaces", () => {
+        assert.ok(LIVE_POLL_MS < RUNNING_POLL_MS);
+    });
+});
+
+/**
+ * How a live sample lands on the polled status: over it, without disturbing
+ * what only the full route knows. The provider keeps the previous object when
+ * a sample says nothing new, for the same reason sameStatus exists at all -
+ * a fresh object per sample would re-render the whole tree twice a second to
+ * show what is already on screen.
+ */
+describe("withLive", () => {
+    const status = {
+        paused: false, running: true, phase: "download", progress: 0.4, speed: 87,
+        startedAt: "2026-08-20T10:00:00Z", lastTest: {id: 7}, recentFailures: 2, nextTest: "08:00"
+    };
+
+    it("keeps the very object when the sample says nothing new", () => {
+        const same = withLive(status, {running: true, phase: "download", progress: 0.4, speed: 87,
+            startedAt: "2026-08-20T10:00:00Z"});
+
+        assert.equal(same, status, "an unchanged sample built a new object, which is a render");
+    });
+
+    it("moves the fields a run moves", () => {
+        const next = withLive(status, {running: true, phase: "upload", progress: 0.7, speed: 91,
+            startedAt: "2026-08-20T10:00:00Z"});
+
+        assert.equal(next.phase, "upload");
+        assert.equal(next.progress, 0.7);
+        assert.equal(next.speed, 91);
+    });
+
+    it("leaves what only the full route knows", () => {
+        const next = withLive(status, {running: true, phase: "upload", progress: 0.7, speed: 91,
+            startedAt: "2026-08-20T10:00:00Z"});
+
+        assert.deepEqual(next.lastTest, {id: 7});
+        assert.equal(next.recentFailures, 2);
+        assert.equal(next.nextTest, "08:00");
+        assert.equal(next.paused, false);
+    });
+
+    // The task resets its progress the moment a run ends, so the ending sample
+    // carries the nulls - and must land, or the bar holds its last reading.
+    it("lands the falling edge and its reset", () => {
+        const next = withLive(status, {running: false, phase: null, progress: null, speed: null, startedAt: null});
+
+        assert.equal(next.running, false);
+        assert.equal(next.progress, null);
+        assert.equal(next.startedAt, null);
     });
 });
 
