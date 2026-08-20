@@ -572,22 +572,28 @@ export const factoryReset = async () => {
     // everything below, including the session revocation. It also never
     // restored a default whose row was missing altogether.
     //
-    // Both halves in one transaction: an unwrapped destroy commits on its own,
-    // so a failure in the re-seed would leave the table empty - which is worse
-    // than the half-default state this replaced, because "no row" is not a
-    // value any reader has a fallback for.
+    // Every table in one transaction: an unwrapped destroy commits on its own,
+    // so a failure in the re-seed would leave the config table empty - which is
+    // worse than the half-default state this replaced, because "no row" is not
+    // a value any reader has a fallback for. The other three tables used to be
+    // cleared afterwards, each on its own commit, and a failure among them left
+    // a configuration that says "factory fresh" beside nodes still polling and
+    // integrations still firing - behind a 500 that invites retrying a reset
+    // that half-happened.
     await db.transaction(async (transaction) => {
         await config.destroy({where: {}, transaction});
         await insertDefaults(transaction);
+        await node.destroy({where: {}, transaction});
+        await recommendations.destroy({where: {}, transaction});
+        await integration.destroy({where: {}, transaction});
     });
 
     // The reset put the password back to the unprotected sentinel without going
     // through updateValue, which is the only place that revoked sessions.
+    // After the commit, never inside it: thrown out of the transaction the old
+    // password still stands, and logging everyone out of an instance that did
+    // not reset revokes access it still guards.
     destroyAllSessions();
-
-    await node.destroy({where: {}});
-    await recommendations.destroy({where: {}});
-    await integration.destroy({where: {}});
 
     timer.stopTimer();
     timer.startTimer(configDefaults.cron);
