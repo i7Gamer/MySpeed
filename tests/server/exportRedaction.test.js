@@ -69,6 +69,66 @@ describe("withoutUrlCredentials", () => {
         assert.equal(withoutUrlCredentials(""), "");
         assert.equal(withoutUrlCredentials(null), null);
     });
+
+    /**
+     * The two ways a URL can carry userinfo without spelling "://" before it.
+     *
+     * A textual walk that looks for "://" and stops the authority at "/", "?"
+     * or "#" is not the walk the URL parser takes, and where the two disagree
+     * the redaction rewrites an address it promised only to shorten. Both of
+     * these parse - which is the whole reason they are stored in the first
+     * place, since the field only has to satisfy `new URL` - so both reach this
+     * function.
+     */
+    it("keeps the address when the scheme carries no slashes", () => {
+        // Special schemes ignore however many slashes were written, so this is
+        // node.lan to `new URL`, to safeRequest and to http.request. Reading
+        // three characters past the colon took the redaction into the scheme.
+        assert.equal(new URL(withoutUrlCredentials("http:admin:hunter2@node.lan/")).hostname, "node.lan");
+        assert.doesNotMatch(withoutUrlCredentials("http:admin:hunter2@node.lan/"), /hunter2/);
+    });
+
+    it("keeps the address when a backslash ends the authority", () => {
+        // A backslash terminates the authority exactly as a slash does, so this
+        // address is evil.com and everything after it is the path. Scanning
+        // only for "/?#" ran the walk into that path and took its "@" instead,
+        // which answered good.com - a redaction that silently repoints a node.
+        const redacted = withoutUrlCredentials("http://admin:pw@evil.com\\@good.com/");
+
+        assert.equal(new URL(redacted).hostname, "evil.com");
+        assert.doesNotMatch(redacted, /admin:pw/);
+    });
+
+    /**
+     * And the general form of both, which is what actually keeps them fixed.
+     *
+     * The two cases above are the ones that were found; the guarantee is that
+     * no input can be redacted into a different target. Whatever the textual
+     * surgery produces is parsed back and compared against the address that
+     * went in, so a walk that ever disagrees with the parser again is caught
+     * here rather than in a restored backup.
+     */
+    it("never redacts one address into another", () => {
+        const targets = [
+            "http://admin:hunter2@node.lan:5216",
+            "http://admin:hunt@er2@node.lan:5216/x?y=1#z",
+            "https://u:p@node.lan:8443/api/v2?x=1",
+            "http:admin:hunter2@node.lan/",
+            "http://admin:pw@evil.com\\@good.com/",
+            "http://admin:pw@[fd00::1]:5216/api"
+        ];
+
+        for (const target of targets) {
+            const before = new URL(target);
+            const after = new URL(withoutUrlCredentials(target));
+
+            assert.equal(after.host, before.host, `${target} was redacted to a different host`);
+            assert.equal(after.protocol, before.protocol, `${target} changed scheme`);
+            assert.equal(after.pathname, before.pathname, `${target} changed path`);
+            assert.equal(after.username, "", `${target} kept its username`);
+            assert.equal(after.password, "", `${target} kept its password`);
+        }
+    });
 });
 
 /**
@@ -87,8 +147,13 @@ describe("the redacted export", () => {
             "a node URL leaves in a redacted backup with its userinfo attached");
     });
 
+    // Both halves, because naming the list proves nothing on its own: an empty
+    // list and a deleted branch each leave the name in place, and either one
+    // ships libreUrl verbatim in a file stamped secretsRedacted.
     it("strips it from the librespeed URL too", () => {
-        assert.match(source, /CREDENTIAL_BEARING_KEYS/,
+        assert.match(source, /CREDENTIAL_BEARING_KEYS = \[[^\]]*"libreUrl"/,
+            "libreUrl is no longer on the list of values that can carry a credential");
+        assert.match(source, /CREDENTIAL_BEARING_KEYS\.includes\([^)]*\)\s*\?\s*withoutUrlCredentials/,
             "the config half of the export still ships every URL verbatim");
     });
 

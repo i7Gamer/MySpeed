@@ -16,6 +16,19 @@ while getopts "d:" o > /dev/null 2>&1; do
     esac
 done
 
+# An empty -d is not a relative path, and must not be made into one. Called as
+# `install.sh -d "$MYSPEED_DIR"` with the variable unset, this used to fail safe
+# - the path stayed empty and `cd ""` ended the run. Resolved against the working
+# directory it becomes a real, existing one, so the install proceeds into
+# wherever the caller happened to be, chowns its data and bin subdirectories to
+# the service account and writes that path into the unit. Run from the
+# filesystem root that re-owns the system bin directory.
+if [ -z "$INSTALLATION_PATH" ]; then
+  echo -e "$RED✗ ABORTED"
+  echo -e "$NORMAL The installation path given with -d is empty. Pass a directory, or omit -d for /opt/myspeed."
+  exit 1
+fi
+
 # Made absolute before anything is written with it. systemd refuses a relative
 # WorkingDirectory, so `-d myspeed` recorded a unit that could not start - and
 # the same relative path is what sent the reachability walk climbing for ever.

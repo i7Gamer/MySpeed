@@ -8,7 +8,7 @@ import * as serverController from "../controller/servers.js";
 import { toErrorMessage } from '../util/helpers.js';
 import { PHASE_ORDER, PHASE_START, overallProgress } from '../util/providers/progress.js';
 import { failedPayload, finishedPayload } from '../util/notificationPayload.js';
-import { FAILED_TEST } from '../util/testOutcome.js';
+import { FAILED_TEST, UNMEASURED_LATENCY, isFailedTest, isMeasuredLatency } from '../util/testOutcome.js';
 
 // The placeholder a failed test stores in every numeric column. The client
 // tells a failure apart by it, so it is not a value anyone should read as one.
@@ -66,11 +66,15 @@ const setRunning = (running, sendRequest = true) => {
 // too little about the line to recommend anything.
 const RECOMMENDATION_SAMPLE = 10;
 
-// What a ping has to clear before it counts as something that was measured.
-// FAILED sits below every real latency, so a failed row that reaches the sample
-// anyway - one whose error column somehow stayed null - would take "lowest
-// ping" from every genuine test beside it.
-const LOWEST_REAL_PING = FAILED + 1;
+// What a ping has to be before it counts as something that was measured: a
+// reading, and a positive one. FAILED sits below every real latency, so a failed
+// row that reaches the sample anyway - one whose error column somehow stayed
+// null - would otherwise take "lowest ping" from every genuine test beside it,
+// and the fabricated zero above it would do the same. Asked through
+// isMeasuredLatency rather than spelled again here: the statistics and the alert
+// gate judge this exact question, and a third answer is what put a 0 ms target
+// on the recommendation card beside a page that would not average the same row.
+const lowestRealPing = (ping) => isMeasuredLatency(ping) && ping > UNMEASURED_LATENCY;
 
 /**
  * Exported for its tests. Filtering failures out of listTests() - whose default
@@ -91,7 +95,7 @@ export const createRecommendations = async () => {
         // it was handed, and a history imported before importTests() checked its
         // numeric columns can still hold an empty string in one - which compares
         // as zero and so took "lowest ping" from the whole sample.
-        if (Number.isFinite(ping) && ping >= LOWEST_REAL_PING && ping < recommendations.ping)
+        if (lowestRealPing(ping) && ping < recommendations.ping)
             recommendations.ping = ping;
 
         if (Number.isFinite(download) && download > recommendations.down)
@@ -247,6 +251,23 @@ const execute = async (type, retried) => {
             packetLoss, downloadLatency, uploadLatency, isp, externalIp, provider,
             bytesDownloaded, bytesUploaded} = await parseData.parseData(process.env.PREVIEW_MODE === "true" ?
             parseData.OOKLA : mode, test);
+
+        /*
+         * A parse that produced no measurement is a failed run, whatever the
+         * CLI's exit code said.
+         *
+         * parseCloudflare is total by design - it keeps the edge and the
+         * external IP when the measurement block never arrived - so it answers
+         * the failure placeholders rather than throwing, and this path had no
+         * idea. The row went in with `error` left NULL, createRecommendations
+         * was handed it, healthchecks.io was pinged on the success endpoint and
+         * every webhook was told the test completed at -1 Mbps, while every
+         * reader of the stored row called it a failure. Thrown here, it takes
+         * the one path that writes the error text, sends sendError, and retries
+         * once - which a run that reached an edge and measured nothing deserves.
+         */
+        if (isFailedTest({ping, download, upload}))
+            throw new Error(`${mode} finished without reporting any measurement`);
 
         const serverId = test.serverId;
 

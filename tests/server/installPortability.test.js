@@ -98,10 +98,19 @@ describe("the installer's network calls", () => {
  * A source scan cannot catch that - the loop looked fine - so this executes the
  * function with a deadline. Reaching the deadline is the failure.
  */
+// Long enough for a shell to start, short enough that a loop which never ends
+// is reported rather than waited on.
+const WALK_TIMEOUT = 10_000;
+
 const bash = (() => {
     for (const candidate of ["bash", "/usr/bin/bash", "C:/Program Files/Git/bin/bash.exe"]) {
         try {
-            if (execFileSync(candidate, ["-c", "echo ok"], {encoding: "utf8", stdio: ["pipe", "pipe", "ignore"]})
+            // On a deadline like every other call here, and for a sharper
+            // reason: on Windows the first candidate resolves to the WSL
+            // launcher, which can sit booting a distribution. This runs at
+            // module load, so without it a suite written to catch a hang hangs.
+            if (execFileSync(candidate, ["-c", "echo ok"],
+                {encoding: "utf8", timeout: WALK_TIMEOUT, stdio: ["pipe", "pipe", "ignore"]})
                 .trim() === "ok") return candidate;
         } catch {
             // Not there, or not usable.
@@ -124,10 +133,6 @@ describe("the reachability walk", {skip: bash ? false : "No bash available"}, ()
 
         return source.slice(start, end + 2);
     };
-
-    // Long enough for a shell to start, short enough that a loop which never
-    // ends is reported rather than waited on.
-    const WALK_TIMEOUT = 10_000;
 
     const run = (directory, cwd) => execFileSync(bash, ["-c",
         `${walk()}\nreachable_by_service "${directory}" && echo reachable || echo unreachable`],
@@ -172,5 +177,56 @@ describe("the installation path", () => {
     it("is made absolute before anything is written with it", () => {
         assert.match(install, /INSTALLATION_PATH="\$\(pwd\)\/\$INSTALLATION_PATH"/,
             "a relative -d reaches the unit file, and systemd refuses a relative WorkingDirectory");
+    });
+
+    /*
+     * Executed rather than scanned, because what the prologue answers is the
+     * whole point and a scan cannot tell an empty string from a path.
+     *
+     * Everything from the default down to the root check, which is where the
+     * script stops deciding where to install and starts installing.
+     */
+    const prologue = () => {
+        const source = readSource("scripts/install.sh");
+        const start = source.indexOf('INSTALLATION_PATH="/opt/myspeed"');
+        const end = source.indexOf("if [ $EUID -ne 0 ]");
+
+        assert.notEqual(start, -1, "the installer no longer carries a default path");
+        assert.notEqual(end, -1, "the root check is gone, so the slice below is not the prologue");
+
+        return `${source.slice(start, end)}\necho "$INSTALLATION_PATH"`;
+    };
+
+    const resolve = (args) => execFileSync(bash, ["-c", `${prologue()}\n`, "install.sh", ...args],
+        {encoding: "utf8", cwd: os.tmpdir(), timeout: WALK_TIMEOUT, stdio: ["pipe", "pipe", "ignore"]}).trim();
+
+    describe("as the prologue resolves it", {skip: bash ? false : "No bash available"}, () => {
+        it("keeps an absolute path exactly as given", () => {
+            assert.equal(resolve(["-d", "/opt/elsewhere"]), "/opt/elsewhere");
+        });
+
+        it("resolves a relative path against the working directory", () => {
+            assert.match(resolve(["-d", "myspeed"]), /^\/.*\/myspeed$/);
+        });
+
+        it("falls back to the default when no path is given", () => {
+            assert.equal(resolve([]), "/opt/myspeed");
+        });
+
+        /*
+         * And an empty one is refused rather than resolved.
+         *
+         * `install.sh -d "$MYSPEED_DIR"` with the variable unset used to fail
+         * safe: the path stayed empty and `cd ""` ended the run. Canonicalising
+         * it turned that into "$(pwd)/" - a real, existing directory - so the
+         * install proceeded into wherever the caller happened to be, chowned
+         * its data and bin subdirectories to the service account and wrote that
+         * path into the unit. From the filesystem root that re-owns the system
+         * bin directory, behind a banner announcing a completed install.
+         */
+        it("refuses an empty one instead of installing into the working directory", () => {
+            assert.throws(() => resolve(["-d", ""]),
+                "an empty -d resolves to the caller's working directory and the install proceeds");
+        });
     });
 });

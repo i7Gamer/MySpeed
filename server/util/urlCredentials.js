@@ -19,7 +19,47 @@
  * discover it. It also carries no userinfo a parser could find, so passing it
  * through leaks nothing.
  */
+/*
+ * Where the authority ends, in the two dialects the URL parser has.
+ *
+ * For a special scheme a backslash is a slash - the parser converts them - so
+ * it ends the authority just as "/" does, and a walk that scans only for "/?#"
+ * runs on into the path. That is not cosmetic: in
+ * "http://admin:pw@evil.com\@good.com/" the address is evil.com, and a walk
+ * that reaches the second "@" answers good.com.
+ */
 const AUTHORITY_END = /[/?#]/;
+const AUTHORITY_END_SPECIAL = /[/\\?#]/;
+
+// The schemes for which the parser applies that conversion, and skips however
+// many slashes were written after the colon rather than requiring two.
+const SPECIAL_SCHEMES = ["http:", "https:", "ws:", "wss:", "ftp:", "file:"];
+
+const isAuthoritySlash = (character, special) =>
+    character === "/" || (special && character === "\\");
+
+/**
+ * The same address, or not the same address.
+ *
+ * The surgery below is textual, and text and the URL parser can disagree; when
+ * they do, the redaction rewrites an address it promised only to shorten. So
+ * whatever comes out is parsed back and held against what went in, and a
+ * candidate that moved the target is refused rather than returned. This is the
+ * guarantee, not the two spellings that broke it - a walk that disagrees with
+ * the parser in some third way lands here too.
+ */
+const sameTarget = (candidate, original) => {
+    let parsed;
+    try {
+        parsed = new URL(candidate);
+    } catch {
+        return false;
+    }
+
+    return parsed.protocol === original.protocol && parsed.host === original.host
+        && parsed.pathname === original.pathname && parsed.search === original.search
+        && parsed.hash === original.hash && parsed.username === "" && parsed.password === "";
+};
 
 export const withoutUrlCredentials = (value) => {
     if (typeof value !== "string" || value === "") return value;
@@ -42,18 +82,31 @@ export const withoutUrlCredentials = (value) => {
      * restore producing "//api/config", which the child's router does not
      * match. Redacting a backup must not quietly rewrite the address it keeps.
      *
-     * The authority is everything between "://" and the first "/", "?" or "#"
-     * after it, and the userinfo is everything in it before the last "@" - the
-     * last, because a password may legally contain one.
+     * The authority begins after the scheme and after however many slashes were
+     * written, which is not the same as after a literal "://": a special scheme
+     * accepts "http:user:pw@node.lan/" with none at all, and looking three
+     * characters past the colon then cut the redaction into the scheme itself
+     * and answered "htnode.lan/". The userinfo is everything before the last
+     * "@" in it - the last, because a password may legally contain one.
      */
-    const start = value.indexOf("://") + 3;
+    const special = SPECIAL_SCHEMES.includes(url.protocol);
+
+    let start = value.indexOf(":") + 1;
+    while (start < value.length && isAuthoritySlash(value[start], special)) start++;
+
     const rest = value.slice(start);
-    const end = rest.search(AUTHORITY_END);
+    const end = rest.search(special ? AUTHORITY_END_SPECIAL : AUTHORITY_END);
     const authorityEnd = end === -1 ? value.length : start + end;
 
-    const authority = value.slice(start, authorityEnd);
-    const at = authority.lastIndexOf("@");
+    const at = value.slice(start, authorityEnd).lastIndexOf("@");
     if (at === -1) return value;
 
-    return value.slice(0, start) + authority.slice(at + 1) + value.slice(authorityEnd);
+    const stripped = value.slice(0, start) + value.slice(start + at + 1);
+    if (sameTarget(stripped, url)) return stripped;
+
+    // The walk and the parser disagreed about this one. The address the parser
+    // read is the address the instance actually connects to, so that is what a
+    // restore has to come back with - serialised, trailing slash and all, since
+    // a rewritten path is the lesser wrong against a rewritten host.
+    return `${url.protocol}//${url.host}${url.pathname}${url.search}${url.hash}`;
 };

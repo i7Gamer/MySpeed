@@ -1,4 +1,5 @@
 import { Op } from 'sequelize';
+import { metricValue } from './metricValue.js';
 
 /**
  * Whether a stored test is the record of a failure rather than a measurement.
@@ -28,11 +29,28 @@ import { Op } from 'sequelize';
  */
 export const FAILED_TEST = -1;
 
+/*
+ * The placeholders are recognised by value, not by type.
+ *
+ * sqlite returns a numeric column as whatever it was handed, so a history
+ * imported before importTests validated its columns can hold "-1" as text - the
+ * same population metricValue was widened to read. It was widened and this was
+ * not, so those rows walked past every failure check: the Prometheus route
+ * published myspeed_test_failed 0 and then myspeed_ping -1 beside it, a line
+ * delivering minus one megabit recorded as a healthy sample.
+ *
+ * metricValue rather than a cast, because a cast is what makes that worse:
+ * Number("") is 0 and Number([]) is 0, so an empty column would become a
+ * reading. An unreadable value stays unreadable and the row is judged by the
+ * columns that can be read.
+ */
+const isPlaceholder = (value) => metricValue(value) === FAILED_TEST;
+
 export const isFailedTest = (test) => {
     if (!test) return false;
     if (test.error) return true;
 
-    return test.ping === FAILED_TEST && test.download === FAILED_TEST && test.upload === FAILED_TEST;
+    return isPlaceholder(test.ping) && isPlaceholder(test.download) && isPlaceholder(test.upload);
 };
 
 /** The other side of the same question, for the filters that read it that way. */

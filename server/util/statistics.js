@@ -258,7 +258,14 @@ const fullSeries = (sorted) => ({
     failed: sorted.map(isFailedTest),
     errors: sorted.map(entry => entry.error),
     data: {
-        ping: sorted.map(entry => isSuccessfulTest(entry) ? entry.ping : null),
+        // A gap where the latency was fabricated rather than measured, exactly
+        // as jitter and the loaded latencies below already draw an absent
+        // reading. The summary above this chart has skipped the fabricated zero
+        // since UNMEASURED_LATENCY was written; the line did not, so a range
+        // could report a minimum of 20 ms over a chart that visibly touched
+        // nought - the same instance answering one question two ways.
+        ping: sorted.map(entry =>
+            isSuccessfulTest(entry) && isMeasuredLatency(entry.ping) ? entry.ping : null),
         jitter: sorted.map(entry => isSuccessfulTest(entry) ? entry.jitter : null),
         download: sorted.map(entry => isSuccessfulTest(entry) ? entry.download : null),
         upload: sorted.map(entry => isSuccessfulTest(entry) ? entry.upload : null),
@@ -315,7 +322,11 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
         series.labels.push(new Date(midTime).toISOString());
         series.failed.push(bucket.errors.length > 0);
         series.errors.push(bucket.errors.length > 0 ? `${bucket.errors.length} failed in period` : null);
-        series.data.ping.push(round(average(valid.map(entry => entry.ping))));
+        // Measured-only like the three below it: a fabricated zero folded into
+        // a bucket average is a dip of the wrong depth rather than a visible
+        // nought, which is the harder of the two to catch. Null when a bucket
+        // held nothing else, since a bucket with no reading has no latency.
+        series.data.ping.push(averageOrNull(valid.map(entry => entry.ping).filter(isMeasuredLatency)));
         series.data.jitter.push(averageOrNull(measuredOnly("jitter")));
         series.data.download.push(round(average(valid.map(entry => entry.download))));
         series.data.upload.push(round(average(valid.map(entry => entry.upload))));
