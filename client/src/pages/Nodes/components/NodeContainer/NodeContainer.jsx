@@ -29,6 +29,11 @@ import {convertSpeed, formatLatency, formatWhole, formatWithUnit, getSpeedUnit} 
 import {useNavigate} from "react-router-dom";
 import ContextMenu from "@/common/components/ContextMenu";
 
+// How often a visible card re-reads its node. Named rather than inline because
+// the tick's cost is two requests per card, proxied to the child for a remote
+// one - see the visibility guard below.
+const POLL_INTERVAL_MS = 10000;
+
 export const NodeContainer = (node) => {
     const updateNodes = useContext(NodeContext)[1];
     const updateCurrentNode = useContext(NodeContext)[3];
@@ -156,8 +161,19 @@ export const NodeContainer = (node) => {
     );
 
     useEffect(() => {
-        updateData().catch(() => setNodeError("SERVER_NOT_REACHABLE"));
-        const interval = setInterval(() => updateData().catch(() => setNodeError("SERVER_NOT_REACHABLE")), 10000);
+        const load = () => updateData().catch(() => setNodeError("SERVER_NOT_REACHABLE"));
+
+        load();
+        // Not while nobody is looking. Every tick is two requests, and for a
+        // remote card both are proxied through this instance to the child - so
+        // a dashboard left open on the node list asked six idle nodes some
+        // 4,300 times an hour, against the very request budget the status
+        // poll's own comment exists to protect. StatusContext has skipped
+        // hidden ticks all along; the first load above is not a tick, because
+        // opening the page has to fill the card in.
+        const interval = setInterval(() => {
+            if (!document.hidden) load();
+        }, POLL_INTERVAL_MS);
         return () => clearInterval(interval);
         // One poller for the life of the card. `updateData` is rebuilt on every
         // render, so listing it would tear the interval down and start a new one

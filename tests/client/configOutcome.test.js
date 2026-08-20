@@ -88,6 +88,36 @@ describe("failureOutcome", () => {
         assert.equal(failureOutcome("0").redirectToNodes, false);
         assert.equal(failureOutcome(null).redirectToNodes, false);
     });
+
+    /**
+     * A refusal is not a node that has gone away, and the difference is the
+     * whole recovery.
+     *
+     * The redirect was written for a node that cannot be reached: sending the
+     * visitor to the list is the only useful place to be. But every request
+     * while a remote node is selected travels through the parent, so the
+     * *parent's* own session expiring refuses them too - and that answered the
+     * same redirect, which pre-empted the password prompt. The node list then
+     * 401s as well and swallows it, so the visitor lands on an empty page with
+     * no error, no prompt, and a reload that returns them to it.
+     *
+     * A credential failure belongs in front of a password box wherever it was
+     * raised.
+     */
+    it("asks for the credential rather than redirecting when the refusal wants one", () => {
+        assert.equal(failureOutcome("1", {credential: true}).redirectToNodes, false,
+            "a session expiring while a node is selected strands the visitor on the node list");
+    });
+
+    it("still redirects when the node itself could not be reached", () => {
+        assert.equal(failureOutcome("1", {credential: false}).redirectToNodes, true);
+        assert.equal(failureOutcome("1", undefined).redirectToNodes, true);
+    });
+
+    // On this instance there is nowhere to redirect to either way.
+    it("shows a credential failure on this instance as before", () => {
+        assert.equal(failureOutcome("0", {credential: true}).redirectToNodes, false);
+    });
 });
 
 describe("the config context", () => {

@@ -67,7 +67,10 @@ export const ConfigProvider = (props) => {
             setConfig(loaded);
             if (redirectToNodes) navigate("/nodes");
         }).catch((reason) => {
-            if (failureOutcome(readStored("currentNode")).redirectToNodes) return navigate("/nodes");
+            // The reason travels with it: a refusal that wants a credential is
+            // not a node that has gone away, and only one of the two is
+            // answered by moving the visitor - see failureOutcome.
+            if (failureOutcome(readStored("currentNode"), reason).redirectToNodes) return navigate("/nodes");
 
             showErrorDialog(reason);
         });

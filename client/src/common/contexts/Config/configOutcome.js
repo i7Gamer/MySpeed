@@ -33,5 +33,16 @@ export const configOutcome = (config, storedNode) => ({
  * The same decision for a config that could not be read at all. There is no
  * config to store, but a visitor who was looking at a remote node still belongs
  * on the node list rather than in front of an error about this instance.
+ *
+ * Except when the refusal wants a credential, which is not the same failure.
+ * The redirect was written for a node that has gone away - the list is then the
+ * only useful place to be - but every request made while a remote node is
+ * selected travels through the parent, so the parent's own session expiring
+ * refuses them too. Redirecting that pre-empted the password prompt, and the
+ * node list refuses for the same reason and swallows it: the visitor landed on
+ * an empty page with no error, no prompt, and a reload that returned them to
+ * it. A credential failure belongs in front of a password box wherever it was
+ * raised.
  */
-export const failureOutcome = (storedNode) => ({redirectToNodes: isRemoteNode(storedNode)});
+export const failureOutcome = (storedNode, reason) =>
+    ({redirectToNodes: isRemoteNode(storedNode) && !reason?.credential});

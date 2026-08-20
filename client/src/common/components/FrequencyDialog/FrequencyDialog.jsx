@@ -11,6 +11,7 @@ import {formatDateTime} from "@/common/utils/FormatUtil";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
 import {CronExpressionParser} from "cron-parser";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
+import {clickable} from "@/common/utils/Clickable";
 import {firstRunOutsideWindow} from "@/common/components/PauseDialog/quietHoursWindow";
 import {CRON_PRESETS, DEFAULT_CRON, frequencyStateFrom} from "./frequencyState";
 import "./styles.sass";
@@ -91,6 +92,8 @@ export const FrequencyDialog = ({open, onClose}) => {
         setSelected(preset.id);
         setCustomCron(preset.cron);
     };
+
+    const toggleScheduleOffset = () => setScheduleOffset(!scheduleOffset);
 
     const handleSave = async (close) => {
         const cronValue = selected === "custom" ? customCron : PRESETS.find(p => p.id === selected)?.cron;
@@ -176,7 +179,16 @@ export const FrequencyDialog = ({open, onClose}) => {
                                 </div>
                             )}
                             
-                            <div className="frequency-option" onClick={() => setScheduleOffset(!scheduleOffset)}>
+                            {/* The shared key handling, with the role a toggle
+                                actually has - clickable() spells "button",
+                                and this reports a state rather than firing an
+                                action, so a reader is told whether it is on.
+                                As a bare div with an onClick it was the one
+                                control in this dialog a keyboard could not
+                                reach: the presets are SelectableOption and the
+                                disclosure above is a real button. */}
+                            <div className="frequency-option" {...clickable(toggleScheduleOffset)}
+                                 role="switch" aria-checked={scheduleOffset}>
                                 <div className={`frequency-toggle${scheduleOffset ? " frequency-toggle-active" : ""}`}>
                                     <div className="frequency-toggle-knob"/>
                                 </div>

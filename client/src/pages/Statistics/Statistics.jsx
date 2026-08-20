@@ -215,23 +215,40 @@ export const Statistics = () => {
             setLoadError(null);
             setLoading(true);
         });
-        Promise.all([
+        /*
+         * Settled apart rather than awaited together.
+         *
+         * These are two independent reads: the aggregation the page is made of,
+         * and the ten most recent tests behind the latest-test card and its
+         * deltas. Under Promise.all either rejection took the whole page to the
+         * full-screen error - so a recent-tests request timing out against a
+         * flaky proxied node discarded a statistics payload that had arrived
+         * perfectly, and two failure sources gated one page.
+         *
+         * Only the aggregation can blank the page now. The card simply draws
+         * with nothing, which is what it already does before the first test.
+         */
+        Promise.allSettled([
             jsonRequest(`/speedtests/statistics/?${query}`),
             jsonRequest(`/speedtests?limit=${RECENT_TESTS}`)
         ]).then(([stats, tests]) => {
             if (!isCurrent()) return;
 
-            startTransition(() => {
-                setStatistics(stats);
-                setRecentTests(Array.isArray(tests) ? tests : []);
-                setLoading(false);
-            });
-        }).catch(error => {
-            if (!isCurrent()) return;
+            if (stats.status === "rejected") {
+                console.error("Failed to load statistics:", stats.reason);
+                startTransition(() => {
+                    setLoadError(stats.reason);
+                    setLoading(false);
+                });
+                return;
+            }
 
-            console.error("Failed to load statistics:", error);
+            if (tests.status === "rejected")
+                console.error("Failed to load the recent tests:", tests.reason);
+
             startTransition(() => {
-                setLoadError(error);
+                setStatistics(stats.value);
+                setRecentTests(tests.status === "fulfilled" && Array.isArray(tests.value) ? tests.value : []);
                 setLoading(false);
             });
         });
