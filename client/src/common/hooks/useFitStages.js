@@ -30,6 +30,19 @@ import {useLayoutEffect} from "react";
  * value at t=0, so a stage measured mid-ease would wear the previous stage's
  * box. The attribute is set and removed inside one frame, so nothing visible
  * ever misses its animation.
+ *
+ * The subtree observer is also the busiest trigger, because the status bar
+ * lives in the row and commits new text on every status poll - the live speed,
+ * the phase, the age of the last test - once a second for the length of a run.
+ * Each firing used to walk the whole ladder from the top. So a mutation is
+ * answered with a reading first, not a walk: the geometry the fit depends on
+ * is the row's width and each child's used and scroll width, and the bar is
+ * the row's only grower, so a text change inside its slack moves none of them
+ * - while one that outgrows the slack cannot hide, because the bar's
+ * min-width: max-content widens its own box. Unchanged geometry at the widest
+ * stage is skipped outright; growth resumes from the stage the row wears; a
+ * shrink, a moved row width or a changed child count re-proves from the top.
+ * geometryShift and walkResponse below are that judgement.
  */
 
 /**
@@ -65,18 +78,77 @@ export const nextStage = (stages, stage) => {
  */
 export const resumeStage = (stages, stage) => stages.includes(stage) ? stage : stages[0];
 
+/**
+ * What a mutation moved, read against the last settled measurement.
+ *
+ * "shrink" is really "anything that could let a wider stage fit": an actual
+ * loss of width, a changed child count - the start button mounting once
+ * /config resolves - a moved row width, or a first reading with nothing to
+ * compare against. Checked before growth so a mixed change re-proves rather
+ * than resumes.
+ *
+ * The comparison is exact. Used widths are fractional and honest; scroll
+ * widths round to the pixel, so a sub-pixel clip could in principle hide -
+ * but a clip only begins where the bar has already been pushed to its
+ * min-width, which the used widths report fractionally.
+ */
+export const geometryShift = (previous, next) => {
+    if (!previous || previous.children.length !== next.children.length
+        || previous.row !== next.row) return "shrink";
+
+    const pairs = next.children.map((child, index) => [previous.children[index], child]);
+
+    if (pairs.some(([was, is]) => is.used < was.used || is.content < was.content)) return "shrink";
+    if (pairs.some(([was, is]) => is.used > was.used || is.content > was.content)) return "growth";
+
+    return "none";
+};
+
+/**
+ * What the observer does about it: nothing, a walk from the worn stage, or a
+ * walk from the top.
+ *
+ * "none" may only be skipped at the widest stage. At any narrower one the bar
+ * sits on a line of its own, where its text can change - and shrink - without
+ * moving a single measurable box, and a shrink is what lets a wider stage fit
+ * again. Growth resumes rather than re-proving: the ladder only ever takes
+ * things away, so a stage that did not fit before the row grew fuller still
+ * does not.
+ */
+export const walkResponse = (shift, atWidestStage) => {
+    if (shift === "none") return atWidestStage ? "skip" : "top";
+
+    return shift === "growth" ? "resume" : "top";
+};
+
 export const useFitStages = (ref, stages, controls) => {
     useLayoutEffect(() => {
         const row = ref.current;
         if (!row) return;
 
         let lastWidth = null;
+        let lastGeometry = null;
         let disposed = false;
 
         /** The top edge of each control that is on screen, rounded off the sub-pixel. */
         const controlTops = () => controls.map((selector) => {
             const node = row.querySelector(selector);
             return node ? Math.round(node.getBoundingClientRect().top) : null;
+        });
+
+        /**
+         * Everything a mutation could have moved that the fit depends on, in
+         * one layout pass. Taken after each walk while the layout the walk
+         * forced is still clean, and compared before the next one is allowed
+         * to start - geometryShift above for what the comparison can and
+         * cannot see.
+         */
+        const rowGeometry = () => ({
+            row: row.getBoundingClientRect().width,
+            children: [...row.children].map((child) => ({
+                used: child.getBoundingClientRect().width,
+                content: child.scrollWidth
+            }))
         });
 
         // Writing the attribute and reading a rect straight after is what
@@ -102,6 +174,7 @@ export const useFitStages = (ref, stages, controls) => {
             lastWidth = width;
 
             walk(contentChanged || grew ? stages[0] : resumeStage(stages, row.dataset.compact));
+            lastGeometry = rowGeometry();
         };
 
         measure(true);
@@ -116,7 +189,20 @@ export const useFitStages = (ref, stages, controls) => {
 
         // Attributes are deliberately not watched: the walk's own writes are
         // attribute changes on this very row, and watching them would loop.
-        const mutationObserver = new MutationObserver(() => measure(true));
+        //
+        // A reading before the walk, because most mutations move nothing the
+        // fit depends on: the speed figure is tabular, so most polls replace
+        // its digits within the same width, and every other tick lands inside
+        // the bar's slack. The reading costs one layout pass on a tree the
+        // mutation had already dirtied; the walk it usually saves costs an
+        // attribute flip, a subtree restyle and a layout per stage.
+        const mutationObserver = new MutationObserver(() => {
+            const response = walkResponse(geometryShift(lastGeometry, rowGeometry()),
+                row.dataset.compact === stages[0]);
+
+            if (response === "skip") return;
+            measure(response === "top");
+        });
         mutationObserver.observe(row, {childList: true, subtree: true, characterData: true});
 
         document.fonts?.ready.then(() => {
