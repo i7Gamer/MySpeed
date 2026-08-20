@@ -172,7 +172,10 @@ const StatusBarComponent = () => {
                 a bar held at zero for the length of a run reads as a test that
                 has hung rather than one that cannot say how far along it is. */}
             {status.running && (
-                <div className="status-progress" role="progressbar"
+                /* Out of the toolbar's flow, and marked so its measuring
+                   walk leaves the fill's glide alone - PageToolbar's guard rule
+                   for what that walk was cancelling once a second. */
+                <div className="status-progress" role="progressbar" data-fit-exempt=""
                      aria-valuenow={percent === null ? undefined : percent}
                      aria-valuemin={0} aria-valuemax={PERCENT}>
                     {percent === null
