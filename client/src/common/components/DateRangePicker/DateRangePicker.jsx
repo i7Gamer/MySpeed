@@ -68,14 +68,31 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
 
     useClickOutside(isOpen, [popoverRef, triggerRef], closePicker);
 
+    /**
+     * Escape closes the popover - and speaks the overlays' treaty doing it.
+     *
+     * The listener sat on the document for as long as the toolbar was mounted,
+     * answering every Escape in the app with a state reset for a popover that
+     * was not open; now it exists only while there is something to close. And
+     * the claim is spoken rather than silent: Dialog declines a key whose
+     * default has been prevented and DropdownSelect prevents when it claims,
+     * so a picker that one day sits inside a modal closes alone instead of
+     * taking the modal down on the same press - and declines a key something
+     * above it has already answered.
+     */
     useEffect(() => {
+        if (!isOpen) return;
+
         const handleEscape = (event) => {
-            if (event.key === "Escape") closePicker();
+            if (event.key !== "Escape" || event.defaultPrevented) return;
+
+            event.preventDefault();
+            closePicker();
         };
 
         document.addEventListener("keydown", handleEscape);
         return () => document.removeEventListener("keydown", handleEscape);
-    }, [closePicker]);
+    }, [isOpen, closePicker]);
 
     useEffect(() => {
         setTempFrom(from);
