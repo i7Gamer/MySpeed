@@ -26,15 +26,22 @@ const appSource = readSource("server/app.js");
  *                           same page, sat behind 20 - and on a demo, where the
  *                           password middleware admits everyone, it is reachable
  *                           without a credential.
+ *   /api/storage            the whole-history downloads (streamed now, but a
+ *                           full table walk per request all the same), a 50 MB
+ *                           body parse on the imports, and the factory reset.
+ *                           The heaviest family in the API sat behind the
+ *                           backstop alone while lighter reads sat behind 20.
  *
  * The page loads statistics on demand rather than on a poll, so the expensive
- * limit is not something ordinary use can reach.
+ * limit is not something ordinary use can reach - and the storage dialog asks
+ * for its size once per open, far under the same ceiling.
  */
 const EXPENSIVE_PATHS = [
     "/api/opengraph",
     "/api/speedtests/export",
     "/api/speedtests/run",
-    "/api/speedtests/statistics"
+    "/api/speedtests/statistics",
+    "/api/storage"
 ];
 
 // Any limiter of its own, whatever the number: what matters is that the path is

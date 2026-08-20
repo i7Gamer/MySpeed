@@ -20,6 +20,11 @@ after(async () => {
 
 beforeEach(async () => {
     await setConfig(server.config, "retentionDays", "365");
+
+    // This file drives the storage imports and exports far harder than any
+    // caller would, and /api/storage carries a limit of its own - see app.js.
+    // What is under test here is the retention and the export, not the limiter.
+    server.resetRateLimits();
 });
 
 describe("retention sweep", () => {

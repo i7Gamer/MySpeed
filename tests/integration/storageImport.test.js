@@ -47,7 +47,14 @@ const importConfig = (payload) => api(server.baseUrl, "/storage/config", {
     body: JSON.stringify(payload)
 });
 
-beforeEach(seedEverything);
+beforeEach(async () => {
+    await seedEverything();
+
+    // This file drives PUT /api/storage/config far harder than any caller
+    // would, and /api/storage carries a limit of its own - see app.js. What is
+    // under test here is the restore, not the limiter.
+    server.resetRateLimits();
+});
 
 describe("PUT /api/storage/config", () => {
     /**

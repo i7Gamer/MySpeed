@@ -132,6 +132,11 @@ const expensiveLimit = () => limited({limit: EXPENSIVE_REQUESTS_PER_MINUTE});
 app.use("/api/opengraph", expensiveLimit());
 app.use("/api/speedtests/export", expensiveLimit());
 app.use("/api/speedtests/run", expensiveLimit());
+// The whole-history downloads, the 50 MB import parses and the factory reset:
+// the heaviest family in the API, which sat behind the 300/min backstop alone
+// while lighter reads sat behind 20. The dialog asks for its size once per
+// open, far under this ceiling.
+app.use("/api/storage", expensiveLimit());
 app.use("/api/speedtests/statistics", limited({limit: STATISTICS_REQUESTS_PER_MINUTE}));
 app.use("/api/prometheus", limited({limit: METRICS_REQUESTS_PER_MINUTE}));
 
