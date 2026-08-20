@@ -1,3 +1,8 @@
+// The placeholder a failed run stores in every measurement column, taken from
+// the module that owns the judgement rather than written out as -1 here: what
+// this file produces has to be what isFailedTest recognises.
+import { FAILED_TEST } from '../testOutcome.js';
+
 // Exported so the live progress readout reports a transfer in the same unit,
 // rounded the same way, as the figure eventually stored for it.
 export const roundSpeed = (bandwidth) => {
@@ -313,8 +318,25 @@ export const parseCloudflare = (test) => {
             bytesUploaded: transferred(uploadTests)};
     }
 
-    return {ping: 0, jitter: null, download: 0, upload: 0, time: 0, resultId: null, ...identity,
-        bytesDownloaded: null, bytesUploaded: null};
+    /*
+     * No measurements at all is a failed run, and it used to be recorded as a
+     * flawless one.
+     *
+     * This answered zeros, which carry no error - and isFailedTest reads the
+     * placeholders only when all three agree on -1, so a row of zeros was a
+     * success. A run that measured nothing therefore counted toward the success
+     * total and pulled every download, upload and ping average toward zero: a
+     * malfunction published as a line delivering nothing.
+     *
+     * The placeholders rather than a throw, because both of the things this
+     * branch already did are worth keeping. The parser stays total - a CLI that
+     * prints something unusable is not an exception - and the identity survives,
+     * which is the whole point of the block above: the attempt reached an edge
+     * and came from an address, and that is true of the attempt even when the
+     * measurement is not.
+     */
+    return {ping: FAILED_TEST, jitter: null, download: FAILED_TEST, upload: FAILED_TEST, time: null,
+        resultId: null, ...identity, bytesDownloaded: null, bytesUploaded: null};
 };
 
 export const parseData = (provider, data) => {

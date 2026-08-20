@@ -1,6 +1,6 @@
 import { mapFixed, mapRounded } from './helpers.js';
 import { localHourAt, serverZone, zoneFromOffset } from './timezone.js';
-import { isFailedTest, isSuccessfulTest } from './testOutcome.js';
+import { isFailedTest, isMeasuredLatency, isSuccessfulTest } from './testOutcome.js';
 
 export const TARGET_CHART_POINTS = 300;
 
@@ -141,7 +141,10 @@ const buildHourlyAverages = (entries, zone) => {
         const bucket = buckets[localHourAt(zone, new Date(entry.created))];
         bucket.download.push(entry.download);
         bucket.upload.push(entry.upload);
-        bucket.ping.push(entry.ping);
+        // Guarded like the jitter below it, and for the same reason: a
+        // fabricated zero is not a reading, and one in an hour's bucket halved
+        // that hour's latency.
+        if (isMeasuredLatency(entry.ping)) bucket.ping.push(entry.ping);
         if (entry.jitter !== null && entry.jitter !== undefined) bucket.jitter.push(entry.jitter);
     });
 
@@ -356,6 +359,11 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
         : downsampledSeries(sorted, from, to, targetPoints);
 
     const withJitter = succeeded.filter(entry => entry.jitter !== null && entry.jitter !== undefined);
+    // The same shape, for the same reason: a successful test can carry a
+    // latency nobody measured - see UNMEASURED_LATENCY - and averaging that
+    // fabricated zero as a 0 ms reading dragged every ping figure down while
+    // the alert gate, reading the same row, refused it.
+    const withPing = succeeded.filter(entry => isMeasuredLatency(entry.ping));
 
     return {
         tests: {
@@ -370,7 +378,7 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
             .filter(value => value !== null && value !== undefined)),
         // mapFixed rather than mapRounded: the latency carries decimals now, and
         // `time` below is the only column here that is genuinely whole.
-        ping: mapFixed(succeeded, "ping"),
+        ping: mapFixed(withPing, "ping"),
         jitter: mapFixed(withJitter, "jitter"),
         download: mapFixed(succeeded, "download"),
         upload: mapFixed(succeeded, "upload"),
@@ -388,7 +396,7 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
                 // feed a consistency percentage whose formula wants the
                 // standard deviation, while this figure is read directly by a
                 // person - so it is the median kind, and named for what it is.
-                deviation: roundOrNull(medianAbsoluteDeviation(succeeded.map(entry => entry.ping))),
+                deviation: roundOrNull(medianAbsoluteDeviation(withPing.map(entry => entry.ping))),
                 jitter: averageOrNull(withJitter.map(entry => entry.jitter))
             },
             // The aggregate over every success, the trend over the ones that

@@ -20,7 +20,7 @@
  * integration whenever someone edited an unrelated screen.
  */
 
-import { FAILED_TEST } from './testOutcome.js';
+import { FAILED_TEST, UNMEASURED_LATENCY } from './testOutcome.js';
 
 /** The switch that turns the whole gate on, off by default and for every existing row. */
 export const ALERT_ONLY = "alert_only";
@@ -37,20 +37,16 @@ export const ALERT_ONLY = "alert_only";
  */
 const FAILED = FAILED_TEST;
 
-/**
- * The latency of a run that measured nothing.
+/*
+ * The latency of a run that measured nothing is imported above rather than
+ * declared here.
  *
- * Not because fast lines do not exist - on fibre or a LAN the whole reading
- * lives below the millisecond, which is exactly why the parsers keep two
- * decimals - but because those decimals are kept: a genuine 0.24 arrives here
- * as 0.24. Only a fabricated value stores as exactly zero, and parseCloudflare
- * produces one on its success path: its no-usable-figures fallback answers
- * `{ping: 0, download: 0, upload: 0}`, and `round(avg_latency_ms) ?? 0` yields
- * the same whenever the latency block carries no average. The comparison
- * below must stay exact for the same reason - widened to "under a
- * millisecond", it would swallow every real fibre reading with it.
+ * This gate read the fabricated zero correctly from the start while the
+ * statistics averaged it as a 0 ms reading, so one instance answered the same
+ * row two ways - the notification refusing what the page had already
+ * published. The rule now has one home, and UNMEASURED_LATENCY explains itself
+ * there.
  */
-const UNMEASURED_LATENCY = 0;
 
 /**
  * The metrics that can raise an alert, each named for the comparison it

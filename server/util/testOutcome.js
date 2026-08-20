@@ -39,6 +39,33 @@ export const isFailedTest = (test) => {
 export const isSuccessfulTest = (test) => !isFailedTest(test);
 
 /**
+ * The latency a run records when it measured none.
+ *
+ * A successful test can still carry a latency nobody took: parseCloudflare
+ * answers `round(avg_latency_ms) ?? 0` on its success path, so a run whose
+ * latency block held no average stores exactly 0. The column is NOT NULL, so 0
+ * is the only sentinel available - and it is a safe one, because no connection
+ * produces it. A real sub-millisecond line stores the decimals it measured:
+ * the column has held them since migration 0010, and a genuine 0.24 arrives as
+ * 0.24.
+ *
+ * Which is why the comparison stays exact. Widened to "under a millisecond" it
+ * would discard every fibre and LAN reading along with the fabrication.
+ */
+export const UNMEASURED_LATENCY = 0;
+
+/**
+ * Whether a stored latency is a reading.
+ *
+ * Lives here beside the failure predicates, and for the same reason they do:
+ * the alert gate judged this one way and the statistics another, so the same
+ * fabricated zero was refused by the notification and averaged into the figure
+ * on the page. One home, both readers.
+ */
+export const isMeasuredLatency = (value) =>
+    typeof value === "number" && Number.isFinite(value) && value !== UNMEASURED_LATENCY;
+
+/**
  * The same two answers as where clauses, for the queries that ask the database
  * rather than a row.
  *
