@@ -60,19 +60,19 @@ describe("the generated import identifiers", () => {
     });
 
     it("gives every integration on disk something the parser accepts", () => {
-        for (const file of integrationFiles) {
-            const identifier = integrationIdentifier(file);
+        integrationFiles.forEach((file, index) => {
+            const identifier = integrationIdentifier(file, index);
             assert.ok(parsesAsIdentifier(identifier), `${file} yields "${identifier}", which is not an identifier`);
-        }
+        });
     });
 
     // The failure that prompted all of this: a hyphen is legal in a filename and
     // illegal in a binding, and the generator emitted it verbatim.
     it("survives a hyphenated integration filename", () => {
-        const identifier = integrationIdentifier("discord-webhook.js");
+        const identifier = integrationIdentifier("discord-webhook.js", 0);
 
         assert.ok(parsesAsIdentifier(identifier), `"${identifier}" is not an identifier`);
-        assert.equal(identifier, "i_discord_webhook");
+        assert.equal(identifier, "i0_discord_webhook");
     });
 
     it("survives a hyphenated migration filename", () => {
@@ -84,8 +84,8 @@ describe("the generated import identifiers", () => {
 
     it("strips only the extension from a dotted filename", () => {
         assert.equal(moduleName("my.helper.js"), "my.helper");
-        assert.ok(parsesAsIdentifier(integrationIdentifier("my.helper.js")));
-        assert.equal(integrationIdentifier("my.helper.js"), "i_my_helper");
+        assert.ok(parsesAsIdentifier(integrationIdentifier("my.helper.js", 3)));
+        assert.equal(integrationIdentifier("my.helper.js", 3), "i3_my_helper");
     });
 
     // The unanchored replace took the *first* ".js" it found, so this filename
@@ -96,7 +96,19 @@ describe("the generated import identifiers", () => {
 
         assert.equal(moduleName(file), "chart.js-helper");
         assert.notEqual(moduleName(file), file.replace(".js", ""));
-        assert.equal(integrationIdentifier(file), "i_chart_js_helper");
+        assert.equal(integrationIdentifier(file, 1), "i1_chart_js_helper");
+    });
+
+    // The same collision the migrations already guard against: "a-b" and "a_b"
+    // sanitise to one name, and a duplicate binding takes the server down at
+    // boot with a SyntaxError pointing at a generated file nobody edits. Only
+    // the array index separates them - the identifier is local to the generated
+    // file, so the prefix costs nothing.
+    it("keeps two integrations that sanitise to the same name apart", () => {
+        const identifiers = ["a-b.js", "a_b.js"].map(integrationIdentifier);
+
+        assert.notEqual(identifiers[0], identifiers[1]);
+        identifiers.forEach((identifier) => assert.ok(parsesAsIdentifier(identifier)));
     });
 
     // Two migrations authored against the same 4-digit prefix used to collapse

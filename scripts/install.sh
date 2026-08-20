@@ -87,7 +87,17 @@ echo -e "$NORMAL Searching for updates for Linux system..."
 echo -e ""
 echo -e "$BLUE-$NORMAL-$BLUE-$NORMAL-$BLUE-$NORMAL-$BLUE-$NORMAL-$BLUE-$NORMAL-$BLUE-$NORMAL-$BLUE-$NORMAL-$BLUE-$NORMAL-$BLUE-$NORMAL-"
 echo -e ""
-apt-get update -y
+# Only where there is an apt-get to call. This script targets Debian-shaped
+# systems and says so by using apt-get at all; on anything else it used to
+# stagger through "command not found" errors and succeed only if curl and wget
+# happened to be preinstalled. What it owes those machines is an honest message
+# instead of a broken half-install - check() below delivers it.
+if command -v apt-get &> /dev/null
+then
+  apt-get update -y
+else
+  echo -e "$YELLOWℹ apt-get was not found - skipping the package update.$NORMAL Dependencies are checked next..."
+fi
 
 clear
 echo -e "$GREENℹ Info:$NORMAL Installation is now being prepared. This may take a moment..."
@@ -102,6 +112,12 @@ function check() {
   echo -e ""
   if ! command -v "$1" &> /dev/null
   then
+      if ! command -v apt-get &> /dev/null
+      then
+          echo -e "$RED✗ \"$1\" is required and apt-get is not available to install it."
+          echo -e "$NORMALℹ Install \"$1\" with your distribution's package manager and run this installer again."
+          exit 1
+      fi
       echo -e "$YELLOWℹ \"$1\" is not installed.$NORMAL Installation will proceed..."
       sleep 2
       echo -e "$PURPLEℹ Installing..."
@@ -118,7 +134,7 @@ echo -e "$BLUE🔎 STATUS MESSAGE"
 echo -e "$NORMAL Fetching latest release information..."
 # Match the asset name exactly so MySpeed-linux-x64 does not also hit
 # MySpeed-linux-x64-baseline.
-RELEASE_JSON=$(curl -s https://api.github.com/repos/i7Gamer/MySpeed/releases/latest)
+RELEASE_JSON=$(curl -s --max-time 15 https://api.github.com/repos/i7Gamer/MySpeed/releases/latest)
 
 # A rate limit, an outage, or no network answers with JSON holding no assets at
 # all, which reads exactly like a release that happens not to carry the file
@@ -204,7 +220,7 @@ sleep 2
 # loop announced as a finished installation is worse than stopping.
 DOWNLOAD_TMP="myspeed.download.$$"
 
-if ! wget -O "$DOWNLOAD_TMP" "$RELEASE_URL"; then
+if ! wget --timeout=30 -O "$DOWNLOAD_TMP" "$RELEASE_URL"; then
     rm -f "$DOWNLOAD_TMP"
     echo -e "$RED✗ Could not download MySpeed from $RELEASE_URL"
     echo -e "$NORMALℹ Any existing installation has been left untouched."
@@ -397,7 +413,7 @@ fi
 clear
 echo -e "$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-"
 echo -e "$GREEN✓ Installation completed: $NORMAL MySpeed has been installed under $INSTALLATION_PATH."
-echo -e "You can access the web interface in your browser at$BLUE http://$(curl -s ifconfig.me):5216$NORMAL."
+echo -e "You can access the web interface in your browser at$BLUE http://$(curl -s --max-time 5 ifconfig.me || echo "<this-server's-address>"):5216$NORMAL."
 if [ -d "$INSTALLATION_PATH" ]; then
   echo -e "$BLUEℹ Info:$NORMAL To restart MySpeed:$BLUE systemctl restart myspeed"
 fi

@@ -2,6 +2,12 @@ import {defineConfig, createLogger} from "vite";
 import react from "@vitejs/plugin-react";
 import {VitePWA} from "vite-plugin-pwa";
 import * as path from "node:path";
+import {fileURLToPath} from "node:url";
+
+// Not the CommonJS directory global, which exists only while this file is
+// loaded as CommonJS - true today solely because client/package.json declares
+// no "type". This spelling says the same thing in both module systems.
+const configDir = path.dirname(fileURLToPath(import.meta.url));
 
 const logger = createLogger();
 const originalError = logger.error.bind(logger);
@@ -37,7 +43,7 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            "@": path.resolve(__dirname, "./src"),
+            "@": path.resolve(configDir, "./src"),
         },
     },
     server: {

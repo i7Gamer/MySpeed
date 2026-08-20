@@ -26,14 +26,14 @@ import { integrationIdentifier, migrationIdentifier, moduleName } from './identi
 export const literal = (value) => JSON.stringify(String(value));
 
 export const integrationRegistrySource = (files) => {
-    const imports = files.map((file) =>
-        `import ${integrationIdentifier(file)} from ${literal(`./${file}`)};`).join('\n');
+    const imports = files.map((file, index) =>
+        `import ${integrationIdentifier(file, index)} from ${literal(`./${file}`)};`).join('\n');
 
     // `name` stays exactly the filename stem: the controller keys its registry
     // off it, every stored IntegrationData row carries it, and the client
     // builds both its translation keys and its PUT route from it.
-    const entries = files.map((file) =>
-        `    { name: ${literal(moduleName(file))}, setup: ${integrationIdentifier(file)} },`).join('\n');
+    const entries = files.map((file, index) =>
+        `    { name: ${literal(moduleName(file))}, setup: ${integrationIdentifier(file, index)} },`).join('\n');
 
     return `${imports}
 
