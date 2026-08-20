@@ -417,6 +417,31 @@ export const exportConfig = async ({includeSecrets = false} = {}) => {
 const asRows = (value) => Array.isArray(value) ? value : null;
 
 /**
+ * The most rows a restored table may carry.
+ *
+ * These three are small by their nature - the nodes an operator added, one row
+ * per configured notifier, and the computed optimal values - and nothing
+ * bounded them. The import body is parsed at a 50mb limit, so
+ * `{"ping":1,"download":1,"upload":1}` at 34 bytes packs about 1.5 million
+ * recommendations into a single request, written at 9-13us each with the event
+ * loop held for the whole of it.
+ *
+ * Planted `integrations` rows outlast the request as well: triggerEvent loops
+ * over every active one and awaits an outbound call for each, and the minute
+ * job fires that loop for ever. One request would leave a permanent outbound
+ * flood behind it.
+ *
+ * A ceiling rather than the chunking the history import takes, because these
+ * two imports want opposite things. That one is allowed to land partly - its
+ * counts say so - and this one must not: the whole reason for the transaction
+ * here is that the tables are emptied first, and a payload that fails partway
+ * used to take every node and integration with it. So the size is settled
+ * before anything is touched, and 10 000 is orders of magnitude past any real
+ * instance while still refusing the abuse.
+ */
+const MAX_IMPORTED_ROWS = 10000;
+
+/**
  * What a refused import answers with when no single value is to blame - a
  * payload that is not a backup, or a write the database turned down.
  *
@@ -443,6 +468,12 @@ export const importConfig = async (obj) => {
     for (const {key} of IMPORTED_TABLES) {
         const value = asRows(obj[key]);
         if (value === null) return REFUSED;
+
+        // Named, because "too long" is a thing an operator can act on, and
+        // settled here - before the deletes, like every other check in this
+        // function.
+        if (value.length > MAX_IMPORTED_ROWS) return {ok: false, key};
+
         rows[key] = value;
     }
 

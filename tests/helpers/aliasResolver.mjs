@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 /**
- * Teaches node the "@/" alias that vite.config.js gives the client.
+ * Teaches node the "@/" alias that vite.config.mjs gives the client.
  *
  * Client utilities import each other through it, so without this a test could
  * only reach the handful of modules that happen to import nothing. Note that it

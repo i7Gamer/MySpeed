@@ -37,7 +37,16 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            "@": path.resolve(__dirname, "./src"),
+            // From import.meta rather than from the CommonJS directory global
+            // this used to read, which is not defined in an ES module: it
+            // resolved only because Vite bundles the config before running it,
+            // and under the native loader the alias every client import depends
+            // on would have resolved against nothing.
+            //
+            // The old global is named in viteConfigModule.test.js rather than
+            // here, because the assertion that it is gone searches this file and
+            // would otherwise find it in this sentence.
+            "@": path.resolve(import.meta.dirname, "./src"),
         },
     },
     server: {
