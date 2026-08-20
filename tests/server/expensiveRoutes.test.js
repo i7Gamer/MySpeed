@@ -5,6 +5,25 @@ import { readSource } from "../helpers/source.js";
 const appSource = readSource("server/app.js");
 
 /**
+ * Comments removed before a source is scanned for a call.
+ *
+ * storage.js explains in prose that two of its routes "answer with
+ * tests.listAll() untouched", so a scan for that call finds it in the sentence
+ * describing it and credits it to whichever route the sentence happens to sit
+ * above - which is what the completeness check below reported first time round.
+ *
+ * Block comments go whole; a line comment only where the line is nothing else,
+ * so a `//` inside a string is left alone. Enough for the one file read through
+ * it, and deliberately not a lexer: telling a regex from a division needs a
+ * parser, which is not a dependency worth taking on for an assertion.
+ */
+const withoutComments = (source) => source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((line) => !/^\s*\/\//.test(line))
+    .join("\n");
+
+/**
  * The reads that cost the server more than a request should.
  *
  * The general /api limiter is a backstop against a stranger monopolising the
@@ -27,10 +46,15 @@ const appSource = readSource("server/app.js");
  *                           password middleware admits everyone, it is reachable
  *                           without a credential.
  *   /api/storage            the whole-history downloads (streamed now, but a
- *                           full table walk per request all the same), a 50 MB
- *                           body parse on the imports, and the factory reset.
- *                           The heaviest family in the API sat behind the
- *                           backstop alone while lighter reads sat behind 20.
+ *                           full table walk per request all the same), the PUT
+ *                           that restores a history and the DELETE that
+ *                           empties it, a 50 MB body parse on the imports, and
+ *                           the factory reset. The heaviest family in the API
+ *                           sat behind the backstop alone while lighter reads
+ *                           sat behind 20 - a merge briefly held a second,
+ *                           narrower cap on /tests/history, which this prefix
+ *                           subsumes: nested limiters would take two tickets
+ *                           per history request.
  *
  * The page loads statistics on demand rather than on a poll, so the expensive
  * limit is not something ordinary use can reach - and the storage dialog asks
@@ -75,10 +99,68 @@ describe("the expensive read limiter", () => {
     });
 
     /**
+     * And each limiter is registered before the router that answers the path.
+     *
+     * Express runs middleware in the order it was mounted and a router that
+     * handles the request ends the chain, so a limiter mounted after one never
+     * runs at all - it would sit in this file looking correct and metering
+     * nothing. Every entry above happens to be in the same block today; this is
+     * what keeps the next one there.
+     */
+    it("registers each limit before the router that serves the path", () => {
+        const routers = [...appSource.matchAll(/app\.use\(\s*["'`](\/api[^"'`]*)["'`]\s*,\s*\w+Routes\)/g)];
+
+        assert.notEqual(routers.length, 0, "no routers are mounted the way this expects");
+
+        for (const path of EXPENSIVE_PATHS) {
+            const limiter = appSource.search(
+                new RegExp(`app\\.use\\(\\s*["'\`]${path}["'\`]\\s*,\\s*(?:expensiveLimit\\(\\)|limited\\()`));
+            const router = routers.find((match) => path.startsWith(match[1]));
+
+            assert.notEqual(limiter, -1, `${path} has no limit to order`);
+            assert.notEqual(router, undefined, `nothing serves ${path}, so this entry is stale`);
+            assert.ok(limiter < router.index,
+                `${path} is limited after ${router[1]} is mounted, so the limiter never runs`);
+        }
+    });
+
+    /**
+     * And the list is complete for the shape that keeps recurring: a route
+     * that walks the entire table per request.
+     *
+     * The walk used to be tests.listAll() into one string; the streaming
+     * rewrite replaced it with tests.listPages(), which bounds the memory and
+     * not the work - every request still reads every row there is, which is
+     * what earns the limit. Asked here so the next such route has to answer
+     * too: the list is a record of decisions, and this is the check that no
+     * decision was skipped.
+     */
+    it("covers every route that walks the whole table", () => {
+        const storage = withoutComments(readSource("server/routes/storage.js"));
+        const declarations = [...storage.matchAll(/app\.(?:get|put|post|delete|all)\("([^"]*)"/g)];
+
+        const unbounded = declarations
+            .filter((declaration, index) => storage
+                .slice(declaration.index, declarations[index + 1]?.index ?? storage.length)
+                .includes("tests.listPages()"))
+            .map((declaration) => `/api/storage${declaration[1]}`);
+
+        assert.deepEqual(unbounded.sort(),
+            ["/api/storage/tests/history/csv", "/api/storage/tests/history/json"],
+            "a storage route walks the whole table that this file has not been told about");
+
+        for (const route of unbounded)
+            assert.ok(EXPENSIVE_PATHS.some((path) => route.startsWith(path)),
+                `${route} reads every row there is on the general 300/min backstop, `
+                + "while /api/speedtests/export reads a date range on 20");
+    });
+
+    /**
      * Every limit has to be resettable, or adding one silently turns each test
      * of that route into a test of the limiter - which is what happened when
      * statistics was first given one: nineteen aggregation assertions started
-     * failing on 429.
+     * failing on 429, and again when the history download was given one: twelve
+     * import assertions did.
      */
     it("can be put back as it was, so a suite is not measuring it", () => {
         assert.match(appSource, /export const resetRateLimits/);

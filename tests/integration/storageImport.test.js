@@ -109,6 +109,53 @@ describe("PUT /api/storage/config", () => {
         assert.equal(survivor.name, EXISTING_NODE.name);
     });
 
+    /**
+     * A table longer than any instance has is not a backup either.
+     *
+     * These three tables are small by their nature - the nodes an operator
+     * added, one row per configured notifier, and the computed optimal values -
+     * and nothing bounded them. The import body is parsed at a 50mb limit, so
+     * `{"ping":1,"download":1,"upload":1}` at 34 bytes packs about 1.5 million
+     * recommendations into one request, and bulkCreate writes them at 9-13us
+     * each with the event loop held for all of it.
+     *
+     * Planted `integrations` rows outlive the request as well: triggerEvent
+     * loops over every active one and awaits an outbound call for each, and the
+     * minute job fires that loop for ever. One request would leave a permanent
+     * outbound flood behind it.
+     *
+     * Refused with the table named, and refused *before* the deletes - which is
+     * the property this file exists to protect.
+     */
+    it("keeps existing rows when a table is longer than any instance has", async () => {
+        const {status, body} = await importConfig({
+            config: {},
+            nodes: [],
+            integrations: [],
+            recommendations: Array.from({length: 10_001},
+                () => ({ping: 1, download: 1, upload: 1}))
+        });
+
+        assert.equal(status, 500);
+        assert.match(body.message, /recommendations/,
+            "the refusal does not say which table was too long");
+        assert.deepEqual(await counts(), {nodes: 1, integrations: 1, recommendations: 1},
+            "the tables were emptied before the payload was found to be unusable");
+    });
+
+    it("still accepts a table at the largest size it allows", async () => {
+        const {status} = await importConfig({
+            config: {},
+            nodes: [],
+            integrations: [],
+            recommendations: Array.from({length: 10_000},
+                () => ({ping: 1, download: 1, upload: 1}))
+        });
+
+        assert.equal(status, 200, "the ceiling is off by one and refuses a payload at the limit");
+        assert.equal((await counts()).recommendations, 10_000);
+    });
+
     it("replaces the tables when the payload is sound", async () => {
         const {status} = await importConfig({
             config: {retentionDays: "30"},
