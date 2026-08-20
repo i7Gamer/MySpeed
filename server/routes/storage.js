@@ -3,7 +3,7 @@ import * as tests from '../controller/speedtests.js';
 import * as config from '../controller/config.js';
 import password from '../middlewares/password.js';
 import previewReadOnly from '../middlewares/previewReadOnly.js';
-import { toCsv } from '../util/csv.js';
+import { streamCsv, streamJsonArray } from '../util/exportStream.js';
 
 const app = express.Router();
 
@@ -62,13 +62,19 @@ app.get("/", password(false), async (req, res) => {
 /**
  * The raw history, which is not the redacted one.
  *
- * Sealed on a demo whatever the format. These answer with tests.listAll()
- * untouched, so the provider and external address that /api/speedtests/export
- * strips for a caller who is not the operator went out in full through here
- * instead - the same rows by a different controller call. That export is still
- * open on a demo and is still redacted, so nothing a visitor should have is
- * lost; this is the backup path, and its PUT and DELETE siblings below have
- * been guarded all along.
+ * Sealed on a demo whatever the format. These answer with the rows untouched,
+ * so the provider and external address that /api/speedtests/export strips for
+ * a caller who is not the operator went out in full through here instead - the
+ * same rows by a different controller call. That export is still open on a
+ * demo and is still redacted, so nothing a visitor should have is lost; this
+ * is the backup path, and its PUT and DELETE siblings below have been guarded
+ * all along.
+ *
+ * Streamed page by page rather than built as one string: the backup of an
+ * instance that has simply been running is the largest thing this server ever
+ * produces, and holding every row beside the whole rendered document was how
+ * exporting a healthy history could take the process down with it. The bytes
+ * on the wire are exactly what the one-string versions answered.
  */
 const noRawHistoryOnDemo = previewReadOnly.blocking(
     "For security reasons, you can't download the raw history in preview mode");
@@ -78,7 +84,7 @@ app.get("/tests/history/json", password(false), noRawHistoryOnDemo, async (req, 
         "Content-Type": "application/json; charset=utf-8",
         "Content-Disposition": "attachment; filename=\"speedtests.json\""
     });
-    res.send(JSON.stringify(await tests.listAll(), null, 4));
+    await streamJsonArray(res, tests.listPages());
 });
 
 // Uses the shared writer rather than a hand-rolled one. The old version took
@@ -92,7 +98,7 @@ app.get("/tests/history/csv", password(false), noRawHistoryOnDemo, async (req, r
         "Content-Disposition": "attachment; filename=\"speedtests.csv\""
     });
 
-    res.send(toCsv(await tests.listAll()));
+    await streamCsv(res, tests.listPages());
 });
 
 app.delete("/tests/history", password(false), previewReadOnly, async (req, res) => {
