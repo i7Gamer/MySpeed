@@ -12,6 +12,30 @@ const SCRIPTS = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "
 const WALK_TIMEOUT = 10_000;
 
 /**
+ * Whether this machine has a POSIX shell to run a shell function in.
+ *
+ * One block below runs a function lifted out of install.sh, which needs `sh`.
+ * That is always there on the Linux runner the suite gates releases on, and it
+ * is not guaranteed on a contributor's Windows box: Git ships one, but only the
+ * installer option that puts Git's Unix tools on PATH makes `sh` resolvable, so
+ * without it node answers `spawnSync sh ENOENT` and four assertions fail for a
+ * reason that has nothing to do with the script.
+ *
+ * Skipped there rather than failed, and skipped rather than pointed at a guessed
+ * install path: install.sh is a Linux installer, CI is Linux, and a hard-coded
+ * `C:\Program Files\Git\...` would be one more thing to be wrong about. The
+ * runner prints the reason, so a skip cannot be mistaken for a pass.
+ */
+const noPosixShell = (() => {
+    try {
+        execFileSync("sh", ["-c", "exit 0"], {timeout: WALK_TIMEOUT, stdio: "ignore"});
+        return false;
+    } catch {
+        return "no POSIX shell on PATH - install.sh is a Linux installer and this block runs a function from it";
+    }
+})();
+
+/**
  * Comments stripped before anything is asserted against a script.
  *
  * These scripts explain the bug they were fixed for right beside the fix, so an
@@ -448,7 +472,7 @@ describe("install.sh registers a service that is not root", () => {
      * assertion written against its text passed with the permission test
      * replaced by `:` - which is the whole function saying yes to everything.
      */
-    describe("whether an unprivileged account can reach the installation", () => {
+    describe("whether an unprivileged account can reach the installation", {skip: noPosixShell}, () => {
         const walk = (() => {
             const at = source.indexOf("reachable_by_service() {");
             assert.notEqual(at, -1, "nothing asks whether the account can reach the installation");
