@@ -54,3 +54,23 @@ const answerableHere = (reason) => reason?.credential && !reason.node;
 
 export const failureOutcome = (storedNode, reason) =>
     ({redirectToNodes: isRemoteNode(storedNode) && !answerableHere(reason)});
+
+/**
+ * Whether a session may reach the admin controls.
+ *
+ * The header's admin login exchanges the password for a session and then
+ * re-reads /api/config to see what that session is worth: read-level access
+ * authenticates, but not for the controls the dialog was opened to reach, so it
+ * counts as a refusal there.
+ *
+ * That judgement was `!config?.viewMode`, which is true of every answer that is
+ * not an admin config - including no answer at all. checkConfig calls `.json()`
+ * without asserting the status and the call site catches into null, so a 401
+ * body, a 503 from a proxy in front of a stopped container, and a request that
+ * threw each read as a successful admin sign-in: the prompt closed, the
+ * dashboard showed its admin controls, and every one of them failed.
+ *
+ * Only an instance that answered has said anything about the session, and what
+ * it said is `viewMode: false`. Everything else is not a grant.
+ */
+export const grantsAdminAccess = (config) => config?.viewMode === false;

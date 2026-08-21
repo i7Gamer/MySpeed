@@ -315,7 +315,6 @@ const maxTicksFor = (isSingleDay) => isSingleDay ? SINGLE_DAY_TICKS : MULTI_DAY_
  * @param themeColors from chartThemeColors
  * @param labels      the ISO timestamps under the points
  * @param errors      per-point error text, for the tooltip of a failure
- * @param failed      per-point failure flags
  * @param isSingleDay from isSingleDaySeries, decides the tick format
  * @param pointStyle  from pointStyleFor - the density-aware marker size
  * @param lineTension from lineTensionFor
@@ -324,7 +323,7 @@ const maxTicksFor = (isSingleDay) => isSingleDay ? SINGLE_DAY_TICKS : MULTI_DAY_
  * @param yStepSize   optional fixed y-tick step (the speed charts use 100)
  */
 export const lineChartOptions = ({
-    themeColors, labels, errors, failed, isSingleDay,
+    themeColors, labels, errors, isSingleDay,
     pointStyle, lineTension, use12h, valueUnit, yStepSize
 }) => ({
     responsive: true,
@@ -334,7 +333,27 @@ export const lineChartOptions = ({
     plugins: {
         tooltip: {
             ...tooltipTheme(themeColors),
-            filter: (item) => item.dataset.label !== t("statistics.failed_test"),
+            /*
+             * No filter on the failure markers, though they are kept out of the
+             * legend below.
+             *
+             * `filter: (item) => item.dataset.label !== failed_test` used to sit
+             * here, and every measurement series holds null where a test failed -
+             * buildStatistics puts that gap there deliberately, so the line reads
+             * as a hole rather than as a reading of zero. At a failed index the
+             * marker is therefore the only dataset with a point, the filter
+             * removed it, and chart.js draws no tooltip at all once nothing is
+             * left: hovering the red cross said nothing, and the `label` branch
+             * written to name the reason could never run. The one place an
+             * operator goes to ask why a test failed was the one place that
+             * would not answer.
+             *
+             * `afterBody` used to name the failure instead, which is why this
+             * went unnoticed - on a bucket that also held a successful test the
+             * tooltip had a line to attach itself to. It is gone with the filter,
+             * since `label` now names the failure on both and keeping the two
+             * printed the reason twice.
+             */
             callbacks: {
                 title: (items) => {
                     if (items.length > 0) {
@@ -350,16 +369,6 @@ export const lineChartOptions = ({
                         return error ? `${t("statistics.failed_test")}: ${error}` : t("statistics.failed_test");
                     }
                     return `${item.dataset.label}: ${item.formattedValue} ${valueUnit}`;
-                },
-                afterBody: (items) => {
-                    if (items.length > 0) {
-                        const index = items[0].dataIndex;
-                        if (failed[index]) {
-                            const error = errors[index];
-                            return error ? `\n⚠ ${t("statistics.failed_test")}: ${error}` : `\n⚠ ${t("statistics.failed_test")}`;
-                        }
-                    }
-                    return '';
                 }
             }
         },

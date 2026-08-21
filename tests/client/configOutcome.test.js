@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-    configOutcome, failureOutcome, isRemoteNode
+    configOutcome, failureOutcome, grantsAdminAccess, isRemoteNode
 } from "../../client/src/common/contexts/Config/configOutcome.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
@@ -195,5 +195,63 @@ describe("the node refusal header", () => {
     it("is set on a refusal the proxy relayed", () => {
         assert.match(read("controller/node.js"), /NODE_REFUSAL_HEADER/,
             "the parent relays a node's 401 without marking it as the node's");
+    });
+});
+
+/**
+ * Whether a sign-in got what it was opened for.
+ *
+ * The admin login in the header exchanges the password for a session and then
+ * re-reads /api/config to see what that session is worth: read-level access
+ * authenticates, but not for the controls the dialog was opened to reach, so it
+ * counts as a refusal. That judgement was `{ok: !newConfig?.viewMode}`, which
+ * is true of every answer that is not an admin config - including no answer at
+ * all. checkConfig calls `.json()` without asserting the status and the call
+ * site catches into null, so a 401 body, a 503 from a proxy in front of a
+ * stopped container, and a request that threw were each read as a successful
+ * admin sign-in: the prompt closed, the dashboard showed its admin controls, and
+ * every one of them failed.
+ *
+ * The question is what viewMode actually says, and only an instance that
+ * answered says it.
+ */
+describe("grantsAdminAccess", () => {
+    it("accepts a config that says the session is not in view mode", () => {
+        assert.equal(grantsAdminAccess(ADMIN_CONFIG), true);
+    });
+
+    it("refuses a read-only session, which authenticated but not for this", () => {
+        assert.equal(grantsAdminAccess(VIEW_CONFIG), false);
+    });
+
+    for (const [name, answer] of [
+        ["nothing at all", null],
+        ["an undefined answer", undefined],
+        ["a refusal body", {message: "Unauthorized"}],
+        ["a busy body", {type: "SERVER_BUSY"}],
+        ["an empty object", {}]
+    ])
+        it(`refuses ${name}`, () => {
+            assert.equal(grantsAdminAccess(answer), false,
+                "an answer that never said anything about the session is read as an admin sign-in");
+        });
+});
+
+/**
+ * And the header asks through it. The judgement being right is worth nothing
+ * while the call site keeps its own.
+ */
+describe("the header's admin login", () => {
+    const header = fs.readFileSync(path.join(CLIENT_SRC,
+        "common/components/Header/HeaderComponent.jsx"), "utf8");
+
+    it("judges the re-read config through the shared answer", () => {
+        assert.match(header, /grantsAdminAccess\(/,
+            "the header decides for itself whether the sign-in worked");
+    });
+
+    it("no longer reads any answer that is not view mode as success", () => {
+        assert.doesNotMatch(header, /ok: !newConfig\?\.viewMode/,
+            "a 401, a 503 and a thrown request all still report a successful admin sign-in");
     });
 });

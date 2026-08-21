@@ -300,13 +300,38 @@ export const SpeedtestProvider = (props) => {
     // generation on the way back.
     useEffect(() => () => clearTimeout(retryTimerRef.current), []);
 
+    /**
+     * Held across a render that changed none of it.
+     *
+     * This provider reads StatusContext, because the list refetches on the
+     * falling edge of a run - and that context samples the live status every
+     * 500ms while a test is running. So this component re-renders twice a second
+     * for the length of every speedtest, and it used to hand down a fresh object
+     * literal each time. Context has no selectors: a new identity re-renders
+     * every consumer, so the whole overview - the list and each of its rows -
+     * was reconciled twice a second throughout a run, over a value whose
+     * contents had not moved.
+     *
+     * It works because everything in here is already stable between renders: the
+     * four state values, the range and timeframe derived through useMemo above,
+     * and six callbacks that are each useCallback'd. A key added here has to be
+     * added to the dependencies too, or every consumer gets a stale copy of it -
+     * which reads as the list refusing to update rather than as anything to do
+     * with this line. speedtestContextValue.test.js holds the two together.
+     *
+     * reloadTests is for the actions that replace the history wholesale -
+     * clearing it, importing one. Those cannot be reconciled by a refresh of the
+     * newest page: an import appends *older* rows, which that page never sees,
+     * so the merge path reported success and showed nothing.
+     */
+    const contextValue = useMemo(() => ({
+        speedtests, updateTests, reloadTests: loadInitialTests, deleteTest,
+        loadMoreTests, loading, hasMore, timeframe, range, selectTimeframe, selectRange
+    }), [speedtests, updateTests, loadInitialTests, deleteTest, loadMoreTests, loading, hasMore,
+        timeframe, range, selectTimeframe, selectRange]);
+
     return (
-        // reloadTests is for the actions that replace the history wholesale -
-        // clearing it, importing one. Those cannot be reconciled by a refresh
-        // of the newest page: an import appends *older* rows, which that page
-        // never sees, so the merge path reported success and showed nothing.
-        <SpeedtestContext.Provider value={{speedtests, updateTests, reloadTests: loadInitialTests, deleteTest,
-            loadMoreTests, loading, hasMore, timeframe, range, selectTimeframe, selectRange}}>
+        <SpeedtestContext.Provider value={contextValue}>
             {props.children}
         </SpeedtestContext.Provider>
     )

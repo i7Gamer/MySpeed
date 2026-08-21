@@ -21,6 +21,7 @@ const settingsMenu = read("common/components/Dropdown/DropdownComponent.jsx");
 const exportMenu = read("common/components/ExportButton/ExportButton.jsx");
 const exportStyles = read("common/components/ExportButton/styles.sass");
 const integrationDialog = read("common/components/IntegrationDialog/IntegrationDialog.jsx");
+const contextMenu = read("common/components/ContextMenu/ContextMenu.jsx");
 
 /**
  * The element that carries `marker` in its className, named.
@@ -1266,5 +1267,59 @@ describe("the first integration added", () => {
             "the debt is paid to something other than the menu the choice was made in");
         assert.match(effect.slice(effect.indexOf("}, [")), /^}, \[renderable\.length]/,
             "the effect does not run when the dialog leaves its empty state, which is the only moment this happens");
+    });
+});
+
+/**
+ * The context menu, which is the only way to rename or remove a node.
+ *
+ * It is properly operable once it is open - arrows walk the entries, Enter and
+ * Space run one, Escape and Tab dismiss it - and Shift+F10 or the menu key
+ * raises it from the focused card, because browsers deliver those as a
+ * `contextmenu` event. What it never did was give focus back.
+ *
+ * It takes focus on mount, so dismissing it dropped focus to <body>: the next
+ * Tab restarted from the top of the document, and a reader who pressed Escape
+ * had no idea where they now were. The card they were on is the answer, and it
+ * is still there - unlike the export menu, which cannot hand focus back
+ * immediately because the same commit disables the button it would go to.
+ */
+describe("the node card's context menu", () => {
+    const mountEffect = () => {
+        const at = contextMenu.indexOf("setFocusedIndex(0)");
+        assert.notEqual(at, -1, "the menu no longer seats itself on its first entry when it opens");
+
+        const opened = contextMenu.lastIndexOf("useEffect(", at);
+        return contextMenu.slice(opened, contextMenu.indexOf("}, [", opened));
+    };
+
+    it("remembers what had focus before it opened", () => {
+        assert.match(mountEffect(), /document\.activeElement/,
+            "nothing records the control the menu was raised from");
+    });
+
+    it("gives focus back when it goes away", () => {
+        assert.match(mountEffect(), /return\s*\(\)\s*=>/,
+            "the menu takes focus on mount and never returns it, so dismissing it lands on <body>");
+        assert.match(mountEffect(), /\.focus\?\.\(\)|\.focus\(\)/,
+            "nothing is focused on the way out");
+    });
+
+    /**
+     * But not over a click that landed somewhere else. Closing by clicking
+     * outside is the case the export menu names too: focus there belongs to
+     * whatever was clicked, and pulling it back to the card would take it off
+     * the control the reader just chose.
+     */
+    it("does not take focus back from whatever was clicked instead", () => {
+        const effect = mountEffect();
+        const cleanup = effect.slice(effect.indexOf("return () =>"));
+
+        assert.match(cleanup, /document\.activeElement/,
+            "the way out never asks where focus actually is");
+        assert.match(cleanup, /\.contains\(/,
+            "focus is pulled back to the card even when the menu never held it");
+        assert.match(cleanup, /if\s*\(/,
+            "focus is handed back unconditionally");
     });
 });

@@ -20,9 +20,7 @@ import IndonesianFlag from "@/common/assets/languages/id.webp";
 // Portuguese is already keyed "pt" against a "br" flag.
 import UkrainianFlag from "@/common/assets/languages/ua.webp";
 import {readStored, writeStored} from "@/common/utils/Storage";
-
-if (readStored('language') === null)
-    writeStored('language', navigator.language.split('-')[0]);
+import {supportedLanguage} from "@/common/utils/LanguageChoice";
 
 export const languages = [
     {name: 'English', code: 'en', flag: EnglishFlag},
@@ -41,6 +39,19 @@ export const languages = [
     {name: 'Bahasa Indonesia', code: 'id', flag: IndonesianFlag},
     {name: 'Українська', code: 'uk', flag: UkrainianFlag}
 ]
+
+/*
+ * Seeded below the list rather than above it, because the seed is now judged
+ * against it.
+ *
+ * The browser's language used to be stored exactly as it came. i18next copes -
+ * `supportedLngs` sends anything unknown to the English fallback - but the
+ * language dialog reads this same value to decide which entry to highlight, so
+ * a browser set to a language MySpeed does not ship opened it with nothing
+ * selected and no sign of what was in use.
+ */
+if (readStored('language') === null)
+    writeStored('language', supportedLanguage(navigator.language.split('-')[0], languages));
 
 i18n.use(initReactI18next).use(LanguageDetector).use(HttpApi).init({
     supportedLngs: languages.map(lang => lang.code),

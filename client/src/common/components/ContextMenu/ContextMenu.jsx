@@ -81,9 +81,34 @@ export const ContextMenu = ({items, position, onClose}) => {
         }
     }, [position]);
 
+    /**
+     * Focus goes into the menu when it opens, and back to what raised it when it
+     * closes.
+     *
+     * It took focus and never gave it back, so dismissing dropped the reader on
+     * <body>: the next Tab restarted at the top of the document, and after an
+     * Escape there was nothing to say where they now were. The card is still
+     * there to return to - unlike the export menu beside it, which records the
+     * debt instead because the same commit disables the button it would focus.
+     *
+     * Only when the menu still holds focus, though. A click outside closes this
+     * too, and there focus belongs to whatever was clicked; pulling it back
+     * would take it off the control the reader had just chosen. The body is
+     * included because a menu item that ran and removed itself leaves focus
+     * there, and that is the case with nowhere else for it to go.
+     */
     useEffect(() => {
-        menuRef.current?.focus();
+        const raisedFrom = document.activeElement;
+        const menu = menuRef.current;
+
+        menu?.focus();
         setFocusedIndex(0);
+
+        return () => {
+            const holder = document.activeElement;
+
+            if (menu?.contains(holder) || holder === document.body || !holder) raisedFrom?.focus?.();
+        };
     }, []);
 
     if (!position) return null;
