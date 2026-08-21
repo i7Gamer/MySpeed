@@ -15,6 +15,7 @@ import * as interfaces from '../util/loadInterfaces.js';
 import { destroyAllSessions } from '../util/session.js';
 import { isValidTimeOfDay } from '../util/quietHours.js';
 import { withoutUrlCredentials } from '../util/urlCredentials.js';
+import { ALLOWED_PROTOCOLS } from '../util/safeUrl.js';
 
 const configDefaults = {
     ping: "25",
@@ -98,6 +99,31 @@ const THRESHOLD_KEYS = ["ping", "download", "upload"];
  * allowed userinfo, so the credential travels in the address itself.
  */
 const CREDENTIAL_BEARING_KEYS = ["libreUrl"];
+
+// What the announcement says instead of a password. A sentinel for the
+// consumer, not a value: nothing is meant to read it back.
+const PROTECTED = "protected";
+
+/**
+ * What a `configUpdated` event is allowed to carry for a key.
+ *
+ * The event goes out to whatever address the operator configured - the webhook
+ * and discord modules deliver it, over plain http on a LAN as often as not - so
+ * it is a second way every stored value leaves the instance, and it redacted
+ * exactly one key. libreUrl went out verbatim, credential and all: the same
+ * address the export has stripped since it learned a URL can carry userinfo,
+ * and the same one GET /api/config already withholds from a reader who is not
+ * the operator.
+ *
+ * Decided from the list the export reads rather than from a second list beside
+ * it. Two would drift the first time a key was added to one of them, which is
+ * how this half came to be left behind in the first place.
+ */
+export const announcedValue = (key, value) => {
+    if (key === "password") return PROTECTED;
+
+    return CREDENTIAL_BEARING_KEYS.includes(key) ? withoutUrlCredentials(value) : value;
+};
 
 // The value stored when no password is configured. It is a sentinel, not a
 // password: password.js waves every request through when it sees this.
@@ -214,7 +240,7 @@ export const updateValue = async (key, newValue) => {
     // caught rather than dropped. triggerEvent already contains a failing
     // module; this covers a failure of the dispatch itself, which floated free
     // to the process-level unhandledRejection hook.
-    triggerEvent("configUpdated", {key: key, value: key === "password" ? "protected" : newValue})
+    triggerEvent("configUpdated", {key: key, value: announcedValue(key, newValue)})
         .catch((error) => console.error(`Could not announce the change to '${key}': ${toErrorMessage(error)}`));
 
     return result;
@@ -284,9 +310,22 @@ export const validateInput = async (key, value) => {
     if ((key === "ooklaId" || key === "libreId") && (/[^0-9]/.test(value) && value !== "none"))
         return "You need to provide a number in order to change this";
 
+    /*
+     * The scheme as well as the shape.
+     *
+     * `new URL()` parses `javascript:`, `data:` and `file:` perfectly happily,
+     * so this accepted, stored and displayed values that are not addresses of
+     * anything the server can fetch - and the only sign of it was a speedtest
+     * failing later for a reason that named none of it.
+     *
+     * Judged by the set safeUrl already holds a node URL and a webhook target
+     * to, rather than by a list of its own. Two lists drift, and this is the
+     * third value of the same kind.
+     */
     if (key === "libreUrl" && value !== "none") {
         try {
-            new URL(value);
+            if (!ALLOWED_PROTOCOLS.has(new URL(value).protocol))
+                return "You need to provide a valid URL";
         } catch {
             return "You need to provide a valid URL";
         }

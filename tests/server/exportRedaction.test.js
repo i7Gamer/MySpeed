@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readSource } from "../helpers/source.js";
 import { withoutUrlCredentials } from "../../server/util/urlCredentials.js";
+import { announcedValue } from "../../server/controller/config.js";
 
 /**
  * A credential does not stop being one for living inside a URL.
@@ -162,5 +163,63 @@ describe("the redacted export", () => {
     it("leaves a full export untouched", () => {
         assert.match(source, /includeSecrets \? nodeRows\s*:/,
             "the credential strip is no longer behind the redaction switch");
+    });
+});
+
+/**
+ * And the other way the same value leaves the instance.
+ *
+ * The export is not the only reader of libreUrl. Every save fires a
+ * `configUpdated` event carrying the key and its new value, and the webhook and
+ * discord modules deliver that to whatever address the operator configured -
+ * over plain http on a LAN, as often as not. That announcement redacted exactly
+ * one key, `password`, so the librespeed backend URL went out verbatim: an
+ * address whose userinfo the export has stripped since it learned a URL can
+ * carry a credential, and which GET /api/config already withholds from a reader
+ * who is not the operator.
+ *
+ * The same list decides it in both places. Two lists would drift the first time
+ * a key was added to one of them, which is precisely the drift that left this
+ * half behind.
+ */
+describe("what a configUpdated event carries", () => {
+    it("never carries the password, hashed or otherwise", () => {
+        assert.equal(announcedValue("password", "$2b$10$abcdefghijklmnopqrstuv"), "protected");
+    });
+
+    it("strips the credential out of the librespeed URL", () => {
+        assert.equal(announcedValue("libreUrl", "http://admin:hunter2@speed.lan:8080"),
+            "http://speed.lan:8080");
+    });
+
+    it("keeps the address itself, which is what the announcement is about", () => {
+        assert.equal(announcedValue("libreUrl", "https://speed.example.net/backend"),
+            "https://speed.example.net/backend");
+    });
+
+    // An ordinary setting is announced as it was stored. Redacting more than the
+    // credentials would make the event useless to the consumers it exists for.
+    it("passes an ordinary value through untouched", () => {
+        assert.equal(announcedValue("cron", "0 * * * *"), "0 * * * *");
+        assert.equal(announcedValue("download", "500"), "500");
+    });
+
+    /**
+     * The one that ties the two halves together: whatever the export treats as
+     * credential-bearing, the announcement has to treat the same way. A key
+     * added to the list for the export alone is this bug again under a new name.
+     */
+    it("redacts every key the export redacts", () => {
+        const source = readSource("server/controller/config.js");
+        const declared = source.match(/CREDENTIAL_BEARING_KEYS = \[([^\]]*)\]/);
+
+        assert.ok(declared, "the export no longer names the keys that can carry a credential");
+
+        const keys = [...declared[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+        assert.ok(keys.length > 0, "the list is empty, so neither half redacts anything");
+
+        for (const key of keys)
+            assert.equal(announcedValue(key, "http://admin:hunter2@host.lan"), "http://host.lan",
+                `${key} is redacted in the export but announced verbatim`);
     });
 });

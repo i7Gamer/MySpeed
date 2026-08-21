@@ -124,6 +124,16 @@ else
 
     rm -R "$INSTALLATION_PATH"
     mkdir "$INSTALLATION_PATH"
+
+    # The mode is stated because mkdir applies the umask, and what reads it is
+    # the *next* install: reachable_by_service walks this directory, and root on
+    # a hardened host runs with 027 or 077, so the recreated directory came back
+    # 0750 or 0700 and install.sh fell back to SERVICE_ACCOUNT="root". Keeping
+    # the data is what makes reinstalling the easy path, so this flag was the
+    # quiet way an installation lost its privilege separation. install.sh states
+    # the same mode where it creates the directory itself.
+    chmod 755 "$INSTALLATION_PATH"
+
     mv "$STAGING/data" "$INSTALLATION_PATH/data"
     rmdir "$STAGING"
   else

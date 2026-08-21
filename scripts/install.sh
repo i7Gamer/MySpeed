@@ -212,6 +212,19 @@ if [ ! -d "$INSTALLATION_PATH" ]; then
     echo -e "$BLUEℹ Info: $NORMAL MySpeed will be installed under directory $INSTALLATION_PATH. Creating the folder now."
     sleep 2
     mkdir -p "$INSTALLATION_PATH"
+
+    # Stated rather than left to the umask, exactly as the binary's mode is
+    # below - and for a consequence one step further out. reachable_by_service
+    # walks this directory shortly and needs its other-execute bit; root on a
+    # hardened host runs with 027 or 077, which is what the CIS profiles set, so
+    # a fresh install created its own installation directory unreachable, failed
+    # its own check, and registered the service as root. The account, and the
+    # privilege separation around the CLIs the server downloads and spawns, were
+    # then gone behind one line of fallback text scrolling past mid-install.
+    #
+    # Only where it is created. A directory that was already there is the
+    # operator's, and its mode is theirs to have chosen.
+    chmod 755 "$INSTALLATION_PATH"
 fi
 
 # An unwritable path, a read-only mount or a name already taken by a file all

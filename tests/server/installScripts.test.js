@@ -247,6 +247,30 @@ describe("uninstall.sh --keep-data", () => {
      * one quoted and one bare path, which is precisely the mistake worth
      * catching - `mv "$SRC" $DEST` is as broken as quoting neither.
      */
+    /**
+     * The directory it puts back is the one the next install.sh will judge.
+     *
+     * mkdir applies the umask, and root on a hardened host runs with 027 or 077,
+     * so the recreated directory comes out 0750 or 0700. install.sh then walks
+     * it with reachable_by_service, finds it cannot be entered by an
+     * unprivileged account, and falls back to SERVICE_ACCOUNT="root" - so
+     * reinstalling over kept data silently gives up the privilege separation the
+     * previous install had, and runs the downloaded speedtest CLIs as root.
+     *
+     * The flag exists to make the reinstall the easy path, which is exactly why
+     * this one has to come back the way it went.
+     */
+    it("puts the directory back in a mode the service account can enter", () => {
+        const keepData = source.slice(source.indexOf('"--keep-data"'));
+        const made = keepData.indexOf('mkdir "$INSTALLATION_PATH"');
+        const stated = keepData.indexOf('chmod 755 "$INSTALLATION_PATH"');
+
+        assert.notEqual(made, -1, "the installation directory is no longer recreated");
+        assert.notEqual(stated, -1,
+            "the recreated directory's mode is left to the umask, so the next install falls back to root");
+        assert.ok(made < stated, "the mode is stated before the directory is recreated");
+    });
+
     it("quotes every path it moves and removes", () => {
         const unquoted = source.split("\n")
             .filter((line) => /^\s*(mv|rm|mkdir)\b/.test(line))
@@ -615,6 +639,39 @@ describe("install.sh registers a service that is not root", () => {
 
         assert.match(made, /mkdir -p "\$INSTALLATION_PATH\/data" "\$INSTALLATION_PATH\/bin"/,
             "the service is expected to create its own folders in a directory it does not own");
+    });
+
+    /**
+     * And the directory itself is left in a mode the account can enter.
+     *
+     * The same umask that leaves a downloaded binary at 700 leaves a created
+     * directory at 700, and this is the directory reachable_by_service is about
+     * to judge: on a host where root runs with 027 or 077 - which is what the
+     * CIS profiles set - a fresh install creates its own installation directory
+     * unreachable, fails its own check, and silently registers the service as
+     * root. The whole point of the account is then gone, along with the
+     * privilege separation around the third-party CLIs the server downloads and
+     * spawns, and the only sign of it is one line of fallback text scrolling
+     * past mid-install.
+     *
+     * Stated before the check rather than after it, because the check is what
+     * consumes it. uninstall.sh recreates the same directory under the same mask
+     * and states the same mode, for the same reason - see the assertion there.
+     */
+    it("creates the installation directory in a mode the account can enter", () => {
+        const made = source.indexOf('mkdir -p "$INSTALLATION_PATH"\n');
+        const stated = source.indexOf('chmod 755 "$INSTALLATION_PATH"');
+
+        assert.notEqual(made, -1, "nothing creates the installation directory any more");
+        assert.notEqual(stated, -1,
+            "the directory's mode is left to the umask, so a hardened host installs a service running as root");
+        assert.ok(made < stated, "the mode is stated before the directory exists");
+
+        const judged = source.indexOf('reachable_by_service "$INSTALLATION_PATH"');
+
+        assert.notEqual(judged, -1, "nothing asks whether the account can reach the installation");
+        assert.ok(stated < judged,
+            "the mode is stated after the check that reads it, which has already fallen back to root");
     });
 
     /**

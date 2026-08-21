@@ -2,11 +2,24 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import securityHeaders from "../../server/middlewares/securityHeaders.js";
 
+/**
+ * Node's own bound on what a header value may hold, copied from
+ * _http_common.js: res.setHeader throws ERR_INVALID_CHAR for anything outside
+ * it. The spy refuses the same characters, so a value that would take the real
+ * server down fails here rather than passing as a string nobody looked at.
+ */
+const HEADER_CHARACTERS = /[^\t\x20-\x7e\x80-\xff]/;
+
 const responseSpy = () => {
     const headers = {};
     return {
         headers,
-        setHeader: (name, value) => { headers[name.toLowerCase()] = value; }
+        setHeader: (name, value) => {
+            if (HEADER_CHARACTERS.test(String(value)))
+                throw new TypeError(`Invalid character in header content ["${name}"]`);
+
+            headers[name.toLowerCase()] = value;
+        }
     };
 };
 
@@ -87,6 +100,62 @@ describe("securityHeaders", () => {
         it("drops X-Frame-Options when framing is allowed", () => {
             process.env.FRAME_ANCESTORS = "https://dash.example.com";
             assert.equal(headersFor()["x-frame-options"], undefined);
+        });
+
+        it("carries a list of several origins through", () => {
+            process.env.FRAME_ANCESTORS = "https://dash.example.com https://home.lan:3000";
+            assert.deepEqual(directives()["frame-ancestors"],
+                ["https://dash.example.com", "https://home.lan:3000"]);
+        });
+    });
+
+    /**
+     * The value is the operator's own, so this is not a way in - it is the way
+     * a plausible mistake becomes an outage, or a policy nobody wrote.
+     *
+     * A semicolon ends the directive: FRAME_ANCESTORS="'self'; sandbox" reads as
+     * a complete second directive appended to the policy this module composes,
+     * and `sandbox` alone is enough to leave the dashboard unable to run its own
+     * scripts. A newline is worse and quieter, because it never reaches a
+     * browser at all: res.setHeader refuses the character outright, so the
+     * middleware throws on *every* request and the instance answers 500 to
+     * everything - including the health endpoint that would say what is wrong.
+     *
+     * Both come out of ordinary editing. Writing a CSP fragment rather than a
+     * bare ancestor list is the first guess at what the variable wants, and a
+     * value set from a here-doc or read out of a file keeps its trailing
+     * newline.
+     */
+    describe("an ancestor list that is not one", () => {
+        it("does not let a semicolon append a directive", () => {
+            process.env.FRAME_ANCESTORS = "'self'; sandbox";
+
+            assert.equal(directives()["sandbox"], undefined,
+                "the value ends the directive and writes a policy the operator did not");
+        });
+
+        it("keeps the origins either side of one", () => {
+            process.env.FRAME_ANCESTORS = "https://dash.example.com; https://home.lan";
+            const ancestors = directives()["frame-ancestors"];
+
+            assert.ok(ancestors.includes("https://dash.example.com"), "the first origin was dropped");
+            assert.ok(ancestors.includes("https://home.lan"), "the second origin was dropped");
+        });
+
+        it("survives a trailing newline", () => {
+            process.env.FRAME_ANCESTORS = "https://dash.example.com\n";
+
+            assert.deepEqual(directives()["frame-ancestors"], ["https://dash.example.com"],
+                "setHeader refuses the newline, so every request answers 500");
+        });
+
+        it("survives a value that is only whitespace", () => {
+            process.env.FRAME_ANCESTORS = "   ";
+
+            assert.deepEqual(directives()["frame-ancestors"], ["'none'"],
+                "an empty directive is a policy no browser can read");
+            assert.equal(headersFor()["x-frame-options"], "DENY",
+                "a value that says nothing must leave the default refusal in place");
         });
     });
 
