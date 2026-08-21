@@ -52,8 +52,17 @@ const StatusBarComponent = () => {
         const refresh = () => setLastTestText(formatLastTest(lastTest?.created));
 
         refresh();
-        const timer = setInterval(refresh, RELATIVE_TIME_REFRESH_MS);
-        return () => clearInterval(timer);
+        const timer = setInterval(() => {
+            if (!document.hidden) refresh();
+        }, RELATIVE_TIME_REFRESH_MS);
+        const onVisibilityChange = () => {
+            if (!document.hidden) refresh();
+        };
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        return () => {
+            clearInterval(timer);
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+        };
     }, [lastTest?.created]);
 
     // Ticks locally rather than waiting on the poll, so the seconds advance
@@ -61,11 +70,25 @@ const StatusBarComponent = () => {
     useEffect(() => {
         if (!status.startedAt) return setElapsed(null);
 
-        const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - Date.parse(status.startedAt)) / 1000)));
+        const tick = () => {
+            const parsed = Date.parse(status.startedAt);
+            if (!Number.isFinite(parsed)) return setElapsed(null);
+            const seconds = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+            setElapsed(Number.isFinite(seconds) ? seconds : null);
+        };
 
         tick();
-        const timer = setInterval(tick, RELATIVE_TIME_REFRESH_MS);
-        return () => clearInterval(timer);
+        const timer = setInterval(() => {
+            if (!document.hidden) tick();
+        }, RELATIVE_TIME_REFRESH_MS);
+        const onVisibilityChange = () => {
+            if (!document.hidden) tick();
+        };
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        return () => {
+            clearInterval(timer);
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+        };
     }, [status.startedAt]);
 
     if (Object.entries(config).length === 0) return <></>;
@@ -138,7 +161,7 @@ const StatusBarComponent = () => {
                     <div className="status-detail">
                         {nextText() && <span>{nextText()}</span>}
 
-                        {status.running && status.speed !== null && status.speed !== undefined && (
+                        {status.running && typeof status.speed === "number" && Number.isFinite(status.speed) && status.speed >= 0 && (
                             <span className="status-speed">
                                 {formatWithUnit(convertSpeed(status.speed, preferences), speedUnit)}
                             </span>

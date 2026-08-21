@@ -1,23 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readSource } from "../helpers/source.js";
+import { blockEnd, readSource } from "../helpers/source.js";
 
 const createDialogSource = readSource(
     "client/src/pages/Nodes/components/CreateNodeDialog/CreateNodeDialog.jsx");
 const nodeContainerSource = readSource(
     "client/src/pages/Nodes/components/NodeContainer/NodeContainer.jsx");
-
-// The index of the } that closes the block opened at `from`.
-const blockEnd = (source, from) => {
-    let depth = 0;
-
-    for (let index = from; index < source.length; index++) {
-        if (source[index] === "{") depth++;
-        else if (source[index] === "}" && --depth === 0) return index;
-    }
-
-    assert.fail("a block is never closed");
-};
 
 /**
  * The `authenticate` half of a password prompt, taken out of its component and

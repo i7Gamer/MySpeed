@@ -183,6 +183,7 @@ export const PasswordDialog = ({open, onClose}) => {
                                     <button
                                         type="button"
                                         className="password-toggle"
+                                        aria-label={showPassword ? t("update.hide_password") : t("update.show_password")}
                                         onClick={() => setShowPassword(!showPassword)}
                                     >
                                         <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye}/>
@@ -233,12 +234,12 @@ export const PasswordDialog = ({open, onClose}) => {
                     </DialogBody>
                     <DialogFooter>
                         {isPasswordSet && (
-                            <button className="dialog-btn dialog-btn-danger" onClick={() => confirmRemoval(close)}>
+                            <button type="button" className="dialog-btn dialog-btn-danger" onClick={() => confirmRemoval(close)}>
                                 <FontAwesomeIcon icon={faLockOpen}/>
                                 {t("update.remove_password")}
                             </button>
                         )}
-                        <button className="dialog-btn" onClick={() => save(close)}>{t("dialog.update")}</button>
+                        <button type="button" className="dialog-btn" onClick={() => save(close)}>{t("dialog.update")}</button>
                     </DialogFooter>
                 </>
             )}

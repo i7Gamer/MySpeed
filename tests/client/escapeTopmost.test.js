@@ -1,31 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { blockEnd, readSource } from "../helpers/source.js";
 
-const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
-
-const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
-
-const dialogSource = read("common/contexts/Dialog/DialogContext.jsx");
-const alertSource = read("common/contexts/Alert/AlertContext.jsx");
-const chartSource = read("common/components/ChartModal/ChartModal.jsx");
+const dialogSource = readSource("client/src/common/contexts/Dialog/DialogContext.jsx");
+const alertSource = readSource("client/src/common/contexts/Alert/AlertContext.jsx");
+const chartSource = readSource("client/src/common/components/ChartModal/ChartModal.jsx");
 
 const SELECTOR = "const OVERLAY_AREA_SELECTOR";
 const RULE = "export const isTopmostOverlay";
-
-// The index of the } that closes the block opened at `from`.
-const blockEnd = (source, from) => {
-    let depth = 0;
-
-    for (let index = from; index < source.length; index++) {
-        if (source[index] === "{") depth++;
-        else if (source[index] === "}" && --depth === 0) return index;
-    }
-
-    assert.fail("a block is never closed");
-};
 
 const bodyOfArrowAt = (source, start) =>
     source.slice(source.indexOf("{", source.indexOf("=>", start)));
@@ -262,6 +244,22 @@ describe("Escape with an alert stacked over an expanded chart", () => {
 
         assert.deepEqual(closed, ["chart"]);
         assert.equal(event.defaultPrevented, true, "the key has to be claimed, as the other overlays claim it");
+    });
+
+    it("declines a key that has already been claimed by another control", () => {
+        const {press, closed} = expand(false);
+        const event = {
+            key: "Escape",
+            defaultPrevented: true,
+            preventDefault() {
+                this.defaultPrevented = true;
+            }
+        };
+
+        press(event);
+
+        assert.deepEqual(closed, [],
+            "the expanded chart answered an Escape that was already claimed (defaultPrevented: true)");
     });
 
     it("leaves every other key alone", () => {

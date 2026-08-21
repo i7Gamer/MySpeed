@@ -90,7 +90,7 @@ const PERCENT = 100;
  * deliberately not treated as zero.
  */
 export const progressPercent = (status) => {
-    if (typeof status?.progress !== "number") return null;
+    if (typeof status?.progress !== "number" || !Number.isFinite(status.progress)) return null;
 
     return Math.round(Math.min(Math.max(status.progress, 0), 1) * PERCENT);
 };

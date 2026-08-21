@@ -2,8 +2,34 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import {
-    bodyIn, bodyOf, findMounts, listSources, mountText, readSource, unreadableMountCount
+    blockEnd, bodyIn, bodyOf, findMounts, listSources, mountText, readSource, unreadableMountCount
 } from "../helpers/source.js";
+
+describe("blockEnd", () => {
+    it("returns the index of the matching closing brace", () => {
+        const source = "{ one(); }";
+        assert.equal(blockEnd(source, 0), source.length - 1);
+    });
+
+    it("handles nested braces", () => {
+        const source = "{ if (x) { deep(); } done(); } extra";
+        assert.equal(blockEnd(source, 0), source.indexOf(" extra") - 1);
+    });
+
+    it("starts from the given offset", () => {
+        const source = "prefix { { inner(); } } suffix";
+        const from = source.indexOf("{");
+        assert.equal(blockEnd(source, from), source.indexOf(" suffix") - 1);
+    });
+
+    it("throws when a block is never closed", () => {
+        assert.throws(() => blockEnd("{ unclosed();", 0), /a block is never closed/);
+    });
+
+    it("throws when no brace is present", () => {
+        assert.throws(() => blockEnd("plain text", 0), /a block is never closed/);
+    });
+});
 
 /**
  * The helper several tests read source with, which had been written twice.

@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import * as sass from "sass";
 import { clickable } from "@/common/utils/Clickable.js";
 import { nextFocus } from "@/common/hooks/useModalFocus.js";
+import { blockEnd } from "../helpers/source.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -418,18 +419,6 @@ describe("the export menu answers the keyboard", () => {
     });
 });
 
-// The index of the } that closes the block opened at `from`.
-const blockEnd = (source, from) => {
-    let depth = 0;
-
-    for (let index = from; index < source.length; index++) {
-        if (source[index] === "{") depth++;
-        else if (source[index] === "}" && --depth === 0) return index;
-    }
-
-    assert.fail("a block is never closed");
-};
-
 /**
  * The named arrow function, lifted out of the component and made callable.
  *
@@ -672,6 +661,81 @@ describe("the integration menu answers the keyboard", () => {
             assert.deepEqual(options.map((option) => option.focused), [0, 0, 0]);
         });
     });
+
+    describe("Arrow keys and Home/End", () => {
+        it("ArrowDown moves focus to the next option and wraps from last to first", () => {
+            const {press, options} = open({active: 0});
+            const event = keyPress("ArrowDown");
+
+            press(event);
+
+            assert.equal(event.defaultPrevented, true);
+            assert.equal(options[1].focused, 1);
+
+            const {press: pressLast, options: optionsLast} = open({active: 2});
+            const eventLast = keyPress("ArrowDown");
+
+            pressLast(eventLast);
+
+            assert.equal(eventLast.defaultPrevented, true);
+            assert.equal(optionsLast[0].focused, 1);
+        });
+
+        it("ArrowUp moves focus to the previous option and wraps from first to last", () => {
+            const {press, options} = open({active: 1});
+            const event = keyPress("ArrowUp");
+
+            press(event);
+
+            assert.equal(event.defaultPrevented, true);
+            assert.equal(options[0].focused, 1);
+
+            const {press: pressFirst, options: optionsFirst} = open({active: 0});
+            const eventFirst = keyPress("ArrowUp");
+
+            pressFirst(eventFirst);
+
+            assert.equal(eventFirst.defaultPrevented, true);
+            assert.equal(optionsFirst[2].focused, 1);
+        });
+
+        it("Home moves focus to the first option", () => {
+            const {press, options} = open({active: 2});
+            const event = keyPress("Home");
+
+            press(event);
+
+            assert.equal(event.defaultPrevented, true);
+            assert.equal(options[0].focused, 1);
+        });
+
+        it("End moves focus to the last option", () => {
+            const {press, options} = open({active: 0});
+            const event = keyPress("End");
+
+            press(event);
+
+            assert.equal(event.defaultPrevented, true);
+            assert.equal(options[2].focused, 1);
+        });
+
+        it("leaves arrow keys alone when the menu is closed", () => {
+            const {press, options} = open({menu: false});
+            const event = keyPress("ArrowDown");
+
+            press(event);
+
+            assert.equal(event.defaultPrevented, false);
+            assert.deepEqual(options.map((option) => option.focused), [0, 0, 0]);
+        });
+    });
+
+    it("marks the dropdown menu and items with ARIA roles", () => {
+        assert.match(dropdown, /role="menu"/, "the portalled menu is missing role='menu'");
+        assert.match(dropdown, /role="menuitem"/, "dropdown items are missing role='menuitem'");
+        assert.match(dropdown, /aria-haspopup="true"/, "trigger button is missing aria-haspopup");
+        assert.match(dropdown, /aria-expanded=\{isOpen\}/, "trigger button is missing aria-expanded");
+    });
 });
 
 /**
@@ -721,11 +785,34 @@ describe("the dialogs' own buttons", () => {
     const overlays = {
         "the optimal values dialog": "common/components/OptimalValuesDialog/OptimalValuesDialog.jsx",
         "the integration dialog": "common/components/IntegrationDialog/IntegrationDialog.jsx",
-        "the welcome dialog": "common/components/WelcomeDialog/WelcomeDialog.jsx"
+        "the welcome dialog": "common/components/WelcomeDialog/WelcomeDialog.jsx",
+        "the password dialog": "common/components/PasswordDialog/PasswordDialog.jsx",
+        "the pause dialog": "common/components/PauseDialog/PauseDialog.jsx"
     };
 
     for (const [what, file] of Object.entries(overlays))
         it(`states the type of every button in ${what}`, () => everyButtonIsTyped(read(file), what));
+});
+
+describe("form field and dialog accessibility", () => {
+    const formFieldSource = read("common/components/FormField/FormField.jsx");
+    const toggleSwitchSource = read("common/components/ToggleSwitch/ToggleSwitch.jsx");
+    const passwordDialogSource = read("common/components/PasswordDialog/PasswordDialog.jsx");
+
+    it("associates the FormField label with the input using htmlFor and id", () => {
+        assert.match(formFieldSource, /htmlFor=\{inputId\}/, "label is missing htmlFor association");
+        assert.match(formFieldSource, /id=\{inputId\}/, "inputs/textareas/toggle switches are missing id");
+    });
+
+    it("ToggleSwitch accepts and binds id to its checkbox and label", () => {
+        assert.match(toggleSwitchSource, /htmlFor=\{id\}/, "ToggleSwitch label is missing htmlFor={id}");
+        assert.match(toggleSwitchSource, /id=\{id\}/, "ToggleSwitch input is missing id={id}");
+    });
+
+    it("provides an aria-label for the password visibility toggle", () => {
+        assert.match(passwordDialogSource, /aria-label=\{showPassword \? t\("update\.hide_password"\) : t\("update\.show_password"\)\}/,
+            "password visibility toggle button is missing an accessible name");
+    });
 });
 
 /**

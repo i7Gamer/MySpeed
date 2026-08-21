@@ -56,6 +56,37 @@ describe("the chart modal's Escape", () => {
         assert.match(chartModal, /if \(e\.key !== "Escape" \|\| e\.defaultPrevented \|\| hasOpenOverlay\(\)\) return;/,
             "the modal is the one overlay outside the defaultPrevented treaty");
     });
+
+    it("behaviorally declines when defaultPrevented is true", () => {
+        const start = chartModal.indexOf("const handleEscape");
+        assert.notEqual(start, -1, "the modal no longer defines handleEscape");
+        const body = chartModal.slice(chartModal.indexOf("{", chartModal.indexOf("=>", start)));
+        let depth = 0;
+        let end = 0;
+        for (let i = 0; i < body.length; i++) {
+            if (body[i] === "{") depth++;
+            else if (body[i] === "}" && --depth === 0) {
+                end = i;
+                break;
+            }
+        }
+        let closed = false;
+        const onClose = () => {
+            closed = true;
+        };
+        const hasOpenOverlay = () => false;
+        const handler = new Function("onClose", "hasOpenOverlay", `return (e) => ${body.slice(0, end + 1)};`)(onClose, hasOpenOverlay);
+
+        const event = {
+            key: "Escape",
+            defaultPrevented: true,
+            preventDefault() {
+                this.defaultPrevented = true;
+            }
+        };
+        handler(event);
+        assert.equal(closed, false, "modal must not close when event is defaultPrevented");
+    });
 });
 
 describe("the chart modal holds focus", () => {

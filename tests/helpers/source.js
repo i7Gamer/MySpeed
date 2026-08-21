@@ -203,6 +203,17 @@ export const unreadableMountCount = (source, verbs) => {
  * from the *end*. That returns an empty string, and every assertion made
  * against it passes.
  */
+export const blockEnd = (source, from = 0) => {
+    let depth = 0;
+
+    for (let index = from; index < source.length; index++) {
+        if (source[index] === "{") depth++;
+        else if (source[index] === "}" && --depth === 0) return index;
+    }
+
+    throw new Error("a block is never closed");
+};
+
 export const bodyOf = (source, declaration) => {
     const start = source.indexOf(declaration);
     if (start === -1) throw new Error(`"${declaration}" is not in this source`);

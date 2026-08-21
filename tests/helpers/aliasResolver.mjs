@@ -12,7 +12,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  */
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
-const CANDIDATES = ["", ".js", ".mjs", ".json", "/index.js"];
+const CANDIDATES = ["", ".js", ".mjs", ".jsx", ".json", "/index.js", "/index.jsx"];
 
 const firstExisting = (base) => {
     for (const suffix of CANDIDATES) {

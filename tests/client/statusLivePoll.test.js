@@ -95,3 +95,36 @@ describe("the live poll", () => {
             "the glide and the sampling rate have drifted apart");
     });
 });
+
+describe("status context generation tracking and node synchronization", () => {
+    it("tracks status and live request generations to drop stale responses", () => {
+        assert.match(contextSource, /statusGeneration/);
+        assert.match(contextSource, /appliedStatusGen/);
+        assert.match(contextSource, /liveGeneration/);
+        assert.match(contextSource, /appliedLiveGen/);
+    });
+
+    it("resets fallback and refreshes status when switching nodes", () => {
+        assert.match(contextSource, /useContext\(NodeContext\)/);
+        assert.match(contextSource, /currentNode/);
+        assert.match(contextSource, /setLiveSupported\(true\)/);
+    });
+
+    it("invalidates pending full status polls when a run finishes", () => {
+        assert.match(contextSource, /appliedStatusGen\.current\s*=\s*statusGeneration\.current/);
+    });
+});
+
+describe("status bar background throttling and speed filtering", () => {
+    const barSource = read("common/components/StatusBar/StatusBarComponent.jsx");
+
+    it("spares background tabs for elapsed and last test timers", () => {
+        const guards = barSource.match(/document\.hidden/g) ?? [];
+        assert.ok(guards.length >= 4, "status bar timers do not check document.hidden on ticks and visibility change");
+    });
+
+    it("guards against negative sentinel speeds", () => {
+        assert.match(barSource, /status\.speed\s*>=\s*0/);
+    });
+});
+

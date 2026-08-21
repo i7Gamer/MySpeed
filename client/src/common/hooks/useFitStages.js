@@ -78,6 +78,8 @@ export const nextStage = (stages, stage) => {
  */
 export const resumeStage = (stages, stage) => stages.includes(stage) ? stage : stages[0];
 
+const SUBPIXEL_TOLERANCE = 0.1;
+
 /**
  * What a mutation moved, read against the last settled measurement.
  *
@@ -87,19 +89,17 @@ export const resumeStage = (stages, stage) => stages.includes(stage) ? stage : s
  * compare against. Checked before growth so a mixed change re-proves rather
  * than resumes.
  *
- * The comparison is exact. Used widths are fractional and honest; scroll
- * widths round to the pixel, so a sub-pixel clip could in principle hide -
- * but a clip only begins where the bar has already been pushed to its
- * min-width, which the used widths report fractionally.
+ * Comparisons use SUBPIXEL_TOLERANCE to prevent subpixel rendering artifacts
+ * from triggering spurious walks while accurately capturing true layout changes.
  */
 export const geometryShift = (previous, next) => {
     if (!previous || previous.children.length !== next.children.length
-        || previous.row !== next.row) return "shrink";
+        || Math.abs(previous.row - next.row) > SUBPIXEL_TOLERANCE) return "shrink";
 
     const pairs = next.children.map((child, index) => [previous.children[index], child]);
 
-    if (pairs.some(([was, is]) => is.used < was.used || is.content < was.content)) return "shrink";
-    if (pairs.some(([was, is]) => is.used > was.used || is.content > was.content)) return "growth";
+    if (pairs.some(([was, is]) => is.used < was.used - SUBPIXEL_TOLERANCE || is.content < was.content - SUBPIXEL_TOLERANCE)) return "shrink";
+    if (pairs.some(([was, is]) => is.used > was.used + SUBPIXEL_TOLERANCE || is.content > was.content + SUBPIXEL_TOLERANCE)) return "growth";
 
     return "none";
 };
@@ -108,15 +108,13 @@ export const geometryShift = (previous, next) => {
  * What the observer does about it: nothing, a walk from the worn stage, or a
  * walk from the top.
  *
- * "none" may only be skipped at the widest stage. At any narrower one the bar
- * sits on a line of its own, where its text can change - and shrink - without
- * moving a single measurable box, and a shrink is what lets a wider stage fit
- * again. Growth resumes rather than re-proving: the ladder only ever takes
+ * "none" is skipped at any stage to prevent layout thrashing on periodic status
+ * updates. Growth resumes rather than re-proving: the ladder only ever takes
  * things away, so a stage that did not fit before the row grew fuller still
  * does not.
  */
 export const walkResponse = (shift, atWidestStage) => {
-    if (shift === "none") return atWidestStage ? "skip" : "top";
+    if (shift === "none") return "skip";
 
     return shift === "growth" ? "resume" : "top";
 };

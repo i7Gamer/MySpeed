@@ -515,17 +515,24 @@ describe("what a mutation is allowed to cost", () => {
     /**
      * The decision table the observer answers with.
      *
-     * "none" may only be skipped at the widest stage: at any narrower one the
-     * bar sits on a line of its own, where its text can change - and shrink -
-     * without moving a single measurable box, and a shrink is what lets a
-     * wider stage fit again. Growth resumes rather than re-proving: the ladder
+     * "none" is skipped at any stage: if the geometry hasn't shifted, re-walking
+     * from the top would trigger forced synchronous layout thrashing on every
+     * periodic status update. Growth resumes rather than re-proving: the ladder
      * only ever takes things away, so a stage that did not fit before the row
      * grew fuller still does not.
      */
-    it("skips an unchanged row only at the widest stage", () => {
+    it("skips an unchanged row at any stage", () => {
         assert.equal(walkResponse("none", true), "skip");
-        assert.equal(walkResponse("none", false), "top",
-            "an invisible shrink behind the stacked bar never un-stacks it");
+        assert.equal(walkResponse("none", false), "skip");
+    });
+
+    it("ignores subpixel rendering jitter in geometry", () => {
+        assert.equal(geometryShift(
+            geometry(900, [300, 300], [400, 380]),
+            geometry(900.05, [300.05, 300], [400, 380])), "none");
+        assert.equal(geometryShift(
+            geometry(900, [300, 300], [400, 380]),
+            geometry(899.95, [299.95, 300], [400, 380])), "none");
     });
 
     it("resumes on growth and re-proves on shrink, at any stage", () => {

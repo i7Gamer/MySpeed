@@ -159,6 +159,8 @@
     "manually": "Set manually",
     "new_password": "Set a new password",
     "password_placeholder": "New password",
+    "show_password": "Show password",
+    "hide_password": "Hide password",
     "confirm_password": "Repeat it",
     "confirm_password_placeholder": "New password again",
     "password_mismatch": "The two passwords do not match",

@@ -140,6 +140,40 @@ export const DropdownSelect = ({
             return;
         }
 
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            const buttons = Array.from(menuRef.current?.querySelectorAll("button") || []);
+            if (buttons.length === 0) return;
+
+            e.preventDefault();
+            const index = buttons.indexOf(document.activeElement);
+            if (e.key === "ArrowDown") {
+                const next = index === -1 || index === buttons.length - 1 ? 0 : index + 1;
+                buttons[next]?.focus();
+            } else {
+                const prev = index <= 0 ? buttons.length - 1 : index - 1;
+                buttons[prev]?.focus();
+            }
+            return;
+        }
+
+        if (e.key === "Home") {
+            const buttons = Array.from(menuRef.current?.querySelectorAll("button") || []);
+            if (buttons.length > 0) {
+                e.preventDefault();
+                buttons[0]?.focus();
+            }
+            return;
+        }
+
+        if (e.key === "End") {
+            const buttons = Array.from(menuRef.current?.querySelectorAll("button") || []);
+            if (buttons.length > 0) {
+                e.preventDefault();
+                buttons[buttons.length - 1]?.focus();
+            }
+            return;
+        }
+
         if (e.key !== "Tab") return;
 
         /*
@@ -164,21 +198,22 @@ export const DropdownSelect = ({
     return (
         <div className="dropdown-select-container" ref={containerRef} onBlur={handleBlur}
              onKeyDown={handleMenuKey} tabIndex={-1}>
-            <button type="button" className="dropdown-select-btn" onClick={switchOpen}>
+            <button type="button" className="dropdown-select-btn" onClick={switchOpen}
+                    aria-haspopup="true" aria-expanded={isOpen}>
                 <FontAwesomeIcon icon={buttonIcon}/>
                 <span>{buttonText}</span>
                 <FontAwesomeIcon icon={faChevronDown} className={`dropdown-select-chevron ${isOpen ? "rotated" : ""}`}/>
             </button>
 
             {isOpen && createPortal(
-                <div className="dropdown-select-menu" ref={menuRef} style={position} data-overlay-portal>
+                <div className="dropdown-select-menu" ref={menuRef} style={position} data-overlay-portal role="menu">
                     {/* Buttons, not focusable divs: tabIndex={0} put focus on
                         an option and then nothing answered Enter or Space
                         there, and this menu is the only way to add an
                         integration at all. */}
                     {items.map((item, index) => (
                         <button type="button" key={item.key || index} className="dropdown-select-item"
-                                onClick={() => handleSelect(item)}>
+                                role="menuitem" onClick={() => handleSelect(item)}>
                             {item.icon && <FontAwesomeIcon icon={item.icon}/>}
                             <span>{item.label}</span>
                         </button>

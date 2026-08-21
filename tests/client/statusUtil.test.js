@@ -29,6 +29,13 @@ describe("progressPercent", () => {
         assert.equal(progressPercent({running: true}), null);
     });
 
+    it("is unknown for NaN, Infinity, or non-numeric values", () => {
+        assert.equal(progressPercent({running: true, progress: NaN}), null);
+        assert.equal(progressPercent({running: true, progress: Infinity}), null);
+        assert.equal(progressPercent({running: true, progress: -Infinity}), null);
+        assert.equal(progressPercent({running: true, progress: "0.5"}), null);
+    });
+
     it("rounds to whole percent", () => {
         assert.equal(progressPercent({running: true, progress: 0.4267}), 43);
     });

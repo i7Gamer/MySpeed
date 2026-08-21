@@ -1,27 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { blockEnd, readSource } from "../helpers/source.js";
 
-const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
-
-const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
-
-const statistics = read("pages/Statistics/Statistics.jsx");
-const app = read("App.jsx");
-
-// The index of the } that closes the block opened at `from`.
-const blockEnd = (source, from) => {
-    let depth = 0;
-
-    for (let index = from; index < source.length; index++) {
-        if (source[index] === "{") depth++;
-        else if (source[index] === "}" && --depth === 0) return index;
-    }
-
-    assert.fail("a block is never closed");
-};
+const statistics = readSource("client/src/pages/Statistics/Statistics.jsx");
+const app = readSource("client/src/App.jsx");
 
 /**
  * The arrow function declared at `named`, lifted out and made callable.

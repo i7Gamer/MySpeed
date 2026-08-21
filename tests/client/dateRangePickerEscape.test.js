@@ -50,3 +50,93 @@ describe("the picker's Escape handler", () => {
         assert.match(effect, /removeEventListener\("keydown", handleEscape\)/);
     });
 });
+
+const bodyOfArrowAt = (src, start) =>
+    src.slice(src.indexOf("{", src.indexOf("=>", start)));
+
+const blockEnd = (src, from) => {
+    let depth = 0;
+    for (let index = from; index < src.length; index++) {
+        if (src[index] === "{") depth++;
+        else if (src[index] === "}" && --depth === 0) return index;
+    }
+    assert.fail("a block is never closed");
+};
+
+const pickerHandler = (closure) => {
+    const start = source.indexOf("const handleEscape");
+    assert.notEqual(start, -1, "the picker no longer defines handleEscape");
+
+    const body = bodyOfArrowAt(source, start);
+    const names = Object.keys(closure);
+
+    return new Function(...names, `return (event) => ${body.slice(0, blockEnd(body, 0) + 1)};`)(
+        ...names.map((name) => closure[name]));
+};
+
+describe("behavioral execution of the picker's handleEscape", () => {
+    const createHandler = () => {
+        let closed = false;
+        const closePicker = () => {
+            closed = true;
+        };
+        const handler = pickerHandler({ closePicker });
+        return {
+            handler,
+            isClosed: () => closed
+        };
+    };
+
+    const keyEvent = (key, defaultPrevented = false) => {
+        let prevented = defaultPrevented;
+        let preventDefaultCalled = false;
+        return {
+            key,
+            get defaultPrevented() {
+                return prevented;
+            },
+            preventDefault() {
+                prevented = true;
+                preventDefaultCalled = true;
+            },
+            get preventDefaultCalled() {
+                return preventDefaultCalled;
+            }
+        };
+    };
+
+    it("closes the picker and calls preventDefault on Escape when not prevented", () => {
+        const { handler, isClosed } = createHandler();
+        const event = keyEvent("Escape", false);
+
+        handler(event);
+
+        assert.equal(isClosed(), true, "Escape should close the picker");
+        assert.equal(event.defaultPrevented, true, "Escape should prevent default");
+        assert.equal(event.preventDefaultCalled, true, "preventDefault should have been called");
+    });
+
+    it("must NOT close picker and must NOT call preventDefault when defaultPrevented is true", () => {
+        const { handler, isClosed } = createHandler();
+        const event = keyEvent("Escape", true);
+
+        handler(event);
+
+        assert.equal(isClosed(), false, "claimed Escape must not close the picker");
+        assert.equal(event.preventDefaultCalled, false, "preventDefault must not be called when already prevented");
+    });
+
+    it("must NOT close picker and must NOT call preventDefault on non-Escape keys", () => {
+        for (const key of ["Enter", "Tab", "ArrowDown", " ", "a", "EscapeKey"]) {
+            const { handler, isClosed } = createHandler();
+            const event = keyEvent(key, false);
+
+            handler(event);
+
+            assert.equal(isClosed(), false, `Key "${key}" must not close the picker`);
+            assert.equal(event.defaultPrevented, false, `Key "${key}" must not set defaultPrevented`);
+            assert.equal(event.preventDefaultCalled, false, `Key "${key}" must not call preventDefault`);
+        }
+    });
+});
+

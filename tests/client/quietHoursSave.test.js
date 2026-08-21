@@ -1,47 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import {
     carriesWindow, windowProblem, writeQuietHours
 } from "@/common/components/PauseDialog/quietHoursWindow.js";
+import { blockEnd, readSource } from "../helpers/source.js";
 
-const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
-
-const source = fs.readFileSync(
-    path.join(CLIENT_SRC, "common", "components", "PauseDialog", "PauseDialog.jsx"), "utf8");
-
-/**
- * The quiet window is two configuration keys written one PATCH at a time, and a
- * refusal on the second used to be both destructive and invisible: the server
- * was left holding a new start against the old end - a window nobody configured,
- * which the scheduler then honours - while the dialog went on showing the pair
- * that had been asked for, and reloadConfig() sat on the success path where the
- * failure never reached it. Reopening the dialog re-seeded from the same stale
- * context, so nothing on screen ever named the mixed pair.
- *
- * saveQuietHours is taken out of the component file and run, the way
- * escapeTopmost.test.js runs the keydown handlers: the JSX around it is what
- * node cannot parse, but the save itself is plain JavaScript, and what was wrong
- * here is which values reached the fields after a refusal - re-seeding from the
- * stale context instead of the re-read is exactly the bug commit 167e30f4 fixed,
- * and a scan of the source cannot tell the two apart. The helpers the save leans
- * on are the real ones; everything at the component's edges - requests, toasts,
- * state setters - is recorded instead.
- */
-
-// The index of the } that closes the block opened at `from`.
-const blockEnd = (text, from) => {
-    let depth = 0;
-
-    for (let index = from; index < text.length; index++) {
-        if (text[index] === "{") depth++;
-        else if (text[index] === "}" && --depth === 0) return index;
-    }
-
-    assert.fail("a block is never closed");
-};
+const source = readSource("client/src/common/components/PauseDialog/PauseDialog.jsx");
 
 const bodyOfArrowAt = (text, start) =>
     text.slice(text.indexOf("{", text.indexOf("=>", start)));

@@ -1,20 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readSource } from "../helpers/source.js";
+import { blockEnd, readSource } from "../helpers/source.js";
 
 const welcomeSource = readSource("client/src/common/components/WelcomeDialog/WelcomeDialog.jsx");
-
-// The index of the } that closes the block opened at `from`.
-const blockEnd = (source, from) => {
-    let depth = 0;
-
-    for (let index = from; index < source.length; index++) {
-        if (source[index] === "{") depth++;
-        else if (source[index] === "}" && --depth === 0) return index;
-    }
-
-    assert.fail("a block is never closed");
-};
 
 /**
  * The wizard's last step, taken out of the component file and run.

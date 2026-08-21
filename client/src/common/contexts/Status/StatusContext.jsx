@@ -1,6 +1,7 @@
-import React, {useState, createContext, useEffect} from "react";
+import React, {useState, createContext, useEffect, useContext, useRef} from "react";
 import {jsonRequest} from "@/common/utils/RequestUtil";
 import {LIVE_POLL_MS, pollIntervalFor, runJustFinished, sameStatus, withLive} from "@/common/utils/StatusUtil";
+import {NodeContext} from "@/common/contexts/Node";
 
 export const StatusContext = createContext({});
 
@@ -16,6 +17,14 @@ export const StatusProvider = (props) => {
     // the client back to the fast full poll for the length of the session.
     const [liveSupported, setLiveSupported] = useState(true);
 
+    const nodeContext = useContext(NodeContext);
+    const currentNode = nodeContext?.[2];
+
+    const statusGeneration = useRef(0);
+    const appliedStatusGen = useRef(0);
+    const liveGeneration = useRef(0);
+    const appliedLiveGen = useRef(0);
+
     // Polled every few seconds, so a transient failure must not reject: keep the
     // last known status rather than tearing down the interval.
     //
@@ -25,11 +34,37 @@ export const StatusProvider = (props) => {
     // one consumes this context and rebuilds its own value - so TestArea and
     // every row were redrawn every five seconds at idle and every second during
     // a run, to show exactly what was already on screen.
-    const updateStatus = () => jsonRequest("/speedtests/status")
-        .then(next => setStatus(prev => sameStatus(prev, next) ? prev : next))
-        .catch(() => undefined);
+    const updateStatus = () => {
+        const generation = ++statusGeneration.current;
+
+        return jsonRequest("/speedtests/status")
+            .then(next => {
+                if (generation <= appliedStatusGen.current) return;
+
+                appliedStatusGen.current = generation;
+                setStatus(prev => {
+                    if (sameStatus(prev, next)) return prev;
+                    if (prev.running && next.running && liveSupported) {
+                        return {...next, phase: prev.phase, progress: prev.progress, speed: prev.speed, startedAt: prev.startedAt};
+                    }
+                    return next;
+                });
+            })
+            .catch(() => undefined);
+    };
 
     const setRunning = (running) => setStatus(prev => ({...prev, running}));
+
+    // Reset fallback and status whenever switching between nodes, so a 404 on
+    // an older node is not sticky for a modern node, and old status is refreshed.
+    useEffect(() => {
+        setLiveSupported(true);
+        setStatus({paused: false, running: false});
+        appliedStatusGen.current = ++statusGeneration.current;
+        appliedLiveGen.current = ++liveGeneration.current;
+        updateStatus();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentNode]);
 
     // The interval follows the state rather than being fixed: polling fast
     // forever is wasted on a page left open overnight, and the full route is
@@ -76,14 +111,27 @@ export const StatusProvider = (props) => {
     useEffect(() => {
         if (!status.running || !liveSupported) return;
 
-        const updateLive = () => jsonRequest("/speedtests/status/live")
-            .then(live => {
-                if (runJustFinished(status.running, live.running)) updateStatus();
-                setStatus(prev => withLive(prev, live));
-            })
-            .catch(error => {
-                if (error?.status === NOT_FOUND) setLiveSupported(false);
-            });
+        const updateLive = () => {
+            const generation = ++liveGeneration.current;
+
+            return jsonRequest("/speedtests/status/live")
+                .then(live => {
+                    if (generation <= appliedLiveGen.current) return;
+
+                    appliedLiveGen.current = generation;
+
+                    if (runJustFinished(status.running, live.running)) {
+                        // Invalidate pending full status polls from mid-run so a stale
+                        // response with running: true cannot resurrect a completed run.
+                        appliedStatusGen.current = statusGeneration.current;
+                        updateStatus();
+                    }
+                    setStatus(prev => withLive(prev, live));
+                })
+                .catch(error => {
+                    if (error?.status === NOT_FOUND) setLiveSupported(false);
+                });
+        };
 
         updateLive();
         // A hidden tab skips the tick, like the full poll above: the sample

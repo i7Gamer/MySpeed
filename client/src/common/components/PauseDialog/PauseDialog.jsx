@@ -127,6 +127,7 @@ export const PauseDialog = ({open, onClose, onPause}) => {
                             </SelectableList>
                             
                             <button 
+                                type="button"
                                 className={`pause-custom-toggle${showCustom ? " pause-custom-open" : ""}`}
                                 onClick={() => setShowCustom(!showCustom)}
                             >
@@ -152,6 +153,7 @@ export const PauseDialog = ({open, onClose, onPause}) => {
                             {/* The standing version of a pause: the same hours
                                 every day, without having to set it again. */}
                             <button
+                                type="button"
                                 className={`pause-custom-toggle${showQuiet ? " pause-custom-open" : ""}`}
                                 onClick={() => setShowQuiet(!showQuiet)}
                             >
@@ -176,7 +178,7 @@ export const PauseDialog = ({open, onClose, onPause}) => {
                                                    onChange={(e) => setQuietEnd(e.target.value)}/>
                                         </label>
                                     </div>
-                                    <button className="dialog-btn pause-quiet-save"
+                                    <button type="button" className="dialog-btn pause-quiet-save"
                                             onClick={saveQuietHours} disabled={!!quietProblem || savingQuiet}>
                                         {t("dialog.save")}
                                     </button>
@@ -185,7 +187,7 @@ export const PauseDialog = ({open, onClose, onPause}) => {
                         </div>
                     </DialogBody>
                     <DialogFooter>
-                        <button className="dialog-btn" onClick={() => handleSave(close)} disabled={!isCustomValid}>
+                        <button type="button" className="dialog-btn" onClick={() => handleSave(close)} disabled={!isCustomValid}>
                             {t("update.pause")}
                         </button>
                     </DialogFooter>

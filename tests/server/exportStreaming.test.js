@@ -2,7 +2,7 @@ import { describe, it, mock } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { Op } from "sequelize";
-import { toCsv } from "../../server/util/csv.js";
+import { CSV_HEADER, toCsv } from "../../server/util/csv.js";
 import { streamCsv, streamJsonArray } from "../../server/util/exportStream.js";
 import { EXPORT_PAGE_ROWS, listPages } from "../../server/controller/speedtests.js";
 import model from "../../server/models/Speedtests.js";
@@ -118,6 +118,26 @@ describe("a client that leaves mid-export", () => {
 
         assert.equal(pulled.count, 1, "the export kept reading for a caller that had left");
     });
+
+    it("stops pulling pages instead of reading the rest of the table for CSV", async () => {
+        const {iterator, pulled} = pagesOf(ROWS.slice(0, 1), ROWS.slice(1, 2), ROWS.slice(2));
+        const res = capturingResponse();
+
+        res.write = (chunk, callback) => {
+            if (chunk !== CSV_HEADER) {
+                res.destroyed = true;
+            }
+            setImmediate(() => {
+                if (res.destroyed) res.emit("close");
+                callback?.();
+            });
+            return false;
+        };
+
+        await streamCsv(res, iterator);
+
+        assert.equal(pulled.count, 1, "the CSV export kept reading for a caller that had left");
+    });
 });
 
 /**
@@ -146,6 +166,27 @@ describe("a client that reads slowly", () => {
             "backpressure truncated the export for a client that was merely slow");
         assert.equal(res.writableEnded, true);
     });
+
+    it("waits out each refusal and still delivers the whole CSV document", async () => {
+        const res = capturingResponse();
+        res.write = (chunk, callback) => {
+            res.emit("written", chunk);
+            setImmediate(() => {
+                res.emit("drain");
+                callback?.();
+            });
+            return false;
+        };
+        const written = [];
+        res.on("written", (chunk) => written.push(chunk));
+        res.text = () => written.join("");
+
+        await streamCsv(res, pagesOf(ROWS.slice(0, 2), ROWS.slice(2)).iterator);
+
+        assert.equal(res.text(), toCsv(ROWS),
+            "backpressure truncated the CSV export for a client that was merely slow");
+        assert.equal(res.writableEnded, true);
+    });
 });
 
 /**
@@ -169,6 +210,20 @@ describe("a database that fails mid-walk", () => {
             "the truncated document was closed as though it were complete");
         assert.match(res.text(), /^\[\n/, "nothing at all was flushed before the failure");
         assert.doesNotMatch(res.text(), /\n\]$/, "the document claims to be whole");
+    });
+
+    it("surfaces the failure instead of ending the CSV document", async () => {
+        const res = capturingResponse();
+        const failing = (async function* () {
+            yield ROWS.slice(0, 1);
+            throw new Error("database has gone away");
+        })();
+
+        await assert.rejects(() => streamCsv(res, failing), /gone away/);
+
+        assert.notEqual(res.writableEnded, true,
+            "the truncated CSV document was closed as though it were complete");
+        assert.equal(res.text().startsWith(CSV_HEADER), true, "header was not flushed before the failure");
     });
 });
 
