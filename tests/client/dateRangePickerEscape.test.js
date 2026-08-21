@@ -1,8 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { readSource } from "../helpers/source.js";
 
 /**
  * The picker's Escape follows the protocol every other overlay speaks.
@@ -20,10 +18,7 @@ import { fileURLToPath } from "node:url";
  *
  * Read as source, the way the picker's sibling components are.
  */
-const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-
-const source = fs.readFileSync(
-    path.join(ROOT, "client/src/common/components/DateRangePicker/DateRangePicker.jsx"), "utf8");
+const source = readSource("client/src/common/components/DateRangePicker/DateRangePicker.jsx");
 
 const at = source.indexOf("handleEscape");
 const effect = source.slice(source.lastIndexOf("useEffect(", at), source.indexOf("]);", at) + 3);

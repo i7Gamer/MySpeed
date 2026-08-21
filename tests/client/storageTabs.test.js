@@ -1,8 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { readSource, tagHolding } from "../helpers/source.js";
 
 /**
  * The storage dialog's two tabs were divs carrying an onClick.
@@ -16,20 +14,8 @@ import { fileURLToPath } from "node:url";
  * Read as source, the way keyboardReachableControls.test.js reads its
  * components.
  */
-const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-
-const read = (file) => fs.readFileSync(path.join(ROOT, file), "utf8");
-
-const dialog = read("client/src/common/components/StorageDialog/StorageDialog.jsx");
-const styles = read("client/src/common/components/StorageDialog/styles.sass");
-
-/** The opening tag of the element carrying `marker`, attributes and all. */
-const tagHolding = (source, marker) => {
-    const at = source.indexOf(marker);
-    assert.notEqual(at, -1, `${marker} is no longer in this component`);
-
-    return source.slice(source.lastIndexOf("<", at), source.indexOf(">", at) + 1);
-};
+const dialog = readSource("client/src/common/components/StorageDialog/StorageDialog.jsx");
+const styles = readSource("client/src/common/components/StorageDialog/styles.sass");
 
 describe("the storage tabs answer the keyboard", () => {
     it("switches with buttons rather than bare divs", () => {

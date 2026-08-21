@@ -415,7 +415,9 @@ describe("the columns the second and third rows fall into", () => {
 
         return named.map(([, name, props]) => {
             if (name === "SpeedChart") return `speed:${props.match(/dataKey="(\w+)"/)?.[1]}`;
-            if (name === "AverageChart") return `average:${props.match(/statistics\.values\.(\w+)/)?.[1]}`;
+            // Named by the map entry the title now reads from - the charts and
+            // the dialog share one authority, so the card namer follows it.
+            if (name === "AverageChart") return `average:${props.match(/CHART_MODAL_LABELS\.(\w+)/)?.[1]}`;
             return name;
         });
     };
@@ -424,9 +426,9 @@ describe("the columns the second and third rows fall into", () => {
         assert.equal(cards().length, 9, `the page renders ${cards().length} cards, so the rows are not three deep`);
     });
 
-    // down/up on the value cards, download/upload on the charts - the two
-    // names for one metric, which is the pairing this is about.
-    for (const [chart, panel] of [["speed:download", "average:down"], ["speed:upload", "average:up"]])
+    // avgDownload/avgUpload on the value cards, download/upload on the charts
+    // - the two names for one metric, which is the pairing this is about.
+    for (const [chart, panel] of [["speed:download", "average:avgDownload"], ["speed:upload", "average:avgUpload"]])
         it(`puts ${panel} directly under ${chart}`, () => {
             const order = cards();
             const above = order.indexOf(chart);
@@ -494,7 +496,7 @@ describe("the columns the second and third rows fall into", () => {
             `the stylesheet gives a row to ${spanning.length} cards, the model to ${SPANNING.length}`);
     });
 
-    for (const [one, two] of [["speed:download", "speed:upload"], ["average:down", "average:up"],
+    for (const [one, two] of [["speed:download", "speed:upload"], ["average:avgDownload", "average:avgUpload"],
         ["LatestTestChart", "ConsistencyChart"]])
         it(`keeps ${one} beside ${two} once two share a row`, () => {
             assert.ok(twoColumnRows().some((row) => row.includes(one) && row.includes(two)),

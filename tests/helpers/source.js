@@ -222,3 +222,44 @@ export const bodyOf = (source, declaration) => {
 
 /** The two together, which is how every caller but one uses them. */
 export const bodyIn = (file, declaration) => bodyOf(readSource(file), declaration);
+
+/**
+ * The opening tag of the JSX element carrying `marker`, attributes and all.
+ *
+ * Walking back to the nearest `<` rather than matching an opening tag, because
+ * these tags carry arrow functions - `onClick={() => …}` - and any pattern
+ * written as "everything up to the closing angle bracket" stops inside the
+ * first arrow it meets. Forward to the first `>` after the marker, which is
+ * the end of the tag only while the attributes *after* the marker hold no
+ * arrow function - so callers point it at a className or a ref, not at a
+ * handler.
+ *
+ * One home rather than a copy per test file: the review that moved it here
+ * found three drifting copies, which is how a fix to the walk reaches one
+ * suite and misses two.
+ */
+export const tagHolding = (source, marker) => {
+    const at = source.indexOf(marker);
+    if (at === -1) throw new Error(`${marker} is not in this source`);
+
+    return source.slice(source.lastIndexOf("<", at), source.indexOf(">", at) + 1);
+};
+
+/**
+ * Shell-style sources with their comment lines removed, for the assertions
+ * that must not be satisfied by prose. Whole lines only: a `#` mid-line is
+ * more often a fragment of something real than a trailing comment.
+ */
+export const withoutHashComments = (source) => source
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
+
+/**
+ * JS/JSX sources with their comments removed, for the same reason. Block
+ * comments go whole; line comments only from `//` that does not follow a
+ * colon, so a URL inside a string survives.
+ */
+export const withoutJsComments = (source) => source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");

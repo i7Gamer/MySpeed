@@ -402,18 +402,18 @@ export const Statistics = () => {
                                          ranges={{download: deferredStatistics.download, upload: deferredStatistics.upload,
                                              ping: deferredStatistics.ping, jitter: deferredStatistics.jitter}}/>;
             case 'download':
-                return <SpeedChart labels={source.labels} data={source.data} dataKey="download" titleKey="latest.down" color="hsl(187, 94%, 43%)" failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
+                return <SpeedChart labels={source.labels} data={source.data} dataKey="download" titleKey={CHART_MODAL_LABELS.download} color="hsl(187, 94%, 43%)" failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
             case 'upload':
-                return <SpeedChart labels={source.labels} data={source.data} dataKey="upload" titleKey="latest.up" color="hsl(258, 90%, 66%)" failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
+                return <SpeedChart labels={source.labels} data={source.data} dataKey="upload" titleKey={CHART_MODAL_LABELS.upload} color="hsl(258, 90%, 66%)" failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
             case 'ping':
                 return <PingChart labels={source.labels} data={source.data} failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints}/>;
             case 'hourly':
                 return <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages}/>;
             case 'avgDownload':
-                return <AverageChart title={t("statistics.values.down")} data={deferredStatistics.download} previous={previous?.download} target={config?.download}
+                return <AverageChart title={t(CHART_MODAL_LABELS.avgDownload)} data={deferredStatistics.download} previous={previous?.download} target={config?.download}
                                     consistency={deferredStatistics.consistency?.download} tests={deferredStatistics.tests} expanded/>;
             case 'avgUpload':
-                return <AverageChart title={t("statistics.values.up")} data={deferredStatistics.upload} previous={previous?.upload} target={config?.upload}
+                return <AverageChart title={t(CHART_MODAL_LABELS.avgUpload)} data={deferredStatistics.upload} previous={previous?.upload} target={config?.upload}
                                     consistency={deferredStatistics.consistency?.upload} tests={deferredStatistics.tests} expanded/>;
             default:
                 return null;
@@ -469,13 +469,13 @@ export const Statistics = () => {
                 card takes the same share of the row - so the pairing is a
                 property of this order and statisticsReflow.test.js holds it. */}
             <PingChart labels={deferredStatistics.labels} data={deferredStatistics.data} failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('ping')} compact/>
-            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="download" titleKey="latest.down" color="hsl(187, 94%, 43%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('download')} compact/>
-            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="upload" titleKey="latest.up" color="hsl(258, 90%, 66%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('upload')} compact/>
+            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="download" titleKey={CHART_MODAL_LABELS.download} color="hsl(187, 94%, 43%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('download')} compact/>
+            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="upload" titleKey={CHART_MODAL_LABELS.upload} color="hsl(258, 90%, 66%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('upload')} compact/>
 
             <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages} onClick={() => setExpandedChart('hourly')}/>
 
-            <AverageChart title={t("statistics.values.down")} data={deferredStatistics.download} previous={previous?.download} target={config?.download} onClick={() => setExpandedChart('avgDownload')}/>
-            <AverageChart title={t("statistics.values.up")} data={deferredStatistics.upload} previous={previous?.upload} target={config?.upload} onClick={() => setExpandedChart('avgUpload')}/>
+            <AverageChart title={t(CHART_MODAL_LABELS.avgDownload)} data={deferredStatistics.download} previous={previous?.download} target={config?.download} onClick={() => setExpandedChart('avgDownload')}/>
+            <AverageChart title={t(CHART_MODAL_LABELS.avgUpload)} data={deferredStatistics.upload} previous={previous?.upload} target={config?.upload} onClick={() => setExpandedChart('avgUpload')}/>
 
             <ChartModal
                 isOpen={!!expandedChart}
