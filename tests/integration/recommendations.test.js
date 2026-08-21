@@ -106,6 +106,31 @@ describe("createRecommendations", () => {
         assert.equal(current.ping, 21);
     });
 
+    /**
+     * The fabricated zero, which is not a placeholder and not a reading either.
+     *
+     * parseCloudflare stores `round(avg_latency_ms) ?? 0` on its success path,
+     * so a run whose latency block held no average writes a 0 into a row that
+     * is a success in every other column. The statistics refuse it and the
+     * alert gate refuses it, both through isMeasuredLatency - and this loop,
+     * the third reader of the same rule, was still gating on "at least
+     * FAILED + 1", which is zero. So the recommendation card published a
+     * latency target of 0 ms drawn from a row the page beside it would not
+     * average, which is the disagreement that rule exists to end.
+     */
+    it("never recommends the fabricated zero as the best latency", async () => {
+        const sample = successes();
+        sample[0].ping = 0;
+
+        await seedTests(server.tests, sample);
+
+        await createRecommendations();
+
+        const current = await recommendations.getCurrent();
+        assert.equal(current.ping, 21,
+            "a latency nobody measured was published as the best of the sample");
+    });
+
     it("recommends nothing when no test in the sample measured a ping", async () => {
         await seedTests(server.tests, unmeasured());
 

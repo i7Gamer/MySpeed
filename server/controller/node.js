@@ -2,7 +2,8 @@ import nodes from '../models/Node.js';
 import { writePasswordHeaders } from '../util/passwordHeader.js';
 import { checkNodeTarget } from '../util/safeUrl.js';
 import { RESPONSE_TOO_LARGE, safeRequest } from '../util/safeRequest.js';
-import { SERVER_BUSY } from '../util/authOutcome.js';
+import { stripTrailingSlashes } from '../util/helpers.js';
+import { NODE_REFUSAL_HEADER, SERVER_BUSY } from '../util/authOutcome.js';
 import { isBackupExportPath, relayPolicy } from '../util/backupPolicy.js';
 
 // The child answers this while it already has as many password comparisons
@@ -12,6 +13,10 @@ const SERVICE_UNAVAILABLE = 503;
 // The far end produced something this relay will not pass on - a redirect, or
 // an answer past the ceiling. The failure is the upstream's, not this server's.
 const BAD_GATEWAY = 502;
+
+// The child refusing the credential this instance stores for it, which is a
+// different refusal from this instance refusing the caller's own session.
+const UNAUTHORIZED = 401;
 
 /**
  * Whether a 503 came from MySpeed's own throttle rather than from whatever
@@ -70,7 +75,11 @@ export const checkStatus = async (url, password) => {
     if (!(await checkNodeTarget(url)).safe) return "INVALID_URL";
 
     try {
-        const res = await safeRequest(url + "/api/config", {
+        // Normalised for the reason the proxy normalises it: a stored address
+        // ending in a slash otherwise asks for //api/config, which the child's
+        // router does not match - so adding a perfectly good node reported it
+        // as unreachable.
+        const res = await safeRequest(stripTrailingSlashes(url) + "/api/config", {
             headers: writePasswordHeaders(password),
             timeout: STATUS_TIMEOUT
         });
@@ -234,6 +243,19 @@ export const proxyRequest = async (url, req, res) => {
             const value = response.headers[name];
             if (value) res.setHeader(name, name === "content-type" ? safeContentType(value) : value);
         }
+
+        /*
+         * Marked as the node's refusal, not this instance's.
+         *
+         * The body goes on verbatim, so a child that rejects its stored
+         * password answers exactly what this instance answers when its own
+         * session expires. The client cannot tell them apart, and it needs to:
+         * one wants the password box, the other wants the node list, because
+         * the credential the child refused is not the one login() sends. Asking
+         * the wrong one loops - the parent accepts its own password, the page
+         * reloads, the child refuses again.
+         */
+        if (response.status === UNAUTHORIZED) res.setHeader(NODE_REFUSAL_HEADER, "1");
 
         // Handed on verbatim. Forcing the body through JSON.parse turned every
         // non-JSON response - both CSV export endpoints - into a literal null.

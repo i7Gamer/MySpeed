@@ -1,6 +1,40 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { checkNodeTarget, isBlockedAddress } from "../../server/util/safeUrl.js";
+import { checkNodeTarget, isBlockedAddress, isMetadataAddress } from "../../server/util/safeUrl.js";
+
+/**
+ * The IPv6 metadata endpoint, refused on the node path too.
+ *
+ * fd00:ec2::254 is where AWS answers IMDS over IPv6, and it sits in
+ * Unique-Local space rather than link-local - so the range checks that catch
+ * 169.254.169.254 and fe80::/10 walked straight past it. Blocked as one
+ * address rather than as a range, because fd00::/8 is the IPv6 LAN and a node
+ * on one is ordinary.
+ */
+describe("the IPv6 metadata address", () => {
+    it("is blocked in every spelling", () => {
+        for (const spelling of ["fd00:ec2::254", "fd00:ec2:0:0:0:0:0:254", "FD00:EC2::0254"])
+            assert.equal(isBlockedAddress(spelling), true, `${spelling} is not recognised`);
+    });
+
+    it("is recognised on its own, so both guards can share the rule", () => {
+        assert.equal(isMetadataAddress("fd00:ec2::254"), true);
+        assert.equal(isMetadataAddress("169.254.169.254"), true);
+        assert.equal(isMetadataAddress("fd00::1234"), false);
+    });
+
+    it("leaves the rest of the Unique-Local range alone", () => {
+        assert.equal(isBlockedAddress("fd00::1234"), false);
+        assert.equal(isBlockedAddress("fd12:3456:789a::1"), false);
+    });
+
+    it("refuses a node pointed at it", async () => {
+        const {safe, reason} = await checkNodeTarget("http://[fd00:ec2::254]:5216");
+
+        assert.equal(safe, false);
+        assert.match(reason, /metadata|loopback or link-local/i);
+    });
+});
 
 const originalOptOut = process.env.ALLOW_LOCAL_NODES;
 

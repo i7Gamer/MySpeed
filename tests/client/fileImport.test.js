@@ -1,5 +1,8 @@
-import { describe, it, beforeEach } from "node:test";
+import { describe, it, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
+
+const realFileReader = Object.getOwnPropertyDescriptor(globalThis, "FileReader");
+const realDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
 
 /**
  * The import helpers target the browser; stub the two globals they reach for
@@ -42,6 +45,13 @@ const { readAsJson, chooseJsonFile, chooseAndReadJson } = await import("../../cl
 
 beforeEach(() => {
     lastInput = null;
+});
+
+after(() => {
+    if (realFileReader) Object.defineProperty(globalThis, "FileReader", realFileReader);
+    else delete globalThis.FileReader;
+    if (realDocument) Object.defineProperty(globalThis, "document", realDocument);
+    else delete globalThis.document;
 });
 
 describe("readAsJson", () => {

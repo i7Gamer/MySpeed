@@ -1,8 +1,11 @@
-import { describe, it, beforeEach } from "node:test";
+import { describe, it, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+const realLocalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+const realFetch = Object.getOwnPropertyDescriptor(globalThis, "fetch");
 
 // RequestUtil targets the browser; stub the globals it reaches for before the
 // module graph is loaded, the same way requestUtil.test.js does.
@@ -31,6 +34,13 @@ const nodeContainerSource = fs.readFileSync(
 beforeEach(() => {
     store.clear();
     lastUrl = null;
+});
+
+after(() => {
+    if (realLocalStorage) Object.defineProperty(globalThis, "localStorage", realLocalStorage);
+    else delete globalThis.localStorage;
+    if (realFetch) Object.defineProperty(globalThis, "fetch", realFetch);
+    else delete globalThis.fetch;
 });
 
 /**

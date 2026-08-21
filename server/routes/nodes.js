@@ -182,7 +182,12 @@ app.all("/:nodeId/*route", password(false),
     resolveNode, importBody, async (req, res) => {
     const node = req.node;
 
-    const url = node.url + req.originalUrl.replace("/api/nodes/" + req.params.nodeId, "/api");
+    // Normalised before the join: the stored address is whatever the operator
+    // pasted, and a browser hands out `http://host:5216/` with the slash. Left
+    // on, the concatenation asks the child for `//api/...`, which Express does
+    // not collapse - its router never matches its own mount, so every proxied
+    // request 404s and a healthy node reads as broken.
+    const url = stripTrailingSlashes(node.url) + req.originalUrl.replace("/api/nodes/" + req.params.nodeId, "/api");
 
     passwordHeaderNames.forEach(name => delete req.headers[name]);
     Object.assign(req.headers, writePasswordHeaders(node.password));

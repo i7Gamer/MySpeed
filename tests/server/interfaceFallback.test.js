@@ -139,6 +139,34 @@ describe("deciding whether to fall back", () => {
         assert.deepEqual(resolveFallback(undefined, available, 0), {missingRounds: 0, write: "eth0"});
     });
 
+    /**
+     * And "none" is nothing configured, not an adapter that has gone missing.
+     *
+     * It is the sentinel insertDefaults seeds when the probe found no usable
+     * adapter at all - a boot while the network was still coming up, which
+     * under docker is ordinary - and validateInput refuses it as an operator's
+     * choice, so it can only ever mean "unset". Read as a pinned adapter it
+     * took the three-round wait meant for protecting a real choice: the
+     * instance spent those rounds with no usable interface, and every
+     * scheduled test in them failed with `interface "none" has no usable
+     * address` before the fallback finally wrote a working one.
+     */
+    it("treats the unset sentinel as nothing configured", () => {
+        assert.deepEqual(resolveFallback("none", available, 0), {missingRounds: 0, write: "eth0"});
+    });
+
+    it("does not wait out the run of rounds for it", () => {
+        const {write} = resolveFallback("none", available, 0);
+
+        assert.equal(write, "eth0", "an instance that seeded the sentinel keeps failing for three rounds");
+    });
+
+    // And with nothing detected there is still nothing to write, sentinel or
+    // not: the configuration is left alone rather than overwritten with undefined.
+    it("still writes nothing when there is no adapter to move to", () => {
+        assert.deepEqual(resolveFallback("none", [], 0), {missingRounds: 0, write: null});
+    });
+
     // With nothing detected there is nothing to fall back to, and overwriting a
     // good setting with undefined is worse than leaving it. The run carries on
     // rather than starting again - see below for why that matters.

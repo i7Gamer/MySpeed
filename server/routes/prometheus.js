@@ -9,6 +9,7 @@ import {
 } from '../middlewares/password.js';
 import { matchesSetupToken } from '../util/setupToken.js';
 import { isFailedTest } from '../util/testOutcome.js';
+import { metricValue } from '../util/metricValue.js';
 import { createQueue } from '../util/serialiseQueue.js';
 import { clientGone } from '../util/clientGone.js';
 
@@ -107,10 +108,6 @@ const authorizeMetrics = async (req, res) => {
 };
 
 const speedLabels = ['server_id', 'server_name', 'server_host'];
-
-// A packet loss of zero is a measurement; only null and undefined mean the
-// provider never reported one.
-const isMeasured = (value) => value !== null && value !== undefined;
 
 const pingGauge = new promClient.Gauge({name: 'myspeed_ping', help: 'Current ping in ms', labelNames: speedLabels});
 const jitterGauge = new promClient.Gauge({name: 'myspeed_jitter', help: 'Current jitter in ms', labelNames: speedLabels});
@@ -234,17 +231,26 @@ const collect = async (res) => {
     // and which server it was is most of the diagnosis when one server is what
     // keeps failing.
     serverInfoGauge.set(labels, 1);
-    // Defended the same way resolveServerLabels defends the same field:
-    // prom-client throws "Value is not a valid number" for null, and an
-    // imported row - PUT /storage/tests/history validates only ping, download,
-    // upload and time - can carry one. That took down the whole scrape for as
-    // long as the row stayed the newest.
-    currentServerGauge.set(latest.serverId ?? 0);
+    /*
+     * Every value below goes through metricValue, and none of them used to.
+     *
+     * prom-client throws for anything that is not a number, and the throw is
+     * ahead of the response - so one unreadable column in the newest test
+     * answered 500 for every scrape until a newer test landed, which Prometheus
+     * reads as the exporter being down. `?? 0` covered the null this route was
+     * first bitten by and nothing else: serverId was the one numeric column the
+     * history import never validated, so "auto" could be written into it
+     * through the API, and any measurement column can hold a string on a
+     * history imported before that validation existed - the case
+     * createRecommendations guards against by name.
+     */
+    currentServerGauge.set(metricValue(latest.serverId) ?? 0);
 
     // Positive, not merely truthy: a failed test's duration is -1 like the rest
     // of its row, and exporting that would be the placeholder this branch
     // exists to keep out.
-    if (latest.time > 0) timeGauge.set(labels, latest.time);
+    const time = metricValue(latest.time);
+    if (time !== null && time > 0) timeGauge.set(labels, time);
 
     if (isFailedTest(latest)) {
         testFailedGauge.set(labels, 1);
@@ -253,18 +259,25 @@ const collect = async (res) => {
 
     testFailedGauge.set(labels, 0);
 
-    pingGauge.set(labels, latest.ping);
-    if (latest.jitter !== null && latest.jitter !== undefined)
-        jitterGauge.set(labels, latest.jitter);
-    downloadGauge.set(labels, latest.download);
-    uploadGauge.set(labels, latest.upload);
+    // An unreadable measurement leaves its series absent, which is what an
+    // absent series already means here - the provider did not report it. That
+    // is the honest answer, and it keeps the rest of the scrape standing.
+    const measured = (gauge, value) => {
+        const reading = metricValue(value);
+        if (reading !== null) gauge.set(labels, reading);
+    };
+
+    measured(pingGauge, latest.ping);
+    measured(jitterGauge, latest.jitter);
+    measured(downloadGauge, latest.download);
+    measured(uploadGauge, latest.upload);
 
     // Left unset rather than zeroed when the provider did not measure them: an
     // absent series is a gap in a graph, while a zero is a claim that the line
     // was flawless. Only Ookla reports any of these.
-    if (isMeasured(latest.packetLoss)) packetLossGauge.set(labels, latest.packetLoss);
-    if (isMeasured(latest.downloadLatency)) downloadLatencyGauge.set(labels, latest.downloadLatency);
-    if (isMeasured(latest.uploadLatency)) uploadLatencyGauge.set(labels, latest.uploadLatency);
+    measured(packetLossGauge, latest.packetLoss);
+    measured(downloadLatencyGauge, latest.downloadLatency);
+    measured(uploadLatencyGauge, latest.uploadLatency);
 
     return serve();
 };

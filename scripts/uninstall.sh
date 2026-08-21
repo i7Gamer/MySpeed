@@ -60,7 +60,11 @@ clear
 echo -e "$BLUE🔎 Status:$NORMAL Removing service data if present..."
 sleep 3
 
-if docker ps -a --format '{{.Names}}' | grep -q "MySpeed"; then
+# Exactly, not merely containing. The two branches are exclusive, so a native
+# systemd host that also runs an unrelated MySpeedBackup container took the
+# docker branch: the service was never stopped, the unit never removed and the
+# data never deleted, under a banner announcing that it had all been done.
+if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "MySpeed"; then
   echo -e "$YELLOW Found Docker container. Stopping the container..."
   docker stop MySpeed
   echo -e "$YELLOW Removing Docker container..."
@@ -71,11 +75,21 @@ if docker ps -a --format '{{.Names}}' | grep -q "MySpeed"; then
   fi
   rm -rf "$DOCKER_INSTALLATION_PATH"
 else
-  if command -v systemctl &> /dev/null && systemctl --all --type service | grep -n "myspeed.service"; then
+  # -q, not -n: the condition wants an answer, and -n printed the matched line
+  # and its number into the middle of the uninstall output.
+  if command -v systemctl &> /dev/null && systemctl --all --type service | grep -q "myspeed.service"; then
     systemctl stop myspeed
     systemctl disable myspeed
-    rm /etc/systemd/system/myspeed.service
-    rm /usr/lib/systemd/system/myspeed.service
+
+    # Through the list that names them, guarded - the same list this script
+    # already walks to read the recorded path. Spelled out as two bare `rm`s,
+    # every ordinary uninstall printed "cannot remove ...: No such file or
+    # directory" for the path install.sh never creates, swallowed for want of
+    # `set -e`, directly beneath the success banner.
+    for unit in "${SERVICE_FILES[@]}"; do
+      rm -f "$unit"
+    done
+
     systemctl daemon-reload
     systemctl reset-failed
   fi

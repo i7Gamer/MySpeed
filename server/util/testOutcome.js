@@ -1,4 +1,5 @@
 import { Op } from 'sequelize';
+import { metricValue } from './metricValue.js';
 
 /**
  * Whether a stored test is the record of a failure rather than a measurement.
@@ -28,15 +29,59 @@ import { Op } from 'sequelize';
  */
 export const FAILED_TEST = -1;
 
+/*
+ * The placeholders are recognised by value, not by type.
+ *
+ * sqlite returns a numeric column as whatever it was handed, so a history
+ * imported before importTests validated its columns can hold "-1" as text - the
+ * same population metricValue was widened to read. It was widened and this was
+ * not, so those rows walked past every failure check: the Prometheus route
+ * published myspeed_test_failed 0 and then myspeed_ping -1 beside it, a line
+ * delivering minus one megabit recorded as a healthy sample.
+ *
+ * metricValue rather than a cast, because a cast is what makes that worse:
+ * Number("") is 0 and Number([]) is 0, so an empty column would become a
+ * reading. An unreadable value stays unreadable and the row is judged by the
+ * columns that can be read.
+ */
+const isPlaceholder = (value) => metricValue(value) === FAILED_TEST;
+
 export const isFailedTest = (test) => {
     if (!test) return false;
     if (test.error) return true;
 
-    return test.ping === FAILED_TEST && test.download === FAILED_TEST && test.upload === FAILED_TEST;
+    return isPlaceholder(test.ping) && isPlaceholder(test.download) && isPlaceholder(test.upload);
 };
 
 /** The other side of the same question, for the filters that read it that way. */
 export const isSuccessfulTest = (test) => !isFailedTest(test);
+
+/**
+ * The latency a run records when it measured none.
+ *
+ * A successful test can still carry a latency nobody took: parseCloudflare
+ * answers `round(avg_latency_ms) ?? 0` on its success path, so a run whose
+ * latency block held no average stores exactly 0. The column is NOT NULL, so 0
+ * is the only sentinel available - and it is a safe one, because no connection
+ * produces it. A real sub-millisecond line stores the decimals it measured:
+ * the column has held them since migration 0010, and a genuine 0.24 arrives as
+ * 0.24.
+ *
+ * Which is why the comparison stays exact. Widened to "under a millisecond" it
+ * would discard every fibre and LAN reading along with the fabrication.
+ */
+export const UNMEASURED_LATENCY = 0;
+
+/**
+ * Whether a stored latency is a reading.
+ *
+ * Lives here beside the failure predicates, and for the same reason they do:
+ * the alert gate judged this one way and the statistics another, so the same
+ * fabricated zero was refused by the notification and averaged into the figure
+ * on the page. One home, both readers.
+ */
+export const isMeasuredLatency = (value) =>
+    typeof value === "number" && Number.isFinite(value) && value !== UNMEASURED_LATENCY;
 
 /**
  * The same two answers as where clauses, for the queries that ask the database

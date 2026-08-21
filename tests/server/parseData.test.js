@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { parseData, parseOokla, parseLibre, parseCloudflare } from "../../server/util/providers/parseData.js";
+import { FAILED_TEST, isFailedTest } from "../../server/util/testOutcome.js";
 
 /**
  * These functions turn raw provider CLI output into the exact numbers persisted
@@ -626,17 +627,48 @@ describe("parseCloudflare", () => {
         assert.equal(parseCloudflare(withoutElapsed).time, 30);
     });
 
-    it("returns a zeroed result rather than throwing on an unusable payload", () => {
-        assert.deepEqual(parseCloudflare({}), {
-            ping: 0, jitter: null, download: 0, upload: 0, time: 0,
-            resultId: null, provider: "cloudflare", serverName: null, serverHost: null, serverLocation: null,
-            packetLoss: null, downloadLatency: null, uploadLatency: null,
-            isp: null, externalIp: null, bytesDownloaded: null, bytesUploaded: null
-        });
+    /**
+     * An unusable payload is a failed run, and used to be recorded as a
+     * flawless one.
+     *
+     * It answered zeros, and zeros carry no error - isFailedTest reads the
+     * placeholders only when all three agree on -1. So the row counted toward
+     * the success total and pulled every download, upload and ping average
+     * toward zero: a test that measured nothing was published as a line
+     * delivering nothing, which is a measurement rather than a malfunction.
+     *
+     * Still answered rather than thrown, and the identity still kept - both
+     * were deliberate and both survive. What changes is only which outcome the
+     * row records.
+     */
+    it("reports an unusable payload as a failure rather than a zeroed measurement", () => {
+        const parsed = parseCloudflare({});
+
+        assert.equal(isFailedTest(parsed), true, "a run that measured nothing counts as a success");
+        assert.deepEqual([parsed.ping, parsed.download, parsed.upload],
+            [FAILED_TEST, FAILED_TEST, FAILED_TEST]);
     });
 
-    it("returns a zeroed result for a null payload", () => {
-        assert.equal(parseCloudflare(null).download, 0);
+    it("reports a null payload the same way", () => {
+        assert.equal(isFailedTest(parseCloudflare(null)), true);
+    });
+
+    // Half a result is no more usable than none: without both blocks there is
+    // nothing to report either direction from.
+    it("reports a payload carrying only one of the two measurement blocks as a failure", () => {
+        assert.equal(isFailedTest(parseCloudflare({latency_measurement: {avg_latency_ms: 5}})), true);
+        assert.equal(isFailedTest(parseCloudflare({speed_measurements: []})), true);
+    });
+
+    // A run that measured nothing took no time either, and null is how every
+    // other failure records that.
+    it("records no duration for it", () => {
+        assert.equal(parseCloudflare({}).time, null);
+    });
+
+    it("still answers rather than throwing", () => {
+        assert.doesNotThrow(() => parseCloudflare({}));
+        assert.equal(parseCloudflare({}).provider, "cloudflare");
     });
 
     /**
@@ -674,7 +706,10 @@ describe("parseCloudflare", () => {
 
             assert.equal(parsed.serverName, "ZRH");
             assert.equal(parsed.externalIp, "2a04:ee41:2:4256::1");
-            assert.equal(parsed.download, 0);
+            // The measurement is the failure placeholder now rather than a
+            // zero, which is what stops the row counting as a success - the
+            // identity beside it is the half that was always worth keeping.
+            assert.equal(parsed.download, FAILED_TEST);
         });
 
         it("nulls the identity when no metadata was printed", () => {
@@ -740,7 +775,7 @@ describe("parseData", () => {
         });
 
         assert.equal(ookla.download, 10);
-        assert.equal(parseData("cloudflare", {}).download, 0);
+        assert.equal(parseData("cloudflare", {}).download, FAILED_TEST);
     });
 
     it("rejects an unknown provider", () => {

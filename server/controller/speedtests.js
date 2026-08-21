@@ -30,8 +30,13 @@ const MAX_TEST_LIMIT = 1000;
 // number, so a text value was summed and returned the whole range's average as
 // NaN. There is no model-level validator behind this: the columns are DOUBLE,
 // and sqlite does not care.
+// serverId belongs here for the same reason as the rest, and was missing for
+// the reason it went unnoticed: nothing did arithmetic on it, so text in that
+// column stayed invisible until the Prometheus exporter began setting a gauge
+// from it - and prom-client throws for anything that is not a number, which
+// took down every scrape for as long as the row stayed newest.
 const NUMERIC_COLUMNS = ["ping", "download", "upload", "time", "bytesDownloaded", "bytesUploaded",
-    "jitter", "packetLoss", "downloadLatency", "uploadLatency"];
+    "jitter", "packetLoss", "downloadLatency", "uploadLatency", "serverId"];
 
 const isImportableNumber = (value) =>
     value === null || value === undefined || (typeof value === "number" && Number.isFinite(value));
@@ -301,7 +306,11 @@ const writeImportBatch = async (rows) => {
 };
 
 export const importTests = async (data) => {
-    if (!Array.isArray(data)) return false;
+    // The same shape a run answers with. As a bare `false` the route's
+    // `{ok, imported, skipped}` came back all undefined, so the counts it
+    // deliberately sends - "the counts travel with the message" - were dropped
+    // from the body and a refusal answered less than a failure did.
+    if (!Array.isArray(data)) return {ok: false, imported: 0, skipped: 0};
 
     let imported = 0;
     let skipped = 0;

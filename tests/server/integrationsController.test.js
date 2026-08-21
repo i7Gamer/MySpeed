@@ -180,6 +180,44 @@ describe("withoutSecrets", () => {
         assert.equal(original.data.token, "123:supersecret");
     });
 
+    /**
+     * A credential does not stop being one for living inside a URL.
+     *
+     * Only fields flagged `secret` are blanked, and no integration flags its
+     * endpoint - gotify's and influxdb's are plain text fields, and both accept
+     * `https?://\S+`, which permits userinfo. So an operator fronting InfluxDB
+     * with basic auth had `http://myspeed:hunter2@influx.lan:8086` written into
+     * the file that blanks the token beside it and stamps secretsRedacted true.
+     * The node URLs and libreUrl learned this; the integrations were the third
+     * place the same value shape is stored.
+     *
+     * Applied to every string rather than to a list of URL fields, because the
+     * next integration to arrive with an endpoint should not have to be
+     * remembered here - and for anything that is not a URL with userinfo in it,
+     * this returns the value unchanged.
+     */
+    it("strips a credential out of an integration's URL", () => {
+        const [row] = withoutSecrets([{
+            id: "i", name: "influxdb",
+            data: {url: "http://myspeed:hunter2@influx.lan:8086", token: "supersecret", org: "home"}
+        }]);
+
+        assert.equal(row.data.url, "http://influx.lan:8086",
+            "an endpoint's userinfo ships in clear in a redacted export");
+        assert.equal(row.data.token, null, "the flagged credential is no longer blanked");
+        assert.equal(row.data.org, "home", "a plain field was rewritten");
+    });
+
+    // Including one whose fields are all plain: that row used to be handed back
+    // untouched, so a URL credential in it never reached the strip at all.
+    it("strips it even when the integration flags nothing as secret", () => {
+        const [row] = withoutSecrets([{
+            id: "g", name: "gotify", data: {url: "https://admin:hunter2@gotify.lan", key: "abcdefghijklmno"}
+        }]);
+
+        assert.equal(row.data.url, "https://gotify.lan");
+    });
+
     // Guessing which fields of an unknown integration are harmless is exactly
     // the mistake this function exists to prevent.
     it("blanks everything for an integration it does not recognise", () => {

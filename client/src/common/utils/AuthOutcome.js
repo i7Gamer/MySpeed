@@ -12,6 +12,22 @@ export const PASSWORD_REQUIRED = "PASSWORD_REQUIRED";
 export const TOO_MANY_ATTEMPTS = "TOO_MANY_ATTEMPTS";
 export const SERVER_BUSY = "SERVER_BUSY";
 
+/**
+ * The header the parent sets on a refusal it relayed rather than raised.
+ *
+ * Every request made while a remote node is selected goes through the parent,
+ * so the parent's own session expiring and the child rejecting its stored
+ * password both arrive here as a 401 with the same body. They want opposite
+ * things: the first wants the password box, and the second wants the node list,
+ * because login() posts to this instance's /api/session and the credential the
+ * child refused is not that one. Asking the wrong question loops - the parent
+ * accepts its own password, the page reloads, the child refuses again, and the
+ * right password is called right for ever.
+ *
+ * Mirrored from server/util/authOutcome.js, which sets it.
+ */
+export const NODE_REFUSAL_HEADER = "x-myspeed-node-refused";
+
 export const PROMPT_SETUP_TOKEN = "setup-token";
 export const PROMPT_PASSWORD = "password";
 export const PROMPT_THROTTLED = "throttled";

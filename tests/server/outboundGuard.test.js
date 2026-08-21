@@ -36,6 +36,28 @@ describe("checkOutboundTarget", () => {
     });
 
     /**
+     * The IPv6 cloud metadata endpoint, which is not link-local.
+     *
+     * AWS answers IMDS on fd00:ec2::254, in Unique-Local space (fd00::/8) - the
+     * IPv6 analogue of the RFC1918 ranges this guard deliberately allows for a
+     * LAN. So the range as a whole stays reachable and only the metadata address
+     * itself is refused, exactly as the IPv4 side allows 10/192.168 while
+     * blocking 169.254.169.254. Every spelling of the one address is caught.
+     */
+    it("refuses the IPv6 cloud metadata endpoint", () => {
+        assert.equal(checkOutboundTarget("http://[fd00:ec2::254]/latest/meta-data").safe, false);
+        assert.equal(checkOutboundTarget("http://[fd00:ec2:0:0:0:0:0:254]/").safe, false);
+        assert.equal(checkOutboundTarget("http://[FD00:EC2::0254]/").safe, false);
+    });
+
+    // The rest of Unique-Local stays reachable: a self-hoster may run a node or
+    // an integration on an fd00::/8 LAN, exactly as they may on 192.168/16.
+    it("allows an ordinary Unique-Local LAN address", () => {
+        assert.deepEqual(checkOutboundTarget("http://[fd00::1234]:8086/api/v2/write"), {safe: true});
+        assert.deepEqual(checkOutboundTarget("http://[fd12:3456:789a::1]/hook"), {safe: true});
+    });
+
+    /**
      * Loopback is allowed, and that is a decision rather than a gap.
      *
      * A node is another machine by definition, so loopback there is never

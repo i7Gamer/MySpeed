@@ -2,6 +2,7 @@ import IntegrationData from '../models/IntegrationData.js';
 import integrationModules from '../integrations/index.js';
 import { ALERT_METRICS, ALERT_ONLY, breachesThreshold, wantsOnlyBreaches } from '../util/alertThreshold.js';
 import { FAILED_VARIABLES, FINISHED_VARIABLES } from '../util/notificationPayload.js';
+import { withoutUrlCredentials } from '../util/urlCredentials.js';
 
 const integrations = {};
 
@@ -246,14 +247,30 @@ export const secretFieldNames = (name) => {
  */
 export const withoutSecrets = (rows) => rows.map((row) => {
     const secrets = secretFieldNames(row.name);
-    if (secrets !== null && secrets.length === 0) return row;
-
     const data = typeof row.data === "string" ? JSON.parse(row.data) : {...row.data};
 
     // An unrecognised integration gets everything blanked. Guessing which of its
     // fields are harmless is exactly the mistake this function exists to stop.
     const fields = secrets ?? Object.keys(data);
     for (const field of fields) if (data[field] !== undefined) data[field] = null;
+
+    /*
+     * And a credential does not stop being one for living inside a URL.
+     *
+     * No integration flags its endpoint as a secret, and none should - it is
+     * not one. But gotify's and influxdb's both accept `https?://\S+`, which
+     * permits userinfo, so an operator fronting either with basic auth had
+     * `http://myspeed:hunter2@influx.lan:8086` written into the file that
+     * blanks the token beside it and stamps secretsRedacted true.
+     *
+     * Every string rather than a list of URL fields, so the next integration
+     * with an endpoint does not have to be remembered here. For anything that
+     * is not a URL carrying userinfo, this hands the value straight back - and
+     * a row whose integration flags nothing as secret now reaches it too, which
+     * an early return used to skip.
+     */
+    for (const [field, value] of Object.entries(data))
+        if (typeof value === "string") data[field] = withoutUrlCredentials(value);
 
     return {...row, data};
 });

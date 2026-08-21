@@ -126,10 +126,87 @@ const isBlockedIpv4 = (address) => {
     return first === 169 && second === 254;            // link-local, incl. 169.254.169.254
 };
 
+/**
+ * The IPv6 address the cloud metadata service answers on.
+ *
+ * AWS serves IMDS over IPv6 at fd00:ec2::254, which is Unique-Local - the IPv6
+ * analogue of RFC1918, not link-local. So every range check in this file walked
+ * past it: the guard blocks fe80::/10 because nothing legitimate lives there,
+ * while fd00::/8 is somebody's LAN and a node or an integration on one is
+ * ordinary. Blocking the range would break those installs; blocking the range
+ * is also not what the IPv4 side does, where 10/8 and 192.168/16 are allowed
+ * and 169.254.169.254 alone is refused.
+ *
+ * So this is one address, matched however it is spelled. A v6 address has many
+ * legal spellings of the same value - leading zeros in any group, `::` standing
+ * for a different run of them, either case - and a text comparison catches one.
+ * Expanding to the eight groups and reading them as numbers compares the value.
+ */
+const IPV6_GROUPS = 8;
+
+const METADATA_IPV6 = [0xfd00, 0x0ec2, 0, 0, 0, 0, 0, 0x0254];
+
+/** The eight groups of a v6 literal as numbers, or null when it is not one. */
+const ipv6Groups = (address) => {
+    const normalised = address.toLowerCase().split("%")[0];
+    if (!/^[0-9a-f:]+$/.test(normalised)) return null;
+
+    const halves = normalised.split("::");
+    if (halves.length > 2) return null;
+
+    const parse = (half) => half === "" ? [] : half.split(":").map((group) => {
+        if (!/^[0-9a-f]{1,4}$/.test(group)) return NaN;
+        return parseInt(group, 16);
+    });
+
+    const head = parse(halves[0]);
+    const tail = halves.length === 2 ? parse(halves[1]) : [];
+    if ([...head, ...tail].some((group) => Number.isNaN(group))) return null;
+
+    // Without a `::` the address has to be written out in full.
+    if (halves.length === 1) return head.length === IPV6_GROUPS ? head : null;
+
+    const gap = IPV6_GROUPS - head.length - tail.length;
+    if (gap < 1) return null;
+
+    return [...head, ...Array(gap).fill(0), ...tail];
+};
+
+const isMetadataIpv6 = (address) => {
+    const groups = ipv6Groups(address);
+
+    return groups !== null && groups.every((group, index) => group === METADATA_IPV6[index]);
+};
+
+/**
+ * The metadata service in either family, which is the one destination in the
+ * otherwise-allowed private ranges with anything to gain. Exported so the two
+ * guards below - which disagree about loopback and about LAN ranges - can still
+ * agree about this.
+ */
+export const isMetadataAddress = (address) => {
+    if (typeof address !== "string" || address === "") return false;
+
+    const embedded = embeddedIpv4(address);
+    const dotted = embedded ?? address;
+
+    if (!dotted.includes(":")) {
+        const parts = octets(dotted);
+
+        return parts.length === 4 && parts[0] === 169 && parts[1] === 254 && parts[2] === 169 && parts[3] === 254;
+    }
+
+    return isMetadataIpv6(dotted);
+};
+
 const isBlockedIpv6 = (address) => {
     const normalised = address.toLowerCase().split("%")[0];
 
     if (normalised === "::1" || normalised === "::") return true;
+
+    // The metadata service, which is Unique-Local rather than link-local and so
+    // is caught by neither of the rules around it - see isMetadataAddress.
+    if (isMetadataIpv6(normalised)) return true;
 
     // fe80::/10 - link-local. The second nibble of the second byte only has to
     // fall in 8..b for the prefix to match.
@@ -303,6 +380,14 @@ export const checkOutboundTarget = (value) => {
 
     if (isLinkLocalAddress(hostname))
         return {safe: false, reason: "That address is a link-local one"};
+
+    // The metadata service in the other family. Loopback and the private ranges
+    // are allowed here on purpose - an integration on the same host or the same
+    // LAN is ordinary - but fd00:ec2::254 is the one address in that space with
+    // anything to gain, and it is Unique-Local rather than link-local, so the
+    // check above does not reach it.
+    if (isMetadataAddress(hostname))
+        return {safe: false, reason: "That address is the cloud metadata service"};
 
     return {safe: true};
 };
