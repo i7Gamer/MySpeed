@@ -24,7 +24,7 @@
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
     "bcryptjs": "^3.0.3",
-    "cron-parser": "^5.8.1",
+    "cron-parser": "^5.10.0",
     "cron-validator": "^1.4.0",
     "decompress": "^4.2.1",
     "decompress-targz": "^4.1.1",
