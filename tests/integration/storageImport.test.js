@@ -317,7 +317,10 @@ describe("PUT /api/storage/config with a threshold an older version accepted", (
             assert.equal(status, 200, "the whole backup is refused over one unreadable threshold");
             assert.equal(await server.config.getValue("download"), "100",
                 "the unreadable threshold was kept, so every speed on the dashboard stays grey");
-            assert.equal((await counts()).nodes, 1, "the nodes were not restored");
+            // The row's identity, not the count: seedEverything leaves exactly
+            // one node and the payload carries exactly one, so a count of 1 is
+            // what a refused restore answers too.
+            assert.equal((await nodeModel.findOne()).name, "new", "the nodes were not restored");
         });
     });
 
@@ -364,7 +367,8 @@ describe("PUT /api/storage/config with a librespeed URL an older version accepte
             assert.equal(status, 200, "the whole backup is refused over one unusable backend URL");
             assert.equal(await server.config.getValue("libreUrl"), "none",
                 "a URL the CLI cannot fetch was restored anyway");
-            assert.equal((await counts()).nodes, 1, "the nodes were not restored");
+            // Its identity rather than the count, for the reason given above.
+            assert.equal((await nodeModel.findOne()).name, "new", "the nodes were not restored");
         });
     });
 

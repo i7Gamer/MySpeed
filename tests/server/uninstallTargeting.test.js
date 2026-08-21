@@ -138,103 +138,167 @@ const noPosixShell = (() => {
 })();
 
 /**
- * The rule deciding whether the native installation is removed, run rather than
- * read.
+ * The two rules the end of the uninstall turns on, run rather than read.
  *
- * Reading it cannot say what it answers, and this one is not obvious. It has to
- * be false for a host that only ever had a container - `rm -R` on a path that
- * was never there is checked and fatal, so running it there would report a
- * finished uninstall as a failure - while staying true for a native host that
- * found nothing, which is the case that has to reach the removal to be told
- * which path it could not remove.
+ * Reading them cannot say what they answer, and between them they have to
+ * separate three situations that look identical from the outside:
  *
- * Whether a *service* was found is deliberately not part of it. Making it part
- * of it looks right - a unit is evidence of a native install - and is wrong: on
- * a host holding both a container and a stale unit, with the installation
- * directory already gone, it pulled execution into a removal with nothing left
- * to remove, which printed "the installation is still on disk" over a host where
- * it was not, and exited 1 on an uninstall that had removed everything it found.
- * What is actually being asked is whether there is anything at that path, and
- * `-d` asks it directly.
+ *   - a host that only ever ran the container, where there is no installation
+ *     directory and never was one;
+ *   - a host whose native installation is genuinely already gone, leaving a
+ *     unit behind;
+ *   - a host whose native installation is still on disk somewhere this run was
+ *     not told to look.
+ *
+ * The first two are finished uninstalls and must not be reported as failures.
+ * The third must not be reported as a success: the directory left behind holds
+ * the database and the admin password hash.
+ *
+ * What separates the last two is where the path came from. With no -d the script
+ * reads WorkingDirectory out of the unit before deleting it, so the path is the
+ * system's own answer and an empty one means the installation is gone. With -d
+ * the path is the operator's, and a typo in it is indistinguishable from an
+ * absence - so that is the case that gets told.
  */
-describe("whether the native installation is removed", {skip: noPosixShell}, () => {
-    const guard = (() => {
-        const at = uninstall.indexOf('if [ "$REMOVED_CONTAINER"');
-        assert.notEqual(at, -1, "nothing decides whether to remove the installation directory");
+describe("the end of the uninstall", {skip: noPosixShell}, () => {
+    const fragment = (opening) => {
+        const at = uninstall.indexOf(opening);
+        assert.notEqual(at, -1, `${opening} is no longer how this is decided`);
 
         return uninstall.slice(at, uninstall.indexOf("; then", at));
-    })();
+    };
 
-    // A directory that is there, and one that is not, rather than a stubbed
-    // test: `-d` is the operator the condition uses and the filesystem is what
-    // answers it.
     const PRESENT = os.tmpdir();
     const ABSENT = path.join(os.tmpdir(), "myspeed-no-such-installation-directory");
 
-    // FOUND_SERVICE is still set by the script, and still passed here, so that a
-    // condition which starts reading it again is caught by the pairs below.
-    const removes = ({container, service, directory}) => execFileSync("sh", ["-c",
-        `REMOVED_CONTAINER=${container}\nFOUND_SERVICE=${service}\n`
+    const answer = (condition, {container, service, directory, fromUnit = 1}) => execFileSync("sh", ["-c",
+        `REMOVED_CONTAINER=${container}\nFOUND_SERVICE=${service}\nPATH_FROM_UNIT=${fromUnit}\n`
+        + `INSTALLATION_FOUND=${directory ? 1 : 0}\n`
         + `INSTALLATION_PATH="${directory ? PRESENT : ABSENT}"\n`
-        + `${guard}; then echo yes; else echo no; fi`],
+        + `${condition}; then echo yes; else echo no; fi`],
     {encoding: "utf8", timeout: CONDITION_TIMEOUT}).trim() === "yes";
 
-    it("leaves a host that only ever had a container alone", () => {
-        assert.equal(removes({container: 1, service: 0, directory: false}), false,
-            "a finished docker uninstall fails on an installation directory it never had");
+    describe("whether the installation directory is removed", () => {
+        const removes = (state) => answer(fragment('if [ -d "$INSTALLATION_PATH" ]'), state);
+
+        it("removes it wherever there is one", () => {
+            for (const container of [0, 1])
+                for (const service of [0, 1])
+                    assert.equal(removes({container, service, directory: true}), true,
+                        `an installation directory was left on disk (container=${container} service=${service})`);
+        });
+
+        it("leaves a host that only ever had a container alone", () => {
+            assert.equal(removes({container: 1, service: 0, directory: false}), false,
+                "a finished docker uninstall fails on an installation directory it never had");
+        });
+
+        /**
+         * Nothing is there to remove, so nothing is attempted - `rm -R` on a
+         * path that was never there is checked and fatal, and would report a
+         * finished uninstall as a failure. Whether that absence is worth saying
+         * anything about is the second rule's question, not this one's.
+         */
+        it("does not chase a directory that is not there just because a unit was", () => {
+            assert.equal(removes({container: 1, service: 1, directory: false}), false,
+                "an uninstall that removed everything it found reports failure");
+            assert.equal(removes({container: 0, service: 1, directory: false}), false,
+                "a native installation already removed by hand reports failure");
+        });
+
+        /**
+         * And a host where nothing at all was found still reaches the removal, so
+         * the operator is told which path was looked at rather than being handed
+         * a success banner over an untouched installation.
+         */
+        it("still reaches the removal when nothing else was found either", () => {
+            assert.equal(removes({container: 0, service: 0, directory: false}), true,
+                "an uninstall that found nothing anywhere reports success");
+        });
     });
 
-    /**
-     * The migration case the restructure exists for: the container running
-     * beside the unit it replaced, with the installation still on disk.
-     */
-    it("removes it on a host that has both", () => {
-        assert.equal(removes({container: 1, service: 1, directory: true}), true,
-            "the native installation survives an uninstall because a container was found first");
+    describe("whether an unaccounted installation is reported", () => {
+        // Both this and the account rule below open on FOUND_SERVICE, so the
+        // anchor carries enough of the condition to tell them apart.
+        const warns = (state) =>
+            answer(fragment('if [ "$FOUND_SERVICE" -eq 1 ] && [ "$INSTALLATION_FOUND" -eq 0 ]'), state);
+
+        /**
+         * The case that has to be caught. A container beside a native install,
+         * and `-d` naming a path that is not the installation - a typo, or the
+         * wrong one of two. Everything found is removed, the unit file goes with
+         * it, and the real installation is left on disk with its database and its
+         * password hash under a banner saying MySpeed has been uninstalled.
+         */
+        it("reports an installation it was told about but never found", () => {
+            assert.equal(warns({container: 1, service: 1, directory: false, fromUnit: 0}), true,
+                "a wrong -d reports a complete uninstall over an installation still on disk");
+            assert.equal(warns({container: 0, service: 1, directory: false, fromUnit: 0}), true,
+                "the same without a container");
+        });
+
+        /**
+         * But not when the path is the system's own answer. The unit named that
+         * directory and it is not there, so the installation is gone - which is
+         * an uninstall that is over, not one to warn about.
+         */
+        it("says nothing when the path came from the unit itself", () => {
+            assert.equal(warns({container: 1, service: 1, directory: false, fromUnit: 1}), false,
+                "a native install already removed by hand is reported as a problem");
+        });
+
+        it("says nothing when there was no service to have an installation", () => {
+            for (const fromUnit of [0, 1])
+                assert.equal(warns({container: 1, service: 0, directory: false, fromUnit}), false,
+                    "a docker-only host is warned about a native installation it never had");
+        });
+
+        it("says nothing when the installation was found and removed", () => {
+            for (const fromUnit of [0, 1])
+                assert.equal(warns({container: 1, service: 1, directory: true, fromUnit}), false,
+                    "an installation that was removed is reported as unaccounted for");
+        });
+    });
+});
+
+/**
+ * And the account install.sh creates belongs to the service, not to the
+ * directory.
+ *
+ * It used to be removed in the `else` of the container branch, so a host running
+ * both kept its `myspeed` entry in /etc/passwd - and the installer only runs
+ * useradd when the account is missing, so it survived every later uninstall too,
+ * with a home directory that no longer exists. Restructuring the script moved it
+ * inside the block that removes the installation directory, which fixed that
+ * cell and broke another: a native install whose directory was already gone left
+ * the account behind for the same reason.
+ *
+ * What it turns on is whether there was ever a native installation here, which
+ * is the unit or the directory - never the container, which creates no account
+ * on the host at all.
+ */
+describe("whether the service account is removed", {skip: noPosixShell}, () => {
+    const removes = ({service, directory}) => execFileSync("sh", ["-c",
+        `FOUND_SERVICE=${service}\nINSTALLATION_FOUND=${directory}\n`
+        + `${(() => {
+            const at = uninstall.indexOf('if [ "$FOUND_SERVICE" -eq 1 ] || [ "$INSTALLATION_FOUND" -eq 1 ]');
+            assert.notEqual(at, -1, "nothing decides whether the account is removed");
+            return uninstall.slice(at, uninstall.indexOf("; then", at));
+        })()}; then echo yes; else echo no; fi`],
+    {encoding: "utf8", timeout: CONDITION_TIMEOUT}).trim() === "yes";
+
+    it("removes it when a service was found", () => {
+        assert.equal(removes({service: 1, directory: 0}), true,
+            "a native install whose directory was already gone leaves its account in /etc/passwd");
     });
 
-    /**
-     * And the same host once its directory is already gone - a native install
-     * removed by hand, leaving the unit behind. Everything found was removed, so
-     * the run is over; reaching the removal here only produces a false "the
-     * installation is still on disk" and exit 1.
-     */
-    it("does not chase a directory that is not there just because a unit was", () => {
-        assert.equal(removes({container: 1, service: 1, directory: false}), false,
-            "an uninstall that removed everything it found reports failure");
+    it("removes it when an installation was found", () => {
+        assert.equal(removes({service: 0, directory: 1}), true,
+            "an installation whose unit was already removed by hand leaves its account behind");
     });
 
-    it("removes a native installation left beside a container", () => {
-        assert.equal(removes({container: 1, service: 0, directory: true}), true,
-            "an installation directory sitting next to a container is left on disk");
-    });
-
-    /**
-     * And a native host reaches the removal whatever was found, so a wrong -d
-     * still earns the message naming the path. Skipping quietly there would put
-     * the success banner over an installation still on disk, which is the thing
-     * the checked `rm` exists to prevent.
-     */
-    it("still reaches the removal on a host with no container at all", () => {
-        assert.equal(removes({container: 0, service: 0, directory: false}), true,
-            "an uninstall that found nothing reports success without saying so");
-    });
-
-    it("removes an ordinary native installation", () => {
-        assert.equal(removes({container: 0, service: 1, directory: true}), true,
-            "the ordinary uninstall no longer removes anything");
-    });
-
-    /**
-     * The answer must not depend on the service at all. Every pair below differs
-     * only in FOUND_SERVICE.
-     */
-    it("answers the same whether or not a service was found", () => {
-        for (const container of [0, 1])
-            for (const directory of [false, true])
-                assert.equal(
-                    removes({container, service: 0, directory}),
-                    removes({container, service: 1, directory}),
-                    `finding a service changed the answer for container=${container} directory=${directory}`);
+    it("leaves a docker-only host's accounts alone", () => {
+        assert.equal(removes({service: 0, directory: 0}), false,
+            "a host that never had a native install has an account deleted out from under it");
     });
 });

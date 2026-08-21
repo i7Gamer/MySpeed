@@ -356,8 +356,9 @@ export const lineChartOptions = ({
              * drew no tooltip at all.
              *
              * Both go. `label` names the failure and its reason on every index
-             * that has one, and keeping `afterBody` beside it printed the reason
-             * twice on every mixed bucket.
+             * that has one, and `afterBody` keyed on nothing but that same
+             * `failed[index]` - so keeping it would print the reason a second
+             * time at every one of them, under whatever else the tooltip held.
              */
             callbacks: {
                 title: (items) => {

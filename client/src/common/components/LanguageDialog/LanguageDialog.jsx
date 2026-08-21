@@ -42,8 +42,9 @@ export const LanguageDialog = ({open, onClose}) => {
      * highlighted English over a German interface, and pressing Update again put
      * the interface back to English.
      *
-     * Before the close, because closing is what unmounts the button that called
-     * this.
+     * Ahead of the toast and the close only so that the write happens on every
+     * way out of this handler. Nothing depends on that order: `close` adds two
+     * CSS classes, and the unmount comes later, off the fadeOut animation.
      */
     const updateLanguage = (close) => {
         changeLanguage(selectedLanguage);
