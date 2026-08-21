@@ -113,7 +113,7 @@ export const geometryShift = (previous, next) => {
  * things away, so a stage that did not fit before the row grew fuller still
  * does not.
  */
-export const walkResponse = (shift, atWidestStage) => {
+export const walkResponse = (shift, _atWidestStage) => {
     if (shift === "none") return "skip";
 
     return shift === "growth" ? "resume" : "top";

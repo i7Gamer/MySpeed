@@ -1,4 +1,4 @@
-import React, {useState, createContext, useEffect, useContext, useRef} from "react";
+import React, {useState, createContext, useEffect, useContext, useRef, useCallback} from "react";
 import {jsonRequest} from "@/common/utils/RequestUtil";
 import {LIVE_POLL_MS, pollIntervalFor, runJustFinished, sameStatus, withLive} from "@/common/utils/StatusUtil";
 import {NodeContext} from "@/common/contexts/Node";
@@ -34,7 +34,7 @@ export const StatusProvider = (props) => {
     // one consumes this context and rebuilds its own value - so TestArea and
     // every row were redrawn every five seconds at idle and every second during
     // a run, to show exactly what was already on screen.
-    const updateStatus = () => {
+    const updateStatus = useCallback(() => {
         const generation = ++statusGeneration.current;
 
         return jsonRequest("/speedtests/status")
@@ -51,7 +51,13 @@ export const StatusProvider = (props) => {
                 });
             })
             .catch(() => undefined);
-    };
+        // Memoised so the two polling effects below can name this as the
+        // dependency it is. Rebuilt every render it would tear their timers
+        // down and start new ones on each one, and since the poll sets state
+        // the interval would never elapse - which is why they suppressed the
+        // rule instead. liveSupported is the only state it reads, and both
+        // effects already re-run when that changes.
+    }, [liveSupported]);
 
     const setRunning = (running) => setStatus(prev => ({...prev, running}));
 
@@ -90,7 +96,7 @@ export const StatusProvider = (props) => {
             clearInterval(timer);
             document.removeEventListener("visibilitychange", onVisibilityChange);
         };
-    }, [interval]);
+    }, [interval, updateStatus]);
 
     /**
      * The run itself, sampled from the route that answers without touching the
@@ -140,7 +146,7 @@ export const StatusProvider = (props) => {
             if (!document.hidden) updateLive();
         }, LIVE_POLL_MS);
         return () => clearInterval(timer);
-    }, [status.running, liveSupported]);
+    }, [status.running, liveSupported, updateStatus]);
 
     return (
         <StatusContext.Provider value={[status, updateStatus, setRunning]}>

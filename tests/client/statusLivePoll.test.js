@@ -113,6 +113,30 @@ describe("status context generation tracking and node synchronization", () => {
     it("invalidates pending full status polls when a run finishes", () => {
         assert.match(contextSource, /appliedStatusGen\.current\s*=\s*statusGeneration\.current/);
     });
+
+    /**
+     * And both polls name updateStatus as the dependency it is, rather than
+     * silencing the rule that asks for it.
+     *
+     * The two only go together. As a plain function rebuilt on every render,
+     * listing updateStatus would tear the timer down and start a new one each
+     * time - and since the poll sets state, the interval would never elapse, so
+     * the effects had to suppress the warning to stay correct. Memoised on
+     * liveSupported, its identity changes only when the poll's own rate does,
+     * which both effects already re-run for. Unwrapping the memo while leaving
+     * the dependency declared is the shape that reintroduces the runaway timer,
+     * and that is what this pins.
+     */
+    it("declares the poll's dependency rather than suppressing it", () => {
+        assert.match(contextSource, /const updateStatus = useCallback\(/,
+            "updateStatus is rebuilt every render, so declaring it rebuilds the timer on each one");
+        assert.match(contextSource, /\}, \[liveSupported\]\)/,
+            "the memo does not track the one piece of state updateStatus reads");
+        assert.match(contextSource, /\}, \[interval, updateStatus\]\)/,
+            "the full poll does not declare updateStatus");
+        assert.match(contextSource, /\}, \[status\.running, liveSupported, updateStatus\]\)/,
+            "the live poll does not declare updateStatus");
+    });
 });
 
 describe("status bar background throttling and speed filtering", () => {
