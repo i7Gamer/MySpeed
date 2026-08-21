@@ -151,6 +151,52 @@ describe("gotify", () => {
         assert.equal(sent[0].body.priority, 8);
         assert.match(sent[0].body.message, /boom/);
     });
+
+    /**
+     * A stored row without a readable priority still has to deliver.
+     *
+     * parseInt(undefined) is NaN, and JSON.stringify writes NaN as `null`.
+     * Gotify is Go: it unmarshals the body into a struct whose Priority is an
+     * int, and encoding/json refuses null into an integer field - so the whole
+     * request comes back 400 and the notification is lost, silently, for as
+     * long as the row stays that way.
+     *
+     * The form cannot produce such a row: the field is required and validated
+     * against a single digit. importConfig can, because it bulk-creates the
+     * integration rows a backup carries without running them through
+     * validateInput - and so can any row written before the field existed. A
+     * notification is the one thing that must not depend on that.
+     */
+    describe("a stored priority that is not a number", () => {
+        for (const [name, priority] of [["absent", undefined], ["empty", ""],
+            ["text", "urgent"], ["null", null]])
+            it(`sends a number rather than null when the priority is ${name}`, async () => {
+                const {events} = load(setupGotify);
+                await fire(events, "testFinished", {...config, priority}, RESULT);
+
+                assert.equal(typeof sent[0].body.priority, "number",
+                    "gotify answers 400 and the notification is dropped");
+                assert.ok(Number.isFinite(sent[0].body.priority),
+                    "NaN serialises as null, which is what gotify refuses");
+            });
+
+        // Still below the one a failure carries, which is the whole point of
+        // that number being different.
+        it("falls back to something quieter than a failure", async () => {
+            const {events} = load(setupGotify);
+            await fire(events, "testFinished", {...config, priority: undefined}, RESULT);
+
+            assert.ok(sent[0].body.priority < 8,
+                "a finished test arrives as loudly as a failed one");
+        });
+
+        it("still prefers a priority that is readable", async () => {
+            const {events} = load(setupGotify);
+            await fire(events, "testFinished", {...config, priority: "2"}, RESULT);
+
+            assert.equal(sent[0].body.priority, 2, "the operator's own choice was replaced by the fallback");
+        });
+    });
 });
 
 describe("pushover", () => {
@@ -397,6 +443,57 @@ describe("a discord display name longer than the api accepts", () => {
         await fire(events, "testFinished", {...config, display_name: "Basement NUC"}, RESULT);
 
         assert.equal(sent[0].body.username, "Basement NUC");
+    });
+});
+
+/**
+ * Telegram refuses the whole message when the markdown does not parse, so the
+ * formatting has to be able to give way to the delivery.
+ *
+ * The interpolated values are already stripped of metacharacters, which leaves
+ * one way for a message to arrive unbalanced: the trim to 4096 characters
+ * cutting through a pair the operator's own template opened. A custom template
+ * runs to 2000 characters and a stored failure reason to another 2000, so the
+ * two together reach the limit without either being unusual - and what is
+ * dropped is a failure alert.
+ */
+describe("telegram markdown that will not parse", () => {
+    const config = {token: "1:abc", chat_id: "-100", send_failed: true, send_finished: true};
+
+    const sendFailure = async (overrides = {}) => {
+        const {events} = load(setupTelegram);
+        await fire(events, "testFailed", {...config, ...overrides}, failure("boom"));
+        return sent[0];
+    };
+
+    it("asks for markdown on an ordinary message", async () => {
+        assert.equal((await sendFailure()).body.parse_mode, "markdown",
+            "the operator's template is no longer rendered as markdown at all");
+    });
+
+    it("sends plain text rather than nothing when a pair is left open", async () => {
+        const request = await sendFailure({error_message: "*A speedtest has failed: %error%"});
+
+        assert.equal(request.body.parse_mode, undefined,
+            "telegram answers 400 for unbalanced markdown and delivers nothing");
+        assert.match(request.body.text, /boom/, "the reason was dropped along with the formatting");
+    });
+
+    it("still delivers when the trim cuts through the template's own formatting", async () => {
+        const template = `*${"Context. ".repeat(500)}%error%*`;
+        const request = await sendFailure({error_message: template});
+
+        assert.ok(request.body.text.length <= TELEGRAM_MESSAGE_LIMIT, "the message was not trimmed at all");
+        assert.equal(request.body.parse_mode, undefined,
+            "the trim cut the closing delimiter off and the message is sent as markdown anyway");
+    });
+
+    // One request either way. A retry would double every notification an
+    // endpoint is slow to answer.
+    it("sends exactly once", async () => {
+        await sendFailure({error_message: "*A speedtest has failed: %error%"});
+
+        assert.equal(sent.length, 1, "the message is sent more than once");
     });
 });
 

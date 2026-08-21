@@ -64,3 +64,43 @@ describe("updateValue", () => {
             "the event is dispatched with its rejection thrown away");
     });
 });
+
+/**
+ * And the controller that ordering came from, which floated its own.
+ *
+ * recommendations.update builds the announcement as
+ * `() => triggerEvent(...).then(() => {})` and calls it without a handler. A
+ * `then` with no second argument handles nothing: the promise it returns
+ * carries the rejection on, and nothing is holding it. triggerEvent reads the
+ * integration rows from the database before it dispatches, and that read is not
+ * inside its per-module try - so a locked sqlite file or a dropped MySQL
+ * connection rejects, and the rejection reaches the process-level
+ * unhandledRejection hook, which logs it as a bare server fault naming nothing.
+ *
+ * The same hazard config.js:updateValue was fixed for, in the file whose
+ * comments the fix there cites. It runs on the tail of a finished speedtest,
+ * which is when a database under pressure is most likely to refuse.
+ */
+describe("recommendations.update", () => {
+    const source = read("server/controller/recommendations.js");
+    const announce = source.slice(source.indexOf("const announce"), source.indexOf("if (existing)"));
+
+    it("still announces the change", () => {
+        assert.match(announce, /triggerEvent\("recommendationsUpdated"/,
+            "nothing tells the integrations the recommendations moved");
+    });
+
+    it("catches a dispatch that fails rather than floating it", () => {
+        assert.match(announce, /\.catch\(/,
+            "a failing dispatch escapes to the process-level hook as an unnamed server fault");
+        assert.doesNotMatch(announce, /\.then\(\(\)\s*=>\s*\{\}\)\s*;?\s*$/,
+            "the rejection is still passed on by a then that handles nothing");
+    });
+
+    it("says which announcement failed, as config.js does", () => {
+        assert.match(announce, /console\.error\(/,
+            "the failure is swallowed silently, which is worse than the bare hook it replaced");
+        assert.match(announce, /recommendation/i,
+            "the logged line does not say what could not be announced");
+    });
+});

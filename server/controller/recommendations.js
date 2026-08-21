@@ -1,5 +1,6 @@
 import recommendations from '../models/Recommendations.js';
 import { triggerEvent } from './integrations.js';
+import { toErrorMessage } from '../util/helpers.js';
 
 export const getCurrent = async () => {
     return await recommendations.findOne();
@@ -22,7 +23,17 @@ export const update = async (ping, download, upload) => {
     // Still not awaited: an integration is allowed to be slow, and this runs on
     // the tail of a speedtest that has already finished. triggerEvent handles
     // its own failures per module.
-    const announce = () => triggerEvent("recommendationsUpdated", configuration).then(() => {});
+    //
+    // Caught, though. `then(() => {})` handles nothing - the promise it returns
+    // carries the rejection on, and nothing was holding it. triggerEvent reads
+    // the integration rows before it dispatches and that read is outside its
+    // per-module try, so a locked sqlite file or a dropped connection rejected
+    // into the process-level unhandledRejection hook and was logged as a bare
+    // server fault naming nothing. This is the handler config.js:updateValue
+    // grew for the same reason.
+    const announce = () => triggerEvent("recommendationsUpdated", configuration)
+        .catch((error) => console.error(
+            `Could not announce the new recommendations: ${toErrorMessage(error)}`));
 
     if (existing) {
         await recommendations.update(configuration, {where: {id: existing.id}});

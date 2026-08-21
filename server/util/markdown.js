@@ -50,3 +50,42 @@ export const stripMarkdown = (variables, characters) => Object.fromEntries(
     Object.entries(variables ?? {}).map(([key, value]) =>
         [key, typeof value === "string" ? value.replace(characters, "") : value])
 );
+
+/**
+ * The delimiters Telegram's legacy parser pairs, and the bracket it needs a
+ * target for.
+ */
+const TELEGRAM_PAIRS = ["*", "_", "`"];
+
+const occurrences = (text, character) => text.split(character).length - 1;
+
+/**
+ * Whether Telegram's legacy parser will accept this message at all.
+ *
+ * It has no escape syntax and refuses the whole request with a 400 when an
+ * entity is left open, which is why every interpolated value is stripped of its
+ * metacharacters above. What that pass cannot reach is the operator's own
+ * template - deliberately, since its formatting is the point - and one thing
+ * still cuts through it: the message is trimmed to 4096 characters on the way
+ * out, and a template long enough to be trimmed can lose the closing half of a
+ * pair it opened. What is then dropped is usually a failure alert, which is the
+ * one nobody can afford to lose.
+ *
+ * A parity count rather than a parser. Reimplementing the grammar to decide
+ * whether a message is sendable would be a second thing to be wrong about, and
+ * the cost of the two mistakes is not the same: a message wrongly called
+ * unbalanced arrives without its formatting, where one wrongly called balanced
+ * does not arrive. So this errs towards plain text, and the caller sends
+ * unformatted rather than not at all.
+ *
+ * Brackets are counted as a pair for the same reason: `[` opens a link the
+ * parser then wants a target for, and a trim that took the target with it is
+ * the same failure by a different route.
+ */
+export const balancedForTelegram = (text) => {
+    const message = String(text ?? "");
+
+    if (occurrences(message, "[") !== occurrences(message, "]")) return false;
+
+    return TELEGRAM_PAIRS.every((character) => occurrences(message, character) % 2 === 0);
+};
