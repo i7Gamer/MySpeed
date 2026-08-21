@@ -38,6 +38,44 @@ usage() {
   echo -e "$NORMAL   --keep-data  keep the data directory, and the account that owns it"
 }
 
+# One spelling for a directory, whichever side it arrived from.
+#
+# Two paths are compared in this script - the one the operator gave with -d and
+# the one the unit recorded - and the answer decides whether an empty directory
+# means "already uninstalled" or "your installation is somewhere else, go and
+# look". Comparing them byte for byte made that answer depend on how each was
+# typed:
+#
+#   - install.sh writes WorkingDirectory exactly as it was given, so installing
+#     with `-d /opt/myspeed/` records the trailing slash. Uninstalling with the
+#     obvious `-d /opt/myspeed` then failed to corroborate, and a finished
+#     uninstall was reported as an installation left on disk.
+#   - A unit file that picked up a carriage return - edited on Windows, or
+#     written by a template - carries it into the value. systemd strips trailing
+#     whitespace before using it, so the service runs perfectly well from a
+#     directory this script then could not find. It took that as the system's own
+#     answer that the installation was gone and printed the completion banner
+#     over a directory still holding the database and the admin password hash.
+normalise_path() {
+  local value="$1"
+
+  # Trailing whitespace, one character at a time - the carriage return above,
+  # and the spaces a copied-and-pasted path arrives with.
+  while true; do
+    case "$value" in
+      *[[:space:]]) value="${value%?}" ;;
+      *) break ;;
+    esac
+  done
+
+  # Then trailing slashes, which belong to the typing rather than to the path.
+  while [ "${value%/}" != "$value" ]; do
+    value="${value%/}"
+  done
+
+  printf '%s' "$value"
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --keep-data)
@@ -80,32 +118,30 @@ done
 # What install.sh can produce is an absolute path with a name on the end, so
 # that is what is accepted.
 if [ -n "$CHOSEN_PATH" ]; then
-  case "$CHOSEN_PATH" in
+  # Kept as typed for the messages below, which are about what the operator
+  # wrote rather than about what it was reduced to.
+  GIVEN="$CHOSEN_PATH"
+
+  case "$GIVEN" in
     /*) ;;
     *)
-      echo -e "$RED✗ Uninstallation Error:$NORMAL -d needs an absolute path, and \"$CHOSEN_PATH\" is relative."
+      echo -e "$RED✗ Uninstallation Error:$NORMAL -d needs an absolute path, and \"$GIVEN\" is relative."
       echo -e "$NORMAL It would be taken from the directory you are standing in."
       exit 1
       ;;
   esac
 
-  # Trailing slashes are the operator's, not the path's - /opt/myspeed/ is the
-  # installation. What is left after taking them off is what has to be a
-  # directory somebody could have installed into.
-  TRIMMED="$CHOSEN_PATH"
-  while [ "${TRIMMED%/}" != "$TRIMMED" ]; do
-    TRIMMED="${TRIMMED%/}"
-  done
+  CHOSEN_PATH="$(normalise_path "$GIVEN")"
 
-  case "$TRIMMED" in
-    "" | */. | */.. | . | ..)
-      echo -e "$RED✗ Uninstallation Error:$NORMAL \"$CHOSEN_PATH\" is not an installation directory."
+  # What is left has to be a directory somebody could have installed into. "/"
+  # normalises to nothing at all, which is the case worth catching.
+  case "$CHOSEN_PATH" in
+    "" | */. | */..)
+      echo -e "$RED✗ Uninstallation Error:$NORMAL \"$GIVEN\" is not an installation directory."
       echo -e "$NORMAL Removing it would take the filesystem with it. Name the directory MySpeed is in."
       exit 1
       ;;
   esac
-
-  CHOSEN_PATH="$TRIMMED"
 fi
 
 # Where the installation actually is, which is not always the default:
@@ -134,7 +170,11 @@ RECORDED=""
 for unit in "${SERVICE_FILES[@]}"; do
   [ -f "$unit" ] || continue
 
-  RECORDED="$(sed -n 's/^WorkingDirectory=//p' "$unit" | head -n 1)"
+  # Normalised on the way in, so that a unit carrying a trailing slash or a
+  # carriage return is the same path as the one an operator types - and so that a
+  # value which is nothing but whitespace counts as no record at all rather than
+  # ending the search.
+  RECORDED="$(normalise_path "$(sed -n 's/^WorkingDirectory=//p' "$unit" | head -n 1)")"
   [ -n "$RECORDED" ] && break
 done
 
@@ -268,6 +308,11 @@ fi
 INSTALLATION_FOUND=0
 [ -d "$INSTALLATION_PATH" ] && INSTALLATION_FOUND=1
 
+# Whether data was actually kept, as opposed to asked for. Set where the keeping
+# happens, read where the account that owns it is removed - and declared here
+# because the block in between does not run on every path that reaches it.
+KEPT_DATA=0
+
 # A symlink is refused rather than followed.
 #
 # `[ -d ]` answers true for a link to a directory, and `rm -R` then removes the
@@ -332,8 +377,27 @@ if [ "$INSTALLATION_FOUND" -eq 1 ] || { [ "$REMOVED_CONTAINER" -eq 0 ] && [ "$FO
     exit 1
   fi
 
+  # An installation with no data directory is still an installation.
+  #
+  # The staging move below was attempted whether or not there was anything to
+  # stage, so --keep-data against an install that had never been run - or whose
+  # data lives somewhere else - failed on a directory that was not there and
+  # stopped. By then the service was stopped and both unit files were deleted, so
+  # the flag that exists to make an uninstall safer left the host half
+  # uninstalled. Nothing to keep is a thing to say, not a reason to stop.
+  #
+  # Recorded rather than answered twice, because the account below belongs to
+  # what was kept: the operator asking for --keep-data is not the same fact as
+  # data having been kept, and it is the second one that decides whether the
+  # owner of that directory has to stay behind with it. Declared above this
+  # block, which does not run on every path that reaches the account.
+  if [ "$KEEP_DATA" == "--keep-data" ] && [ ! -d "$INSTALLATION_PATH/data" ]; then
+    echo -e "$YELLOW There is no data directory at$NORMAL $INSTALLATION_PATH/data$YELLOW to keep."
+    echo -e "$YELLOW Removing the installation."
+  fi
+
   # Remove folder
-  if [ "$KEEP_DATA" == "--keep-data" ]; then
+  if [ "$KEEP_DATA" == "--keep-data" ] && [ -d "$INSTALLATION_PATH/data" ]; then
     # A fresh staging directory every run, rather than a fixed /tmp path.
     #
     # mv renames into an empty destination but moves *into* an existing
@@ -391,6 +455,7 @@ if [ "$INSTALLATION_FOUND" -eq 1 ] || { [ "$REMOVED_CONTAINER" -eq 0 ] && [ "$FO
     fi
 
     rmdir "$STAGING"
+    KEPT_DATA=1
   else
     # Checked, because this is the step that cannot be undone and it was the one
     # whose failure was discarded. There is no `set -e`, so a path that was
@@ -464,11 +529,16 @@ fi
 # block does not run for it. The container creates no account on the host at all,
 # so a docker-only uninstall must not go looking for one to delete.
 #
-# Not under --keep-data, and that is the whole reason this is a condition rather
-# than a line: that flag exists to leave the database on disk for a later
+# Not when data was kept, and that is the whole reason this is a condition rather
+# than a line: --keep-data exists to leave the database on disk for a later
 # reinstall, and those files belong to this account. Delete it and they belong to
 # a free uid, which the next account created on this host may be given. Data that
 # is being kept keeps its owner.
+#
+# Asked of what was kept rather than of what was asked for. --keep-data on an
+# installation that had no data directory keeps nothing, and an account left
+# behind with nothing to own is the /etc/passwd entry this block exists to
+# prevent.
 #
 # Guarded on every side, and never fatal: a system without userdel must not fail
 # an uninstall over it, and an install that fell back to root created no account
@@ -476,7 +546,7 @@ fi
 SERVICE_USER="myspeed"
 
 if [ "$FOUND_SERVICE" -eq 1 ] || [ "$INSTALLATION_FOUND" -eq 1 ]; then
-  if [ "$KEEP_DATA" != "--keep-data" ] && command -v userdel &> /dev/null \
+  if [ "$KEPT_DATA" -eq 0 ] && command -v userdel &> /dev/null \
       && id -u "$SERVICE_USER" > /dev/null 2>&1; then
     userdel "$SERVICE_USER" > /dev/null 2>&1 || true
   fi

@@ -776,19 +776,13 @@ describe("uninstall.sh removes the account install.sh creates", () => {
     });
 
     /*
-     * Slicing from the last KEEP_DATA and then asserting KEEP_DATA is in the
-     * slice says nothing - the slice begins with it. What has to hold is that
-     * the flag is part of the condition guarding userdel.
+     * Whether the account survives an uninstall that kept its files is asserted
+     * by running one, in uninstallBehaviour.test.js.
+     *
+     * It was asserted here by finding KEEP_DATA in the condition above userdel,
+     * which is a mechanism rather than a property - and the mechanism moved. The
+     * question is not whether --keep-data was asked for but whether data was
+     * actually kept: the flag also arrives on installations that have no data
+     * directory, where an account left behind owns nothing at all.
      */
-    it("keeps the account whenever it keeps the data it owns", () => {
-        const line = source.split("\n").find((text) => text.includes("userdel"));
-        const condition = source.slice(0, source.indexOf("userdel"));
-        const guard = condition.slice(condition.lastIndexOf("if "));
-
-        assert.match(guard, /KEEP_DATA/,
-            "the account is removed even under --keep-data, orphaning the files it owns");
-        assert.match(guard, /!=\s*"--keep-data"/,
-            "the --keep-data check does not read as \"only when data is not kept\"");
-        assert.ok(line, "userdel is no longer called");
-    });
 });

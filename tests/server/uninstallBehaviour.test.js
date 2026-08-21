@@ -100,7 +100,7 @@ const stub = (file, body) => {
  * can be observed without one existing.
  */
 const host = ({container = false, service = false, recorded = null, installed = null, account = false,
-    unremovable = false, otherService = false}) => {
+    unremovable = false, otherService = false, data = true}) => {
     const sandbox = path.join(root, randomBytes(8).toString("hex"));
 
     fs.mkdirSync(path.join(sandbox, "bin"), {recursive: true});
@@ -155,14 +155,25 @@ const host = ({container = false, service = false, recorded = null, installed = 
         `echo "id $*" >> "${calls}"\n` + (account ? "echo 999\nexit 0" : "exit 1"));
 
     if (recorded) {
-        const at = recorded === true ? `${posix(sandbox)}/opt/myspeed` : recorded;
+        // A function when the case is about how the path is spelled - the
+        // sandbox directory is only known here, and that spelling is what has to
+        // be varied.
+        const at = recorded === true
+            ? `${posix(sandbox)}/opt/myspeed`
+            : (typeof recorded === "function" ? recorded(`${posix(sandbox)}/opt/myspeed`) : recorded);
+
         fs.writeFileSync(path.join(sandbox, "units", "a.service"), `[Service]\nWorkingDirectory=${at}\n`);
     }
 
     if (installed) {
         const at = installed === true ? path.join(sandbox, "opt", "myspeed") : installed;
-        fs.mkdirSync(path.join(at, "data"), {recursive: true});
-        fs.writeFileSync(path.join(at, "data", "storage.db"), "the database");
+        fs.mkdirSync(at, {recursive: true});
+
+        if (data) {
+            fs.mkdirSync(path.join(at, "data"), {recursive: true});
+            fs.writeFileSync(path.join(at, "data", "storage.db"), "the database");
+        }
+
         fs.writeFileSync(path.join(at, "myspeed"), "the binary");
     }
 
@@ -296,6 +307,46 @@ describe("the uninstaller", {skip: bash ? false : "no bash on PATH - uninstall.s
     });
 
     /**
+     * What the unit recorded is compared against a path an operator typed, so
+     * both have to be spelled the same way.
+     *
+     * install.sh makes the path absolute and writes it into WorkingDirectory
+     * exactly as given, trailing slash and all - and this script now trims a -d
+     * before comparing. Trimming only one side is worse than trimming neither:
+     * `-d /opt/myspeed` against a recorded `/opt/myspeed/` stopped counting as
+     * corroboration, so a finished uninstall was reported as an installation
+     * still on disk somewhere.
+     */
+    it("corroborates a -d that differs from the recorded path only by a trailing slash", () => {
+        const machine = host({service: true, recorded: (at) => `${at}/`});
+        const result = machine.run("-d", machine.given("opt", "myspeed"));
+
+        assert.equal(result.status, 0,
+            "a finished uninstall is reported as an installation still on disk somewhere");
+        assert.ok(result.completed);
+    });
+
+    /**
+     * And trailing whitespace is the same problem with worse consequences.
+     *
+     * systemd strips it before using the value, so a unit file that picked up a
+     * carriage return - edited on Windows, or written by a template - runs the
+     * service perfectly well from a directory this script then cannot find. It
+     * takes the empty result as the system's own answer that the installation is
+     * gone, and prints the completion banner over a directory still holding the
+     * database and the admin password hash.
+     */
+    it("finds an installation the unit recorded with trailing whitespace", () => {
+        const machine = host({service: true, installed: true, account: true,
+            recorded: (at) => `${at}   `});
+        const result = machine.run();
+
+        assert.equal(result.status, 0, result.output);
+        assert.equal(result.survives(...DATABASE), false,
+            "the database survived under the completion banner");
+    });
+
+    /**
      * The unit file goes whether or not systemd ever loaded it.
      *
      * Removing it was inside the branch that `systemctl --all` selects, so a
@@ -425,6 +476,48 @@ describe("the uninstaller", {skip: bash ? false : "no bash on PATH - uninstall.s
             assert.doesNotMatch(result.calls, /userdel/, "the owner of the kept data was deleted");
         });
 
+        /**
+         * And an installation with no data directory is still an installation.
+         *
+         * The staging move was attempted regardless, so `--keep-data` against an
+         * install that had never been run - or whose data lives somewhere else -
+         * failed on a directory that was not there and stopped. By then the
+         * service was stopped and both unit files were deleted, so the flag that
+         * exists to make an uninstall safer left the host half uninstalled and
+         * the operator with an exit code and a `mv` error.
+         *
+         * There is nothing to keep, which is a thing to say rather than a reason
+         * to stop - and nothing for the account to own afterwards either.
+         */
+        it("finishes when there is no data directory to keep", () => {
+            const result = host({service: true, recorded: true, installed: true, data: false, account: true})
+                .run("--keep-data");
+
+            assert.equal(result.status, 0, result.output);
+            assert.ok(result.completed);
+            assert.equal(result.survives("opt", "myspeed"), false,
+                "the installation is left on disk by the flag that only meant to keep its data");
+            assert.match(result.output, /no data directory/,
+                "nothing says the data the operator asked to keep was never there");
+            assert.match(result.calls, /userdel myspeed/,
+                "the account outlives an uninstall that kept nothing for it to own");
+        });
+
+        /**
+         * Asking to keep data is not the same as data having been kept, and it
+         * is the second one the account depends on. Here the installation was
+         * gone before the run started, so --keep-data kept nothing - and an
+         * account left behind with nothing to own is exactly the /etc/passwd
+         * entry the removal exists to prevent.
+         */
+        it("removes the account when --keep-data found nothing to keep", () => {
+            const result = host({service: true, recorded: true, account: true}).run("--keep-data");
+
+            assert.equal(result.status, 0, result.output);
+            assert.match(result.calls, /userdel myspeed/,
+                "an account survives an uninstall that kept nothing for it to own");
+        });
+
         it("removes the account when the data goes with it", () => {
             const result = host({service: true, recorded: true, installed: true, account: true}).run();
 
@@ -456,6 +549,24 @@ describe("the uninstaller", {skip: bash ? false : "no bash on PATH - uninstall.s
             assert.equal(result.status, 0, result.output);
             assert.match(result.calls, /userdel myspeed/,
                 "an installation whose unit was removed by hand leaves its account behind");
+        });
+
+        /**
+         * And a userdel that refuses is not a failed uninstall. Everything it
+         * guards has already happened by the time it runs, so exiting non-zero
+         * over a leftover /etc/passwd entry would report a finished removal as a
+         * broken one.
+         */
+        it("finishes when the account cannot be removed", () => {
+            const machine = host({service: true, recorded: true, installed: true, account: true});
+
+            stub(machine.at("bin", "userdel"), 'echo "userdel: user myspeed is currently used" >&2\nexit 8');
+
+            const result = machine.run();
+
+            assert.equal(result.status, 0, "an account that would not go failed the whole uninstall");
+            assert.ok(result.completed);
+            assert.equal(result.survives(...DATABASE), false);
         });
 
         // The container never creates an account on the host.
