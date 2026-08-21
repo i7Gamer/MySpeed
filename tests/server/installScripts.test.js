@@ -658,8 +658,49 @@ describe("install.sh registers a service that is not root", () => {
      * consumes it. uninstall.sh recreates the same directory under the same mask
      * and states the same mode, for the same reason - see the assertion there.
      */
+    /**
+     * Where the installation directory itself is created, as opposed to the
+     * `data` and `bin` it makes underneath. Matched by pattern rather than by a
+     * fixed spelling, so guarding the call - which is the subject of the
+     * assertion below - does not also move the anchor it is measured from.
+     */
+    const createsInstallationPath = () => {
+        const at = source.search(/mkdir -p "\$INSTALLATION_PATH"(?!\/)/);
+
+        assert.notEqual(at, -1, "nothing creates the installation directory any more");
+        return at;
+    };
+
+    /**
+     * And it does not widen something that is not a directory.
+     *
+     * `[ ! -d "$INSTALLATION_PATH" ]` is also true when the path is a regular
+     * file - the case the `cd` check below calls "a name already taken by a
+     * file". There is no `set -e`, so an unchecked `mkdir -p` fails with EEXIST
+     * and execution walks straight into the chmod, which follows symlinks and
+     * succeeds: a 0600 file named by a typo in -d is left world-readable and
+     * executable, by root, and only then does the script abort. Before the mode
+     * was stated here that invocation changed nothing at all.
+     */
+    it("does not reach the chmod when the directory was not created", () => {
+        const made = createsInstallationPath();
+        const stated = source.indexOf('chmod 755 "$INSTALLATION_PATH"');
+
+        assert.ok(made !== -1 && stated !== -1);
+
+        const between = source.slice(made, stated);
+
+        assert.match(between, /\|\||exit|&&/,
+            "a failed mkdir falls through to a chmod that widens whatever is already at that path");
+    });
+
+    it("says why it could not create the directory", () => {
+        assert.match(source, /Could not create \$INSTALLATION_PATH/,
+            "the failure is silent, and the run aborts a few lines later for a reason that names something else");
+    });
+
     it("creates the installation directory in a mode the account can enter", () => {
-        const made = source.indexOf('mkdir -p "$INSTALLATION_PATH"\n');
+        const made = createsInstallationPath();
         const stated = source.indexOf('chmod 755 "$INSTALLATION_PATH"');
 
         assert.notEqual(made, -1, "nothing creates the installation directory any more");

@@ -78,4 +78,31 @@ describe("where the stored language comes from and goes", () => {
         assert.match(source, /useSyncOnOpen\(/,
             "the selection is seeded once at mount and never refreshed");
     });
+
+    /**
+     * Which means the dialog has to write what it chose.
+     *
+     * It never did: changeLanguage() is called and the value reaches storage only
+     * because i18next-browser-languagedetector caches it there. That cache is a
+     * no-op when the browser refuses the store - which is the cross-origin iframe
+     * this release went out of its way to keep working, and Storage.js falls back
+     * to an in-memory Map there rather than to nothing. So the seeded value stayed
+     * in that Map, and re-reading on open handed the dialog a selection the
+     * operator had already changed: reopening highlighted English over a German
+     * interface, and pressing Update again put the interface back to English.
+     *
+     * Writing it here is also what makes the re-read above honest in the ordinary
+     * case: the dialog no longer depends on a plugin's side effect to know what
+     * it last did.
+     */
+    it("is written by the dialog that changes it", () => {
+        const source = readSource("client/src/common/components/LanguageDialog/LanguageDialog.jsx");
+        const update = source.slice(source.indexOf("const updateLanguage"), source.indexOf("return ("));
+
+        assert.match(update, /writeStored\(\s*["']language["']/,
+            "the chosen language is only stored as a side effect of the detector, which does nothing "
+            + "when the browser refuses the store");
+        assert.ok(update.indexOf("writeStored") < update.indexOf("close()"),
+            "the dialog closes before it records what was chosen");
+    });
 });

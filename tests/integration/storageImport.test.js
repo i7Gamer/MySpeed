@@ -334,6 +334,62 @@ describe("PUT /api/storage/config with a threshold an older version accepted", (
 });
 
 /**
+ * And the same for a librespeed URL an older version accepted.
+ *
+ * That value was checked with a bare `new URL()` until the scheme check was
+ * added, and `new URL("localhost:8080")` does not throw - it reads "localhost:"
+ * as the scheme. So a bare host and port, which is a natural thing to type for a
+ * backend on the LAN, was stored behind a 200 and carried verbatim into every
+ * backup taken since. Restoring one of those files now refused the whole import:
+ * the nodes, the integrations and the recorded history were all left behind by a
+ * URL the instance could never have fetched anyway.
+ *
+ * The default is written instead, which for this key means "choose a server
+ * automatically" - the same trade the thresholds above make, and for the same
+ * reason. A value the current validator cannot read is one this instance cannot
+ * act on, so the restore completes without it and the setting is the one thing
+ * that does not survive.
+ */
+describe("PUT /api/storage/config with a librespeed URL an older version accepted", () => {
+    const restore = (config) => importConfig({
+        config, nodes: [{name: "new", url: "http://10.0.0.9:5216"}], integrations: [], recommendations: []
+    });
+
+    ["localhost:8080", "speed.lan:8080/backend", "nas:3000"].forEach((stored) => {
+        it(`restores everything else when libreUrl is ${JSON.stringify(stored)}`, async () => {
+            await setConfig(server.config, "libreUrl", "none");
+
+            const {status} = await restore({libreUrl: stored});
+
+            assert.equal(status, 200, "the whole backup is refused over one unusable backend URL");
+            assert.equal(await server.config.getValue("libreUrl"), "none",
+                "a URL the CLI cannot fetch was restored anyway");
+            assert.equal((await counts()).nodes, 1, "the nodes were not restored");
+        });
+    });
+
+    it("keeps a URL it can still read", async () => {
+        assert.equal((await restore({libreUrl: "https://speed.example.net/backend"})).status, 200);
+        assert.equal(await server.config.getValue("libreUrl"), "https://speed.example.net/backend",
+            "a URL the check accepts was replaced by the default anyway");
+    });
+
+    // The sentinel is the default, so it takes the shipped-default path rather
+    // than the validator at all - but it still has to come back as itself.
+    it("keeps the unset sentinel", async () => {
+        assert.equal((await restore({libreUrl: "none"})).status, 200);
+        assert.equal(await server.config.getValue("libreUrl"), "none");
+    });
+
+    // Tolerating this one must not tolerate the next thing that cannot be read:
+    // a cron the scheduler cannot parse still takes the restore down, because
+    // guessing at it would restore an instance on a different schedule.
+    it("still refuses a value that is not one of the tolerated keys", async () => {
+        assert.equal((await restore({cron: "every second tuesday"})).status, 500);
+    });
+});
+
+/**
  * And a refused restore says which value it refused.
  *
  * The import walks every stored key back through the validator and abandons the

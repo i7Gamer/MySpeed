@@ -90,6 +90,9 @@ fi
 #
 # Both halves are guarded on finding their own, so a host with only one pays
 # nothing for the other being asked.
+#
+# Recorded but not consulted below: what decides whether the installation
+# directory is removed is whether there is one, not whether a unit named it.
 FOUND_SERVICE=0
 
 # -q, not -n: the condition wants an answer, and -n printed the matched line
@@ -117,13 +120,21 @@ fi
 #
 # `rm -R` on a path that was never there is checked and fatal, deliberately: that
 # check is what stops a removal which failed from printing the success banner. So
-# it cannot simply run always - a docker-only host has no /opt/myspeed, and
-# would have its finished uninstall reported as a failure.
+# it cannot simply run always - a docker-only host has no /opt/myspeed, and would
+# have its finished uninstall reported as a failure.
 #
-# Skipped only in that one case. A native host with nothing found still reaches
-# the removal and still gets told which path it could not remove, which is the
-# sentence that sends anyone to look for where their installation actually is.
-if [ "$REMOVED_CONTAINER" -eq 0 ] || [ "$FOUND_SERVICE" -eq 1 ] || [ -d "$INSTALLATION_PATH" ]; then
+# A native host reaches the removal whatever was found, so a wrong -d still earns
+# the message naming the path it could not remove - the sentence that sends
+# anyone to look for where their installation actually is.
+#
+# FOUND_SERVICE is deliberately not part of this. Treating a unit as evidence
+# that there is something to remove looks right and is not: on a host holding
+# both a container and a stale unit, with the directory already gone, it pulled
+# execution into a removal with nothing left to remove, printed "the installation
+# is still on disk" over a host where it was not, and exited 1 on an uninstall
+# that had removed everything it found. The question is whether anything is at
+# that path, and -d asks it.
+if [ "$REMOVED_CONTAINER" -eq 0 ] || [ -d "$INSTALLATION_PATH" ]; then
   clear
   echo -e "$BLUE🔎 Status:$NORMAL Removing MySpeed system data if present..."
   sleep 3

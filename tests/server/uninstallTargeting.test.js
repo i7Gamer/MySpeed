@@ -141,12 +141,21 @@ const noPosixShell = (() => {
  * The rule deciding whether the native installation is removed, run rather than
  * read.
  *
- * Reading it cannot say what it answers, and this one is not obvious: it has to
+ * Reading it cannot say what it answers, and this one is not obvious. It has to
  * be false for a host that only ever had a container - `rm -R` on a path that
  * was never there is checked and fatal, so running it there would report a
  * finished uninstall as a failure - while staying true for a native host that
  * found nothing, which is the case that has to reach the removal to be told
  * which path it could not remove.
+ *
+ * Whether a *service* was found is deliberately not part of it. Making it part
+ * of it looks right - a unit is evidence of a native install - and is wrong: on
+ * a host holding both a container and a stale unit, with the installation
+ * directory already gone, it pulled execution into a removal with nothing left
+ * to remove, which printed "the installation is still on disk" over a host where
+ * it was not, and exited 1 on an uninstall that had removed everything it found.
+ * What is actually being asked is whether there is anything at that path, and
+ * `-d` asks it directly.
  */
 describe("whether the native installation is removed", {skip: noPosixShell}, () => {
     const guard = (() => {
@@ -162,6 +171,8 @@ describe("whether the native installation is removed", {skip: noPosixShell}, () 
     const PRESENT = os.tmpdir();
     const ABSENT = path.join(os.tmpdir(), "myspeed-no-such-installation-directory");
 
+    // FOUND_SERVICE is still set by the script, and still passed here, so that a
+    // condition which starts reading it again is caught by the pairs below.
     const removes = ({container, service, directory}) => execFileSync("sh", ["-c",
         `REMOVED_CONTAINER=${container}\nFOUND_SERVICE=${service}\n`
         + `INSTALLATION_PATH="${directory ? PRESENT : ABSENT}"\n`
@@ -173,10 +184,24 @@ describe("whether the native installation is removed", {skip: noPosixShell}, () 
             "a finished docker uninstall fails on an installation directory it never had");
     });
 
-    /** The migration case: the container running beside the unit it replaced. */
+    /**
+     * The migration case the restructure exists for: the container running
+     * beside the unit it replaced, with the installation still on disk.
+     */
     it("removes it on a host that has both", () => {
-        assert.equal(removes({container: 1, service: 1, directory: false}), true,
+        assert.equal(removes({container: 1, service: 1, directory: true}), true,
             "the native installation survives an uninstall because a container was found first");
+    });
+
+    /**
+     * And the same host once its directory is already gone - a native install
+     * removed by hand, leaving the unit behind. Everything found was removed, so
+     * the run is over; reaching the removal here only produces a false "the
+     * installation is still on disk" and exit 1.
+     */
+    it("does not chase a directory that is not there just because a unit was", () => {
+        assert.equal(removes({container: 1, service: 1, directory: false}), false,
+            "an uninstall that removed everything it found reports failure");
     });
 
     it("removes a native installation left beside a container", () => {
@@ -198,5 +223,18 @@ describe("whether the native installation is removed", {skip: noPosixShell}, () 
     it("removes an ordinary native installation", () => {
         assert.equal(removes({container: 0, service: 1, directory: true}), true,
             "the ordinary uninstall no longer removes anything");
+    });
+
+    /**
+     * The answer must not depend on the service at all. Every pair below differs
+     * only in FOUND_SERVICE.
+     */
+    it("answers the same whether or not a service was found", () => {
+        for (const container of [0, 1])
+            for (const directory of [false, true])
+                assert.equal(
+                    removes({container, service: 0, directory}),
+                    removes({container, service: 1, directory}),
+                    `finding a service changed the answer for container=${container} directory=${directory}`);
     });
 });

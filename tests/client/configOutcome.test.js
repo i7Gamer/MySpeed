@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-    configOutcome, failureOutcome, grantsAdminAccess, isRemoteNode
+    configOutcome, deniesAdminAccess, failureOutcome, isRemoteNode
 } from "../../client/src/common/contexts/Config/configOutcome.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
@@ -199,59 +199,70 @@ describe("the node refusal header", () => {
 });
 
 /**
- * Whether a sign-in got what it was opened for.
+ * Whether a sign-in was refused the thing it was opened for.
  *
  * The admin login in the header exchanges the password for a session and then
  * re-reads /api/config to see what that session is worth: read-level access
  * authenticates, but not for the controls the dialog was opened to reach, so it
- * counts as a refusal. That judgement was `{ok: !newConfig?.viewMode}`, which
- * is true of every answer that is not an admin config - including no answer at
- * all. checkConfig calls `.json()` without asserting the status and the call
- * site catches into null, so a 401 body, a 503 from a proxy in front of a
- * stopped container, and a request that threw were each read as a successful
- * admin sign-in: the prompt closed, the dashboard showed its admin controls, and
- * every one of them failed.
+ * counts as a refusal.
  *
- * The question is what viewMode actually says, and only an instance that
- * answered says it.
+ * The question has to be asked in this direction. Asking the opposite - is this
+ * an admin config - reads every answer that is not one as a refusal, and one of
+ * those is "no answer": `request` does not throw on a non-2xx, checkConfig calls
+ * .json() on whatever came back, and the call site catches into null. So a
+ * proxied node that has gone slow, a 503 from in front of a restarting
+ * container, or a fetch that hit the 10s timeout each produced {ok: false} for a
+ * password that had *already* been accepted by POST /api/session a moment
+ * earlier - and promptUntilAccepted only stops on ok or unreachable, so the
+ * operator was told their correct password was wrong and asked again, and again.
+ *
+ * Only `viewMode: true` is the server saying no. It is the only thing it ever
+ * says: password.js sets req.viewMode to a literal true or false on every path,
+ * so a config that answered at all carries a boolean, and anything else is an
+ * answer that never came.
  */
-describe("grantsAdminAccess", () => {
-    it("accepts a config that says the session is not in view mode", () => {
-        assert.equal(grantsAdminAccess(ADMIN_CONFIG), true);
-    });
-
+describe("deniesAdminAccess", () => {
     it("refuses a read-only session, which authenticated but not for this", () => {
-        assert.equal(grantsAdminAccess(VIEW_CONFIG), false);
+        assert.equal(deniesAdminAccess(VIEW_CONFIG), true);
     });
 
+    it("lets an admin session through", () => {
+        assert.equal(deniesAdminAccess(ADMIN_CONFIG), false);
+    });
+
+    /**
+     * None of these is the server refusing. The password was accepted before any
+     * of them could happen, so treating them as a refusal calls a correct
+     * password wrong - and the prompt asks again for as long as it keeps
+     * happening.
+     */
     for (const [name, answer] of [
         ["nothing at all", null],
         ["an undefined answer", undefined],
         ["a refusal body", {message: "Unauthorized"}],
-        ["a busy body", {type: "SERVER_BUSY"}],
+        ["a body from a proxy in front of a stopped container", {type: "SERVER_BUSY"}],
         ["an empty object", {}]
     ])
-        it(`refuses ${name}`, () => {
-            assert.equal(grantsAdminAccess(answer), false,
-                "an answer that never said anything about the session is read as an admin sign-in");
+        it(`does not read ${name} as a refusal`, () => {
+            assert.equal(deniesAdminAccess(answer), false,
+                "an answer that never came is treated as the server saying no, and the prompt re-asks forever");
         });
 });
 
 /**
- * And the header asks through it. The judgement being right is worth nothing
- * while the call site keeps its own.
+ * And the header asks through it, in that direction.
  */
 describe("the header's admin login", () => {
     const header = fs.readFileSync(path.join(CLIENT_SRC,
         "common/components/Header/HeaderComponent.jsx"), "utf8");
 
     it("judges the re-read config through the shared answer", () => {
-        assert.match(header, /grantsAdminAccess\(/,
-            "the header decides for itself whether the sign-in worked");
+        assert.match(header, /deniesAdminAccess\(/,
+            "the header decides for itself what a sign-in was worth");
     });
 
-    it("no longer reads any answer that is not view mode as success", () => {
-        assert.doesNotMatch(header, /ok: !newConfig\?\.viewMode/,
-            "a 401, a 503 and a thrown request all still report a successful admin sign-in");
+    it("does not treat an unreadable config as a refused password", () => {
+        assert.doesNotMatch(header, /ok:\s*grantsAdminAccess|viewMode === false/,
+            "a slow node or a restarting server tells the operator their correct password is wrong");
     });
 });

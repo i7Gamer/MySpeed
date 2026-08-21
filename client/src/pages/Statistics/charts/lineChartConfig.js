@@ -338,21 +338,26 @@ export const lineChartOptions = ({
              * legend below.
              *
              * `filter: (item) => item.dataset.label !== failed_test` used to sit
-             * here, and every measurement series holds null where a test failed -
-             * buildStatistics puts that gap there deliberately, so the line reads
-             * as a hole rather than as a reading of zero. At a failed index the
-             * marker is therefore the only dataset with a point, the filter
-             * removed it, and chart.js draws no tooltip at all once nothing is
-             * left: hovering the red cross said nothing, and the `label` branch
-             * written to name the reason could never run. The one place an
-             * operator goes to ask why a test failed was the one place that
-             * would not answer.
+             * here, and it took out the only dataset that has anything to say at
+             * a failed index: every measurement series holds null there -
+             * buildStatistics puts that gap in deliberately, so the line reads as
+             * a hole rather than as a reading of zero - and the marker carries
+             * the reason. So the `label` branch written to name that reason could
+             * never run, and what an operator saw instead came from `afterBody`,
+             * as a note appended to whatever else happened to be in the tooltip.
              *
-             * `afterBody` used to name the failure instead, which is why this
-             * went unnoticed - on a bucket that also held a successful test the
-             * tooltip had a line to attach itself to. It is gone with the filter,
-             * since `label` now names the failure on both and keeping the two
-             * printed the reason twice.
+             * What else happened to be there was the dashed average, which holds
+             * the same value at every index including the failed ones. That is
+             * why this went unnoticed: on any range where at least one test
+             * succeeded the tooltip still opened, reading "Average: …" with the
+             * failure noted underneath. It is only where the average is absent -
+             * a range in which every test failed, which is exactly when someone
+             * is looking - that nothing was left after the filter and chart.js
+             * drew no tooltip at all.
+             *
+             * Both go. `label` names the failure and its reason on every index
+             * that has one, and keeping `afterBody` beside it printed the reason
+             * twice on every mixed bucket.
              */
             callbacks: {
                 title: (items) => {

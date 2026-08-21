@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readSource } from "../helpers/source.js";
+import { readSource, bodyOf } from "../helpers/source.js";
 import { withoutUrlCredentials } from "../../server/util/urlCredentials.js";
 import { announcedValue } from "../../server/controller/config.js";
 
@@ -202,6 +202,24 @@ describe("what a configUpdated event carries", () => {
     it("passes an ordinary value through untouched", () => {
         assert.equal(announcedValue("cron", "0 * * * *"), "0 * * * *");
         assert.equal(announcedValue("download", "500"), "500");
+    });
+
+    /**
+     * And the announcement is actually made through it.
+     *
+     * Everything above tests the helper. A helper nothing calls is the same
+     * disclosure with a test suite over it: put the old
+     * `key === "password" ? "protected" : newValue` back into updateValue and
+     * every assertion here still passes while libreUrl goes out to the webhook
+     * with its credential attached.
+     */
+    it("is what updateValue announces with", () => {
+        const body = bodyOf(readSource("server/controller/config.js"), "export const updateValue");
+
+        assert.match(body, /triggerEvent\("configUpdated",[^)]*announcedValue\(/,
+            "the event is built inline again, so only the password is redacted");
+        assert.doesNotMatch(body, /key === "password" \? "protected" : newValue/,
+            "the inline redaction is back and libreUrl leaves with its credential");
     });
 
     /**

@@ -91,6 +91,27 @@ const THRESHOLD_NUMBER = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/;
 const THRESHOLD_KEYS = ["ping", "download", "upload"];
 
 /**
+ * Keys a restore may write the default for rather than refusing the whole file.
+ *
+ * The thresholds are here because a stored "1.2.3" was legal when it was saved
+ * and cannot be kept now. libreUrl joined them for the same reason and by the
+ * same route: it was checked with a bare `new URL()` until the scheme check was
+ * added, and `new URL("localhost:8080")` does not throw - it reads "localhost:"
+ * as the scheme - so a bare host and port was stored behind a 200 and carried
+ * verbatim into every backup taken since. Restoring one refused the entire
+ * import, nodes and integrations and history included, over an address the CLI
+ * could never have fetched.
+ *
+ * Its default is "none", which means "choose a server automatically", so the
+ * instance comes back working with one setting to re-enter. That is the whole
+ * test for membership here: a value this instance cannot act on, whose default
+ * is a working state rather than a guess. A cron it cannot parse is not on the
+ * list and must not be - the default schedule is a different schedule, and
+ * restoring one would be restoring a different instance.
+ */
+const RESTORABLE_AS_DEFAULT = [...THRESHOLD_KEYS, "libreUrl"];
+
+/**
  * Stored values that are URLs an operator may have put a credential in.
  *
  * libreUrl is the librespeed backend, and it is already withheld from an
@@ -605,11 +626,13 @@ export const importConfig = async (obj) => {
              * the unreadable preference is the one thing that does not survive
              * it, which is the direction with something left to fix afterwards.
              *
-             * Only these three. Anything else refused here is a value the
-             * server acts on, and guessing at one of those would restore an
-             * instance that is not the one that was backed up.
+             * Only the keys on that list - the three thresholds and the
+             * librespeed URL, which arrived by the same route. Anything else
+             * refused here is a value the server acts on, and guessing at one of
+             * those would restore an instance that is not the one that was
+             * backed up. RESTORABLE_AS_DEFAULT says what earns a place.
              */
-            if (!THRESHOLD_KEYS.includes(key)) return {ok: false, key};
+            if (!RESTORABLE_AS_DEFAULT.includes(key)) return {ok: false, key};
 
             updates.push({key, value: configDefaults[key]});
             continue;

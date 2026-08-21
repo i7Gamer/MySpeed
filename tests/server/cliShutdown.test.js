@@ -211,4 +211,25 @@ describe("untrackProcess", () => {
 
         assert.equal(terminateActiveProcess(), false);
     });
+
+    /**
+     * And the run lets go through it.
+     *
+     * The three above test the helper against fake children. The helper is not
+     * what was wrong: `trackProcess(null)` in the run's own handlers is, and
+     * putting that back leaves all three of them passing while the race is fully
+     * restored. `finish()` is the one place a run ends, so it is the one place
+     * this has to be asked.
+     */
+    it("is how the run itself lets go", () => {
+        const source = read("util/speedtest.js");
+        const finish = source.slice(source.indexOf("const finish = () =>"),
+            source.indexOf("await new Promise"));
+
+        assert.notEqual(finish.length, 0, "the run no longer ends in one place");
+        assert.match(finish, /untrackProcess\(testProcess\)/,
+            "the run clears the tracker without asking whose child it is");
+        assert.doesNotMatch(source, /trackProcess\(null\)/,
+            "a handler still wipes the tracker outright, which can take a retry's child with it");
+    });
 });
