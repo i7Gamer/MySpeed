@@ -60,11 +60,13 @@ clear
 echo -e "$BLUE🔎 Status:$NORMAL Removing service data if present..."
 sleep 3
 
-# Exactly, not merely containing. The two branches are exclusive, so a native
-# systemd host that also runs an unrelated MySpeedBackup container took the
-# docker branch: the service was never stopped, the unit never removed and the
-# data never deleted, under a banner announcing that it had all been done.
+# Exactly, not merely containing: an unrelated MySpeedBackup container is not
+# this one, and the substring match that used to decide this took its whole
+# branch on the strength of the name.
+REMOVED_CONTAINER=0
+
 if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "MySpeed"; then
+  REMOVED_CONTAINER=1
   echo -e "$YELLOW Found Docker container. Stopping the container..."
   docker stop MySpeed
   echo -e "$YELLOW Removing Docker container..."
@@ -74,26 +76,54 @@ if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "MySpeed"; then
     docker volume rm myspeed-dockerized_myspeed
   fi
   rm -rf "$DOCKER_INSTALLATION_PATH"
-else
-  # -q, not -n: the condition wants an answer, and -n printed the matched line
-  # and its number into the middle of the uninstall output.
-  if command -v systemctl &> /dev/null && systemctl --all --type service | grep -q "myspeed.service"; then
-    systemctl stop myspeed
-    systemctl disable myspeed
+fi
 
-    # Through the list that names them, guarded - the same list this script
-    # already walks to read the recorded path. Spelled out as two bare `rm`s,
-    # every ordinary uninstall printed "cannot remove ...: No such file or
-    # directory" for the path install.sh never creates, swallowed for want of
-    # `set -e`, directly beneath the success banner.
-    for unit in "${SERVICE_FILES[@]}"; do
-      rm -f "$unit"
-    done
+# Asked on its own, not as the other half of the question above.
+#
+# A host can hold both. The README recommends Docker, so migrating a native
+# install means the container runs beside a systemd unit that is still enabled -
+# and that is exactly when somebody reaches for this script. Written as an
+# `else`, finding the container was the end of it: the service kept running, the
+# unit stayed enabled through every reboot, and the installation stayed on disk
+# with its database and its password hash, under a banner announcing that
+# MySpeed had been uninstalled.
+#
+# Both halves are guarded on finding their own, so a host with only one pays
+# nothing for the other being asked.
+FOUND_SERVICE=0
 
-    systemctl daemon-reload
-    systemctl reset-failed
-  fi
+# -q, not -n: the condition wants an answer, and -n printed the matched line
+# and its number into the middle of the uninstall output.
+if command -v systemctl &> /dev/null && systemctl --all --type service | grep -q "myspeed.service"; then
+  FOUND_SERVICE=1
 
+  systemctl stop myspeed
+  systemctl disable myspeed
+
+  # Through the list that names them, guarded - the same list this script
+  # already walks to read the recorded path. Spelled out as two bare `rm`s,
+  # every ordinary uninstall printed "cannot remove ...: No such file or
+  # directory" for the path install.sh never creates, swallowed for want of
+  # `set -e`, directly beneath the success banner.
+  for unit in "${SERVICE_FILES[@]}"; do
+    rm -f "$unit"
+  done
+
+  systemctl daemon-reload
+  systemctl reset-failed
+fi
+
+# And the installation itself, unless a container was the whole of what was here.
+#
+# `rm -R` on a path that was never there is checked and fatal, deliberately: that
+# check is what stops a removal which failed from printing the success banner. So
+# it cannot simply run always - a docker-only host has no /opt/myspeed, and
+# would have its finished uninstall reported as a failure.
+#
+# Skipped only in that one case. A native host with nothing found still reaches
+# the removal and still gets told which path it could not remove, which is the
+# sentence that sends anyone to look for where their installation actually is.
+if [ "$REMOVED_CONTAINER" -eq 0 ] || [ "$FOUND_SERVICE" -eq 1 ] || [ -d "$INSTALLATION_PATH" ]; then
   clear
   echo -e "$BLUE🔎 Status:$NORMAL Removing MySpeed system data if present..."
   sleep 3
