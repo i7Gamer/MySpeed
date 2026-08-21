@@ -341,30 +341,17 @@ describe("uninstall.sh finds the installation it is removing", () => {
             "--keep-data is still read as the first positional, which -d displaces");
     });
 
-    /**
-     * The removal is the step that cannot be undone, and it was the one step
-     * whose failure was ignored. Reporting success over a directory that is
-     * still there is worse than the failure itself: it is what stops anyone
-     * going to look.
+    /*
+     * What that removal does when it fails is asserted by running it, in
+     * uninstallBehaviour.test.js.
+     *
+     * It was asserted here by slicing the source from its last bare `else` to
+     * the success banner and looking for a check inside the slice. The window
+     * was the --keep-data branch when it was written; a later block added an
+     * `else` nearer the banner, the window moved onto a message being printed,
+     * and all three assertions went on passing against code that has nothing to
+     * do with removing anything.
      */
-    it("does not report success when the removal failed", () => {
-        // The plain branch, not the --keep-data one above it: that removal is
-        // already guarded, by the staging move that has to succeed before it.
-        //
-        // Matched as a line of its own rather than as the substring "else",
-        // which also occurs inside the very message this branch prints.
-        const branches = [...source.matchAll(/^[ \t]*else[ \t]*$/gm)];
-        assert.notEqual(branches.length, 0, "the uninstaller no longer branches on --keep-data");
-
-        const plain = source.slice(branches[branches.length - 1].index, source.indexOf("Completed"));
-
-        assert.match(plain, /rm\s+-R\s+"\$\{?INSTALLATION_PATH/,
-            "the uninstaller no longer removes the installation directory");
-        assert.match(plain, /if\s+!\s*rm|\|\||&&/,
-            "the removal is unchecked, so a path that was never there fails silently");
-        assert.match(plain, /exit\s+1/,
-            "the script carries on to its success banner after a removal that did not happen");
-    });
 });
 
 /**
