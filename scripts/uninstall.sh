@@ -59,11 +59,19 @@ usage() {
 normalise_path() {
   local value="$1"
 
-  # Trailing whitespace, one character at a time - the carriage return above,
-  # and the spaces a copied-and-pasted path arrives with.
+  # Whitespace at both ends, one character at a time - the carriage return above,
+  # the spaces a copied-and-pasted path arrives with, and the one somebody types
+  # after the `=` when writing a unit by hand.
+  #
+  # Both ends because systemd strips both: it runs the service from the stripped
+  # value, so a script that reads the value differently from the manager that has
+  # been using it disagrees with the only record on the host. Trailing alone left
+  # `WorkingDirectory= /opt/myspeed` naming a directory this script could not
+  # find, and an installation it cannot find is one it reports as already gone.
   while true; do
     case "$value" in
       *[[:space:]]) value="${value%?}" ;;
+      [[:space:]]*) value="${value#?}" ;;
       *) break ;;
     esac
   done
@@ -122,23 +130,31 @@ if [ -n "$CHOSEN_PATH" ]; then
   # wrote rather than about what it was reduced to.
   GIVEN="$CHOSEN_PATH"
 
-  case "$GIVEN" in
-    /*) ;;
-    *)
-      echo -e "$RED✗ Uninstallation Error:$NORMAL -d needs an absolute path, and \"$GIVEN\" is relative."
-      echo -e "$NORMAL It would be taken from the directory you are standing in."
-      exit 1
-      ;;
-  esac
-
+  # Normalised before it is judged, and by the same function the unit's value
+  # goes through. Judging the raw spelling and comparing the trimmed one is how
+  # the two sides came apart the last time: " /opt/myspeed" was refused as a
+  # relative path here while the identical spelling in a unit file was read as
+  # absolute, so the same directory was two different answers depending on which
+  # side of the script it arrived from.
   CHOSEN_PATH="$(normalise_path "$GIVEN")"
 
-  # What is left has to be a directory somebody could have installed into. "/"
-  # normalises to nothing at all, which is the case worth catching.
+  # Nothing left, or nothing but a directory that cannot be an installation. "/"
+  # and "  " both normalise away to nothing at all, which is the case worth
+  # catching first - "" is not a relative path, and saying so would be a worse
+  # answer than saying it is not a directory to remove.
   case "$CHOSEN_PATH" in
     "" | */. | */..)
       echo -e "$RED✗ Uninstallation Error:$NORMAL \"$GIVEN\" is not an installation directory."
       echo -e "$NORMAL Removing it would take the filesystem with it. Name the directory MySpeed is in."
+      exit 1
+      ;;
+  esac
+
+  case "$CHOSEN_PATH" in
+    /*) ;;
+    *)
+      echo -e "$RED✗ Uninstallation Error:$NORMAL -d needs an absolute path, and \"$GIVEN\" is relative."
+      echo -e "$NORMAL It would be taken from the directory you are standing in."
       exit 1
       ;;
   esac
@@ -391,13 +407,25 @@ if [ "$INSTALLATION_FOUND" -eq 1 ] || { [ "$REMOVED_CONTAINER" -eq 0 ] && [ "$FO
   # data having been kept, and it is the second one that decides whether the
   # owner of that directory has to stay behind with it. Declared above this
   # block, which does not run on every path that reaches the account.
-  if [ "$KEEP_DATA" == "--keep-data" ] && [ ! -d "$INSTALLATION_PATH/data" ]; then
-    echo -e "$YELLOW There is no data directory at$NORMAL $INSTALLATION_PATH/data$YELLOW to keep."
+  if [ "$KEEP_DATA" == "--keep-data" ] \
+      && [ ! -e "$INSTALLATION_PATH/data" ] && [ ! -L "$INSTALLATION_PATH/data" ]; then
+    echo -e "$YELLOW There is nothing at$NORMAL $INSTALLATION_PATH/data$YELLOW to keep."
     echo -e "$YELLOW Removing the installation."
   fi
 
-  # Remove folder
-  if [ "$KEEP_DATA" == "--keep-data" ] && [ -d "$INSTALLATION_PATH/data" ]; then
+  # Whether anything is there, not whether it is a directory. The staging move
+  # below handles either, and asking `[ -d ]` sent everything else down the
+  # branch that removes the installation outright - so on an installation where
+  # data is a file, the flag that exists to protect that path was the one thing
+  # that deleted it.
+  #
+  # -L as well as -e, because -e follows the link and a target that is not there
+  # right now is not the same as nothing at that path. A data directory kept on a
+  # separate disk that happens to be unmounted is an ordinary state for a backup
+  # volume, and the link naming where that data lives is the last thing to remove
+  # on the strength of it.
+  if [ "$KEEP_DATA" == "--keep-data" ] \
+      && { [ -e "$INSTALLATION_PATH/data" ] || [ -L "$INSTALLATION_PATH/data" ]; }; then
     # A fresh staging directory every run, rather than a fixed /tmp path.
     #
     # mv renames into an empty destination but moves *into* an existing

@@ -53,7 +53,9 @@ const RUN_TIMEOUT = 20_000;
  * everywhere inside the script, the native one for every fs call. On Linux the
  * two are the same string.
  */
-const posix = (target) => target.replace(/^([A-Za-z]):/, (_, drive) => `/${drive.toLowerCase()}`);
+const posix = (target) => target
+    .split(path.sep).join("/")
+    .replace(/^([A-Za-z]):/, (_, drive) => `/${drive.toLowerCase()}`);
 
 let root;
 
@@ -327,24 +329,36 @@ describe("the uninstaller", {skip: bash ? false : "no bash on PATH - uninstall.s
     });
 
     /**
-     * And trailing whitespace is the same problem with worse consequences.
+     * And whitespace around the value is the same problem with worse
+     * consequences.
      *
-     * systemd strips it before using the value, so a unit file that picked up a
-     * carriage return - edited on Windows, or written by a template - runs the
+     * systemd strips both ends of an assignment before using it, so a unit file
+     * that picked up a carriage return - edited on Windows, or written by a
+     * template - or that was hand-written with a space after the `=`, runs the
      * service perfectly well from a directory this script then cannot find. It
      * takes the empty result as the system's own answer that the installation is
      * gone, and prints the completion banner over a directory still holding the
      * database and the admin password hash.
+     *
+     * Both ends, because reading it the way systemd reads it is the whole point:
+     * a value this script interprets differently from the service manager that
+     * has been using it is the one case where nothing on the host can tell the
+     * operator which of them is right.
      */
-    it("finds an installation the unit recorded with trailing whitespace", () => {
-        const machine = host({service: true, installed: true, account: true,
-            recorded: (at) => `${at}   `});
-        const result = machine.run();
+    for (const [side, spell] of [
+        ["trailing", (at) => `${at}   `],
+        ["leading", (at) => `  ${at}`],
+        ["both ends", (at) => ` ${at} `]
+    ]) {
+        it(`finds an installation the unit recorded with ${side} whitespace`, () => {
+            const machine = host({service: true, installed: true, account: true, recorded: spell});
+            const result = machine.run();
 
-        assert.equal(result.status, 0, result.output);
-        assert.equal(result.survives(...DATABASE), false,
-            "the database survived under the completion banner");
-    });
+            assert.equal(result.status, 0, result.output);
+            assert.equal(result.survives(...DATABASE), false,
+                "the database survived under the completion banner");
+        });
+    }
 
     /**
      * The unit file goes whether or not systemd ever loaded it.
@@ -425,8 +439,22 @@ describe("the uninstaller", {skip: bash ? false : "no bash on PATH - uninstall.s
          * nothing to do with MySpeed. Neither is a path install.sh can produce,
          * so both are answered where the arguments are read.
          */
+        /**
+         * A -d is read the way a recorded path is read, or the same directory
+         * becomes two different answers depending on which side of the script it
+         * arrived from - which is how the last round's trim came apart.
+         */
+        it("reads a -d the way it reads the unit's value", () => {
+            const machine = host({service: true, recorded: true, installed: true, account: true});
+            const result = machine.run("-d", `  ${machine.given("opt", "myspeed")} `);
+
+            assert.equal(result.status, 0, result.output);
+            assert.equal(result.survives(...DATABASE), false,
+                "a -d that a unit file would have been read from was refused");
+        });
+
         it("refuses a path that is not an installation directory", () => {
-            for (const argument of ["/", "//", "/.", "/..", "myspeed", "./myspeed"]) {
+            for (const argument of ["/", "//", "/.", "/..", "myspeed", "./myspeed", "   ", " ./x"]) {
                 const machine = host({container: true, service: true, recorded: true, installed: true});
                 const result = machine.run("-d", argument);
 
@@ -489,6 +517,53 @@ describe("the uninstaller", {skip: bash ? false : "no bash on PATH - uninstall.s
          * There is nothing to keep, which is a thing to say rather than a reason
          * to stop - and nothing for the account to own afterwards either.
          */
+        /**
+         * And "no data directory" means nothing there, not "not a directory".
+         *
+         * The staging move handled whatever was at that path, so anything called
+         * data came back afterwards. Asking `[ -d ]` before staging narrowed that
+         * to directories, and the else branch it now falls into is the plain
+         * removal - so the one path this flag exists to protect became the one
+         * path it deleted, on any installation where data is a file, or a link
+         * this script should not be resolving on the operator's behalf.
+         */
+        it("keeps something at the data path that is not a directory", () => {
+            const machine = host({service: true, recorded: true, installed: true, data: false, account: true});
+
+            fs.writeFileSync(machine.at("opt", "myspeed", "data"), "the database, not in a directory");
+
+            const result = machine.run("--keep-data");
+
+            assert.equal(result.status, 0, result.output);
+            assert.equal(result.survives("opt", "myspeed", "data"), true,
+                "--keep-data destroyed the data it was typed to keep");
+            assert.equal(result.survives("opt", "myspeed", "myspeed"), false,
+                "the binary was kept along with it");
+            assert.doesNotMatch(result.calls, /userdel/, "the owner of the kept data was deleted");
+        });
+
+        /**
+         * A link whose target is not there right now is still something at that
+         * path. `[ -e ]` follows the link and answers no, so the data directory
+         * an operator keeps on a separate disk - unmounted at the moment of the
+         * uninstall, which is an ordinary state for a backup volume - looked like
+         * an installation with nothing to keep, and the link telling anyone where
+         * that data lives went with the removal.
+         */
+        it("keeps a link at the data path whose target is not mounted", () => {
+            const machine = host({service: true, recorded: true, installed: true, data: false, account: true});
+
+            fs.symlinkSync(path.join(root, "not-mounted-right-now"), machine.at("opt", "myspeed", "data"), "dir");
+
+            const result = machine.run("--keep-data");
+
+            assert.equal(result.status, 0, result.output);
+            assert.equal(fs.existsSync(machine.at("opt", "myspeed", "data")), false,
+                "the test's own link is not where it was put");
+            assert.equal(fs.lstatSync(machine.at("opt", "myspeed", "data")).isSymbolicLink(), true,
+                "the link naming where the data lives was removed with the installation");
+        });
+
         it("finishes when there is no data directory to keep", () => {
             const result = host({service: true, recorded: true, installed: true, data: false, account: true})
                 .run("--keep-data");
@@ -497,7 +572,7 @@ describe("the uninstaller", {skip: bash ? false : "no bash on PATH - uninstall.s
             assert.ok(result.completed);
             assert.equal(result.survives("opt", "myspeed"), false,
                 "the installation is left on disk by the flag that only meant to keep its data");
-            assert.match(result.output, /no data directory/,
+            assert.match(result.output, /nothing at.*data.*to keep/,
                 "nothing says the data the operator asked to keep was never there");
             assert.match(result.calls, /userdel myspeed/,
                 "the account outlives an uninstall that kept nothing for it to own");
