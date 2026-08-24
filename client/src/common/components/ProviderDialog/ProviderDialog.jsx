@@ -34,6 +34,10 @@ export const ProviderDialog = ({open, onClose}) => {
     const [serverId, setServerId] = useState("none");
     const [libreUrl, setLibreUrl] = useState("none");
     const [acceptedOokla, setAcceptedOokla] = useState(false);
+    // One run at a time. The chain of PATCHes below takes long enough on a
+    // slow link for a second click to land, and that second click ran the
+    // whole chain again, interleaved with the first.
+    const [saving, setSaving] = useState(false);
 
     useSyncOnOpen(open, () => {
         const stored = config.provider || "ookla";
@@ -98,6 +102,9 @@ export const ProviderDialog = ({open, onClose}) => {
     const update = async (close) => {
         const patch = async (path, value) => assertOk(await patchRequest(path, {value}), path);
 
+        if (saving) return;
+        setSaving(true);
+
         try {
             await patch("/config/provider", provider);
 
@@ -114,6 +121,9 @@ export const ProviderDialog = ({open, onClose}) => {
             return;
         } finally {
             reloadConfig();
+            // However the run ended - a refused value must not leave the
+            // dialog locked shut.
+            setSaving(false);
         }
 
         updateToast(t('dropdown.provider_changed'), "green", faCheck);
@@ -232,7 +242,8 @@ export const ProviderDialog = ({open, onClose}) => {
                         </div>
                     </DialogBody>
                     <DialogFooter>
-                        <button className="dialog-btn" onClick={() => update(close)} disabled={!canUpdate}>{t("dialog.update")}</button>
+                        <button className="dialog-btn" onClick={() => update(close)}
+                                disabled={!canUpdate || saving}>{t("dialog.update")}</button>
                     </DialogFooter>
                 </>
             )}

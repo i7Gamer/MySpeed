@@ -30,6 +30,10 @@ export const OptimalValuesDialog = ({open, onClose}) => {
     // Distinguishes "not enough tests yet", which the API reports as 501, from a
     // genuine failure - only the former earns an explanation.
     const [tooFewTests, setTooFewTests] = useState(false);
+    // One run at a time. The three PATCHes below take long enough on a slow
+    // link for a second click to land, and that second click ran the whole
+    // chain again, interleaved with the first.
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         if (!open) return;
@@ -81,6 +85,9 @@ export const OptimalValuesDialog = ({open, onClose}) => {
         // field, for one, was refused by the server and reported as saved.
         const patch = async (path, value) => assertOk(await patchRequest(path, {value}), path);
 
+        if (saving) return;
+        setSaving(true);
+
         try {
             if (ping !== config.ping) await patch("/config/ping", ping);
             if (download !== config.download) await patch("/config/download", download);
@@ -93,6 +100,10 @@ export const OptimalValuesDialog = ({open, onClose}) => {
             // failure falls back to the generic line.
             updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
                 "red", faExclamationTriangle);
+        } finally {
+            // However the run ended - a refused value must not leave the
+            // dialog locked shut.
+            setSaving(false);
         }
     };
 
@@ -159,7 +170,8 @@ export const OptimalValuesDialog = ({open, onClose}) => {
                                 <span>{t("optimal_values.use_recommended")}</span>
                             </button>
                         )}
-                        <button type="button" className="dialog-btn" onClick={() => update(close)}>{t("dialog.update")}</button>
+                        <button type="button" className="dialog-btn" onClick={() => update(close)}
+                                disabled={saving}>{t("dialog.update")}</button>
                     </DialogFooter>
                 </>
             )}

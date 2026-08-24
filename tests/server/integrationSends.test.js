@@ -6,6 +6,7 @@ import setupGotify from "../../server/integrations/gotify.js";
 import setupPushover, { PUSHOVER_MESSAGE_LIMIT } from "../../server/integrations/pushover.js";
 import setupWebhook from "../../server/integrations/webhook.js";
 import setupHealthChecks from "../../server/integrations/healthChecks.js";
+import setupInflux from "../../server/integrations/influxdb.js";
 
 /**
  * These modules are what actually reaches the user when a speedtest finishes or
@@ -54,6 +55,41 @@ const RESULT = {ping: 12, jitter: 2, download: 100, upload: 50};
  */
 const failure = (error) => ({error, id: 12, created: "2026-08-13T09:15:00.000Z", provider: "ookla"});
 const fire = (events, name, config, payload) => events[name]({data: config}, payload, () => {});
+
+describe("influxdb", () => {
+    const config = {url: "http://influx.lan:8086", org: "o", bucket: "b", token: "t", host: "server1"};
+
+    /**
+     * The row stores three quality figures beside the throughput - packet loss
+     * and the loaded latency in each direction - and the testFinished payload
+     * carries all of them. The line wrote only the four originals, so the
+     * operator graphing bufferbloat in Grafana had the columns in sqlite and
+     * nothing in Influx.
+     */
+    it("writes the quality figures beside the throughput", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config,
+            {...RESULT, packetLoss: 0.7, downloadLatency: 231.4, uploadLatency: 88.1});
+
+        const [written] = sent;
+        assert.match(written.body, /packetLoss=0.7/);
+        assert.match(written.body, /downloadLatency=231.4/);
+        assert.match(written.body, /uploadLatency=88.1/);
+    });
+
+    // A figure the provider does not measure stays out of the line entirely -
+    // writing 0 would chart a loss-free, latency-free connection nobody measured.
+    it("leaves out the figures the provider did not measure", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config,
+            {...RESULT, packetLoss: null, downloadLatency: null, uploadLatency: null});
+
+        const [written] = sent;
+        assert.match(written.body, /download=100/);
+        assert.doesNotMatch(written.body, /packetLoss/);
+        assert.doesNotMatch(written.body, /Latency/);
+    });
+});
 
 describe("discord", () => {
     const config = {url: "https://discord.com/api/webhooks/1/token", send_finished: true, send_failed: true};

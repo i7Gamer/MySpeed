@@ -8,6 +8,7 @@ let reserveAttempt;
 let ATTEMPT_ADMITTED;
 let ATTEMPT_LOCKED_OUT;
 let ATTEMPT_BUSY;
+let MAX_TRACKED_CLIENTS;
 let clearFailedAttempts;
 let passwordMiddleware;
 
@@ -19,7 +20,7 @@ before(async () => {
     const module = await import("../../server/middlewares/password.js");
 
     ({resetFailedAttempts, reserveAttempt, clearFailedAttempts,
-        ATTEMPT_ADMITTED, ATTEMPT_LOCKED_OUT, ATTEMPT_BUSY} = module);
+        ATTEMPT_ADMITTED, ATTEMPT_LOCKED_OUT, ATTEMPT_BUSY, MAX_TRACKED_CLIENTS} = module);
     // The same middleware the routes mount, for the assertions that need calls
     // to genuinely overlap - see "attempts made at the same time".
     passwordMiddleware = module.default(false);
@@ -359,6 +360,79 @@ describe("password attempt throttling", () => {
             for (const admission of held) admission.settle({failed: 1});
 
             assert.equal(reserveAttempt(CALLER).outcome, ATTEMPT_LOCKED_OUT);
+        });
+
+        /**
+         * A full table must not spend an unrelated client's lockout.
+         *
+         * The failure map evicts its oldest entry when it is full and a new
+         * client arrives - deliberately, so an attacker rotating addresses
+         * cannot reset every counter at once. But "new" was read as "the entry
+         * is missing or expired", and a key the map already holds does not grow
+         * it: refreshing one while the table is full evicted the entry at the
+         * head for nothing.
+         *
+         * The head is not necessarily expired junk. An entry refreshed after
+         * its window lapses keeps its original position - Map.set does not
+         * move a key - while its reset time jumps forward, so the entry at the
+         * head can be a lockout that is still running while a later-positioned
+         * entry has already expired. That is precisely the state this builds:
+         * the victim locks out at the head of a full table, an unrelated
+         * client's expired entry is refreshed - and the victim's lockout must
+         * survive it, because spending it hands an attacker at the failure
+         * budget a fresh window for the price of one wrong guess from anywhere.
+         */
+        it("keeps an active lockout when a full table refreshes an expired entry", () => {
+            const caller = (address) => ({headers: {}, socket: {remoteAddress: address}});
+
+            const fail = (who, count = 1) => {
+                const admission = reserveAttempt(who, count);
+                assert.equal(admission.outcome, ATTEMPT_ADMITTED);
+                admission.settle({failed: count});
+            };
+
+            const VICTIM = caller("203.0.113.201");
+            const REFRESHED = caller("203.0.113.202");
+
+            const realNow = Date.now;
+            const start = realNow();
+            const at = (seconds) => { Date.now = () => start + seconds * 1000; };
+
+            try {
+                // The victim's key enters the map first, taking the head
+                // position it will keep through every refresh.
+                at(0);
+                fail(VICTIM);
+
+                // A second client fails once; its window ends at 65s.
+                at(5);
+                fail(REFRESHED);
+
+                // Past both windows, the victim spends its whole budget: the
+                // entry is refreshed in place - still at the head - and the
+                // lockout now runs to 130s, well past the other entry's 65s.
+                at(70);
+                fail(VICTIM, MAX_FAILED_ATTEMPTS);
+                assert.equal(reserveAttempt(VICTIM).outcome, ATTEMPT_LOCKED_OUT,
+                    "the victim's lockout never took hold");
+
+                // Fill the table to its cap with fresh clients. IPv4, because
+                // clientKey buckets IPv6 by prefix - synthetic v6 neighbours
+                // would all land on one key and lock it, not fill the table.
+                for (let filler = 2; filler < MAX_TRACKED_CLIENTS; filler++)
+                    fail(caller(`10.${(filler >> 16) & 255}.${(filler >> 8) & 255}.${filler & 255}`));
+
+                // 100s: the other entry's window has lapsed, the victim's has
+                // not. One wrong guess from that client refreshes its own entry
+                // - which must not cost the victim's running lockout.
+                at(100);
+                fail(REFRESHED);
+
+                assert.equal(reserveAttempt(VICTIM).outcome, ATTEMPT_LOCKED_OUT,
+                    "refreshing an unrelated expired entry spent an active lockout");
+            } finally {
+                Date.now = realNow;
+            }
         });
 
         /**

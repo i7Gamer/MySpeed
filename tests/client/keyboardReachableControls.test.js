@@ -246,7 +246,8 @@ describe("every clickable card answers the keyboard", () => {
         {what: "the ping chart", file: "pages/Statistics/charts/PingChart.jsx"},
         {what: "the hourly chart", file: "pages/Statistics/charts/HourlyChart.jsx"},
         {what: "a node card", file: "pages/Nodes/components/NodeContainer/NodeContainer.jsx"},
-        {what: "the add-node tile", file: "pages/Nodes/Nodes.jsx"}
+        {what: "the add-node tile", file: "pages/Nodes/Nodes.jsx"},
+        {what: "the integration cards", file: "common/components/ExpandableCard/ExpandableCard.jsx"}
     ];
 
     for (const {what, file} of CARDS) {
@@ -255,6 +256,27 @@ describe("every clickable card answers the keyboard", () => {
                 `${what} is a click-only element: no tab stop, no key handler, nothing announced`);
         });
     }
+
+    /**
+     * The expandable card discloses a panel, so - like the overview row, the
+     * only other card that owns a disclosure - it has to say which state it is
+     * in. And its chevron is the picture of that state, not a second control:
+     * once the header is the button, a focusable chevron is a duplicate tab
+     * stop that does exactly what the header just did.
+     */
+    it("the integration cards announce their state, and the chevron is only a picture", () => {
+        const card = read("common/components/ExpandableCard/ExpandableCard.jsx");
+
+        assert.match(card, /aria-expanded=\{expanded}/,
+            "the card expands with nothing announcing whether it is open");
+
+        const chevron = card.match(/<button[^>]*expand-btn[^>]*>/s)?.[0];
+        assert.ok(chevron, "the chevron button is no longer recognisable");
+        assert.match(chevron, /tabIndex=\{-1}/,
+            "the chevron is a second tab stop pressing the same control as the header");
+        assert.match(chevron, /aria-hidden/,
+            "a screen reader announces the chevron as a second, unlabelled button");
+    });
 
     // The one that already had it, kept honest: it must not drift back to a
     // hand-written copy, and it must not lose the shape either.
@@ -332,6 +354,22 @@ describe("the date range picker answers the keyboard", () => {
         assert.ok(!datePicker.includes('aria-haspopup="dialog"')
             || /className="date-range-popover"[^>]*role="dialog"/.test(datePicker),
             "the trigger promises a dialog, and the popover behind it is not one");
+    });
+
+    /**
+     * A day button's visible text is a bare number, and half the grid shows
+     * numbers from the neighbouring months - so "14" is announced three times
+     * in one calendar with nothing saying which month any of them belongs to.
+     * The shared formatter already spells the whole date in the app's
+     * language, year included, which is what tells the trailing days of one
+     * month from the leading days of the next.
+     */
+    it("names each day with its whole date", () => {
+        const dayButton = datePicker.match(/<button(?:(?!<button)[^])*?className=\{`day-btn(?:(?!<button)[^])*?>/)?.[0];
+
+        assert.ok(dayButton, "the day buttons are no longer recognisable");
+        assert.match(dayButton, /aria-label=\{formatDay\(item\.date\)}/,
+            "a day announces a bare number, with no month to tell it from the same number twice more in the grid");
     });
 
     /**
@@ -809,6 +847,30 @@ describe("form field and dialog accessibility", () => {
         assert.match(toggleSwitchSource, /htmlFor=\{id\}/, "ToggleSwitch label is missing htmlFor={id}");
         assert.match(toggleSwitchSource, /id=\{id\}/, "ToggleSwitch input is missing id={id}");
     });
+
+    /**
+     * The wrapping label is the toggle's whole visual - a slider span and no
+     * text - so it names nothing. A caller wired through FormField gets its
+     * name from the external label and the id; the two standalone toggles had
+     * neither, and a screen reader announced each as a bare unnamed checkbox
+     * beside the visible text that should have been its name.
+     */
+    it("ToggleSwitch takes an accessible name for callers with no label to point at", () => {
+        assert.match(toggleSwitchSource, /aria-label=\{label\}/,
+            "the input cannot be named by the callers that render no <label htmlFor>");
+    });
+
+    for (const [what, file, key] of [
+        ["the export secrets toggle", "common/components/StorageDialog/tabs/Configuration.jsx", "storage.include_secrets"],
+        ["the chart detail toggle", "pages/Statistics/Statistics.jsx", "statistics.detail.title"]
+    ])
+        it(`${what} names itself with its visible text`, () => {
+            const toggle = read(file).match(/<ToggleSwitch[^/]*?\/>/s)?.[0];
+
+            assert.ok(toggle, `${what} is no longer recognisable`);
+            assert.match(toggle, new RegExp(`label=\\{t\\("${key.replace(/\./g, "\\.")}"\\)}`),
+                `${what} is an unnamed checkbox beside the text that should name it`);
+        });
 
     it("provides an aria-label for the password visibility toggle", () => {
         assert.match(passwordDialogSource, /aria-label=\{showPassword \? t\("update\.hide_password"\) : t\("update\.show_password"\)\}/,

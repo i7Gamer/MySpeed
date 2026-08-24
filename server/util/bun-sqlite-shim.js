@@ -14,6 +14,13 @@ const OPEN_CREATE = 0x00000004;
 
 const isBun = typeof globalThis.Bun !== "undefined";
 
+// How long a writer waits for a locked database before giving up. sqlite's
+// default is zero - SQLITE_BUSY on the spot - and the places that can lock this
+// file are exactly the ones nothing rehearses: a factoryReset or insertDefaults
+// transaction overlapping an ordinary write, or a second process opening the
+// same storage. Five seconds outlasts any transaction this server runs.
+const BUSY_TIMEOUT_MS = 5000;
+
 // Both specifiers are string literals on purpose. `bun build --compile` bundles
 // statically, and a variable specifier would leave bun:sqlite unresolved in the
 // compiled binary. Only the branch for the current runtime is ever evaluated.
@@ -79,6 +86,7 @@ class Database {
             this.db = openDatabase(filename, readonly);
             this.filename = filename;
             this.db.exec("PRAGMA journal_mode = WAL");
+            this.db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
             if (callback) process.nextTick(() => callback(null));
         } catch (err) {
             if (callback) process.nextTick(() => callback(err));

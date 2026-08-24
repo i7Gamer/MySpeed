@@ -462,7 +462,7 @@ export const Statistics = () => {
         <div className="chart-detail-toggle">
             <ToggleSwitch checked={preferences.fullChartDetail === true}
                           onChange={(value) => updatePreferences({fullChartDetail: value})}
-                          disabled={!isDownsampled}/>
+                          disabled={!isDownsampled} label={t("statistics.detail.title")}/>
             <div className="chart-detail-text">
                 <span className="chart-detail-label">{t("statistics.detail.title")}</span>
                 <span className="chart-detail-hint">{detailHint()}</span>

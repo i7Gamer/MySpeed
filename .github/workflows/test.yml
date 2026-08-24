@@ -57,9 +57,8 @@ jobs:
       # evaluating them, so a name that is re-exported and then used - which
       # binds nothing, and throws at render - passes 2300 tests and a build.
       #
-      # Errors fail the job; warnings do not. The 28 open warnings are unused
-      # variables and deliberately narrowed effect dependencies, each of which
-      # wants reading rather than a sweep.
+      # Errors fail the job; warnings do not - though the count stands at zero
+      # since the sweep that answered them, so a warning here is new.
       - name: Lint
         run: npm run lint
 
@@ -82,3 +81,14 @@ jobs:
       - name: Build the client
         working-directory: client
         run: bun run build
+
+      # The embed generator was the one build step left that only ran on
+      # `release`, inside build-binaries - so a generator defect, an asset type
+      # it refuses or an output tree it cannot walk, was first seen while
+      # publishing, by the workflow that cannot merge a fix. The move mirrors
+      # build:binary, whose generator reads the build directory at the root.
+      - name: Package the client into the embed
+        run: |
+          rm -rf build
+          mv client/build build
+          bun run generate-client-embed

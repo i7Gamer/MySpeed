@@ -164,4 +164,20 @@ describe("CI compiles the client", () => {
         assert.ok(tests.indexOf("npm run test:all") < tests.indexOf("run: bun run build"),
             "the build runs before the suite, so a broken test is reported as a broken build");
     });
+
+    /**
+     * And the embed generator runs on what was built, for the same reason the
+     * build itself does: it was the one build step left that only ran on
+     * `release`, so a generator defect - a new asset type it refuses, an
+     * output tree it cannot walk - was first seen while publishing, by the
+     * workflow that cannot merge a fix.
+     */
+    it("packages the build into the embed", () => {
+        const embed = tests.indexOf("bun run generate-client-embed");
+
+        assert.notEqual(embed, -1,
+            "no PR ever runs the embed generator, so its first run on a change is during the release");
+        assert.ok(tests.indexOf("run: bun run build") < embed,
+            "the embed step runs before the client is built, so it packages a stale or missing tree");
+    });
 });
