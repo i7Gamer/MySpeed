@@ -109,6 +109,43 @@ describe("an instance behind a path prefix", () => {
         assert.ok((await response.text()).includes(PAGE_MARKER));
     });
 
+    /**
+     * And gets there by a redirect, which is the part that matters.
+     *
+     * The bare prefix is the URL the README tells the operator to open. Served
+     * directly it answers 200 with the page, which is why this went unnoticed -
+     * but the browser then holds a base URL with no trailing slash, and every
+     * relative asset on the page resolves one directory too high.
+     */
+    it("redirects the bare prefix rather than serving the page there", async () => {
+        const response = await fetch(`${baseUrl}${PREFIX}`, {redirect: "manual"});
+
+        assert.equal(response.status, 302);
+        assert.equal(response.headers.get("location"), `${PREFIX}/`);
+    });
+
+    /**
+     * The whole point of the redirect, done the way a browser does it: resolve
+     * the page's relative asset reference against the URL the page was finally
+     * served from, and ask for that.
+     *
+     * Without the redirect this resolves to /assets/... at the root of the host,
+     * which under the reporter's Traefik rule is outside the application - so
+     * the page loads and then renders nothing.
+     */
+    it("leaves the page asking for assets inside the prefix", async () => {
+        const page = await get(PREFIX);
+        const asset = /src="(\.\/assets\/[^"]+\.js)"/.exec(await page.text());
+
+        assert.ok(asset, "the page did not ask for its entry script relatively");
+
+        const resolved = new URL(asset[1], page.url);
+
+        assert.equal(resolved.pathname, `${PREFIX}/${asset[1].slice(2)}`,
+            "the entry script resolves outside the prefix");
+        assert.equal((await fetch(resolved)).status, 200);
+    });
+
     it("serves it at the prefix with a trailing slash too", async () => {
         assert.equal((await get(`${PREFIX}/`)).status, 200);
     });

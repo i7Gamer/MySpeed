@@ -55,16 +55,14 @@ const announced = new Set();
  * there is litter on somebody else's broker.
  */
 const announcementsFor = (c) => {
-    if (c.discovery !== true) return [];
+    if (c.discovery !== true) return null;
 
     const prefix = c.discovery_prefix || DEFAULT_DISCOVERY_PREFIX;
     const key = `${prefix}|${c.topic}`;
 
-    if (announced.has(key)) return [];
+    if (announced.has(key)) return null;
 
-    announced.add(key);
-
-    return discoveryMessages({stateTopic: c.topic, prefix, version: packageJson.version});
+    return {key, messages: discoveryMessages({stateTopic: c.topic, prefix, version: packageJson.version})};
 };
 
 /** For the tests, which need each case to start from nothing announced. */
@@ -73,7 +71,18 @@ export const forgetAnnouncements = () => announced.clear();
 /** A payload as the bytes a broker takes. */
 const body = (payload) => Buffer.from(JSON.stringify(payload), "utf8");
 
-const send = async (c, messages, activity) => {
+/**
+ * `announced` is written here, once the broker has taken the messages, rather
+ * than where they are built.
+ *
+ * MySpeed and the broker come up together often enough - one docker compose, a
+ * Windows service that starts before mosquitto - that the first publish of a
+ * process is the likeliest one to fail. Recorded up front, that failure was
+ * permanent: nothing retained the configs, `announced` said otherwise for the
+ * life of the process, and Home Assistant showed no entities until somebody
+ * restarted MySpeed.
+ */
+const send = async (c, messages, activity, announcement) => {
     const target = checkOutboundHost(c.host);
 
     if (!target.safe) {
@@ -99,6 +108,8 @@ const send = async (c, messages, activity) => {
             timeout: OUTBOUND_TIMEOUT
         });
 
+        if (announcement) announced.add(announcement.key);
+
         noteActivity(activity, false);
     } catch (error) {
         // Reported rather than thrown, like every other module's send:
@@ -113,13 +124,15 @@ export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {
         if (!c.send_finished) return;
 
+        const announcement = announcementsFor(c);
+
         // The announcement travels in front of the result, on the one
         // connection: seven configs and a result down eight separate handshakes
         // is a noticeable thing to do to a broker on every restart.
         await send(c, [
-            ...announcementsFor(c),
+            ...(announcement?.messages ?? []),
             {topic: c.topic, payload: body(data), retain: c.retain === true}
-        ], activity);
+        ], activity, announcement);
     });
 
     registerEvent('testFailed', async ({data: c}, failure, activity) => {

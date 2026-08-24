@@ -41,12 +41,24 @@ export const normaliseBasePath = (value) => {
 };
 
 /**
+ * Temporary, not permanent, for the redirect below.
+ *
+ * An operator who takes BASE_PATH off again should not have to fight a redirect
+ * that every browser in the house has cached forever.
+ */
+const REDIRECT_TO_PREFIX_ROOT = 302;
+
+/** The methods a browser follows without dropping the request body on the way. */
+const REDIRECTABLE = new Set(["GET", "HEAD"]);
+
+/**
  * Removes the prefix from the path the routes will read.
  *
  * `req.url` only. `req.originalUrl` is what the HTTPS redirect builds its
  * Location from, and a redirect that had dropped the prefix would send the
  * caller out of the application and into whatever else the proxy serves at the
- * root.
+ * root. Handlers that need the whole path without the prefix get `appPath(req)`
+ * below rather than either of them.
  *
  * A request that does not carry the prefix passes through untouched, and that is
  * load-bearing rather than lenient: the container healthcheck asks
@@ -56,17 +68,50 @@ export const normaliseBasePath = (value) => {
  * The boundary is checked rather than the characters. `/internet_speedy` starts
  * with `/internet_speed` and is a different path; stripping it would produce
  * `/y`, which is nobody's route and would 404 with nothing said about why.
+ *
+ * The bare prefix is redirected to the prefix root rather than served as it.
+ * That one slash is what lets the client be told nothing at all: index.html asks
+ * for `./assets/index-x.js`, and the browser resolves that against the URL the
+ * page came from. Served at `/internet_speed`, the last segment is not read as a
+ * directory and the asset resolves to `https://host/assets/index-x.js` - outside
+ * the prefix, where the proxy serves something else or nothing, and the page
+ * comes up blank. Served at `/internet_speed/`, every one of those URLs lands
+ * back inside.
  */
 export const stripBasePath = (base) => (req, res, next) => {
-    if (base === "") return next();
+    if (base === "") {
+        req.appOriginalUrl = req.url;
+        return next();
+    }
 
     const url = req.url;
+
+    if ((url === base || url.startsWith(`${base}?`)) && REDIRECTABLE.has(req.method))
+        return res.redirect(REDIRECT_TO_PREFIX_ROOT, `${base}/${url.slice(base.length)}`);
 
     if (url === base || url.startsWith(`${base}/`)) req.url = url.slice(base.length) || "/";
     else if (url.startsWith(`${base}?`)) req.url = `/${url.slice(base.length)}`;
 
+    req.appOriginalUrl = req.url;
     next();
 };
+
+/**
+ * The whole path a handler should match on, with the prefix already off.
+ *
+ * Neither of the two paths Express offers is this one. `req.url` holds only the
+ * part below the mount once a router has been entered, which is why the callers
+ * of this reach for `originalUrl` - but `originalUrl` still carries the prefix,
+ * and both of them match it against a pattern anchored at `^/api`. Under a
+ * prefix that made the node proxy ask a child for a path the child does not
+ * serve, and made the backup relay lose its larger size allowance without
+ * saying so.
+ *
+ * Falls back to `originalUrl` rather than answering undefined: several suites
+ * exercise a router with no middleware in front of it, and undefined would match
+ * nothing at all rather than failing where it could be seen.
+ */
+export const appPath = (req) => req.appOriginalUrl ?? req.originalUrl;
 
 /** What the process was started with, read once. */
 export const basePath = () => normaliseBasePath(process.env.BASE_PATH);

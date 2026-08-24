@@ -47,6 +47,26 @@ describe("integration field labels", () => {
         assert.ok(everyField().length > 40, "the definitions gave nothing to check");
     });
 
+    /**
+     * And a name of its own, which is one key further along than everything else
+     * in this file was checking.
+     *
+     * The dialog builds it the same unscannable way - `integrations.${name}
+     * .title` - and uses it twice: as the row in the "create integration" menu,
+     * and as the initial display name of the card that row creates. So an
+     * integration missing this does not just look wrong; pressing save writes
+     * the raw key into the integration_name column, and the card carries it in
+     * every language afterwards, long after the locale has been fixed.
+     *
+     * Both integrations added in this branch shipped without one.
+     */
+    it("has a name for every integration", () => {
+        const missing = Object.keys(getIntegrations())
+            .filter((name) => valueAt(english, `integrations.${name}.title`) === undefined);
+
+        assert.deepEqual(missing, [], "these integrations are listed and then stored as their own key");
+    });
+
     it("has a label for every declared field", () => {
         const missing = everyField()
             .filter(({name, field}) => !labelKeys(name, field).some((key) => valueAt(english, key) !== undefined))

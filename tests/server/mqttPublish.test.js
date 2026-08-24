@@ -1,5 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import net from "node:net";
 import {
     CONNACK, CONNECT, DISCONNECT, PUBACK, PUBLISH, encodeLength, publish, publishAll, readPacket
@@ -380,5 +381,90 @@ describe("the packet length", () => {
         // this pins the two against each other directly rather than through a
         // socket.
         assert.deepEqual([...encodeLength(500)], [0xf4, 0x03]);
+    });
+});
+
+/**
+ * The handshake, which the TLS path got wrong in a way no plain-TCP test could
+ * have seen.
+ *
+ * A TLSSocket emits `connect` when the TCP layer is up and `secureConnect` when
+ * the handshake finishes - both, in that order, on every single connection.
+ * Listening for both therefore wrote CONNECT twice, and MQTT-3.1.0-2 requires a
+ * server that receives a second CONNECT to treat it as a protocol violation and
+ * close the connection. Every publish over TLS failed, and the operator saw a
+ * connection reset with nothing to explain it.
+ *
+ * Exercised through an injected socket rather than a real TLS server, which
+ * would mean a certificate and its private key checked into the repository.
+ */
+describe("the handshake a connection waits for", () => {
+    const socketDouble = () => {
+        const socket = new EventEmitter();
+
+        socket.written = [];
+        socket.write = (chunk) => socket.written.push(chunk);
+        socket.end = (chunk, done) => {
+            if (chunk) socket.written.push(chunk);
+            if (done) done();
+        };
+        socket.destroy = () => undefined;
+
+        return socket;
+    };
+
+    const connects = (socket) => socket.written.filter((chunk) => (chunk[0] >> 4) === CONNECT).length;
+
+    const CONNACK_ACCEPTED = Buffer.from([0x20, 0x02, 0x00, 0x00]);
+
+    const sendThrough = (socket, secure) => publishAll({
+        host: "broker.example", port: secure ? 8883 : 1883, secure, qos: 0, timeout: 1000,
+        messages: [{topic: "myspeed/result", payload: "x"}],
+        connect: () => socket
+    });
+
+    it("writes one CONNECT over TLS, not one per handshake event", async () => {
+        const socket = socketDouble();
+        const sent = sendThrough(socket, true);
+
+        socket.emit("connect");
+        assert.equal(connects(socket), 0, "CONNECT was written before the handshake had finished");
+
+        socket.emit("secureConnect");
+        assert.equal(connects(socket), 1, "the secure handshake did not produce a CONNECT");
+
+        socket.emit("data", CONNACK_ACCEPTED);
+        await sent;
+
+        assert.equal(connects(socket), 1, "a second CONNECT went out on the same connection");
+    });
+
+    it("writes one CONNECT without TLS", async () => {
+        const socket = socketDouble();
+        const sent = sendThrough(socket, false);
+
+        socket.emit("connect");
+        assert.equal(connects(socket), 1);
+
+        socket.emit("data", CONNACK_ACCEPTED);
+        await sent;
+
+        assert.equal(connects(socket), 1);
+    });
+
+    // The mirror of the first case: a plain socket never emits this, but nothing
+    // should be listening for it either.
+    it("ignores a secure handshake it never asked for", async () => {
+        const socket = socketDouble();
+        const sent = sendThrough(socket, false);
+
+        socket.emit("secureConnect");
+        assert.equal(connects(socket), 0, "a non-TLS connection answered secureConnect");
+
+        socket.emit("connect");
+        socket.emit("data", CONNACK_ACCEPTED);
+        await sent;
+
+        assert.equal(connects(socket), 1);
     });
 });

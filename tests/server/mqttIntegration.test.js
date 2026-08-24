@@ -313,6 +313,50 @@ describe("home assistant discovery", () => {
     });
 
     // A changed topic is a different device as far as Home Assistant is
+    /**
+     * Recorded once it has arrived, not once it has been assembled.
+     *
+     * MySpeed and the broker come up together often enough - one docker compose,
+     * a Windows service that starts before mosquitto - that the first publish of
+     * a process is the one most likely to fail. Marking the topic announced
+     * before the send made that failure permanent: the retained configs were
+     * never written, `announced` said otherwise for the life of the process, and
+     * Home Assistant showed no entities until somebody restarted MySpeed.
+     */
+    it("is announced again after a send the broker refused", async () => {
+        refuseConnection = true;
+        await fire("testFinished", config({discovery: true, topic: "myspeed/refused"}), RESULT);
+        await settled();
+
+        assert.deepEqual(configTopics(), [], "a broker told to refuse the connection took the announcement");
+
+        seen = [];
+        refuseConnection = false;
+        await fire("testFinished", config({discovery: true, topic: "myspeed/refused"}), RESULT);
+        await settled();
+
+        assert.ok(configTopics().length > 0, "the announcement was spent on the attempt that failed");
+    });
+
+    /**
+     * The same for a host the outbound guard turns down, which is what a typo in
+     * the host field looks like from here - and which returns before the send
+     * rather than through it.
+     */
+    it("is announced again after a host that was never dialled", async () => {
+        await fire("testFinished",
+            config({discovery: true, topic: "myspeed/guarded", host: "169.254.169.254"}), RESULT);
+        await settled();
+
+        assert.equal(seen.length, 0, "the guarded host was dialled");
+
+        seen = [];
+        await fire("testFinished", config({discovery: true, topic: "myspeed/guarded"}), RESULT);
+        await settled();
+
+        assert.ok(configTopics().length > 0, "correcting the host did not bring the announcement back");
+    });
+
     // concerned, so it has to be announced again or the new entities never exist.
     it("is announced again when the topic changes", async () => {
         await fire("testFinished", config({discovery: true, topic: "myspeed/e"}), RESULT);

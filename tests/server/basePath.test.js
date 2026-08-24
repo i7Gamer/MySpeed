@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readSource } from "../helpers/source.js";
-import { normaliseBasePath, stripBasePath } from "../../server/middlewares/basePath.js";
+import { appPath, normaliseBasePath, stripBasePath } from "../../server/middlewares/basePath.js";
 
 /**
  * Serving from a subdirectory, which is upstream #771.
@@ -53,12 +53,14 @@ describe("reading the setting", () => {
 });
 
 describe("taking the prefix off a request", () => {
-    const strip = (url, base) => {
-        const request = {url, originalUrl: url};
+    const strip = (url, base, method = "GET") => {
+        const request = {url, originalUrl: url, method};
+        const response = {redirected: null, redirect(status, to) { this.redirected = {status, to}; }};
+        let passed = false;
 
-        stripBasePath(base)(request, {}, () => undefined);
+        stripBasePath(base)(request, response, () => { passed = true; });
 
-        return request;
+        return {...request, redirected: response.redirected, passed};
     };
 
     it("removes it from the path the routes will read", () => {
@@ -71,14 +73,61 @@ describe("taking the prefix off a request", () => {
     });
 
     /**
-     * The prefix on its own is the application root. Left as an empty string the
-     * static handler has no path to match and answers 404 for the one URL the
-     * operator will actually type.
+     * The prefix with a slash on the end is the application root. Left as an
+     * empty string the static handler has no path to match and answers 404 for
+     * the one URL the operator will actually type.
      */
-    it("turns the bare prefix into the root", () => {
-        assert.equal(strip("/internet_speed", "/internet_speed").url, "/");
+    it("turns the prefix root into the root", () => {
         assert.equal(strip("/internet_speed/", "/internet_speed").url, "/");
-        assert.equal(strip("/internet_speed?x=1", "/internet_speed").url, "/?x=1");
+        assert.equal(strip("/internet_speed/?x=1", "/internet_speed").url, "/?x=1");
+    });
+
+    /**
+     * The bare prefix is redirected to that root rather than served as it, and
+     * this is the whole reason the client can be told nothing and still work.
+     *
+     * index.html asks for `./assets/index-x.js`, which the browser resolves
+     * against the URL the page was served from. Served AT /internet_speed, that
+     * base has no trailing slash, so the last segment is not read as a directory
+     * and the asset resolves to https://host/assets/index-x.js - outside the
+     * prefix, where the proxy serves something else or nothing at all, and the
+     * page comes up blank. One slash puts every one of those URLs back inside.
+     *
+     * This used to be rewritten to "/" and served directly, which answered 200
+     * and so looked correct to a test that only read the status.
+     */
+    it("redirects the bare prefix to the prefix root", () => {
+        const {redirected, passed} = strip("/internet_speed", "/internet_speed");
+
+        assert.deepEqual(redirected, {status: 302, to: "/internet_speed/"});
+        assert.ok(!passed, "the request was also passed on down the chain");
+    });
+
+    it("keeps the query when it redirects", () => {
+        assert.deepEqual(strip("/internet_speed?x=1", "/internet_speed").redirected,
+            {status: 302, to: "/internet_speed/?x=1"});
+    });
+
+    // Temporary, not permanent: an operator who takes BASE_PATH off again should
+    // not be fighting a redirect that every browser in the house cached forever.
+    it("redirects temporarily", () => {
+        assert.equal(strip("/internet_speed", "/internet_speed").redirected.status, 302);
+    });
+
+    /**
+     * Only the methods a browser follows. A redirected POST loses its body, and
+     * nothing the client sends posts to the bare prefix in any case.
+     */
+    it("does not redirect a request that is not a GET or HEAD", () => {
+        const {redirected, url} = strip("/internet_speed", "/internet_speed", "POST");
+
+        assert.equal(redirected, null);
+        assert.equal(url, "/");
+    });
+
+    it("does not redirect a path underneath the prefix", () => {
+        assert.equal(strip("/internet_speed/api/health", "/internet_speed").redirected, null);
+        assert.equal(strip("/internet_speed/", "/internet_speed").redirected, null);
     });
 
     /**
@@ -115,6 +164,50 @@ describe("taking the prefix off a request", () => {
     it("leaves originalUrl as the caller sent it", () => {
         assert.equal(strip("/internet_speed/api/health", "/internet_speed").originalUrl,
             "/internet_speed/api/health");
+    });
+});
+
+/**
+ * The whole path with the prefix already taken off, for the handlers that need
+ * the whole path.
+ *
+ * req.url is not it: once Express enters a mounted router, req.url holds only
+ * the part below the mount, which is why the two callers of this reach for
+ * originalUrl instead. But originalUrl still carries the prefix, and both of
+ * them then match it against a pattern anchored at ^/api - so under a prefix the
+ * node proxy asked a child for a path the child does not serve, and the backup
+ * relay silently lost its larger size allowance.
+ */
+describe("the path a handler should match on", () => {
+    const run = (url, base) => {
+        const request = {url, originalUrl: url, method: "GET"};
+
+        stripBasePath(base)(request, {redirect() {}}, () => undefined);
+
+        return request;
+    };
+
+    it("is the whole path without the prefix", () => {
+        assert.equal(appPath(run("/internet_speed/api/nodes/1/storage/config", "/internet_speed")),
+            "/api/nodes/1/storage/config");
+    });
+
+    it("is the whole path when no prefix is configured", () => {
+        assert.equal(appPath(run("/api/nodes/1/storage/config", "")), "/api/nodes/1/storage/config");
+    });
+
+    it("keeps the query, which the backup paths strip for themselves", () => {
+        assert.equal(appPath(run("/internet_speed/api/speedtests?limit=5", "/internet_speed")),
+            "/api/speedtests?limit=5");
+    });
+
+    /**
+     * Falls back rather than answering undefined: a router exercised without the
+     * middleware in front of it - which several suites do - would otherwise hand
+     * every one of these matchers undefined, and match nothing at all.
+     */
+    it("falls back to originalUrl when the middleware never ran", () => {
+        assert.equal(appPath({originalUrl: "/api/nodes/1/storage/config"}), "/api/nodes/1/storage/config");
     });
 });
 

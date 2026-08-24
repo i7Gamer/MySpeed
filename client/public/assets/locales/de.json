@@ -564,6 +564,7 @@
       }
     },
     "email": {
+      "title": "E-Mail",
       "fields": {
         "host": "SMTP-Server",
         "port": "Port",
@@ -637,6 +638,7 @@
       }
     },
     "mqtt": {
+      "title": "MQTT",
       "fields": {
         "host": "Broker-Host",
         "port": "Port",

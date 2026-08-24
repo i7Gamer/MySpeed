@@ -217,8 +217,26 @@ export const generateClientId = () => `myspeed-${randomBytes(4).toString("hex")}
  * other integration in this project has to think about, for a saving of one
  * handshake an hour.
  */
+/**
+ * Which event says the socket is ready to be written to.
+ *
+ * A TLSSocket emits both `connect` and `secureConnect`, so this has to choose
+ * one - see the note at the listener. `secureConnect` is the right one under
+ * TLS: it is the point the handshake has finished, and nothing should be handed
+ * to the socket before then.
+ */
+export const readyEvent = (secure) => secure ? "secureConnect" : "connect";
+
+/**
+ * Opens the socket. Separated so a test can hand publishAll a stand-in and
+ * exercise the TLS branch without a certificate and private key living in the
+ * repository, the same way the email integration takes its transport.
+ */
+export const openSocket = ({host, port, secure}) =>
+    secure ? tls.connect({host, port, servername: host}) : net.connect({host, port});
+
 export const publishAll = ({host, port, secure, username, password, clientId, messages,
-                               qos = 0, timeout}) => new Promise((resolve, reject) => {
+                               qos = 0, timeout, connect = openSocket}) => new Promise((resolve, reject) => {
     let settled = false;
     let received = Buffer.alloc(0);
     let socket;
@@ -318,22 +336,22 @@ export const publishAll = ({host, port, secure, username, password, clientId, me
     };
 
     try {
-        const options = {host, port, ...(secure ? {servername: host} : {})};
-
-        socket = secure ? tls.connect(options) : net.connect(options);
+        socket = connect({host, port, secure});
     } catch (error) {
         return fail(error);
     }
 
-    socket.on("connect", () => socket.write(connectPacket({
-        clientId: clientId || generateClientId(),
-        username, password,
-        keepAlive: KEEP_ALIVE_SECONDS
-    })));
-
-    // tls.connect announces itself differently, and writing before the handshake
-    // finishes would send the CONNECT in the clear.
-    socket.on("secureConnect", () => socket.write(connectPacket({
+    /*
+     * One event, never both.
+     *
+     * A TLSSocket emits `connect` when the TCP layer is up and `secureConnect`
+     * when the handshake finishes - both, in that order, on every connection.
+     * Listening for the pair wrote CONNECT twice, and MQTT-3.1.0-2 requires the
+     * broker to treat the second one as a protocol violation and hang up, so
+     * nothing was ever published over TLS: the operator saw ECONNRESET and no
+     * reason for it.
+     */
+    socket.once(readyEvent(secure), () => socket.write(connectPacket({
         clientId: clientId || generateClientId(),
         username, password,
         keepAlive: KEEP_ALIVE_SECONDS

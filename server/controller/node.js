@@ -5,6 +5,7 @@ import { RESPONSE_TOO_LARGE, safeRequest } from '../util/safeRequest.js';
 import { stripTrailingSlashes } from '../util/helpers.js';
 import { NODE_REFUSAL_HEADER, SERVER_BUSY } from '../util/authOutcome.js';
 import { isBackupExportPath, relayPolicy } from '../util/backupPolicy.js';
+import { appPath } from '../middlewares/basePath.js';
 
 // The child answers this while it already has as many password comparisons
 // running for this caller as it will run at once. Transient by construction.
@@ -203,12 +204,15 @@ export const proxyRequest = async (url, req, res) => {
          * and the import limit is the natural bound, because an export too
          * large to ever restore is not a backup.
          *
-         * req.originalUrl rather than req.path: by the time this handler runs,
-         * req.path has been rewritten relative to the router's mount and no
-         * longer names these paths.
+         * appPath rather than req.path: by the time this handler runs, req.path
+         * has been rewritten relative to the router's mount and no longer names
+         * these paths. Not req.originalUrl either - it keeps the BASE_PATH
+         * prefix, and NODE_PREFIX is anchored at ^, so under a prefix this
+         * matched nothing and a node with a year of history was cut off at the
+         * default ceiling instead of the export allowance.
          */
         const response = await safeRequest(url, {method: req.method, headers, body, signal: disconnect.signal,
-            maxBytes: isBackupExportPath(req.originalUrl) ? relayPolicy.backupAllowanceBytes : undefined});
+            maxBytes: isBackupExportPath(appPath(req)) ? relayPolicy.backupAllowanceBytes : undefined});
 
         if (isRedirect(response))
             return res.status(BAD_GATEWAY).json({message: "The node redirected the request", type: "INVALID_URL"});
