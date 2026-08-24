@@ -50,23 +50,41 @@ export const stripMarkdown = (variables) => strip(variables, TELEGRAM_MARKDOWN);
  * notification to an endpoint that is merely slow, and leaves the integration's
  * activity marked failed for a message that did arrive.
  */
-const send = (token, chat_id, text, activity) => {
+/**
+ * The forum topic to post into, or nothing at all - upstream #1176.
+ *
+ * Omitted rather than sent as null when there is none: telegram refuses a
+ * `message_thread_id` for a chat that has no topics, and an ordinary group or a
+ * channel is the common case. A 400 there delivers nothing, which is strictly
+ * worse than the General topic this exists to move messages out of.
+ *
+ * Every shape a stored row can hold has to answer "nothing": no key at all on a
+ * row written before the field existed, and the empty string on one saved with
+ * the input cleared, since that is what a text field submits.
+ */
+const topic = (message_thread_id) =>
+    message_thread_id ? {message_thread_id} : {};
+
+const send = (token, chat_id, text, activity, message_thread_id) => {
     const message = truncate(text, TELEGRAM_MESSAGE_LIMIT);
 
     return postJson(`https://api.telegram.org/bot${token}/sendMessage`,
-        {text: message, chat_id, ...(balancedForTelegram(message) ? {parse_mode: "markdown"} : {})},
+        {text: message, chat_id, ...topic(message_thread_id),
+            ...(balancedForTelegram(message) ? {parse_mode: "markdown"} : {})},
         {activity});
 };
 
 export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {
         if (c.send_finished) await send(c.token, c.chat_id,
-            replaceVariables(c.finished_message || defaults.finished, stripMarkdown(data)), activity);
+            replaceVariables(c.finished_message || defaults.finished, stripMarkdown(data)), activity,
+            c.message_thread_id);
     });
 
     registerEvent('testFailed', async ({data: c}, failure, activity) => {
         if (c.send_failed) await send(c.token, c.chat_id,
-            replaceVariables(c.error_message || defaults.failed, stripMarkdown(failure)), activity);
+            replaceVariables(c.error_message || defaults.failed, stripMarkdown(failure)), activity,
+            c.message_thread_id);
     });
 
     return {
@@ -85,6 +103,13 @@ export default (registerEvent) => {
             // common case for an alert. Anchoring this to digits alone would
             // have refused every one of them.
             {name: "chat_id", type: "text", required: true, regex: /^-?\d+$/},
+            // The topic within a forum supergroup. Positive only, unlike the
+            // chat id above: the negative spelling belongs to the group itself,
+            // and a topic telegram cannot honour is a 400 rather than a
+            // misfiled message. Not secret - it says nothing the chat id does
+            // not, and redacting it would drop the routing from a config export
+            // the operator restores from.
+            {name: "message_thread_id", type: "text", required: false, regex: /^\d+$/},
             {name: "send_finished", type: "boolean", required: false},
             {name: "finished_message", type: "textarea", required: false},
             {name: "send_failed", type: "boolean", required: false},

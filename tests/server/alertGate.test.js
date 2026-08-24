@@ -38,7 +38,7 @@ const fieldNames = (name) => getIntegration(name).fields.map((field) => field.na
  */
 const NOT_NOTIFIERS = ["influxdb", "healthChecks"];
 
-const NOTIFIERS = ["discord", "gotify", "ntfy", "pushover", "telegram", "webhook"];
+const NOTIFIERS = ["discord", "email", "gotify", "ntfy", "pushover", "telegram", "webhook"];
 
 describe("the shared threshold fields", () => {
     it("covers every integration that exists", () => {

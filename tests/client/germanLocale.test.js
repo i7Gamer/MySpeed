@@ -64,7 +64,7 @@ describe("the German locale", () => {
             "integrations.influxdb.fields.token", "integrations.telegram.fields.token",
             "integrations.telegram.fields.chat_id", "integrations.ntfy.fields.title_placeholder",
             // The notification templates are variable names, identical everywhere.
-            ...["discord", "gotify", "pushover", "ntfy", "telegram"]
+            ...["discord", "email", "gotify", "pushover", "ntfy", "telegram"]
                 .map((name) => `integrations.${name}.fields.finished_message_placeholder`)
         ]);
 

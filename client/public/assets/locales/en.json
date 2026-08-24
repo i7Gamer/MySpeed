@@ -559,6 +559,27 @@
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
+    "email": {
+      "fields": {
+        "host": "SMTP server",
+        "port": "Port",
+        "secure": "Use TLS directly (port 465)",
+        "username": "Username (optional)",
+        "password": "Password (optional)",
+        "from": "Sender address",
+        "to": "Recipient address",
+        "send_failed": "Send error messages",
+        "error_subject": "Error subject",
+        "error_subject_placeholder": "MySpeed: speedtest failed",
+        "error_message": "Error message",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
+        "send_finished": "Send finished messages",
+        "finished_subject": "Finished subject",
+        "finished_subject_placeholder": "MySpeed: speedtest finished",
+        "finished_message": "Finished message",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
     "gotify": {
       "title": "Gotify",
       "fields": {
@@ -641,6 +662,7 @@
       "fields": {
         "token": "Bot Token",
         "chat_id": "Chat ID",
+        "message_thread_id": "Topic ID (optional)",
         "error_message": "Error message",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Send error messages",

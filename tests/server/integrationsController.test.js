@@ -92,6 +92,14 @@ describe("secretFieldNames", () => {
  */
 const ADDRESSING_FIELDS = {
     discord: ["url"],
+    // email is the one entry here that is not only about capability. `username`
+    // and `password` are the credential, in the usual way - but `from` and `to`
+    // are somebody's mailboxes, withheld because a demo visitor has no business
+    // reading the operator's address and a redacted export is a file people
+    // attach to bug reports. The relay's own host and port stay in the clear:
+    // a hostname is not a capability without the credentials above it, and
+    // blanking it would cost the diagnosis such an export exists for.
+    email: ["username", "password", "from", "to"],
     webhook: ["url"],
     healthChecks: ["url"],
     ntfy: ["token", "topic", "url"],
