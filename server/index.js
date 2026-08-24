@@ -7,6 +7,7 @@ import * as timerTask from './tasks/timer.js';
 import * as integrationTask from './tasks/integrations.js';
 import './util/loadServers.js';
 import errorHandler from './util/errorHandler.js';
+import { describeError } from './util/errorDetail.js';
 import db from './config/database.js';
 import { runMigrations } from './util/migrationRunner.js';
 import * as config from './controller/config.js';
@@ -246,7 +247,12 @@ db.authenticate().then(() => {
     // migrations, no defaults and no scheduler, which is worse than not
     // starting at all.
     run().catch(err => {
-        console.error("The server could not finish starting up: " + (err?.message ?? err));
+        // describeError, not the bare message: a failed migration or a stored
+        // value the model refuses arrives here as sequelize's "Validation
+        // error" and nothing else, and this line is the only thing the
+        // operator gets before the process leaves - upstream #1549 is 138
+        // restarts on exactly that, ended by deleting the database.
+        console.error("The server could not finish starting up: " + describeError(err));
         process.exit(112);
     });
 }).catch(err => {

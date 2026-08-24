@@ -9,6 +9,8 @@ import { toErrorMessage } from '../util/helpers.js';
 import { PHASE_ORDER, PHASE_START, overallProgress } from '../util/providers/progress.js';
 import { failedPayload, finishedPayload } from '../util/notificationPayload.js';
 import { FAILED_TEST, UNMEASURED_LATENCY, isFailedTest, isMeasuredLatency } from '../util/testOutcome.js';
+import { isRateLimitMessage } from '../util/providers/cliOutput.js';
+import { clearBackoff, recordRateLimit } from '../util/rateLimitBackoff.js';
 
 // The placeholder a failed test stores in every numeric column. The client
 // tells a failure apart by it, so it is not a value anyone should read as one.
@@ -271,6 +273,11 @@ const execute = async (type, retried) => {
 
         const serverId = test.serverId;
 
+        // The provider is answering again, so whatever hold a previous refusal
+        // earned is over - including the escalation, which a completed test is
+        // the only thing that disproves.
+        clearBackoff(mode);
+
         let testResult = await tests.create({ping, download, upload, time, serverId, type,
             resultId, jitter, serverName, serverHost, serverLocation, packetLoss, downloadLatency, uploadLatency,
             isp, externalIp, provider, bytesDownloaded, bytesUploaded});
@@ -288,16 +295,32 @@ const execute = async (type, retried) => {
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
     } catch (e) {
         console.log(e)
-        // Not while the process is leaving: the shutdown has just killed the
-        // child this failure reports, and a retry would spawn a fresh one after
-        // the only moment terminateActiveProcess could reach it - the orphan
-        // trackProcess exists to prevent, rebuilt one line further down.
-        if (!retried && !isShuttingDown()) return await create(type, true);
 
         // A thrown string or a plain object has no `message`, and storing
         // undefined writes NULL - which marks the row as *successful* and lets
         // its -1 placeholder values poison every average.
+        //
+        // Read before the retry rather than after it, which is where it used to
+        // sit: the retry now has to know what the failure was.
         const message = toErrorMessage(e);
+
+        /*
+         * A provider that answered "too many requests" is the one failure a
+         * second attempt cannot help with, because the second attempt is the
+         * problem - upstream #846 and #1092. Recorded before the retry decision
+         * so the hold stands whichever way that goes, and against `mode` because
+         * the limiter belongs to the provider that refused rather than to this
+         * instance.
+         */
+        const rateLimited = isRateLimitMessage(message);
+
+        if (rateLimited) recordRateLimit(mode);
+
+        // Not while the process is leaving: the shutdown has just killed the
+        // child this failure reports, and a retry would spawn a fresh one after
+        // the only moment terminateActiveProcess could reach it - the orphan
+        // trackProcess exists to prevent, rebuilt one line further down.
+        if (!retried && !isShuttingDown() && !rateLimited) return await create(type, true);
 
         /*
          * The run is over however the rest of this goes.
