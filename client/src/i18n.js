@@ -21,6 +21,7 @@ import IndonesianFlag from "@/common/assets/languages/id.webp";
 import UkrainianFlag from "@/common/assets/languages/ua.webp";
 import {readStored, writeStored} from "@/common/utils/Storage";
 import {supportedLanguage} from "@/common/utils/LanguageChoice";
+import {withBasePath} from "@/common/utils/BasePath";
 /*
  * The English locale, bundled rather than fetched.
  *
@@ -100,7 +101,10 @@ i18n.use(initReactI18next).use(LanguageDetector).use(HttpApi).init({
         escapeValue: false
     },
     backend: {
-        loadPath: '/assets/locales/{{lng}}.json'
+        // Through the prefix, like every other URL the client emits (#771).
+        // Absolute, this 404s under a subdirectory and every language but the
+        // bundled English silently stops loading.
+        loadPath: withBasePath('/assets/locales/{{lng}}.json')
     },
     detection: {
         order: ['localStorage'],

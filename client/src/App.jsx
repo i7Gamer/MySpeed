@@ -16,6 +16,7 @@ import {AlertProvider} from "@/common/contexts/Alert";
 import {ThemeProvider} from "@/common/contexts/Theme";
 import {PreferencesProvider} from "@/common/contexts/Preferences";
 import i18n, {FALLBACK_LANGUAGE} from './i18n';
+import {basePath} from "@/common/utils/BasePath";
 import Loading from "@/pages/Loading";
 import Error from "@/pages/Error";
 import RouteError from "@/pages/RouteError";
@@ -93,7 +94,18 @@ const router = createBrowserRouter([
             {path: "/statistics", element: <Statistics/>}
         ]
     }
-]);
+], {
+    /*
+     * Where the application starts, when it is not the root of the host -
+     * upstream #771. Without it the router pushes "/statistics" into the address
+     * bar of a page served from /internet_speed/, and the next reload asks the
+     * proxy for a path outside the prefix.
+     *
+     * react-router wants "/" for "no prefix" rather than the empty string
+     * BasePath answers with.
+     */
+    basename: basePath || "/"
+});
 
 const App = () => {
     /**

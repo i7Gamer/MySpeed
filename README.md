@@ -231,6 +231,7 @@ through the proxy.
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `TRUST_PROXY` | unset | Number of proxies in front (`1`) or a preset such as `loopback`. Required behind a reverse proxy so rate limiting sees real client addresses. `true` is read as `1`: Express would otherwise take the address from a header the caller writes. |
+| `BASE_PATH` | unset | Serve the whole application from a subdirectory - `/internet_speed` - for a proxy that routes on a path prefix without stripping it off. The client works the prefix out for itself, so this is the only setting involved. |
 | `ALLOW_NO_PASSWORD` | `false` | Serve an instance that has no password to anyone who can reach it. LAN only. |
 | `FRAME_ANCESTORS` | `'none'` | CSP origins allowed to embed MySpeed in an iframe, for dashboards like Homepage or Heimdall. |
 | `HTTPS_REDIRECT` | `true` | Send network callers to the HTTPS listener when `data/certs` holds a certificate. Set `false` if a proxy terminates TLS and `TRUST_PROXY` is not set. |
