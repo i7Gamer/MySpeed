@@ -57,6 +57,66 @@ export const isFailedTest = (test) => {
 export const isSuccessfulTest = (test) => !isFailedTest(test);
 
 /**
+ * The three columns a row cannot be without. They are NOT NULL, so a value that
+ * cannot be read has nowhere honest to go and the run has to fail instead.
+ */
+const REQUIRED_MEASUREMENTS = ["ping", "download", "upload"];
+
+/**
+ * Which required measurement came back below zero, or null.
+ *
+ * Upstream #875, and on the evidence of its screenshot #792 as well. isFailedTest
+ * above asks whether *all three* are the placeholder, so a run that measured
+ * something impossible - one negative upload beside two good figures - is a
+ * failure by no reading and was stored as an ordinary result. Every reader then
+ * believes it: it drags the average, it colours a grade, the export carries it,
+ * and the alert gate reads it as a measurement far below the threshold and
+ * raises an outage that never happened.
+ *
+ * Zero is deliberately not caught. A line that carried nothing in the time
+ * allowed is a real reading and is what an outage looks like; clamping it away
+ * would hide the very measurement the instance exists to record.
+ *
+ * A row whose three columns are all the placeholder is left alone: that is a
+ * failed run, isFailedTest already names it, and two guards answering the same
+ * row would make which message the operator sees a matter of ordering.
+ *
+ * Read through metricValue, like every other consumer of these columns, so an
+ * imported history holding "-1" as text is judged rather than walked past - `<0`
+ * on a string is false, which is how those rows got past the failure checks
+ * before metricValue existed.
+ */
+export const impossibleMeasurement = (test) => {
+    if (!test || isFailedTest(test)) return null;
+
+    for (const name of REQUIRED_MEASUREMENTS) {
+        const value = metricValue(test[name]);
+
+        if (value !== null && value < 0) return name;
+    }
+
+    return null;
+};
+
+/**
+ * An optional figure, or null when it is not one.
+ *
+ * The nullable columns - jitter, packet loss, the two loaded latencies - ask a
+ * different question from the three above and get a different answer. Null
+ * already means "nobody measured this", so a negative one has an honest home to
+ * go to, and failing a whole run over a jitter of -0.2 would throw away a
+ * perfectly good throughput measurement - the opposite of what #875 is about.
+ *
+ * A measured zero is kept, for the same reason zero is kept above: a line that
+ * lost no packets is a fact, not an absence.
+ */
+export const usableFigure = (value) => {
+    const figure = metricValue(value);
+
+    return figure === null || figure < 0 ? null : figure;
+};
+
+/**
  * The latency a run records when it measured none.
  *
  * A successful test can still carry a latency nobody took: parseCloudflare

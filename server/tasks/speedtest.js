@@ -8,7 +8,8 @@ import * as serverController from "../controller/servers.js";
 import { toErrorMessage } from '../util/helpers.js';
 import { PHASE_ORDER, PHASE_START, overallProgress } from '../util/providers/progress.js';
 import { failedPayload, finishedPayload } from '../util/notificationPayload.js';
-import { FAILED_TEST, UNMEASURED_LATENCY, isFailedTest, isMeasuredLatency } from '../util/testOutcome.js';
+import { FAILED_TEST, UNMEASURED_LATENCY, impossibleMeasurement, isFailedTest, isMeasuredLatency, usableFigure }
+    from '../util/testOutcome.js';
 import { isRateLimitMessage } from '../util/providers/cliOutput.js';
 import { clearBackoff, recordRateLimit } from '../util/rateLimitBackoff.js';
 
@@ -271,6 +272,28 @@ const execute = async (type, retried) => {
         if (isFailedTest({ping, download, upload}))
             throw new Error(`${mode} finished without reporting any measurement`);
 
+        /*
+         * And a run that reported something impossible leaves by the same door -
+         * upstream #875, and on the evidence of its screenshot #792.
+         *
+         * The check above asks whether all three came back as the placeholder,
+         * so one negative upload beside two good figures was a failure by no
+         * reading and went in as an ordinary result. From there every reader
+         * believed it: the average, the grade, the export, and the alert gate,
+         * which reads a measurement far below the threshold as an outage.
+         *
+         * Thrown rather than clamped, because zero is not what was measured
+         * either - nobody knows what the line did. It takes the same path an
+         * unmeasurable run takes: the reason is written down, the integrations
+         * are told the test failed, and it is retried once, which a run that
+         * came back with a negative reading deserves as much as one that came
+         * back with nothing.
+         */
+        const impossible = impossibleMeasurement({ping, download, upload});
+
+        if (impossible)
+            throw new Error(`${mode} reported an impossible ${impossible}: ${{ping, download, upload}[impossible]}`);
+
         const serverId = test.serverId;
 
         // The provider is answering again, so whatever hold a previous refusal
@@ -278,8 +301,17 @@ const execute = async (type, retried) => {
         // the only thing that disproves.
         clearBackoff(mode);
 
+        /*
+         * The nullable figures ask a different question and get a different
+         * answer: null already means "nobody measured this", so a negative one
+         * has an honest home to go to. Failing the whole run over a jitter of
+         * -0.2 would throw away a throughput measurement that is perfectly good,
+         * which is the opposite of what the guard above is for.
+         */
         let testResult = await tests.create({ping, download, upload, time, serverId, type,
-            resultId, jitter, serverName, serverHost, serverLocation, packetLoss, downloadLatency, uploadLatency,
+            resultId, jitter: usableFigure(jitter), serverName, serverHost, serverLocation,
+            packetLoss: usableFigure(packetLoss),
+            downloadLatency: usableFigure(downloadLatency), uploadLatency: usableFigure(uploadLatency),
             isp, externalIp, provider, bytesDownloaded, bytesUploaded});
         console.log(`Test #${testResult.id} was executed successfully in ${time}s. 🏓 ${ping} (±${jitter ?? 'N/A'}) ⬇ ${download}️ ⬆ ${upload}️`);
         createRecommendations().catch(err =>
