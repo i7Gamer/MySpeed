@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readSource } from "../helpers/source.js";
+import { escapeRegExp, readSource } from "../helpers/source.js";
 
 /**
  * A dialog's submit button stays pressable while its request is in flight.
@@ -60,7 +60,7 @@ describe("a dialog cannot be submitted twice at once", () => {
                 // From the opening tag to the translation key it carries,
                 // spanning an icon in between but never a different button.
                 const tag = source.match(
-                    new RegExp(`<button(?:(?!<button)[^])*?\\{t\\("${key.replace(/\./g, "\\.")}"\\)}`))?.[0];
+                    new RegExp(`<button(?:(?!<button)[^])*?\\{t\\("${escapeRegExp(key)}"\\)}`))?.[0];
 
                 assert.ok(tag, `the "${key}" button in ${what} is no longer recognisable`);
                 assert.match(tag, /disabled=\{[^}]*saving/,

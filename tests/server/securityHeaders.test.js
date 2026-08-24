@@ -134,12 +134,17 @@ describe("securityHeaders", () => {
                 "the value ends the directive and writes a policy the operator did not");
         });
 
-        it("keeps the origins either side of one", () => {
+        // The whole list, not membership: two includes() checks held even if a
+        // third origin nobody configured rode along, and the policy is as much
+        // about what is absent as what is present. (Array equality also reads
+        // as what it is - CodeQL took the membership checks for substring
+        // matching on a URL, which the directives() split exists to rule out.)
+        it("keeps the origins either side of one, and nothing else", () => {
             process.env.FRAME_ANCESTORS = "https://dash.example.com; https://home.lan";
-            const ancestors = directives()["frame-ancestors"];
 
-            assert.ok(ancestors.includes("https://dash.example.com"), "the first origin was dropped");
-            assert.ok(ancestors.includes("https://home.lan"), "the second origin was dropped");
+            assert.deepEqual(directives()["frame-ancestors"],
+                ["https://dash.example.com", "https://home.lan"],
+                "an origin was dropped, or one nobody configured rode along");
         });
 
         it("survives a trailing newline", () => {

@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import * as sass from "sass";
 import { clickable } from "@/common/utils/Clickable.js";
 import { nextFocus } from "@/common/hooks/useModalFocus.js";
-import { blockEnd } from "../helpers/source.js";
+import { blockEnd, escapeRegExp } from "../helpers/source.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -868,7 +868,7 @@ describe("form field and dialog accessibility", () => {
             const toggle = read(file).match(/<ToggleSwitch[^/]*?\/>/s)?.[0];
 
             assert.ok(toggle, `${what} is no longer recognisable`);
-            assert.match(toggle, new RegExp(`label=\\{t\\("${key.replace(/\./g, "\\.")}"\\)}`),
+            assert.match(toggle, new RegExp(`label=\\{t\\("${escapeRegExp(key)}"\\)}`),
                 `${what} is an unnamed checkbox beside the text that should name it`);
         });
 
