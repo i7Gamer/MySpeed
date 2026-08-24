@@ -220,8 +220,8 @@
     "tests_imported": "Testler içe aktarıldı",
     "import_test_error": "Testler içe aktarılırken bir hata oluştu",
     "import_config_error": "Yapılandırma içe aktarılırken bir hata oluştu",
-    "export": "İhracat",
-    "import": "İthalat",
+    "export": "Dışa aktar",
+    "import": "İçe aktar",
     "clear_history": "Geçmişi temizle",
     "history_cleared": "Geçmiş temizlendi",
     "delete": "Silme",
@@ -317,7 +317,7 @@
     "day": "1 gün",
     "days": "{{days}} gün",
     "on": "Tarih",
-    "at": "Zamanında"
+    "at": "Saat"
   },
   "test": {
     "not_available": "Şu anda kullanılabilir test yok",

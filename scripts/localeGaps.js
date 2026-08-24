@@ -117,38 +117,149 @@ export const UNIVERSAL_SHARED = [
 ];
 
 /**
- * Values a particular language leaves as the English text on purpose, because
- * that is the word it uses. German keeps "Server", "Download" and "Ping";
- * Chinese keeps almost nothing.
+ * The finished-notification templates for the named senders.
  *
- * Filled in as each language is translated, and read by the parity test - so
- * the list is the record of a decision someone made about that string, and an
- * untranslated value that is not on it fails.
+ * They repeat per integration and differ only in the unit they carry, so a
+ * language either localises all of them or none. Named here so a language's list
+ * reads as the one decision it is.
+ */
+const TEMPLATES = (...names) => names.map((name) => `integrations.${name}.fields.finished_message_placeholder`);
+
+/**
+ * Values a particular language leaves as the English text on purpose, because
+ * that is the word it uses.
+ *
+ * The lists are long and they are meant to be. Danish keeps "Download",
+ * "Upload", "Server", "Import", "Pause" and "Okay" because those are the Danish
+ * words; Portuguese keeps "Download" and "Upload"; Russian keeps only "Jitter"
+ * and "Bufferbloat", because everything else has a Cyrillic form and uses it.
+ * The length of a language's list is roughly how much English its speakers have
+ * adopted, and there is no way to shorten it that is not a lie.
+ *
+ * Filled in as each language is translated, and read by the parity test - so an
+ * entry here is the record of a decision someone made about that string, and an
+ * untranslated value that is not here fails.
  */
 export const LANGUAGE_SHARED = {
+    bg: [
+        "update.ping_placeholder", "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit",
+        "latest.byte_speed_unit", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
+        "test.details.bufferbloat", "test.details.bufferbloat_value", "preview.info",
+        "integrations.influxdb.fields.bucket", "integrations.ntfy.fields.topic_placeholder",
+        ...TEMPLATES("discord", "gotify", "pushover", "ntfy", "telegram")
+    ],
+    da: [
+        "dialog.okay", "dialog.provider.server", "dropdown.ping", "update.ping_placeholder",
+        "update.download", "update.pause", "header.download", "storage.tests", "storage.import",
+        "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.down",
+        "latest.byte_speed_unit", "latest.up", "info.ping.title", "info.jitter.title",
+        "info.bufferbloat.title", "test.details.seconds", "test.details.server", "test.details.bufferbloat",
+        "test.details.bufferbloat_value", "statistics.failed.label", "statistics.values.min",
+        "statistics.hourly.sample_count", "preview.info", "integrations.discord.fields.url",
+        "integrations.email.fields.port", "integrations.gotify.fields.url",
+        "integrations.influxdb.fields.url", "integrations.mqtt.fields.port", "integrations.ntfy.fields.url",
+        "integrations.ntfy.fields.tags", "integrations.webhook.fields.url", "status.start",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
     de: [
         "welcome.ms", "dialog.okay", "dialog.provider.server", "update.ping_placeholder",
-        "storage.speedtests", "storage.tests", "statistics.failed.label",
-        "statistics.hourly.sample_count", "preview.info",
-        // The metrics keep their English names in German, in the interface and
-        // out of it, and the units keep their symbols.
-        "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit",
-        "latest.down", "latest.up", "latest.byte_speed_unit",
-        "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
-        "test.details.server", "test.details.seconds",
-        "test.details.bufferbloat", "test.details.bufferbloat_value",
-        // Field labels that are the same word in German, and the templates whose
-        // German differs from the English only in the unit - which is "ms" here
-        // too.
-        "integrations.discord.fields.url", "integrations.gotify.fields.url",
+        "storage.speedtests", "storage.tests", "latest.ping", "latest.ping_unit", "latest.jitter",
+        "latest.jitter_unit", "latest.down", "latest.byte_speed_unit", "latest.up", "info.ping.title",
+        "info.jitter.title", "info.bufferbloat.title", "test.details.seconds", "test.details.server",
+        "test.details.bufferbloat", "test.details.bufferbloat_value", "statistics.failed.label",
+        "statistics.hourly.sample_count", "preview.info", "integrations.discord.fields.url",
+        "integrations.email.fields.port", "integrations.gotify.fields.url",
         "integrations.healthChecks.fields.url", "integrations.influxdb.fields.url",
-        "integrations.influxdb.fields.token", "integrations.ntfy.fields.url",
-        "integrations.ntfy.fields.title_placeholder", "integrations.ntfy.fields.tags",
-        "integrations.telegram.fields.token", "integrations.telegram.fields.chat_id",
-        "integrations.webhook.fields.url", "integrations.email.fields.port",
-        "integrations.mqtt.fields.port",
-        ...["discord", "email", "gotify", "pushover", "ntfy", "telegram"]
-            .map((name) => `integrations.${name}.fields.finished_message_placeholder`)
+        "integrations.influxdb.fields.token", "integrations.mqtt.fields.port",
+        "integrations.ntfy.fields.url", "integrations.ntfy.fields.title_placeholder",
+        "integrations.ntfy.fields.tags", "integrations.telegram.fields.token",
+        "integrations.telegram.fields.chat_id", "integrations.webhook.fields.url",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
+    es: [
+        "update.ping_placeholder", "storage.tests", "latest.ping", "latest.ping_unit", "latest.jitter",
+        "latest.jitter_unit", "latest.speed_unit", "latest.byte_speed_unit", "info.ping.title",
+        "info.jitter.title", "info.bufferbloat.title", "test.details.seconds", "test.details.bufferbloat",
+        "test.details.bufferbloat_value", "statistics.failed.label", "statistics.hourly.sample_count",
+        "preview.info", "integrations.discord.fields.error_message_placeholder",
+        "integrations.email.fields.error_message_placeholder",
+        "integrations.gotify.fields.error_message_placeholder",
+        "integrations.pushover.fields.error_message_placeholder",
+        "integrations.ntfy.fields.error_message_placeholder", "integrations.telegram.fields.chat_id",
+        "integrations.telegram.fields.error_message_placeholder",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
+    fr: [
+        "dialog.provider.interface", "update.ping_placeholder", "storage.configuration", "storage.tests",
+        "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
+        "info.jitter.title", "info.bufferbloat.title", "time.minute", "test.details.seconds",
+        "test.details.bufferbloat", "test.details.bufferbloat_value", "statistics.failed.label",
+        "statistics.values.min", "statistics.values.max", "statistics.hourly.sample_count",
+        "statistics.consistency.excellent", "integrations.email.fields.port",
+        "integrations.influxdb.fields.bucket", "integrations.mqtt.fields.port",
+        "integrations.ntfy.fields.tags",
+        ...TEMPLATES("email")
+    ],
+    id: [
+        "dialog.provider.server", "update.ping_placeholder", "storage.reset", "latest.ping",
+        "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
+        "latest.byte_speed_unit", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
+        "test.details.server", "test.details.bufferbloat", "test.details.bufferbloat_value",
+        "statistics.values.min", "statistics.values.target", "preview.info",
+        "integrations.influxdb.fields.bucket", "integrations.ntfy.fields.topic_placeholder",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
+    it: [
+        "welcome.ms", "welcome.mbps", "dialog.provider.server", "update.ping_placeholder", "latest.ping",
+        "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
+        "latest.byte_speed_unit", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
+        "test.details.seconds", "test.details.server", "test.details.bufferbloat",
+        "test.details.bufferbloat_value", "test.details.isp", "preview.info",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
+    nl: [
+        "welcome.ms", "dialog.provider.interface", "dialog.provider.server", "update.ping_placeholder",
+        "header.servers", "storage.tests", "storage.reset", "latest.ping", "latest.ping_unit",
+        "latest.jitter", "latest.jitter_unit", "latest.byte_speed_unit", "info.ping.title",
+        "info.jitter.title", "info.bufferbloat.title", "test.details.seconds", "test.details.server",
+        "test.details.bufferbloat", "test.details.bufferbloat_value", "test.details.isp",
+        "statistics.failed.label", "statistics.values.min", "statistics.values.max",
+        "statistics.hourly.sample_count", "preview.info", "integrations.influxdb.fields.url",
+        "integrations.ntfy.fields.url", "integrations.ntfy.fields.tags",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
+    pl: [
+        "update.ping_placeholder", "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit",
+        "latest.speed_unit", "latest.byte_speed_unit", "info.ping.title", "info.jitter.title",
+        "info.bufferbloat.title", "test.details.seconds", "test.details.bufferbloat",
+        "test.details.bufferbloat_value", "statistics.values.min", "preview.info",
+        "integrations.email.fields.port", "integrations.mqtt.fields.port",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
+    pt: [
+        "dialog.provider.interface", "update.ping_placeholder", "latest.ping", "latest.ping_unit",
+        "latest.jitter", "latest.jitter_unit", "latest.down", "latest.speed_unit", "latest.byte_speed_unit",
+        "latest.up", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
+        "test.details.seconds", "test.details.bufferbloat", "test.details.bufferbloat_value",
+        "preview.info", "integrations.influxdb.fields.bucket", "integrations.ntfy.fields.tags",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
+    ru: [
+        "latest.jitter", "info.jitter.title", "info.bufferbloat.title", "test.details.bufferbloat"
+    ],
+    tr: [
+        "update.ping_placeholder", "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit",
+        "latest.byte_speed_unit", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
+        "test.details.bufferbloat", "test.details.bufferbloat_value", "preview.info",
+        "integrations.influxdb.fields.bucket", "integrations.ntfy.fields.topic_placeholder",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
+    uk: [
+        "info.bufferbloat.title", "test.details.bufferbloat", "integrations.influxdb.fields.bucket",
+        "integrations.ntfy.fields.topic_placeholder"
+    ],
+    zh: [
+        "latest.speed_unit", "latest.byte_speed_unit", "integrations.ntfy.fields.topic_placeholder"
     ]
 };
 

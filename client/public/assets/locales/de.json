@@ -119,14 +119,14 @@
       "read_access": "Nur Lesezugriff"
     }
   },
+  "password": {
+    "no_access_desc": "Besucher müssen das Passwort eingeben um irgendetwas zu sehen",
+    "read_access_desc": "Besucher können Daten ansehen, können aber Einstellungen nicht ändern"
+  },
   "locked": {
     "password_desc": "Diese Instanz ist mit einem Passwort geschützt. Melde dich an, um ihre Daten zu sehen.",
     "token_hint": "Der Server schreibt das Token erneut in sein Log, sobald er eine Anfrage ablehnt - höchstens einmal alle zehn Minuten. Ein Neuladen dieser Seite legt also eine frische Kopie ans Ende des Logs.",
     "enter_token": "Setup-Token eingeben"
-  },
-  "password": {
-    "no_access_desc": "Besucher müssen das Passwort eingeben um irgendetwas zu sehen",
-    "read_access_desc": "Besucher können Daten ansehen, können aber Einstellungen nicht ändern"
   },
   "pause": {
     "manual": "Auf unbestimmte Zeit pausieren",
@@ -491,13 +491,13 @@
     "last_30_days": "Letzte 30 Tage",
     "last_90_days": "Letzte 90 Tage",
     "last_year": "Letztes Jahr",
-    "mon": "Mon",
+    "mon": "Mo",
     "tue": "Di",
     "wed": "Mi",
-    "thu": "Thu",
+    "thu": "Do",
     "fri": "Fr",
     "sat": "Sa",
-    "sun": "Sonne"
+    "sun": "So"
   },
   "nodes": {
     "add": "Server hinzufügen",
