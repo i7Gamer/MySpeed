@@ -320,6 +320,30 @@ describe("publishing several messages at once", () => {
         assert.equal(new Set(ids).size, 3, "two messages shared a packet identifier");
     });
 
+    /**
+     * Counted from 1, rather than from somewhere random.
+     *
+     * The identifier correlates a PUBLISH with its PUBACK and is not a secret,
+     * and CONNECT always sets CLEAN_SESSION - so there is no state left over
+     * from a previous connection for a random start to avoid colliding with.
+     * Taking crypto bytes and reducing them with `%` bought nothing and biased
+     * the result, which is what CodeQL alert 27/28 pointed at.
+     *
+     * Pinned as an exact sequence: "distinct" above still held while the start
+     * was random, so it would not have noticed the change either way.
+     */
+    it("numbers the messages from one", async () => {
+        behaviour.ackPublish = true;
+
+        await sendAll({qos: 1});
+        await sawType(DISCONNECT);
+
+        const ids = seen.filter((packet) => packet.type === PUBLISH)
+            .map((packet) => packet.body.readUInt16BE(2 + packet.body.readUInt16BE(0)));
+
+        assert.deepEqual(ids, [1, 2, 3]);
+    });
+
     it("does not report success when one acknowledgement never comes", async () => {
         behaviour.ackPublish = false;
 

@@ -266,15 +266,22 @@ export const publishAll = ({host, port, secure, username, password, clientId, me
         fail(new Error(`The broker did not answer within ${Math.round(timeout / 1000)} seconds`)), timeout);
 
     /*
-     * One identifier per message, taken in sequence from a random start.
+     * One identifier per message, counted from one.
      *
      * Distinct, because at QoS 1 the exchange is over when the *last* one has
      * been acknowledged: two messages sharing an id would have one PUBACK close
      * a connection with a message still outstanding. Wrapped rather than allowed
      * to run past the field, and never zero, which the protocol reserves.
+     *
+     * Counted rather than begun somewhere random, which is what this did until
+     * CodeQL pointed out that reducing crypto bytes with `%` biases the result.
+     * The bias was real - 0xffff values folded onto 0xfffe - but the randomness
+     * was the actual mistake: an identifier is not a secret, it exists to match
+     * a PUBLISH to its PUBACK within one connection, and CONNECT always sets
+     * CLEAN_SESSION, so no broker state survives a reconnect for a random start
+     * to have been avoiding.
      */
-    const firstId = (randomBytes(2).readUInt16BE() % MAX_PACKET_ID) + 1;
-    const identifierFor = (index) => ((firstId + index - 1) % MAX_PACKET_ID) + 1;
+    const identifierFor = (index) => (index % MAX_PACKET_ID) + 1;
 
     let acknowledged = 0;
 

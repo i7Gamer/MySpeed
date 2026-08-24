@@ -91,22 +91,30 @@ describe("describeError", () => {
      * The path and the rule are enough to find the row by hand; the value is
      * not needed to do it.
      */
+    /*
+     * Asserted as the whole string, rather than as "the secret is not in it".
+     *
+     * A not-contains check passes on a partial leak - the host without the path,
+     * a token without its prefix - and it goes on passing over anything the
+     * describer learns to append later. Equality states exactly what reaches the
+     * log, so a value arriving there fails the test whatever shape it arrives
+     * in. It also stops the assertion reading as URL substring matching, which
+     * is what CodeQL alert 26 took it for.
+     */
     describe("what it refuses to say", () => {
-        it("never reports the value that was refused", () => {
-            const secret = "s3cr3t-telegram-token";
-            const item = new ValidationErrorItem("Validation len on token failed", "Validation error", "token", secret);
+        it("names the field a validation refused, and nothing else", () => {
+            const item = new ValidationErrorItem("Validation len on token failed", "Validation error",
+                "token", "s3cr3t-telegram-token");
 
-            const described = describeError(new ValidationError("Validation error", [item]));
-
-            assert.ok(!described.includes(secret), "a refused credential was written to the log");
+            assert.equal(describeError(new ValidationError("Validation error", [item])),
+                "Validation error (SequelizeValidationError; Validation error on token)");
         });
 
-        it("never reports the value a unique constraint clashed on", () => {
-            const secret = "https://hooks.example/T000/B000/xxxxx";
+        it("names the column a unique constraint clashed on, and nothing else", () => {
+            const clash = new UniqueConstraintError({fields: {url: "https://hooks.example/T000/B000/xxxxx"}});
 
-            const described = describeError(new UniqueConstraintError({fields: {url: secret}}));
-
-            assert.ok(!described.includes(secret), "a refused webhook URL was written to the log");
+            assert.equal(describeError(clash),
+                "Validation Error (SequelizeUniqueConstraintError; fields: url)");
         });
     });
 
