@@ -106,7 +106,13 @@ const ADDRESSING_FIELDS = {
     gotify: ["key"],
     pushover: ["token", "user_key"],
     telegram: ["token"],
-    influxdb: ["token"]
+    influxdb: ["token"],
+    // The two halves of a broker login, and nothing else. The topic is not
+    // withheld: unlike an ntfy topic it is no capability on its own - a broker
+    // that lets a stranger publish to it has an ACL problem rather than a
+    // disclosure one - and blanking it would drop the routing from an export
+    // the operator restores from.
+    mqtt: ["username", "password"]
 };
 
 describe("what each integration withholds", () => {

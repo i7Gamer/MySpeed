@@ -636,6 +636,22 @@
         "tags_placeholder": "region=eu,role=primary (comma-separated)"
       }
     },
+    "mqtt": {
+      "fields": {
+        "host": "Broker host",
+        "port": "Port",
+        "secure": "Use TLS (port 8883)",
+        "username": "Username (optional)",
+        "password": "Password (optional)",
+        "client_id": "Client ID (optional)",
+        "topic": "Topic",
+        "error_topic": "Error topic (optional)",
+        "retain": "Retain messages",
+        "qos": "Quality of service (0 or 1)",
+        "send_finished": "Publish finished tests",
+        "send_failed": "Publish failed tests"
+      }
+    },
     "ntfy": {
       "title": "ntfy",
       "fields": {

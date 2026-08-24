@@ -262,7 +262,7 @@ describe("discord webhook url", () => {
 describe("the notifier flag", () => {
     const MODULE_FILES = fs.readdirSync(INTEGRATIONS_DIR)
         .filter((file) => file.endsWith(".js") && file !== "index.js");
-    const ABSTAINERS = ["influxdb", "healthChecks"];
+    const ABSTAINERS = ["influxdb", "healthChecks", "mqtt"];
 
     // If an abstainer is renamed, the ban list above goes stale silently: the
     // old name matches no file, and comments naming the new one sail through.

@@ -636,6 +636,22 @@
         "tags_placeholder": "region=eu,role=primär (kommagetrennt)"
       }
     },
+    "mqtt": {
+      "fields": {
+        "host": "Broker-Host",
+        "port": "Port",
+        "secure": "TLS verwenden (Port 8883)",
+        "username": "Benutzername (optional)",
+        "password": "Passwort (optional)",
+        "client_id": "Client-ID (optional)",
+        "topic": "Thema",
+        "error_topic": "Fehler-Thema (optional)",
+        "retain": "Nachrichten behalten",
+        "qos": "Dienstgüte (0 oder 1)",
+        "send_finished": "Abgeschlossene veröffentlichen",
+        "send_failed": "Fehlgeschlagene veröffentlichen"
+      }
+    },
     "ntfy": {
       "title": "nackt",
       "fields": {
