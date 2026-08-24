@@ -23,14 +23,21 @@ import RouteError from "@/pages/RouteError";
 import {ToastNotificationProvider} from "@/common/contexts/ToastNotification";
 import {NodeProvider} from "@/common/contexts/Node";
 import {library} from '@fortawesome/fontawesome-svg-core';
-import {faBell, faBellConcierge, faDatabase, faGlobe, faHeartPulse} from '@fortawesome/free-solid-svg-icons';
+import {faBell, faBellConcierge, faDatabase, faEnvelope, faGlobe, faHeartPulse, faTowerBroadcast} from '@fortawesome/free-solid-svg-icons';
 import {faDiscord, faTelegram} from "@fortawesome/free-brands-svg-icons";
 import {PushOverIcon} from "@/common/assets/icons/pushover";
 import Nodes from "@/pages/Nodes";
 import Statistics from "@/pages/Statistics";
 import Home from "@/pages/Home";
 
-library.add(faBell, faBellConcierge, faDatabase, faGlobe, faHeartPulse, faDiscord, faTelegram);
+// Every glyph an integration can name, because it names it as a string and a
+// string is resolved against this library at render time. A glyph that is not
+// in here does not fail the build or throw: FontAwesomeIcon logs a miss and
+// renders null, so the card and the dropdown row come up with a hole where the
+// icon belongs. tests/client/integrationIcons.test.js holds the two ends
+// together.
+library.add(faBell, faBellConcierge, faDatabase, faEnvelope, faGlobe, faHeartPulse,
+    faTowerBroadcast, faDiscord, faTelegram);
 library.add(PushOverIcon);
 
 const Providers = ({children}) => {
