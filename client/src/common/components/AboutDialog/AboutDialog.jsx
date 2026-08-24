@@ -11,6 +11,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { jsonRequest } from "@/common/utils/RequestUtil";
 import { ConfigContext } from "@/common/contexts/Config";
 import { PROJECT_URL, RELEASES_URL } from "@/index";
+import {withBasePath} from "@/common/utils/BasePath";
 
 export const AboutDialog = ({ open, onClose }) => {
   const [config] = useContext(ConfigContext);
@@ -45,7 +46,7 @@ export const AboutDialog = ({ open, onClose }) => {
         <>
           <DialogHeader onClose={close}>
             <span className="about-title">
-              <img src="/assets/img/logo192.png" alt="MySpeed" />
+              <img src={withBasePath("/assets/img/logo192.png")} alt="MySpeed" />
               <span>{t("about.title")}</span>
               {version && <span className="about-version">v{version}</span>}
             </span>

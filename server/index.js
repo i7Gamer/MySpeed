@@ -7,7 +7,10 @@ import * as timerTask from './tasks/timer.js';
 import * as integrationTask from './tasks/integrations.js';
 import './util/loadServers.js';
 import errorHandler from './util/errorHandler.js';
-import db from './config/database.js';
+import { describeError } from './util/errorDetail.js';
+import { QueryTypes } from 'sequelize';
+import db, { SQLITE_STORAGE_PATH } from './config/database.js';
+import { checkIntegrity, recoveryAdvice } from './util/databaseIntegrity.js';
 import { runMigrations } from './util/migrationRunner.js';
 import * as config from './controller/config.js';
 import { initialize as initializeIntegrations } from './controller/integrations.js';
@@ -168,7 +171,34 @@ const shutdown = createShutdown({
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
+/**
+ * Asks sqlite whether the file can be read, and says what to do when it cannot.
+ *
+ * Ahead of the migrations, because a migration is the first thing that would
+ * touch a damaged page - and it would do so halfway through applying itself,
+ * reporting whatever sqlite threw as an unexplained startup failure. Upstream
+ * #1549 is that failure repeated 138 times, ended by deleting the database.
+ *
+ * Reported rather than fatal, and that is the point: exiting is what produced
+ * the restart loop. Coming up lets the operator reach the interface and export
+ * whatever is still readable, with the ways out already on the console.
+ *
+ * sqlite only. MySQL has no such pragma and its own consistency machinery, and
+ * the file this advice names does not exist there.
+ */
+const reportDatabaseDamage = async () => {
+    if (process.env.DB_TYPE === "mysql") return;
+
+    const outcome = await checkIntegrity((sql) => db.query(sql, {type: QueryTypes.SELECT}));
+
+    if (outcome.ok) return;
+
+    for (const line of recoveryAdvice(SQLITE_STORAGE_PATH, outcome.problems)) console.error(line);
+};
+
 const run = async () => {
+    await reportDatabaseDamage();
+
     await runMigrations();
 
     await initializeIntegrations();
@@ -180,7 +210,7 @@ const run = async () => {
 
     await config.insertDefaults();
 
-    timerTask.startTimer(await config.getValue("cron"));
+    timerTask.startTimer(await config.getValue("cron"), await config.getValue("timezone"));
     intervals.push(setInterval(() => removeOld().catch(err =>
         console.error(`Could not apply the retention policy: ${err?.message ?? err}`)), RETENTION_SWEEP_INTERVAL));
 
@@ -246,7 +276,12 @@ db.authenticate().then(() => {
     // migrations, no defaults and no scheduler, which is worse than not
     // starting at all.
     run().catch(err => {
-        console.error("The server could not finish starting up: " + (err?.message ?? err));
+        // describeError, not the bare message: a failed migration or a stored
+        // value the model refuses arrives here as sequelize's "Validation
+        // error" and nothing else, and this line is the only thing the
+        // operator gets before the process leaves - upstream #1549 is 138
+        // restarts on exactly that, ended by deleting the database.
+        console.error("The server could not finish starting up: " + describeError(err));
         process.exit(112);
     });
 }).catch(err => {

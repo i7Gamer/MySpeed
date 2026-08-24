@@ -8,6 +8,7 @@ import './util/createFolders.js';
 
 import errorMiddleware from './middlewares/error.js';
 import securityHeaders from './middlewares/securityHeaders.js';
+import { basePath, stripBasePath } from './middlewares/basePath.js';
 import httpsRedirect from './middlewares/httpsRedirect.js';
 import { createRateLimit } from './middlewares/rateLimit.js';
 import { parseTrustProxy } from './util/trustProxy.js';
@@ -90,6 +91,14 @@ app.disable('x-powered-by');
 // password throttle do.
 const trustProxy = parseTrustProxy(process.env.TRUST_PROXY);
 if (trustProxy !== undefined) app.set('trust proxy', trustProxy);
+
+/*
+ * Before everything, so that every route, guard, limiter and body-size decision
+ * below reads the path it was written for rather than one carrying a proxy's
+ * prefix - upstream #771. Unset, this is a no-op and nothing downstream can tell
+ * it is there.
+ */
+app.use(stripBasePath(basePath()));
 
 app.use(httpsRedirect());
 app.use(securityHeaders());

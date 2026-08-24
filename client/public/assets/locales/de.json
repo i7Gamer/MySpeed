@@ -53,6 +53,7 @@
       "interface": "Schnittstelle",
       "server": "Server",
       "server_id": "Server-ID",
+      "server_id_placeholder": "Beliebige Server-ID, oder leer lassen",
       "custom_url": "Benutzerdefinierte URL",
       "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Automatisch wählen",
@@ -139,6 +140,9 @@
     "custom": "Eigene Dauer",
     "quiet_hours": "Ruhezeiten",
     "quiet_hours_desc": "Geplante Tests werden täglich zwischen diesen Uhrzeiten übersprungen. Selbst gestartete Tests laufen immer.",
+    "timezone": "Zeitzone",
+    "timezone_server": "Serveruhr",
+    "timezone_desc": "Die Uhr, nach der sich sowohl die Ruhezeiten als auch der Testzeitplan richten.",
     "quiet_from": "Von",
     "quiet_until": "Bis"
   },
@@ -559,6 +563,28 @@
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
+    "email": {
+      "title": "E-Mail",
+      "fields": {
+        "host": "SMTP-Server",
+        "port": "Port",
+        "secure": "TLS direkt verwenden (Port 465)",
+        "username": "Benutzername (optional)",
+        "password": "Passwort (optional)",
+        "from": "Absenderadresse",
+        "to": "Empfängeradressen (mit Komma getrennt)",
+        "send_failed": "Fehlernachrichten senden",
+        "error_subject": "Betreff bei Fehler",
+        "error_subject_placeholder": "MySpeed: Geschwindigkeitstest fehlgeschlagen",
+        "error_message": "Fehlernachricht",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Fehler: %error%",
+        "send_finished": "Abgeschlossene senden",
+        "finished_subject": "Betreff bei Abschluss",
+        "finished_subject_placeholder": "MySpeed: Geschwindigkeitstest abgeschlossen",
+        "finished_message": "Abgeschlossen-Nachricht",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
     "gotify": {
       "title": "Gotify",
       "fields": {
@@ -611,6 +637,25 @@
         "tags_placeholder": "region=eu,role=primär (kommagetrennt)"
       }
     },
+    "mqtt": {
+      "title": "MQTT",
+      "fields": {
+        "host": "Broker-Host",
+        "port": "Port",
+        "secure": "TLS verwenden (Port 8883)",
+        "username": "Benutzername (optional)",
+        "password": "Passwort (optional)",
+        "client_id": "Client-ID (optional)",
+        "topic": "Thema",
+        "error_topic": "Fehler-Thema (optional)",
+        "retain": "Nachrichten behalten",
+        "discovery": "Home-Assistant-Erkennung",
+        "discovery_prefix": "Erkennungs-Präfix (optional)",
+        "qos": "Dienstgüte (0 oder 1)",
+        "send_finished": "Abgeschlossene veröffentlichen",
+        "send_failed": "Fehlgeschlagene veröffentlichen"
+      }
+    },
     "ntfy": {
       "title": "nackt",
       "fields": {
@@ -641,6 +686,7 @@
       "fields": {
         "token": "Bot Token",
         "chat_id": "Chat ID",
+        "message_thread_id": "Themen-ID (optional)",
         "error_message": "Fehlernachricht",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Fehler: %error%",
         "send_failed": "Fehlernachrichten senden",

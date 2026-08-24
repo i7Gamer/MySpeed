@@ -5,10 +5,35 @@ import { isValidCron } from "cron-validator";
 import { CronExpressionParser } from "cron-parser";
 import { create as createSpeedtest } from './speedtest.js';
 import { isQuietHour } from '../util/quietHours.js';
+import { serverZone, zoneFromName } from '../util/timezone.js';
+import { backoffRemainingMs } from '../util/rateLimitBackoff.js';
 import errorHandler from "../util/errorHandler.js";
+
+const MS_PER_MINUTE = 60_000;
+
+/**
+ * Whether a stored `timezone` is one to hand to the schedule at all.
+ *
+ * The off sentinel and anything unusable both answer false, which leaves the
+ * host clock in charge - the behaviour every instance had before the setting
+ * existed. zoneFromName makes the same judgement for the window; this one exists
+ * because node-schedule and cron-parser want the *name*, not a zone object.
+ */
+const isValidTimezone = (timezone) => zoneFromName(timezone) !== serverZone;
 
 let job;
 let currentCron;
+
+/**
+ * The zone the running schedule was built in, as its stored name.
+ *
+ * Held beside the cron for the same reason the cron is: nextRun answers what the
+ * *running* schedule will do next, and reading the setting again would describe
+ * a schedule that has not been started yet. Changing it restarts the timer -
+ * routes/config.js and controller/config.js both do - so this only ever holds
+ * what node-schedule was actually given.
+ */
+let currentTimezone;
 
 /**
  * Bumped every time the schedule is torn down, so a run can tell whether the
@@ -94,7 +119,7 @@ const getRandomDelay = (cron) => {
     return Math.floor(Math.random() * (maxDelay - OFFSET_MIN_DELAY_MS + 1)) + OFFSET_MIN_DELAY_MS;
 };
 
-export const startTimer = (cron) => {
+export const startTimer = (cron, timezone) => {
     if (!isValidCron(cron)) return;
 
     // Before the assignment, not left to the caller. Every caller happens to
@@ -105,6 +130,20 @@ export const startTimer = (cron) => {
     stopTimer();
 
     currentCron = cron;
+    currentTimezone = timezone;
+
+    /*
+     * `{rule, tz}` rather than the bare expression whenever a zone is
+     * configured, so "0 3 * * *" is three in the morning where the operator
+     * lives rather than wherever the host thinks it is - which the Docker image
+     * pins to Etc/UTC (upstream #1115).
+     *
+     * The bare expression is kept when nothing is set, rather than passing the
+     * host zone explicitly: node-schedule reads a bare one on the host clock
+     * already, and naming a zone would route it through cron-parser's tz
+     * handling for no change in meaning.
+     */
+    const spec = isValidTimezone(timezone) ? {rule: cron, tz: timezone} : cron;
 
     // Caught here, because nothing else does. create() guards its own work, but
     // runTask reaches it through the pause state, the quiet hours check and the
@@ -118,7 +157,7 @@ export const startTimer = (cron) => {
     // Reported through errorHandler rather than console.error, so it still
     // reaches data/logs/error.log - the file the log's own header points bug
     // reports at, and where the unhandledRejection route used to put it.
-    job = schedule.scheduleJob(cron, () => runTask().catch(err =>
+    job = schedule.scheduleJob(spec, () => runTask().catch(err =>
         errorHandler(err, {fatal: false, context: "The scheduled speedtest failed"})));
 };
 
@@ -149,16 +188,21 @@ const MAX_QUIET_OCCURRENCES = 1500;
  * test that never happened, then silently reset to the next - all night, with
  * nothing saying why.
  */
-export const nextRun = (cron = currentCron, quietHours = null) => {
+export const nextRun = (cron = currentCron, quietHours = null, timezone = currentTimezone) => {
     if (!cron || !isValidCron(cron)) return null;
 
     try {
-        const schedule = CronExpressionParser.parse(cron);
+        // The same zone the job itself was scheduled in, or this announces a
+        // different moment from the one that will happen - and the countdown on
+        // the status bar is built from exactly this answer.
+        const schedule = CronExpressionParser.parse(cron,
+            isValidTimezone(timezone) ? {tz: timezone} : undefined);
+        const zone = zoneFromName(timezone);
 
         for (let stepped = 0; stepped < MAX_QUIET_OCCURRENCES; stepped++) {
             const occurrence = schedule.next().toDate();
 
-            if (!isQuietHour(occurrence, quietHours?.start, quietHours?.end))
+            if (!isQuietHour(occurrence, quietHours?.start, quietHours?.end, zone))
                 return occurrence.toISOString();
         }
 
@@ -175,7 +219,38 @@ export const nextRun = (cron = currentCron, quietHours = null) => {
  * two tests, and a cached copy would go on silencing the old hours.
  */
 const withinQuietHours = async () => isQuietHour(new Date(),
-    await config.getValue("quietHoursStart"), await config.getValue("quietHoursEnd"));
+    await config.getValue("quietHoursStart"), await config.getValue("quietHoursEnd"),
+    // Read fresh alongside the window, not taken from currentTimezone: the two
+    // are always changed together (a timezone change restarts the schedule), and
+    // reading the same source as the window keeps them from disagreeing if that
+    // ever stops being true.
+    zoneFromName(await config.getValue("timezone")));
+
+/**
+ * Whether the provider is still inside the hold a refusal earned, and says so
+ * when it is.
+ *
+ * One home for the message, because the question is asked twice: once before the
+ * schedule offset and once on the far side of it, the same way the pause and the
+ * quiet hours are. The sleep is up to five minutes, and a run started by hand
+ * during it can be refused and record a hold that did not exist when this run
+ * began.
+ *
+ * Only the scheduled runs are held, which is the rule the quiet hours already
+ * follow for the reason their own module gives: a test started by hand is
+ * somebody asking for one now, and refusing that would be a fault rather than a
+ * courtesy. So this is consulted here rather than inside create().
+ */
+const heldByBackoff = (provider) => {
+    const remaining = backoffRemainingMs(provider);
+
+    if (remaining === 0) return false;
+
+    console.warn(`The ${provider} provider refused the last test for too many requests. `
+        + `Skipping this one - trying again in ${Math.ceil(remaining / MS_PER_MINUTE)} minutes.`);
+
+    return true;
+};
 
 export const runTask = async () => {
     if (pauseController.currentState) {
@@ -200,6 +275,8 @@ export const runTask = async () => {
         return;
     }
 
+    if (heldByBackoff(await config.getValue("provider"))) return;
+
     const scheduleOffset = await config.getValue("scheduleOffset");
 
     if (scheduleOffset === "true" && currentCron) {
@@ -217,6 +294,10 @@ export const runTask = async () => {
         // those reads were in flight was seen by no guard at all and one test
         // still fired from the schedule that had just been replaced.
         const quietHoursBegan = await withinQuietHours();
+        // Read again for the same reason, and here rather than after the guards:
+        // the provider can be changed while the offset sleeps, and asking for it
+        // below would put an await between the last guard and the speedtest.
+        const provider = await config.getValue("provider");
 
         if (scheduleChangedSince(startedIn)) {
             console.warn("The schedule changed during the delay. Skipping this test...");
@@ -232,6 +313,8 @@ export const runTask = async () => {
             console.warn("Quiet hours began during delay. Skipping this test...");
             return;
         }
+
+        if (heldByBackoff(provider)) return;
     }
 
     await createSpeedtest("auto");

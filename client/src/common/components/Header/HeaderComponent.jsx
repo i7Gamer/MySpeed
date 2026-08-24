@@ -25,6 +25,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Pagination from "./components/Pagination";
 import AboutDialog from "@/common/components/AboutDialog";
 import Tooltip from "@/common/components/Tooltip";
+import {withBasePath} from "@/common/utils/BasePath";
 
 const HeaderComponent = () => {
     const findNode = useContext(NodeContext)[4];
@@ -155,7 +156,7 @@ const HeaderComponent = () => {
                         <button type="button" className="header-about"
                                 aria-label={t("about.title")}
                                 onClick={() => setShowAboutDialog(true)}>
-                            <img src="/assets/img/logo192.png" alt="" className="header-logo"/>
+                            <img src={withBasePath("/assets/img/logo192.png")} alt="" className="header-logo"/>
                             {" "}<span className="header-title">{getNodeName()}</span>
                         </button>
                     </h2>

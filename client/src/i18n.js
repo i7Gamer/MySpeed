@@ -21,6 +21,29 @@ import IndonesianFlag from "@/common/assets/languages/id.webp";
 import UkrainianFlag from "@/common/assets/languages/ua.webp";
 import {readStored, writeStored} from "@/common/utils/Storage";
 import {supportedLanguage} from "@/common/utils/LanguageChoice";
+import {withBasePath} from "@/common/utils/BasePath";
+/*
+ * The English locale, bundled rather than fetched.
+ *
+ * Upstream #725 and #1330. Every language was loaded over HTTP at boot, English
+ * included, and one failed request set the state that renders the error page -
+ * which reloads itself after five seconds, fetches the same missing file, and
+ * fails again. The floor has to be something no request can take away, and this
+ * is it: whatever else does or does not arrive, there is always a full set of
+ * strings to render with.
+ *
+ * Imported from public/ rather than copied into src/, because that path is
+ * crowdin's source file (see crowdin.yml). A copy would be a second English to
+ * keep in step, and the one the translators edit would not be the one shipped.
+ */
+import englishTranslations from "../public/assets/locales/en.json";
+
+/**
+ * The language everything falls back to, and therefore the one that is bundled.
+ * Named because three places have to agree on it: the resource below, the
+ * fallback below that, and App.jsx asking whether anything is loadable at all.
+ */
+export const FALLBACK_LANGUAGE = "en";
 
 export const languages = [
     {name: 'English', code: 'en', flag: EnglishFlag},
@@ -55,7 +78,14 @@ if (readStored('language') === null)
 
 i18n.use(initReactI18next).use(LanguageDetector).use(HttpApi).init({
     supportedLngs: languages.map(lang => lang.code),
-    fallbackLng: 'en',
+    fallbackLng: FALLBACK_LANGUAGE,
+    // Seeds the store, rather than replacing the backend: with
+    // partialBundledLanguages the other fourteen are still fetched on demand,
+    // and English is simply already there. Without that flag `resources` turns
+    // the HTTP backend off altogether and a fifteen-language interface silently
+    // becomes an English one that still offers to change language.
+    resources: {[FALLBACK_LANGUAGE]: {translation: englishTranslations}},
+    partialBundledLanguages: true,
     // Values are printed, not injected as markup. i18next escapes them by
     // default - it is written for templating engines that build HTML strings -
     // and its escaper turns a slash into `&#x2F;`, which React then renders as
@@ -71,7 +101,10 @@ i18n.use(initReactI18next).use(LanguageDetector).use(HttpApi).init({
         escapeValue: false
     },
     backend: {
-        loadPath: '/assets/locales/{{lng}}.json'
+        // Through the prefix, like every other URL the client emits (#771).
+        // Absolute, this 404s under a subdirectory and every language but the
+        // bundled English silently stops loading.
+        loadPath: withBasePath('/assets/locales/{{lng}}.json')
     },
     detection: {
         order: ['localStorage'],

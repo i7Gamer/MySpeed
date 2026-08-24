@@ -1,16 +1,8 @@
-/**
- * Integrations are notified from inside the speedtest run, which holds the
- * run lock until every one of them has answered. A webhook pointed at a host
- * that accepts the connection and then says nothing would otherwise hang that
- * run forever, so every outbound post carries this deadline.
- *
- * getJson takes it only as the default for a caller that has no opinion. The
- * run lock says nothing about a GET, so a caller whose request is slower or
- * more expendable than a webhook is expected to name its own deadline instead.
- */
 import { checkOutboundTarget } from "./safeUrl.js";
-
-const OUTBOUND_TIMEOUT = 10000;
+// The deadline and the activity note both live beside each other now, because
+// the SMTP integration needs both and neither is HTTP's to own alone.
+// integrationActivity.js carries the reasoning for each.
+import { OUTBOUND_TIMEOUT, noteActivity as note } from "./integrationActivity.js";
 
 /**
  * Refuses a destination the server may not reach, as an ordinary send failure.
@@ -78,29 +70,6 @@ const hostOf = (url) => {
 // that was never configured.
 const report = (url, error) =>
     console.error(`Integration request to ${hostOf(url)} failed: ${error?.message ?? error}`);
-
-/**
- * Notes the outcome against the integration without letting that note matter.
- *
- * `activity` is triggerEvent's callback and it awaits an IntegrationData
- * update, so it returns a promise that can reject - a transient SQLITE_BUSY
- * while the speedtest row is being written to the same file is the realistic
- * case. It was invoked bare, so the rejection had no handler at all and escaped
- * to the process-level unhandledRejection hook; the two sibling calls in
- * controller/integrations.js carry a deliberate catch that this path did not.
- *
- * Whether the note was written is not something the send depends on, either
- * way round: a throw from the callback must not turn a delivered notification
- * into a reported failure.
- */
-const note = (activity, failed) => {
-    try {
-        Promise.resolve(activity?.(failed)).catch(() => undefined);
-    } catch {
-        // A synchronous throw from the callback, which is no more the send's
-        // business than a rejected one.
-    }
-};
 
 /**
  * Finishes with a response body nobody is going to read.

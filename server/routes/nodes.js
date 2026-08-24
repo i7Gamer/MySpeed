@@ -7,6 +7,7 @@ import { stripTrailingSlashes } from '../util/helpers.js';
 import { checkNodeTarget } from '../util/safeUrl.js';
 import { isUntrustedReader } from '../util/untrustedReader.js';
 import { importBody } from './storage.js';
+import { appPath } from '../middlewares/basePath.js';
 
 const app = express.Router();
 
@@ -187,7 +188,12 @@ app.all("/:nodeId/*route", password(false),
     // on, the concatenation asks the child for `//api/...`, which Express does
     // not collapse - its router never matches its own mount, so every proxied
     // request 404s and a healthy node reads as broken.
-    const url = stripTrailingSlashes(node.url) + req.originalUrl.replace("/api/nodes/" + req.params.nodeId, "/api");
+    // appPath rather than originalUrl: under BASE_PATH the original still carries
+    // the prefix, and the replace below is not anchored to the front, so the
+    // prefix rode along into the URL the child was asked for. The child has no
+    // BASE_PATH of its own, so nothing matched and its SPA fallback answered
+    // every proxied call with the index page.
+    const url = stripTrailingSlashes(node.url) + appPath(req).replace("/api/nodes/" + req.params.nodeId, "/api");
 
     passwordHeaderNames.forEach(name => delete req.headers[name]);
     Object.assign(req.headers, writePasswordHeaders(node.password));

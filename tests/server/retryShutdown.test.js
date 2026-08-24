@@ -24,7 +24,7 @@ describe("the retry under shutdown", () => {
 
     it("is guarded by the shutdown latch, not just the attempt count", () => {
         assert.match(catchBlock,
-            /if\s*\(\s*!retried\s*&&\s*!isShuttingDown\(\)\s*\)\s*return\s+await\s+create\(type,\s*true\)/,
+            /if\s*\(\s*!retried\s*&&\s*!isShuttingDown\(\)[^)]*\)\s*return\s+await\s+create\(type,\s*true\)/,
             "a run killed by the shutdown starts a fresh child the shutdown can no longer reach");
     });
 });

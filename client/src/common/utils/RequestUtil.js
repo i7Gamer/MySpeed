@@ -1,5 +1,6 @@
 import { SERVER_BUSY } from "@/common/utils/AuthOutcome";
 import {readStored, removeStored} from "@/common/utils/Storage";
+import {withBasePath} from "@/common/utils/BasePath";
 
 const REQUEST_TIMEOUT = 10000;
 
@@ -16,10 +17,22 @@ export class RequestError extends Error {
     }
 }
 
+/*
+ * Every URL this file emits goes through withBasePath - upstream #771.
+ *
+ * The page can be served from a subdirectory, and the browser resolves an
+ * absolute path against the host rather than against the application: from
+ * https://host/internet_speed/ a request for "/api/config" asks the proxy for
+ * something outside the prefix, which is either a 404 or whichever other service
+ * is mounted at the root.
+ *
+ * The prefix is worked out from where this module itself was loaded, so nothing
+ * here has to be configured or rebuilt per deployment. BasePath.js says how.
+ */
 const getApiRoot = () => {
     if (readStored("currentNode") !== null && readStored("currentNode") !== "0") {
-        return "/api/nodes/" + readStored("currentNode");
-    } else return "/api";
+        return withBasePath("/api/nodes/" + readStored("currentNode"));
+    } else return withBasePath("/api");
 }
 
 /**
@@ -56,7 +69,7 @@ const timedFetch = async (url, init = {}) => {
  * can read it either - which is the point.
  */
 export const login = async (password) => {
-    const response = await timedFetch("/api/session", {
+    const response = await timedFetch(withBasePath("/api/session"), {
         method: "POST",
         headers: {"content-type": "application/json"},
         body: JSON.stringify({password})
@@ -81,7 +94,7 @@ export const login = async (password) => {
     return {ok: false, type: body?.type};
 }
 
-export const logout = () => timedFetch("/api/session", {method: "DELETE"});
+export const logout = () => timedFetch(withBasePath("/api/session"), {method: "DELETE"});
 
 const STORED_PASSWORD_KEY = "password";
 
@@ -109,7 +122,7 @@ const getHeaders = () => ({"content-type": "application/json"});
 
 // Run a plain request with all default values using the base path
 export const baseRequest = async (path, method = "GET", body = {}, headers = {}) =>
-    timedFetch("/api" + path, {
+    timedFetch(withBasePath("/api" + path), {
         headers: {...getHeaders(), ...headers}, method,
         body: method !== "GET" ? JSON.stringify(body) : undefined
     });

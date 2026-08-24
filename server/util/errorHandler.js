@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import { describeError } from "./errorDetail.js";
+
 const filePath = process.cwd() + "/data/logs/error.log";
 
 /**
@@ -46,7 +48,21 @@ export default (error, {fatal = true, context = null} = {}) => {
     const date = new Date().toLocaleString();
     const lineStarter = fs.existsSync(filePath) ? "\n\n" : "# Found a bug? Report it here: https://github.com/i7Gamer/MySpeed/issues\n\n";
 
-    console.error((context ?? "An error occurred") + ": " + reported.message);
+    /**
+     * The message with the parts sequelize keeps on the side put back.
+     *
+     * `reported.message` alone is "Validation error" for a whole class of
+     * failures - upstream #1549 - and neither the console line nor the stack
+     * below carries the column, the rule or the driver's code, all of which sit
+     * on properties of the error. Taken from the original rather than from
+     * asError's rewrapping, because that only ever produces a plain Error and
+     * would have thrown those properties away.
+     *
+     * It reports no *values*, deliberately; errorDetail.js says why.
+     */
+    const described = describeError(error);
+
+    console.error((context ?? "An error occurred") + ": " + described);
 
     // The stack, not the Error itself. Concatenating the Error calls toString(),
     // which is "Error: <message>" and nothing more - so the file held exactly
@@ -59,7 +75,14 @@ export default (error, {fatal = true, context = null} = {}) => {
     // carries no stack - built where Error.stackTraceLimit was 0, or assembled
     // by a caller - because this is the uncaughtException handler and
     // "undefined" is not an acceptable thing to write instead.
-    const recorded = reported.stack || reported.message || String(reported);
+    const stack = reported.stack || reported.message || String(reported);
+
+    // And the detail ahead of it when the stack does not already carry it. A
+    // stack's first line is "Error: <message>", so for an ordinary error this
+    // changes nothing; for the ORM errors describeError exists for, it is the
+    // only place in the file the column and the rule appear at all - and this
+    // file is the one the log's own header points bug reports at.
+    const recorded = stack.includes(described) ? stack : described + "\n" + stack;
 
     fs.writeFile(filePath, lineStarter + "## " + date + "\n" + (context ? context + "\n" : "") + recorded,
         {flag: 'a+'}, err => {

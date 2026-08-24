@@ -36,9 +36,9 @@ const fieldNames = (name) => getIntegration(name).fields.map((field) => field.na
  * and reports the check as down - so "tell me only when the line is bad" would
  * mean "raise an outage on every good result".
  */
-const NOT_NOTIFIERS = ["influxdb", "healthChecks"];
+const NOT_NOTIFIERS = ["influxdb", "healthChecks", "mqtt"];
 
-const NOTIFIERS = ["discord", "gotify", "ntfy", "pushover", "telegram", "webhook"];
+const NOTIFIERS = ["discord", "email", "gotify", "ntfy", "pushover", "telegram", "webhook"];
 
 describe("the shared threshold fields", () => {
     it("covers every integration that exists", () => {

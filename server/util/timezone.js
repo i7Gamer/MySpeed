@@ -166,6 +166,33 @@ export const utcFromLocal = (zone, parts, {prefer = "earliest"} = {}) => {
     return new Date(prefer === "latest" ? Math.max(...real) : Math.min(...real));
 };
 
+/**
+ * An instant shifted so that reading its **UTC** fields gives the zone's wall
+ * clock.
+ *
+ * The one place that arithmetic lives. localHourAt did it inline and the quiet
+ * window needs the minutes as well, so a second copy would have been the start
+ * of the two drifting.
+ *
+ * The returned Date is a carrier for those fields and not a moment in time - its
+ * own getTime() is the instant minus the offset, which is a different instant
+ * altogether. Nothing should store it.
+ */
+export const localWallClock = (zone, instant) =>
+    new Date(instant.getTime() - zone.offsetAt(instant) * MS_PER_MINUTE);
+
 /** The hour of the day an instant falls in, on the zone's wall clock. */
-export const localHourAt = (zone, instant) =>
-    new Date(instant.getTime() - zone.offsetAt(instant) * MS_PER_MINUTE).getUTCHours();
+export const localHourAt = (zone, instant) => localWallClock(zone, instant).getUTCHours();
+
+/**
+ * The zone a stored `timezone` setting names, or the host's own clock.
+ *
+ * Anything unusable answers the host clock rather than raising - "none" (the
+ * sentinel every other optional setting uses), a name the platform's zone
+ * database does not know, a value written in by hand. This is read from inside
+ * the scheduler, and throwing there would stop every scheduled test from
+ * running: a window judged on the wrong clock silences some wrong hours, and an
+ * exception silences all of them. The door refuses a bad value (validateInput
+ * does), so a stored one is either historical or hand-written.
+ */
+export const zoneFromName = (name) => isKnownTimeZone(name) ? namedZone(name) : serverZone;

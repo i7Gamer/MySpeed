@@ -467,7 +467,23 @@ describe("parseCloudflare", () => {
      * fast line, which is why maximising across sizes looked defensible.
      */
     describe("the speed it reports for a direction", () => {
-        const sizedResult = (measurements) => ({...cloudflareResult, speed_measurements: measurements});
+        /*
+         * The other direction filled in from the reference result unless the
+         * case names one itself.
+         *
+         * These are about how *a* direction's figure is chosen, and
+         * parseCloudflare refuses a run that measured only one - so a fixture
+         * listing downloads alone would be exercising that refusal rather than
+         * the selection it means to describe.
+         */
+        const uploadEntries = cloudflareResult.speed_measurements.filter((m) => m.test_type === "Upload");
+
+        const sizedResult = (measurements) => ({
+            ...cloudflareResult,
+            speed_measurements: measurements.some((m) => m.test_type === "Upload")
+                ? measurements
+                : [...measurements, ...uploadEntries]
+        });
 
         it("takes the median of the largest payload that ran", () => {
             const {download, upload} = parseCloudflare(sizedResult([
@@ -562,13 +578,23 @@ describe("parseCloudflare", () => {
             assert.equal(upload, 45);
         });
 
-        it("reports zero for a direction whose entries all measured nothing", () => {
-            const {download, upload} = parseCloudflare(sizedResult([
+        /*
+         * This used to assert the opposite - that such a direction reports 0 -
+         * which was the fabrication the comment under parseCloudflare's failure
+         * branch describes as the bug: a row of zeros carries no error, so it
+         * counted as a success and pulled every average toward zero.
+         *
+         * A direction whose entries were all skipped measured nothing, and there
+         * is no sentinel for an unmeasured throughput the way there is for an
+         * unmeasured latency - 0 is a real reading here and cannot be borrowed.
+         * So the run is refused instead.
+         */
+        it("refuses a run whose direction measured nothing rather than inventing a zero", () => {
+            const parsed = parseCloudflare(sizedResult([
                 {test_type: "Download", payload_size: 100000, median: null, avg: null, max: null, successes: 0}
             ]));
 
-            assert.equal(download, 0);
-            assert.equal(upload, 0);
+            assert.equal(isFailedTest(parsed), true);
         });
 
         // Two decimals, the same as every other measurement on the row. This
@@ -744,13 +770,23 @@ describe("parseCloudflare", () => {
 
         // A skipped run moved nothing. Counting it as though it had transferred
         // its payload would report 250 MB for a phase the CLI declined to run.
+        /*
+         * The skipped entry sits beside one that ran, rather than alone. A
+         * direction that only skipped measured nothing at all, and
+         * parseCloudflare refuses that run outright now - which would leave this
+         * asserting on a failure row instead of on the counting it is about.
+         */
         it("counts no payload for the runs that were skipped", () => {
             const parsed = parseCloudflare({
                 ...cloudflareResult,
-                speed_measurements: [{test_type: "Download", payload_size: 25000000, successes: 0, skipped: 10, max: 0}]
+                speed_measurements: [
+                    {test_type: "Download", payload_size: 100000, successes: 5, max: 90},
+                    {test_type: "Download", payload_size: 25000000, successes: 0, skipped: 10, max: 0},
+                    {test_type: "Upload", payload_size: 100000, successes: 5, max: 48.5}
+                ]
             });
 
-            assert.equal(parsed.bytesDownloaded, 0);
+            assert.equal(parsed.bytesDownloaded, 100000 * 5, "a skipped run was counted as though it had transferred");
         });
 
         it("nulls a direction whose runs never stated a payload", () => {

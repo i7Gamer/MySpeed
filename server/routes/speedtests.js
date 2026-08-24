@@ -185,7 +185,10 @@ app.get("/status", password(true), async (req, res) => {
             // will refuse and then resets to the next one it will also refuse.
             start: await config.getValue("quietHoursStart"),
             end: await config.getValue("quietHoursEnd")
-        }
+        },
+        // And on the clock the schedule itself runs on, or the countdown names
+        // a different moment from the one that will happen.
+        await config.getValue("timezone")
     );
 
     // getLatest strips a null error rather than reporting it, and answers

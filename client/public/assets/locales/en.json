@@ -53,6 +53,7 @@
       "interface": "Interface",
       "server": "Server",
       "server_id": "Server ID",
+      "server_id_placeholder": "Any server ID, or leave empty",
       "custom_url": "Custom URL",
       "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Choose automatically",
@@ -139,6 +140,9 @@
     "custom": "Custom Duration",
     "quiet_hours": "Quiet hours",
     "quiet_hours_desc": "Scheduled tests are skipped every day between these times. Tests you start yourself always run.",
+    "timezone": "Timezone",
+    "timezone_server": "Server clock",
+    "timezone_desc": "The clock the quiet hours and the test schedule are both judged on.",
     "quiet_from": "From",
     "quiet_until": "Until"
   },
@@ -559,6 +563,28 @@
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
+    "email": {
+      "title": "Email",
+      "fields": {
+        "host": "SMTP server",
+        "port": "Port",
+        "secure": "Use TLS directly (port 465)",
+        "username": "Username (optional)",
+        "password": "Password (optional)",
+        "from": "Sender address",
+        "to": "Recipient addresses (comma separated)",
+        "send_failed": "Send error messages",
+        "error_subject": "Error subject",
+        "error_subject_placeholder": "MySpeed: speedtest failed",
+        "error_message": "Error message",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
+        "send_finished": "Send finished messages",
+        "finished_subject": "Finished subject",
+        "finished_subject_placeholder": "MySpeed: speedtest finished",
+        "finished_message": "Finished message",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
     "gotify": {
       "title": "Gotify",
       "fields": {
@@ -611,6 +637,25 @@
         "tags_placeholder": "region=eu,role=primary (comma-separated)"
       }
     },
+    "mqtt": {
+      "title": "MQTT",
+      "fields": {
+        "host": "Broker host",
+        "port": "Port",
+        "secure": "Use TLS (port 8883)",
+        "username": "Username (optional)",
+        "password": "Password (optional)",
+        "client_id": "Client ID (optional)",
+        "topic": "Topic",
+        "error_topic": "Error topic (optional)",
+        "retain": "Retain messages",
+        "discovery": "Home Assistant discovery",
+        "discovery_prefix": "Discovery prefix (optional)",
+        "qos": "Quality of service (0 or 1)",
+        "send_finished": "Publish finished tests",
+        "send_failed": "Publish failed tests"
+      }
+    },
     "ntfy": {
       "title": "ntfy",
       "fields": {
@@ -641,6 +686,7 @@
       "fields": {
         "token": "Bot Token",
         "chat_id": "Chat ID",
+        "message_thread_id": "Topic ID (optional)",
         "error_message": "Error message",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Send error messages",

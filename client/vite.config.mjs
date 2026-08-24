@@ -11,6 +11,16 @@ logger.error = (msg, options) => {
 };
 
 export default defineConfig({
+    /*
+     * Relative, so index.html asks for its assets against wherever it was itself
+     * served rather than against the root of the host - upstream #771, whose
+     * report is exactly that: the page loads under a Traefik PathPrefix and then
+     * asks for /assets/index.js, which is outside it.
+     *
+     * It is also what lets the client work out its own prefix at runtime, so one
+     * build serves any subdirectory - see common/utils/BasePath.js.
+     */
+    base: "./",
     customLogger: logger,
     plugins: [
         // A new service worker otherwise waits for every tab to close before it

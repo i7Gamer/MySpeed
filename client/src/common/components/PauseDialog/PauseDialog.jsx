@@ -11,6 +11,9 @@ import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import {
     carriesWindow, storedTimeToInput, windowProblem, writeQuietHours
 } from "@/common/components/PauseDialog/quietHoursWindow";
+import {
+    TIMEZONE_OFF, storedTimezoneToInput, timezoneOptions
+} from "@/common/components/PauseDialog/timezoneChoice";
 import "./styles.sass";
 
 const PRESETS = [
@@ -35,9 +38,20 @@ export const PauseDialog = ({open, onClose, onPause}) => {
     const [quietEnd, setQuietEnd] = useState("");
     const [savingQuiet, setSavingQuiet] = useState(false);
 
+    // The clock both the window above and the cron are judged on. It lives here
+    // rather than in a settings page of its own because these are the hours it
+    // decides the meaning of: "no tests between 23:00 and 07:00" says nothing
+    // until something says whose 23:00.
+    const [timezone, setTimezone] = useState(TIMEZONE_OFF);
+
+    // Built once per render of an open dialog rather than per keystroke: it is
+    // some 400 entries, and the stored value is the only input that moves it.
+    const zones = timezoneOptions(config.timezone);
+
     const showStoredWindow = (stored) => {
         setQuietStart(storedTimeToInput(stored.quietHoursStart));
         setQuietEnd(storedTimeToInput(stored.quietHoursEnd));
+        setTimezone(storedTimezoneToInput(stored.timezone));
     };
 
     // Read when the dialog opens rather than at mount: the config arrives
@@ -52,6 +66,23 @@ export const PauseDialog = ({open, onClose, onPause}) => {
 
         setSavingQuiet(true);
         try {
+            /*
+             * Written first, and only when it moved.
+             *
+             * First, because the window is read *through* it: writing the pair
+             * against the old zone and then changing the zone would leave a
+             * moment - and, if the second write is refused, a lasting state -
+             * where the stored hours mean something nobody asked for.
+             *
+             * Only when it moved, because the server restarts the schedule on
+             * every write of this key: node-schedule compiles the zone into the
+             * job and cannot be told otherwise. Saving an unchanged zone would
+             * tear down a working timer and build an identical one, which for a
+             * schedule with the offset enabled also re-randomises the next run.
+             */
+            if (timezone !== storedTimezoneToInput(config.timezone))
+                assertOk(await patchRequest("/config/timezone", {value: timezone}), "update timezone");
+
             await writeQuietHours(
                 async (key, value) => assertOk(await patchRequest(`/config/${key}`, {value}), "update quiet hours"),
                 quietStart, quietEnd, config);
@@ -178,6 +209,20 @@ export const PauseDialog = ({open, onClose, onPause}) => {
                                                    onChange={(e) => setQuietEnd(e.target.value)}/>
                                         </label>
                                     </div>
+                                    <label className="pause-quiet-timezone">
+                                        <span>{t("pause.timezone")}</span>
+                                        <select className="dialog-input timezone-select"
+                                                aria-label={t("pause.timezone")}
+                                                value={timezone}
+                                                onChange={(e) => setTimezone(e.target.value)}>
+                                            {/* The sentinel is offered by what it
+                                                means, not by its stored spelling:
+                                                "none" names nothing to a reader. */}
+                                            <option value={TIMEZONE_OFF}>{t("pause.timezone_server")}</option>
+                                            {zones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+                                        </select>
+                                    </label>
+                                    <p className="pause-quiet-hint">{t("pause.timezone_desc")}</p>
                                     <button type="button" className="dialog-btn pause-quiet-save"
                                             onClick={saveQuietHours} disabled={!!quietProblem || savingQuiet}>
                                         {t("dialog.save")}

@@ -197,6 +197,57 @@ describe("errorHandler", () => {
         });
     });
 
+    /**
+     * The reason describeError exists, seen from the end an operator reads.
+     *
+     * Upstream #1549: a validation failure reported as "Validation error" and
+     * nothing else, 138 times, ended by deleting the database. The columns and
+     * the rule sit on properties of the error, and neither the console line nor
+     * the stack carried them - a stack's first line is "Error: <message>", which
+     * is the same nothing.
+     *
+     * Built by hand rather than imported so this holds whatever sequelize's own
+     * constructors do next: what is being asserted is that the handler reads the
+     * properties, not that one library shape survives.
+     */
+    describe("an error carrying detail behind its message", () => {
+        const validationError = `(() => {
+            const error = new Error("Validation error");
+            error.name = "SequelizeValidationError";
+            error.errors = [{message: "", type: "notNull Violation", path: "ping"}];
+            return error;
+        })()`;
+
+        it("names the column and the rule on the console", async () => {
+            const {stderr} = await runHandler("{fatal: false}", validationError);
+
+            assert.match(stderr, /notNull Violation on ping/,
+                "the operator is told only that something is invalid");
+        });
+
+        it("keeps them in the log file, alongside the frames", async () => {
+            await runHandler("{fatal: false}", validationError);
+
+            const entry = logContents();
+            assert.match(entry, /notNull Violation on ping/);
+            assert.match(entry, /at /, "the stack was dropped to make room for the detail");
+        });
+
+        /**
+         * The entries accumulate in one file, so this reads the last one rather
+         * than the whole log - every case above has already written "boom" into
+         * it, and a scan of the file would match those.
+         */
+        it("does not repeat an ordinary error's message above its own stack", async () => {
+            await runHandler("{fatal: false}");
+
+            const lastEntry = logContents().split("\n\n## ").pop();
+
+            assert.doesNotMatch(lastEntry, /\nboom\nError: boom/,
+                "an error with nothing hidden behind it is now recorded twice");
+        });
+    });
+
     describe("fatal", () => {
         it("exits with a failure code by default", async () => {
             const {code, stdout} = await runHandler();

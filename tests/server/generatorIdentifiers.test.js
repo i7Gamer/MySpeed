@@ -43,7 +43,7 @@ const parsesAsIdentifier = (name) => {
  * reach the name field and do it silently.
  */
 const PINNED_INTEGRATION_NAMES = [
-    "discord", "gotify", "healthChecks", "influxdb", "ntfy", "pushover", "telegram", "webhook"
+    "discord", "email", "gotify", "healthChecks", "influxdb", "mqtt", "ntfy", "pushover", "telegram", "webhook"
 ];
 
 describe("the generated import identifiers", () => {

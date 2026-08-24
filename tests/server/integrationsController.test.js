@@ -92,13 +92,27 @@ describe("secretFieldNames", () => {
  */
 const ADDRESSING_FIELDS = {
     discord: ["url"],
+    // email is the one entry here that is not only about capability. `username`
+    // and `password` are the credential, in the usual way - but `from` and `to`
+    // are somebody's mailboxes, withheld because a demo visitor has no business
+    // reading the operator's address and a redacted export is a file people
+    // attach to bug reports. The relay's own host and port stay in the clear:
+    // a hostname is not a capability without the credentials above it, and
+    // blanking it would cost the diagnosis such an export exists for.
+    email: ["username", "password", "from", "to"],
     webhook: ["url"],
     healthChecks: ["url"],
     ntfy: ["token", "topic", "url"],
     gotify: ["key"],
     pushover: ["token", "user_key"],
     telegram: ["token"],
-    influxdb: ["token"]
+    influxdb: ["token"],
+    // The two halves of a broker login, and nothing else. The topic is not
+    // withheld: unlike an ntfy topic it is no capability on its own - a broker
+    // that lets a stranger publish to it has an ACL problem rather than a
+    // disclosure one - and blanking it would drop the routing from an export
+    // the operator restores from.
+    mqtt: ["username", "password"]
 };
 
 describe("what each integration withholds", () => {

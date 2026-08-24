@@ -1,6 +1,49 @@
 import { truncate } from '../helpers.js';
 
-const RATE_LIMIT_MESSAGE = "Too many requests. Please try again later";
+/**
+ * The one wording a refusal is stored under, whichever provider refused and
+ * however it phrased it.
+ *
+ * Exported because it is no longer only a display string: the backoff that holds
+ * the schedule after a refusal is the reader, and the tests that walk that path
+ * need to name what they are looking for without keeping a copy of it.
+ */
+export const RATE_LIMIT_MESSAGE = "Too many requests. Please try again later";
+
+/**
+ * What a refusal looks like before it is normalised.
+ *
+ * Matched rather than compared, and case-insensitively: the three CLIs word this
+ * differently, the wording changes between their versions, and it arrives
+ * wrapped in whatever else the line said - "Error: Too many requests received,
+ * please try again later." Ookla is the one observed to send it (upstream #846,
+ * #1092), and this is the phrase it and its API use.
+ *
+ * Deliberately only that phrase. A bare "429" would match a byte count, a server
+ * id or an elapsed time just as readily, and reading an ordinary failure as a
+ * refusal is the one direction this must not fail in: it would silence the
+ * schedule for up to two hours over a dropped socket. Another provider's
+ * phrasing is one alternation away when one is actually seen.
+ */
+const RATE_LIMIT_PATTERN = /too many requests/i;
+
+export const isRateLimitMessage = (text) => typeof text === "string" && RATE_LIMIT_PATTERN.test(text);
+
+/**
+ * Applied on both paths a CLI can report an error by, so that the two agree.
+ *
+ * Only the stderr fallback below used to do this, and the JSON branch that reads
+ * `data.error` did not - so the same refusal was stored under its own wording
+ * depending on which stream the CLI chose to write it on. That was invisible
+ * while the message was only ever read by a human; the backoff reads it now, and
+ * a refusal it cannot recognise is one the schedule asks for again a minute
+ * later.
+ *
+ * Anything that is not a string passes through untouched, because it is not this
+ * function's business to decide what such a value means - capError below already
+ * has that job.
+ */
+const normaliseError = (text) => isRateLimitMessage(text) ? RATE_LIMIT_MESSAGE : text;
 
 /**
  * How much of a failing run's output is worth storing.
@@ -80,11 +123,27 @@ export const parseCliOutput = (mode, stdout, stderr) => {
             // parse at all.
             if (data === null || typeof data !== "object") continue;
 
-            if (data.error) result.error = data.error;
+            if (data.error) result.error = normaliseError(data.error);
 
             if (isResult(mode, data)) {
+                const normalised = result.error;
+
                 result = data;
                 hasResult = true;
+
+                /*
+                 * Carried across the assignment, which replaces the whole
+                 * object.
+                 *
+                 * For ookla the two are never the same record - isResult wants
+                 * `type: "result"`, and an error report does not say that - so
+                 * the line above stood. libre adopts any object and cloudflare
+                 * anything that is not an array, so for both of them the record
+                 * carrying the error *is* the result, and replacing `result`
+                 * put the wording of the CLI back and made normaliseError a
+                 * no-op on two of the three providers.
+                 */
+                if (normalised !== undefined) result.error = normalised;
             }
         }
     }
@@ -100,7 +159,7 @@ export const parseCliOutput = (mode, stdout, stderr) => {
         // its own progress log as the reason it stopped.
         const text = stderr.trim() || plainTextLines(stdout);
 
-        if (text) result.error = text.includes("Too many requests") ? RATE_LIMIT_MESSAGE : text;
+        if (text) result.error = normaliseError(text);
     }
 
     // Capped in one place, so it holds however the error was arrived at.

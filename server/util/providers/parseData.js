@@ -272,8 +272,47 @@ const directionSpeed = (measurements) => {
             best = {size, figure};
     }
 
-    return best === null ? 0 : round(best.figure);
+    /*
+     * Null, not zero, when nothing ran.
+     *
+     * A fabricated zero is indistinguishable from the reading it imitates once
+     * it is in the column, and the two mean opposite things: a direction that
+     * ran and moved nothing is a real measurement - it is what an outage looks
+     * like - while a direction that never ran is the absence of one. Answering 0
+     * for the second published a malfunction as a line delivering nothing, which
+     * is the fault the comment below parseCloudflare's success branch describes
+     * having fixed for the case where the blocks are missing altogether.
+     *
+     * `ranAnything` above is what keeps the distinction: an entry the CLI
+     * skipped is not counted, and one that succeeded is - whatever figure it
+     * reports, zero included.
+     */
+    return best === null ? null : round(best.figure);
 };
+
+/**
+ * A cloudflare run that measured nothing, with whatever it did establish kept.
+ *
+ * Both callers below reach this - the run whose measurement blocks never
+ * arrived, and the run whose blocks arrived empty - and they are the same
+ * outcome, so they answer with the same row rather than two spellings of it.
+ *
+ * It used to answer zeros, which carry no error, and isFailedTest reads the
+ * placeholders only when all three agree on -1 - so a row of zeros was a
+ * success. A run that measured nothing therefore counted toward the success
+ * total and pulled every download, upload and ping average toward zero: a
+ * malfunction published as a line delivering nothing.
+ *
+ * The placeholders rather than a throw, because both of the things this does are
+ * worth keeping. The parser stays total - a CLI that prints something unusable
+ * is not an exception - and the identity survives: the attempt reached an edge
+ * and came from an address, and that is true of the attempt even when the
+ * measurement is not.
+ */
+const unmeasurableRun = (identity) => ({
+    ping: FAILED_TEST, jitter: null, download: FAILED_TEST, upload: FAILED_TEST, time: null,
+    resultId: null, ...identity, bytesDownloaded: null, bytesUploaded: null
+});
 
 export const parseCloudflare = (test) => {
     const metadata = test?.metadata ?? {};
@@ -308,6 +347,25 @@ export const parseCloudflare = (test) => {
         const download = directionSpeed(downloadTests);
         const upload = directionSpeed(uploadTests);
 
+        /*
+         * The blocks being *present* is not the same as their holding anything,
+         * and the condition above only asks the first question: `{}` and `[]`
+         * are both truthy, so a run that measured nothing came down here and had
+         * a zero invented for each direction. That is the same row of zeros the
+         * failure branch below was written to stop, arriving by the other door.
+         *
+         * Either direction is enough to refuse the run. Both columns are NOT
+         * NULL and there is no sentinel for an unmeasured throughput - unlike
+         * the latency column, which can borrow zero because no connection
+         * produces one - so half a result has nowhere honest to be stored.
+         *
+         * The ping is deliberately not part of this. Zero already means "nobody
+         * measured this" there, testOutcome.js owns that convention, and a run
+         * that measured its throughput is a result whether or not a latency came
+         * with it.
+         */
+        if (download === null || upload === null) return unmeasurableRun(identity);
+
         const ping = round(test.latency_measurement.avg_latency_ms) ?? 0;
         const jitter = calculateJitter(test.latency_measurement.latency_measurements);
 
@@ -318,25 +376,7 @@ export const parseCloudflare = (test) => {
             bytesUploaded: transferred(uploadTests)};
     }
 
-    /*
-     * No measurements at all is a failed run, and it used to be recorded as a
-     * flawless one.
-     *
-     * This answered zeros, which carry no error - and isFailedTest reads the
-     * placeholders only when all three agree on -1, so a row of zeros was a
-     * success. A run that measured nothing therefore counted toward the success
-     * total and pulled every download, upload and ping average toward zero: a
-     * malfunction published as a line delivering nothing.
-     *
-     * The placeholders rather than a throw, because both of the things this
-     * branch already did are worth keeping. The parser stays total - a CLI that
-     * prints something unusable is not an exception - and the identity survives,
-     * which is the whole point of the block above: the attempt reached an edge
-     * and came from an address, and that is true of the attempt even when the
-     * measurement is not.
-     */
-    return {ping: FAILED_TEST, jitter: null, download: FAILED_TEST, upload: FAILED_TEST, time: null,
-        resultId: null, ...identity, bytesDownloaded: null, bytesUploaded: null};
+    return unmeasurableRun(identity);
 };
 
 export const parseData = (provider, data) => {

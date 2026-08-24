@@ -370,6 +370,36 @@ export const safeLookup = (hostname, options, callback) => {
  *
  * @returns {{safe: true}|{safe: false, reason: string}}
  */
+/**
+ * The address half of the outbound guard, for a destination that is a host
+ * rather than a URL.
+ *
+ * Split out because not every integration speaks HTTP any more: the email module
+ * connects to a bare host and port, so it cannot reach this policy through
+ * checkOutboundTarget below - and a copy of the two checks in that module would
+ * be the start of the two drifting.
+ *
+ * Loopback and the private ranges are allowed on purpose. An integration on the
+ * same host or the same LAN is ordinary, and a mail relay is the most ordinary
+ * of them. What is refused is link-local - 169.254.169.254 is the cloud metadata
+ * service - and fd00:ec2::254, which is that service in the other family and is
+ * Unique-Local rather than link-local, so the first check does not reach it.
+ */
+export const checkOutboundHost = (value) => {
+    // Strips the brackets an IPv6 literal carries in a URL.
+    const hostname = String(value ?? "").replace(/^\[|]$/g, "");
+
+    if (hostname === "") return {safe: false, reason: "No host was given"};
+
+    if (isLinkLocalAddress(hostname))
+        return {safe: false, reason: "That address is a link-local one"};
+
+    if (isMetadataAddress(hostname))
+        return {safe: false, reason: "That address is the cloud metadata service"};
+
+    return {safe: true};
+};
+
 export const checkOutboundTarget = (value) => {
     let url;
     try {
@@ -381,21 +411,7 @@ export const checkOutboundTarget = (value) => {
     if (!ALLOWED_PROTOCOLS.has(url.protocol))
         return {safe: false, reason: "A URL has to use http or https"};
 
-    // Strips the brackets an IPv6 literal carries in a URL.
-    const hostname = url.hostname.replace(/^\[|]$/g, "");
-
-    if (isLinkLocalAddress(hostname))
-        return {safe: false, reason: "That address is a link-local one"};
-
-    // The metadata service in the other family. Loopback and the private ranges
-    // are allowed here on purpose - an integration on the same host or the same
-    // LAN is ordinary - but fd00:ec2::254 is the one address in that space with
-    // anything to gain, and it is Unique-Local rather than link-local, so the
-    // check above does not reach it.
-    if (isMetadataAddress(hostname))
-        return {safe: false, reason: "That address is the cloud metadata service"};
-
-    return {safe: true};
+    return checkOutboundHost(url.hostname);
 };
 
 /**
