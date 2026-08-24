@@ -15,7 +15,7 @@ import {StatusProvider} from "./common/contexts/Status";
 import {AlertProvider} from "@/common/contexts/Alert";
 import {ThemeProvider} from "@/common/contexts/Theme";
 import {PreferencesProvider} from "@/common/contexts/Preferences";
-import i18n from './i18n';
+import i18n, {FALLBACK_LANGUAGE} from './i18n';
 import Loading from "@/pages/Loading";
 import Error from "@/pages/Error";
 import RouteError from "@/pages/RouteError";
@@ -118,7 +118,20 @@ const App = () => {
         }
 
         const loaded = () => setTranslationsLoaded(true);
-        const failed = () => setTranslationError(true);
+        /*
+         * A locale that would not load is only fatal when it leaves nothing to
+         * render with.
+         *
+         * This used to fire for any language at all, and the fallback was
+         * already configured - so upstream #1330, where the missing file was
+         * da.json and English was perfectly fine, took the interface down for a
+         * language nobody had asked to read it in. English is bundled now, so
+         * the answer here is almost always "there is plenty left"; the check is
+         * what makes that true rather than assumed.
+         */
+        const failed = () => {
+            if (!i18n.hasResourceBundle(FALLBACK_LANGUAGE, "translation")) setTranslationError(true);
+        };
 
         i18n.on("initialized", loaded);
         i18n.on("failedLoading", failed);
@@ -134,7 +147,12 @@ const App = () => {
     }
 
     if (translationError) {
-        return <Error text="Failed to load translations"/>;
+        // disableReload, because this page reloads itself after five seconds by
+        // default and the reload refetches the very thing that failed - which is
+        // the loop both #725 and #1330 are named after. Nothing a reload can fix
+        // is left by the time this renders: the bundled locale is gone, which
+        // means i18next itself did not come up.
+        return <Error text="Failed to load translations" disableReload/>;
     }
 
     return <RouterProvider router={router}/>;
