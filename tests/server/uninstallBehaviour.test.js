@@ -505,20 +505,7 @@ describe("the uninstaller", {skip: bash ? false : "no bash on PATH - uninstall.s
         });
 
         /**
-         * And an installation with no data directory is still an installation.
-         *
-         * The staging move was attempted regardless, so `--keep-data` against an
-         * install that had never been run - or whose data lives somewhere else -
-         * failed on a directory that was not there and stopped. By then the
-         * service was stopped and both unit files were deleted, so the flag that
-         * exists to make an uninstall safer left the host half uninstalled and
-         * the operator with an exit code and a `mv` error.
-         *
-         * There is nothing to keep, which is a thing to say rather than a reason
-         * to stop - and nothing for the account to own afterwards either.
-         */
-        /**
-         * And "no data directory" means nothing there, not "not a directory".
+         * "Nothing to keep" means nothing there, not "not a directory".
          *
          * The staging move handled whatever was at that path, so anything called
          * data came back afterwards. Asking `[ -d ]` before staging narrowed that
@@ -564,6 +551,43 @@ describe("the uninstaller", {skip: bash ? false : "no bash on PATH - uninstall.s
                 "the link naming where the data lives was removed with the installation");
         });
 
+        /**
+         * And a link whose target IS mounted is kept as the link it is, never
+         * resolved. The staging mv moves the link itself, so the target - a
+         * volume this script has no mandate over - stays untouched on both ends
+         * of the round trip.
+         */
+        it("keeps a link at the data path without touching what it points at", () => {
+            const machine = host({service: true, recorded: true, installed: true, data: false, account: true});
+            const volume = machine.at("volume");
+
+            fs.mkdirSync(volume, {recursive: true});
+            fs.writeFileSync(path.join(volume, "storage.db"), "the database, on its own disk");
+            fs.symlinkSync(volume, machine.at("opt", "myspeed", "data"), "dir");
+
+            const result = machine.run("--keep-data");
+
+            assert.equal(result.status, 0, result.output);
+            assert.equal(result.survives("volume", "storage.db"), true,
+                "--keep-data reached through the link and touched the volume behind it");
+            assert.equal(fs.lstatSync(machine.at("opt", "myspeed", "data")).isSymbolicLink(), true,
+                "the link came back as something other than a link");
+            assert.doesNotMatch(result.calls, /userdel/, "the owner of the kept data was deleted");
+        });
+
+        /**
+         * An installation with no data directory is still an installation.
+         *
+         * The staging move was attempted regardless, so `--keep-data` against an
+         * install that had never been run failed on a directory that was not
+         * there and stopped. By then the service was stopped and both unit files
+         * were deleted, so the flag that exists to make an uninstall safer left
+         * the host half uninstalled and the operator with an exit code and a
+         * `mv` error.
+         *
+         * There is nothing to keep, which is a thing to say rather than a reason
+         * to stop - and nothing for the account to own afterwards either.
+         */
         it("finishes when there is no data directory to keep", () => {
             const result = host({service: true, recorded: true, installed: true, data: false, account: true})
                 .run("--keep-data");
