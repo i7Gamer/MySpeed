@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
     carriesWindow, windowProblem, writeQuietHours
 } from "@/common/components/PauseDialog/quietHoursWindow.js";
+import { storedTimezoneToInput } from "@/common/components/PauseDialog/timezoneChoice.js";
 import { blockEnd, readSource } from "../helpers/source.js";
 
 const source = readSource("client/src/common/components/PauseDialog/PauseDialog.jsx");
@@ -31,7 +32,7 @@ class RequestError extends Error {}
  * pair looks like, and the starts differ, so fields re-seeded from the wrong
  * side cannot pass for the right one.
  */
-const CONTEXT = {quietHoursStart: "23:00", quietHoursEnd: "08:00"};
+const CONTEXT = {quietHoursStart: "23:00", quietHoursEnd: "08:00", timezone: "Europe/Berlin"};
 const SERVER_HOLDS = {quietHoursStart: "22:00", quietHoursEnd: "08:00"};
 
 const FIRST_PATCH = 1;
@@ -42,12 +43,16 @@ const SECOND_PATCH = 2;
  * PATCH; `reread` (or a whole `checkConfig`) is what the failure-path re-read
  * finds on the server.
  */
-const dialogSaving = ({quietStart, quietEnd, refuse = () => false, reread = SERVER_HOLDS, checkConfig}) => {
+const dialogSaving = ({quietStart, quietEnd, refuse = () => false, reread = SERVER_HOLDS, checkConfig,
+                       timezone = CONTEXT.timezone}) => {
     const seen = {patches: [], toasts: [], shown: [], reloads: 0, saving: []};
 
     const save = saveIn({
         quietProblem: windowProblem(quietStart, quietEnd),
         quietStart, quietEnd,
+        // Defaulted to what the context holds, so the cases below that are not
+        // about the zone record the two window PATCHes and nothing else.
+        timezone, storedTimezoneToInput,
         config: CONTEXT,
         writeQuietHours, carriesWindow, RequestError,
         setSavingQuiet: (value) => seen.saving.push(value),
@@ -113,6 +118,40 @@ describe("the quiet hours save", () => {
             "the fields go on showing the window that was asked for, not the stored one");
         assert.equal(seen.reloads, 1, "a partial save does not resync the config");
         assert.deepEqual(seen.saving, [true, false]);
+    });
+
+    /**
+     * The zone decides what the window it is saved beside *means*, so it goes
+     * first - a pair written against the old zone and then re-judged by a new
+     * one is a window nobody asked for, and if the second write is refused that
+     * state is what stands.
+     */
+    it("writes a changed timezone ahead of the window", async () => {
+        const {save, seen} = dialogSaving({quietStart: "22:00", quietEnd: "07:00", timezone: "Etc/GMT+8"});
+
+        await save();
+
+        assert.deepEqual(seen.patches, [
+            {url: "/config/timezone", value: "Etc/GMT+8"},
+            {url: "/config/quietHoursStart", value: "22:00"},
+            {url: "/config/quietHoursEnd", value: "07:00"}
+        ]);
+        assert.deepEqual(seen.toasts, ["green"]);
+    });
+
+    /**
+     * Writing this key restarts the schedule - node-schedule compiles the zone
+     * into the job - and with the offset enabled that also re-randomises when
+     * the next test lands. Saving a window the operator edited without touching
+     * the zone must not cost either.
+     */
+    it("leaves an unchanged timezone alone", async () => {
+        const {save, seen} = dialogSaving({quietStart: "22:00", quietEnd: "07:00"});
+
+        await save();
+
+        assert.deepEqual(seen.patches.filter((patch) => patch.url === "/config/timezone"), [],
+            "every save of the quiet hours tears the schedule down and rebuilds it");
     });
 
     // checkConfig hands back the parsed body whatever the status was, so an

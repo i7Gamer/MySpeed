@@ -139,6 +139,9 @@
     "custom": "Eigene Dauer",
     "quiet_hours": "Ruhezeiten",
     "quiet_hours_desc": "Geplante Tests werden täglich zwischen diesen Uhrzeiten übersprungen. Selbst gestartete Tests laufen immer.",
+    "timezone": "Zeitzone",
+    "timezone_server": "Serveruhr",
+    "timezone_desc": "Die Uhr, nach der sich sowohl die Ruhezeiten als auch der Testzeitplan richten.",
     "quiet_from": "Von",
     "quiet_until": "Bis"
   },

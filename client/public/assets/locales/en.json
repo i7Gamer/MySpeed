@@ -139,6 +139,9 @@
     "custom": "Custom Duration",
     "quiet_hours": "Quiet hours",
     "quiet_hours_desc": "Scheduled tests are skipped every day between these times. Tests you start yourself always run.",
+    "timezone": "Timezone",
+    "timezone_server": "Server clock",
+    "timezone_desc": "The clock the quiet hours and the test schedule are both judged on.",
     "quiet_from": "From",
     "quiet_until": "Until"
   },

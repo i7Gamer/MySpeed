@@ -75,6 +75,21 @@
     color: $subtext
     font-size: 0.85rem
 
+// The zone the range above is read in, so it sits with them and is labelled the
+// same way. Full width rather than beside them: a zone name is long - the list
+// runs to "America/Argentina/Rio_Gallegos" - and sharing the row with two time
+// inputs would truncate every one of them.
+.pause-quiet-timezone
+  display: flex
+  flex-direction: column
+  gap: 0.35rem
+  margin-top: 0.75rem
+  color: $subtext
+  font-size: 0.85rem
+
+  select
+    width: 100%
+
 .pause-quiet-save
   width: 100%
   margin-top: 0.75rem
