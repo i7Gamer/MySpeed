@@ -77,6 +77,31 @@ describe("normalising a refusal", () => {
         assert.equal(parsed.error, RATE_LIMIT_MESSAGE);
     });
 
+    /**
+     * On every provider, not only the one whose isResult is strict enough to
+     * hide the bug.
+     *
+     * ookla adopts a JSON record as the result only when it says
+     * `type: "result"`, so a record carrying nothing but an error never became
+     * one and the normalised wording survived. libre adopts any object and
+     * cloudflare adopts anything that is not an array - so for both of them the
+     * record carrying the error *was* the result, and assigning it over `result`
+     * put the wording of the CLI straight back. Every case above used ookla,
+     * which is why nothing noticed.
+     */
+    it("normalises one on every provider, not just the strict one", () => {
+        for (const mode of ["ookla", "libre", "cloudflare"])
+            assert.equal(
+                parseCliOutput(mode, JSON.stringify({error: "Too many requests received, try again later."}), "").error,
+                RATE_LIMIT_MESSAGE, `${mode} kept the wording of the CLI`);
+    });
+
+    it("still keeps an unrelated error verbatim on those providers", () => {
+        for (const mode of ["libre", "cloudflare"])
+            assert.equal(parseCliOutput(mode, JSON.stringify({error: "Latency test failed"}), "").error,
+                "Latency test failed", mode);
+    });
+
     it("leaves an unrelated error alone on both paths", () => {
         assert.equal(parseCliOutput("ookla", "", "Cannot open socket").error, "Cannot open socket");
         assert.equal(parseCliOutput("ookla", '{"error":"Latency test failed"}', "").error, "Latency test failed");

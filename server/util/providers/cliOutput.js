@@ -126,8 +126,24 @@ export const parseCliOutput = (mode, stdout, stderr) => {
             if (data.error) result.error = normaliseError(data.error);
 
             if (isResult(mode, data)) {
+                const normalised = result.error;
+
                 result = data;
                 hasResult = true;
+
+                /*
+                 * Carried across the assignment, which replaces the whole
+                 * object.
+                 *
+                 * For ookla the two are never the same record - isResult wants
+                 * `type: "result"`, and an error report does not say that - so
+                 * the line above stood. libre adopts any object and cloudflare
+                 * anything that is not an array, so for both of them the record
+                 * carrying the error *is* the result, and replacing `result`
+                 * put the wording of the CLI back and made normaliseError a
+                 * no-op on two of the three providers.
+                 */
+                if (normalised !== undefined) result.error = normalised;
             }
         }
     }
