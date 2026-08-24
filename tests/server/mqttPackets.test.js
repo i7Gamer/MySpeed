@@ -159,6 +159,25 @@ describe("PUBLISH", () => {
 
         assert.deepEqual([...withId.subarray(2)], [...encodeString("t"), 0x12, 0x34, 0x78]);
     });
+
+    /**
+     * A string as readily as a Buffer. Every caller here publishes JSON, and
+     * JSON.stringify answers a string - so requiring the caller to wrap it was a
+     * step each of them had to remember, and forgetting it threw from inside
+     * Buffer.concat with a message about "list[2]".
+     */
+    it("takes a string payload as UTF-8 bytes", () => {
+        const fromString = publishPacket({topic: "t", payload: '{"a":1}', qos: 0});
+        const fromBuffer = publishPacket({topic: "t", payload: Buffer.from('{"a":1}'), qos: 0});
+
+        assert.deepEqual([...fromString], [...fromBuffer]);
+    });
+
+    it("counts a multibyte payload in bytes", () => {
+        const packet = publishPacket({topic: "t", payload: "ä", qos: 0});
+
+        assert.deepEqual([...packet.subarray(2)], [...encodeString("t"), 0xc3, 0xa4]);
+    });
 });
 
 describe("DISCONNECT", () => {

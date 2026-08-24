@@ -2,7 +2,7 @@ import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";
 import {
-    CONNACK, CONNECT, DISCONNECT, PUBACK, PUBLISH, encodeLength, publish, readPacket
+    CONNACK, CONNECT, DISCONNECT, PUBACK, PUBLISH, encodeLength, publish, publishAll, readPacket
 } from "../../server/util/mqtt.js";
 
 /**
@@ -251,6 +251,88 @@ describe("a broker that says no", () => {
         await assert.rejects(() => publish({
             host: "127.0.0.1", port: 1, topic: "t", payload: Buffer.alloc(0), timeout: TIMEOUT
         }), /ECONNREFUSED|EACCES|closed the connection/);
+    });
+});
+
+/**
+ * Several messages down one connection.
+ *
+ * Home Assistant discovery is one retained config per sensor, and there are
+ * seven of them - so a connection each would be seven handshakes to a broker
+ * that is perfectly happy to take them all on one. The publish path was written
+ * for a single message; this is the same exchange with more PUBLISHes in the
+ * middle of it.
+ */
+describe("publishing several messages at once", () => {
+    const three = [
+        {topic: "a/one", payload: Buffer.from("1"), retain: true},
+        {topic: "a/two", payload: Buffer.from("2"), retain: true},
+        {topic: "a/three", payload: Buffer.from("3")}
+    ];
+
+    const sendAll = (overrides = {}) => publishAll({
+        host: "127.0.0.1", port, messages: three, timeout: TIMEOUT, ...overrides
+    });
+
+    it("uses one connection for all of them", async () => {
+        await sendAll();
+        await sawType(DISCONNECT);
+
+        assert.equal(seen.filter((packet) => packet.type === CONNECT).length, 1,
+            "each message opened its own connection");
+        assert.equal(seen.filter((packet) => packet.type === PUBLISH).length, 3);
+    });
+
+    it("sends them in the order it was given", async () => {
+        await sendAll();
+        await sawType(DISCONNECT);
+
+        const topics = seen.filter((packet) => packet.type === PUBLISH).map((packet) => contentOf(packet).topic);
+
+        assert.deepEqual(topics, ["a/one", "a/two", "a/three"]);
+    });
+
+    // Per message, not per call: a discovery config has to be retained and the
+    // result beside it does not.
+    it("takes the retain flag from each message", async () => {
+        await sendAll();
+        await sawType(DISCONNECT);
+
+        const flags = seen.filter((packet) => packet.type === PUBLISH).map((packet) => packet.flags & 0x01);
+
+        assert.deepEqual(flags, [1, 1, 0]);
+    });
+
+    /**
+     * At QoS 1 the exchange is over when the last one has been acknowledged, not
+     * the first - so each needs its own identifier and the acknowledgements have
+     * to be counted.
+     */
+    it("waits for every acknowledgement at QoS 1", async () => {
+        behaviour.ackPublish = true;
+
+        await sendAll({qos: 1});
+        await sawType(DISCONNECT);
+
+        const ids = seen.filter((packet) => packet.type === PUBLISH)
+            .map((packet) => packet.body.readUInt16BE(2 + packet.body.readUInt16BE(0)));
+
+        assert.equal(new Set(ids).size, 3, "two messages shared a packet identifier");
+    });
+
+    it("does not report success when one acknowledgement never comes", async () => {
+        behaviour.ackPublish = false;
+
+        await assert.rejects(() => sendAll({qos: 1, timeout: 300}), /did not answer/);
+    });
+
+    // The single-message helper is the same path with one message in it, so the
+    // whole file above is also a test of this one.
+    it("is what the single-message helper is built on", async () => {
+        await publish({host: "127.0.0.1", port, topic: "solo", payload: Buffer.from("x"), timeout: TIMEOUT});
+        await sawType(DISCONNECT);
+
+        assert.equal(seen.filter((packet) => packet.type === PUBLISH).length, 1);
     });
 });
 

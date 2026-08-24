@@ -119,6 +119,17 @@ export const connectPacket = ({clientId, username, password, keepAlive}) => {
     ]));
 };
 
+/**
+ * The payload as bytes.
+ *
+ * A string is accepted as well as a Buffer, because a payload is very often one
+ * - JSON.stringify answers a string, and every caller here is publishing JSON.
+ * Encoded as UTF-8, which is what the length in front of the topic is counted in
+ * too.
+ */
+const payloadBytes = (payload) =>
+    Buffer.isBuffer(payload) ? payload : Buffer.from(String(payload ?? ""), "utf8");
+
 export const publishPacket = ({topic, payload, qos = 0, retain = false, packetId}) => {
     const flags = (retain ? 0x01 : 0) | ((qos & 0x03) << 1);
 
@@ -127,7 +138,7 @@ export const publishPacket = ({topic, payload, qos = 0, retain = false, packetId
     const identifier = Buffer.alloc(qos > 0 ? 2 : 0);
     if (qos > 0) identifier.writeUInt16BE(packetId);
 
-    return packet(PUBLISH, flags, Buffer.concat([encodeString(topic), identifier, payload]));
+    return packet(PUBLISH, flags, Buffer.concat([encodeString(topic), identifier, payloadBytes(payload)]));
 };
 
 export const DISCONNECT_PACKET = Buffer.from([DISCONNECT << 4, 0x00]);
@@ -206,8 +217,8 @@ export const generateClientId = () => `myspeed-${randomBytes(4).toString("hex")}
  * other integration in this project has to think about, for a saving of one
  * handshake an hour.
  */
-export const publish = ({host, port, secure, username, password, clientId, topic, payload,
-                            qos = 0, retain = false, timeout}) => new Promise((resolve, reject) => {
+export const publishAll = ({host, port, secure, username, password, clientId, messages,
+                               qos = 0, timeout}) => new Promise((resolve, reject) => {
     let settled = false;
     let received = Buffer.alloc(0);
     let socket;
@@ -254,13 +265,32 @@ export const publish = ({host, port, secure, username, password, clientId, topic
     const timer = setTimeout(() =>
         fail(new Error(`The broker did not answer within ${Math.round(timeout / 1000)} seconds`)), timeout);
 
-    const packetId = qos > 0 ? (randomBytes(2).readUInt16BE() % MAX_PACKET_ID) + 1 : undefined;
+    /*
+     * One identifier per message, taken in sequence from a random start.
+     *
+     * Distinct, because at QoS 1 the exchange is over when the *last* one has
+     * been acknowledged: two messages sharing an id would have one PUBACK close
+     * a connection with a message still outstanding. Wrapped rather than allowed
+     * to run past the field, and never zero, which the protocol reserves.
+     */
+    const firstId = (randomBytes(2).readUInt16BE() % MAX_PACKET_ID) + 1;
+    const identifierFor = (index) => ((firstId + index - 1) % MAX_PACKET_ID) + 1;
 
-    const sendMessage = () => {
-        socket.write(publishPacket({topic, payload, qos, retain, packetId}));
+    let acknowledged = 0;
+
+    const sendMessages = () => {
+        messages.forEach((message, index) => socket.write(publishPacket({
+            topic: message.topic,
+            payload: message.payload,
+            qos,
+            // Per message rather than per call: a discovery config has to be
+            // retained and the result beside it does not.
+            retain: message.retain === true,
+            packetId: identifierFor(index)
+        })));
 
         // At QoS 0 there is nothing to wait for: the broker acknowledges
-        // nothing, so the message is as delivered as it is ever going to be
+        // nothing, so the messages are as delivered as they are ever going to be
         // once the bytes have left. succeed() is what makes sure they have.
         if (qos === 0) succeed();
     };
@@ -272,10 +302,12 @@ export const publish = ({host, port, secure, username, password, clientId, topic
             if (code !== CONNECTION_ACCEPTED)
                 return fail(new Error(CONNACK_REASONS[code] ?? `the broker refused the connection (${code})`));
 
-            return sendMessage();
+            return sendMessages();
         }
 
-        if (received.type === PUBACK) succeed();
+        // Counted rather than taken as the end: the last acknowledgement is what
+        // finishes the exchange, and the broker may answer them in any order.
+        if (received.type === PUBACK && ++acknowledged >= messages.length) succeed();
     };
 
     try {
@@ -318,3 +350,13 @@ export const publish = ({host, port, secure, username, password, clientId, topic
     // otherwise leave this promise pending until the timeout.
     socket.on("close", () => fail(new Error("The broker closed the connection")));
 });
+
+/**
+ * One message, which is publishAll with a list of one.
+ *
+ * Kept as its own name because it is what almost every caller wants, and because
+ * reading `publishAll({messages: [one]})` at a call site says less than this
+ * does.
+ */
+export const publish = ({topic, payload, retain = false, ...connection}) =>
+    publishAll({...connection, messages: [{topic, payload, retain}]});

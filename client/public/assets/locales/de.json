@@ -647,6 +647,8 @@
         "topic": "Thema",
         "error_topic": "Fehler-Thema (optional)",
         "retain": "Nachrichten behalten",
+        "discovery": "Home-Assistant-Erkennung",
+        "discovery_prefix": "Erkennungs-Präfix (optional)",
         "qos": "Dienstgüte (0 oder 1)",
         "send_finished": "Abgeschlossene veröffentlichen",
         "send_failed": "Fehlgeschlagene veröffentlichen"

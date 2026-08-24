@@ -647,6 +647,8 @@
         "topic": "Topic",
         "error_topic": "Error topic (optional)",
         "retain": "Retain messages",
+        "discovery": "Home Assistant discovery",
+        "discovery_prefix": "Discovery prefix (optional)",
         "qos": "Quality of service (0 or 1)",
         "send_finished": "Publish finished tests",
         "send_failed": "Publish failed tests"
