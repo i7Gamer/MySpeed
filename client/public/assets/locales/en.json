@@ -570,7 +570,7 @@
         "username": "Username (optional)",
         "password": "Password (optional)",
         "from": "Sender address",
-        "to": "Recipient address",
+        "to": "Recipient addresses (comma separated)",
         "send_failed": "Send error messages",
         "error_subject": "Error subject",
         "error_subject_placeholder": "MySpeed: speedtest failed",

@@ -260,6 +260,38 @@ describe("the outcome", () => {
     });
 });
 
+/**
+ * More than one person wanting to know, which is the ordinary case for an alert:
+ * an operator and whoever is on call. A field that takes one address means
+ * either a second integration configured identically or a distribution list
+ * somebody has to maintain elsewhere.
+ */
+describe("several recipients", () => {
+    it("are all carried on the message", async () => {
+        const mail = await finish({to: "ops@example.com, oncall@example.com"});
+
+        assert.equal(mail.to, "ops@example.com, oncall@example.com");
+    });
+
+    /**
+     * Normalised before it goes out. The stored value is whatever was typed, and
+     * a list pasted from a mail client arrives with uneven spacing - which the
+     * pattern tolerates on the way in, so something has to tidy it on the way
+     * out rather than handing a relay `a@b.co ,   c@d.co`.
+     */
+    it("are tidied into one separated list", async () => {
+        const mail = await finish({to: "ops@example.com ,   oncall@example.com"});
+
+        assert.equal(mail.to, "ops@example.com, oncall@example.com");
+    });
+
+    it("still work when there is only one", async () => {
+        const mail = await finish({to: "ops@example.com"});
+
+        assert.equal(mail.to, "ops@example.com");
+    });
+});
+
 describe("the declared fields", () => {
     const fields = () => load().definition.fields;
     const named = (name) => fields().find((field) => field.name === name);
@@ -297,6 +329,29 @@ describe("the declared fields", () => {
 
         for (const bad of ["ops", "ops@", "@example.com", "ops @example.com", "ops@example", "a@b.c\nBcc: x@y.z"])
             assert.ok(!regex.test(bad), `${JSON.stringify(bad)} was accepted as an address`);
+    });
+
+    /**
+     * The recipient field takes a list; the sender does not, because a message
+     * has one sender and a relay checks it against the identity that
+     * authenticated.
+     */
+    it("accepts a list of recipients and only one sender", () => {
+        const to = named("to").regex;
+        const from = named("from").regex;
+
+        assert.ok(to.test("ops@example.com,oncall@example.com"));
+        assert.ok(to.test("ops@example.com , oncall@example.com"));
+        assert.ok(!from.test("ops@example.com,oncall@example.com"),
+            "a second sender was accepted, which no relay will honour");
+    });
+
+    it("refuses a list with a bad address anywhere in it", () => {
+        const {regex} = named("to");
+
+        for (const bad of ["ops@example.com,", ",ops@example.com", "ops@example.com,,x@y.co",
+            "ops@example.com,nonsense", "nonsense,ops@example.com"])
+            assert.ok(!regex.test(bad), `${JSON.stringify(bad)} was accepted as a recipient list`);
     });
 
     it("accepts a hostname or an address as the relay, and not a URL", () => {

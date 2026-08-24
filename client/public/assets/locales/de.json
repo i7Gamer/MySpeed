@@ -570,7 +570,7 @@
         "username": "Benutzername (optional)",
         "password": "Passwort (optional)",
         "from": "Absenderadresse",
-        "to": "Empfängeradresse",
+        "to": "Empfängeradressen (mit Komma getrennt)",
         "send_failed": "Fehlernachrichten senden",
         "error_subject": "Betreff bei Fehler",
         "error_subject_placeholder": "MySpeed: Geschwindigkeitstest fehlgeschlagen",

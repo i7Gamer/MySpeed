@@ -51,6 +51,46 @@ const SENDER_NAME = "MySpeed";
 export const SUBJECT_LIMIT = 200;
 
 /**
+ * One address, in the shape both fields want it.
+ *
+ * Deliberately a bare addr-spec rather than `Name <addr>`. A display name is put
+ * in front of the sender below, and allowing one here would mean parsing the
+ * angle brackets to find the addr-spec - which is the part a relay checks
+ * against the identity that authenticated, and the part a recipient list has to
+ * be split on.
+ *
+ * `<`, `>` and `,` are excluded from every position on purpose: they are the
+ * characters that would let one value become two, or become a header of its own.
+ */
+const ADDRESS = String.raw`[^\s@<>,]+@[^\s@<>,.]+(?:\.[^\s@<>,.]+)+`;
+
+const ONE_ADDRESS = new RegExp(`^${ADDRESS}$`);
+
+/**
+ * One or more, comma-separated.
+ *
+ * Built from the same fragment rather than a looser "anything with commas in
+ * it", so a list is refused whole when any one address in it is malformed. A
+ * relay handed `ops@example.com,nonsense` answers 550 for the bad one and the
+ * notification is lost - or, worse, delivered to some and not others with
+ * nothing said.
+ */
+// String.raw, like the fragment above: a template literal reduces an
+// unrecognised escape, so a plain `\s` here would have compiled to a literal "s"
+// and the pattern would have refused every list with a space in it while
+// accepting "opss,soncall".
+const SPACE = String.raw`\s*`;
+
+const ADDRESS_LIST = new RegExp(`^${SPACE}${ADDRESS}(?:${SPACE},${SPACE}${ADDRESS})*${SPACE}$`);
+
+/**
+ * The stored value as a relay wants to read it: one comma-and-space separated
+ * list, however it was typed.
+ */
+const recipientList = (value) => String(value ?? "").split(",").map((address) => address.trim())
+    .filter(Boolean).join(", ");
+
+/**
  * A subject that cannot become more than a subject.
  *
  * A header ends at the newline, so one inside this value would end it early and
@@ -134,7 +174,7 @@ export default (registerEvent, createTransport = nodemailer.createTransport) => 
 
             await transport.sendMail({
                 from: `${SENDER_NAME} <${c.from}>`,
-                to: c.to,
+                to: recipientList(c.to),
                 subject: headerSafe(subject),
                 text
             });
@@ -202,10 +242,13 @@ export default (registerEvent, createTransport = nodemailer.createTransport) => 
              * parsing `Name <addr>` to find the addr-spec, which is the part a
              * relay checks against the identity that authenticated.
              */
-            {name: "from", type: "text", required: true, secret: true,
-                regex: /^[^\s@<>,]+@[^\s@<>,.]+(?:\.[^\s@<>,.]+)+$/},
-            {name: "to", type: "text", required: true, secret: true,
-                regex: /^[^\s@<>,]+@[^\s@<>,.]+(?:\.[^\s@<>,.]+)+$/},
+            {name: "from", type: "text", required: true, secret: true, regex: ONE_ADDRESS},
+            // A list, unlike the sender: an alert usually wants an operator and
+            // whoever is on call, and one address per integration would mean a
+            // second one configured identically. Spacing either side of the
+            // comma is tolerated because a list pasted out of a mail client
+            // carries it; recipientList below tidies it on the way out.
+            {name: "to", type: "text", required: true, secret: true, regex: ADDRESS_LIST},
             {name: "send_finished", type: "boolean", required: false},
             {name: "finished_subject", type: "text", required: false},
             {name: "finished_message", type: "textarea", required: false},
