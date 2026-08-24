@@ -18,3 +18,6 @@
 /bin
 /MySpeed
 /MySpeed.exe
+
+# tooling caches
+.token-savior-cache.json

@@ -78,14 +78,13 @@ const PingChart = memo(({ compact = false, ...props }) => {
         themeColors,
         labels: filteredData.labels,
         errors: filteredData.errors,
-        failed: filteredData.failed,
         isSingleDay: filteredData.isSingleDay,
         pointStyle,
         lineTension,
         use12h,
         valueUnit: t("latest.ping_unit")
-    }), [themeColors, filteredData.labels, filteredData.errors, filteredData.failed,
-        filteredData.isSingleDay, pointStyle, lineTension, use12h]);
+    }), [themeColors, filteredData.labels, filteredData.errors, filteredData.isSingleDay,
+        pointStyle, lineTension, use12h]);
 
     const chartData = useMemo(() => ({
         labels: filteredData.labels,

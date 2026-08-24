@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import * as sass from "sass";
 import { clickable } from "@/common/utils/Clickable.js";
 import { nextFocus } from "@/common/hooks/useModalFocus.js";
-import { blockEnd } from "../helpers/source.js";
+import { blockEnd, escapeRegExp } from "../helpers/source.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -21,6 +21,7 @@ const settingsMenu = read("common/components/Dropdown/DropdownComponent.jsx");
 const exportMenu = read("common/components/ExportButton/ExportButton.jsx");
 const exportStyles = read("common/components/ExportButton/styles.sass");
 const integrationDialog = read("common/components/IntegrationDialog/IntegrationDialog.jsx");
+const contextMenu = read("common/components/ContextMenu/ContextMenu.jsx");
 
 /**
  * The element that carries `marker` in its className, named.
@@ -245,7 +246,8 @@ describe("every clickable card answers the keyboard", () => {
         {what: "the ping chart", file: "pages/Statistics/charts/PingChart.jsx"},
         {what: "the hourly chart", file: "pages/Statistics/charts/HourlyChart.jsx"},
         {what: "a node card", file: "pages/Nodes/components/NodeContainer/NodeContainer.jsx"},
-        {what: "the add-node tile", file: "pages/Nodes/Nodes.jsx"}
+        {what: "the add-node tile", file: "pages/Nodes/Nodes.jsx"},
+        {what: "the integration cards", file: "common/components/ExpandableCard/ExpandableCard.jsx"}
     ];
 
     for (const {what, file} of CARDS) {
@@ -254,6 +256,27 @@ describe("every clickable card answers the keyboard", () => {
                 `${what} is a click-only element: no tab stop, no key handler, nothing announced`);
         });
     }
+
+    /**
+     * The expandable card discloses a panel, so - like the overview row, the
+     * only other card that owns a disclosure - it has to say which state it is
+     * in. And its chevron is the picture of that state, not a second control:
+     * once the header is the button, a focusable chevron is a duplicate tab
+     * stop that does exactly what the header just did.
+     */
+    it("the integration cards announce their state, and the chevron is only a picture", () => {
+        const card = read("common/components/ExpandableCard/ExpandableCard.jsx");
+
+        assert.match(card, /aria-expanded=\{expanded}/,
+            "the card expands with nothing announcing whether it is open");
+
+        const chevron = card.match(/<button[^>]*expand-btn[^>]*>/s)?.[0];
+        assert.ok(chevron, "the chevron button is no longer recognisable");
+        assert.match(chevron, /tabIndex=\{-1}/,
+            "the chevron is a second tab stop pressing the same control as the header");
+        assert.match(chevron, /aria-hidden/,
+            "a screen reader announces the chevron as a second, unlabelled button");
+    });
 
     // The one that already had it, kept honest: it must not drift back to a
     // hand-written copy, and it must not lose the shape either.
@@ -331,6 +354,22 @@ describe("the date range picker answers the keyboard", () => {
         assert.ok(!datePicker.includes('aria-haspopup="dialog"')
             || /className="date-range-popover"[^>]*role="dialog"/.test(datePicker),
             "the trigger promises a dialog, and the popover behind it is not one");
+    });
+
+    /**
+     * A day button's visible text is a bare number, and half the grid shows
+     * numbers from the neighbouring months - so "14" is announced three times
+     * in one calendar with nothing saying which month any of them belongs to.
+     * The shared formatter already spells the whole date in the app's
+     * language, year included, which is what tells the trailing days of one
+     * month from the leading days of the next.
+     */
+    it("names each day with its whole date", () => {
+        const dayButton = datePicker.match(/<button(?:(?!<button)[^])*?className=\{`day-btn(?:(?!<button)[^])*?>/)?.[0];
+
+        assert.ok(dayButton, "the day buttons are no longer recognisable");
+        assert.match(dayButton, /aria-label=\{formatDay\(item\.date\)}/,
+            "a day announces a bare number, with no month to tell it from the same number twice more in the grid");
     });
 
     /**
@@ -809,6 +848,30 @@ describe("form field and dialog accessibility", () => {
         assert.match(toggleSwitchSource, /id=\{id\}/, "ToggleSwitch input is missing id={id}");
     });
 
+    /**
+     * The wrapping label is the toggle's whole visual - a slider span and no
+     * text - so it names nothing. A caller wired through FormField gets its
+     * name from the external label and the id; the two standalone toggles had
+     * neither, and a screen reader announced each as a bare unnamed checkbox
+     * beside the visible text that should have been its name.
+     */
+    it("ToggleSwitch takes an accessible name for callers with no label to point at", () => {
+        assert.match(toggleSwitchSource, /aria-label=\{label\}/,
+            "the input cannot be named by the callers that render no <label htmlFor>");
+    });
+
+    for (const [what, file, key] of [
+        ["the export secrets toggle", "common/components/StorageDialog/tabs/Configuration.jsx", "storage.include_secrets"],
+        ["the chart detail toggle", "pages/Statistics/Statistics.jsx", "statistics.detail.title"]
+    ])
+        it(`${what} names itself with its visible text`, () => {
+            const toggle = read(file).match(/<ToggleSwitch[^/]*?\/>/s)?.[0];
+
+            assert.ok(toggle, `${what} is no longer recognisable`);
+            assert.match(toggle, new RegExp(`label=\\{t\\("${escapeRegExp(key)}"\\)}`),
+                `${what} is an unnamed checkbox beside the text that should name it`);
+        });
+
     it("provides an aria-label for the password visibility toggle", () => {
         assert.match(passwordDialogSource, /aria-label=\{showPassword \? t\("update\.hide_password"\) : t\("update\.show_password"\)\}/,
             "password visibility toggle button is missing an accessible name");
@@ -1266,5 +1329,59 @@ describe("the first integration added", () => {
             "the debt is paid to something other than the menu the choice was made in");
         assert.match(effect.slice(effect.indexOf("}, [")), /^}, \[renderable\.length]/,
             "the effect does not run when the dialog leaves its empty state, which is the only moment this happens");
+    });
+});
+
+/**
+ * The context menu, which is the only way to rename or remove a node.
+ *
+ * It is properly operable once it is open - arrows walk the entries, Enter and
+ * Space run one, Escape and Tab dismiss it - and Shift+F10 or the menu key
+ * raises it from the focused card, because browsers deliver those as a
+ * `contextmenu` event. What it never did was give focus back.
+ *
+ * It takes focus on mount, so dismissing it dropped focus to <body>: the next
+ * Tab restarted from the top of the document, and a reader who pressed Escape
+ * had no idea where they now were. The card they were on is the answer, and it
+ * is still there - unlike the export menu, which cannot hand focus back
+ * immediately because the same commit disables the button it would go to.
+ */
+describe("the node card's context menu", () => {
+    const mountEffect = () => {
+        const at = contextMenu.indexOf("setFocusedIndex(0)");
+        assert.notEqual(at, -1, "the menu no longer seats itself on its first entry when it opens");
+
+        const opened = contextMenu.lastIndexOf("useEffect(", at);
+        return contextMenu.slice(opened, contextMenu.indexOf("}, [", opened));
+    };
+
+    it("remembers what had focus before it opened", () => {
+        assert.match(mountEffect(), /document\.activeElement/,
+            "nothing records the control the menu was raised from");
+    });
+
+    it("gives focus back when it goes away", () => {
+        assert.match(mountEffect(), /return\s*\(\)\s*=>/,
+            "the menu takes focus on mount and never returns it, so dismissing it lands on <body>");
+        assert.match(mountEffect(), /\.focus\?\.\(\)|\.focus\(\)/,
+            "nothing is focused on the way out");
+    });
+
+    /**
+     * But not over a click that landed somewhere else. Closing by clicking
+     * outside is the case the export menu names too: focus there belongs to
+     * whatever was clicked, and pulling it back to the card would take it off
+     * the control the reader just chose.
+     */
+    it("does not take focus back from whatever was clicked instead", () => {
+        const effect = mountEffect();
+        const cleanup = effect.slice(effect.indexOf("return () =>"));
+
+        assert.match(cleanup, /document\.activeElement/,
+            "the way out never asks where focus actually is");
+        assert.match(cleanup, /\.contains\(/,
+            "focus is pulled back to the card even when the menu never held it");
+        assert.match(cleanup, /if\s*\(/,
+            "focus is handed back unconditionally");
     });
 });

@@ -57,15 +57,14 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClic
         themeColors,
         labels: filteredData.labels,
         errors: filteredData.errors,
-        failed: filteredData.failed,
         isSingleDay: filteredData.isSingleDay,
         pointStyle,
         lineTension,
         use12h,
         valueUnit: speedUnit,
         yStepSize: SPEED_TICK_STEP
-    }), [themeColors, filteredData.labels, filteredData.errors, filteredData.failed,
-        filteredData.isSingleDay, pointStyle, lineTension, speedUnit, use12h]);
+    }), [themeColors, filteredData.labels, filteredData.errors, filteredData.isSingleDay,
+        pointStyle, lineTension, speedUnit, use12h]);
 
     const hasFailedTests = useMemo(() => failedMarkerData.some(v => v !== null), [failedMarkerData]);
 

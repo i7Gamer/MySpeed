@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { trackProcess, terminateActiveProcess, SHUTDOWN_KILL_GRACE, KILL_GRACE } from "../../server/util/speedtest.js";
+import { trackProcess, untrackProcess, terminateActiveProcess, SHUTDOWN_KILL_GRACE, KILL_GRACE } from "../../server/util/speedtest.js";
 import { SHUTDOWN_GRACE_MS } from "../../server/util/shutdown.js";
 
 const SERVER = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "server");
@@ -160,5 +160,76 @@ describe("the shutdown sequence", () => {
         const onStop = index.slice(index.indexOf("onStop:"), index.indexOf("onCleanup:"));
         assert.match(onStop, /terminateActiveProcess\(\)/,
             "the CLI is killed too late in the sequence to be sure of it");
+    });
+});
+
+/**
+ * Letting go of a run says *which* run, because two can briefly overlap.
+ *
+ * A child that finishes clears the tracker, and it used to clear it whatever was
+ * in there - the handlers called `trackProcess(null)`. Node emits 'error' before
+ * 'close' for a spawn that failed, and the promise rejection that the 'error'
+ * handler triggers is a microtask, so the retry in tasks/speedtest.js resumes
+ * while the first child's 'close' is still queued. Nothing about the tracker
+ * prevented that 'close' from arriving after the retry had tracked its own
+ * child and wiping it - which leaves terminateActiveProcess with nothing to
+ * find, and the CLI running after the server has gone.
+ *
+ * What stops it today is that the retry awaits two configuration reads before it
+ * spawns, so the queued 'close' always lands first. That is a property of the
+ * retry's shape rather than of the tracking, and it is not one anybody editing
+ * either file would know they were relying on. Asking whose child it is costs a
+ * comparison and does not need to be known about.
+ */
+describe("untrackProcess", () => {
+    it("lets go of the run that finished", () => {
+        const child = fakeChild();
+        trackProcess(child);
+
+        untrackProcess(child);
+
+        assert.equal(terminateActiveProcess(), false, "the finished run is still held as the one in flight");
+    });
+
+    it("leaves a newer run alone", () => {
+        const first = fakeChild();
+        const second = fakeChild();
+
+        trackProcess(first);
+        trackProcess(second);
+
+        // The first child's deferred 'close', arriving after the retry spawned.
+        untrackProcess(first);
+
+        assert.equal(terminateActiveProcess(), true, "the run in flight was forgotten and cannot be ended");
+        assert.deepEqual(second.signals, ["SIGTERM"], "the shutdown reached the wrong child, or none");
+        assert.deepEqual(first.signals, [], "the finished child was signalled again");
+    });
+
+    it("does nothing when there is no run at all", () => {
+        untrackProcess(fakeChild());
+
+        assert.equal(terminateActiveProcess(), false);
+    });
+
+    /**
+     * And the run lets go through it.
+     *
+     * The three above test the helper against fake children. The helper is not
+     * what was wrong: `trackProcess(null)` in the run's own handlers is, and
+     * putting that back leaves all three of them passing while the race is fully
+     * restored. `finish()` is the one place a run ends, so it is the one place
+     * this has to be asked.
+     */
+    it("is how the run itself lets go", () => {
+        const source = read("util/speedtest.js");
+        const finish = source.slice(source.indexOf("const finish = () =>"),
+            source.indexOf("await new Promise"));
+
+        assert.notEqual(finish.length, 0, "the run no longer ends in one place");
+        assert.match(finish, /untrackProcess\(testProcess\)/,
+            "the run clears the tracker without asking whose child it is");
+        assert.doesNotMatch(source, /trackProcess\(null\)/,
+            "a handler still wipes the tracker outright, which can take a retry's child with it");
     });
 });

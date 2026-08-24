@@ -4,6 +4,10 @@ import { parseProgressLine } from './providers/progress.js';
 import { isMuslLinux, MUSL_CLOUDFLARE_REASON } from './providers/libc.js';
 import * as interfacesModule from '../util/loadInterfaces.js';
 import * as config from '../controller/config.js';
+import * as loadLibre from './providers/loadLibre.js';
+import * as loadOokla from './providers/loadOokla.js';
+import * as loadCloudflare from './providers/loadCloudflare.js';
+import { toErrorMessage } from './helpers.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -55,6 +59,26 @@ let activeProcess = null;
 export const trackProcess = (child) => {
     activeProcess = child;
     return child;
+};
+
+/**
+ * Lets go of a run that has ended - but only if it is still the one being held.
+ *
+ * The handlers used to clear the tracker outright, whatever was in it. Node
+ * emits 'error' before 'close' for a spawn that failed, and the rejection the
+ * 'error' handler triggers resumes the caller in a microtask - so the retry in
+ * tasks/speedtest.js can spawn and track a second child while the first one's
+ * 'close' is still queued. Nothing here stopped that queued 'close' from wiping
+ * the newer child, which leaves terminateActiveProcess with nothing to find and
+ * the CLI still running after the server has gone.
+ *
+ * What prevents it today is that the retry awaits two configuration reads before
+ * it spawns, so the queued 'close' always lands first. That is a property of the
+ * retry's shape rather than of this file, and not one anybody editing either
+ * would know they were relying on.
+ */
+export const untrackProcess = (child) => {
+    if (activeProcess === child) activeProcess = null;
 };
 
 /**
@@ -174,6 +198,75 @@ export const missingBinaryMessage = (mode, binaryPath, errorCode, musl = isMuslL
         + 'so the server log says why that did not finish';
 };
 
+/**
+ * The module that knows how to fetch each provider's CLI, by the mode that runs
+ * it. Injectable so the recovery below is testable without the network.
+ */
+const PROVIDER_LOADERS = {ookla: loadOokla, libre: loadLibre, cloudflare: loadCloudflare};
+
+/**
+ * Makes sure the CLI this run is about to spawn is actually on disk.
+ *
+ * loadCli fetches all three at boot and reports a failure rather than
+ * propagating it - one unreachable release must not stop the dashboard coming
+ * up. But nothing ever tried again, so an instance started during a brief
+ * github.com outage, or on a connection that came up a moment after the server
+ * did, recorded a failed test every scheduled run for the life of the process.
+ * The reason stored on those rows said the binary was missing and pointed at a
+ * boot log that had scrolled away hours before anyone looked.
+ *
+ * `load()` is the same call the boot makes and asks the same question: it
+ * checks whether the file is there and downloads it only if it is not. So this
+ * costs one existsSync on the ordinary run, and turns a permanent failure into
+ * one that clears itself the moment the network comes back.
+ *
+ * A failed download is thrown here rather than left to the spawn. The loader
+ * knows why - a 403, a platform with no published build, the musl refusal
+ * cfspeedtest carries - where the ENOENT that would follow can only say the
+ * file is not there. A mode with no loader is left alone: there is nothing to
+ * ask, and refusing here would replace a failure naming the binary with one
+ * naming an internal lookup.
+ */
+export const ensureBinary = async (mode, binaryPath, loaders = PROVIDER_LOADERS) => {
+    const loader = loaders[mode];
+    if (!loader) return;
+
+    try {
+        await loader.load();
+    } catch (error) {
+        // The reason is in the message because that is what reaches the failed
+        // test's error column, and `cause` because the log is where the whole
+        // chain is worth having.
+        throw new Error(`The speedtest CLI ${binaryPath} is not there and could not be downloaded: `
+            + toErrorMessage(error), {cause: error});
+    }
+};
+
+/**
+ * The custom-server file a librespeed run writes, taken back off disk.
+ *
+ * A run against a custom backend writes that backend's address into
+ * data/servers/libre_custom.json for the CLI to read, and nothing ever removed
+ * it. A URL is allowed userinfo, so the address can carry a credential - the
+ * same one the config export strips and GET /api/config withholds - and it sat
+ * there in the data volume, outliving the run by however long the instance
+ * lived, for anyone reading a backup of that directory.
+ *
+ * Failures are swallowed. The file has done its job by the time this runs, and
+ * a run that measured the line successfully must not be reported as failed
+ * because a temporary file could not be deleted.
+ */
+export const removeTemporaryServer = (file) => {
+    if (!file) return;
+
+    try {
+        fs.unlinkSync(file);
+    } catch {
+        // Already gone, or a directory that has become read-only. Neither is
+        // something this run can do anything about.
+    }
+};
+
 export default async (mode, serverId, serverUrl, onProgress) => {
     const binaryPath = mode === "ookla" ? './bin/speedtest' + (process.platform === "win32" ? ".exe" : "")
         : mode === "libre" ? './bin/librespeed-cli' + (process.platform === "win32" ? ".exe" : "")
@@ -187,8 +280,19 @@ export default async (mode, serverId, serverUrl, onProgress) => {
     const unusable = missingInterfaceMessage(mode, process.platform, currentInterface, interfaceIp);
     if (unusable) throw new Error(unusable);
 
+    // Fetched now if the boot could not - see ensureBinary. Ahead of the
+    // arguments rather than beside the spawn, so that nothing between writing
+    // the librespeed server file below and starting the CLI can throw and leave
+    // it behind - and so a download is not counted as time the test took.
+    await ensureBinary(mode, binaryPath);
+
     const startTime = new Date().getTime();
     let args;
+
+    // The custom-server file, when this run writes one. Held out here because
+    // what removes it is the handler that ends the run, not the branch that
+    // wrote it.
+    let temporaryServer = null;
 
     if (mode === "ookla") {
         // jsonl rather than json: the CLI reports each phase as it goes instead
@@ -215,9 +319,9 @@ export default async (mode, serverId, serverUrl, onProgress) => {
                 pingURL: "empty.php",
                 getIpURL: "getIP.php"
             }];
-            const tempJsonPath = path.join('data', 'servers', 'libre_custom.json');
-            fs.writeFileSync(tempJsonPath, JSON.stringify(customServerConfig));
-            args.push(`--local-json=${tempJsonPath}`);
+            temporaryServer = path.join('data', 'servers', 'libre_custom.json');
+            fs.writeFileSync(temporaryServer, JSON.stringify(customServerConfig));
+            args.push(`--local-json=${temporaryServer}`);
             args.push('--server=1');
         } else if (serverId) {
             args.push(`--server=${serverId}`);
@@ -281,6 +385,16 @@ export default async (mode, serverId, serverUrl, onProgress) => {
         }
     });
 
+    // Everything the end of a run has to let go of, however it ended. The two
+    // handlers below repeated this between them, which is how the temporary
+    // server file came to be cleaned up by neither.
+    const finish = () => {
+        clearTimeout(timeout);
+        clearTimeout(escalation);
+        untrackProcess(testProcess);
+        removeTemporaryServer(temporaryServer);
+    };
+
     await new Promise((resolve, reject) => {
         // A binary that is not there is the one spawn failure whose own message
         // explains nothing, so it gets one that does. Everything else is
@@ -288,9 +402,7 @@ export default async (mode, serverId, serverUrl, onProgress) => {
         // `message` key holding an Error, which the caller then stored verbatim
         // in a string column.
         testProcess.on('error', (error) => {
-            clearTimeout(timeout);
-            clearTimeout(escalation);
-            trackProcess(null);
+            finish();
 
             const missing = missingBinaryMessage(mode, binaryPath, error.code);
             reject(missing ? new Error(missing) : error);
@@ -299,9 +411,7 @@ export default async (mode, serverId, serverUrl, onProgress) => {
         // 'close' rather than 'exit': the process can exit while its pipes still
         // hold output, and parsing then would read a truncated result.
         testProcess.on('close', (code) => {
-            clearTimeout(timeout);
-            clearTimeout(escalation);
-            trackProcess(null);
+            finish();
             result = parseCliOutput(mode, stdout, stderr);
 
             // The exit code has the last word when the streams had nothing to

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-    configOutcome, failureOutcome, isRemoteNode
+    configOutcome, deniesAdminAccess, failureOutcome, isRemoteNode
 } from "../../client/src/common/contexts/Config/configOutcome.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
@@ -195,5 +195,74 @@ describe("the node refusal header", () => {
     it("is set on a refusal the proxy relayed", () => {
         assert.match(read("controller/node.js"), /NODE_REFUSAL_HEADER/,
             "the parent relays a node's 401 without marking it as the node's");
+    });
+});
+
+/**
+ * Whether a sign-in was refused the thing it was opened for.
+ *
+ * The admin login in the header exchanges the password for a session and then
+ * re-reads /api/config to see what that session is worth: read-level access
+ * authenticates, but not for the controls the dialog was opened to reach, so it
+ * counts as a refusal.
+ *
+ * The question has to be asked in this direction. Asking the opposite - is this
+ * an admin config - reads every answer that is not one as a refusal, and one of
+ * those is "no answer": `request` does not throw on a non-2xx, checkConfig calls
+ * .json() on whatever came back, and the call site catches into null. So a
+ * proxied node that has gone slow, a 503 from in front of a restarting
+ * container, or a fetch that hit the 10s timeout each produced {ok: false} for a
+ * password that had *already* been accepted by POST /api/session a moment
+ * earlier - and promptUntilAccepted only stops on ok or unreachable, so the
+ * operator was told their correct password was wrong and asked again, and again.
+ *
+ * Only `viewMode: true` is the server saying no. It is the only thing it ever
+ * says: password.js sets req.viewMode to a literal true or false on every path,
+ * so a config that answered at all carries a boolean, and anything else is an
+ * answer that never came.
+ */
+describe("deniesAdminAccess", () => {
+    it("refuses a read-only session, which authenticated but not for this", () => {
+        assert.equal(deniesAdminAccess(VIEW_CONFIG), true);
+    });
+
+    it("lets an admin session through", () => {
+        assert.equal(deniesAdminAccess(ADMIN_CONFIG), false);
+    });
+
+    /**
+     * None of these is the server refusing. The password was accepted before any
+     * of them could happen, so treating them as a refusal calls a correct
+     * password wrong - and the prompt asks again for as long as it keeps
+     * happening.
+     */
+    for (const [name, answer] of [
+        ["nothing at all", null],
+        ["an undefined answer", undefined],
+        ["a refusal body", {message: "Unauthorized"}],
+        ["a body from a proxy in front of a stopped container", {type: "SERVER_BUSY"}],
+        ["an empty object", {}]
+    ])
+        it(`does not read ${name} as a refusal`, () => {
+            assert.equal(deniesAdminAccess(answer), false,
+                "an answer that never came is treated as the server saying no, and the prompt re-asks forever");
+        });
+});
+
+/**
+ * And the header asks through it, in that direction.
+ */
+describe("the header's admin login", () => {
+    const header = fs.readFileSync(path.join(CLIENT_SRC,
+        "common/components/Header/HeaderComponent.jsx"), "utf8");
+
+    it("judges the re-read config through the shared answer", () => {
+        assert.match(header, /deniesAdminAccess\(/,
+            "the header decides for itself what a sign-in was worth");
+    });
+
+    it("does not treat an unreadable config as a refused password", () => {
+        assert.doesNotMatch(header, /ok:\s*grantsAdminAccess|viewMode === false/,
+            "a slow node or a restarting server tells the operator their correct password is wrong");
     });
 });

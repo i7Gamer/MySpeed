@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripMarkdown } from "../../server/integrations/telegram.js";
-import { DISCORD_MARKDOWN, stripMarkdown as stripFor } from "../../server/util/markdown.js";
+import { DISCORD_MARKDOWN, stripMarkdown as stripFor, balancedForTelegram } from "../../server/util/markdown.js";
 import { replaceVariables } from "../../server/util/helpers.js";
 
 const FAILURE_TEMPLATE = "❌ *A speedtest has failed*\n`Reason`: %error%";
@@ -171,4 +171,68 @@ describe("the markdown pass", () => {
                 `${file} carries a character class of its own again`);
         });
     }
+});
+
+/**
+ * Whether Telegram's legacy parser will accept the message at all.
+ *
+ * That parser has no escape syntax and refuses the whole request with a 400
+ * when an entity is left open - which is why every interpolated value is
+ * stripped of its metacharacters before substitution. What that pass cannot
+ * reach is the operator's own template, and one thing still cuts through it:
+ * the message is trimmed to 4096 characters on the way out, and a template long
+ * enough to be trimmed can lose the closing half of a pair it opened. The
+ * notification then fails to send entirely - a failure alert, which is the one
+ * nobody can afford to lose, dropped over a formatting character.
+ *
+ * The question is asked rather than the grammar reimplemented: a message whose
+ * delimiters do not pair cannot be parsed, so it is sent as plain text instead.
+ * The asymmetry is deliberate. A false "unbalanced" costs the message its
+ * formatting; a false "balanced" costs the message.
+ */
+describe("balancedForTelegram", () => {
+    it("accepts the rendered default templates", () => {
+        assert.equal(balancedForTelegram(replaceVariables(FAILURE_TEMPLATE,
+            stripMarkdown({error: "a *bad* thing"}))), true);
+    });
+
+    it("accepts text with no formatting at all", () => {
+        assert.equal(balancedForTelegram("A speedtest has failed. Reason: boom"), true);
+    });
+
+    for (const [name, text] of [
+        ["asterisk", "*bold and then nothing"],
+        ["underscore", "_italic and then nothing"],
+        ["backtick", "`code and then nothing"],
+        ["bracket", "[a link with no target"]
+    ])
+        it(`refuses an unclosed ${name}`, () => {
+            assert.equal(balancedForTelegram(text), false);
+        });
+
+    it("accepts each of them closed", () => {
+        assert.equal(balancedForTelegram("*bold* _italic_ `code` [text](https://example.net)"), true);
+    });
+
+    // Two of them is a fenced block, which is four more backticks and still
+    // pairs. Counting fences rather than characters would have to know that.
+    it("accepts a fenced code block", () => {
+        assert.equal(balancedForTelegram("```\nsome output\n```"), true);
+    });
+
+    it("tolerates being handed nothing", () => {
+        assert.equal(balancedForTelegram(undefined), true);
+        assert.equal(balancedForTelegram(""), true);
+    });
+
+    /**
+     * The case this exists for: a template long enough to be trimmed, cut
+     * between the two halves of a pair it opened.
+     */
+    it("notices a pair the trim cut through", () => {
+        const message = `*${"a".repeat(40)}`;
+
+        assert.equal(balancedForTelegram(`${message}*`), true, "the whole message pairs");
+        assert.equal(balancedForTelegram(message), false, "the trimmed one does not");
+    });
 });

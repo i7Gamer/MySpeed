@@ -14,6 +14,40 @@ const HSTS_VALUE = `max-age=${HSTS_MAX_AGE_SECONDS}; includeSubDomains`;
 const DEFAULT_FRAME_ANCESTORS = "'none'";
 
 /**
+ * The operator's ancestor list, reduced to something a header can carry.
+ *
+ * The value is the operator's own, so this is not a way in - it is the way a
+ * plausible mistake becomes an outage, or a policy nobody wrote.
+ *
+ * A semicolon ends the directive, so FRAME_ANCESTORS="'self'; sandbox" appends a
+ * complete second directive to the policy composed below - and `sandbox` alone
+ * leaves the dashboard unable to run its own scripts. A comma ends the whole
+ * policy the same way, which is what the natural comma-separated spelling of a
+ * list quietly does to the second origin in it.
+ *
+ * Anything outside printable ASCII goes for a different reason: res.setHeader
+ * refuses those characters outright, so a value that keeps the newline it was
+ * read with - a here-doc, a file, a copied line - throws from inside this
+ * middleware on *every* request. The instance then answers 500 to everything,
+ * including the health endpoint that would otherwise say what is wrong. A
+ * source list is hosts, schemes and ports; none of it lives outside that range.
+ *
+ * Replaced with a space rather than deleted, so two origins with a stray
+ * character between them stay two origins instead of being joined into one
+ * address that matches nothing. A value left holding nothing at all falls back
+ * to the default refusal: an empty directive is a policy no browser can read.
+ */
+const ancestorList = (value) => {
+    const cleaned = String(value ?? "")
+        .replace(/[^\x20-\x7E]/g, " ")
+        .replace(/[;,]/g, " ")
+        .trim()
+        .replace(/\s+/g, " ");
+
+    return cleaned === "" ? DEFAULT_FRAME_ANCESTORS : cleaned;
+};
+
+/**
  * `style-src` carries 'unsafe-inline' because the app genuinely needs it: React
  * sets `style` attributes for the target bars in the test detail view, and
  * @fortawesome/fontawesome-svg-core writes its CSS into a <style> element at
@@ -41,7 +75,7 @@ export default () => {
     // Self-hosters embed MySpeed in dashboards like Homepage or Heimdall, which
     // a bare 'none' breaks. The default stays restrictive; the escape hatch is
     // an explicit list of origins.
-    const frameAncestors = process.env.FRAME_ANCESTORS || DEFAULT_FRAME_ANCESTORS;
+    const frameAncestors = ancestorList(process.env.FRAME_ANCESTORS);
     const policy = buildPolicy(frameAncestors);
 
     return (req, res, next) => {

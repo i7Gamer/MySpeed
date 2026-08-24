@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import {
-    blockEnd, bodyIn, bodyOf, findMounts, listSources, mountText, readSource, unreadableMountCount
+    blockEnd, bodyIn, bodyOf, escapeRegExp, findMounts, listSources, mountText, readSource, unreadableMountCount
 } from "../helpers/source.js";
 
 describe("blockEnd", () => {
@@ -571,5 +571,44 @@ describe("unreadableMountCount", () => {
 
         assert.equal(unreadableMountCount(source, ["get"]), 0, "an indented post was counted against get");
         assert.equal(unreadableMountCount(source, ["get", "post"]), 1);
+    });
+});
+
+/**
+ * The escape for a literal that has to travel inside a RegExp.
+ *
+ * Three tests were building patterns with a hand-rolled partial escape -
+ * `key.replace(/\./g, "\\.")` - which covers exactly one metacharacter. The
+ * inputs are literals today, so nothing was wrong; but the first translation
+ * key or version string carrying a `(`, `$` or `|` would have built a broken
+ * or quietly different pattern, and a scan that matches the wrong thing fails
+ * in whichever direction the wrong thing happens to point. One complete
+ * escape, promoted from the copy muslCloudflare.test.js kept locally.
+ */
+describe("escapeRegExp", () => {
+    it("passes a plain word through untouched", () => {
+        assert.equal(escapeRegExp("statistics"), "statistics");
+    });
+
+    it("matches the literal it was given, whatever it carries", () => {
+        for (const hostile of [
+            "dialog.update",
+            "a(b)c",
+            "1.3.5+build|next",
+            "price is $5 (or more?)",
+            "chars [a-z]^ and {2,3}",
+            "back\\slash"
+        ])
+            assert.ok(new RegExp(`^${escapeRegExp(hostile)}$`).test(hostile),
+                `the escaped pattern no longer matches ${JSON.stringify(hostile)} itself`);
+    });
+
+    // The bug class the partial escape invited: an unescaped dot matches any
+    // character, so the pattern held against a neighbour it was never meant for.
+    it("matches only the literal", () => {
+        assert.equal(new RegExp(escapeRegExp("dialog.update")).test("dialogXupdate"), false,
+            "the dot still matches any character");
+        assert.equal(new RegExp(escapeRegExp("a|b")).test("a"), false,
+            "the pipe still reads as an alternative");
     });
 });

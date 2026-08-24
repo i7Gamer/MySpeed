@@ -17,7 +17,7 @@ import { PASSWORD_REQUIRED, SERVER_BUSY, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS
  */
 const ATTEMPT_WINDOW_MS = 60000;
 const MAX_FAILED_ATTEMPTS = 20;
-const MAX_TRACKED_CLIENTS = 10000;
+export const MAX_TRACKED_CLIENTS = 10000;
 
 /**
  * How many comparisons one client may have in flight at once.
@@ -74,6 +74,19 @@ const recordFailure = (key, attempts = 1) => {
     const entry = failedAttempts.get(key);
 
     if (entry === undefined || now >= entry.resetAt) {
+        // A key the map already holds is refreshed, not added: deleting it
+        // first means the size check below only fires when the map would
+        // actually grow. Without this, refreshing an expired entry in a full
+        // table evicted the entry at the head for nothing - and the head is not
+        // necessarily stale, because Map.set keeps a refreshed key at its
+        // original position while its window moves forward, so the entry
+        // sitting there can be a lockout still running. Spending it handed an
+        // attacker at the failure budget a fresh window for the price of one
+        // wrong guess from any expired client. The delete also moves the
+        // refreshed key to the tail, which is where the newest entry belongs
+        // for the eviction order to mean "oldest".
+        failedAttempts.delete(key);
+
         // Evict the single oldest entry rather than dropping the whole map.
         // Clearing it wholesale meant an attacker rotating source addresses -
         // trivial with an IPv6 /64 - reset every counter including their own.

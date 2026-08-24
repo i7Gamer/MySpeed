@@ -14,16 +14,151 @@ SERVICE_FILES=("/etc/systemd/system/myspeed.service" "/usr/lib/systemd/system/my
 # Parsed by hand rather than with getopts, which stops at the first argument
 # beginning with "--" and would leave --keep-data unseen the moment -d is also
 # passed. Both flags are read wherever they appear.
+#
+# Every arm refuses rather than shrugs, because every way of mis-parsing this
+# command line ends in deleting something:
+#
+#   - `-d` took whatever followed it, flag or not. `uninstall.sh -d $DIR
+#     --keep-data` with DIR unset - an ordinary thing for a wrapper script to do
+#     - read "--keep-data" as the path, so the flag was never seen and the very
+#     next block removed the docker volume holding the database it was typed to
+#     keep.
+#   - `-d` with nothing after it, or with an empty value, fell through to the
+#     compiled-in default and deleted that instead. install.sh refuses the same
+#     input.
+#   - Anything unrecognised was shifted away in silence. `--help` ran a complete
+#     destructive uninstall, and every near-miss of the one flag that protects
+#     data - `--keepdata`, `-keep-data`, `--keep_data` - destroyed it.
 KEEP_DATA=""
 CHOSEN_PATH=""
 
+usage() {
+  echo -e "$NORMAL Usage: uninstall.sh [-d /path/to/installation] [--keep-data]"
+  echo -e "$NORMAL   -d           where MySpeed is installed, when it is not the recorded path"
+  echo -e "$NORMAL   --keep-data  keep the data directory, and the account that owns it"
+}
+
+# One spelling for a directory, whichever side it arrived from.
+#
+# Two paths are compared in this script - the one the operator gave with -d and
+# the one the unit recorded - and the answer decides whether an empty directory
+# means "already uninstalled" or "your installation is somewhere else, go and
+# look". Comparing them byte for byte made that answer depend on how each was
+# typed:
+#
+#   - install.sh writes WorkingDirectory exactly as it was given, so installing
+#     with `-d /opt/myspeed/` records the trailing slash. Uninstalling with the
+#     obvious `-d /opt/myspeed` then failed to corroborate, and a finished
+#     uninstall was reported as an installation left on disk.
+#   - A unit file that picked up a carriage return - edited on Windows, or
+#     written by a template - carries it into the value. systemd strips trailing
+#     whitespace before using it, so the service runs perfectly well from a
+#     directory this script then could not find. It took that as the system's own
+#     answer that the installation was gone and printed the completion banner
+#     over a directory still holding the database and the admin password hash.
+normalise_path() {
+  local value="$1"
+
+  # Whitespace at both ends, one character at a time - the carriage return above,
+  # the spaces a copied-and-pasted path arrives with, and the one somebody types
+  # after the `=` when writing a unit by hand.
+  #
+  # Both ends because systemd strips both: it runs the service from the stripped
+  # value, so a script that reads the value differently from the manager that has
+  # been using it disagrees with the only record on the host. Trailing alone left
+  # `WorkingDirectory= /opt/myspeed` naming a directory this script could not
+  # find, and an installation it cannot find is one it reports as already gone.
+  while true; do
+    case "$value" in
+      *[[:space:]]) value="${value%?}" ;;
+      [[:space:]]*) value="${value#?}" ;;
+      *) break ;;
+    esac
+  done
+
+  # Then trailing slashes, which belong to the typing rather than to the path.
+  while [ "${value%/}" != "$value" ]; do
+    value="${value%/}"
+  done
+
+  printf '%s' "$value"
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
-    --keep-data) KEEP_DATA="--keep-data" ;;
-    -d) shift; CHOSEN_PATH="$1" ;;
+    --keep-data)
+      KEEP_DATA="--keep-data"
+      ;;
+    -d)
+      # The value, not merely the next word: a flag there means the path was
+      # never supplied, and continuing would delete the default.
+      if [ $# -lt 2 ] || [ -z "$2" ] || [ "${2#-}" != "$2" ]; then
+        echo -e "$RED✗ Uninstallation Error:$NORMAL -d needs the path MySpeed is installed at."
+        usage
+        exit 1
+      fi
+      CHOSEN_PATH="$2"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo -e "$RED✗ Uninstallation Error:$NORMAL Unknown argument \"$1\"."
+      usage
+      exit 1
+      ;;
   esac
   shift
 done
+
+# And a -d that could not name an installation is refused here, rather than
+# discovered by the one step in this script that cannot be undone.
+#
+# `-d /` passes every check below it - the directory exists, it is not a symlink -
+# and arrives at `rm -R /`. That GNU coreutils declines it is the whole of the
+# current protection: busybox does not, and by then the container has been
+# removed and both unit files deleted, so a refusal at that point is far from
+# free. A relative path is the same mistake from the other end, resolved against
+# whatever directory the operator was standing in.
+#
+# What install.sh can produce is an absolute path with a name on the end, so
+# that is what is accepted.
+if [ -n "$CHOSEN_PATH" ]; then
+  # Kept as typed for the messages below, which are about what the operator
+  # wrote rather than about what it was reduced to.
+  GIVEN="$CHOSEN_PATH"
+
+  # Normalised before it is judged, and by the same function the unit's value
+  # goes through. Judging the raw spelling and comparing the trimmed one is how
+  # the two sides came apart the last time: " /opt/myspeed" was refused as a
+  # relative path here while the identical spelling in a unit file was read as
+  # absolute, so the same directory was two different answers depending on which
+  # side of the script it arrived from.
+  CHOSEN_PATH="$(normalise_path "$GIVEN")"
+
+  # Nothing left, or nothing but a directory that cannot be an installation. "/"
+  # and "  " both normalise away to nothing at all, which is the case worth
+  # catching first - "" is not a relative path, and saying so would be a worse
+  # answer than saying it is not a directory to remove.
+  case "$CHOSEN_PATH" in
+    "" | */. | */..)
+      echo -e "$RED✗ Uninstallation Error:$NORMAL \"$GIVEN\" is not an installation directory."
+      echo -e "$NORMAL Removing it would take the filesystem with it. Name the directory MySpeed is in."
+      exit 1
+      ;;
+  esac
+
+  case "$CHOSEN_PATH" in
+    /*) ;;
+    *)
+      echo -e "$RED✗ Uninstallation Error:$NORMAL -d needs an absolute path, and \"$GIVEN\" is relative."
+      echo -e "$NORMAL It would be taken from the directory you are standing in."
+      exit 1
+      ;;
+  esac
+fi
 
 # Where the installation actually is, which is not always the default:
 # install.sh takes -d and records the chosen path in the unit's
@@ -32,16 +167,39 @@ done
 #
 # It has to happen before the systemd block below, which deletes the unit file -
 # and with it the only record of where anything was put.
+#
+# Whether the answer came from the system or from a guess is remembered, because
+# the end of this script cannot otherwise tell two identical-looking hosts apart:
+# one whose installation is genuinely gone, and one whose installation is
+# somewhere this run was never told to look. The unit's own WorkingDirectory is
+# authoritative - an empty directory at that path means the files are gone. A -d,
+# or the compiled-in default, is a guess, and a wrong guess is indistinguishable
+# from an absence.
+PATH_FROM_UNIT=0
+RECORDED=""
+
+# Read whatever the system recorded, always - including when -d was given. The
+# unit is the only place the real path is written down, this script is about to
+# delete it, and an operator's -d is worth corroborating: a -d that names exactly
+# what the unit records is not a guess at all, and treating it as one reported a
+# finished uninstall as an installation left on disk.
+for unit in "${SERVICE_FILES[@]}"; do
+  [ -f "$unit" ] || continue
+
+  # Normalised on the way in, so that a unit carrying a trailing slash or a
+  # carriage return is the same path as the one an operator types - and so that a
+  # value which is nothing but whitespace counts as no record at all rather than
+  # ending the search.
+  RECORDED="$(normalise_path "$(sed -n 's/^WorkingDirectory=//p' "$unit" | head -n 1)")"
+  [ -n "$RECORDED" ] && break
+done
+
 if [ -n "$CHOSEN_PATH" ]; then
   INSTALLATION_PATH="$CHOSEN_PATH"
-else
-  for unit in "${SERVICE_FILES[@]}"; do
-    [ -f "$unit" ] || continue
-
-    RECORDED="$(sed -n 's/^WorkingDirectory=//p' "$unit" | head -n 1)"
-    [ -n "$RECORDED" ] && INSTALLATION_PATH="$RECORDED"
-    break
-  done
+  [ "$CHOSEN_PATH" = "$RECORDED" ] && PATH_FROM_UNIT=1
+elif [ -n "$RECORDED" ]; then
+  INSTALLATION_PATH="$RECORDED"
+  PATH_FROM_UNIT=1
 fi
 
 if [ $EUID -ne 0 ]; then
@@ -60,46 +218,214 @@ clear
 echo -e "$BLUE🔎 Status:$NORMAL Removing service data if present..."
 sleep 3
 
-# Exactly, not merely containing. The two branches are exclusive, so a native
-# systemd host that also runs an unrelated MySpeedBackup container took the
-# docker branch: the service was never stopped, the unit never removed and the
-# data never deleted, under a banner announcing that it had all been done.
+# Exactly, not merely containing: an unrelated MySpeedBackup container is not
+# this one, and the substring match that used to decide this took its whole
+# branch on the strength of the name.
+REMOVED_CONTAINER=0
+
 if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "MySpeed"; then
   echo -e "$YELLOW Found Docker container. Stopping the container..."
   docker stop MySpeed
   echo -e "$YELLOW Removing Docker container..."
-  docker rm MySpeed
+
+  # Checked, and the flag set from the result rather than from having tried. A
+  # container under a restart policy, one the daemon refuses, or a socket this
+  # user cannot write all leave `docker rm` failing - and unchecked, that still
+  # set REMOVED_CONTAINER and still reached the success banner, with the two
+  # `clear` calls below wiping the daemon's error off the screen and out of the
+  # scrollback. The operator was told MySpeed was uninstalled while it went on
+  # serving on its published port.
+  if ! docker rm MySpeed; then
+    echo -e "$RED✗ Could not remove the Docker container.$NORMAL"
+    echo -e "$NORMAL It is still there, and may still be running. Nothing else has been touched."
+    exit 1
+  fi
+
+  REMOVED_CONTAINER=1
+
   echo -e "$YELLOW Removing MySpeed Docker folder..."
   if [ "$KEEP_DATA" != "--keep-data" ]; then
     docker volume rm myspeed-dockerized_myspeed
   fi
   rm -rf "$DOCKER_INSTALLATION_PATH"
-else
-  # -q, not -n: the condition wants an answer, and -n printed the matched line
-  # and its number into the middle of the uninstall output.
-  if command -v systemctl &> /dev/null && systemctl --all --type service | grep -q "myspeed.service"; then
-    systemctl stop myspeed
-    systemctl disable myspeed
+fi
 
-    # Through the list that names them, guarded - the same list this script
-    # already walks to read the recorded path. Spelled out as two bare `rm`s,
-    # every ordinary uninstall printed "cannot remove ...: No such file or
-    # directory" for the path install.sh never creates, swallowed for want of
-    # `set -e`, directly beneath the success banner.
-    for unit in "${SERVICE_FILES[@]}"; do
-      rm -f "$unit"
-    done
+# Asked on its own, not as the other half of the question above.
+#
+# A host can hold both. The README recommends Docker, so migrating a native
+# install means the container runs beside a systemd unit that is still enabled -
+# and that is exactly when somebody reaches for this script. Written as an
+# `else`, finding the container was the end of it: the service kept running, the
+# unit stayed enabled through every reboot, and the installation stayed on disk
+# with its database and its password hash, under a banner announcing that
+# MySpeed had been uninstalled.
+#
+# Both halves are guarded on finding their own, so a host with only one pays
+# nothing for the other being asked.
+#
+# What it records is not "there is a directory to remove" - that is asked
+# directly, below - but "a native installation existed here", which is what makes
+# an installation directory nobody could find worth reporting.
+FOUND_SERVICE=0
 
-    systemctl daemon-reload
-    systemctl reset-failed
+# The whole unit name, not a substring of somebody else's.
+#
+# `grep -q "myspeed.service"` matches anywhere in the line, so an unrelated
+# notmyspeed.service made this host look like it had a native MySpeed on it -
+# and FOUND_SERVICE is what decides whether the myspeed account is deleted at the
+# end of the run. The same defect the container name had, on the other half of
+# the same decision. The `.` was a regex any-char into the bargain.
+#
+# -q, not -n: the condition wants an answer, and -n printed the matched line
+# and its number into the middle of the uninstall output.
+if command -v systemctl &> /dev/null \
+    && systemctl --all --type service | grep -qE '(^|[[:space:]])myspeed\.service([[:space:]]|$)'; then
+  FOUND_SERVICE=1
+
+  systemctl stop myspeed
+  systemctl disable myspeed
+fi
+
+# The unit files themselves, whether or not that list named them.
+#
+# Removing them used to be inside the branch above, so a host where systemd does
+# not list the service - never reloaded after install.sh wrote the unit, the unit
+# masked, or no systemctl at all - finished the uninstall with the unit still on
+# disk, pointing at a directory this script had just deleted. The next
+# daemon-reload brings that service back, and install.sh will not overwrite it,
+# because the account it checks for is still there too.
+#
+# A unit file on disk is the same evidence the list is: a native installation was
+# here. That is what FOUND_SERVICE records, so either sets it.
+#
+# Walked through the list that names them, guarded - the same list this script
+# already walks to read the recorded path. Spelled out as two bare `rm`s, every
+# ordinary uninstall printed "cannot remove ...: No such file or directory" for
+# the path install.sh never creates, swallowed for want of `set -e`, directly
+# beneath the success banner.
+for unit in "${SERVICE_FILES[@]}"; do
+  if [ -f "$unit" ]; then
+    FOUND_SERVICE=1
+    rm -f "$unit"
   fi
+done
 
+# Guarded on systemctl as well as on having found something, because this branch
+# is now reachable on a host that has no systemd for the units to be reloaded
+# into.
+if [ "$FOUND_SERVICE" -eq 1 ] && command -v systemctl &> /dev/null; then
+  systemctl daemon-reload
+  systemctl reset-failed
+fi
+
+# Whether there was an installation to remove, read once and before anything is
+# removed - every question after this point needs the answer, and by then the
+# directory may be gone because this script took it.
+INSTALLATION_FOUND=0
+[ -d "$INSTALLATION_PATH" ] && INSTALLATION_FOUND=1
+
+# Whether data was actually kept, as opposed to asked for. Set where the keeping
+# happens, read where the account that owns it is removed - and declared here
+# because the block in between does not run on every path that reaches it.
+KEPT_DATA=0
+
+# A symlink is refused rather than followed.
+#
+# `[ -d ]` answers true for a link to a directory, and `rm -R` then removes the
+# link and nothing else - so the installation survived in full while the script
+# reported it gone, which is this file's worst failure mode wearing a different
+# hat. Following it instead would be worse: the operator would be deleting
+# whatever the link happens to point at, named by something this script cannot
+# see.
+if [ -L "$INSTALLATION_PATH" ]; then
+  echo -e "$RED✗ $INSTALLATION_PATH is a symbolic link, not the installation.$NORMAL"
+  echo -e "$NORMAL Removing it would delete the link and leave MySpeed on disk."
+  echo -e "$NORMAL Re-run with$YELLOW -d$NORMAL naming the directory it points at."
+  exit 1
+fi
+
+# And the installation itself.
+#
+# Entered where there is something at this path, and on a run that found no
+# MySpeed anywhere - which has nothing to remove either, but does have something
+# to say, and says it at the top of the block rather than reaching a banner.
+#
+# What is deliberately *not* entered is a host where the container or the service
+# was already dealt with and there is nothing at this path. That is either an
+# installation that is genuinely gone or one that is somewhere else, and `rm`
+# cannot tell the difference - it can only fail, and a failure here would report
+# a finished uninstall as a broken one. The block after this is where that
+# difference is reported instead.
+if [ "$INSTALLATION_FOUND" -eq 1 ] || { [ "$REMOVED_CONTAINER" -eq 0 ] && [ "$FOUND_SERVICE" -eq 0 ]; }; then
   clear
   echo -e "$BLUE🔎 Status:$NORMAL Removing MySpeed system data if present..."
   sleep 3
 
-  # Remove folder
-  if [ "$KEEP_DATA" == "--keep-data" ]; then
+  # What has already happened, for the failures below to be honest about.
+  #
+  # Every message in this block once began "Nothing was removed" or "The service
+  # has been stopped and removed", and by the time any of them can print, neither
+  # is reliably true: the container, its volume, the compose directory, the
+  # service and both unit files may all be gone already, or none of them may be.
+  # A failure that misdescribes the state it failed in is what stops anyone going
+  # to look.
+  ALREADY_REMOVED=""
+  [ "$REMOVED_CONTAINER" -eq 1 ] && ALREADY_REMOVED="The Docker container has been removed."
+  if [ "$FOUND_SERVICE" -eq 1 ]; then
+    if [ -n "$ALREADY_REMOVED" ]; then
+      ALREADY_REMOVED="$ALREADY_REMOVED The service has been stopped and removed."
+    else
+      ALREADY_REMOVED="The service has been stopped and removed."
+    fi
+  fi
+  [ -z "$ALREADY_REMOVED" ] && ALREADY_REMOVED="Nothing else was found to remove."
+
+  # Nothing at that path, said rather than discovered by failing to remove it.
+  #
+  # This branch is reached only when nothing else was found either, so the run
+  # has found no MySpeed anywhere. `rm -R` was doing the talking - it failed, and
+  # the handler announced that the installation was "still on disk", which on a
+  # host that has none is untrue and sends the operator looking for something
+  # that is not there. What is worth saying is which path was looked at.
+  if [ "$INSTALLATION_FOUND" -eq 0 ]; then
+    echo -e "$RED✗ Found nothing to uninstall at $INSTALLATION_PATH.$NORMAL"
+    echo -e "$NORMAL If MySpeed is installed elsewhere, re-run with$YELLOW -d /your/path$NORMAL."
+    exit 1
+  fi
+
+  # An installation with no data directory is still an installation.
+  #
+  # The staging move below was attempted whether or not there was anything to
+  # stage, so --keep-data against an install that had never been run - or whose
+  # data lives somewhere else - failed on a directory that was not there and
+  # stopped. By then the service was stopped and both unit files were deleted, so
+  # the flag that exists to make an uninstall safer left the host half
+  # uninstalled. Nothing to keep is a thing to say, not a reason to stop.
+  #
+  # Recorded rather than answered twice, because the account below belongs to
+  # what was kept: the operator asking for --keep-data is not the same fact as
+  # data having been kept, and it is the second one that decides whether the
+  # owner of that directory has to stay behind with it. Declared above this
+  # block, which does not run on every path that reaches the account.
+  if [ "$KEEP_DATA" == "--keep-data" ] \
+      && [ ! -e "$INSTALLATION_PATH/data" ] && [ ! -L "$INSTALLATION_PATH/data" ]; then
+    echo -e "$YELLOW There is nothing at$NORMAL $INSTALLATION_PATH/data$YELLOW to keep."
+    echo -e "$YELLOW Removing the installation."
+  fi
+
+  # Whether anything is there, not whether it is a directory. The staging move
+  # below handles either, and asking `[ -d ]` sent everything else down the
+  # branch that removes the installation outright - so on an installation where
+  # data is a file, the flag that exists to protect that path was the one thing
+  # that deleted it.
+  #
+  # -L as well as -e, because -e follows the link and a target that is not there
+  # right now is not the same as nothing at that path. A data directory kept on a
+  # separate disk that happens to be unmounted is an ordinary state for a backup
+  # volume, and the link naming where that data lives is the last thing to remove
+  # on the strength of it.
+  if [ "$KEEP_DATA" == "--keep-data" ] \
+      && { [ -e "$INSTALLATION_PATH/data" ] || [ -L "$INSTALLATION_PATH/data" ]; }; then
     # A fresh staging directory every run, rather than a fixed /tmp path.
     #
     # mv renames into an empty destination but moves *into* an existing
@@ -111,21 +437,53 @@ else
     # Deleting that leftover first would be worse, not better: after an
     # interrupted run it is the only surviving copy of the database. mktemp
     # cannot collide with anything, so there is nothing to delete.
-    STAGING="$(mktemp -d)" || { echo -e "$RED✗ Could not create a staging directory. Nothing was removed.$NORMAL"; exit 1; }
+    STAGING="$(mktemp -d)" || { echo -e "$RED✗ Could not create a staging directory.$NORMAL"; echo -e "$NORMAL $ALREADY_REMOVED The installation is untouched."; exit 1; }
 
     # Guarded, because the step after it is the one that cannot be undone. This
     # is a cross-filesystem copy in practice - /opt on disk, /tmp often tmpfs -
     # so a full /tmp fails here, and deleting the installation anyway would
     # destroy the data this flag exists to keep.
     if ! mv "$INSTALLATION_PATH/data" "$STAGING/data"; then
-      echo -e "$RED✗ Could not move the data directory to safety. Nothing was removed.$NORMAL"
+      echo -e "$RED✗ Could not move the data directory to safety.$NORMAL"
+      echo -e "$NORMAL $ALREADY_REMOVED The installation at $INSTALLATION_PATH is untouched."
+      rmdir "$STAGING" 2>/dev/null
       exit 1
     fi
 
-    rm -R "$INSTALLATION_PATH"
-    mkdir "$INSTALLATION_PATH"
-    mv "$STAGING/data" "$INSTALLATION_PATH/data"
+    # From here the data is in the staging directory and nowhere else, so every
+    # step is checked and every failure says where it is. Unchecked, a full disk
+    # or a read-only mount left the database in a mktemp directory nobody was
+    # told about, under the success banner.
+    if ! rm -R "$INSTALLATION_PATH"; then
+      echo -e "$RED✗ Could not remove $INSTALLATION_PATH.$NORMAL"
+      echo -e "$NORMAL Your data is safe in$YELLOW $STAGING/data$NORMAL - move it back by hand."
+      exit 1
+    fi
+
+    if ! mkdir "$INSTALLATION_PATH"; then
+      echo -e "$RED✗ Could not recreate $INSTALLATION_PATH.$NORMAL"
+      echo -e "$NORMAL Your data is safe in$YELLOW $STAGING/data$NORMAL - move it back by hand."
+      exit 1
+    fi
+
+
+    # The mode is stated because mkdir applies the umask, and what reads it is
+    # the *next* install: reachable_by_service walks this directory, and root on
+    # a hardened host runs with 027 or 077, so the recreated directory came back
+    # 0750 or 0700 and install.sh fell back to SERVICE_ACCOUNT="root". Keeping
+    # the data is what makes reinstalling the easy path, so this flag was the
+    # quiet way an installation lost its privilege separation. install.sh states
+    # the same mode where it creates the directory itself.
+    chmod 755 "$INSTALLATION_PATH"
+
+    if ! mv "$STAGING/data" "$INSTALLATION_PATH/data"; then
+      echo -e "$RED✗ Could not put the data directory back.$NORMAL"
+      echo -e "$NORMAL It is safe in$YELLOW $STAGING/data$NORMAL - move it to $INSTALLATION_PATH/data by hand."
+      exit 1
+    fi
+
     rmdir "$STAGING"
+    KEPT_DATA=1
   else
     # Checked, because this is the step that cannot be undone and it was the one
     # whose failure was discarded. There is no `set -e`, so a path that was
@@ -133,38 +491,98 @@ else
     # is worse than the failure, because it is what stops anyone going to look.
     if ! rm -R "$INSTALLATION_PATH"; then
       echo -e "$RED✗ Could not remove $INSTALLATION_PATH.$NORMAL"
-      echo -e "$NORMAL The service has been stopped and removed, but the installation is still on disk."
-      echo -e "$NORMAL If it was installed elsewhere, re-run with$YELLOW -d /your/path$NORMAL."
+      echo -e "$NORMAL $ALREADY_REMOVED The installation is still on disk."
+
+      # The recorded path, when there was one and it is not the path just tried.
+      # The unit that held it has been deleted by now, so "re-run with -d" was
+      # advice the operator had no way left to follow.
+      if [ -n "$RECORDED" ] && [ "$RECORDED" != "$INSTALLATION_PATH" ]; then
+        echo -e "$NORMAL The service recorded it at$YELLOW $RECORDED$NORMAL - re-run with$YELLOW -d $RECORDED$NORMAL."
+      else
+        echo -e "$NORMAL If it was installed elsewhere, re-run with$YELLOW -d /your/path$NORMAL."
+      fi
+
       exit 1
     fi
   fi
+fi
 
-  # The account install.sh creates, taken back out with the files it owned.
-  #
-  # Without this, an uninstall that removes the binary, the unit and the whole
-  # directory still reports "MySpeed has been uninstalled" while leaving a
-  # `myspeed` entry in /etc/passwd whose home directory is the path just
-  # deleted - and it survives every later uninstall too, because the installer
-  # only runs useradd when the account is missing.
-  #
-  # Not under --keep-data, and that is the whole reason this is a condition
-  # rather than a line: that flag exists to leave the database on disk for a
-  # later reinstall, and those files belong to this account. Delete it and they
-  # belong to a free uid, which the next account created on this host may be
-  # given. Data that is being kept keeps its owner.
-  #
-  # Guarded on both sides, and never fatal: a system without userdel must not
-  # fail an uninstall over it, and an install that fell back to root created no
-  # account to remove.
-  SERVICE_USER="myspeed"
+# There was reason to expect a native installation, and none was found.
+#
+# Two ways to have that reason: a service was here, or the operator named a path
+# with -d. The second is what this missed - install.sh writes no unit on a host
+# without systemctl, and a unit removed by hand leaves none either, so a wrong -d
+# beside a container reached the success banner with the whole installation, its
+# database and its password hash untouched on disk.
+#
+# Not when the path is corroborated. Read from the unit, or matching what the
+# unit recorded, an empty directory is the system's own answer that the files are
+# gone - and an uninstall that is over must not be reported as a problem.
+#
+# Ahead of the account removal below, because this exits: deleting the owner of a
+# data directory the operator has just been told is still on disk is the state
+# --keep-data exists to avoid, arrived at from the other side.
+UNACCOUNTED=0
+if [ "$INSTALLATION_FOUND" -eq 0 ] && [ "$PATH_FROM_UNIT" -eq 0 ]; then
+  [ "$FOUND_SERVICE" -eq 1 ] && UNACCOUNTED=1
+  [ -n "$CHOSEN_PATH" ] && UNACCOUNTED=1
+fi
 
-  if [ "$KEEP_DATA" != "--keep-data" ] && command -v userdel &> /dev/null \
+if [ "$UNACCOUNTED" -eq 1 ]; then
+  echo -e "$RED✗ Found no installation at $INSTALLATION_PATH.$NORMAL"
+
+  if [ -n "$RECORDED" ] && [ "$RECORDED" != "$INSTALLATION_PATH" ]; then
+    echo -e "$NORMAL The service recorded it at$YELLOW $RECORDED$NORMAL."
+    echo -e "$NORMAL Re-run with$YELLOW -d $RECORDED$NORMAL to remove it."
+  else
+    echo -e "$NORMAL MySpeed is installed somewhere else. Its data directory - the database and"
+    echo -e "$NORMAL the admin password hash - is still on disk."
+    echo -e "$NORMAL Re-run with$YELLOW -d /your/path$NORMAL to remove it."
+  fi
+
+  exit 1
+fi
+
+# The account install.sh creates, taken back out with the files it owned.
+#
+# Without this, an uninstall that removes the binary, the unit and the whole
+# directory still reports "MySpeed has been uninstalled" while leaving a
+# `myspeed` entry in /etc/passwd whose home directory is the path just deleted -
+# and it survives every later uninstall too, because the installer only runs
+# useradd when the account is missing.
+#
+# Asked of the installation as a whole rather than from inside the directory
+# removal above. The account belongs to the service, not to the directory: a
+# native install whose directory was already gone still has one, and the removal
+# block does not run for it. The container creates no account on the host at all,
+# so a docker-only uninstall must not go looking for one to delete.
+#
+# Not when data was kept, and that is the whole reason this is a condition rather
+# than a line: --keep-data exists to leave the database on disk for a later
+# reinstall, and those files belong to this account. Delete it and they belong to
+# a free uid, which the next account created on this host may be given. Data that
+# is being kept keeps its owner.
+#
+# Asked of what was kept rather than of what was asked for. --keep-data on an
+# installation that had no data directory keeps nothing, and an account left
+# behind with nothing to own is the /etc/passwd entry this block exists to
+# prevent.
+#
+# Guarded on every side, and never fatal: a system without userdel must not fail
+# an uninstall over it, and an install that fell back to root created no account
+# to remove.
+SERVICE_USER="myspeed"
+
+if [ "$FOUND_SERVICE" -eq 1 ] || [ "$INSTALLATION_FOUND" -eq 1 ]; then
+  if [ "$KEPT_DATA" -eq 0 ] && command -v userdel &> /dev/null \
       && id -u "$SERVICE_USER" > /dev/null 2>&1; then
     userdel "$SERVICE_USER" > /dev/null 2>&1 || true
   fi
 fi
 
 clear
+
+
 echo -e "$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-" #multicolor
 echo -e "$GREEN✓ Completed: $NORMAL MySpeed has been uninstalled."
 echo -e "$NORMAL You can reinstall MySpeed anytime. Find the instructions at https://github.com/i7Gamer/MySpeed#readme."

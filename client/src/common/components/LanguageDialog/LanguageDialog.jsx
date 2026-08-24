@@ -6,14 +6,49 @@ import {languages} from "@/i18n";
 import {useContext, useState} from "react";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
-import {readStored} from "@/common/utils/Storage";
+import {readStored, writeStored} from "@/common/utils/Storage";
+import {supportedLanguage} from "@/common/utils/LanguageChoice";
+import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 
 export const LanguageDialog = ({open, onClose}) => {
     const updateToast = useContext(ToastNotificationContext);
-    const [selectedLanguage, setSelectedLanguage] = useState(readStored("language") || "en");
+    const [selectedLanguage, setSelectedLanguage] = useState(() =>
+        supportedLanguage(readStored("language"), languages));
 
+    /**
+     * Read when the dialog opens, not at mount - see useSyncOnOpen, and the four
+     * sibling dialogs that already do this. The header mounts this long before
+     * anything opens it, so a useState initialiser is a single read taken at
+     * page load: a language changed in another tab, or chosen and then reopened,
+     * left the list highlighting the one this saw first.
+     *
+     * Through supportedLanguage, because the stored code is not necessarily one
+     * of these entries. i18n.js seeds it from `navigator.language`, and a value
+     * written by an earlier version was seeded from it unchecked - so a browser
+     * set to a language MySpeed does not ship opened this dialog with nothing
+     * selected, and no sign of which language was actually in use.
+     */
+    useSyncOnOpen(open, () => setSelectedLanguage(supportedLanguage(readStored("language"), languages)));
+
+    /**
+     * Written here, not left to the language detector.
+     *
+     * changeLanguage() reaches storage only because
+     * i18next-browser-languagedetector caches it there, and that cache is a no-op
+     * when the browser refuses the store - the cross-origin iframe Storage.js
+     * exists to keep working, where it falls back to an in-memory Map instead.
+     * The seeded value stayed in that Map, so the re-read on open above handed
+     * the dialog back a selection the operator had already changed: reopening
+     * highlighted English over a German interface, and pressing Update again put
+     * the interface back to English.
+     *
+     * Ahead of the toast and the close only so that the write happens on every
+     * way out of this handler. Nothing depends on that order: `close` adds two
+     * CSS classes, and the unmount comes later, off the fadeOut animation.
+     */
     const updateLanguage = (close) => {
         changeLanguage(selectedLanguage);
+        writeStored("language", selectedLanguage);
         updateToast(t('dropdown.language_changed'), "green", faGlobe);
         close();
     };

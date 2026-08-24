@@ -424,6 +424,11 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                                 <button
                                     type="button"
                                     key={index}
+                                    // The visible text is a bare number, and the
+                                    // grid shows the neighbours' numbers too - the
+                                    // whole date, in the app's language, is what
+                                    // tells the three "14"s on screen apart.
+                                    aria-label={formatDay(item.date)}
                                     className={`day-btn ${!item.isCurrentMonth ? "other-month" : ""} ${isInRange(item.date) ? "in-range" : ""} ${isRangeStart(item.date) ? "range-start" : ""} ${isRangeEnd(item.date) ? "range-end" : ""} ${isSelected(item.date) ? "selected" : ""} ${isToday(item.date) ? "today" : ""} ${isDisabled(item.date) ? "disabled" : ""}`}
                                     onClick={() => !isDisabled(item.date) && handleDayClick(item.date)}
                                     onMouseEnter={() => selecting === "to" && !isDisabled(item.date) && setHoverDate(item.date)}

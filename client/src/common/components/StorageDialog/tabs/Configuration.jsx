@@ -79,7 +79,8 @@ export default ({close}) => {
                 <div className="storage-row-actions">
                     <label className="storage-row-toggle">
                         <span>{t("storage.include_secrets")}</span>
-                        <ToggleSwitch checked={includeSecrets} onChange={setIncludeSecrets}/>
+                        <ToggleSwitch checked={includeSecrets} onChange={setIncludeSecrets}
+                                      label={t("storage.include_secrets")}/>
                     </label>
                     <button className="dialog-btn" onClick={exportConfig}>{t("storage.export")}</button>
                 </div>

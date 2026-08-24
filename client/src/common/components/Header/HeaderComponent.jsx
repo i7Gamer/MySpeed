@@ -16,6 +16,7 @@ import { refusalDescriptionKey } from "@/common/utils/AuthOutcome";
 import { updateInfo } from "@/common/components/Header/utils/infos";
 import { t } from "i18next";
 import { ConfigContext } from "@/common/contexts/Config";
+import { deniesAdminAccess } from "@/common/contexts/Config/configOutcome";
 import { NodeContext } from "@/common/contexts/Node";
 import { INSTALL_URL, RELEASES_URL } from "@/index";
 import { nodeTitle } from "@/common/components/Header/nodeTitle";
@@ -100,8 +101,11 @@ const HeaderComponent = () => {
             const newConfig = await checkConfig().catch(() => null);
 
             // Read-level access authenticates, but not for the admin controls
-            // this dialog was opened to reach, so it counts as a refusal.
-            return {ok: !newConfig?.viewMode};
+            // this dialog was opened to reach, so it counts as a refusal. An
+            // answer that never came does not: login() has already succeeded by
+            // this point, and calling that a wrong password re-asks for one that
+            // was right - see deniesAdminAccess.
+            return {ok: !deniesAdminAccess(newConfig)};
         }
     );
 

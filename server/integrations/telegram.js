@@ -1,6 +1,6 @@
 import { postJson } from "../util/http.js";
 import { replaceVariables, truncate } from "../util/helpers.js";
-import { TELEGRAM_MARKDOWN, stripMarkdown as strip } from "../util/markdown.js";
+import { TELEGRAM_MARKDOWN, stripMarkdown as strip, balancedForTelegram } from "../util/markdown.js";
 
 /**
  * What sendMessage will accept as text.
@@ -33,11 +33,30 @@ const defaults = {
  */
 export const stripMarkdown = (variables) => strip(variables, TELEGRAM_MARKDOWN);
 
-// Trimmed here rather than at each call site, so a message added later cannot
-// be the one that is sent whole and refused.
-const send = (token, chat_id, text, activity) =>
-    postJson(`https://api.telegram.org/bot${token}/sendMessage`,
-        {text: truncate(text, TELEGRAM_MESSAGE_LIMIT), chat_id, parse_mode: "markdown"}, {activity});
+/**
+ * Trimmed here rather than at each call site, so a message added later cannot
+ * be the one that is sent whole and refused.
+ *
+ * And rendered as markdown only while it still parses as markdown. The trim is
+ * the one thing that reaches past stripMarkdown: it cuts the composed message,
+ * which is where the operator's own delimiters are, so a template long enough
+ * to be trimmed can lose the closing half of a pair it opened. Telegram answers
+ * that with a 400 and delivers nothing - and what is being sent at that length
+ * is a failure alert carrying a long CLI reason, which is the notification
+ * least able to afford being dropped.
+ *
+ * Dropping parse_mode sends the same text unformatted, in the same single
+ * request. The alternative - send, notice the 400, send again - doubles every
+ * notification to an endpoint that is merely slow, and leaves the integration's
+ * activity marked failed for a message that did arrive.
+ */
+const send = (token, chat_id, text, activity) => {
+    const message = truncate(text, TELEGRAM_MESSAGE_LIMIT);
+
+    return postJson(`https://api.telegram.org/bot${token}/sendMessage`,
+        {text: message, chat_id, ...(balancedForTelegram(message) ? {parse_mode: "markdown"} : {})},
+        {activity});
+};
 
 export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {

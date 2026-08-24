@@ -485,13 +485,11 @@ describe("lineChartOptions", () => {
             {hour: "2-digit", minute: "2-digit", hour12: false}));
     });
 
-    it("keeps the failure markers out of the tooltip and the legend", () => {
-        const built = options();
-        const failedLabel = {dataset: {label: "statistics.failed_test"}};
-
-        assert.equal(built.plugins.tooltip.filter(failedLabel), false);
-        assert.equal(built.plugins.legend.labels.filter({text: "statistics.failed_test"}), false);
-        assert.equal(built.plugins.tooltip.filter({dataset: {label: "anything else"}}), true);
+    // The marker is a cross on the axis with no meaning of its own in a list of
+    // series, so it stays out of the legend. The tooltip is the opposite case -
+    // see below.
+    it("keeps the failure markers out of the legend", () => {
+        assert.equal(options().plugins.legend.labels.filter({text: "statistics.failed_test"}), false);
     });
 
     it("appends the metric's unit to the tooltip line", () => {
@@ -501,10 +499,53 @@ describe("lineChartOptions", () => {
         assert.equal(line, "Download: 100 Mbps");
     });
 
-    it("names the failure and its reason in the tooltip body", () => {
-        const body = options().plugins.tooltip.callbacks.afterBody([{dataIndex: 1}]);
+    /**
+     * The tooltip on a failed test, which used to be no tooltip at all.
+     *
+     * The options carried `filter: (item) => item.dataset.label !== failed_test`,
+     * and every measurement series holds null where a test failed - buildStatistics
+     * puts the gap there on purpose, so the line reads as a hole rather than as a
+     * reading of zero. So at a failed index the failure marker is the *only*
+     * dataset with a point, the filter removed it, and chart.js suppresses a
+     * tooltip with no items left: hovering the red cross showed nothing, and the
+     * `label` branch written to name the reason could never run. The one place an
+     * operator goes to ask why a test failed was the one place that would not say.
+     *
+     * `afterBody` said it instead, which is why this went unnoticed on a bucket
+     * that also held a successful test - there the tooltip had a line to attach
+     * itself to. It is gone now: with the filter lifted, `label` names the failure
+     * on both, and keeping both printed the reason twice.
+     */
+    describe("the tooltip on a failed test", () => {
+        const failedItem = {dataset: {label: "statistics.failed_test"}, dataIndex: 1, formattedValue: "0"};
 
-        assert.match(body, /Too many requests/);
+        it("is not suppressed by a filter", () => {
+            const built = options();
+
+            assert.equal(built.plugins.tooltip.filter?.(failedItem) ?? true, true,
+                "the only dataset with a point at that index is dropped, so no tooltip is drawn at all");
+        });
+
+        it("names the failure and the reason it carries", () => {
+            const line = options().plugins.tooltip.callbacks.label(failedItem);
+
+            assert.match(line, /statistics\.failed_test/, "the tooltip line does not say the test failed");
+            assert.match(line, /Too many requests/, "the reason the run recorded is not shown");
+        });
+
+        it("still names the failure when no reason was recorded", () => {
+            const line = options().plugins.tooltip.callbacks.label(
+                {...failedItem, dataIndex: 0});
+
+            assert.match(line, /statistics\.failed_test/);
+        });
+
+        // Two callbacks naming the same failure printed it twice on any bucket
+        // that held a successful test beside it.
+        it("says it once", () => {
+            assert.equal(options().plugins.tooltip.callbacks.afterBody, undefined,
+                "the reason is printed by both the label and the body");
+        });
     });
 
     it("only sets a y step when one is asked for", () => {

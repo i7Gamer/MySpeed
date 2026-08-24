@@ -214,6 +214,17 @@ export const blockEnd = (source, from = 0) => {
     throw new Error("a block is never closed");
 };
 
+/**
+ * A literal, made safe to travel inside a RegExp.
+ *
+ * For the scans that build a pattern around a value - a translation key, a
+ * version string, a binary name. Three of them were escaping by hand, each
+ * covering only the dot, which holds exactly until the first value carrying a
+ * `(`, `$` or `|` builds a pattern that matches something else. The character
+ * class is the whole set RegExp assigns meaning to.
+ */
+export const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 export const bodyOf = (source, declaration) => {
     const start = source.indexOf(declaration);
     if (start === -1) throw new Error(`"${declaration}" is not in this source`);

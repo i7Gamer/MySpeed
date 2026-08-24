@@ -54,3 +54,29 @@ const answerableHere = (reason) => reason?.credential && !reason.node;
 
 export const failureOutcome = (storedNode, reason) =>
     ({redirectToNodes: isRemoteNode(storedNode) && !answerableHere(reason)});
+
+/**
+ * Whether the config just read is the server refusing admin access.
+ *
+ * The header's admin login exchanges the password for a session and then
+ * re-reads /api/config to see what that session is worth: read-level access
+ * authenticates, but not for the controls the dialog was opened to reach, so it
+ * counts as a refusal there.
+ *
+ * Asked in this direction on purpose. Asking the opposite - is this an admin
+ * config - reads every answer that is not one as a refusal, and one of those is
+ * "no answer": `request` does not throw on a non-2xx, checkConfig calls .json()
+ * on whatever came back, and the call site catches into null. So a proxied node
+ * that has gone slow, a 503 from in front of a restarting container, or a fetch
+ * that hit the 10s timeout each answered {ok: false} for a password POST
+ * /api/session had accepted a moment earlier - and promptUntilAccepted stops
+ * only on ok or unreachable, so the operator was told their correct password was
+ * wrong and asked for it again, and again.
+ *
+ * `viewMode: true` is the only thing the server ever says to refuse this, and it
+ * always says it in full: password.js assigns req.viewMode a literal true or
+ * false on every path, so a config that answered at all carries a boolean.
+ * Anything else is an answer that never arrived, and the login already succeeded
+ * without it.
+ */
+export const deniesAdminAccess = (config) => config?.viewMode === true;

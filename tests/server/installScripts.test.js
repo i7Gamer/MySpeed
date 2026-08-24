@@ -247,6 +247,30 @@ describe("uninstall.sh --keep-data", () => {
      * one quoted and one bare path, which is precisely the mistake worth
      * catching - `mv "$SRC" $DEST` is as broken as quoting neither.
      */
+    /**
+     * The directory it puts back is the one the next install.sh will judge.
+     *
+     * mkdir applies the umask, and root on a hardened host runs with 027 or 077,
+     * so the recreated directory comes out 0750 or 0700. install.sh then walks
+     * it with reachable_by_service, finds it cannot be entered by an
+     * unprivileged account, and falls back to SERVICE_ACCOUNT="root" - so
+     * reinstalling over kept data silently gives up the privilege separation the
+     * previous install had, and runs the downloaded speedtest CLIs as root.
+     *
+     * The flag exists to make the reinstall the easy path, which is exactly why
+     * this one has to come back the way it went.
+     */
+    it("puts the directory back in a mode the service account can enter", () => {
+        const keepData = source.slice(source.indexOf('"--keep-data"'));
+        const made = keepData.indexOf('mkdir "$INSTALLATION_PATH"');
+        const stated = keepData.indexOf('chmod 755 "$INSTALLATION_PATH"');
+
+        assert.notEqual(made, -1, "the installation directory is no longer recreated");
+        assert.notEqual(stated, -1,
+            "the recreated directory's mode is left to the umask, so the next install falls back to root");
+        assert.ok(made < stated, "the mode is stated before the directory is recreated");
+    });
+
     it("quotes every path it moves and removes", () => {
         const unquoted = source.split("\n")
             .filter((line) => /^\s*(mv|rm|mkdir)\b/.test(line))
@@ -317,30 +341,17 @@ describe("uninstall.sh finds the installation it is removing", () => {
             "--keep-data is still read as the first positional, which -d displaces");
     });
 
-    /**
-     * The removal is the step that cannot be undone, and it was the one step
-     * whose failure was ignored. Reporting success over a directory that is
-     * still there is worse than the failure itself: it is what stops anyone
-     * going to look.
+    /*
+     * What that removal does when it fails is asserted by running it, in
+     * uninstallBehaviour.test.js.
+     *
+     * It was asserted here by slicing the source from its last bare `else` to
+     * the success banner and looking for a check inside the slice. The window
+     * was the --keep-data branch when it was written; a later block added an
+     * `else` nearer the banner, the window moved onto a message being printed,
+     * and all three assertions went on passing against code that has nothing to
+     * do with removing anything.
      */
-    it("does not report success when the removal failed", () => {
-        // The plain branch, not the --keep-data one above it: that removal is
-        // already guarded, by the staging move that has to succeed before it.
-        //
-        // Matched as a line of its own rather than as the substring "else",
-        // which also occurs inside the very message this branch prints.
-        const branches = [...source.matchAll(/^[ \t]*else[ \t]*$/gm)];
-        assert.notEqual(branches.length, 0, "the uninstaller no longer branches on --keep-data");
-
-        const plain = source.slice(branches[branches.length - 1].index, source.indexOf("Completed"));
-
-        assert.match(plain, /rm\s+-R\s+"\$\{?INSTALLATION_PATH/,
-            "the uninstaller no longer removes the installation directory");
-        assert.match(plain, /if\s+!\s*rm|\|\||&&/,
-            "the removal is unchecked, so a path that was never there fails silently");
-        assert.match(plain, /exit\s+1/,
-            "the script carries on to its success banner after a removal that did not happen");
-    });
 });
 
 /**
@@ -618,6 +629,80 @@ describe("install.sh registers a service that is not root", () => {
     });
 
     /**
+     * And the directory itself is left in a mode the account can enter.
+     *
+     * The same umask that leaves a downloaded binary at 700 leaves a created
+     * directory at 700, and this is the directory reachable_by_service is about
+     * to judge: on a host where root runs with 027 or 077 - which is what the
+     * CIS profiles set - a fresh install creates its own installation directory
+     * unreachable, fails its own check, and silently registers the service as
+     * root. The whole point of the account is then gone, along with the
+     * privilege separation around the third-party CLIs the server downloads and
+     * spawns, and the only sign of it is one line of fallback text scrolling
+     * past mid-install.
+     *
+     * Stated before the check rather than after it, because the check is what
+     * consumes it. uninstall.sh recreates the same directory under the same mask
+     * and states the same mode, for the same reason - see the assertion there.
+     */
+    /**
+     * Where the installation directory itself is created, as opposed to the
+     * `data` and `bin` it makes underneath. Matched by pattern rather than by a
+     * fixed spelling, so guarding the call - which is the subject of the
+     * assertion below - does not also move the anchor it is measured from.
+     */
+    const createsInstallationPath = () => {
+        const at = source.search(/mkdir -p "\$INSTALLATION_PATH"(?!\/)/);
+
+        assert.notEqual(at, -1, "nothing creates the installation directory any more");
+        return at;
+    };
+
+    /**
+     * And it does not widen something that is not a directory.
+     *
+     * `[ ! -d "$INSTALLATION_PATH" ]` is also true when the path is a regular
+     * file - the case the `cd` check below calls "a name already taken by a
+     * file". There is no `set -e`, so an unchecked `mkdir -p` fails with EEXIST
+     * and execution walks straight into the chmod, which follows symlinks and
+     * succeeds: a 0600 file named by a typo in -d is left world-readable and
+     * executable, by root, and only then does the script abort. Before the mode
+     * was stated here that invocation changed nothing at all.
+     */
+    it("does not reach the chmod when the directory was not created", () => {
+        const made = createsInstallationPath();
+        const stated = source.indexOf('chmod 755 "$INSTALLATION_PATH"');
+
+        assert.ok(made !== -1 && stated !== -1);
+
+        const between = source.slice(made, stated);
+
+        assert.match(between, /\|\||exit|&&/,
+            "a failed mkdir falls through to a chmod that widens whatever is already at that path");
+    });
+
+    it("says why it could not create the directory", () => {
+        assert.match(source, /Could not create \$INSTALLATION_PATH/,
+            "the failure is silent, and the run aborts a few lines later for a reason that names something else");
+    });
+
+    it("creates the installation directory in a mode the account can enter", () => {
+        const made = createsInstallationPath();
+        const stated = source.indexOf('chmod 755 "$INSTALLATION_PATH"');
+
+        assert.notEqual(made, -1, "nothing creates the installation directory any more");
+        assert.notEqual(stated, -1,
+            "the directory's mode is left to the umask, so a hardened host installs a service running as root");
+        assert.ok(made < stated, "the mode is stated before the directory exists");
+
+        const judged = source.indexOf('reachable_by_service "$INSTALLATION_PATH"');
+
+        assert.notEqual(judged, -1, "nothing asks whether the account can reach the installation");
+        assert.ok(stated < judged,
+            "the mode is stated after the check that reads it, which has already fallen back to root");
+    });
+
+    /**
      * And an installation the account cannot reach falls back to root.
      *
      * systemd chdirs to WorkingDirectory and execs ExecStart after dropping to
@@ -691,19 +776,13 @@ describe("uninstall.sh removes the account install.sh creates", () => {
     });
 
     /*
-     * Slicing from the last KEEP_DATA and then asserting KEEP_DATA is in the
-     * slice says nothing - the slice begins with it. What has to hold is that
-     * the flag is part of the condition guarding userdel.
+     * Whether the account survives an uninstall that kept its files is asserted
+     * by running one, in uninstallBehaviour.test.js.
+     *
+     * It was asserted here by finding KEEP_DATA in the condition above userdel,
+     * which is a mechanism rather than a property - and the mechanism moved. The
+     * question is not whether --keep-data was asked for but whether data was
+     * actually kept: the flag also arrives on installations that have no data
+     * directory, where an account left behind owns nothing at all.
      */
-    it("keeps the account whenever it keeps the data it owns", () => {
-        const line = source.split("\n").find((text) => text.includes("userdel"));
-        const condition = source.slice(0, source.indexOf("userdel"));
-        const guard = condition.slice(condition.lastIndexOf("if "));
-
-        assert.match(guard, /KEEP_DATA/,
-            "the account is removed even under --keep-data, orphaning the files it owns");
-        assert.match(guard, /!=\s*"--keep-data"/,
-            "the --keep-data check does not read as \"only when data is not kept\"");
-        assert.ok(line, "userdel is no longer called");
-    });
 });

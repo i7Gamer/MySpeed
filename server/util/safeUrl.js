@@ -11,8 +11,14 @@ import dnsCallback from 'node:dns';
  * anyway. What is blocked is what can never be a legitimate node: the machine's
  * own loopback, the link-local range that carries cloud metadata services, and
  * anything that is not plain HTTP.
+ *
+ * The protocol set is exported because that last part is no longer only this
+ * file's question: the librespeed backend URL in controller/config.js is a
+ * third stored address the server has to be able to fetch, and it was judged by
+ * whether `new URL()` could parse it - which is true of every scheme the parser
+ * knows. One set, so the next scheme question has one answer.
  */
-const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
+export const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
 
 /**
  * An optional allowlist of hosts a node URL may point at.

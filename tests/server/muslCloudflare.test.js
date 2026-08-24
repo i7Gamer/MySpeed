@@ -6,22 +6,12 @@ import { fileURLToPath } from "node:url";
 import { isMuslLinux } from "../../server/util/providers/libc.js";
 import { selectBinary } from "../../server/util/providers/loadCloudflare.js";
 import { missingBinaryMessage } from "../../server/util/speedtest.js";
+import { escapeRegExp } from "../helpers/source.js";
 import { cloudflareVersion } from "../../server/config/binaries.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 const existsIn = (...paths) => (candidate) => paths.includes(candidate);
-
-/**
- * A literal turned into a pattern that matches only itself.
- *
- * Escaping just the dots reads as enough for a version string, and CodeQL is
- * right that it is not: a backslash left alone escapes whatever follows it, so
- * the pattern stops meaning the text it was built from. Nothing here is
- * attacker-controlled, which is why this is a tidiness matter rather than a
- * hole - but a half-escaper is worth neither keeping nor explaining twice.
- */
-const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Alpine reports itself as linux/x64 like any other Linux, so the platform pair

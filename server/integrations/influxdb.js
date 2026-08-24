@@ -108,11 +108,18 @@ export default (registerEvent) => {
             ...parseTags(c.tags)
         };
 
+        // The quality figures ride along with the throughput. They are null
+        // where the provider does not measure them, and buildLine keeps only
+        // finite numbers - so an absent figure stays out of the line rather
+        // than charting a loss-free connection nobody measured.
         const fields = {
             download: data.download,
             upload: data.upload,
             ping: data.ping,
-            jitter: data.jitter ?? 0
+            jitter: data.jitter ?? 0,
+            packetLoss: data.packetLoss,
+            downloadLatency: data.downloadLatency,
+            uploadLatency: data.uploadLatency
         };
 
         const timestamp = Math.floor(Date.now() / 1000);

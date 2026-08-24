@@ -57,6 +57,11 @@ export const PasswordDialog = ({open, onClose}) => {
     // confirmation - it must not shout at an untouched box.
     const mismatch = confirmation ? passwordConfirmationProblem(password, confirmation) : null;
 
+    // One flag for both network actions. Saving and removing race each other
+    // just as badly as two saves do - and a second click on a slow link ran
+    // the whole chain again, exchanging two sessions where one was asked for.
+    const [saving, setSaving] = useState(false);
+
     const save = async (close) => {
         // Before the PATCH, not after: the server hashes what it is given and
         // never sees it again, so a typo caught afterwards is already the
@@ -65,6 +70,9 @@ export const PasswordDialog = ({open, onClose}) => {
         // "changes unsaved".
         const problem = passwordConfirmationProblem(password, confirmation);
         if (problem) return updateToast(t(problem), "red", faExclamationTriangle);
+
+        if (saving) return;
+        setSaving(true);
 
         try {
             if (password) {
@@ -97,10 +105,17 @@ export const PasswordDialog = ({open, onClose}) => {
             // failure falls back to the generic line.
             updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
                 "red", faExclamationTriangle);
+        } finally {
+            // However the run ended - a refused password must not leave the
+            // dialog locked shut.
+            setSaving(false);
         }
     };
 
     const removePassword = async (close) => {
+        if (saving) return;
+        setSaving(true);
+
         try {
             // Its own endpoint rather than a PATCH carrying "none": that
             // sentinel is indistinguishable from someone choosing "none" as
@@ -129,6 +144,8 @@ export const PasswordDialog = ({open, onClose}) => {
             // failure falls back to the generic line, as the save path does.
             updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
                 "red", faExclamationTriangle);
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -234,12 +251,14 @@ export const PasswordDialog = ({open, onClose}) => {
                     </DialogBody>
                     <DialogFooter>
                         {isPasswordSet && (
-                            <button type="button" className="dialog-btn dialog-btn-danger" onClick={() => confirmRemoval(close)}>
+                            <button type="button" className="dialog-btn dialog-btn-danger" onClick={() => confirmRemoval(close)}
+                                    disabled={saving}>
                                 <FontAwesomeIcon icon={faLockOpen}/>
                                 {t("update.remove_password")}
                             </button>
                         )}
-                        <button type="button" className="dialog-btn" onClick={() => save(close)}>{t("dialog.update")}</button>
+                        <button type="button" className="dialog-btn" onClick={() => save(close)}
+                                disabled={saving}>{t("dialog.update")}</button>
                     </DialogFooter>
                 </>
             )}
