@@ -18,7 +18,11 @@ export const downloadFile = async () => {
         throw new Error(`Your platform (${process.platform}-${process.arch}) is not supported by the LibreSpeed CLI`);
 
     await downloadAndExtract(downloadPath + binary.suffix,
-        {suffix: binary.suffix, outputDir: binaryDirectory, binaryRegex, outputName: binaryName});
+        {suffix: binary.suffix, outputDir: binaryDirectory, binaryRegex, outputName: binaryName,
+            // The digest config/binaries.js pins for this exact archive.
+            // downloadHelper refuses the download without one, so a new
+            // platform entry cannot arrive unverified by being forgotten here.
+            sha256: binary.sha256});
 };
 
 export const load = async () => {

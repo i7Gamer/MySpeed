@@ -1,6 +1,7 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { downloadAndExtract, downloadToFile, extractBinary } from "../../server/util/providers/downloadHelper.js";
@@ -64,6 +65,15 @@ const failsMidStream = () => responseStub({
 
 const clientFor = (response) => (url, cb) => { cb(response); return request; };
 
+/**
+ * The digest of what a stub is about to serve.
+ *
+ * downloadAndExtract verifies before it extracts and fails closed, so a case
+ * about the *cleanup* still has to pin what it downloads - otherwise it is a
+ * test of the digest guard wearing the name of something else.
+ */
+const digestOf = (body) => createHash("sha256").update(body).digest("hex");
+
 describe("downloadAndExtract", () => {
     const options = (extra) => ({
         outputDir: directory,
@@ -78,6 +88,7 @@ describe("downloadAndExtract", () => {
 
         await downloadAndExtract("https://example.test/cli.tgz", options({
             client: clientFor(success("archive bytes")),
+            sha256: digestOf("archive bytes"),
             extract: (from) => { extractedFrom = from; }
         }));
 
@@ -87,6 +98,7 @@ describe("downloadAndExtract", () => {
     it("removes the archive once the binary is out of it", async () => {
         await downloadAndExtract("https://example.test/cli.tgz", options({
             client: clientFor(success("archive bytes")),
+            sha256: digestOf("archive bytes"),
             extract: () => {}
         }));
 
@@ -97,6 +109,7 @@ describe("downloadAndExtract", () => {
     it("removes the archive even when extraction fails", async () => {
         await assert.rejects(() => downloadAndExtract("https://example.test/cli.tgz", options({
             client: clientFor(success("not really an archive")),
+            sha256: digestOf("not really an archive"),
             extract: () => { throw new Error("not a tarball"); }
         })), /not a tarball/);
 

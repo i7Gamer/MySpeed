@@ -2,10 +2,68 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { get } from 'node:https';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import decompress from 'decompress';
 import decompressTarGz from 'decompress-targz';
 import decompressUnzip from 'decompress-unzip';
+
+/**
+ * What a refused download is, as its own type.
+ *
+ * Named rather than a bare Error because it is the one failure here that means
+ * something other than "the network was unhelpful": the archive arrived intact
+ * and is not the archive this build expects. A caller telling the two apart
+ * should not have to match on a message.
+ */
+export class DigestMismatchError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = "DigestMismatchError";
+        this.code = "EDIGESTMISMATCH";
+    }
+}
+
+const SHA256 = /^[a-f0-9]{64}$/;
+
+/**
+ * Refuses a file that is not the one the manifest names.
+ *
+ * The first item in the tech debt register: these archives are unpacked and the
+ * binary inside is then spawned by the server on a schedule, so a replaced
+ * upstream asset is arbitrary code on the operator's machine once an hour for as
+ * long as the instance runs. 1.3.5 stopped that running as root; this is the
+ * other half.
+ *
+ * Fails closed. An expected digest that is absent or malformed is a manifest
+ * that cannot say what should have arrived, and continuing on that basis is
+ * exactly the state this ends - so it is refused rather than waved through as
+ * "nothing to check against".
+ *
+ * Streamed rather than read whole: these are a few megabytes today, and reading
+ * an archive into memory to hash it is a habit that only becomes a problem on
+ * the machine least able to afford it.
+ */
+export const verifyDigest = (filePath, expected) => new Promise((resolve, reject) => {
+    const wanted = String(expected ?? "").toLowerCase();
+
+    if (!SHA256.test(wanted))
+        return reject(new DigestMismatchError(
+            `Refusing ${filePath}: no sha256 is pinned for it, so there is nothing to check it against`));
+
+    const hash = createHash("sha256");
+    const stream = fs.createReadStream(filePath);
+
+    stream.on("error", reject);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => {
+        const actual = hash.digest("hex");
+
+        if (actual === wanted) return resolve();
+
+        reject(new DigestMismatchError(
+            `Refusing ${filePath}: expected sha256 ${wanted} but the download hashes to ${actual}`));
+    });
+});
 
 export const tmpFile = (suffix = '') =>
     path.join(os.tmpdir(), randomBytes(16).toString('hex') + suffix);
@@ -119,13 +177,18 @@ export const downloadToFile = (url, destPath, {redirectsLeft = MAX_DOWNLOAD_REDI
  * `extract` and `tmp` are injectable for the same reason `client` is: so the
  * cleanup can be tested without a real archive or the network.
  */
-export const downloadAndExtract = async (url, {outputDir, binaryRegex, outputName,
+export const downloadAndExtract = async (url, {outputDir, binaryRegex, outputName, sha256,
     client = get, extract = extractBinary, tmp = tmpFile, suffix = ''} = {}) => {
 
     const archivePath = tmp(suffix);
 
     try {
         await downloadToFile(url, archivePath, {client});
+        // Between the download and the extraction, and it has to be there rather
+        // than after: unpacking writes whatever the archive contains into ./bin,
+        // and removing it afterwards is not the same as never having written it -
+        // the file the loader is about to spawn would have existed in between.
+        await verifyDigest(archivePath, sha256);
         await extract(archivePath, outputDir, binaryRegex, outputName);
     } finally {
         await fs.promises.unlink(archivePath).catch(() => undefined);
