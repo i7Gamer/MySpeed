@@ -4,11 +4,13 @@ import {jsonRequest} from "@/common/utils/RequestUtil";
 import {runJustFinished} from "@/common/utils/StatusUtil";
 import {StatusContext} from "@/common/contexts/Status";
 import {NodeContext} from "@/common/contexts/Node";
+import {ConfigContext} from "@/common/contexts/Config";
 import {
     formatDateParam, rangeKey, rangeToParams, selectionFromParams, timeframeFromRange, timezoneParams
 } from "@/common/utils/TimeframeUtil";
 import {applyRefresh, mergeNewTests} from "./merge";
 import {applyPage, cursorOf, removeTest} from "./paging";
+import {reloadOnPermissionChange} from "./permission";
 
 export const SpeedtestContext = createContext({});
 
@@ -41,7 +43,10 @@ export const SpeedtestProvider = (props) => {
     const retryTimerRef = useRef(null);
     const [status] = useContext(StatusContext);
     const [, , currentNode] = useContext(NodeContext);
+    const [config] = useContext(ConfigContext);
     const wasRunningRef = useRef(status.running);
+    // The permission the rows in hand were fetched under. See permission.js.
+    const fetchedUnderRef = useRef(undefined);
 
     /**
      * The overview's date picker, kept in the URL rather than in state here.
@@ -274,6 +279,32 @@ export const SpeedtestProvider = (props) => {
     useEffect(() => {
         loadInitialTests();
     }, [currentNode, loadInitialTests]);
+
+    /**
+     * And on the permission the rows were served under, which changes what the
+     * endpoint puts in them rather than which rows it answers with.
+     *
+     * A read-only session has stripConnectionIdentity run over every row, and
+     * the detail pane draws its Connection fact and its result link from
+     * exactly the three fields that strips. Signing in through the header
+     * reloads the config and nothing else, so without this the list stayed as
+     * the read-only fetch left it and the pane kept its holes until the page
+     * was reloaded by hand.
+     *
+     * loadInitialTests rather than refreshTests: a refresh merges, and
+     * mergeNewTests only prepends rows the list does not already know by id, so
+     * every stripped row would survive it untouched. Replacing the list means
+     * paging starts again from the newest page, which is what a node switch and
+     * a range change already do - and what the manual reload this replaces did.
+     *
+     * The whole config is deliberately not the dependency: it is a fresh object
+     * every time it reloads, so the list would be refetched each time the
+     * settings dialog saves.
+     */
+    useEffect(() => {
+        fetchedUnderRef.current = reloadOnPermissionChange(
+            fetchedUnderRef.current, config.viewMode, loadInitialTests);
+    }, [config.viewMode, loadInitialTests]);
 
     // The list used to be refetched every five seconds around the clock. A new
     // row can only appear when a run ends, and the polled status already says
