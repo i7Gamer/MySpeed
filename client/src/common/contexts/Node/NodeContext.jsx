@@ -55,10 +55,38 @@ export const NodeProvider = (props) => {
         });
     };
 
+    /**
+     * Whether the config is an answer at all, rather than the value it starts
+     * at.
+     *
+     * Kept apart from what the answer *says*, and depended on separately below,
+     * because the two are not derivable from one another: `config` here is
+     * whichever instance the app is pointed at, and a node running a version
+     * from before the flag existed answers without a viewMode at all. Reading
+     * that absence as "not loaded yet" would leave the node list permanently
+     * empty against such a node.
+     */
+    const configLoaded = Object.keys(config).length > 0;
+
+    /**
+     * Keyed on the two things this reads rather than on the config object.
+     *
+     * reloadConfig gives `config` a new identity on every call, from a dozen
+     * places - so every settings save, password change and node edit refetched
+     * a list none of them had changed, and could put two fetches in flight at
+     * once. That is the race the generation refs above exist to survive, and
+     * this effect was manufacturing it. They stay, because the dialogs call
+     * updateNodes directly too; what goes is the effect firing on a config that
+     * says exactly what it said before.
+     *
+     * viewMode is still a dependency, and has to be: the nodes route answers a
+     * read-only reader with an empty list, so signing in through the header is
+     * what makes the nodes appear without a page reload.
+     */
     useEffect(() => {
-        if (Object.keys(config).length === 0) return;
+        if (!configLoaded) return;
         if (!config.viewMode) updateNodes();
-    }, [config]);
+    }, [configLoaded, config.viewMode]);
 
     const updateCurrentNode = (node) => {
         writeStored("currentNode", node);
