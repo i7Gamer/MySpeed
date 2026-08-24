@@ -53,6 +53,7 @@
       "interface": "Schnittstelle",
       "server": "Server",
       "server_id": "Server-ID",
+      "server_id_placeholder": "Beliebige Server-ID, oder leer lassen",
       "custom_url": "Benutzerdefinierte URL",
       "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Automatisch wählen",

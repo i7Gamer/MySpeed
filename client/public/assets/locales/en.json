@@ -53,6 +53,7 @@
       "interface": "Interface",
       "server": "Server",
       "server_id": "Server ID",
+      "server_id_placeholder": "Any server ID, or leave empty",
       "custom_url": "Custom URL",
       "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Choose automatically",

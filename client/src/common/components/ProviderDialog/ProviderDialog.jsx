@@ -197,13 +197,24 @@ export const ProviderDialog = ({open, onClose}) => {
                                     </div>
                                 )}
 
-                                {provider !== "cloudflare" && serverId !== "none" && !isUsingCustomUrl && (
+                                {/* Not gated on a server having been chosen already,
+                                    which is upstream #1455. The list above is the
+                                    twenty speedtest.net returns for the *instance's*
+                                    address, so a server in another country is not in
+                                    it - and this input, the one way to name one, was
+                                    drawn only once something had been picked from
+                                    the list it is there to escape. The two conditions
+                                    that remain are real: cloudflare has one endpoint
+                                    and no id, and a custom LibreSpeed URL is itself
+                                    the server. */}
+                                {provider !== "cloudflare" && !isUsingCustomUrl && (
                                     <div className="provider-setting">
                                         <div className="provider-setting-label">
                                             <FontAwesomeIcon icon={faHashtag}/>
                                             <h3>{t("dialog.provider.server_id")}</h3>
                                         </div>
                                         <input type="text" className="dialog-input provider-input"
+                                               placeholder={t("dialog.provider.server_id_placeholder")}
                                                value={serverId === "none" ? "" : serverId}
                                                onChange={(e) => handleServerIdChange(e.target.value)}/>
                                     </div>
