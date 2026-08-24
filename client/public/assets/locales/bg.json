@@ -23,30 +23,45 @@
     "unset": "Премахване на",
     "retry": "Опитайте отново",
     "login": "Влезте в системата",
-    "save": "Save",
-    "saving": "Saving...",
+    "save": "Запази",
+    "saving": "Запазване...",
     "password": {
       "title": "Изисква се парола",
       "placeholder": "Вашата парола",
       "wrong": "Въведената от вас парола е неправилна",
       "unlock": "Отключване на"
     },
+    "setup_token": {
+      "title": "Необходим е инсталационен код",
+      "description": "На тази инсталация не е зададена парола, затова тя не може да бъде отворена от друга машина. Въведете инсталационния код от дневника на сървъра и след това изберете парола.",
+      "placeholder": "Инсталационен код от дневника на сървъра",
+      "wrong": "Това не е инсталационният код от дневника на сървъра"
+    },
+    "busy": {
+      "title": "Сървърът е зает",
+      "description": "Сървърът вече проверява други пароли. Изчакайте малко и опитайте отново."
+    },
+    "throttled": {
+      "title": "Твърде много опити",
+      "description": "Твърде много опити бяха отхвърлени. Изчакайте една минута и опитайте отново."
+    },
     "api": {
       "title": "API не е достъпен",
       "description": "MySpeed не може да се свърже с API на тази инстанция. Моля, опитайте отново по-късно."
     },
     "provider": {
-      "interface": "Интерфейс",
+      "interface": "Мрежов интерфейс",
       "server": "Сървър",
       "server_id": "Идентификатор на сървъра",
-      "custom_url": "Custom URL",
+      "server_id_placeholder": "Произволен идентификатор на сървър или оставете празно",
+      "custom_url": "Персонализиран URL",
       "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Изберете автоматично",
       "ookla_license": "Прочетох и приемам <Eula>ЛСКП,</Eula> <GDPR>политиката за поверителност</GDPR> и <TOS>условията за ползване на</TOS> Ookla.",
-      "ookla_notice": "By using Ookla, you agree to their <Eula>EULA</Eula>, <GDPR>privacy policy</GDPR> and <TOS>terms of service</TOS>.",
-      "ookla_desc": "Popular provider with global server network",
-      "libre_desc": "Open-source, self-hostable speedtest",
-      "cloudflare_desc": "Fast CDN-based testing"
+      "ookla_notice": "Използвайки Ookla, вие приемате техните <Eula>лицензионни условия</Eula>, <GDPR>политика за поверителност</GDPR> и <TOS>условия за ползване</TOS>.",
+      "ookla_desc": "Популярен доставчик с глобална мрежа от сървъри",
+      "libre_desc": "Тест за скорост с отворен код, който можете да хоствате сами",
+      "cloudflare_desc": "Бърз тест, базиран на CDN"
     }
   },
   "dropdown": {
@@ -60,7 +75,7 @@
     "upload": "Оптимална скорост нагоре",
     "download": "Оптимална скорост нагоре",
     "recommendations": "Оптимални стойности",
-    "optimal_values": "Optimal values",
+    "optimal_values": "Оптимални стойности",
     "change_provider": "Смяна на доставчика",
     "password": "Промяна на паролата",
     "cron": "Задаване на честота",
@@ -73,31 +88,31 @@
     "dark_mode": "Тъмният режим",
     "theme_switched_light": "Превключване в режим на светлина",
     "theme_switched_dark": "Превключване в тъмен режим",
-    "preferences": "Preferences",
+    "preferences": "Предпочитания",
     "provider": "Щодо провайдера",
     "integrations": "Интеграции"
   },
   "about": {
-    "title": "About MySpeed",
-    "description": "MySpeed is an open-source speedtest analysis software that records your internet speed over a configurable period of time.",
+    "title": "Относно MySpeed",
+    "description": "MySpeed е софтуер с отворен код за анализ на тестове за скорост, който записва скоростта на интернет връзката ви за настройваем период от време.",
     "github": "GitHub",
-    "website": "Website",
-    "donate": "Donate",
-    "translate": "Translate",
-    "made_by": "Made with"
+    "website": "Уебсайт",
+    "donate": "Дарете",
+    "translate": "Помогнете с превода",
+    "made_by": "Направено с"
   },
   "options": {
     "cron": {
-      "continuous": "Continuous",
-      "continuous_desc": "Every minute - high resource usage",
-      "frequent": "Very often",
-      "frequent_desc": "Every 30 minutes",
-      "default": "Default",
-      "default_desc": "Every hour - recommended",
-      "rare": "Rarely",
-      "rare_desc": "Every 3 hours",
-      "really_rare": "Very rarely",
-      "really_rare_desc": "Every 6 hours"
+      "continuous": "Непрекъснато",
+      "continuous_desc": "Всяка минута - високо натоварване на ресурсите",
+      "frequent": "Много често",
+      "frequent_desc": "На всеки 30 минути",
+      "default": "По подразбиране",
+      "default_desc": "На всеки час - препоръчително",
+      "rare": "Рядко",
+      "rare_desc": "На всеки 3 часа",
+      "really_rare": "Много рядко",
+      "really_rare_desc": "На всеки 6 часа"
     },
     "level": {
       "no_access": "Няма достъп",
@@ -105,19 +120,31 @@
     }
   },
   "password": {
-    "no_access_desc": "Visitors must enter the password to view anything",
-    "read_access_desc": "Visitors can view data but can't change settings"
+    "no_access_desc": "Посетителите трябва да въведат паролата, за да видят каквото и да било",
+    "read_access_desc": "Посетителите могат да виждат данните, но не могат да променят настройките"
+  },
+  "locked": {
+    "password_desc": "Тази инсталация е защитена с парола. Влезте, за да видите данните ѝ.",
+    "token_hint": "Сървърът записва кода в дневника си отново при всяко отхвърлено заявление, но не по-често от веднъж на десет минути — така че презареждането на тази страница оставя свежо копие в края на дневника.",
+    "enter_token": "Въведете инсталационния код"
   },
   "pause": {
-    "manual": "Pause Indefinitely",
-    "manual_desc": "Pause until manually resumed",
-    "short": "Short Break",
-    "short_desc": "Pause for 1 hour",
-    "medium": "Medium Break",
-    "medium_desc": "Pause for 6 hours",
-    "long": "Long Break",
-    "long_desc": "Pause for 12 hours",
-    "custom": "Custom Duration"
+    "manual": "Безсрочна пауза",
+    "manual_desc": "Пауза до ръчно възобновяване",
+    "short": "Кратка пауза",
+    "short_desc": "Пауза за 1 час",
+    "medium": "Средна пауза",
+    "medium_desc": "Пауза за 6 часа",
+    "long": "Дълга пауза",
+    "long_desc": "Пауза за 12 часа",
+    "custom": "Персонализирана продължителност",
+    "quiet_hours": "Тихи часове",
+    "quiet_hours_desc": "Планираните тестове се пропускат всеки ден между тези часове. Тестовете, които стартирате сами, се изпълняват винаги.",
+    "timezone": "Часова зона",
+    "timezone_server": "Часовник на сървъра",
+    "timezone_desc": "Часовникът, по който се тълкуват както тихите часове, така и графикът на тестовете.",
+    "quiet_from": "От",
+    "quiet_until": "До"
   },
   "page": {
     "overview": "Преглед",
@@ -136,25 +163,34 @@
     "manually": "Задайте ръчно",
     "new_password": "Задаване на нова парола",
     "password_placeholder": "Нова парола",
+    "show_password": "Показване на паролата",
+    "hide_password": "Скриване на паролата",
+    "confirm_password": "Повторете я",
+    "confirm_password_placeholder": "Новата парола отново",
+    "password_mismatch": "Двете пароли не съвпадат",
+    "remove_password": "Премахване на паролата",
+    "remove_password_title": "Да се премахне ли паролата?",
+    "remove_password_desc": "Ще бъдете отписани и тази инсталация ще остане без парола. След това тя се отваря за всеки на машината, на която работи, и иска от всяка друга машина инсталационния код от дневника на сървъра, докато не бъде зададена нова парола.",
     "password_removed": "Заключването с парола е премахнато и зададената парола е премахната.",
     "level": "Ниво на промяна",
     "level_title": "Права на посетителите",
     "cron_title": "Задаване на тестова честота",
     "cron_rules": "Правило на Cron",
     "cron_next_test": "Следващ тест:",
-    "custom_cron": "Custom cron expression",
-    "schedule_offset": "Offset schedule",
-    "schedule_offset_desc": "Adds a small delay to prevent tests from starting at exact times",
-    "advanced": "Advanced",
+    "custom_cron": "Персонализиран cron израз",
+    "schedule_offset": "Отместване на графика",
+    "schedule_offset_desc": "Добавя малко закъснение, за да не започват тестовете в точни часове",
+    "advanced": "Разширени",
     "time_title": "Покажете тестовете от последните ...",
     "download": "Изтегляне",
     "pause_title": "Тестове за скорост - пауза за...",
     "hours": "Часове",
     "pause": "Пауза",
-    "pause_manual_hint": "Leave empty to pause indefinitely",
+    "pause_manual_hint": "Оставете празно за безсрочна пауза",
     "release_manually": "Освобождаване ръчно",
     "language": "Промяна на езика",
-    "view_title": "Промяна на изгледа"
+    "view_title": "Промяна на изгледа",
+    "quiet_hours_saved": "Тихите часове са запазени"
   },
   "header": {
     "title": "MySpeed",
@@ -165,14 +201,14 @@
     "paused": "В момента тестовете за скорост са спрени. Моля, продължете, ако желаете да се включите.",
     "running": "Тестът на скоростта вече е в ход. Моля, изчакайте малко.",
     "admin_login": "Вход за администратор",
-    "servers": "Servers",
+    "servers": "Сървъри",
     "beta": {
       "title": "Бета версия",
       "description": "Тази функция все още е в бета фаза. Ако откриете някакви грешки, моля, докладвайте за тях <Link>тук</Link>."
     }
   },
   "storage": {
-    "speedtests": "Speedtests",
+    "speedtests": "Тестове за скорост",
     "configuration": "Конфигурация",
     "stored_tests": "Съхранени тестове",
     "tests": "Тестове",
@@ -198,21 +234,24 @@
     "confirm_reset": "Да, нулиране",
     "settings_exported": "Настройките са експортирани",
     "settings_imported": "Настройките са импортирани",
-    "retention": "Data retention",
-    "retention_desc": "How long speedtest results are kept before being automatically deleted.",
-    "retention_saved": "Retention period updated",
+    "retention": "Съхранение на данните",
+    "retention_desc": "Колко дълго се пазят резултатите от тестовете за скорост, преди да бъдат изтрити автоматично.",
+    "retention_saved": "Периодът на съхранение е обновен",
     "retention_days_placeholder": "365",
-    "retention_days_suffix": "days",
-    "retention_back": "Back to presets",
+    "retention_days_suffix": "дни",
+    "retention_back": "Обратно към готовите стойности",
     "retention_options": {
-      "week": "7 days",
-      "month": "30 days",
-      "quarter": "90 days",
-      "half_year": "180 days",
-      "year": "1 year (default)",
-      "forever": "Keep forever",
-      "custom": "Custom..."
-    }
+      "week": "7 дни",
+      "month": "30 дни",
+      "quarter": "90 дни",
+      "half_year": "180 дни",
+      "year": "1 година (по подразбиране)",
+      "forever": "Пази завинаги",
+      "custom": "Персонализирано..."
+    },
+    "include_secrets": "Включване на идентификационните данни",
+    "export_redacted_desc": "Паролите на възлите, ключовете на интеграциите и администраторската парола се пропускат.",
+    "export_with_secrets_desc": "Съдържа паролите на възлите, ключовете на интеграциите и администраторската парола. Съхранявайте го на сигурно място."
   },
   "latest": {
     "ping": "Ping",
@@ -224,7 +263,12 @@
     "byte_speed_unit": "MB/s",
     "up": "Качване на",
     "latest": "Последен тест",
-    "before": "от"
+    "before": "от",
+    "bufferbloat": "Bufferbloat: добавя {{increase}} ms при натоварване",
+    "bufferbloat_trend": "Bufferbloat през последните тестове",
+    "quality": "При натоварване",
+    "loaded_latency": "{{down}} / {{up}} ms закъснение",
+    "packet_loss": "Загуба на пакети"
   },
   "info": {
     "recommendations_error": "Трябва да направите поне 10 теста, за да може да се определи средната стойност. Няма значение дали тестовете са извършени ръчно или автоматично.",
@@ -240,7 +284,19 @@
     },
     "jitter": {
       "title": "Jitter",
-      "description": "Jitter is the variation in ping response times. Lower jitter means a more stable connection, which is important for real-time applications like video calls and gaming."
+      "description": "Jitter е променливостта на времената за отговор на ping. По-нисък jitter означава по-стабилна връзка, което е важно за приложения в реално време като видеоразговори и игри."
+    },
+    "loaded_latency": {
+      "title": "Закъснение при натоварване",
+      "description": "Ping, измерен докато тази посока е била натоварена, а не докато линията е била в покой. Това е числото, което решава дали един разговор ще оцелее, когато някой друг започне изтегляне — една връзка може да е бърза и в двете посоки и да е неизползваема по време на прехвърляне."
+    },
+    "bufferbloat": {
+      "title": "Bufferbloat",
+      "description": "Колко закъснение печели линията, щом е заета: по-лошото от двете закъснения при натоварване, минус ping в покой. Под 5 ms е отлично; над 200 ms прави разговорите и игрите неизползваеми, докато се прехвърля каквото и да е друго. Оценката се дава по по-лошата посока, защото линия, която е чиста при изтегляне и зле буферирана при качване, е зле буферирана линия."
+    },
+    "packet_loss": {
+      "title": "Загуба на пакети",
+      "description": "Загубата на пакети е делът данни, които така и не са пристигнали и е трябвало да бъдат изпратени отново. Всичко над нулата се усеща като накъсване в разговорите и игрите много преди да се прояви като по-ниска скорост. Само Ookla я измерва, затова тест от друг доставчик оставя полето празно, вместо да отчете нула."
     },
     "up": {
       "title": "Скорост на качване",
@@ -258,13 +314,15 @@
     "minutes": "{{minutes}} минути",
     "hour": "1 час",
     "hours": "{{hours}} часове",
-    "day": "1 day",
-    "days": "{{days}} days",
-    "on": "На адрес",
+    "day": "1 ден",
+    "days": "{{days}} дни",
+    "on": "На",
     "at": "На адрес"
   },
   "test": {
     "not_available": "В момента няма налични тестове",
+    "not_available_in_range": "Няма тестове между {{from}} и {{to}}",
+    "show_all_time": "Покажи цялата история",
     "no_latest": "Няма текущ тест. Моля, извършете тест или изчакайте да бъде извършен следващият тест.",
     "loading_more": "Зареждане на още тестове...",
     "no_more_tests": "Няма повече тестове за зареждане",
@@ -272,6 +330,11 @@
     "failed": "Тестът е неуспешен",
     "recheck": "Моля, проверете, доколкото е възможно, дали това се случва по-често.",
     "delete": "Изтриване на теста",
+    "delete_confirm": {
+      "title": "Да се изтрие ли тестът?",
+      "description": "Тестът от <Bold>{{date}}</Bold> ще бъде изтрит. Това действие не може да бъде отменено. Искате ли да продължите?",
+      "yes": "Да, изтрий"
+    },
     "deleted": "Тестът е изтрит",
     "average": {
       "title": "Средна скорост",
@@ -280,12 +343,41 @@
     "result": {
       "title": "Резултат от теста",
       "description": "При <Link>този тест</Link> беше постигната максимална скорост на изтегляне от <Bold>{{down}} Mbps</Bold> и максимална скорост на качване от <Bold>{{up}} Mbps</Bold>. Той беше създаден <Bold>{{type}}</Bold> и е отнел <Bold>{{duration}} секунди</Bold>.",
-      "jitter": " The connection jitter was <Bold>{{jitter}} ms</Bold>.",
+      "jitter": " Jitter на връзката беше <Bold>{{jitter}} ms</Bold>.",
+      "server": " Тестът беше изпълнен срещу <Bold>{{server}}</Bold>.",
       "from_you": "от вас",
       "automatic": "автоматичен"
     },
     "overview": {
-      "title_range": "Test overview from {{from}} to {{to}}"
+      "title_range": "Преглед на тестовете от {{from}} до {{to}}"
+    },
+    "details": {
+      "show": "Покажи подробности",
+      "hide": "Скрий подробностите",
+      "of_target": "{{percent}}% от целта ви",
+      "over_target": "{{amount}} {{unit}} над целта ви",
+      "under_target": "{{amount}} {{unit}} под целта ви",
+      "on_target": "Точно на целта ви",
+      "unchanged": "Без промяна от последния тест",
+      "measured_at": "Измерено в",
+      "measured_with": "Измерено с",
+      "duration": "Продължителност",
+      "seconds": "{{seconds}} с",
+      "data_used": "Използвани данни",
+      "data_used_value": "{{down}} надолу / {{up}} нагоре",
+      "trigger": "Стартиран",
+      "server": "Сървър",
+      "result": "Пълен резултат",
+      "open_result": "speedtest.net",
+      "loaded_latency": "Закъснение при натоварване",
+      "loaded_latency_value": "{{down}} ms надолу / {{up}} ms нагоре",
+      "packet_loss": "Загуба на пакети",
+      "bufferbloat": "Bufferbloat",
+      "bufferbloat_value": "+{{increase}} ms",
+      "connection": "Връзка",
+      "isp": "Доставчик",
+      "external_ip": "Външен адрес",
+      "changed": "променен"
     }
   },
   "errors": {
@@ -297,12 +389,28 @@
     "connection_refused": "Тестът не може да бъде извършен, защото връзката е отхвърлена",
     "timed_out": "Интернет връзката е била нестабилна по време на теста",
     "config": "Конфигурационният файл не може да бъде зареден",
-    "invalid_view": "Невалиден изглед"
+    "invalid_view": "Невалиден изглед",
+    "cannot_open_socket": "Не можа да се отвори връзка към тестовия сървър. Възможно е той да е недостъпен от избрания мрежов интерфейс.",
+    "latency_failed": "Тестът за закъснение се провали, затова не можа да бъде измерена никаква скорост."
   },
   "statistics": {
-    "average": "Average",
+    "average": "Средно",
+    "compare": {
+      "note": "Промени спрямо {{from}} – {{to}}"
+    },
+    "downsampled": "Осреднено · показани са {{shown}} от {{total}} теста",
+    "detail": {
+      "title": "Пълна разделителна способност",
+      "description": "Показване на до {{max}} точки от данните вместо осредняване",
+      "complete": "Всички тестове в този период вече са показани",
+      "loading": "Зареждане на пълната серия…"
+    },
     "export": {
-      "button": "Export"
+      "button": "Експорт"
+    },
+    "delta": {
+      "up": "нагоре с {{value}}",
+      "down": "надолу с {{value}}"
     },
     "overview": {
       "total_title": "Общо тестове",
@@ -310,7 +418,16 @@
       "failed_title": "Неуспешни тестове",
       "failed_description": "Брой неуспешни тестове",
       "average_title": "Средна продължителност",
-      "average_description": "Средна продължителност на тестовете"
+      "average_description": "Средна продължителност на тестовете",
+      "packet_loss_title": "Загуба на пакети",
+      "packet_loss_description": "Средно за тестовете, които са я измерили",
+      "peak_title": "Забавяне в пиковите часове",
+      "peak_description": "Най-бавно около {{slowest}}, най-бързо около {{fastest}}",
+      "ping_description": "Средно закъснение, между {{min}} и {{max}}",
+      "span_title": "Разлика в продължителността",
+      "span_description": "Най-краткият и най-дългият тест в този период",
+      "density_title": "Тестове на ден",
+      "density_description": "За {{days}} дни"
     },
     "failed": {
       "title": "Неуспешни тестове",
@@ -331,42 +448,56 @@
       "label": "Номер"
     },
     "values": {
-      "min": "Най-ниска",
-      "max": "Най-висока",
+      "min": "Минимум",
+      "max": "Максимум",
       "avg": "Средно",
       "down": "Стойности за изтегляне",
-      "up": "Качване на стойности"
+      "up": "Качване на стойности",
+      "target": "Цел: {{target}}",
+      "consistency": "Постоянство",
+      "samples": "Измерени тестове"
     },
-    "failed_test": "Failed test",
+    "failed_test": "Неуспешен тест",
     "hourly": {
-      "title": "Speed by Time of Day",
-      "sample_count": "Tests"
+      "title": "Скорост по час от денонощието",
+      "sample_count": "Тестове"
     },
     "consistency": {
-      "title": "Connection Stability",
-      "excellent": "Excellent",
-      "good": "Good",
-      "fair": "Fair",
-      "poor": "Poor"
-    }
+      "title": "Стабилност на връзката",
+      "excellent": "Отлична",
+      "good": "Добра",
+      "fair": "Приемлива",
+      "poor": "Слаба",
+      "ping_deviation": "Типично отклонение",
+      "loaded_latency_average": "Добавя средно {{increase}} ms при натоварване, за {{tests}} теста",
+      "jitter_detail": "Промяна в рамките на един тест",
+      "range": "Между {{min}} и {{max}}",
+      "sample_count": "За {{tests}} теста"
+    },
+    "loaded_latency": "При натоварване"
   },
   "calendar": {
-    "select_range": "Select date range",
-    "select_start": "Select start date",
-    "select_end": "Select end date",
-    "from": "From",
-    "to": "To",
-    "last_7_days": "Last 7 days",
-    "last_30_days": "Last 30 days",
-    "last_90_days": "Last 90 days",
-    "last_year": "Last year",
-    "mon": "Mon",
-    "tue": "Tue",
-    "wed": "Wed",
-    "thu": "Thu",
-    "fri": "Fri",
-    "sat": "Sat",
-    "sun": "Sun"
+    "select_range": "Изберете период",
+    "all_time": "Цялата история",
+    "select_start": "Изберете начална дата",
+    "select_end": "Изберете крайна дата",
+    "previous_year": "Предишна година",
+    "previous_month": "Предишен месец",
+    "next_month": "Следващ месец",
+    "next_year": "Следваща година",
+    "from": "От",
+    "to": "До",
+    "last_7_days": "Последните 7 дни",
+    "last_30_days": "Последните 30 дни",
+    "last_90_days": "Последните 90 дни",
+    "last_year": "Миналата година",
+    "mon": "Пон",
+    "tue": "Вто",
+    "wed": "Сря",
+    "thu": "Чет",
+    "fri": "Пет",
+    "sat": "Съб",
+    "sun": "Нед"
   },
   "nodes": {
     "add": "Добавяне на сървър",
@@ -393,9 +524,9 @@
       "success": "Сървърът е успешно изтрит"
     },
     "rename": {
-      "title": "Rename server",
-      "placeholder": "New server name",
-      "success": "The server has been renamed successfully"
+      "title": "Преименуване на сървъра",
+      "placeholder": "Ново име на сървъра",
+      "success": "Сървърът беше преименуван успешно"
     },
     "messages": {
       "not_reachable": "Сървърът не е достъпен",
@@ -425,11 +556,33 @@
         "display_name": "Показвайте името",
         "display_name_placeholder": "Известие за MySpeed",
         "error_message": "Съобщение за грешка",
-        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Грешка: %error%",
         "send_failed": "Изпращане на съобщения за грешки",
         "send_finished": "Броят на извършените тестове",
         "finished_message": "Завършено съобщение",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
+    "email": {
+      "title": "Имейл",
+      "fields": {
+        "host": "SMTP сървър",
+        "port": "Порт",
+        "secure": "Директно използване на TLS (порт 465)",
+        "username": "Потребителско име (по избор)",
+        "password": "Парола (по избор)",
+        "from": "Адрес на подателя",
+        "to": "Адреси на получателите (разделени със запетая)",
+        "send_failed": "Изпращане на съобщения за грешка",
+        "error_subject": "Тема при грешка",
+        "error_subject_placeholder": "MySpeed: тестът за скорост се провали",
+        "error_message": "Съобщение за грешка",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Грешка: %error%",
+        "send_finished": "Изпращане на съобщения при завършване",
+        "finished_subject": "Тема при завършване",
+        "finished_subject_placeholder": "MySpeed: тестът за скорост завърши",
+        "finished_message": "Съобщение при завършване",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbit/s, %upload% Mbit/s"
       }
     },
     "gotify": {
@@ -439,7 +592,7 @@
         "key": "Токен на приложението",
         "priority": "Приоритет",
         "error_message": "Съобщение за грешка",
-        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Грешка: %error%",
         "send_failed": "Изпращане на съобщения за грешки",
         "send_finished": "Изпратете попълнен",
         "finished_message": "Завършено съобщение",
@@ -452,7 +605,7 @@
         "token": "Токен на приложение",
         "user_key": "Ключ на потребителя",
         "error_message": "Съобщение за грешка",
-        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Грешка: %error%",
         "send_failed": "Изпращане на съобщения за грешки",
         "send_finished": "Изпращане на завършени съобщения",
         "finished_message": "Завършено съобщение",
@@ -464,48 +617,67 @@
       "fields": {
         "url": "URL адрес за здравни прегледи",
         "url_placeholder": "https://hc-ping.com/<uuid>",
-        "interval": "Ping interval (minutes)",
+        "interval": "Интервал на ping (минути)",
         "interval_placeholder": "1"
       }
     },
     "influxdb": {
       "title": "InfluxDB",
       "fields": {
-        "url": "Server-URL",
+        "url": "URL на сървъра",
         "url_placeholder": "http://localhost:8086",
-        "org": "Organization",
+        "org": "Организация",
         "bucket": "Bucket",
-        "token": "API token",
-        "measurement": "Measurement name",
-        "measurement_placeholder": "speedtests (default)",
-        "host": "Host tag",
-        "host_placeholder": "Defaults to the machine hostname",
-        "tags": "Additional tags",
-        "tags_placeholder": "region=eu,role=primary (comma-separated)"
+        "token": "API ключ",
+        "measurement": "Име на измерването",
+        "measurement_placeholder": "speedtests (по подразбиране)",
+        "host": "Етикет за хост",
+        "host_placeholder": "По подразбиране името на машината",
+        "tags": "Допълнителни етикети",
+        "tags_placeholder": "region=eu,role=primary (разделени със запетая)"
+      }
+    },
+    "mqtt": {
+      "title": "MQTT",
+      "fields": {
+        "host": "Хост на брокера",
+        "port": "Порт",
+        "secure": "Използване на TLS (порт 8883)",
+        "username": "Потребителско име (по избор)",
+        "password": "Парола (по избор)",
+        "client_id": "Идентификатор на клиента (по избор)",
+        "topic": "Тема",
+        "error_topic": "Тема за грешки (по избор)",
+        "retain": "Запазване на съобщенията",
+        "discovery": "Откриване от Home Assistant",
+        "discovery_prefix": "Префикс за откриване (по избор)",
+        "qos": "Качество на обслужване (0 или 1)",
+        "send_finished": "Публикуване на завършените тестове",
+        "send_failed": "Публикуване на неуспешните тестове"
       }
     },
     "ntfy": {
       "title": "ntfy",
       "fields": {
-        "url": "Server-URL",
+        "url": "URL на сървъра",
         "url_placeholder": "https://ntfy.sh",
-        "topic": "Topic",
+        "topic": "Тема",
         "topic_placeholder": "myspeed-alerts",
-        "token": "Access token",
-        "token_placeholder": "tk_... (optional, for protected servers)",
-        "title": "Notification title",
-        "title_placeholder": "MySpeed (optional)",
-        "tags": "Tags",
-        "tags_placeholder": "warning,satellite (comma-separated)",
-        "priority": "Default priority (1-5)",
+        "token": "Ключ за достъп",
+        "token_placeholder": "tk_... (по избор, за защитени сървъри)",
+        "title": "Заглавие на известието",
+        "title_placeholder": "MySpeed (по избор)",
+        "tags": "Етикети",
+        "tags_placeholder": "warning,satellite (разделени със запетая)",
+        "priority": "Приоритет по подразбиране (1-5)",
         "priority_placeholder": "3",
-        "error_priority": "Error priority (1-5)",
+        "error_priority": "Приоритет при грешка (1-5)",
         "error_priority_placeholder": "5",
-        "error_message": "Error message",
-        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
-        "send_failed": "Send error messages",
-        "send_finished": "Send finished messages",
-        "finished_message": "Finished message",
+        "error_message": "Съобщение за грешка",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Грешка: %error%",
+        "send_failed": "Изпращане на съобщения за грешка",
+        "send_finished": "Изпращане на съобщения при завършване",
+        "finished_message": "Съобщение при завършване",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -514,8 +686,9 @@
       "fields": {
         "token": "Токен на бот",
         "chat_id": "Идентификатор на чата",
+        "message_thread_id": "Идентификатор на тема (по избор)",
         "error_message": "Съобщение за грешка",
-        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Грешка: %error%",
         "send_failed": "Изпращане на съобщения за грешки",
         "send_finished": "Изпратете попълнен",
         "finished_message": "Завършено съобщение",
@@ -533,54 +706,84 @@
         "send_alive": "Изпращане на оживени съобщения",
         "send_recommendations": "Изпращане на препоръки",
         "send_config_updates": "Изпращане на актуализации на конфигурацията",
-        "interval": "Keep-Alive interval (minutes)",
+        "interval": "Интервал Keep-Alive (минути)",
         "interval_placeholder": "1"
       }
-    }
+    },
+    "fields": {
+      "alert_only": "Известяване само когато не е достигнат лимит",
+      "alert_ping_above": "Известяване, когато ping е над (ms)",
+      "alert_ping_above_placeholder": "напр. 50",
+      "alert_download_below": "Известяване, когато изтеглянето е под (Mbit/s)",
+      "alert_download_below_placeholder": "напр. 100",
+      "alert_upload_below": "Известяване, когато качването е под (Mbit/s)",
+      "alert_upload_below_placeholder": "напр. 20"
+    },
+    "variables": "Налични променливи",
+    "variables_hint": "Щракнете, за да я добавите към съобщението"
   },
   "common": {
     "back_to_top": "Върнете се в началото"
   },
   "not_found": {
-    "title": "Page not found",
-    "description": "The page you're looking for doesn't exist or has been moved.",
-    "back_home": "Back to Home"
+    "title": "Страницата не е намерена",
+    "description": "Страницата, която търсите, не съществува или е преместена.",
+    "back_home": "Обратно към началото"
   },
   "route_error": {
-    "title": "Oops!",
-    "subtitle": "Something went wrong",
-    "description": "An unexpected error occurred. Please try again or go back to the home page.",
-    "reload": "Reload Page"
+    "title": "Опа!",
+    "subtitle": "Нещо се обърка",
+    "description": "Възникна неочаквана грешка. Опитайте отново или се върнете към началната страница.",
+    "reload": "Презареди страницата"
   },
   "optimal_values": {
-    "title": "Optimal Values",
-    "use_recommended": "Use recommended"
+    "title": "Оптимални стойности",
+    "use_recommended": "Използвай препоръчаните"
   },
   "preferences": {
-    "title": "Preferences",
+    "title": "Предпочитания",
     "theme": {
-      "title": "Appearance",
-      "description": "Switch between dark and light interface.",
-      "dark": "Dark",
-      "dark_desc": "Easier on the eyes in low light",
-      "light": "Light",
-      "light_desc": "Brighter look for daytime use"
+      "title": "Външен вид",
+      "description": "Превключване между тъмен и светъл интерфейс.",
+      "dark": "Тъмен",
+      "dark_desc": "По-щадящ за очите при слаба светлина",
+      "light": "Светъл",
+      "light_desc": "По-ярък вид за дневна употреба"
     },
     "time_format": {
-      "title": "Time format",
-      "description": "How clock times are displayed throughout the app.",
-      "h24": "24-hour",
-      "h24_desc": "Display times like 14:30",
-      "h12": "12-hour",
-      "h12_desc": "Display times like 2:30 PM"
+      "title": "Формат на часа",
+      "description": "Как се показва часът в цялото приложение.",
+      "h24": "24-часов",
+      "h24_desc": "Показва часа като 14:30",
+      "h12": "12-часов",
+      "h12_desc": "Показва часа като 2:30 PM"
     },
     "speed_unit": {
-      "title": "Speed unit",
-      "description": "Choose how speeds are shown. Values are converted automatically.",
-      "mbps": "Mbps (Megabits per second)",
-      "mbps_desc": "Standard ISP / speedtest unit",
-      "mbytes": "MB/s (Megabytes per second)",
-      "mbytes_desc": "Common in browsers and download managers"
+      "title": "Мерна единица за скорост",
+      "description": "Изберете как да се показват скоростите. Стойностите се преобразуват автоматично.",
+      "mbps": "Mbps (мегабита в секунда)",
+      "mbps_desc": "Стандартна единица на доставчиците и тестовете за скорост",
+      "mbytes": "MB/s (мегабайта в секунда)",
+      "mbytes_desc": "Разпространена в браузърите и мениджърите за изтегляне"
     }
+  },
+  "status": {
+    "start": "Стартирай тест",
+    "running_button": "Изпълнява се",
+    "paused": "Тестовете за скорост са на пауза",
+    "never_run": "Все още не е изпълнен нито един тест",
+    "last_test": "Последен тест преди {{time}}",
+    "next_test": "Следващ в {{time}}",
+    "recent_failures": "{{failures}} неуспешни през последния ден",
+    "phase": {
+      "starting": "Стартиране…",
+      "ping": "Измерване на закъснението",
+      "download": "Измерване на изтеглянето",
+      "upload": "Измерване на качването",
+      "measuring": "Измерване…"
+    },
+    "last_test_now": "Последен тест току-що",
+    "elapsed": "изминали {{seconds}} с",
+    "next_test_approx": "Следващ около {{time}}"
   }
 }
