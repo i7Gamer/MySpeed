@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CronExpressionParser } from "cron-parser";
-import { firstRunOutsideWindow } from "@/common/components/PauseDialog/quietHoursWindow.js";
+import { firstRunOutsideWindow, usableZone } from "@/common/components/PauseDialog/quietHoursWindow.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -40,8 +40,12 @@ const getNextRunDateWith = (parse) => {
     const brace = source.indexOf("{", source.indexOf("=>", start));
     const helper = source.slice(start, closingIndex(source, brace, "{", "}") + 1);
 
-    return new Function("CronExpressionParser", "firstRunOutsideWindow", `${helper}; return getNextRunDate;`)(
-        {parse}, firstRunOutsideWindow);
+    // Every module-level name the helper closes over has to be injected. One
+    // missing is not a loud failure: the helper's own try/catch swallows the
+    // ReferenceError and answers null, so every assertion below reads undefined
+    // and blames the wiring it was pointed at.
+    return new Function("CronExpressionParser", "firstRunOutsideWindow", "usableZone",
+        `${helper}; return getNextRunDate;`)({parse}, firstRunOutsideWindow, usableZone);
 };
 
 // Everything below digs into the component body, not the helper above it.
@@ -87,8 +91,10 @@ const previewMemo = ({open, customCron, config, getNextRunDate}) => {
     return recorded;
 };
 
-const QUIET_WINDOW = {quietHoursStart: "23:00", quietHoursEnd: "08:00"};
-const NO_WINDOW = {quietHoursStart: "none", quietHoursEnd: "none"};
+// `timezone` at its off sentinel, so these read the host clock the fixtures below
+// are written in. tests/client/quietHoursTimezone covers a window in a named one.
+const QUIET_WINDOW = {quietHoursStart: "23:00", quietHoursEnd: "08:00", timezone: "none"};
+const NO_WINDOW = {quietHoursStart: "none", quietHoursEnd: "none", timezone: "none"};
 const HOURLY = "0 * * * *";
 
 // Half an hour into the stored window: every top of the hour from midnight on
@@ -209,7 +215,8 @@ describe("what the preview costs the mounted dialog", () => {
             getNextRunDate: (...args) => walks.push(args) && MIDNIGHT_AFTER});
 
         assert.equal(walks.length, 1, "an open dialog shows no preview at all");
-        assert.deepEqual(walks[0], [HOURLY, QUIET_WINDOW.quietHoursStart, QUIET_WINDOW.quietHoursEnd],
+        assert.deepEqual(walks[0],
+            [HOURLY, QUIET_WINDOW.quietHoursStart, QUIET_WINDOW.quietHoursEnd, QUIET_WINDOW.timezone],
             "the window is not handed over the way getNextRunDate reads it");
     });
 

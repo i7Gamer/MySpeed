@@ -23,6 +23,51 @@ const TIME_OF_DAY = /^([0-9]{1,2}):([0-9]{2})$/;
 const MINUTES_PER_HOUR = 60;
 
 /**
+ * How far into the day an instant falls, on the configured zone's clock or on
+ * the browser's when none is set.
+ *
+ * The server judges the window in the `timezone` setting now (upstream #1115,
+ * #748), so this has to as well: a dialog previewing the next test on the
+ * browser clock would name a different moment from the countdown beside it,
+ * which is the disagreement commit 7f684733 already fixed once.
+ *
+ * Read through Intl rather than by shifting the date, because the browser has no
+ * equivalent of the server's offset table - and this is the same `hourCycle:
+ * "h23"` server/util/timezone.js formats with, so midnight is 00 in both rather
+ * than 24 in one of them.
+ *
+ * Anything unusable falls back to the browser clock: the sentinel, a zone this
+ * browser's data does not carry, and the `undefined` that arrives whenever
+ * /api/config withheld the key - which it does for exactly this one.
+ */
+/**
+ * Whether a stored `timezone` is one to read a clock in at all.
+ *
+ * One home for the question, because two callers ask it: this file, to pick a
+ * clock, and FrequencyDialog, to decide whether to hand cron-parser a `tz`. It
+ * cannot tell a misspelled zone from a real one - only Intl can, and only by
+ * being handed it - so the try/catch below is still the real gate.
+ */
+export const usableZone = (timezone) =>
+    typeof timezone === "string" && timezone !== "" && timezone !== QUIET_HOURS_OFF;
+
+const minutesIntoDay = (date, timezone) => {
+    if (usableZone(timezone)) {
+        try {
+            const [hours, minutes] = new Intl.DateTimeFormat("en-US",
+                {timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23"})
+                .format(date).split(":").map(Number);
+
+            return hours * MINUTES_PER_HOUR + minutes;
+        } catch {
+            // Falls through to the browser clock below.
+        }
+    }
+
+    return date.getHours() * MINUTES_PER_HOUR + date.getMinutes();
+};
+
+/**
  * How many scheduled occurrences firstRunOutsideWindow steps over before giving
  * up. Mirrors the server's own limit for the same reason: a window can swallow a
  * long run of them - a minutely cron under an eight-hour window is 480 - and a
@@ -126,13 +171,13 @@ const parseTimeOfDay = (value) => {
  * minute describe a window of no length, read here - as on the server - as no
  * window at all rather than as one covering the whole day.
  */
-export const isQuietHour = (date, start, end) => {
+export const isQuietHour = (date, start, end, timezone) => {
     const from = parseTimeOfDay(start);
     const until = parseTimeOfDay(end);
 
     if (from === null || until === null || from === until) return false;
 
-    const now = date.getHours() * MINUTES_PER_HOUR + date.getMinutes();
+    const now = minutesIntoDay(date, timezone);
 
     return from < until
         ? now >= from && now < until
@@ -149,11 +194,11 @@ export const isQuietHour = (date, start, end) => {
  * was never going to happen, which is the bug commit 7f684733 fixed for the
  * status bar and this fixes for the dialogs.
  */
-export const firstRunOutsideWindow = (nextOccurrence, start, end) => {
+export const firstRunOutsideWindow = (nextOccurrence, start, end, timezone) => {
     for (let stepped = 0; stepped < MAX_QUIET_OCCURRENCES; stepped++) {
         const occurrence = nextOccurrence();
 
-        if (!isQuietHour(occurrence, start, end)) return occurrence;
+        if (!isQuietHour(occurrence, start, end, timezone)) return occurrence;
     }
 
     return null;

@@ -13,7 +13,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as interfaces from '../util/loadInterfaces.js';
 import { destroyAllSessions } from '../util/session.js';
-import { isValidTimeOfDay } from '../util/quietHours.js';
+import { QUIET_HOURS_OFF, isValidTimeOfDay } from '../util/quietHours.js';
+import { isKnownTimeZone } from '../util/timezone.js';
 import { withoutUrlCredentials } from '../util/urlCredentials.js';
 import { ALLOWED_PROTOCOLS } from '../util/safeUrl.js';
 
@@ -34,7 +35,12 @@ const configDefaults = {
     // The daily window in which no scheduled test runs. Both ends have to be
     // set before it means anything, so both default to the off sentinel.
     quietHoursStart: "none",
-    quietHoursEnd: "none"
+    quietHoursEnd: "none",
+    // The clock the schedule and the quiet window are judged on. "none" is the
+    // host's own, which is what both used unconditionally before this existed -
+    // and which is Etc/UTC in the Docker image, however the operator's own
+    // evening runs (upstream #1115, #748).
+    timezone: "none"
 }
 
 const MAX_RETENTION_DAYS = 10000;
@@ -388,6 +394,28 @@ export const validateInput = async (key, value) => {
     if ((key === "quietHoursStart" || key === "quietHoursEnd") && !isValidTimeOfDay(value.toString()))
         return "You need to provide a time of day as HH:MM, or none to switch the quiet hours off";
 
+    /*
+     * Refused at the door rather than stored and ignored.
+     *
+     * zoneFromName falls back to the host clock for a name it cannot use, which
+     * is the right answer for a row that is already there - but taking one here
+     * would report a saved timezone that never applies, behind a 200. That is
+     * exactly the fault the optimal values had before 1.3.5, and it is the
+     * quietest kind: the setting reads back as it was typed and changes nothing.
+     *
+     * Checked before toString(), because an object stringifies to something
+     * isKnownTimeZone would merely reject with a less useful message - and a
+     * non-string is a different mistake from a misspelled zone.
+     */
+    if (key === "timezone") {
+        if (typeof value !== "string")
+            return "You need to provide an IANA time zone name, or none to use the host's clock";
+
+        if (value !== QUIET_HOURS_OFF && !isKnownTimeZone(value))
+            return `'${value}' is not a time zone this system knows. Use a name such as Europe/Berlin, `
+                + `or none to use the host's clock`;
+    }
+
     // Compared as a string, and then *stored* as one. A boolean true is the
     // obvious thing for anyone driving the API to send, and it used to be
     // rejected with "provide either true or false" - which is what they had
@@ -646,6 +674,7 @@ export const importConfig = async (obj) => {
     // skipped, every full backup carries a cron - and restarting on all of them
     // tears down a working timer and starts a fresh one for no reason.
     const storedCron = await getValue("cron");
+    const storedTimezone = await getValue("timezone");
 
     try {
         await db.transaction(async (transaction) => {
@@ -672,9 +701,17 @@ export const importConfig = async (obj) => {
     // Restarting the scheduler is not something a transaction can roll back, so
     // it only happens once the import has actually committed.
     const cron = updates.find((update) => update.key === "cron");
-    if (cron && cron.value.toString() !== storedCron) {
+    const timezone = updates.find((update) => update.key === "timezone");
+
+    // The timezone counts too: an import that changes only that one leaves the
+    // running job compiled against the zone it replaced, and node-schedule has
+    // no way to be told about it other than being rebuilt. Compared against the
+    // stored value the same way the cron is, so an import that merely restates
+    // the current settings does not restart the schedule for nothing.
+    if ((cron && cron.value.toString() !== storedCron)
+        || (timezone && timezone.value.toString() !== storedTimezone)) {
         timer.stopTimer();
-        timer.startTimer(cron.value.toString());
+        timer.startTimer(await getValue("cron"), await getValue("timezone"));
     }
 
     return {ok: true};
@@ -713,7 +750,7 @@ export const factoryReset = async () => {
     destroyAllSessions();
 
     timer.stopTimer();
-    timer.startTimer(configDefaults.cron);
+    timer.startTimer(configDefaults.cron, configDefaults.timezone);
 
     interfaces.requestInterfaces();
 

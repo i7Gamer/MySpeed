@@ -1,3 +1,5 @@
+import { localWallClock, serverZone } from './timezone.js';
+
 /**
  * The daily window in which no scheduled test runs.
  *
@@ -6,10 +8,15 @@
  * #837. Pausing already exists but is a one-shot: it has to be set again every
  * evening, which is why neither issue was answered by it.
  *
- * Judged on the server's own clock, because that is the clock the schedule
- * itself runs on. A window read in one timezone and fired in another would
- * silence the wrong hours, and there is no viewer to ask - nobody is
- * necessarily looking when the test is due.
+ * Judged on the zone the operator configured, falling back to the host's own
+ * clock when none is - which is what this used to do unconditionally. The old
+ * reasoning was sound as far as it went ("a window read in one timezone and
+ * fired in another would silence the wrong hours, and there is no viewer to ask
+ * - nobody is necessarily looking when the test is due") and the conclusion
+ * followed only while there was nowhere to state the zone. The Docker image pins
+ * TZ=Etc/UTC, so for anybody not on UTC the window silenced hours nobody chose:
+ * upstream #1115 and #748. The answer is not to ask a viewer, it is to be told
+ * once - so the zone is passed in, by the scheduler that reads the setting.
  *
  * Only the scheduled runs are held to it. A test started by hand is someone
  * asking for one now, and refusing that would be a fault rather than a
@@ -48,7 +55,19 @@ export const parseTimeOfDay = (value) => {
 /** Whether the configuration would accept this as one end of the window. */
 export const isValidTimeOfDay = (value) => value === QUIET_HOURS_OFF || parseTimeOfDay(value) !== null;
 
-export const minutesIntoDay = (date) => date.getHours() * MINUTES_PER_HOUR + date.getMinutes();
+/**
+ * How far into the day an instant falls, on `zone`'s wall clock.
+ *
+ * Defaulted to the host clock so that every caller which has no zone to offer -
+ * and every test written before there was one - reads exactly what it read
+ * before: serverZone's offset *is* getTimezoneOffset, so the shifted UTC fields
+ * below are the same numbers getHours and getMinutes answer.
+ */
+export const minutesIntoDay = (date, zone = serverZone) => {
+    const wall = localWallClock(zone, date);
+
+    return wall.getUTCHours() * MINUTES_PER_HOUR + wall.getUTCMinutes();
+};
 
 /**
  * Whether this instant falls inside the configured window.
@@ -65,13 +84,13 @@ export const minutesIntoDay = (date) => date.getHours() * MINUTES_PER_HOUR + dat
  * every scheduled test for good while the interface showed an ordinary setting,
  * so the harmless reading is the one taken.
  */
-export const isQuietHour = (date, start, end) => {
+export const isQuietHour = (date, start, end, zone = serverZone) => {
     const from = parseTimeOfDay(start);
     const until = parseTimeOfDay(end);
 
     if (from === null || until === null || from === until) return false;
 
-    const now = ((minutesIntoDay(date) % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+    const now = ((minutesIntoDay(date, zone) % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
 
     return from < until
         ? now >= from && now < until

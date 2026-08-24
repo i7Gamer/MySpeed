@@ -29,8 +29,11 @@ const app = express.Router();
  * the one whose address is meant to be handed to strangers - was handed the
  * whole of it. isUntrustedReader carries why the two had to stop being one flag.
  */
+// `timezone` sits with the quiet hours it governs, and gives up rather more than
+// they do: the window says when the operator's evening begins, and this says
+// which evening - roughly where in the world the instance is being run from.
 const WITHHELD_FROM_UNTRUSTED = ["interface", "ooklaId", "libreId", "libreUrl",
-    "cron", "scheduleOffset", "passwordLevel", "quietHoursStart", "quietHoursEnd"];
+    "cron", "scheduleOffset", "passwordLevel", "quietHoursStart", "quietHoursEnd", "timezone"];
 
 app.get("/", password(true), async (req, res) => {
     const withhold = isUntrustedReader(req);
@@ -79,9 +82,17 @@ app.patch("/:key", password(false), previewReadOnly, async (req, res) => {
     if (!await config.updateValue(req.params.key, value.value))
         return res.status(500).json({message: `Error updating the key '${req.params.key}'`});
 
-    if (req.params.key === "cron") {
+    /*
+     * The timezone as well as the cron, and read back from the configuration
+     * rather than from the request: whichever of the two was just written, the
+     * schedule needs both, and only one of them is in this body. node-schedule
+     * holds the zone inside the compiled job, so a timezone change that did not
+     * restart it left every future occurrence on the old clock until something
+     * else happened to reschedule - which is a restart, or nothing.
+     */
+    if (req.params.key === "cron" || req.params.key === "timezone") {
         timer.stopTimer();
-        timer.startTimer(req.body.value.toString());
+        timer.startTimer(await config.getValue("cron"), await config.getValue("timezone"));
     }
 
     res.json({message: `The key '${req.params.key}' has been successfully updated`});

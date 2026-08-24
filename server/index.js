@@ -181,7 +181,7 @@ const run = async () => {
 
     await config.insertDefaults();
 
-    timerTask.startTimer(await config.getValue("cron"));
+    timerTask.startTimer(await config.getValue("cron"), await config.getValue("timezone"));
     intervals.push(setInterval(() => removeOld().catch(err =>
         console.error(`Could not apply the retention policy: ${err?.message ?? err}`)), RETENTION_SWEEP_INTERVAL));
 

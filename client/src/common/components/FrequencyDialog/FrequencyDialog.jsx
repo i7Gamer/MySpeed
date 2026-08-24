@@ -12,7 +12,7 @@ import SelectableOption, {SelectableList} from "@/common/components/SelectableOp
 import {CronExpressionParser} from "cron-parser";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import {clickable} from "@/common/utils/Clickable";
-import {firstRunOutsideWindow} from "@/common/components/PauseDialog/quietHoursWindow";
+import {firstRunOutsideWindow, usableZone} from "@/common/components/PauseDialog/quietHoursWindow";
 import {CRON_PRESETS, DEFAULT_CRON, frequencyStateFrom} from "./frequencyState";
 import "./styles.sass";
 
@@ -53,11 +53,23 @@ const isCronValid = (cron) => {
  * operator whose quiet hours ran to 08:00 - disagreeing with the countdown on
  * the same screen about a test that was never going to happen.
  */
-const getNextRunDate = (cron, quietStart, quietEnd) => {
+const getNextRunDate = (cron, quietStart, quietEnd, timezone) => {
     try {
-        const schedule = CronExpressionParser.parse(cron);
+        /*
+         * Parsed in the configured zone, not only filtered in it. The scheduler
+         * hands the same zone to node-schedule (upstream #1115), so "0 3 * * *"
+         * is three in the morning there - and generating the occurrences on the
+         * browser clock and then stepping over them in the zone would announce
+         * the right kind of moment on the wrong day's clock.
+         *
+         * An unusable value - the sentinel, or the `undefined` that arrives when
+         * /api/config withheld the key from an untrusted reader - has to mean the
+         * browser clock rather than an exception, since the catch below would
+         * turn one into "no next run at all".
+         */
+        const schedule = CronExpressionParser.parse(cron, usableZone(timezone) ? {tz: timezone} : undefined);
 
-        return firstRunOutsideWindow(() => schedule.next().toDate(), quietStart, quietEnd);
+        return firstRunOutsideWindow(() => schedule.next().toDate(), quietStart, quietEnd, timezone);
     } catch {
         return null;
     }
@@ -133,8 +145,9 @@ export const FrequencyDialog = ({open, onClose}) => {
     // MAX_QUIET_OCCURRENCES occurrences. Going stale across an occurrence while
     // the dialog sits open is the cheaper wrong.
     const nextRunDate = useMemo(
-        () => open ? getNextRunDate(customCron, config.quietHoursStart, config.quietHoursEnd) : null,
-        [open, customCron, config.quietHoursStart, config.quietHoursEnd]);
+        () => open ? getNextRunDate(customCron, config.quietHoursStart, config.quietHoursEnd,
+            config.timezone) : null,
+        [open, customCron, config.quietHoursStart, config.quietHoursEnd, config.timezone]);
     const nextRun = nextRunDate ? formatDateTime(nextRunDate, preferences) : null;
 
     return (
