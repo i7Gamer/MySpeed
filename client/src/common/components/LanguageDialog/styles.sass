@@ -31,6 +31,12 @@ $dialog-chrome-allowance: 13rem
   // over a language when the list ran out.
   overscroll-behavior: contain
   padding-right: 0.25rem
+  // Slack under the last row, because scrollTop clamps on integers while a
+  // 125% or 150% display lays the rows out on fractions: at maximum scroll
+  // the last row's bottom sat a third of a pixel below the crop line, and the
+  // hover repaint decided whether its straddling border was drawn at all.
+  // With the slack, the clamp error eats padding rather than border.
+  padding-bottom: 0.25rem
 
 
 @media screen and (max-height: 500px)

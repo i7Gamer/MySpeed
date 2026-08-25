@@ -106,6 +106,20 @@ describe("the language list", () => {
             "a wheel at the list's end scrolls the dialog behind it, which hides the last row's border");
     });
 
+    /**
+     * The other way the border went missing, and the one that needed a real
+     * device-pixel-ratio to see: scrollTop and scrollHeight clamp on integers
+     * while fractional scaling lays the rows out on fractions, so at 125% and
+     * 150% the bottom of the last row sat ~0.3 CSS px below the scrollport's
+     * crop at maximum scroll - permanently, with the hover repaint deciding
+     * whether the straddling border was drawn or not. Slack under the last row
+     * means the clamp error eats padding, never border.
+     */
+    it("keeps the last row's border off the crop line", () => {
+        assert.match(listRule(), /padding-bottom:\s*0\.25rem/,
+            "without bottom slack, fractional-DPR scroll clamping clips the last row's border");
+    });
+
     it("yields its height to the viewport before the dialog has to scroll", () => {
         // The compiler may drop the redundant calc() inside min(), so the
         // assertion reads the mechanism - a viewport term minus an allowance -
