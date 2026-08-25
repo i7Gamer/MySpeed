@@ -251,17 +251,35 @@ jobs:
 
   build-macos:
     name: "macOS (${{ matrix.arch }})"
-    runs-on: macos-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
+          # A runner per architecture, as the Linux matrix already does, because
+          # this is the one job that was building both targets on one host - and
+          # the host is what decides which native addons exist.
+          #
+          # @resvg/resvg-js resolves a platform-specific .node at require time,
+          # and its bindings are optionalDependencies keyed by os/cpu (see
+          # bun.lock). An install on an arm64 runner fetches darwin-arm64 and
+          # skips darwin-x64, so the x64 binary was cross-compiled against a
+          # binding that was never on disk. server/controller/opengraph.js no
+          # longer imports it at boot, so that is now a broken preview image
+          # rather than a server that will not start - but building each target
+          # where its own bindings install is the actual fix, and it is what
+          # makes the leg verifiable at all: a binary can only be booted on the
+          # architecture it was built for.
           - arch: x64
             target: bun-darwin-x64
+            runner: macos-15-intel
             artifact_name: MySpeed-macos-x64
+            verify: true
           - arch: arm64
             target: bun-darwin-arm64
+            runner: macos-latest
             artifact_name: MySpeed-macos-arm64
+            verify: true
 
     steps:
       - name: Checkout project
@@ -302,6 +320,15 @@ jobs:
 
       - name: Rename binary
         run: mv MySpeed ${{ matrix.artifact_name }}
+
+      # macOS was the only platform shipping a binary nobody had started. Windows
+      # and Linux both boot theirs before the upload; this job went compile ->
+      # rename -> release, so any fault that shows at startup rather than at
+      # compile time - a missing native binding above all - reached users first.
+      - name: Verify binary boots and serves
+        if: ${{ matrix.verify }}
+        shell: pwsh
+        run: ./scripts/verify-binary.ps1 -Binary ./${{ matrix.artifact_name }}
 
       - name: Upload to Release
         uses: actions/github-script@v9

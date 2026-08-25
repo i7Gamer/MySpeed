@@ -25,13 +25,35 @@ before(async () => {
 const everyField = () => Object.entries(getIntegrations())
     .flatMap(([name, definition]) => definition.fields.map((field) => ({integration: name, field})));
 
+const FINISHED_TEMPLATE = "finished_message";
+const FAILED_TEMPLATE = "error_message";
+
+/**
+ * A field whose value is a template, told by the name it is declared under.
+ *
+ * A convention, not the rule: the rule is whether the module puts the value
+ * through replaceVariables, and that pairing is held in
+ * tests/server/templateVariableOffers.test.js, which reads the modules. This is
+ * the cheaper half - it catches a credential or a URL that has somehow grown a
+ * variables array, where a list under it would say the opposite of the truth.
+ *
+ * The subjects are here because email substitutes into them exactly as it does
+ * the bodies. While this said "_message" alone it was asserting the naming
+ * convention rather than the behaviour, and it passed for as long as the two
+ * agreed - which ended the moment the subjects were offered the variables they
+ * had always accepted.
+ */
+const TEMPLATE_SUFFIXES = ["_message", "_subject"];
+
+const isTemplateName = (name) => TEMPLATE_SUFFIXES.some((suffix) => name.endsWith(suffix));
+
 describe("the variables a template advertises", () => {
     it("finds fields to check", () => {
         assert.ok(everyField().length > 40);
     });
 
     it("offers the finished-test names on a finished-test template", () => {
-        const templates = everyField().filter(({field}) => field.name === "finished_message");
+        const templates = everyField().filter(({field}) => field.name === FINISHED_TEMPLATE);
 
         assert.ok(templates.length >= 5, `only found ${templates.length} finished templates`);
         for (const {integration, field} of templates)
@@ -39,7 +61,7 @@ describe("the variables a template advertises", () => {
     });
 
     it("offers the failure names on a failure template", () => {
-        const templates = everyField().filter(({field}) => field.name === "error_message");
+        const templates = everyField().filter(({field}) => field.name === FAILED_TEMPLATE);
 
         assert.ok(templates.length >= 5, `only found ${templates.length} failure templates`);
         for (const {integration, field} of templates)
@@ -53,7 +75,7 @@ describe("the variables a template advertises", () => {
      */
     it("leaves no message template without a list", () => {
         const bare = everyField()
-            .filter(({field}) => field.name.endsWith("_message") && !field.variables)
+            .filter(({field}) => isTemplateName(field.name) && !field.variables)
             .map(({integration, field}) => `${integration}.${field.name}`);
 
         assert.deepEqual(bare, [], "these templates accept variables but advertise none");
@@ -63,7 +85,7 @@ describe("the variables a template advertises", () => {
     // the opposite.
     it("advertises nothing on a field that is not a template", () => {
         const wrong = everyField()
-            .filter(({field}) => field.variables && !field.name.endsWith("_message"))
+            .filter(({field}) => field.variables && !isTemplateName(field.name))
             .map(({integration, field}) => `${integration}.${field.name}`);
 
         assert.deepEqual(wrong, []);

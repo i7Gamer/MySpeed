@@ -159,10 +159,21 @@ const isNotifier = (definition) => definition?.notifier === true;
  * Keyed per field, because a template for a finished test and one for a failure
  * do not accept the same names, and offering a variable that will not
  * substitute leaves a literal "%download%" in the message that arrives.
+ *
+ * The subject lines are here for the mirror-image reason. That last sentence
+ * guards against offering a variable that does not substitute; email's two
+ * subjects are the opposite case - server/integrations/email.js puts them
+ * through replaceVariables exactly as it does the bodies, so they always
+ * accepted these names and were the only templated fields never offered them.
+ * The dialog drew a row of chips under "Finished message" and nothing under the
+ * "Finished subject" directly above it, which reads as a statement that the
+ * subject does not take variables.
  */
 const TEMPLATE_VARIABLES = {
     finished_message: FINISHED_VARIABLES,
-    error_message: FAILED_VARIABLES
+    finished_subject: FINISHED_VARIABLES,
+    error_message: FAILED_VARIABLES,
+    error_subject: FAILED_VARIABLES
 };
 
 const withVariables = (field) => Object.hasOwn(TEMPLATE_VARIABLES, field.name)

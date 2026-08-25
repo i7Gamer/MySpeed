@@ -1,5 +1,30 @@
 import fs from 'node:fs';
-import { Resvg } from '@resvg/resvg-js';
+
+/**
+ * resvg, fetched when an image is actually asked for rather than at boot.
+ *
+ * It is a native addon: the package resolves a platform-specific `.node` at
+ * require time, and if the build that shipped does not carry the one matching
+ * the machine it is running on, that resolution throws. Imported at the top of
+ * this file, that throw happened while server/app.js was still assembling its
+ * route table - so a packaging fault in an endpoint nobody has to use took the
+ * whole server down before it listened, with a message about a missing binding
+ * and no mention of MySpeed.
+ *
+ * Deferred, the same fault is caught by the handler in routes/opengraph.js,
+ * which already answers every failure by redirecting to the project banner. The
+ * social preview falls back to a static image and everything else runs.
+ *
+ * The promise is kept, not the module: a second caller during the first load
+ * waits on the same import, and a failed load is retried rather than cached as
+ * broken - a binding can be absent because the volume was not mounted yet.
+ */
+let resvg = null;
+
+const loadResvg = () => (resvg ??= import('@resvg/resvg-js').catch((error) => {
+    resvg = null;
+    throw error;
+}));
 import moment from 'moment-timezone';
 import * as tests from './speedtests.js';
 import { parseDateRange } from '../util/dateRange.js';
@@ -238,6 +263,7 @@ async function renderOpenGraphImage() {
     ],
   });
 
+  const { Resvg } = await loadResvg();
   const svg = new Resvg(image);
 
   return svg.render().asPng();

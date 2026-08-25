@@ -75,6 +75,94 @@ describe("the Linux binaries are proven to boot", () => {
 });
 
 /**
+ * macOS was the platform shipping binaries nobody had started.
+ *
+ * Windows and Linux both boot theirs between the compile and the upload. This
+ * job went compile -> rename -> release, so every fault that shows at startup
+ * rather than at compile time reached users first - and it had one waiting.
+ *
+ * Both architectures were built on one runner, and `macos-latest` is arm64.
+ * @resvg/resvg-js resolves a platform-specific .node at require time and ships
+ * its bindings as optionalDependencies keyed by os/cpu, so an install on that
+ * runner fetches darwin-arm64 and skips darwin-x64 - and MySpeed-macos-x64 was
+ * compiled against a binding that had never been on the disk. Nothing in the
+ * build could notice: the compiler is happy, and the resolution it would have
+ * failed on happens at startup.
+ *
+ * A runner per architecture is the fix twice over. It puts each target's own
+ * bindings on the machine that builds it, and it is what lets the leg be
+ * verified at all - a binary can only be booted on the architecture it is for,
+ * so a cross-compiled artifact is one no check on that runner could have run.
+ */
+describe("the macOS binaries are proven to boot", () => {
+    const macos = jobOf("build-macos");
+
+    it("verifies before uploading, as the Windows and Linux jobs do", () => {
+        const verify = macos.indexOf("verify-binary.ps1");
+        const upload = macos.indexOf("Upload to Release");
+
+        assert.notEqual(verify, -1, "the macOS binaries are uploaded without ever having been run");
+        assert.ok(verify < upload, "the binary is uploaded before it is verified, so the check gates nothing");
+    });
+
+    it("verifies the artifact by the name it was renamed to", () => {
+        assert.ok(macos.indexOf("Rename binary") < macos.indexOf("verify-binary.ps1"),
+            "the check runs against a file the rename has already moved");
+    });
+
+    it("builds each architecture on a runner of that architecture", () => {
+        assert.match(macos, /runs-on:\s*\$\{\{\s*matrix\.runner\s*\}\}/,
+            "both macOS targets are pinned to one runner again, so one of them is cross-compiled");
+
+        const runners = [...macos.matchAll(/runner:\s*(\S+)/g)].map(([, value]) => value);
+
+        assert.equal(runners.length, 2, "every macOS leg has to name the runner it builds on");
+        assert.equal(new Set(runners).size, 2,
+            "both legs build on the same runner, so the native addons of one of them are absent");
+    });
+
+    it("says per leg whether it is verified, rather than leaving it implied", () => {
+        const flags = [...macos.matchAll(/verify:\s*(true|false)/g)].map(([, value]) => value);
+
+        assert.deepEqual(flags, ["true", "true"],
+            "a macOS leg that is not verified has to say so, and say why in the matrix comment");
+    });
+
+    it("only runs the check on the legs that declare it", () => {
+        assert.match(macos, /if:\s*\$\{\{\s*matrix\.verify\s*\}\}/);
+    });
+});
+
+/**
+ * The rule the three jobs above are instances of, asserted once against all of
+ * them: a leg that produces a release asset either boots it first or is one of
+ * the legs known not to be able to.
+ *
+ * Written as an allowlist rather than a count so that adding a platform is a
+ * decision somebody has to write down. The Linux arm64 leg is the only standing
+ * exemption, and the matrix says why: pwsh, which verify-binary.ps1 needs, is
+ * not on the arm runner image.
+ */
+describe("every binary leg", () => {
+    const UNVERIFIABLE = ["MySpeed-linux-arm64"];
+
+    it("either boots its artifact or is a documented exception", () => {
+        const unverified = ["build-windows", "build-linux", "build-macos"].flatMap((name) => {
+            const job = jobOf(name);
+            const legs = [...job.matchAll(/artifact_name:\s*(\S+)/g)].map(([, value]) => value);
+            const verified = job.includes("verify-binary.ps1");
+
+            return legs
+                .filter((leg) => !UNVERIFIABLE.includes(leg))
+                .filter(() => !verified);
+        });
+
+        assert.deepEqual(unverified, [],
+            "these artifacts are attached to a release without ever having been started");
+    });
+});
+
+/**
  * A workflow expression is substituted into the shell source before bash parses
  * it, so a value that reaches a `run:` body is code rather than data.
  *
