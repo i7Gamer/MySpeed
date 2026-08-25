@@ -213,8 +213,10 @@
     "tests_exported": "Se han exportado los tests",
     "import_tests": "Importar tests",
     "tests_imported": "Se han importado los tests",
+    "tests_imported_partial": "{{imported}} tests importados, {{skipped}} omitidos",
     "import_test_error": "Se ha producido un error al importar los tests",
     "import_config_error": "Se ha producido un error al importar la configuración",
+    "import_config_error_key": "No se pudo importar la configuración: el valor guardado para «{{key}}» no es válido",
     "export": "Exportar",
     "import": "Importar",
     "clear_history": "Eliminar historial",
@@ -320,7 +322,8 @@
     "no_latest": "No hay ningun test en curso. Realice un test o espere hasta que se haya realizado el siguiente.",
     "loading_more": "Cargando más pruebas...",
     "no_more_tests": "No hay que cargar más pruebas",
-    "unknown_error": "Error desconocido:",
+    "unknown_error": "Error desconocido",
+    "unknown_error_detail": "Error desconocido: {{error}}",
     "failed": "Test fallido",
     "recheck": "Por favor, compruebe en la medida de lo posible si esto ocurre más a menudo.",
     "delete": "Borrar test",
@@ -384,7 +387,10 @@
     "config": "No se ha podido cargar el archivo de configuración",
     "invalid_view": "Vista no válida",
     "cannot_open_socket": "No se pudo abrir una conexión con el servidor de test. Puede que no sea accesible desde la interfaz de red seleccionada.",
-    "latency_failed": "El test de latencia falló, así que no se pudo medir ninguna velocidad."
+    "latency_failed": "El test de latencia falló, así que no se pudo medir ninguna velocidad.",
+    "rate_limited": "El proveedor rechazó el test porque se han ejecutado demasiados hace poco. El siguiente se retrasa automáticamente.",
+    "no_measurement": "El test terminó sin informar de ninguna medición.",
+    "impossible_measurement": "El test informó de una medición que no puede ser correcta, así que se descartó."
   },
   "statistics": {
     "average": "Promedio",

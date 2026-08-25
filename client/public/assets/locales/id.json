@@ -213,8 +213,10 @@
     "tests_exported": "Pengujian telah diekspor",
     "import_tests": "Impor pengujian",
     "tests_imported": "Pengujian telah diimpor",
+    "tests_imported_partial": "{{imported}} pengujian diimpor, {{skipped}} dilewati",
     "import_test_error": "Terjadi kesalahan saat mengimpor pengujian",
     "import_config_error": "Terjadi kesalahan saat mengimpor konfigurasi",
+    "import_config_error_key": "Konfigurasi tidak dapat diimpor: nilai tersimpan untuk \"{{key}}\" tidak valid",
     "export": "Ekspor",
     "import": "Impor",
     "clear_history": "Hapus riwayat",
@@ -320,7 +322,8 @@
     "no_latest": "Tidak ada pengujian saat ini yang tersedia. Silakan lakukan pengujian atau tunggu hingga pengujian berikutnya dilakukan.",
     "loading_more": "Memuat lebih banyak pengujian...",
     "no_more_tests": "Tidak ada lagi pengujian untuk dimuat",
-    "unknown_error": "Kesalahan tidak dikenal:",
+    "unknown_error": "Galat tidak dikenal",
+    "unknown_error_detail": "Galat tidak dikenal: {{error}}",
     "failed": "Pengujian gagal",
     "recheck": "Silakan periksa sebisa mungkin jika ini sering terjadi.",
     "delete": "Hapus Pengujian",
@@ -384,7 +387,10 @@
     "config": "File konfigurasi tidak dapat dimuat",
     "invalid_view": "Tampilan tidak valid",
     "cannot_open_socket": "Tidak dapat membuka koneksi ke server pengujian. Server itu mungkin tidak terjangkau dari antarmuka jaringan yang dipilih.",
-    "latency_failed": "Pengujian latensi gagal, sehingga tidak ada kecepatan yang dapat diukur."
+    "latency_failed": "Pengujian latensi gagal, sehingga tidak ada kecepatan yang dapat diukur.",
+    "rate_limited": "Penyedia menolak pengujian karena terlalu banyak yang dijalankan baru-baru ini. Yang berikutnya ditunda secara otomatis.",
+    "no_measurement": "Pengujian selesai tanpa melaporkan pengukuran apa pun.",
+    "impossible_measurement": "Pengujian melaporkan pengukuran yang tidak mungkin benar, jadi pengukuran itu dibuang."
   },
   "statistics": {
     "average": "Rata-rata",

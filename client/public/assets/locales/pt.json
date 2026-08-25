@@ -213,8 +213,10 @@
     "tests_exported": "Os testes foram exportados",
     "import_tests": "Testes de importação",
     "tests_imported": "Os testes foram importados",
+    "tests_imported_partial": "{{imported}} testes importados, {{skipped}} ignorados",
     "import_test_error": "Ocorreu um erro ao importar os testes",
     "import_config_error": "Ocorreu um erro ao importar a configuração",
+    "import_config_error_key": "Não foi possível importar a configuração: o valor armazenado para \"{{key}}\" não é válido",
     "export": "Exportação",
     "import": "Importação",
     "clear_history": "Limpar histórico",
@@ -320,7 +322,8 @@
     "no_latest": "Não há nenhum teste disponível no momento. Realize um teste ou aguarde até que o próximo teste seja realizado.",
     "loading_more": "Carregando mais testes...",
     "no_more_tests": "Não há mais testes para carregar",
-    "unknown_error": "Erro desconhecido:",
+    "unknown_error": "Erro desconhecido",
+    "unknown_error_detail": "Erro desconhecido: {{error}}",
     "failed": "Falha no teste",
     "recheck": "Se isso acontecer com frequência, verifique o máximo possível.",
     "delete": "Excluir teste",
@@ -384,7 +387,10 @@
     "config": "O arquivo de configuração não pôde ser carregado",
     "invalid_view": "Visualização inválida",
     "cannot_open_socket": "Não foi possível abrir uma conexão com o servidor de teste. Talvez ele esteja inacessível pela interface de rede selecionada.",
-    "latency_failed": "O teste de latência falhou, então nenhuma velocidade pôde ser medida."
+    "latency_failed": "O teste de latência falhou, então nenhuma velocidade pôde ser medida.",
+    "rate_limited": "O provedor recusou o teste porque muitos foram executados recentemente. O próximo é adiado automaticamente.",
+    "no_measurement": "O teste terminou sem informar nenhuma medição.",
+    "impossible_measurement": "O teste informou uma medição que não pode estar certa, então ela foi descartada."
   },
   "statistics": {
     "average": "Média",

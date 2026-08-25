@@ -213,8 +213,10 @@
     "tests_exported": "Testene er blevet eksporteret",
     "import_tests": "Importer tests",
     "tests_imported": "Testene er blevet importeret",
+    "tests_imported_partial": "{{imported}} tests importeret, {{skipped}} sprunget over",
     "import_test_error": "Der opstod en fejl under import af tests",
     "import_config_error": "Der opstod en fejl under import af konfigurationen",
+    "import_config_error_key": "Konfigurationen kunne ikke importeres: den gemte værdi for \"{{key}}\" er ikke gyldig",
     "export": "Eksport",
     "import": "Import",
     "clear_history": "Ryd historik",
@@ -320,7 +322,8 @@
     "no_latest": "Der er ingen aktuel test tilgængelig. Udfør venligst en test eller vent til den næste test udføres.",
     "loading_more": "Indlæser flere tests...",
     "no_more_tests": "Ikke flere tests at indlæse",
-    "unknown_error": "Ukendt fejl:",
+    "unknown_error": "Ukendt fejl",
+    "unknown_error_detail": "Ukendt fejl: {{error}}",
     "failed": "Test mislykkedes",
     "recheck": "Kontroller venligst om muligt, om dette sker ofte.",
     "delete": "Slet test",
@@ -384,7 +387,10 @@
     "config": "Konfigurationsfilen kunne ikke indlæses",
     "invalid_view": "Ugyldig visning",
     "cannot_open_socket": "Kunne ikke åbne en forbindelse til testserveren. Den er måske ikke tilgængelig fra det valgte netværkskort.",
-    "latency_failed": "Forsinkelsestesten mislykkedes, så der kunne ikke måles nogen hastighed."
+    "latency_failed": "Forsinkelsestesten mislykkedes, så der kunne ikke måles nogen hastighed.",
+    "rate_limited": "Udbyderen afviste testen, fordi der er kørt for mange for nylig. Den næste udskydes automatisk.",
+    "no_measurement": "Testen sluttede uden at rapportere nogen måling.",
+    "impossible_measurement": "Testen rapporterede en måling, der ikke kan være rigtig, så den blev kasseret."
   },
   "statistics": {
     "average": "Gennemsnit",

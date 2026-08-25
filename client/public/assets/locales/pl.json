@@ -213,8 +213,10 @@
     "tests_exported": "Testy zostały wyeksportowane",
     "import_tests": "Importuj testy",
     "tests_imported": "Testy zostały zaimportowane",
+    "tests_imported_partial": "Zaimportowano {{imported}} testów, pominięto {{skipped}}",
     "import_test_error": "Wystąpił błąd podczas importu testów",
     "import_config_error": "Wystąpił błąd podczas importu konfiguracji",
+    "import_config_error_key": "Nie udało się zaimportować konfiguracji: zapisana wartość dla „{{key}}” jest nieprawidłowa",
     "export": "Eksportuj",
     "import": "Importuj",
     "clear_history": "Wyczyść historię",
@@ -320,7 +322,8 @@
     "no_latest": "Nie ma aktualnie dostępnego testu. Wykonaj test lub poczekaj na kolejny.",
     "loading_more": "Załaduj więcej testów...",
     "no_more_tests": "Nie musisz ładować więcej testów",
-    "unknown_error": "Nieznany błąd:",
+    "unknown_error": "Nieznany błąd",
+    "unknown_error_detail": "Nieznany błąd: {{error}}",
     "failed": "Test nie powiódł się",
     "recheck": "Sprawdź, czy to zdarza się często.",
     "delete": "Usuń test",
@@ -384,7 +387,10 @@
     "config": "Nie udało się załadować pliku konfiguracyjnego",
     "invalid_view": "Nieprawidłowy widok",
     "cannot_open_socket": "Nie udało się otworzyć połączenia z serwerem testowym. Może być nieosiągalny z wybranego interfejsu sieciowego.",
-    "latency_failed": "Test opóźnienia nie powiódł się, więc nie dało się zmierzyć prędkości."
+    "latency_failed": "Test opóźnienia nie powiódł się, więc nie dało się zmierzyć prędkości.",
+    "rate_limited": "Dostawca odrzucił test, ponieważ ostatnio wykonano ich zbyt wiele. Następny zostanie automatycznie opóźniony.",
+    "no_measurement": "Test zakończył się bez zgłoszenia jakiegokolwiek pomiaru.",
+    "impossible_measurement": "Test zgłosił pomiar, który nie może być prawidłowy, więc został odrzucony."
   },
   "statistics": {
     "average": "Średnia",

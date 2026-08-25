@@ -213,8 +213,10 @@
     "tests_exported": "De tests zijn geëxporteerd",
     "import_tests": "Tests importeren",
     "tests_imported": "De tests zijn geïmporteerd",
+    "tests_imported_partial": "{{imported}} tests geïmporteerd, {{skipped}} overgeslagen",
     "import_test_error": "Er is een fout opgetreden tijdens het importeren van de tests",
     "import_config_error": "Er is een fout opgetreden tijdens het importeren van de configuratie",
+    "import_config_error_key": "De configuratie kon niet worden geïmporteerd: de opgeslagen waarde voor \"{{key}}\" is niet geldig",
     "export": "Exporteer",
     "import": "Importeren",
     "clear_history": "Geschiedenis wissen",
@@ -320,7 +322,8 @@
     "no_latest": "Er is geen huidige test. Voer een test uit of wacht tot de volgende test is uitgevoerd.",
     "loading_more": "Meer tests laden...",
     "no_more_tests": "Geen tests meer om te laden",
-    "unknown_error": "Onbekende fout:",
+    "unknown_error": "Onbekende fout",
+    "unknown_error_detail": "Onbekende fout: {{error}}",
     "failed": "Test mislukt",
     "recheck": "Controleer voor zover mogelijk of dit vaker gebeurt.",
     "delete": "Test verwijderen",
@@ -384,7 +387,10 @@
     "config": "Het configuratiebestand kon niet worden geladen",
     "invalid_view": "Ongeldige weergave",
     "cannot_open_socket": "Kon geen verbinding met de testserver openen. Mogelijk is die niet bereikbaar vanaf de gekozen netwerkinterface.",
-    "latency_failed": "De latentietest is mislukt, dus kon er geen snelheid worden gemeten."
+    "latency_failed": "De latentietest is mislukt, dus kon er geen snelheid worden gemeten.",
+    "rate_limited": "De provider heeft de test geweigerd omdat er kort geleden te veel zijn uitgevoerd. De volgende wordt automatisch uitgesteld.",
+    "no_measurement": "De test is geëindigd zonder ook maar één meting te melden.",
+    "impossible_measurement": "De test meldde een meting die niet kan kloppen, dus is die weggegooid."
   },
   "statistics": {
     "average": "Gemiddeld",

@@ -213,8 +213,10 @@
     "tests_exported": "Die Tests wurden exportiert",
     "import_tests": "Tests importieren",
     "tests_imported": "Die Tests wurden importiert",
+    "tests_imported_partial": "{{imported}} Tests importiert, {{skipped}} übersprungen",
     "import_test_error": "Beim Importieren der Tests ist ein Fehler aufgetreten",
     "import_config_error": "Beim Importieren der Konfiguration ist ein Fehler aufgetreten",
+    "import_config_error_key": "Die Konfiguration konnte nicht importiert werden: der gespeicherte Wert für \"{{key}}\" ist ungültig",
     "export": "Exportieren",
     "import": "Importieren",
     "clear_history": "Verlauf leeren",
@@ -320,7 +322,8 @@
     "no_latest": "Es liegt kein aktueller Test vor. Bitte führe einen Test durch oder warte, bis der nächste Test durchgeführt wurde.",
     "loading_more": "Lade weitere Tests...",
     "no_more_tests": "Keine Tests mehr zu laden",
-    "unknown_error": "Unbekannter Fehler:",
+    "unknown_error": "Unbekannter Fehler",
+    "unknown_error_detail": "Unbekannter Fehler: {{error}}",
     "failed": "Test fehlgeschlagen",
     "recheck": "Bitte überprüfe weitestgehend, ob das öfter passiert.",
     "delete": "Test löschen",
@@ -384,7 +387,10 @@
     "config": "Die Konfigurationsdatei konnte nicht geladen werden",
     "invalid_view": "Ungültige Ansicht",
     "cannot_open_socket": "Es konnte keine Verbindung zum Testserver aufgebaut werden. Möglicherweise ist er über die gewählte Netzwerkschnittstelle nicht erreichbar.",
-    "latency_failed": "Der Latenztest ist fehlgeschlagen, daher konnte keine Geschwindigkeit gemessen werden."
+    "latency_failed": "Der Latenztest ist fehlgeschlagen, daher konnte keine Geschwindigkeit gemessen werden.",
+    "rate_limited": "Der Anbieter hat den Test abgelehnt, weil zuletzt zu viele ausgeführt wurden. Der nächste wird automatisch verzögert.",
+    "no_measurement": "Der Test wurde beendet, ohne einen Messwert zu melden.",
+    "impossible_measurement": "Der Test hat einen Messwert gemeldet, der nicht stimmen kann, und wurde verworfen."
   },
   "statistics": {
     "average": "Durchschnitt",

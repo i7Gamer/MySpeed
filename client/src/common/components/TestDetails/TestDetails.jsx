@@ -157,8 +157,15 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
 
     // The panel keeps the raw output appended when there is no translation for
     // it - it is what an issue report needs.
+    //
+    // Its own key rather than the bare one plus punctuation. "Unknown error:"
+    // used to carry the colon, which read correctly here and left the overview
+    // row - the other caller, which appends nothing - ending on a colon with
+    // the explanation it promises never arriving. Interpolated so each locale
+    // places its own punctuation: French wants a space before the colon and
+    // Chinese wants a fullwidth one.
     const reason = describeError(test.error);
-    const errorMessage = reason ?? (t("test.unknown_error") + " " + test.error);
+    const errorMessage = reason ?? t("test.unknown_error_detail", {error: test.error});
 
     const earlier = previous ?? {};
 

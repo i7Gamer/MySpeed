@@ -42,6 +42,20 @@
   border-left-color: $accent-danger
   transform: translateX(-4px)
 
+// Neither done nor failed: the outcome that needs reading rather than
+// dismissing. A partly refused import is the first of them - it succeeded, and
+// saying so in the same green as a clean restore is what hid it.
+.toast-orange
+  border-left: 4px solid $accent-warning
+
+  & .toast-content svg
+    color: $accent-warning
+
+.toast-orange:hover
+  border-color: $light-gray
+  border-left-color: $accent-warning
+  transform: translateX(-4px)
+
 .toast-content
   display: flex
   align-items: center

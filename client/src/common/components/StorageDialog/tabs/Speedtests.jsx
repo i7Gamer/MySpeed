@@ -122,8 +122,20 @@ export default ({tests, close}) => {
         if (data === null) return;
 
         const res = await putRequest("/storage/tests/history", data).catch(() => null);
+
+        // The route sends `imported` and `skipped` on purpose - "the counts
+        // travel with the message" - and reading only res.ok threw them away, so
+        // a file whose rows were nearly all refused answered in the same green as
+        // one that restored whole. A partly usable backup is the case an operator
+        // most needs told, and it is the one that looked most like success.
+        const body = await res?.json().catch(() => null);
+        const skipped = Number(body?.skipped) || 0;
+
         if (res?.ok) {
-            updateToast(t("storage.tests_imported"), "green", faFileImport);
+            updateToast(skipped
+                    ? t("storage.tests_imported_partial", {imported: Number(body?.imported) || 0, skipped})
+                    : t("storage.tests_imported"),
+                skipped ? "orange" : "green", faFileImport);
             reloadTests();
         } else {
             updateToast(t("storage.import_test_error"), "red");

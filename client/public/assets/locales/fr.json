@@ -213,8 +213,10 @@
     "tests_exported": "Les tests ont été exportés",
     "import_tests": "Tests d'importation",
     "tests_imported": "Les tests ont été importés",
+    "tests_imported_partial": "{{imported}} tests importés, {{skipped}} ignorés",
     "import_test_error": "Une erreur s'est produite lors de l'importation des tests",
     "import_config_error": "Une erreur s'est produite lors de l'importation de la configuration",
+    "import_config_error_key": "Impossible d'importer la configuration : la valeur enregistrée pour « {{key}} » n'est pas valide",
     "export": "Exporter",
     "import": "Importation",
     "clear_history": "Effacer l'historique",
@@ -320,7 +322,8 @@
     "no_latest": "Il n'y a pas de test actuellement disponible. Veuillez effectuer un test ou attendre que le prochain test soit effectué.",
     "loading_more": "Chargement d'autres tests...",
     "no_more_tests": "Plus de tests à charger",
-    "unknown_error": "Erreur inconnue :",
+    "unknown_error": "Erreur inconnue",
+    "unknown_error_detail": "Erreur inconnue : {{error}}",
     "failed": "Échec du Test",
     "recheck": "Veuillez vérifier autant que possible si cela se produit souvent.",
     "delete": "Supprimer le test",
@@ -384,7 +387,10 @@
     "config": "Impossible d’ouvrir le fichier de configuration",
     "invalid_view": "Vue invalide",
     "cannot_open_socket": "Impossible d'ouvrir une connexion vers le serveur de test. Il est peut-être inaccessible depuis l'interface réseau sélectionnée.",
-    "latency_failed": "Le test de latence a échoué, aucun débit n'a donc pu être mesuré."
+    "latency_failed": "Le test de latence a échoué, aucun débit n'a donc pu être mesuré.",
+    "rate_limited": "Le fournisseur a refusé le test car trop de tests ont été lancés récemment. Le suivant est retardé automatiquement.",
+    "no_measurement": "Le test s'est terminé sans signaler la moindre mesure.",
+    "impossible_measurement": "Le test a signalé une mesure qui ne peut pas être correcte, elle a donc été écartée."
   },
   "statistics": {
     "average": "Moyenne",

@@ -213,8 +213,10 @@
     "tests_exported": "Testler dışa aktarıldı",
     "import_tests": "İthalat testleri",
     "tests_imported": "Testler içe aktarıldı",
+    "tests_imported_partial": "{{imported}} test içe aktarıldı, {{skipped}} atlandı",
     "import_test_error": "Testler içe aktarılırken bir hata oluştu",
     "import_config_error": "Yapılandırma içe aktarılırken bir hata oluştu",
+    "import_config_error_key": "Yapılandırma içe aktarılamadı: \"{{key}}\" için kayıtlı değer geçerli değil",
     "export": "Dışa aktar",
     "import": "İçe aktar",
     "clear_history": "Geçmişi temizle",
@@ -320,7 +322,8 @@
     "no_latest": "Şu anda geçerli bir test yok. Lütfen bir test yapın veya bir sonraki testin yapılmasını bekleyin.",
     "loading_more": "Daha fazla test yükleniyor...",
     "no_more_tests": "Yüklenecek başka test yok",
-    "unknown_error": "Bilinmeyen hata:",
+    "unknown_error": "Bilinmeyen hata",
+    "unknown_error_detail": "Bilinmeyen hata: {{error}}",
     "failed": "Test başarısız oldu",
     "recheck": "Bu durum sık sık yaşanıyorsa, mümkün oldukça kontrol edin.",
     "delete": "Testi sil",
@@ -384,7 +387,10 @@
     "config": "Konfigürasyon dosyası yüklenemedi",
     "invalid_view": "Geçersiz görünüm",
     "cannot_open_socket": "Test sunucusuna bağlantı açılamadı. Seçilen ağ arayüzünden erişilemiyor olabilir.",
-    "latency_failed": "Gecikme testi başarısız oldu, bu yüzden hiçbir hız ölçülemedi."
+    "latency_failed": "Gecikme testi başarısız oldu, bu yüzden hiçbir hız ölçülemedi.",
+    "rate_limited": "Sağlayıcı testi reddetti, çünkü kısa süre içinde çok fazla test çalıştırıldı. Sonraki otomatik olarak ertelenir.",
+    "no_measurement": "Test, hiçbir ölçüm bildirmeden sona erdi.",
+    "impossible_measurement": "Test, doğru olamayacak bir ölçüm bildirdi, bu yüzden ölçüm atıldı."
   },
   "statistics": {
     "average": "Ortalama",

@@ -213,8 +213,10 @@
     "tests_exported": "I test sono stati esportati",
     "import_tests": "Test di importazione",
     "tests_imported": "I test sono stati importati",
+    "tests_imported_partial": "{{imported}} test importati, {{skipped}} saltati",
     "import_test_error": "Si è verificato un errore durante l'importazione dei test",
     "import_config_error": "Si è verificato un errore durante l'importazione della configurazione",
+    "import_config_error_key": "Impossibile importare la configurazione: il valore salvato per \"{{key}}\" non è valido",
     "export": "Esportazione",
     "import": "Importazione",
     "clear_history": "Cancella la cronologia",
@@ -320,7 +322,8 @@
     "no_latest": "Non c'è nessun test in corso. Eseguire un test o attendere l'esecuzione del test successivo.",
     "loading_more": "Caricamento di altri test...",
     "no_more_tests": "Non ci sono più test da caricare",
-    "unknown_error": "Errore sconosciuto:",
+    "unknown_error": "Errore sconosciuto",
+    "unknown_error_detail": "Errore sconosciuto: {{error}}",
     "failed": "Test fallito",
     "recheck": "Si prega di controllare il più possibile se ciò accade più spesso.",
     "delete": "Cancellare il test",
@@ -384,7 +387,10 @@
     "config": "Die Konfigurationsdatei konnte nicht geladen werden",
     "invalid_view": "Vista non valida",
     "cannot_open_socket": "Non è stato possibile aprire una connessione verso il server di test. Potrebbe non essere raggiungibile dall'interfaccia di rete selezionata.",
-    "latency_failed": "Il test di latenza è fallito, quindi non è stato possibile misurare alcuna velocità."
+    "latency_failed": "Il test di latenza è fallito, quindi non è stato possibile misurare alcuna velocità.",
+    "rate_limited": "Il provider ha rifiutato il test perché ne sono stati eseguiti troppi di recente. Il prossimo viene ritardato automaticamente.",
+    "no_measurement": "Il test è terminato senza riportare alcuna misurazione.",
+    "impossible_measurement": "Il test ha riportato una misurazione che non può essere corretta, quindi è stata scartata."
   },
   "statistics": {
     "average": "Media",
