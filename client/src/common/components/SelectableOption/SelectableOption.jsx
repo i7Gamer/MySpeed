@@ -21,11 +21,6 @@ export const SelectableOption = ({
     onClick,
     icon,
     image,
-    // Something the row shows beside its name that is neither a glyph nor a
-    // picture - the palette preview is a span the stylesheet paints. It sits
-    // in the same slot as those two rather than in `children`, which replaces
-    // the title and description outright.
-    adornment,
     title,
     description,
     showRadio = true,
@@ -51,7 +46,6 @@ export const SelectableOption = ({
             {image && (
                 <img src={image.src} alt={image.alt || ""} className="selectable-option-image"/>
             )}
-            {adornment}
             <div className="selectable-option-text">
                 {children ?? (
                     <>

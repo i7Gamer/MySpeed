@@ -1,6 +1,6 @@
 import React, {createContext, useCallback, useEffect, useMemo, useState} from "react";
 import {readStored, writeStored} from "@/common/utils/Storage";
-import {normaliseTheme, resolveTheme, THEME_SYSTEM} from "./themeChoice";
+import {normaliseTheme, resolveTheme} from "./themeChoice";
 import {normalisePalette} from "./paletteChoice";
 
 export const ThemeContext = createContext({});
@@ -109,8 +109,7 @@ export const ThemeProvider = (props) => {
      * stopped asking in booleans, and a boolean cannot answer a palette.
      */
     const value = useMemo(() => ({
-        theme, setTheme, resolved, palette, setPalette, systemDark,
-        followsSystem: theme === THEME_SYSTEM
+        theme, setTheme, resolved, palette, setPalette, systemDark
     }), [theme, setTheme, resolved, palette, setPalette, systemDark]);
 
     return (
