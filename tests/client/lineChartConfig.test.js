@@ -600,3 +600,39 @@ describe("lineChartOptions", () => {
         assert.equal(options().plugins.crosshair.color, chartThemeColors().crosshair);
     });
 });
+
+/**
+ * The wiring, checked with fourteen colours that all differ.
+ *
+ * With no document every token above is the same fallback string, so asserting
+ * that the tooltip took tooltipBg proves nothing - fed from tickColor it would
+ * pass identically, and the old does-not-hand-dark-to-light assertion that
+ * would have caught a crossed wire left with the boolean. A hand-built palette
+ * in which every token is its own value is what makes a crossed wire able to
+ * fail here.
+ */
+describe("where each token lands", () => {
+    const DISTINCT = Object.fromEntries([
+        "download", "upload", "ping", "loaded", "jitter", "average", "failed",
+        "gridColor", "crosshair", "tickColor", "tooltipBg", "tooltipTitle", "tooltipBody", "tooltipBorder"
+    ].map((name, index) => [name, `#0000${String(index).padStart(2, "0")}`]));
+
+    const wired = options({themeColors: DISTINCT});
+
+    it("hands the tooltip its own four colours", () => {
+        assert.equal(wired.plugins.tooltip.backgroundColor, DISTINCT.tooltipBg);
+        assert.equal(wired.plugins.tooltip.titleColor, DISTINCT.tooltipTitle);
+        assert.equal(wired.plugins.tooltip.bodyColor, DISTINCT.tooltipBody);
+        assert.equal(wired.plugins.tooltip.borderColor, DISTINCT.tooltipBorder);
+    });
+
+    it("hands the chrome around the data its own", () => {
+        assert.equal(wired.plugins.crosshair.color, DISTINCT.crosshair);
+        assert.equal(wired.plugins.legend.labels.color, DISTINCT.tickColor);
+
+        for (const axis of ["x", "y"]) {
+            assert.equal(wired.scales[axis].grid.color, DISTINCT.gridColor, `${axis} grid`);
+            assert.equal(wired.scales[axis].ticks.color, DISTINCT.tickColor, `${axis} ticks`);
+        }
+    });
+});
