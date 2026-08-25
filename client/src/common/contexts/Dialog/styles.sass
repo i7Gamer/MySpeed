@@ -115,6 +115,11 @@
   word-wrap: break-word
   overflow-wrap: break-word
   max-width: 100%
+  // The preferences explanations arrive as one string with a line per choice
+  // - see PreferencesInfo - and HTML collapses their newlines to spaces
+  // without this. A description with no newline in it renders exactly as
+  // before.
+  white-space: pre-line
 
 .dialog-description a
   color: $accent-primary

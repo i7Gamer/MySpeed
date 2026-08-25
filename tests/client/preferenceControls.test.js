@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readSource, withoutJsComments } from "../helpers/source.js";
+import { compile } from "../helpers/sass.mjs";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const LOCALES = path.join(ROOT, "client", "public", "assets", "locales");
@@ -170,6 +171,35 @@ describe("every explanation the preferences dialog offers", () => {
     it("reuses the strings the chart toolbar already has", () => {
         for (const key of ["statistics.detail.title", "statistics.detail.description"])
             assert.notEqual(valueAt(english, key), undefined, `${key} is gone, and the dialog still reads it`);
+    });
+});
+
+/**
+ * The lines those explanations are built of.
+ *
+ * PreferencesInfo joins the section sentence and one line per choice with
+ * "\n", and the alert prints the result in a <p>. HTML collapses a newline to
+ * a space, so without a rule saying otherwise the popup that exists to list
+ * the choices ran them together into one paragraph - the description of Dark
+ * flowing straight into the name of Light. The rule lives on the dialog's
+ * description class, where every alert already renders; a description with no
+ * newline in it cannot tell the difference.
+ */
+describe("the line breaks in those explanations", () => {
+    it("are written into the text", () => {
+        const info = withoutJsComments(readSource("client/src/common/utils/PreferencesInfo.js"));
+
+        assert.match(info, /\.join\("\\n"\)/,
+            "the explanations no longer join their lines with a newline, so this pairing guards nothing");
+    });
+
+    it("are preserved where the alert renders them", () => {
+        const css = compile("common/contexts/Dialog/styles.sass");
+        const at = css.indexOf(".dialog-description {");
+
+        assert.notEqual(at, -1, "the alert's description class is gone from the dialog stylesheet");
+        assert.match(css.slice(at, css.indexOf("}", at)), /white-space:\s*pre-line/,
+            "without pre-line the popup collapses one-line-per-choice into a single run-on paragraph");
     });
 });
 
