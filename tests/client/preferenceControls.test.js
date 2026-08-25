@@ -107,11 +107,69 @@ describe("every option the preferences dialog offers", () => {
     });
 
     it("names the section it sits in", () => {
-        const sections = [...dialog.matchAll(/title=\{t\("([^"]+)"\)}\s*\n\s*description=\{t\("([^"]+)"\)}/g)]
-            .flatMap(([, title, description]) => [title, description]);
+        const sections = [...dialog.matchAll(/title=\{t\("([^"]+)"\)}/g)].map(([, key]) => key);
 
-        assert.ok(sections.length >= 8, `only found ${sections.length} section strings`);
-        assert.deepEqual(sections.filter((key) => valueAt(english, key) === undefined), []);
+        assert.ok(sections.length >= 6, `only found ${sections.length} section headings`);
+        assert.deepEqual(sections.filter((key) => valueAt(english, key) === undefined), [],
+            "these sections would render their own key as their heading");
+    });
+});
+
+/**
+ * The explanations behind the section icons, whose keys nothing else can see.
+ *
+ * PreferencesInfo builds them - `preferences.${section}.${choice}_desc` - so
+ * i18nKeys.test.js, which scans for a literal t("…"), walks straight past every
+ * one. That is the same shape as an integration naming an icon nothing
+ * registered: a name assembled at runtime, with nothing checking that anything
+ * answers to it. A missing key here renders as the key itself, inside the popup
+ * that exists to explain the setting.
+ *
+ * Expanded from the source rather than listed, so a section added later is
+ * covered by having been written.
+ */
+describe("every explanation the preferences dialog offers", () => {
+    const english = readLocale("en");
+    const info = withoutJsComments(readSource("client/src/common/utils/PreferencesInfo.js"));
+
+    // explains("theme", ["system", "dark", "light"]) becomes the eight keys it reads.
+    const expanded = () => [...info.matchAll(/explains\("(\w+)",\s*\[([^\]]+)]\)/g)]
+        .flatMap(([, section, choices]) => {
+            const names = [...choices.matchAll(/"([^"]+)"/g)].map(([, name]) => name);
+
+            return [`preferences.${section}.title`, `preferences.${section}.description`,
+                ...names.flatMap((name) => [`preferences.${section}.${name}`, `preferences.${section}.${name}_desc`])];
+        });
+
+    it("finds the keys to check", () => {
+        assert.ok(expanded().length >= 20, `only expanded ${expanded().length} keys`);
+    });
+
+    it("has a string behind every icon", () => {
+        const missing = expanded().filter((key) => valueAt(english, key) === undefined);
+
+        assert.deepEqual(missing, [], "these would render their own key inside the explanation popup");
+    });
+
+    /**
+     * The palette lines do not go through explains(): the names are constants
+     * rather than keys, so only the sentence under each is translated. Read from
+     * InvariantText, so a fifth palette needs a line before it can ship.
+     */
+    it("has a line for every palette", () => {
+        const names = withoutJsComments(readSource("client/src/common/utils/InvariantText.js"));
+        const block = names.slice(names.indexOf("export const PALETTE_NAMES = {"));
+        const palettes = [...block.slice(0, block.indexOf("};")).matchAll(/(\w+):\s*"/g)].map(([, id]) => id);
+
+        assert.ok(palettes.length >= 4, `only found ${palettes.length} palette names`);
+        assert.deepEqual(palettes.filter((id) => valueAt(english, `preferences.palette.${id}_desc`) === undefined), [],
+            "these palettes would show their own key where their description belongs");
+    });
+
+    /** The chart resolution reuses the toolbar's own strings rather than adding any. */
+    it("reuses the strings the chart toolbar already has", () => {
+        for (const key of ["statistics.detail.title", "statistics.detail.description"])
+            assert.notEqual(valueAt(english, key), undefined, `${key} is gone, and the dialog still reads it`);
     });
 });
 

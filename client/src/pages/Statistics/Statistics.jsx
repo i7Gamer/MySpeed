@@ -14,7 +14,7 @@ import {
 import {useEffect, useState, useCallback, useContext, useMemo, useRef, startTransition, useDeferredValue} from "react";
 import {useSearchParams} from "react-router-dom";
 import {jsonRequest} from "@/common/utils/RequestUtil";
-import {PreferencesContext} from "@/common/contexts/Preferences";
+import {FULL_DETAIL_POINTS, PreferencesContext} from "@/common/contexts/Preferences";
 import {ConfigContext} from "@/common/contexts/Config";
 import {
     DEFAULT_TIMEFRAME,
@@ -78,7 +78,8 @@ const WIDE_PANELS = ['latest'];
 
 // A request, not a guarantee: the server clamps this to its own ceiling and
 // echoes what it actually used as `maxDataPoints`.
-const FULL_DETAIL_POINTS = 1000;
+// Shared with the preferences dialog, which promises the same number in the
+// sentence behind its icon - see contexts/Preferences/constants.
 
 // The newest test and enough of its neighbours for the detail pane to say what
 // changed with it: the one before supplies every "since last time" figure, and

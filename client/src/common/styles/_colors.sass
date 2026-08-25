@@ -1,4 +1,5 @@
 @use "sass:color"
+@use "sass:math"
 @use "sass:map"
 
 /// Every colour the interface has, as data.
@@ -259,6 +260,20 @@ $default-palette: slate
 /// time, so those surfaces render transparent. Only the keys that happen to
 /// pass through rgba() or triplet() ever threw on their own. This is what makes
 /// "a palette cannot be half-declared" true rather than merely intended.
+/// color.mix, snapped to whole channels.
+///
+/// A mix lands on fractional channels, and sass writes one of those as
+/// `rgb(48.8039215686% 54.05% 60.82%)` - valid, and unreadable in a diff or a
+/// devtools panel, and not something the contrast test's hex parser accepts.
+/// Rounding first means the property holds a plain hex like every other one.
+@function blend($a, $b, $weight)
+  $mixed: color.mix($a, $b, $weight)
+  $channel: math.round(color.channel($mixed, "red", $space: rgb))
+  $green: math.round(color.channel($mixed, "green", $space: rgb))
+  $blue: math.round(color.channel($mixed, "blue", $space: rgb))
+
+  @return rgb($channel, $green, $blue)
+
 @function token($t, $name)
   $value: map.get($t, $name)
 
@@ -281,6 +296,13 @@ $default-palette: slate
   --white: #{token($t, white)}
   --subtext: #{token($t, subtext)}
   --icon-neutral: #{token($t, icon-neutral)}
+
+  // Derived rather than declared, so a palette cannot forget it and a fifth one
+  // gets it right by existing. Most of the way to $subtext: $light-gray, which
+  // this used to be, is a border colour and measured 1.30:1 as a thumb, while
+  // $subtext itself is heavier than a scrollbar wants to be. At 85% the worst
+  // any palette manages is 3.53:1, over the 3:1 a control answers to.
+  --scrollbar-thumb: #{blend(token($t, subtext), token($t, light-gray), 85%)}
 
   --glass-bg: #{rgba(token($t, glass-on), map.get($m, glass))}
   // A hover that lifts on a dark ground and settles on a light one. It was

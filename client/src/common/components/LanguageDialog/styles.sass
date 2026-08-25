@@ -1,7 +1,8 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
 
 .language-dialog
-  width: 22rem
+  width: $settings-dialog-width
 
   .dialog-main
     display: block
@@ -11,22 +12,12 @@
   user-select: none
 
 .language-list
-  max-height: 22rem
+  // Six of fifteen languages fitted in the 22rem this was, on a dialog that had
+  // room for more and was narrower than every other one in the same menu.
+  max-height: 28rem
   overflow-y: auto
   padding-right: 0.25rem
 
-  &::-webkit-scrollbar
-    width: 0.4rem
-
-  &::-webkit-scrollbar-track
-    background: transparent
-
-  &::-webkit-scrollbar-thumb
-    background: $light-gray
-    border-radius: 0.25rem
-
-    &:hover
-      background: $subtext
 
 @media screen and (max-height: 500px)
   .language-list

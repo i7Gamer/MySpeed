@@ -27,7 +27,24 @@ const channel = (v) => {
     return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
 };
 
-const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+/**
+ * A declared colour as three channels, in whichever notation it was written.
+ *
+ * Hex for the values a palette states outright, and rgb() for the ones sass
+ * computes - color.mix returns a colour, and sass serialises that as rgb(). A
+ * parser that only knew hex would not fail on those, it would skip them, which
+ * is the quiet half of the same problem.
+ */
+const rgb = (value) => {
+    const functional = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(value);
+    if (functional) return [1, 2, 3].map((i) => Number(functional[i]));
+
+    const hex = value.length === 4
+        ? [...value.slice(1)].map((digit) => digit + digit)
+        : [1, 3, 5].map((i) => value.slice(i, i + 2));
+
+    return hex.map((pair) => parseInt(pair, 16));
+};
 
 const luminance = (hex) => {
     const [r, g, b] = rgb(hex).map(channel);
@@ -168,7 +185,11 @@ const RAW = paletteNames.flatMap((name) => [
 // `color`; a mark and a 36px glyph are non-text at 3:1.
 const AS_TEXT = ["white", "subtext", "accent-secondary",
     "grade-good", "grade-fair", "grade-poor", "grade-none", "grade-failed"];
-const AS_GLYPH = ["icon-neutral"];
+// Non-text: a 36px glyph on an ungraded row, and the scrollbar thumb, which
+// is a control and answers to the same 3:1. The thumb was $light-gray - a
+// border colour - and measured 1.30:1 against a dialog surface, which is why
+// nobody could see where they were in a scrolling list.
+const AS_GLYPH = ["icon-neutral", "scrollbar-thumb"];
 const ACCENTS = ["accent-primary", "accent-warning", "accent-danger"];
 
 // Every mark, and which of them are told apart by colour alone. `average` is a
@@ -257,7 +278,7 @@ for (const [name, block] of BLOCKS) {
         it("states every colour it is measured on", () => {
             const unreadable = [...AS_TEXT, ...AS_GLYPH, ...ACCENTS, ...SERIES, "on-accent"]
                 .map((role) => [role, resolve(role, block)])
-                .filter(([, value]) => !value?.startsWith("#"))
+                .filter(([, value]) => !/^(#[\da-fA-F]{3,8}|rgba?\()/.test(value ?? ""))
                 .map(([role, value]) => `${role} = ${value ?? "undeclared"}`);
 
             assert.deepEqual(unreadable, [], "these cannot be measured, so nothing below checks them");
