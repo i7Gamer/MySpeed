@@ -178,7 +178,15 @@ app.get("/status", password(true), async (req, res) => {
      * Null is the answer this route already gives when nothing is scheduled, so
      * the status bar's existing branch for that covers the visitor too.
      */
-    const nextTest = isUntrustedReader(req) ? null : timer.nextRun(
+    // The run that has already fired and is sleeping its schedule offset,
+    // asked ahead of the cron: during that sleep the cron's next occurrence is
+    // the slot AFTER the pending one, so the bar rolled from "~19:00" to
+    // "~19:30" while the 19:00 test was still on its way - which read as it
+    // having been skipped. The wake moment is exact, so the approximation
+    // flag below drops with it.
+    const pendingRun = timer.pendingRunAt();
+
+    const nextTest = isUntrustedReader(req) ? null : pendingRun ?? timer.nextRun(
         await config.getValue("cron"),
         {
             // The quiet window too, or the countdown names a test the scheduler
@@ -209,8 +217,10 @@ app.get("/status", password(true), async (req, res) => {
         nextTest,
         // The offset delays each run by up to a few minutes so that every
         // instance does not test on the same tick, which makes the cron time the
-        // earliest it could start rather than when it will.
-        nextTestApproximate: nextTest !== null && await config.getValue("scheduleOffset") === "true"
+        // earliest it could start rather than when it will. A pending run's wake
+        // moment is not an estimate, so it is announced without the tilde.
+        nextTestApproximate: nextTest !== null && pendingRun === null
+            && await config.getValue("scheduleOffset") === "true"
     });
 });
 

@@ -1,6 +1,9 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, api, seedTests, setConfig } from "./helpers/boot.js";
+// The same module instance the booted app schedules with, so a delay started
+// here is the pending run the route reports on.
+import * as timer from "../../server/tasks/timer.js";
 
 let server;
 
@@ -169,6 +172,34 @@ describe("GET /api/speedtests/status", () => {
 
             await setConfig(server.config, "scheduleOffset", "true");
             assert.equal((await status()).nextTestApproximate, true);
+        });
+
+        /**
+         * With the offset enabled the 19:00 job fires and then sleeps for up
+         * to five minutes before testing. The countdown is cron arithmetic
+         * from now, so any poll during that sleep answered 19:30 - the bar
+         * rolled to the next slot while the 19:00 test was still on its way,
+         * which read as it having been skipped. While a run sleeps, its wake
+         * moment is the answer - and it is exact, so the tilde drops with it.
+         */
+        it("names the sleeping run's wake moment, not the slot after it", async () => {
+            await setConfig(server.config, "cron", "0,30 * * * *");
+            await setConfig(server.config, "scheduleOffset", "true");
+
+            const sleeping = timer.delayRun(90_000);
+
+            try {
+                const body = await status();
+                const inMs = new Date(body.nextTest).getTime() - Date.now();
+
+                assert.ok(inMs > 60_000 && inMs <= 95_000,
+                    `nextTest is ${Math.round(inMs / 1000)}s out - the slot after, not the pending run`);
+                assert.equal(body.nextTestApproximate, false,
+                    "the wake moment is exact, and the tilde claims it is not");
+            } finally {
+                timer.stopTimer();
+                await sleeping;
+            }
         });
 
         // Written past validateInput deliberately: an unusable schedule cannot

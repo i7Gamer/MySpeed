@@ -71,7 +71,9 @@ export const currentJob = () => job;
  * caller decides what to do about it by asking scheduleChangedSince.
  */
 export const delayRun = (ms) => new Promise((resolve) => {
-    const entry = {resolve};
+    // The wake moment travels with the handle so pendingRunAt below can name
+    // it; the status bar has no other way to know a run is merely asleep.
+    const entry = {resolve, until: Date.now() + ms};
 
     entry.id = setTimeout(() => {
         pendingDelays.delete(entry);
@@ -80,6 +82,29 @@ export const delayRun = (ms) => new Promise((resolve) => {
 
     pendingDelays.add(entry);
 });
+
+/**
+ * When the run currently sleeping its schedule offset will wake, or null when
+ * none is.
+ *
+ * The status bar's countdown is cron arithmetic from now, and the offset makes
+ * that wrong for the whole of the sleep: the 19:00 job has fired, the run is
+ * asleep until 19:03, and the cron's next occurrence is already 19:30 - so the
+ * bar rolled to the next slot while the 19:00 test was still on its way, which
+ * read as it having been skipped. /status asks this first and only falls back
+ * to the cron when nothing is pending.
+ *
+ * The earliest entry answers, though the set only ever holds one today: there
+ * is a single job, and every teardown releases the delays it started.
+ */
+export const pendingRunAt = () => {
+    let earliest = null;
+
+    for (const {until} of pendingDelays)
+        if (earliest === null || until < earliest) earliest = until;
+
+    return earliest === null ? null : new Date(earliest).toISOString();
+};
 
 const calculateMaxDelay = (cron) => {
     try {
