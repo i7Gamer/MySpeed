@@ -55,7 +55,6 @@
       "server_id": "Идентификатор сервера",
       "server_id_placeholder": "Любой идентификатор сервера или оставьте пустым",
       "custom_url": "Пользовательский URL",
-      "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Выбирай автоматически",
       "ookla_license": "Я прочитал и принимаю <Eula>EULA</Eula>, <GDPR>политику конфиденциальности</GDPR> и <TOS>условия обслуживания</TOS> Ookla.",
       "ookla_notice": "Используя Ookla, вы соглашаетесь с их <Eula>EULA</Eula>, <GDPR>политикой конфиденциальности</GDPR> и <TOS>условиями обслуживания</TOS>.",
@@ -95,7 +94,6 @@
   "about": {
     "title": "О MySpeed",
     "description": "MySpeed - это программа для анализа скоростей с открытым исходным кодом, которая записывает вашу скорость в течение настраиваемого периода времени.",
-    "github": "GitHub",
     "website": "Сайт",
     "donate": "Пожертвовать",
     "translate": "Перевести",
@@ -193,7 +191,6 @@
     "quiet_hours_saved": "Тихие часы сохранены"
   },
   "header": {
-    "title": "MySpeed",
     "running_tooltip": "Выполнение теста скорости",
     "start_tooltip": "Запустите тест скорости",
     "new_update": "Доступно обновление",
@@ -214,8 +211,6 @@
     "tests": "Тесты",
     "export_tests": "Экспортные тесты",
     "tests_exported": "Тесты были экспортированы",
-    "csv": "CSV",
-    "json": "JSON",
     "import_tests": "Импортные тесты",
     "tests_imported": "Тесты были импортированы",
     "import_test_error": "Возникла ошибка при импорте тестов",
@@ -237,7 +232,6 @@
     "retention": "Удержание данных",
     "retention_desc": "Как долго сохраняются результаты теста перед автоматическим удалением.",
     "retention_saved": "Период хранения обновлён",
-    "retention_days_placeholder": "365",
     "retention_days_suffix": "дней",
     "retention_back": "Назад к пресетам",
     "retention_options": {
@@ -368,7 +362,6 @@
       "trigger": "Запущен",
       "server": "Сервер",
       "result": "Полный результат",
-      "open_result": "speedtest.net",
       "loaded_latency": "Задержка под нагрузкой",
       "loaded_latency_value": "{{down}} мс на приём / {{up}} мс на отдачу",
       "packet_loss": "Потеря пакетов",
@@ -549,10 +542,8 @@
       "last_run": "Последний перед "
     },
     "discord": {
-      "title": "Discord",
       "fields": {
         "url": "URL Webhook",
-        "url_placeholder": "https://discord.com/api/webhooks/...",
         "display_name": "Отображаемое имя",
         "display_name_placeholder": "Уведомление MySpeed",
         "error_message": "Сообщение об ошибке",
@@ -586,7 +577,6 @@
       }
     },
     "gotify": {
-      "title": "Gotify",
       "fields": {
         "url": "URL сервера",
         "key": "Токен приложения",
@@ -600,7 +590,6 @@
       }
     },
     "pushover": {
-      "title": "Pushover",
       "fields": {
         "token": "Прикладной токен",
         "user_key": "Ключ пользователя",
@@ -613,19 +602,14 @@
       }
     },
     "healthChecks": {
-      "title": "HealthChecks",
       "fields": {
         "url": "Проверка здоровья URL",
-        "url_placeholder": "https://hc-ping.com/<uuid>",
-        "interval": "Интервал пинга (минуты)",
-        "interval_placeholder": "1"
+        "interval": "Интервал пинга (минуты)"
       }
     },
     "influxdb": {
-      "title": "InfluxDB",
       "fields": {
         "url": "URL сервера",
-        "url_placeholder": "http://localhost:8086",
         "org": "Организация",
         "bucket": "Ведро",
         "token": "Токен API",
@@ -638,7 +622,6 @@
       }
     },
     "mqtt": {
-      "title": "MQTT",
       "fields": {
         "host": "Хост брокера",
         "port": "Порт",
@@ -657,10 +640,8 @@
       }
     },
     "ntfy": {
-      "title": "ntfy",
       "fields": {
         "url": "URL сервера",
-        "url_placeholder": "https://ntfy.sh",
         "topic": "Тема",
         "topic_placeholder": "мистики-оповещения",
         "token": "Маркер доступа",
@@ -670,9 +651,7 @@
         "tags": "Теги",
         "tags_placeholder": "предупреждение, спутник (через запятую)",
         "priority": "Приоритет по умолчанию (1-5)",
-        "priority_placeholder": "3",
         "error_priority": "Приоритет ошибок (1-5)",
-        "error_priority_placeholder": "5",
         "error_message": "Сообщение об ошибке",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Ошибка: %error%",
         "send_failed": "Отправить сообщения об ошибках",
@@ -682,7 +661,6 @@
       }
     },
     "telegram": {
-      "title": "Telegram",
       "fields": {
         "token": "Токен бота",
         "chat_id": "Идентификатор чата",
@@ -696,7 +674,6 @@
       }
     },
     "webhook": {
-      "title": "Webhook",
       "fields": {
         "url": "URL Webhook",
         "url_placeholder": "https://ваш-сервер.ru/hook",
@@ -706,8 +683,7 @@
         "send_alive": "Отправляйте живые сообщения",
         "send_recommendations": "Отправить рекомендации",
         "send_config_updates": "Отправка обновлений конфигурации",
-        "interval": "Интервал хранения в прямом эфире (минут)",
-        "interval_placeholder": "1"
+        "interval": "Интервал хранения в прямом эфире (минут)"
       }
     },
     "fields": {

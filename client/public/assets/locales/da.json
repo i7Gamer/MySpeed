@@ -55,7 +55,6 @@
       "server_id": "Server-ID",
       "server_id_placeholder": "Et vilkårligt server-ID, eller lad feltet stå tomt",
       "custom_url": "Brugerdefineret URL",
-      "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Vælg automatisk",
       "ookla_license": "Jeg har læst og accepterer <Eula>EULA</Eula>, <GDPR>privatlivspolitik</GDPR> og <TOS>servicevilkår</TOS> fra Ookla.",
       "ookla_notice": "Ved at bruge Ookla, accepterer du deres <Eula>EULA</Eula>, <GDPR>privacy policy</GDPR> og <TOS>vilkår for service</TOS>.",
@@ -95,7 +94,6 @@
   "about": {
     "title": "Om MySpeed",
     "description": "MySpeed er en open source speedtest analyse software, der registrerer din internet hastighed over en konfigurerbar periode.",
-    "github": "GitHub",
     "website": "Hjemmeside",
     "donate": "Donér",
     "translate": "Oversæt",
@@ -193,7 +191,6 @@
     "quiet_hours_saved": "Stilletimer gemt"
   },
   "header": {
-    "title": "MySpeed",
     "running_tooltip": "Speedtest kører",
     "start_tooltip": "Start hastighedstest",
     "new_update": "Opdatering tilgængelig",
@@ -214,8 +211,6 @@
     "tests": "Tests",
     "export_tests": "Eksporter tests",
     "tests_exported": "Testene er blevet eksporteret",
-    "csv": "CSV",
-    "json": "JSON",
     "import_tests": "Importer tests",
     "tests_imported": "Testene er blevet importeret",
     "import_test_error": "Der opstod en fejl under import af tests",
@@ -237,7 +232,6 @@
     "retention": "Opbevaring af data",
     "retention_desc": "Hvor lange hastighedstestresultater bevares, før de automatisk slettes.",
     "retention_saved": "Tilbageholdelsesperiode opdateret",
-    "retention_days_placeholder": "365",
     "retention_days_suffix": "dage",
     "retention_back": "Tilbage til forudindstillinger",
     "retention_options": {
@@ -368,7 +362,6 @@
       "trigger": "Startet",
       "server": "Server",
       "result": "Fuldt resultat",
-      "open_result": "speedtest.net",
       "loaded_latency": "Forsinkelse under belastning",
       "loaded_latency_value": "{{down}} ms ned / {{up}} ms op",
       "packet_loss": "Pakketab",
@@ -549,10 +542,8 @@
       "last_run": "Sidst kørt for "
     },
     "discord": {
-      "title": "Discord",
       "fields": {
         "url": "Webhook-URL",
-        "url_placeholder": "https://discord.com/api/webhooks/...",
         "display_name": "Visningsnavn",
         "display_name_placeholder": "MySpeed-notifikation",
         "error_message": "Fejlmeddelelse",
@@ -586,7 +577,6 @@
       }
     },
     "gotify": {
-      "title": "Gotify",
       "fields": {
         "url": "Server-URL",
         "key": "App-token",
@@ -600,7 +590,6 @@
       }
     },
     "pushover": {
-      "title": "Pushover",
       "fields": {
         "token": "App-token",
         "user_key": "Bruger-nøgle",
@@ -613,19 +602,14 @@
       }
     },
     "healthChecks": {
-      "title": "HealthChecks",
       "fields": {
         "url": "HealthChecks URL",
-        "url_placeholder": "https://hc-ping.com/<uuid>",
-        "interval": "Ping interval (minutter)",
-        "interval_placeholder": "1"
+        "interval": "Ping interval (minutter)"
       }
     },
     "influxdb": {
-      "title": "InfluxDB",
       "fields": {
         "url": "Server-URL",
-        "url_placeholder": "http://localhost:8086",
         "org": "Organisation",
         "bucket": "Spand",
         "token": "API-token",
@@ -638,7 +622,6 @@
       }
     },
     "mqtt": {
-      "title": "MQTT",
       "fields": {
         "host": "Brokerens vært",
         "port": "Port",
@@ -657,10 +640,8 @@
       }
     },
     "ntfy": {
-      "title": "ntfy",
       "fields": {
         "url": "Server-URL",
-        "url_placeholder": "https://ntfy.sh",
         "topic": "Emne",
         "topic_placeholder": "minspeed-advarsler",
         "token": "Adgang til token",
@@ -670,9 +651,7 @@
         "tags": "Tags",
         "tags_placeholder": "advarsel,satellit (kommasepareret)",
         "priority": "Standard prioritet (1-5)",
-        "priority_placeholder": "3",
         "error_priority": "Fejl prioritet (1-5)",
-        "error_priority_placeholder": "5",
         "error_message": "Fejlmeddelelse",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Fejl: %error%",
         "send_failed": "Send fejlmeddelelser",
@@ -682,7 +661,6 @@
       }
     },
     "telegram": {
-      "title": "Telegram",
       "fields": {
         "token": "Bot-token",
         "chat_id": "Chat-ID",
@@ -696,7 +674,6 @@
       }
     },
     "webhook": {
-      "title": "Webhook",
       "fields": {
         "url": "Webhook-URL",
         "url_placeholder": "https://din-server.dk/hook",
@@ -706,8 +683,7 @@
         "send_alive": "Send Keep-Alive-beskeder",
         "send_recommendations": "Send anbefalinger",
         "send_config_updates": "Send konfigurationsopdateringer",
-        "interval": "Hold-Alive interval (minutter)",
-        "interval_placeholder": "1"
+        "interval": "Hold-Alive interval (minutter)"
       }
     },
     "fields": {

@@ -13,6 +13,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
+import {CUSTOM_BACKEND_PLACEHOLDER} from "@/common/utils/InvariantText";
 
 export const providers = [
     {id: "ookla", name: "Ookla", image: OoklaImage},
@@ -227,7 +228,7 @@ export const ProviderDialog = ({open, onClose}) => {
                                             <h3>{t("dialog.provider.custom_url")}</h3>
                                         </div>
                                         <input type="text" className="dialog-input provider-input"
-                                               placeholder={t("dialog.provider.custom_url_placeholder")}
+                                               placeholder={CUSTOM_BACKEND_PLACEHOLDER}
                                                value={libreUrl === "none" ? "" : libreUrl}
                                                onChange={(e) => handleLibreUrlChange(e.target.value || "none")}/>
                                     </div>

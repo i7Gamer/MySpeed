@@ -55,7 +55,6 @@
       "server_id": "ID serwera",
       "server_id_placeholder": "Dowolne ID serwera lub pozostaw puste",
       "custom_url": "Niestandardowy adres URL",
-      "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Wybierz automatycznie",
       "ookla_license": "Przeczytałem i akceptuję <Eula>EULA</Eula>, <GDPR>politykę prywatności</GDPR> oraz <TOS>regulamin</TOS> Ookla.",
       "ookla_notice": "Korzystając z Ookla, zgadzasz się na ich <Eula>EULA</Eula>, <GDPR>politykę prywatności</GDPR> i <TOS>warunki świadczenia usług</TOS>.",
@@ -95,7 +94,6 @@
   "about": {
     "title": "Informacje o MySpeed",
     "description": "MySpeed jest otwartym oprogramowaniem do analizy prędkości, które rejestruje szybkość internetu przez konfigurowalny czas.",
-    "github": "GitHub",
     "website": "Witryna",
     "donate": "Wesprzyj nas",
     "translate": "Tłumaczenie",
@@ -193,7 +191,6 @@
     "quiet_hours_saved": "Godziny ciszy zapisane"
   },
   "header": {
-    "title": "MySpeed",
     "running_tooltip": "Test prędkości w trakcie",
     "start_tooltip": "Uruchom test prędkości",
     "new_update": "Aktualizacja dostępna",
@@ -214,8 +211,6 @@
     "tests": "Testy",
     "export_tests": "Eksportuj testy",
     "tests_exported": "Testy zostały wyeksportowane",
-    "csv": "CSV",
-    "json": "JSON",
     "import_tests": "Importuj testy",
     "tests_imported": "Testy zostały zaimportowane",
     "import_test_error": "Wystąpił błąd podczas importu testów",
@@ -237,7 +232,6 @@
     "retention": "Zatrzymanie danych",
     "retention_desc": "Jak długo wyniki badania prędkości są utrzymywane przed automatycznym usunięciem.",
     "retention_saved": "Okres przechowywania zaktualizowany",
-    "retention_days_placeholder": "365",
     "retention_days_suffix": "dni",
     "retention_back": "Powrót do ustawień wstępnych",
     "retention_options": {
@@ -368,7 +362,6 @@
       "trigger": "Uruchomiony",
       "server": "Serwer",
       "result": "Pełny wynik",
-      "open_result": "speedtest.net",
       "loaded_latency": "Opóźnienie pod obciążeniem",
       "loaded_latency_value": "{{down}} ms pobieranie / {{up}} ms wysyłanie",
       "packet_loss": "Utrata pakietów",
@@ -549,10 +542,8 @@
       "last_run": "Ostatnie uruchomienie przed "
     },
     "discord": {
-      "title": "Discord",
       "fields": {
         "url": "URL-webhook",
-        "url_placeholder": "https://discord.com/api/webhooks/...",
         "display_name": "Nazwa wyświetlana",
         "display_name_placeholder": "Powiadomienie MySpeed",
         "error_message": "Komunikat o błędzie",
@@ -586,7 +577,6 @@
       }
     },
     "gotify": {
-      "title": "Gotify",
       "fields": {
         "url": "URL serwera",
         "key": "Token aplikacji",
@@ -600,7 +590,6 @@
       }
     },
     "pushover": {
-      "title": "Pushover",
       "fields": {
         "token": "Token aplikacji",
         "user_key": "Klucz użytkownika",
@@ -613,19 +602,14 @@
       }
     },
     "healthChecks": {
-      "title": "HealthChecks",
       "fields": {
         "url": "URL HealthChecks",
-        "url_placeholder": "https://hc-ping.com/<uuid>",
-        "interval": "Odstęp między pingiem (minuty)",
-        "interval_placeholder": "1"
+        "interval": "Odstęp między pingiem (minuty)"
       }
     },
     "influxdb": {
-      "title": "InfluxDB",
       "fields": {
         "url": "Adres serwera",
-        "url_placeholder": "http://localhost:8086",
         "org": "Organizacja",
         "bucket": "Wiadro",
         "token": "Token API",
@@ -638,7 +622,6 @@
       }
     },
     "mqtt": {
-      "title": "MQTT",
       "fields": {
         "host": "Host brokera",
         "port": "Port",
@@ -657,10 +640,8 @@
       }
     },
     "ntfy": {
-      "title": "ntfy",
       "fields": {
         "url": "Adres serwera",
-        "url_placeholder": "https://ntfy.sh",
         "topic": "Temat",
         "topic_placeholder": "tajemnicze alerty",
         "token": "Token dostępu",
@@ -670,9 +651,7 @@
         "tags": "Tagi",
         "tags_placeholder": "ostrzeżenie,satelity (oddzielone przecinkami)",
         "priority": "Domyślny priorytet (1-5)",
-        "priority_placeholder": "3",
         "error_priority": "Priorytet błędu (1-5)",
-        "error_priority_placeholder": "5",
         "error_message": "Komunikat o błędzie",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Błąd: %error%",
         "send_failed": "Wyślij komunikaty o błędach",
@@ -682,7 +661,6 @@
       }
     },
     "telegram": {
-      "title": "Telegram",
       "fields": {
         "token": "Token bota",
         "chat_id": "ID czatu",
@@ -696,7 +674,6 @@
       }
     },
     "webhook": {
-      "title": "Webhook",
       "fields": {
         "url": "URL-webhook",
         "url_placeholder": "https://twoj-serwer.pl/hook",
@@ -706,8 +683,7 @@
         "send_alive": "Wyślij komunikaty o aktywności",
         "send_recommendations": "Wyślij rekomendacje",
         "send_config_updates": "Wyślij aktualizacje konfiguracji",
-        "interval": "Zachowaj interwał na żywo (minuty)",
-        "interval_placeholder": "1"
+        "interval": "Zachowaj interwał na żywo (minuty)"
       }
     },
     "fields": {

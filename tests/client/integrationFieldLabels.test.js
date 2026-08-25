@@ -48,24 +48,11 @@ describe("integration field labels", () => {
     });
 
     /**
-     * And a name of its own, which is one key further along than everything else
-     * in this file was checking.
-     *
-     * The dialog builds it the same unscannable way - `integrations.${name}
-     * .title` - and uses it twice: as the row in the "create integration" menu,
-     * and as the initial display name of the card that row creates. So an
-     * integration missing this does not just look wrong; pressing save writes
-     * the raw key into the integration_name column, and the card carries it in
-     * every language afterwards, long after the locale has been fixed.
-     *
-     * Both integrations added in this branch shipped without one.
+     * The name an integration is listed and stored under is checked in
+     * invariantText.test.js instead, because most of them are no longer locale
+     * keys: nine are brand names, which belong nowhere a translator can reach
+     * them, and only "Email" is still a word this file could look up.
      */
-    it("has a name for every integration", () => {
-        const missing = Object.keys(getIntegrations())
-            .filter((name) => valueAt(english, `integrations.${name}.title`) === undefined);
-
-        assert.deepEqual(missing, [], "these integrations are listed and then stored as their own key");
-    });
 
     it("has a label for every declared field", () => {
         const missing = everyField()
@@ -91,8 +78,10 @@ describe("integration field labels", () => {
                     `${name} carries its own copy of the shared "${field}" label`);
     });
 
-    // German is the one locale held to full parity; the rest fall back to
-    // English until a translator has been round, which is a normal state.
+    // Every locale is now held to full parity by localeParity.test.js, which
+    // covers this and more. Kept because it names the shared namespace
+    // specifically: these six settings reach every notifier at once, so one of
+    // them going untranslated is six dialogs wrong rather than one.
     it("translates every shared setting into German", () => {
         const german = readLocale("de");
 

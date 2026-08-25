@@ -55,7 +55,6 @@
       "server_id": "ID Server",
       "server_id_placeholder": "ID server mana pun, atau biarkan kosong",
       "custom_url": "URL khusus",
-      "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Pilih secara otomatis",
       "ookla_license": "Saya telah membaca dan menerima <Eula>EULA</Eula>, <GDPR>kebijakan privasi</GDPR> dan <TOS>ketentuan layanan</TOS> dari Ookla.",
       "ookla_notice": "Dengan menggunakan Ookla, Anda menyetujui <Eula>EULA</Eula>, <GDPR>kebijakan privasi</GDPR>, dan <TOS>ketentuan layanan</TOS> mereka.",
@@ -95,7 +94,6 @@
   "about": {
     "title": "Tentang MySpeed",
     "description": "MySpeed adalah perangkat lunak analisis speedtest sumber terbuka yang merekam kecepatan internet Anda selama rentang waktu yang dapat diatur.",
-    "github": "GitHub",
     "website": "Situs web",
     "donate": "Donasi",
     "translate": "Bantu terjemahkan",
@@ -193,7 +191,6 @@
     "quiet_hours_saved": "Jam tenang tersimpan"
   },
   "header": {
-    "title": "MySpeed",
     "running_tooltip": "Speedtest sedang berjalan",
     "start_tooltip": "Mulai speedtest",
     "new_update": "Pembaruan tersedia",
@@ -214,8 +211,6 @@
     "tests": "Pengujian",
     "export_tests": "Ekspor pengujian",
     "tests_exported": "Pengujian telah diekspor",
-    "csv": "CSV",
-    "json": "JSON",
     "import_tests": "Impor pengujian",
     "tests_imported": "Pengujian telah diimpor",
     "import_test_error": "Terjadi kesalahan saat mengimpor pengujian",
@@ -237,7 +232,6 @@
     "retention": "Penyimpanan data",
     "retention_desc": "Berapa lama hasil speedtest disimpan sebelum dihapus secara otomatis.",
     "retention_saved": "Masa penyimpanan diperbarui",
-    "retention_days_placeholder": "365",
     "retention_days_suffix": "hari",
     "retention_back": "Kembali ke pilihan bawaan",
     "retention_options": {
@@ -368,7 +362,6 @@
       "trigger": "Dimulai",
       "server": "Server",
       "result": "Hasil lengkap",
-      "open_result": "speedtest.net",
       "loaded_latency": "Latensi saat terbebani",
       "loaded_latency_value": "{{down}} ms unduh / {{up}} ms unggah",
       "packet_loss": "Kehilangan paket",
@@ -549,10 +542,8 @@
       "last_run": "Terakhir dijalankan sebelum "
     },
     "discord": {
-      "title": "Discord",
       "fields": {
         "url": "URL Webhook",
-        "url_placeholder": "https://discord.com/api/webhooks/...",
         "display_name": "Nama tampilan",
         "display_name_placeholder": "Notifikasi MySpeed",
         "error_message": "Pesan kesalahan",
@@ -586,7 +577,6 @@
       }
     },
     "gotify": {
-      "title": "Gotify",
       "fields": {
         "url": "URL server",
         "key": "Token aplikasi",
@@ -600,7 +590,6 @@
       }
     },
     "pushover": {
-      "title": "Pushover",
       "fields": {
         "token": "Token aplikasi",
         "user_key": "Kunci pengguna",
@@ -613,19 +602,14 @@
       }
     },
     "healthChecks": {
-      "title": "HealthChecks",
       "fields": {
         "url": "URL HealthChecks",
-        "url_placeholder": "https://hc-ping.com/<uuid>",
-        "interval": "Interval ping (menit)",
-        "interval_placeholder": "1"
+        "interval": "Interval ping (menit)"
       }
     },
     "influxdb": {
-      "title": "InfluxDB",
       "fields": {
         "url": "URL server",
-        "url_placeholder": "http://localhost:8086",
         "org": "Organisasi",
         "bucket": "Bucket",
         "token": "Token API",
@@ -638,7 +622,6 @@
       }
     },
     "mqtt": {
-      "title": "MQTT",
       "fields": {
         "host": "Host broker",
         "port": "Porta",
@@ -657,10 +640,8 @@
       }
     },
     "ntfy": {
-      "title": "ntfy",
       "fields": {
         "url": "URL server",
-        "url_placeholder": "https://ntfy.sh",
         "topic": "Topik",
         "topic_placeholder": "myspeed-alerts",
         "token": "Token akses",
@@ -670,9 +651,7 @@
         "tags": "Tag",
         "tags_placeholder": "warning,satellite (dipisahkan koma)",
         "priority": "Prioritas bawaan (1-5)",
-        "priority_placeholder": "3",
         "error_priority": "Prioritas galat (1-5)",
-        "error_priority_placeholder": "5",
         "error_message": "Pesan galat",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Galat: %error%",
         "send_failed": "Kirim pesan galat",
@@ -682,7 +661,6 @@
       }
     },
     "telegram": {
-      "title": "Telegram",
       "fields": {
         "token": "Token bot",
         "chat_id": "ID Chat",
@@ -696,7 +674,6 @@
       }
     },
     "webhook": {
-      "title": "Webhook",
       "fields": {
         "url": "URL Webhook",
         "url_placeholder": "https://server-anda.com/hook",
@@ -706,8 +683,7 @@
         "send_alive": "Kirim pesan Keep-Alive",
         "send_recommendations": "Kirim rekomendasi",
         "send_config_updates": "Kirim pembaruan konfigurasi",
-        "interval": "Interval Keep-Alive (menit)",
-        "interval_placeholder": "1"
+        "interval": "Interval Keep-Alive (menit)"
       }
     },
     "fields": {

@@ -62,61 +62,6 @@ export const serialise = (object, eol = "\n") =>
     `${JSON.stringify(object, null, 2)}\n`.replace(/\n/g, eol);
 
 /**
- * Values that are the same string in every language MySpeed ships: the product
- * and protocol names, and the URLs and numbers shown as placeholders in a field
- * the reader is about to overwrite anyway.
- *
- * Allowing identity rather than requiring it - except that here, identity is
- * what a reader wants. Three of these were translated and should not have been:
- * de and nl render the ntfy integration as "nackt" and "kant-en-klare", pt
- * renders Discord as "Discórdia", and uk dropped the "<uuid>" out of the
- * healthchecks URL that shows what the field's shape is. A brand name handed to
- * a translator is a brand name somebody will eventually translate.
- *
- * What is deliberately NOT here, though it looks like it belongs:
- *
- *  - the units. "ms" is "мс" in Russian and "毫秒" in Chinese, "Mbps" is
- *    "Mbit/s" across most of Europe and "Мбіт/с" in Ukrainian, and "MB/s" is
- *    "Mo/s" in French. These are translations, not oversights.
- *  - the notification templates. The variable names between percent signs are
- *    read by the sender rather than by a person, but the units sitting between
- *    them are not: zh writes "%ping% 毫秒" and uk "%download% Мбіт/с".
- *  - the example hostnames - nodes.placeholder.url, and the webhook's. Every
- *    locale localises them on purpose: "dein-server.de", "su-servidor.es".
- *
- * Listed one by one rather than matched by a pattern. The rule that would cover
- * most of them - a value with no lowercase words in it, say - also covers "OK",
- * "Ping" and "Jitter", which several languages do translate, and the whole
- * value of the check is that it fails on the ones nobody got to.
- */
-export const UNIVERSAL_SHARED = [
-    "dialog.provider.custom_url_placeholder",
-    "about.github",
-    "header.title",
-    "storage.csv",
-    "storage.json",
-    "storage.retention_days_placeholder",
-    "test.details.open_result",
-    "integrations.discord.title",
-    "integrations.discord.fields.url_placeholder",
-    "integrations.gotify.title",
-    "integrations.pushover.title",
-    "integrations.healthChecks.title",
-    "integrations.healthChecks.fields.url_placeholder",
-    "integrations.healthChecks.fields.interval_placeholder",
-    "integrations.influxdb.title",
-    "integrations.influxdb.fields.url_placeholder",
-    "integrations.mqtt.title",
-    "integrations.ntfy.title",
-    "integrations.ntfy.fields.url_placeholder",
-    "integrations.ntfy.fields.priority_placeholder",
-    "integrations.ntfy.fields.error_priority_placeholder",
-    "integrations.telegram.title",
-    "integrations.webhook.title",
-    "integrations.webhook.fields.interval_placeholder"
-];
-
-/**
  * The finished-notification templates for the named senders.
  *
  * They repeat per integration and differ only in the unit they carry, so a
@@ -264,7 +209,7 @@ export const LANGUAGE_SHARED = {
 };
 
 /** Every value `code` is allowed to leave as the English text. */
-export const sharedKeys = (code) => new Set([...UNIVERSAL_SHARED, ...(LANGUAGE_SHARED[code] ?? [])]);
+export const sharedKeys = (code) => new Set(LANGUAGE_SHARED[code] ?? []);
 
 /**
  * What stands between a locale and its source.

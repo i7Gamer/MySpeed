@@ -15,9 +15,10 @@ import DropdownSelect from "@/common/components/DropdownSelect";
 import {renderableIntegrations} from "@/common/components/IntegrationDialog/renderableIntegrations";
 import {integrationPayload, isValidDisplayName, isValidFieldValue} from "@/common/components/IntegrationDialog/integrationPayload";
 import {appendVariable, variableToken} from "@/common/components/IntegrationDialog/templateVariables";
+import {integrationPlaceholder, integrationTitle} from "@/common/utils/InvariantText";
 
 const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, config}) => {
-    const [displayName, setDisplayName] = useState(integration.displayName || t(`integrations.${integration.name}.title`));
+    const [displayName, setDisplayName] = useState(integration.displayName || integrationTitle(integration.name, t));
     const [fields, setFields] = useState(() => {
         const initial = {};
         integrationDef.fields.forEach(field => {
@@ -75,7 +76,15 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
         return key ? t(key) : fieldName;
     };
 
+    /**
+     * The invariant placeholders first - the URLs and the numbers, which read
+     * the same in every language and are therefore not in the locales at all.
+     * See InvariantText.js for why they were taken out of them.
+     */
     const getPlaceholder = (fieldName) => {
+        const invariant = integrationPlaceholder(integration.name, fieldName);
+        if (invariant !== undefined) return invariant;
+
         const key = fieldKeys(fieldName, "_placeholder").find((candidate) => i18n.exists(candidate));
         return key ? t(key) : getLabel(fieldName);
     };
@@ -256,7 +265,7 @@ export const IntegrationDialog = ({open, onClose}) => {
     }, [renderable.length]);
 
     const dropdownItems = integrations ? Object.entries(integrations).map(([name, def]) => ({
-        key: name, label: t(`integrations.${name}.title`), icon: def.icon
+        key: name, label: integrationTitle(name, t), icon: def.icon
     })) : [];
 
     const loading = !integrations || !active;

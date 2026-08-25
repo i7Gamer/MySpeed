@@ -7,6 +7,7 @@ import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faFileExport, faFileImport, faTrashCan, faChartLine, faClockRotateLeft, faCheck, faArrowLeft} from "@fortawesome/free-solid-svg-icons";
+import {EXPORT_FORMATS, RETENTION_DAYS_PLACEHOLDER} from "@/common/utils/InvariantText";
 
 const RETENTION_PRESETS = [
     {id: "week", days: 7},
@@ -166,7 +167,7 @@ export default ({tests, close}) => {
                                     className={`storage-input${!isRetentionValid ? " input-error" : ""}`}
                                     value={retentionCustom}
                                     onChange={(e) => setRetentionCustom(e.target.value)}
-                                    placeholder={t("storage.retention_days_placeholder")}
+                                    placeholder={RETENTION_DAYS_PLACEHOLDER}
                                     autoFocus
                                 />
                                 <span className="storage-input-suffix">{t("storage.retention_days_suffix")}</span>
@@ -203,9 +204,9 @@ export default ({tests, close}) => {
                 </div>
                 <div className="storage-row-actions">
                     <button className="dialog-btn" onClick={() => downloadHistory("csv")}>
-                        {t("storage.csv")}</button>
+                        {EXPORT_FORMATS.csv}</button>
                     <button className="dialog-btn" onClick={() => downloadHistory("json")}>
-                        {t("storage.json")}</button>
+                        {EXPORT_FORMATS.json}</button>
                 </div>
             </div>
 

@@ -55,7 +55,6 @@
       "server_id": "Идентификатор на сървъра",
       "server_id_placeholder": "Произволен идентификатор на сървър или оставете празно",
       "custom_url": "Персонализиран URL",
-      "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Изберете автоматично",
       "ookla_license": "Прочетох и приемам <Eula>ЛСКП,</Eula> <GDPR>политиката за поверителност</GDPR> и <TOS>условията за ползване на</TOS> Ookla.",
       "ookla_notice": "Използвайки Ookla, вие приемате техните <Eula>лицензионни условия</Eula>, <GDPR>политика за поверителност</GDPR> и <TOS>условия за ползване</TOS>.",
@@ -95,7 +94,6 @@
   "about": {
     "title": "Относно MySpeed",
     "description": "MySpeed е софтуер с отворен код за анализ на тестове за скорост, който записва скоростта на интернет връзката ви за настройваем период от време.",
-    "github": "GitHub",
     "website": "Уебсайт",
     "donate": "Дарете",
     "translate": "Помогнете с превода",
@@ -193,7 +191,6 @@
     "quiet_hours_saved": "Тихите часове са запазени"
   },
   "header": {
-    "title": "MySpeed",
     "running_tooltip": "Извършване на тест за скорост",
     "start_tooltip": "Стартиране на теста за скорост",
     "new_update": "Налична е актуализация",
@@ -214,8 +211,6 @@
     "tests": "Тестове",
     "export_tests": "Тестове за износ",
     "tests_exported": "Тестовете са експортирани",
-    "csv": "CSV",
-    "json": "JSON",
     "import_tests": "Тестове за внос",
     "tests_imported": "Тестовете са импортирани",
     "import_test_error": "Възникна грешка при импортирането на тестовете",
@@ -237,7 +232,6 @@
     "retention": "Съхранение на данните",
     "retention_desc": "Колко дълго се пазят резултатите от тестовете за скорост, преди да бъдат изтрити автоматично.",
     "retention_saved": "Периодът на съхранение е обновен",
-    "retention_days_placeholder": "365",
     "retention_days_suffix": "дни",
     "retention_back": "Обратно към готовите стойности",
     "retention_options": {
@@ -368,7 +362,6 @@
       "trigger": "Стартиран",
       "server": "Сървър",
       "result": "Пълен резултат",
-      "open_result": "speedtest.net",
       "loaded_latency": "Закъснение при натоварване",
       "loaded_latency_value": "{{down}} ms надолу / {{up}} ms нагоре",
       "packet_loss": "Загуба на пакети",
@@ -549,10 +542,8 @@
       "last_run": "Последно преди "
     },
     "discord": {
-      "title": "Discord",
       "fields": {
         "url": "URL адрес на Webhook",
-        "url_placeholder": "https://discord.com/api/webhooks/...",
         "display_name": "Показвайте името",
         "display_name_placeholder": "Известие за MySpeed",
         "error_message": "Съобщение за грешка",
@@ -586,7 +577,6 @@
       }
     },
     "gotify": {
-      "title": "Gotify",
       "fields": {
         "url": "URL адрес на сървъра",
         "key": "Токен на приложението",
@@ -600,7 +590,6 @@
       }
     },
     "pushover": {
-      "title": "Pushover",
       "fields": {
         "token": "Токен на приложение",
         "user_key": "Ключ на потребителя",
@@ -613,19 +602,14 @@
       }
     },
     "healthChecks": {
-      "title": "HealthChecks",
       "fields": {
         "url": "URL адрес за здравни прегледи",
-        "url_placeholder": "https://hc-ping.com/<uuid>",
-        "interval": "Интервал на ping (минути)",
-        "interval_placeholder": "1"
+        "interval": "Интервал на ping (минути)"
       }
     },
     "influxdb": {
-      "title": "InfluxDB",
       "fields": {
         "url": "URL на сървъра",
-        "url_placeholder": "http://localhost:8086",
         "org": "Организация",
         "bucket": "Bucket",
         "token": "API ключ",
@@ -638,7 +622,6 @@
       }
     },
     "mqtt": {
-      "title": "MQTT",
       "fields": {
         "host": "Хост на брокера",
         "port": "Порт",
@@ -657,10 +640,8 @@
       }
     },
     "ntfy": {
-      "title": "ntfy",
       "fields": {
         "url": "URL на сървъра",
-        "url_placeholder": "https://ntfy.sh",
         "topic": "Тема",
         "topic_placeholder": "myspeed-alerts",
         "token": "Ключ за достъп",
@@ -670,9 +651,7 @@
         "tags": "Етикети",
         "tags_placeholder": "warning,satellite (разделени със запетая)",
         "priority": "Приоритет по подразбиране (1-5)",
-        "priority_placeholder": "3",
         "error_priority": "Приоритет при грешка (1-5)",
-        "error_priority_placeholder": "5",
         "error_message": "Съобщение за грешка",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Грешка: %error%",
         "send_failed": "Изпращане на съобщения за грешка",
@@ -682,7 +661,6 @@
       }
     },
     "telegram": {
-      "title": "Telegram",
       "fields": {
         "token": "Токен на бот",
         "chat_id": "Идентификатор на чата",
@@ -696,7 +674,6 @@
       }
     },
     "webhook": {
-      "title": "Webhook",
       "fields": {
         "url": "URL адрес на Webhook",
         "url_placeholder": "https://вашия-сървър.bg/hook",
@@ -706,8 +683,7 @@
         "send_alive": "Изпращане на оживени съобщения",
         "send_recommendations": "Изпращане на препоръки",
         "send_config_updates": "Изпращане на актуализации на конфигурацията",
-        "interval": "Интервал Keep-Alive (минути)",
-        "interval_placeholder": "1"
+        "interval": "Интервал Keep-Alive (минути)"
       }
     },
     "fields": {

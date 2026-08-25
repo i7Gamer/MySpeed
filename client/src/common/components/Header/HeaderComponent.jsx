@@ -26,6 +26,7 @@ import Pagination from "./components/Pagination";
 import AboutDialog from "@/common/components/AboutDialog";
 import Tooltip from "@/common/components/Tooltip";
 import {withBasePath} from "@/common/utils/BasePath";
+import {PRODUCT_NAME} from "@/common/utils/InvariantText";
 
 const HeaderComponent = () => {
     const findNode = useContext(NodeContext)[4];
@@ -125,7 +126,7 @@ const HeaderComponent = () => {
         if (!config.viewMode) updateVersion();
     }, [config]);
 
-    const getNodeName = () => nodeTitle(currentNode, findNode, t("header.title"));
+    const getNodeName = () => nodeTitle(currentNode, findNode, PRODUCT_NAME);
 
     if (location.pathname === "/nodes") return <></>;
     if (Object.keys(config).length === 0) return <></>;
