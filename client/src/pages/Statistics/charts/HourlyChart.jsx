@@ -77,6 +77,13 @@ const HourlyChart = memo((props) => {
                         weight: 500
                     }
                 }
+            },
+            // The crosshair plugin is registered globally, so it draws on this
+            // chart too - and it reads its colour off the options. Without this
+            // it fell back to the literal it keeps for a chart that says
+            // nothing, which is a colour no palette owns.
+            crosshair: {
+                color: themeColors.crosshair
             }
         },
         scales: {

@@ -154,6 +154,16 @@ const BLOCKS = [
     ])
 ];
 
+// The same blocks unmerged. The merged ones above model the cascade, which is
+// what a contrast check needs - and which is exactly why they cannot answer
+// "does this block declare everything": every one of them is spread over
+// :root, so the answer was always yes. Removing a key from a palette left the
+// whole suite green.
+const RAW = paletteNames.flatMap((name) => [
+    [`${name} dark`, declaredIn(`[data-palette=${name}]`)],
+    [`${name} light`, declaredIn(`[data-palette=${name}][data-theme=light]`)]
+]);
+
 // What a role answers to. Text is 4.5:1 because these are rendered with
 // `color`; a mark and a 36px glyph are non-text at 3:1.
 const AS_TEXT = ["white", "subtext", "accent-secondary",
@@ -204,15 +214,34 @@ describe("the palettes the stylesheet declares", () => {
             "a block has no background to measure against");
     });
 
+    /**
+     * A palette that leaves a key out does not fail the sass build by itself -
+     * map.get answers null and `--dark-gray: #{null}` is `--dark-gray: `, which
+     * compiles and ships and is invalid at computed-value time, so that surface
+     * renders transparent. _colors.sass has a token() guard for that now; this
+     * is the same claim held from the other end, on the emitted CSS.
+     */
     it("declare every property the others do", () => {
-        const [, first] = BLOCKS[0];
-        const expected = Object.keys(first).filter((name) => !name.endsWith("-rgb"));
+        const [, reference] = RAW[0];
+        const expected = Object.keys(reference);
 
-        for (const [name, block] of BLOCKS) {
+        assert.ok(expected.length >= 25, `only ${expected.length} properties in the reference block`);
+
+        for (const [name, block] of RAW) {
             const missing = expected.filter((property) => block[property] === undefined);
 
             assert.deepEqual(missing, [], `${name} never declares these, so it shows the outgoing palette's`);
         }
+    });
+
+    // `--dark-gray: ` parses as a declaration with an empty value, so a check
+    // that only asks whether the property is present reads it as declared.
+    it("declare a value with every property", () => {
+        const empty = RAW.flatMap(([name, block]) => Object.entries(block)
+            .filter(([, value]) => value === "")
+            .map(([property]) => `${name} --${property}`));
+
+        assert.deepEqual(empty, [], "these are declared with nothing, which is invalid and renders as unset");
     });
 });
 

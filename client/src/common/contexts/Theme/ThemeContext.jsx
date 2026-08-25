@@ -1,7 +1,7 @@
 import React, {createContext, useCallback, useEffect, useMemo, useState} from "react";
 import {readStored, writeStored} from "@/common/utils/Storage";
-import {DEFAULT_THEME, normaliseTheme, resolveTheme, THEME_SYSTEM} from "./themeChoice";
-import {DEFAULT_PALETTE, normalisePalette} from "./paletteChoice";
+import {normaliseTheme, resolveTheme, THEME_SYSTEM} from "./themeChoice";
+import {normalisePalette} from "./paletteChoice";
 
 export const ThemeContext = createContext({});
 
@@ -89,16 +89,19 @@ export const ThemeProvider = (props) => {
     }, []);
 
     /**
-     * `isDarkMode` is the resolved answer as a boolean, for the handful of
-     * places that still branch two ways. The charts no longer do - they read
-     * the palette off the document and key their memo on `resolved`, which a
-     * boolean could not have answered once there is more than one dark theme.
+     * `systemDark` is passed on rather than kept private because `resolved`
+     * only answers for the theme in force. The preferences dialog has to
+     * resolve one the reader has selected and not yet saved - picking System
+     * has to preview as light on a machine set to light, whatever the applied
+     * theme is - and resolveTheme needs the machine's answer to do it.
+     *
+     * `isDarkMode` used to sit here too. Nothing read it once the charts
+     * stopped asking in booleans, and a boolean cannot answer a palette.
      */
     const value = useMemo(() => ({
-        theme, setTheme, resolved, palette, setPalette,
-        isDarkMode: resolved !== "light",
+        theme, setTheme, resolved, palette, setPalette, systemDark,
         followsSystem: theme === THEME_SYSTEM
-    }), [theme, setTheme, resolved, palette, setPalette]);
+    }), [theme, setTheme, resolved, palette, setPalette, systemDark]);
 
     return (
         <ThemeContext.Provider value={value}>
@@ -107,4 +110,3 @@ export const ThemeProvider = (props) => {
     );
 };
 
-export {DEFAULT_THEME, THEME_SYSTEM, DEFAULT_PALETTE};

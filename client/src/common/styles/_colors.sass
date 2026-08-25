@@ -64,11 +64,11 @@ $palettes: (slate: (dark: (background: #0f1419,
       accent-secondary: #06b6d4,
       accent-warning: #f59e0b,
       accent-danger: #ef4444,
-      blue: #3b82f6,
       grade-good: #10b981,
       grade-fair: #f59e0b,
       // A step of their own rather than the accent: a grade is rendered as
-      // text, and $red and $blue measure 4.35:1 and 4.45:1 against the card.
+      // text, and the danger and neutral accents measure 4.35:1 and 4.45:1
+      // against the card.
       // Lightening the accents instead would have fixed the figure and dimmed
       // the label on every danger button that uses the same token as a fill.
       grade-poor: #f56565,
@@ -98,7 +98,6 @@ $palettes: (slate: (dark: (background: #0f1419,
       // #dc2626 measures 4.41:1 on the dialog panel, where .icon-red renders
       // every wrong-password and unreachable-node message.
       accent-danger: #c81e1e,
-      blue: #2563eb,
       grade-good: #047857,
       grade-fair: #b45309,
       grade-poor: #c81e1e,
@@ -118,7 +117,6 @@ $palettes: (slate: (dark: (background: #0f1419,
       accent-warning: #ebcb8b,
       // Aurora's #bf616a lightened: as text on this ground it is 4.17:1.
       accent-danger: #d39197,
-      blue: #8fb4de,
       grade-good: #a3be8c,
       grade-fair: #ebcb8b,
       grade-poor: #d39197,
@@ -155,7 +153,6 @@ $palettes: (slate: (dark: (background: #0f1419,
       accent-secondary: #2c6478,
       accent-warning: #7d5f16,
       accent-danger: #a3323d,
-      blue: #43648f,
       grade-good: #4a6b39,
       grade-fair: #7d5f16,
       grade-poor: #a3323d,
@@ -174,7 +171,6 @@ $palettes: (slate: (dark: (background: #0f1419,
       accent-secondary: #3ddbd9,
       accent-warning: #f1c21b,
       accent-danger: #fa4d56,
-      blue: #78a9ff,
       grade-good: #42be65,
       grade-fair: #f1c21b,
       grade-poor: #fa4d56,
@@ -196,7 +192,6 @@ $palettes: (slate: (dark: (background: #0f1419,
       accent-secondary: #005d5d,
       accent-warning: #8a6100,
       accent-danger: #da1e28,
-      blue: #0f62fe,
       grade-good: #198038,
       grade-fair: #8a6100,
       grade-poor: #da1e28,
@@ -217,7 +212,6 @@ $palettes: (slate: (dark: (background: #0f1419,
       accent-secondary: #5cb8b2,
       accent-warning: #e0a458,
       accent-danger: #e07871,
-      blue: #9fb8d4,
       grade-good: #7fb069,
       grade-fair: #e0a458,
       grade-poor: #e07871,
@@ -238,7 +232,6 @@ $palettes: (slate: (dark: (background: #0f1419,
       accent-secondary: #20686a,
       accent-warning: #8a5a12,
       accent-danger: #b03a30,
-      blue: #3f6591,
       grade-good: #4a7337,
       grade-fair: #8a5a12,
       grade-poor: #b03a30,
@@ -259,48 +252,62 @@ $default-palette: slate
 @function triplet($c)
   @return #{color.channel($c, "red", $space: rgb)}, #{color.channel($c, "green", $space: rgb)}, #{color.channel($c, "blue", $space: rgb)}
 
+/// A palette's value for a role, or a failed build.
+///
+/// map.get answers null for a key that is not there, and `--dark-gray: #{null}`
+/// is `--dark-gray: ` - which compiles, ships, and is invalid at computed-value
+/// time, so those surfaces render transparent. Only the keys that happen to
+/// pass through rgba() or triplet() ever threw on their own. This is what makes
+/// "a palette cannot be half-declared" true rather than merely intended.
+@function token($t, $name)
+  $value: map.get($t, $name)
+
+  @if $value == null
+    @error "palette entry is missing #{$name}"
+
+  @return $value
+
 @mixin palette-tokens($t, $mode-name)
   $m: map.get($mode, $mode-name)
   $series: map.get($shared-series, $mode-name)
 
   @if map.has-key($t, series)
-    $series: map.merge($series, map.get($t, series))
+    $series: map.merge($series, token($t, series))
 
-  --background: #{map.get($t, background)}
-  --darker-gray: #{map.get($t, darker-gray)}
-  --dark-gray: #{map.get($t, dark-gray)}
-  --light-gray: #{map.get($t, light-gray)}
-  --white: #{map.get($t, white)}
-  --subtext: #{map.get($t, subtext)}
-  --icon-neutral: #{map.get($t, icon-neutral)}
+  --background: #{token($t, background)}
+  --darker-gray: #{token($t, darker-gray)}
+  --dark-gray: #{token($t, dark-gray)}
+  --light-gray: #{token($t, light-gray)}
+  --white: #{token($t, white)}
+  --subtext: #{token($t, subtext)}
+  --icon-neutral: #{token($t, icon-neutral)}
 
-  --glass-bg: #{rgba(map.get($t, glass-on), map.get($m, glass))}
+  --glass-bg: #{rgba(token($t, glass-on), map.get($m, glass))}
   // A hover that lifts on a dark ground and settles on a light one. It was
   // rgba(255, 255, 255, 0.02) either way, so on a light card the affordance
   // simply was not there.
   --hover-wash: #{map.get($m, wash)}
 
-  --on-accent: #{map.get($t, on-accent)}
-  --accent-primary: #{map.get($t, accent-primary)}
-  --accent-secondary: #{map.get($t, accent-secondary)}
-  --accent-warning: #{map.get($t, accent-warning)}
-  --accent-danger: #{map.get($t, accent-danger)}
-  --blue: #{map.get($t, blue)}
+  --on-accent: #{token($t, on-accent)}
+  --accent-primary: #{token($t, accent-primary)}
+  --accent-secondary: #{token($t, accent-secondary)}
+  --accent-warning: #{token($t, accent-warning)}
+  --accent-danger: #{token($t, accent-danger)}
 
   // For the washes: a fill of the same colour at a low alpha, which several
   // rules pair with a border and a label in the solid colour. Written out as
   // literals they stayed on the dark-theme hue while the border and the label
   // moved, and one control was painted in two different greens.
-  --accent-primary-rgb: #{triplet(map.get($t, accent-primary))}
-  --accent-secondary-rgb: #{triplet(map.get($t, accent-secondary))}
-  --accent-danger-rgb: #{triplet(map.get($t, accent-danger))}
-  --light-gray-rgb: #{triplet(map.get($t, light-gray))}
+  --accent-primary-rgb: #{triplet(token($t, accent-primary))}
+  --accent-secondary-rgb: #{triplet(token($t, accent-secondary))}
+  --accent-danger-rgb: #{triplet(token($t, accent-danger))}
+  --light-gray-rgb: #{triplet(token($t, light-gray))}
 
-  --grade-good: #{map.get($t, grade-good)}
-  --grade-fair: #{map.get($t, grade-fair)}
-  --grade-poor: #{map.get($t, grade-poor)}
-  --grade-none: #{map.get($t, grade-none)}
-  --grade-failed: #{map.get($t, grade-failed)}
+  --grade-good: #{token($t, grade-good)}
+  --grade-fair: #{token($t, grade-fair)}
+  --grade-poor: #{token($t, grade-poor)}
+  --grade-none: #{token($t, grade-none)}
+  --grade-failed: #{token($t, grade-failed)}
 
   --chart-download: #{map.get($series, download)}
   --chart-upload: #{map.get($series, upload)}
@@ -312,36 +319,25 @@ $default-palette: slate
   // they are outside the categorical check - it would have failed them against
   // each other for a difference the reader never has to make.
   --chart-average: #{map.get($series, average)}
-  --chart-failed: #{map.get($t, grade-failed)}
+  --chart-failed: #{token($t, grade-failed)}
 
-  --chart-grid: #{rgba(map.get($t, light-gray), map.get($m, grid))}
-  --chart-crosshair: #{rgba(map.get($t, subtext), 0.6)}
+  --chart-grid: #{rgba(token($t, light-gray), map.get($m, grid))}
+  --chart-crosshair: #{rgba(token($t, subtext), 0.6)}
 
-// The chart's chrome is the interface's chrome. These follow the surfaces
-// rather than restating them, so a palette gets them for free and cannot
-// declare a tooltip that does not match the dialog beside it.
-:root
+  // The chart's chrome is the interface's chrome, so it follows the surfaces
+  // rather than restating them: a palette gets it for free and cannot declare
+  // a tooltip that does not match the dialog beside it.
+  //
+  // Emitted in every block rather than on :root once. A var() reference is
+  // substituted on the element that declares it, so a single :root copy
+  // resolved against <html>'s surfaces and every nested scope inherited that
+  // answer already resolved - which is not what a [data-palette] on a preview
+  // means, and made the swatch in the preferences dialog a half-truth.
   --chart-tick: var(--subtext)
   --chart-tooltip-bg: var(--darker-gray)
   --chart-tooltip-title: var(--white)
   --chart-tooltip-body: var(--subtext)
   --chart-tooltip-border: var(--light-gray)
-
-// The unstamped document. Specificity (0,1,0) for both, so the palette blocks
-// below - emitted later, and the light one two attributes deep - win whenever
-// an attribute is actually present.
-:root
-  +palette-tokens(map.get(map.get($palettes, $default-palette), dark), dark)
-
-[data-theme="light"]
-  +palette-tokens(map.get(map.get($palettes, $default-palette), light), light)
-
-@each $name, $palette in $palettes
-  [data-palette="#{$name}"]
-    +palette-tokens(map.get($palette, dark), dark)
-
-  [data-palette="#{$name}"][data-theme="light"]
-    +palette-tokens(map.get($palette, light), light)
 
 // The aliases every component actually reaches for. Bound to the properties, so
 // a rule written against them follows whatever the document says.
@@ -369,4 +365,3 @@ $accent-danger: var(--accent-danger)
 $green: var(--grade-good)
 $orange: var(--grade-fair)
 $red: var(--grade-poor)
-$blue: var(--grade-none)

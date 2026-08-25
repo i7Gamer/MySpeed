@@ -154,6 +154,22 @@ describe("every chart that draws on a canvas", () => {
             assert.doesNotMatch(withoutJsComments(source), /chartThemeColors\(/,
                 "calling chartThemeColors directly means keying the memo by hand");
         });
+
+        /**
+         * The crosshair plugin is registered globally, so it draws on every one
+         * of these - and it takes its colour from the options rather than
+         * reading the document once per hovered frame. A chart that does not
+         * pass it gets the literal the plugin keeps for a chart that says
+         * nothing, which is a colour no palette owns. The hourly chart did that
+         * under all eight combinations.
+         */
+        it(`${path.basename(chart)} hands the crosshair its colour`, () => {
+            const options = withoutJsComments(source);
+
+            assert.ok(/crosshair:\s*\{[^}]*color:\s*themeColors\.crosshair/.test(options)
+                || /lineChartOptions\(\{/.test(options),
+                "this chart neither sets plugins.crosshair.color nor builds its options with lineChartOptions");
+        });
     }
 });
 

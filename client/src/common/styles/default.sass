@@ -1,8 +1,10 @@
 @use "colors" as *
 @use "grades" as *
 @use "layout" as *
-// The grade palette and the icon-* utilities that carry it, emitted here
-// because this is the one stylesheet App.jsx loads.
+// The palette blocks, the grade palette and the icon-* utilities that carry
+// it. Emitted here because this is the one stylesheet App.jsx loads, and only
+// here - a component that @uses "colors" gets the variables and no output.
+@use "palette-emit"
 @use "grade-palette"
 
 body, html

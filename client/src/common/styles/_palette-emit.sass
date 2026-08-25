@@ -1,0 +1,38 @@
+@use "sass:map"
+@use "colors" as *
+
+/// The palette blocks, emitted once.
+///
+/// Apart from _colors.sass because that file is `@use`d by fifty-one component
+/// stylesheets, each of which is its own sass compilation - so every top-level
+/// rule it held was emitted fifty-one times. esbuild collapses byte-identical
+/// rules that repeat, but not the `:root` block, which the bundler keeps one
+/// copy of per compilation: fifty-four of them, 36% of the shipped CSS.
+///
+/// A component wants the `$` aliases and nothing else. This is the half that
+/// produces output, and default.sass - the one stylesheet App.jsx loads - is
+/// the only thing that reaches for it. _grade-palette.sass is arranged the same
+/// way for the same reason.
+
+// The unstamped document, and the frame before ThemeContext has run. Both are
+// specificity (0,1,0), so the palette blocks below - emitted later, and the
+// light one two attributes deep - win whenever an attribute is actually there.
+:root
+  +palette-tokens(map.get(map.get($palettes, $default-palette), dark), dark)
+
+[data-theme="light"]
+  +palette-tokens(map.get(map.get($palettes, $default-palette), light), light)
+
+// Two attributes rather than one selector per combination: `data-palette` says
+// which colours and `data-theme` says which mode of them, so four palettes and
+// two modes are six blocks of source, not eight hand-written ones.
+//
+// Every block states every property. That is what makes the ordering safe - a
+// (0,1,0) palette block beats the earlier (0,1,0) light block wholesale, rather
+// than leaving a property behind for it to win.
+@each $name, $palette in $palettes
+  [data-palette="#{$name}"]
+    +palette-tokens(map.get($palette, dark), dark)
+
+  [data-palette="#{$name}"][data-theme="light"]
+    +palette-tokens(map.get($palette, light), light)

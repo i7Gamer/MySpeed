@@ -5,7 +5,9 @@ import {faCheck, faClock, faDesktop, faDroplet, faGauge, faMoon, faPalette, faSu
 import {t} from "i18next";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {ThemeContext} from "@/common/contexts/Theme";
-import {DEFAULT_THEME, THEME_DARK, THEME_LIGHT, THEME_SYSTEM} from "@/common/contexts/Theme/themeChoice";
+import {
+    DEFAULT_THEME, resolveTheme, THEME_DARK, THEME_LIGHT, THEME_SYSTEM
+} from "@/common/contexts/Theme/themeChoice";
 import {DEFAULT_PALETTE, PALETTES} from "@/common/contexts/Theme/paletteChoice";
 import {PALETTE_NAMES} from "@/common/utils/InvariantText";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
@@ -117,7 +119,8 @@ const PreferencesSection = ({icon, title, description, options, value, onChange,
 
 export const PreferencesDialog = ({open, onClose}) => {
     const [preferences, updatePreferences] = useContext(PreferencesContext);
-    const {theme: activeTheme, setTheme: applyTheme, palette: activePalette, setPalette: applyPalette, resolved} = useContext(ThemeContext);
+    const {theme: activeTheme, setTheme: applyTheme, palette: activePalette,
+        setPalette: applyPalette, systemDark} = useContext(ThemeContext);
     const updateToast = useContext(ToastNotificationContext);
     // Read when the dialog opens, not at mount - see useSyncOnOpen. This also
     // replaces the hand-rolled reset the old close handler carried for the
@@ -169,10 +172,14 @@ export const PreferencesDialog = ({open, onClose}) => {
                                 options={PALETTE_OPTIONS}
                                 value={palette}
                                 onChange={setPalette}
-                                // The mode each swatch is previewed in. The chosen theme
-                                // may be "system", which no stylesheet block matches - a
-                                // preview has to be shown in one of the two.
-                                theme={theme === THEME_SYSTEM ? resolved : theme}
+                                // The mode each swatch is previewed in, resolved from the
+                                // PENDING theme rather than the applied one. "System"
+                                // matches no stylesheet block, so a preview has to be
+                                // shown in one of the two - and taking that from the
+                                // context's `resolved` showed the theme still in force,
+                                // so selecting System on a light machine left all four
+                                // swatches dark until Save flipped the whole app.
+                                theme={resolveTheme(theme, systemDark)}
                             />
                             <PreferencesSection
                                 icon={faClock}
