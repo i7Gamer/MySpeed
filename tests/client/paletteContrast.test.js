@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { compile } from "../helpers/sass.mjs";
+import { compile, declarationsIn } from "../helpers/sass.mjs";
 
 /**
  * Every palette, held to the bar its own colours have to clear.
@@ -122,26 +122,17 @@ const composite = (over, alpha, under) => "#" + rgb(over)
 // ------------------------------------------------------------- the stylesheet
 
 /**
- * Every property a selector's blocks declare, in source order.
+ * Every property a selector's blocks declare, in source order - the shared
+ * parser, bound to this file's stylesheet. Several blocks share a selector -
+ * _colors.sass writes the chrome on `:root` and the default palette on
+ * another `:root` - and the later one wins, exactly as the cascade decides.
  *
- * Several blocks share a selector - _colors.sass writes the chrome on `:root`
- * and the default palette on another `:root` - and the later one wins, so they
- * are read in order and allowed to overwrite, exactly as the cascade would.
+ * The private copy this replaces matched the selector as a substring, so
+ * "default light" also swallowed every `[data-palette=…][data-theme=light]`
+ * block and re-measured whichever palette was emitted last under the default
+ * label. The helper compares the selector whole.
  */
-const declaredIn = (selector) => {
-    const found = {};
-    const opener = `${selector} {`;
-    let at = css.indexOf(opener);
-
-    while (at !== -1) {
-        const block = css.slice(at, css.indexOf("}", at));
-
-        for (const [, name, value] of block.matchAll(/--([\w-]+):\s*([^;]+);/g)) found[name] = value.trim();
-        at = css.indexOf(opener, at + 1);
-    }
-
-    return found;
-};
+const declaredIn = (selector) => declarationsIn(css, selector);
 
 /** Follows var() to the value underneath, through however many hops. */
 const resolve = (name, block, seen = new Set()) => {

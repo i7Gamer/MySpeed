@@ -1,19 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { localeCodes, readLocale } from "../helpers/source.js";
+import { flatten } from "../../scripts/localeGaps.js";
 
-const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-const LOCALES = path.join(ROOT, "client", "public", "assets", "locales");
+const read = (code) => flatten(readLocale(code));
 
-const flatten = (node, prefix = "") => Object.entries(node).flatMap(([key, value]) =>
-    value && typeof value === "object" ? flatten(value, `${prefix}${key}.`) : [[`${prefix}${key}`, value]]);
-
-const read = (code) =>
-    Object.fromEntries(flatten(JSON.parse(fs.readFileSync(path.join(LOCALES, `${code}.json`), "utf8"))));
-
-const codes = fs.readdirSync(LOCALES).map((file) => path.basename(file, ".json"));
+const codes = localeCodes();
 const english = read("en");
 
 /**

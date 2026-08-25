@@ -1,24 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { withoutJsComments } from "../helpers/source.js";
-import { compile } from "../helpers/sass.mjs";
+import { readSource, walkSources, withoutJsComments } from "../helpers/source.js";
+import { compile, declarationsIn } from "../helpers/sass.mjs";
 
-const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-const CHARTS = path.join(ROOT, "client", "src", "pages", "Statistics");
+const CHARTS = "client/src/pages/Statistics";
 
-const sources = (dir) => fs.readdirSync(dir, {withFileTypes: true}).flatMap((entry) => {
-    const full = path.join(dir, entry.name);
-
-    if (entry.isDirectory()) return sources(full);
-    return /\.jsx?$/.test(entry.name)
-        ? [[path.relative(ROOT, full).split(path.sep).join("/"), fs.readFileSync(full, "utf8")]]
-        : [];
-});
-
-const config = withoutJsComments(fs.readFileSync(path.join(CHARTS, "charts", "lineChartConfig.js"), "utf8"));
+const config = withoutJsComments(readSource(`${CHARTS}/charts/lineChartConfig.js`));
 
 /**
  * The palette had two copies and no reader.
@@ -37,37 +24,12 @@ const config = withoutJsComments(fs.readFileSync(path.join(CHARTS, "charts", "li
 describe("the chart palette", () => {
     const css = compile("common/styles/default.sass");
 
-    /** Every --chart-* property the stylesheet declares, per selector block. */
-    const declared = (selector) => {
-        const found = new Set();
-        let at = css.indexOf(selector);
-
-        assert.notEqual(at, -1, `${selector} is not in the compiled stylesheet`);
-
-        while (at !== -1) {
-            const block = css.slice(at, css.indexOf("}", at));
-
-            for (const [, name] of block.matchAll(/--(chart-[\w-]+):/g)) found.add(name);
-            at = css.indexOf(selector, at + 1);
-        }
-
-        return found;
-    };
+    /** Every --chart-* property the stylesheet declares for one selector. */
+    const declared = (selector) =>
+        new Set(Object.keys(declarationsIn(css, selector)).filter((name) => name.startsWith("chart-")));
 
     /** The same blocks, keeping what each property was declared as. */
-    const declaredValues = (selector) => {
-        const found = {};
-        let at = css.indexOf(selector);
-
-        while (at !== -1) {
-            const block = css.slice(at, css.indexOf("}", at));
-
-            for (const [, name, value] of block.matchAll(/--([\w-]+):\s*([^;]+);/g)) found[name] = value.trim();
-            at = css.indexOf(selector, at + 1);
-        }
-
-        return found;
-    };
+    const declaredValues = (selector) => declarationsIn(css, selector);
 
     /** Every property chartThemeColors asks the document for. */
     const read = () => {
@@ -146,9 +108,9 @@ describe("every chart that draws on a canvas", () => {
     ];
 
     for (const chart of CANVAS_CHARTS) {
-        const source = fs.readFileSync(path.join(CHARTS, chart), "utf8");
+        const source = readSource(`${CHARTS}/${chart}`);
 
-        it(`${path.basename(chart)} takes the palette from the shared hook`, () => {
+        it(`${chart} takes the palette from the shared hook`, () => {
             assert.match(source, /const themeColors = useChartTheme\(\);/,
                 "this chart memoises the palette itself, so it decides for itself when to re-read it");
             assert.doesNotMatch(withoutJsComments(source), /chartThemeColors\(/,
@@ -163,7 +125,7 @@ describe("every chart that draws on a canvas", () => {
          * nothing, which is a colour no palette owns. The hourly chart did that
          * under all eight combinations.
          */
-        it(`${path.basename(chart)} hands the crosshair its colour`, () => {
+        it(`${chart} hands the crosshair its colour`, () => {
             const options = withoutJsComments(source);
 
             assert.ok(/crosshair:\s*\{[^}]*color:\s*themeColors\.crosshair/.test(options)
@@ -196,11 +158,11 @@ describe("no chart under Statistics", () => {
         .filter((line) => COLOUR.test(line));
 
     it("finds the sources to check", () => {
-        assert.ok(sources(CHARTS).length >= 8, `only found ${sources(CHARTS).length} chart sources`);
+        assert.ok(walkSources(CHARTS).length >= 8, `only found ${walkSources(CHARTS).length} chart sources`);
     });
 
     it("names a colour of its own", () => {
-        const offenders = sources(CHARTS).flatMap(([file, source]) => {
+        const offenders = walkSources(CHARTS).flatMap(({path: file, source}) => {
             const found = literalsIn(source);
             const allowed = ALLOWED.get(file) ?? 0;
 

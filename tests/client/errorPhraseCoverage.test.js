@@ -1,18 +1,11 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import i18n from "i18next";
 import { describeError } from "@/common/components/TestDetails/utils/errors.js";
 import { RATE_LIMIT_MESSAGE } from "../../server/util/providers/cliOutput.js";
+import { localeCodes, readLocale, readSource } from "../helpers/source.js";
 
-const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-const LOCALES = path.join(ROOT, "client", "public", "assets", "locales");
-
-const readLocale = (code) => JSON.parse(fs.readFileSync(path.join(LOCALES, `${code}.json`), "utf8"));
-
-const codes = fs.readdirSync(LOCALES).map((file) => path.basename(file, ".json"));
+const codes = localeCodes();
 
 // The real English resource, not a stub. The point of this file is whether the
 // phrases the server actually produces reach a translation, so a hand-written
@@ -58,7 +51,7 @@ describe("the failures the server produces", () => {
      * would mean this passes for exactly as long as somebody remembers to.
      */
     it("explains every failure the speedtest task authors itself", () => {
-        const source = fs.readFileSync(path.join(ROOT, "server", "tasks", "speedtest.js"), "utf8");
+        const source = readSource("server/tasks/speedtest.js");
 
         // The static half of each template literal: `${mode} finished without
         // reporting any measurement` contributes " finished without reporting
@@ -107,8 +100,7 @@ describe("the unknown-error label", () => {
     });
 
     it("is the detail form the panel uses, not the bare one plus punctuation", () => {
-        const panel = fs.readFileSync(
-            path.join(ROOT, "client", "src", "common", "components", "TestDetails", "TestDetails.jsx"), "utf8");
+        const panel = readSource("client/src/common/components/TestDetails/TestDetails.jsx");
 
         assert.match(panel, /t\("test\.unknown_error_detail",\s*\{error:/,
             "the panel builds the sentence itself again, so the punctuation is back in the locale");

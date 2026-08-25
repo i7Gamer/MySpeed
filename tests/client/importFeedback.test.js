@@ -1,22 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { readSource, withoutJsComments } from "../helpers/source.js";
+import { localeCodes, readLocale, readSource, walkSources, withoutJsComments } from "../helpers/source.js";
 import { compile } from "../helpers/sass.mjs";
-
-const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
-
-// listSources is neither recursive nor interested in .jsx, and every caller of
-// updateToast is a component. Walked here rather than widening the helper,
-// which a dozen other tests read at its current contract.
-const componentSources = (dir) => fs.readdirSync(dir, {withFileTypes: true}).flatMap((entry) => {
-    const full = path.join(dir, entry.name);
-
-    if (entry.isDirectory()) return componentSources(full);
-    return /\.jsx?$/.test(entry.name) ? [fs.readFileSync(full, "utf8")] : [];
-});
 
 const storageRoutes = withoutJsComments(readSource("server/routes/storage.js"));
 const speedtestsTab = withoutJsComments(readSource("client/src/common/components/StorageDialog/tabs/Speedtests.jsx"));
@@ -130,8 +115,8 @@ describe("what the storage dialog reads back", () => {
 describe("every toast colour a caller asks for", () => {
     const css = compile("common/contexts/ToastNotification/styles.sass");
 
-    const asked = [...new Set(componentSources(CLIENT_SRC)
-        .flatMap((source) => [...source.matchAll(/updateToast\([\s\S]{0,400}?,\s*"(\w+)"/g)])
+    const asked = [...new Set(walkSources("client/src")
+        .flatMap(({source}) => [...source.matchAll(/updateToast\([\s\S]{0,400}?,\s*"(\w+)"/g)])
         .map(([, colour]) => colour))];
 
     it("finds the colours to check", () => {
@@ -162,10 +147,9 @@ describe("every toast colour a caller asks for", () => {
  * numeral. Every other locale must not put a letter straight after a count.
  */
 describe("the partial-import message", () => {
-    const LOCALES = path.resolve(CLIENT_SRC, "..", "public", "assets", "locales");
     const NUMBER_TOLERANT = new Set(["zh", "id", "tr"]);
 
-    const codes = fs.readdirSync(LOCALES).map((file) => path.basename(file, ".json"));
+    const codes = localeCodes();
 
     it("finds the locales to check", () => {
         assert.ok(codes.length > 10, `only found ${codes.length} locales`);
@@ -175,8 +159,7 @@ describe("the partial-import message", () => {
     it("survives a count of one in every locale that inflects", () => {
         const disagreeing = codes
             .filter((code) => !NUMBER_TOLERANT.has(code))
-            .map((code) => [code, JSON.parse(fs.readFileSync(path.join(LOCALES, `${code}.json`), "utf8"))
-                .storage?.tests_imported_partial])
+            .map((code) => [code, readLocale(code).storage?.tests_imported_partial])
             .filter(([, value]) => !value || /\{\{(?:imported|skipped)\}\}\s*\p{L}/u.test(value))
             .map(([code, value]) => `[${code}] ${JSON.stringify(value)}`);
 

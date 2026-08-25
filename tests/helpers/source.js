@@ -18,6 +18,31 @@ export const listSources = (dir) =>
     fs.readdirSync(path.join(root, dir)).filter((name) => name.endsWith(".js"));
 
 /**
+ * Every .js/.jsx file under a directory, recursively, as repo-relative posix
+ * paths with their text.
+ *
+ * Its own export rather than a widening of listSources, which a dozen suites
+ * read at its flat, .js-only contract. Three suites grew a private copy of
+ * this walk within one review, each starting with the same fifteen lines.
+ */
+export const walkSources = (dir) => fs.readdirSync(path.join(root, dir), {withFileTypes: true})
+    .flatMap((entry) => {
+        const relative = `${dir}/${entry.name}`;
+
+        if (entry.isDirectory()) return walkSources(relative);
+        return /\.jsx?$/.test(entry.name) ? [{path: relative, source: readSource(relative)}] : [];
+    });
+
+const LOCALES_DIR = "client/public/assets/locales";
+
+/** The locale files that ship, by code. */
+export const localeCodes = () =>
+    fs.readdirSync(path.join(root, LOCALES_DIR)).map((file) => path.basename(file, ".json"));
+
+/** One locale file, parsed. */
+export const readLocale = (code) => JSON.parse(readSource(`${LOCALES_DIR}/${code}.json`));
+
+/**
  * The last comma at the outermost argument depth, which is where the handler
  * begins.
  *

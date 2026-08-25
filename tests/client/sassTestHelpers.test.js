@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { containerBlocks, mediaBlocks, rules, ceilings, queriesMentioning } from "../helpers/sass.mjs";
+import { containerBlocks, declarationsIn, mediaBlocks, rules, ceilings, queriesMentioning } from "../helpers/sass.mjs";
 
 /**
  * The parsers the stylesheet tests share, proven against the shapes that broke
@@ -96,5 +96,37 @@ describe("queriesMentioning", () => {
         assert.equal(bodies.length, 1);
         assert.match(bodies[0], /\.inside/);
         assert.equal(queriesMentioning(nested, "1200px").length, 0);
+    });
+});
+
+/**
+ * The next batch of the same drift: three suites grew a private copy of this
+ * walk within one review - the palette-contrast blocks, the boot script's
+ * backgrounds, the chart-token comparison. The cases below are the ones a
+ * copy gets subtly wrong.
+ */
+describe("declarationsIn", () => {
+    const css = [
+        ":root { --a: 1; --b: var(--a); }",
+        ":root { --a: 2 ; }",
+        "[data-palette=nord] { --a: 3; }",
+        "[data-palette=nord][data-theme=light] { --a: 4; }"
+    ].join("\n");
+
+    it("merges a selector's blocks in source order, values trimmed", () => {
+        assert.deepEqual(declarationsIn(css, ":root"), {a: "2", b: "var(--a)"});
+    });
+
+    /**
+     * The loose form - indexOf on the bare selector - reads the two-attribute
+     * palette block as part of the one-attribute one, so a property the light
+     * block declares looked declared by the dark one.
+     */
+    it("does not read a selector that merely starts the same", () => {
+        assert.deepEqual(declarationsIn(css, "[data-palette=nord]"), {a: "3"});
+    });
+
+    it("answers empty for a selector with no block, so absence is assertable", () => {
+        assert.deepEqual(declarationsIn(css, "[data-theme=light]"), {});
     });
 });

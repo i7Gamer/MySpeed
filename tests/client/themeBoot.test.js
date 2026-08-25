@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readSource } from "../helpers/source.js";
-import { compile } from "../helpers/sass.mjs";
+import { compile, declarationsIn } from "../helpers/sass.mjs";
 import { DEFAULT_THEME, normaliseTheme, resolveTheme, THEMES } from "../../client/src/common/contexts/Theme/themeChoice.js";
 import { DEFAULT_PALETTE, normalisePalette, PALETTES } from "../../client/src/common/contexts/Theme/paletteChoice.js";
 
@@ -201,24 +201,9 @@ describe("what the pre-paint script stamps", () => {
  * in this stylesheet since January and matches none of the eight combinations.
  */
 describe("the theme-color the pre-paint script sets", () => {
-    const declaredIn = (selector) => {
-        const found = {};
-        const opener = `${selector} {`;
-        let at = css.indexOf(opener);
-
-        while (at !== -1) {
-            const block = css.slice(at, css.indexOf("}", at));
-
-            for (const [, name, value] of block.matchAll(/--([\w-]+):\s*([^;]+);/g)) found[name] = value.trim();
-            at = css.indexOf(opener, at + 1);
-        }
-
-        return found;
-    };
-
     const background = (palette, mode) => (mode === "light"
-        ? declaredIn(`[data-palette=${palette}][data-theme=light]`)
-        : declaredIn(`[data-palette=${palette}]`))["background"];
+        ? declarationsIn(css, `[data-palette=${palette}][data-theme=light]`)
+        : declarationsIn(css, `[data-palette=${palette}]`))["background"];
 
     it("is the page colour the stylesheet actually paints", () => {
         const wrong = [];

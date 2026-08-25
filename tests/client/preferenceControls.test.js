@@ -1,26 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { readSource, withoutJsComments } from "../helpers/source.js";
+import { readLocale, readSource, walkSources, withoutJsComments } from "../helpers/source.js";
 import { compile } from "../helpers/sass.mjs";
-
-const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-const LOCALES = path.join(ROOT, "client", "public", "assets", "locales");
-
-const readLocale = (code) => JSON.parse(fs.readFileSync(path.join(LOCALES, `${code}.json`), "utf8"));
-const valueAt = (object, key) => key.split(".").reduce((node, part) => node?.[part], object);
+// The same flattening the parity suite reads keys with: "a.b.c" against the
+// nested locale object, one implementation for both.
+import { flatten } from "../../scripts/localeGaps.js";
 
 const dialog = withoutJsComments(readSource("client/src/common/components/PreferencesDialog/PreferencesDialog.jsx"));
 const context = withoutJsComments(readSource("client/src/common/contexts/Preferences/PreferencesContext.jsx"));
-
-const clientSources = (dir) => fs.readdirSync(dir, {withFileTypes: true}).flatMap((entry) => {
-    const full = path.join(dir, entry.name);
-
-    if (entry.isDirectory()) return clientSources(full);
-    return /\.jsx?$/.test(entry.name) ? [fs.readFileSync(full, "utf8")] : [];
-});
 
 /**
  * A preference nothing can set.
@@ -43,8 +30,8 @@ describe("every preference", () => {
     };
 
     const written = () => {
-        const calls = clientSources(path.join(ROOT, "client", "src"))
-            .flatMap((source) => [...source.matchAll(/updatePreferences\(\{([\s\S]{0,200}?)\}\)/g)])
+        const calls = walkSources("client/src")
+            .flatMap(({source}) => [...source.matchAll(/updatePreferences\(\{([\s\S]{0,200}?)\}\)/g)])
             .map(([, body]) => body);
 
         return new Set(calls.flatMap((body) => [...body.matchAll(/(\w+)\s*[:,}]/g)].map(([, name]) => name)));
@@ -71,7 +58,7 @@ describe("every preference", () => {
  * language including English.
  */
 describe("every option the preferences dialog offers", () => {
-    const english = readLocale("en");
+    const english = flatten(readLocale("en"));
 
     // Every descKey, and every labelKey that exists. A row whose name is the
     // same in every language carries a `label` constant instead - see
@@ -93,7 +80,7 @@ describe("every option the preferences dialog offers", () => {
     });
 
     it("has a string for its label and its description", () => {
-        const missing = optionKeys().filter((key) => valueAt(english, key) === undefined);
+        const missing = optionKeys().filter((key) => english[key] === undefined);
 
         assert.deepEqual(missing, [], "these option rows would render their own key");
     });
@@ -111,7 +98,7 @@ describe("every option the preferences dialog offers", () => {
         const sections = [...dialog.matchAll(/title=\{t\("([^"]+)"\)}/g)].map(([, key]) => key);
 
         assert.ok(sections.length >= 6, `only found ${sections.length} section headings`);
-        assert.deepEqual(sections.filter((key) => valueAt(english, key) === undefined), [],
+        assert.deepEqual(sections.filter((key) => english[key] === undefined), [],
             "these sections would render their own key as their heading");
     });
 });
@@ -130,7 +117,7 @@ describe("every option the preferences dialog offers", () => {
  * covered by having been written.
  */
 describe("every explanation the preferences dialog offers", () => {
-    const english = readLocale("en");
+    const english = flatten(readLocale("en"));
     const info = withoutJsComments(readSource("client/src/common/utils/PreferencesInfo.js"));
 
     // explains("theme", ["system", "dark", "light"]) becomes the eight keys it reads.
@@ -147,7 +134,7 @@ describe("every explanation the preferences dialog offers", () => {
     });
 
     it("has a string behind every icon", () => {
-        const missing = expanded().filter((key) => valueAt(english, key) === undefined);
+        const missing = expanded().filter((key) => english[key] === undefined);
 
         assert.deepEqual(missing, [], "these would render their own key inside the explanation popup");
     });
@@ -163,14 +150,14 @@ describe("every explanation the preferences dialog offers", () => {
         const palettes = [...block.slice(0, block.indexOf("};")).matchAll(/(\w+):\s*"/g)].map(([, id]) => id);
 
         assert.ok(palettes.length >= 4, `only found ${palettes.length} palette names`);
-        assert.deepEqual(palettes.filter((id) => valueAt(english, `preferences.palette.${id}_desc`) === undefined), [],
+        assert.deepEqual(palettes.filter((id) => english[`preferences.palette.${id}_desc`] === undefined), [],
             "these palettes would show their own key where their description belongs");
     });
 
     /** The chart resolution reuses the toolbar's own strings rather than adding any. */
     it("reuses the strings the chart toolbar already has", () => {
         for (const key of ["statistics.detail.title", "statistics.detail.description"])
-            assert.notEqual(valueAt(english, key), undefined, `${key} is gone, and the dialog still reads it`);
+            assert.notEqual(english[key], undefined, `${key} is gone, and the dialog still reads it`);
     });
 });
 
