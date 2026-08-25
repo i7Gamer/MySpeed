@@ -241,4 +241,38 @@ describe("the theme-color the pre-paint script sets", () => {
         assert.equal(fallback, background(DEFAULT_PALETTE, "dark"),
             "the static fallback is not the colour an unstamped document paints");
     });
+
+    /**
+     * The installed app does not read the meta at all. Its splash screen and
+     * window chrome come from the manifest, which is served verbatim - so a
+     * stale colour there survives everything the boot script fixes. It held
+     * #232835, the very colour the script's comment calls dead. A manifest is
+     * static, so the only honest value is the one an unstamped document paints.
+     */
+    it("matches the manifest the installed app launches from", () => {
+        const manifest = JSON.parse(readSource("client/public/manifest.json"));
+
+        for (const field of ["theme_color", "background_color"])
+            assert.equal(manifest[field], background(DEFAULT_PALETTE, "dark"),
+                `${field} is a colour no palette paints, so the installed app's splash matches nothing`);
+    });
+
+    /**
+     * The boot script writes the meta once, before first paint - and nothing
+     * wrote it again. A palette change in the dialog, or the machine flipping
+     * at dusk under "system", repainted the page and left the Android chrome
+     * bar in the outgoing colour until a full reload. The provider's commit
+     * effect is where every later change already lands, so the meta follows
+     * from there - read off the freshly stamped document rather than from a
+     * third copy of the page colours, which would be one more pair of ends
+     * for this file to hold together.
+     */
+    it("is restamped by the provider when the theme changes after boot", () => {
+        assert.match(context, /meta\[name="theme-color"\]/,
+            "ThemeContext never touches the meta, so a live change strands the browser chrome");
+        assert.match(context, /getPropertyValue\("--background"\)/,
+            "the provider should ask the stamped document for the page colour, not its own table");
+        assert.doesNotMatch(context, /#[\da-fA-F]{6}\b/,
+            "a hex literal in the provider is a page colour the stylesheet does not own");
+    });
 });

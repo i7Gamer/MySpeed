@@ -72,6 +72,16 @@ export const ThemeProvider = (props) => {
     useEffect(() => {
         document.documentElement.setAttribute("data-theme", resolved);
         document.documentElement.setAttribute("data-palette", palette);
+
+        // The browser chrome, kept in step after boot. themeBoot.js writes
+        // this meta once, before first paint, from a table of its own; every
+        // change after that lands here instead, where the freshly stamped
+        // document can simply be asked for its page colour - a third copy of
+        // the table would be one more pair of ends for a test to hold together.
+        const meta = document.querySelector('meta[name="theme-color"]');
+
+        if (meta) meta.setAttribute("content",
+            getComputedStyle(document.documentElement).getPropertyValue("--background").trim());
     }, [resolved, palette]);
 
     const setTheme = useCallback((next) => {
