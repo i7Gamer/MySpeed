@@ -1,10 +1,12 @@
 import React, {createContext, useCallback, useEffect, useMemo, useState} from "react";
 import {readStored, writeStored} from "@/common/utils/Storage";
 import {DEFAULT_THEME, normaliseTheme, resolveTheme, THEME_SYSTEM} from "./themeChoice";
+import {DEFAULT_PALETTE, normalisePalette} from "./paletteChoice";
 
 export const ThemeContext = createContext({});
 
 const STORAGE_KEY = "theme";
+const PALETTE_KEY = "palette";
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
 /**
@@ -20,6 +22,7 @@ const prefersDark = () => typeof window !== "undefined" && typeof window.matchMe
 
 export const ThemeProvider = (props) => {
     const [theme, setStoredTheme] = useState(() => normaliseTheme(readStored(STORAGE_KEY)));
+    const [palette, setStoredPalette] = useState(() => normalisePalette(readStored(PALETTE_KEY)));
     const [systemDark, setSystemDark] = useState(prefersDark);
 
     /**
@@ -58,20 +61,31 @@ export const ThemeProvider = (props) => {
      * puts it in place in time. Writing an attribute the value it already holds
      * is a no-op, which is what makes this safe to run on every render.
      */
-    if (typeof document !== "undefined") document.documentElement.setAttribute("data-theme", resolved);
+    if (typeof document !== "undefined") {
+        document.documentElement.setAttribute("data-theme", resolved);
+        document.documentElement.setAttribute("data-palette", palette);
+    }
 
     // And again after commit, because the render above may be one React throws
     // away - a concurrent render that never commits would otherwise leave the
     // document describing a theme the reader never chose.
     useEffect(() => {
         document.documentElement.setAttribute("data-theme", resolved);
-    }, [resolved]);
+        document.documentElement.setAttribute("data-palette", palette);
+    }, [resolved, palette]);
 
     const setTheme = useCallback((next) => {
         const chosen = normaliseTheme(next);
 
         setStoredTheme(chosen);
         writeStored(STORAGE_KEY, chosen);
+    }, []);
+
+    const setPalette = useCallback((next) => {
+        const chosen = normalisePalette(next);
+
+        setStoredPalette(chosen);
+        writeStored(PALETTE_KEY, chosen);
     }, []);
 
     /**
@@ -81,10 +95,10 @@ export const ThemeProvider = (props) => {
      * boolean could not have answered once there is more than one dark theme.
      */
     const value = useMemo(() => ({
-        theme, setTheme, resolved,
+        theme, setTheme, resolved, palette, setPalette,
         isDarkMode: resolved !== "light",
         followsSystem: theme === THEME_SYSTEM
-    }), [theme, setTheme, resolved]);
+    }), [theme, setTheme, resolved, palette, setPalette]);
 
     return (
         <ThemeContext.Provider value={value}>
@@ -93,4 +107,4 @@ export const ThemeProvider = (props) => {
     );
 };
 
-export {DEFAULT_THEME, THEME_SYSTEM};
+export {DEFAULT_THEME, THEME_SYSTEM, DEFAULT_PALETTE};

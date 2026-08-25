@@ -730,6 +730,14 @@
       "light": "Açık",
       "light_desc": "Gündüz kullanımı için daha parlak görünüm"
     },
+    "palette": {
+      "title": "Renkler",
+      "description": "Arayüzde kullanılacak renk tonlarını seçin.",
+      "slate_desc": "Soğuk mavi-gri. MySpeed'in varsayılan renkleri",
+      "nord_desc": "Arktik mavi tonları, daha yumuşak kontrast",
+      "carbon_desc": "Neredeyse siyah ve nötr, en yüksek kontrast",
+      "ember_desc": "Sıcak kahverengi tonları ve düşük mavi ışık"
+    },
     "time_format": {
       "title": "Saat biçimi",
       "description": "Saatlerin uygulama genelinde nasıl gösterileceği.",

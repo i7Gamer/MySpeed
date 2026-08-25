@@ -730,6 +730,14 @@
       "light": "浅色",
       "light_desc": "白天使用更明亮"
     },
+    "palette": {
+      "title": "颜色",
+      "description": "选择界面使用的色调。",
+      "slate_desc": "冷调蓝灰，MySpeed 的默认配色",
+      "nord_desc": "北极蓝调，对比更柔和",
+      "carbon_desc": "近乎纯黑且中性，对比最强",
+      "ember_desc": "暖棕色调，蓝光更少"
+    },
     "time_format": {
       "title": "时间格式",
       "description": "应用中的时间显示方式。",

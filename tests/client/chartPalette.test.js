@@ -54,6 +54,21 @@ describe("the chart palette", () => {
         return found;
     };
 
+    /** The same blocks, keeping what each property was declared as. */
+    const declaredValues = (selector) => {
+        const found = {};
+        let at = css.indexOf(selector);
+
+        while (at !== -1) {
+            const block = css.slice(at, css.indexOf("}", at));
+
+            for (const [, name, value] of block.matchAll(/--([\w-]+):\s*([^;]+);/g)) found[name] = value.trim();
+            at = css.indexOf(selector, at + 1);
+        }
+
+        return found;
+    };
+
     /** Every property chartThemeColors asks the document for. */
     const read = () => {
         const body = config.slice(config.indexOf("export const chartThemeColors"));
@@ -79,11 +94,37 @@ describe("the chart palette", () => {
             "chartThemeColors asks for these and the stylesheet never declares them - they resolve to the fallback grey");
     });
 
-    it("gives the light theme its own chrome", () => {
-        const light = declared("[data-theme=light]");
+    /**
+     * The chrome a mark sits in follows the chrome everything else sits in.
+     *
+     * These were four hand-written pairs - a tick colour, a tooltip background,
+     * a tooltip border, restated per theme with the same values the surfaces
+     * already had. That is two places to change and one of them to forget, and
+     * it does not survive a second palette: eight blocks, each restating the
+     * dialog colours a chart's tooltip has to match.
+     *
+     * So they point at the surfaces instead, and a palette gets them for free.
+     * What has to be checked is that they still point at something.
+     */
+    it("takes its chrome from the surfaces", () => {
+        const root = declaredValues(":root");
 
-        for (const name of ["chart-grid", "chart-tick", "chart-tooltip-bg", "chart-crosshair"])
-            assert.ok(light.has(name), `${name} is a dark-theme value the light theme inherits unchanged`);
+        const stranded = ["chart-tick", "chart-tooltip-bg", "chart-tooltip-title",
+            "chart-tooltip-body", "chart-tooltip-border"]
+            .map((name) => [name, /^var\(--([\w-]+)\)$/.exec(root[name] ?? "")])
+            .filter(([, reference]) => !reference || root[reference[1]] === undefined)
+            .map(([name]) => `${name} = ${root[name] ?? "undeclared"}`);
+
+        assert.deepEqual(stranded, [],
+            "these do not resolve to a surface, so a palette cannot move them");
+    });
+
+    /** The two that cannot derive, because they carry an alpha of their own. */
+    it("states the chrome that has to be stated, per palette", () => {
+        for (const selector of [":root", "[data-theme=light]"])
+            for (const name of ["chart-grid", "chart-crosshair"])
+                assert.ok(declared(selector).has(name),
+                    `${name} is missing from ${selector}, so it holds the outgoing theme's value`);
     });
 });
 

@@ -123,7 +123,7 @@ $dialog-secondary-text: 0.85rem
   &.preset-active
     background-color: $accent-primary
     border-color: $accent-primary
-    color: #fff
+    color: $on-accent
 
 .calendar-selecting
   color: $subtext
@@ -218,11 +218,11 @@ $dialog-secondary-text: 0.85rem
     opacity: 0.4
   
   &.in-range
-    background-color: rgba(16, 185, 129, 0.2)
+    background-color: rgba(var(--accent-primary-rgb), 0.2)
   
   &.range-start
     background-color: $accent-primary
-    color: #fff
+    color: $on-accent
     font-weight: 600
     border-radius: 0.25rem 0 0 0.25rem
     
@@ -231,7 +231,7 @@ $dialog-secondary-text: 0.85rem
   
   &.range-end
     background-color: $accent-primary
-    color: #fff
+    color: $on-accent
     font-weight: 600
     border-radius: 0 0.25rem 0.25rem 0
   

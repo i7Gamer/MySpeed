@@ -36,7 +36,7 @@ $row-min-height: 3rem
 
   &:hover
     border-color: var(--accent-primary)
-    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(16, 185, 129, 0.1)
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(var(--accent-primary-rgb), 0.1)
 
   // Lifting an open card drags its whole panel with it, which reads as the page
   // jumping rather than as a hover.
@@ -292,7 +292,7 @@ $row-min-height: 3rem
   &:hover
     color: $accent-danger
     border-color: $accent-danger
-    background-color: rgba(239, 68, 68, 0.08)
+    background-color: rgba(var(--accent-danger-rgb), 0.08)
 
   svg
     width: 0.85rem

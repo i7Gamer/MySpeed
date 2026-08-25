@@ -719,24 +719,32 @@
     "use_recommended": "Gebruik aanbevolen"
   },
   "preferences": {
-    "title": "named@@0",
+    "title": "Voorkeuren",
     "theme": {
       "title": "Uiterlijk",
       "description": "Schakel tussen donker en licht interface.",
       "system": "Systeem",
       "system_desc": "De instelling van dit apparaat volgen",
       "dark": "Donker",
-      "dark_desc": "Makkelijker op de ogen in licht",
+      "dark_desc": "Prettiger voor de ogen bij weinig licht",
       "light": "Licht",
       "light_desc": "Heldere look voor overdag gebruik"
+    },
+    "palette": {
+      "title": "Kleuren",
+      "description": "Kies in welke tinten de interface wordt weergegeven.",
+      "slate_desc": "Koel blauwgrijs. De kleuren die MySpeed meelevert",
+      "nord_desc": "Arctisch blauw, zachter contrast",
+      "carbon_desc": "Bijna zwart en neutraal, het sterkste contrast",
+      "ember_desc": "Warme bruintinten en weinig blauw licht"
     },
     "time_format": {
       "title": "Tijd formaat",
       "description": "Hoe kloktijden worden weergegeven in de app.",
       "h24": "24-uurs",
-      "h24_desc": "Weergavetijden zoals 14:30",
+      "h24_desc": "Geeft tijden weer als 14:30",
       "h12": "12-uur",
-      "h12_desc": "Weergave tijden zoals 2:30 uur"
+      "h12_desc": "Geeft tijden weer als 2:30 PM"
     },
     "speed_unit": {
       "title": "Snelheid eenheid",
@@ -744,7 +752,7 @@
       "mbps": "Mbps (Megabits per seconde)",
       "mbps_desc": "Standaard ISP / snelheidstest eenheid",
       "mbytes": "MB/s (Megabytes per seconde)",
-      "mbytes_desc": "Veelvoorkomende browsers en downloadmanagers"
+      "mbytes_desc": "Gebruikelijk in browsers en downloadmanagers"
     },
     "grade_values": {
       "title": "Beoordelingskleuren",

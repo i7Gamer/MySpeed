@@ -730,6 +730,14 @@
       "light": "Lumière",
       "light_desc": "Un look plus brillant pour une utilisation journalière"
     },
+    "palette": {
+      "title": "Couleurs",
+      "description": "Choisir les teintes de l'interface.",
+      "slate_desc": "Gris-bleu froid. Les couleurs livrées avec MySpeed",
+      "nord_desc": "Bleus arctiques, contraste plus doux",
+      "carbon_desc": "Presque noir et neutre, le contraste le plus fort",
+      "ember_desc": "Bruns chauds et peu de lumière bleue"
+    },
     "time_format": {
       "title": "Format de l'heure",
       "description": "Comment les heures de l'horloge sont affichées dans l'application.",

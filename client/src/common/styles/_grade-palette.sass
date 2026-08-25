@@ -1,43 +1,20 @@
-@use "@/common/styles/colors" as *
-
 // What a grade looks like.
 //
 // The vocabulary is the one every grader in TestUtil returns - green, orange,
 // red, blue, error. Those names are historical and describe the default palette
 // rather than the meaning; the properties below are where the meaning lives, so
-// a palette in which "good" is not green is a change to this file alone.
+// a palette in which "good" is not green is a change to one map entry.
+//
+// The five --grade-* properties themselves are declared in _colors.sass, beside
+// the accents, because a palette has to be able to set them: they used to be
+// var(--accent-primary) and friends, which meant a palette could change what a
+// button looks like or what a verdict looks like but never one without the
+// other - and the two answer to different contrast floors, since a grade is
+// rendered as text and an accent is usually a fill.
 //
 // Emitted once, through default.sass, which is the one stylesheet App.jsx
 // loads. The mixin that reads these lives in _grades.sass and emits nothing, so
 // a component can reach for it without copying any of this into its own sheet.
-
-// Separate properties rather than the accent palette used directly: a theme
-// that wants a different green for "a good line" than for "the primary accent"
-// can say so without redefining the accent everywhere else it is used.
-//
-// On :root, so a theme block - the [data-theme] rules in _colors.sass, or any
-// future one - overrides them exactly the way it overrides a colour.
-:root
-  --grade-good: var(--accent-primary)
-  --grade-fair: var(--accent-warning)
-  // A step of their own rather than the accent, which is what the note above
-  // says this file is for. A grade is rendered as text - the mixin below sets
-  // `color` from it - and $red and $blue measure 4.35:1 and 4.45:1 against the
-  // card surface, just under the 4.5:1 that text answers to. Lightening the
-  // accents instead would have fixed the figure and dimmed the white label on
-  // every danger button that uses the same token as a background.
-  --grade-poor: #{$red-on-dark}
-  // Not a verdict: a figure nobody measured. Blue and not red, because "not
-  // measured" and "bad" are different claims - see gradeBelow in TestUtil.
-  --grade-none: #{$blue-on-dark}
-  --grade-failed: #{$red-on-dark}
-
-// Light mode reads them off the accents again, because those were re-stepped
-// for a light background in _colors.sass and already clear the bar there.
-[data-theme="light"]
-  --grade-poor: var(--accent-danger)
-  --grade-none: var(--blue)
-  --grade-failed: var(--accent-danger)
 
 // The colour utilities every glyph in the app already wears, pointed at the
 // properties above. Nothing under components/ names a colour for a grade.
@@ -55,7 +32,6 @@
 
 .icon-error
   color: var(--grade-failed)
-  filter: brightness(0.9)
 
 // A row states its grade once, on itself, and its parts read it from there.
 // This is what lets a part that does not wear the grade today start wearing it

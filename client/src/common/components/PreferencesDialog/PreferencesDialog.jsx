@@ -1,11 +1,13 @@
 import React, {useContext, useState} from "react";
 import {Dialog, DialogHeader, DialogBody, DialogFooter} from "@/common/contexts/Dialog";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
-import {faCheck, faClock, faDesktop, faDroplet, faGauge, faMoon, faPalette, faSun} from "@fortawesome/free-solid-svg-icons";
+import {faCheck, faClock, faDesktop, faDroplet, faGauge, faMoon, faPalette, faSun, faSwatchbook} from "@fortawesome/free-solid-svg-icons";
 import {t} from "i18next";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {ThemeContext} from "@/common/contexts/Theme";
 import {DEFAULT_THEME, THEME_DARK, THEME_LIGHT, THEME_SYSTEM} from "@/common/contexts/Theme/themeChoice";
+import {DEFAULT_PALETTE, PALETTES} from "@/common/contexts/Theme/paletteChoice";
+import {PALETTE_NAMES} from "@/common/utils/InvariantText";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
 import {
     PreferencesContext,
@@ -25,6 +27,24 @@ const THEME_OPTIONS = [
     {id: THEME_DARK, labelKey: "preferences.theme.dark", descKey: "preferences.theme.dark_desc", icon: faMoon},
     {id: THEME_LIGHT, labelKey: "preferences.theme.light", descKey: "preferences.theme.light_desc", icon: faSun}
 ];
+
+/**
+ * The hue families, built from the list rather than written out.
+ *
+ * PALETTES is what ThemeContext will accept and what _colors.sass emits a
+ * block for; a hand-written array here would be a third list to keep in step,
+ * and the one most likely to fall behind - a palette missing a row is invisible
+ * rather than broken.
+ *
+ * The name is a constant and only the line under it is translated - see
+ * PALETTE_NAMES. `swatch` is the palette's own id, which the row stamps on a
+ * small preview so the chips inside it resolve that palette's properties
+ * instead of the active one. That is the whole of the preview: no colour is
+ * named twice.
+ */
+const PALETTE_OPTIONS = PALETTES.map((id) => ({
+    id, swatch: id, label: PALETTE_NAMES[id], descKey: `preferences.palette.${id}_desc`
+}));
 
 /**
  * How far a verdict is carried across a reading.
@@ -50,7 +70,25 @@ const SPEED_UNIT_OPTIONS = [
     {id: SPEED_UNIT_MBYTES, labelKey: "preferences.speed_unit.mbytes", descKey: "preferences.speed_unit.mbytes_desc"}
 ];
 
-const PreferencesSection = ({icon, title, description, options, value, onChange}) => (
+/**
+ * A preview of a palette, painted in that palette.
+ *
+ * The attributes are the point: _colors.sass declares its blocks against
+ * [data-palette] and [data-palette][data-theme=light], and a custom property
+ * resolves from the nearest ancestor that matches - so stamping both on this
+ * span makes everything inside it that palette's colours while the rest of the
+ * dialog stays in the active one. Naming the four hexes here instead would be
+ * a second copy of the palette, in the one place a reader compares them.
+ */
+const PaletteSwatch = ({palette, theme}) => (
+    <span className="palette-swatch" data-palette={palette} data-theme={theme} aria-hidden="true">
+        <span className="palette-swatch-dot palette-swatch-good"/>
+        <span className="palette-swatch-dot palette-swatch-fair"/>
+        <span className="palette-swatch-dot palette-swatch-poor"/>
+    </span>
+);
+
+const PreferencesSection = ({icon, title, description, options, value, onChange, theme}) => (
     <div className="preferences-section">
         <div className="preferences-section-header">
             <FontAwesomeIcon icon={icon}/>
@@ -64,10 +102,13 @@ const PreferencesSection = ({icon, title, description, options, value, onChange}
                 <SelectableOption
                     key={option.id}
                     icon={option.icon}
-                    title={t(option.labelKey)}
+                    // A name that is the same in every language is a constant, not a
+                    // key - see InvariantText. Every row has exactly one of the two.
+                    title={option.label ?? t(option.labelKey)}
                     description={t(option.descKey)}
                     active={value === option.id}
                     onClick={() => onChange(option.id)}
+                    adornment={option.swatch ? <PaletteSwatch palette={option.swatch} theme={theme}/> : undefined}
                 />
             ))}
         </SelectableList>
@@ -76,7 +117,7 @@ const PreferencesSection = ({icon, title, description, options, value, onChange}
 
 export const PreferencesDialog = ({open, onClose}) => {
     const [preferences, updatePreferences] = useContext(PreferencesContext);
-    const {theme: activeTheme, setTheme: applyTheme} = useContext(ThemeContext);
+    const {theme: activeTheme, setTheme: applyTheme, palette: activePalette, setPalette: applyPalette, resolved} = useContext(ThemeContext);
     const updateToast = useContext(ToastNotificationContext);
     // Read when the dialog opens, not at mount - see useSyncOnOpen. This also
     // replaces the hand-rolled reset the old close handler carried for the
@@ -84,6 +125,7 @@ export const PreferencesDialog = ({open, onClose}) => {
     const [timeFormat, setTimeFormat] = useState(null);
     const [speedUnit, setSpeedUnit] = useState(null);
     const [theme, setTheme] = useState(DEFAULT_THEME);
+    const [palette, setPalette] = useState(DEFAULT_PALETTE);
     const [gradeValues, setGradeValues] = useState(GRADE_VALUE_OPTIONS[0].id);
 
     useSyncOnOpen(open, () => {
@@ -93,12 +135,14 @@ export const PreferencesDialog = ({open, onClose}) => {
         // "system" is in force must show System selected, not whichever of dark
         // and light the machine happens to be asking for.
         setTheme(activeTheme);
+        setPalette(activePalette);
         setGradeValues(preferences.gradeValues ? "values" : "glyph");
     });
 
     const handleSave = (close) => {
         updatePreferences({timeFormat, speedUnit, gradeValues: gradeValues === "values"});
         if (theme !== activeTheme) applyTheme(theme);
+        if (palette !== activePalette) applyPalette(palette);
         updateToast(t("dropdown.changes_applied"), "green", faCheck);
         close();
     };
@@ -117,6 +161,18 @@ export const PreferencesDialog = ({open, onClose}) => {
                                 options={THEME_OPTIONS}
                                 value={theme}
                                 onChange={setTheme}
+                            />
+                            <PreferencesSection
+                                icon={faSwatchbook}
+                                title={t("preferences.palette.title")}
+                                description={t("preferences.palette.description")}
+                                options={PALETTE_OPTIONS}
+                                value={palette}
+                                onChange={setPalette}
+                                // The mode each swatch is previewed in. The chosen theme
+                                // may be "system", which no stylesheet block matches - a
+                                // preview has to be shown in one of the two.
+                                theme={theme === THEME_SYSTEM ? resolved : theme}
                             />
                             <PreferencesSection
                                 icon={faClock}

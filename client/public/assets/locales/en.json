@@ -730,6 +730,14 @@
       "light": "Light",
       "light_desc": "Brighter look for daytime use"
     },
+    "palette": {
+      "title": "Colours",
+      "description": "Choose the hues the interface is drawn in.",
+      "slate_desc": "Cool blue-grey. The colours MySpeed ships with",
+      "nord_desc": "Arctic blues, softer contrast",
+      "carbon_desc": "Near-black and neutral, the strongest contrast",
+      "ember_desc": "Warm browns and low blue light"
+    },
     "time_format": {
       "title": "Time format",
       "description": "How clock times are displayed throughout the app.",

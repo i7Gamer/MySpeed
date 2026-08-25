@@ -730,6 +730,14 @@
       "light": "Claro",
       "light_desc": "Busca brillante para uso diurno"
     },
+    "palette": {
+      "title": "Colores",
+      "description": "Elegir los tonos de la interfaz.",
+      "slate_desc": "Gris azulado frío. Los colores que trae MySpeed",
+      "nord_desc": "Azules árticos, contraste más suave",
+      "carbon_desc": "Casi negro y neutro, el contraste más fuerte",
+      "ember_desc": "Marrones cálidos y poca luz azul"
+    },
     "time_format": {
       "title": "Formato de hora",
       "description": "Cómo se muestran las horas del reloj en toda la aplicación.",

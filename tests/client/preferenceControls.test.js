@@ -4,7 +4,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readSource, withoutJsComments } from "../helpers/source.js";
-import { compile } from "../helpers/sass.mjs";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const LOCALES = path.join(ROOT, "client", "public", "assets", "locales");
@@ -73,17 +72,38 @@ describe("every preference", () => {
 describe("every option the preferences dialog offers", () => {
     const english = readLocale("en");
 
-    const optionKeys = () => [...dialog.matchAll(/labelKey:\s*"([^"]+)",\s*descKey:\s*"([^"]+)"/g)]
-        .flatMap(([, label, desc]) => [label, desc]);
+    // Every descKey, and every labelKey that exists. A row whose name is the
+    // same in every language carries a `label` constant instead - see
+    // PALETTE_NAMES - so matching only on the labelKey/descKey pair would have
+    // skipped the four palette rows silently, which is the failure this
+    // describe exists to catch.
+    const optionKeys = () => [...dialog.matchAll(/(?:labelKey|descKey):\s*"([^"]+)"/g)]
+        .map(([, key]) => key);
+
+    /**
+     * The rows themselves, so a row that declares neither a key nor a constant
+     * - or both - fails rather than going unmeasured.
+     */
+    const optionRows = () => [...dialog.matchAll(/\{id:[^}]*?descKey:[^}]*?}/g)].map(([row]) => row);
 
     it("finds the options to check", () => {
         assert.ok(optionKeys().length >= 14, `only found ${optionKeys().length} option strings`);
+        assert.ok(optionRows().length >= 9, `only found ${optionRows().length} option rows`);
     });
 
     it("has a string for its label and its description", () => {
         const missing = optionKeys().filter((key) => valueAt(english, key) === undefined);
 
         assert.deepEqual(missing, [], "these option rows would render their own key");
+    });
+
+    it("names itself exactly one way", () => {
+        const wrong = optionRows()
+            .filter((row) => /\blabelKey:/.test(row) === /\blabel:/.test(row))
+            .map((row) => row.slice(0, 60));
+
+        assert.deepEqual(wrong, [],
+            "a row needs either a labelKey to translate or a label that is the same everywhere");
     });
 
     it("names the section it sits in", () => {
@@ -95,100 +115,15 @@ describe("every option the preferences dialog offers", () => {
     });
 });
 
-/**
- * The verdict colours are rendered as text, so they answer to text contrast.
+/*
+ * The verdict colours used to be checked here, against two hard-coded
+ * selectors and two hard-coded surfaces. They are checked in
+ * paletteContrast.test.js now, which finds the blocks in the compiled
+ * stylesheet instead of naming them - every palette, both modes, every surface
+ * a figure can land on, and the marks and the accent labels with them.
  *
- * They never were. All five accents were chosen against a near-black background
- * and light mode inherited them unchanged - so a grade printed in the old green
- * measured 2.42:1 on #f8fafc, under even the 3:1 floor for large text, and the
- * figure carrying the verdict was the least readable thing on the page.
- *
- * Computed from the stylesheet rather than from a list here, so a palette added
- * later is held to the same bar without anybody remembering to add it.
+ * The version that lived here could also measure nothing and pass: it filtered
+ * to values starting with "#", so a grade that resolved to anything else was
+ * skipped rather than failed. The replacement asserts that every colour it is
+ * about to measure is one it can measure.
  */
-describe("the grade colours", () => {
-    const css = compile("common/styles/default.sass");
-
-    const luminance = (hex) => {
-        const channel = (value) => {
-            const v = value / 255;
-            return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-        };
-        const [r, g, b] = [1, 3, 5].map((i) => channel(parseInt(hex.slice(i, i + 2), 16)));
-
-        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    };
-
-    const contrast = (a, b) => {
-        const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-        return (high + 0.05) / (low + 0.05);
-    };
-
-    /** Every custom property a selector's blocks declare, across the sheet. */
-    const declaredIn = (selector) => {
-        const found = {};
-        let at = css.indexOf(selector);
-
-        assert.notEqual(at, -1, `${selector} is not in the compiled stylesheet`);
-
-        // Several blocks share the selector - _colors.sass writes one and
-        // _grade-palette.sass another - and the later one wins, so they are read
-        // in source order and allowed to overwrite.
-        while (at !== -1) {
-            const block = css.slice(at, css.indexOf("}", at));
-
-            for (const [, name, value] of block.matchAll(/--([\w-]+):\s*([^;]+);/g)) found[name] = value.trim();
-            at = css.indexOf(selector, at + 1);
-        }
-
-        return found;
-    };
-
-    /**
-     * A grade's actual colour. Most point at an accent through var(), and light
-     * mode overrides only some of them - so an unresolved name falls back to
-     * what :root declared, exactly as the cascade would.
-     */
-    const resolve = (name, block, root) => {
-        const value = block[name] ?? root[name];
-        if (!value) return null;
-
-        const reference = value.match(/^var\(--([\w-]+)\)$/);
-        return reference ? resolve(reference[1], block, root) : value;
-    };
-
-    // The grades, not the accents. These are what carries a verdict, and
-    // _grades.sass renders them with `color` - the accents they are often drawn
-    // from are also button backgrounds, which answer to a different bar.
-    const READ_AS_TEXT = ["grade-good", "grade-fair", "grade-poor", "grade-none", "grade-failed"];
-    const TEXT_CONTRAST = 4.5;
-
-    const root = declaredIn(":root");
-
-    it("finds both themes in the stylesheet", () => {
-        assert.ok(READ_AS_TEXT.every((name) => resolve(name, root, root)?.startsWith("#")),
-            "the dark grade colours could not be resolved to hex");
-        assert.ok(Object.keys(declaredIn("[data-theme=light]")).length >= 4,
-            "light mode declares nothing of its own, so it inherits colours picked for a dark page");
-    });
-
-    for (const [theme, selector, surface] of [
-        ["dark", ":root", "#0f1419"],
-        ["dark card", ":root", "#1a2029"],
-        ["light", "[data-theme=light]", "#f8fafc"],
-        ["light card", "[data-theme=light]", "#ffffff"]
-    ]) {
-        it(`are readable on the ${theme} surface`, () => {
-            const block = declaredIn(selector);
-
-            const failing = READ_AS_TEXT
-                .map((name) => [name, resolve(name, block, root)])
-                .filter(([, value]) => value?.startsWith("#"))
-                .map(([name, value]) => [name, contrast(value, surface)])
-                .filter(([, ratio]) => ratio < TEXT_CONTRAST)
-                .map(([name, ratio]) => `${name} ${ratio.toFixed(2)}:1`);
-
-            assert.deepEqual(failing, [], `below ${TEXT_CONTRAST}:1 against ${surface}`);
-        });
-    }
-});

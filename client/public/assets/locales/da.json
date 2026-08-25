@@ -730,6 +730,14 @@
       "light": "Lys",
       "light_desc": "Lysere udseende til dagbrug"
     },
+    "palette": {
+      "title": "Farver",
+      "description": "Vælg, hvilke nuancer grænsefladen vises i.",
+      "slate_desc": "Kølig blågrå. Farverne, som MySpeed leveres med",
+      "nord_desc": "Arktisk blå, blødere kontrast",
+      "carbon_desc": "Næsten sort og neutral, den stærkeste kontrast",
+      "ember_desc": "Varme brune toner og mindre blåt lys"
+    },
     "time_format": {
       "title": "Tid format",
       "description": "Hvordan ur gange vises i hele appen.",
@@ -744,7 +752,7 @@
       "mbps": "Mbps (Megabits per sekund)",
       "mbps_desc": "Standard ISP / hastighedstestenhed",
       "mbytes": "MB/s (Megabytes per sekund)",
-      "mbytes_desc": "Almindelig i browsere og download ledere"
+      "mbytes_desc": "Almindelig i browsere og downloadprogrammer"
     },
     "grade_values": {
       "title": "Karakterfarver",

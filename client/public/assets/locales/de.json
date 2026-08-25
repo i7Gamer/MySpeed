@@ -728,7 +728,15 @@
       "dark": "Dunkel",
       "dark_desc": "Einfacher an den Augen bei niedrigem Licht",
       "light": "Hell",
-      "light_desc": "Hellere Suche nach Tageszeit"
+      "light_desc": "Helleres Aussehen für den Tag"
+    },
+    "palette": {
+      "title": "Farben",
+      "description": "Wähle die Farbtöne, in denen die Oberfläche dargestellt wird.",
+      "slate_desc": "Kühles Blaugrau. Die Farben, die MySpeed mitbringt",
+      "nord_desc": "Arktisches Blau, weicherer Kontrast",
+      "carbon_desc": "Fast schwarz und neutral, der stärkste Kontrast",
+      "ember_desc": "Warme Brauntöne und wenig blaues Licht"
     },
     "time_format": {
       "title": "Zeitformat",
@@ -736,7 +744,7 @@
       "h24": "24 Stunden",
       "h24_desc": "Zeige Zeiten wie 14:30",
       "h12": "12 Stunden",
-      "h12_desc": "Zeige Zeiten wie 14:30 Uhr"
+      "h12_desc": "Zeige Zeiten wie 2:30 PM"
     },
     "speed_unit": {
       "title": "Geschwindigkeitseinheit",

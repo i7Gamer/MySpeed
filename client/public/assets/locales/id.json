@@ -730,6 +730,14 @@
       "light": "Terang",
       "light_desc": "Tampilan lebih cerah untuk penggunaan siang hari"
     },
+    "palette": {
+      "title": "Warna",
+      "description": "Pilih corak warna yang digunakan antarmuka.",
+      "slate_desc": "Biru keabuan dingin. Warna bawaan MySpeed",
+      "nord_desc": "Biru arktik, kontras lebih lembut",
+      "carbon_desc": "Hampir hitam dan netral, kontras paling kuat",
+      "ember_desc": "Cokelat hangat dan minim cahaya biru"
+    },
     "time_format": {
       "title": "Format waktu",
       "description": "Bagaimana waktu ditampilkan di seluruh aplikasi.",

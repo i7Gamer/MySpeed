@@ -730,6 +730,14 @@
       "light": "Światło",
       "light_desc": "Jasne szukanie użycia w ciągu dnia"
     },
+    "palette": {
+      "title": "Kolory",
+      "description": "Wybierz barwy, w jakich utrzymany jest interfejs.",
+      "slate_desc": "Chłodna błękitna szarość. Domyślne kolory MySpeed",
+      "nord_desc": "Arktyczne błękity, łagodniejszy kontrast",
+      "carbon_desc": "Prawie czarne i neutralne, najsilniejszy kontrast",
+      "ember_desc": "Ciepłe brązy i mało niebieskiego światła"
+    },
     "time_format": {
       "title": "Format czasu",
       "description": "Jak wyświetlane są czasy zegara w aplikacji.",

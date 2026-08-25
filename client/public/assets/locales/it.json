@@ -730,6 +730,14 @@
       "light": "Chiaro",
       "light_desc": "Look più luminoso per l'uso diurno"
     },
+    "palette": {
+      "title": "Colori",
+      "description": "Scegli le tinte dell'interfaccia.",
+      "slate_desc": "Grigio-blu freddo. I colori originali di MySpeed",
+      "nord_desc": "Blu artici, contrasto più morbido",
+      "carbon_desc": "Quasi nero e neutro, il contrasto più forte",
+      "ember_desc": "Marroni caldi e poca luce blu"
+    },
     "time_format": {
       "title": "Formato orario",
       "description": "Come gli orari dell'orologio vengono visualizzati in tutta l'app.",
