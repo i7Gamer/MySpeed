@@ -76,6 +76,46 @@ describe("every dialog in the settings menu", () => {
 });
 
 /**
+ * The list that scrolls inside the language dialog.
+ *
+ * Raising it to 28rem made the dialog taller than a laptop viewport leaves
+ * room for, which handed `.dialog-main` - itself overflow auto - a few pixels
+ * of slack. A wheel at the list's bottom then chains into that slack: the
+ * whole dialog shifts up, the last language's bottom border slides under the
+ * dialog's edge, and scrolling back has to unwind the dialog before the list
+ * will sit at its real bottom again. Measured at 1280x620: 20px of slack, and
+ * the last row's border cropped by exactly the chained pixel.
+ *
+ * Two rules close both halves: the height yields to the viewport, so the
+ * dialog fits and the slack never exists - and the list contains its own
+ * overscroll, so whatever slack a window still produces cannot be reached
+ * from inside the list.
+ */
+describe("the language list", () => {
+    const css = compile("common/components/LanguageDialog/styles.sass");
+
+    const listRule = () => {
+        const at = css.indexOf(".language-list {");
+
+        assert.notEqual(at, -1, "the language list has no rule in its stylesheet");
+        return css.slice(at, css.indexOf("}", at));
+    };
+
+    it("keeps its wheel to itself at its ends", () => {
+        assert.match(listRule(), /overscroll-behavior:\s*contain/,
+            "a wheel at the list's end scrolls the dialog behind it, which hides the last row's border");
+    });
+
+    it("yields its height to the viewport before the dialog has to scroll", () => {
+        // The compiler may drop the redundant calc() inside min(), so the
+        // assertion reads the mechanism - a viewport term minus an allowance -
+        // rather than one spelling of it.
+        assert.match(listRule(), /max-height:\s*min\(28rem,\s*(?:calc\()?100dvh\s*-\s*\d/,
+            "a fixed max-height makes the dialog outgrow short viewports, which is where the slack comes from");
+    });
+});
+
+/**
  * The scrollbar, which had no visible thumb anywhere in the app.
  *
  * $light-gray is a border colour, and as a thumb it measured 1.30:1 against a
