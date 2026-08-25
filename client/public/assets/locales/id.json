@@ -23,30 +23,45 @@
     "unset": "Hapus",
     "retry": "Coba lagi",
     "login": "Masuk",
-    "save": "Save",
-    "saving": "Saving...",
+    "save": "Simpan",
+    "saving": "Menyimpan...",
     "password": {
       "title": "Kata sandi diperlukan",
       "placeholder": "Kata sandi Anda",
       "wrong": "Kata sandi yang Anda masukkan salah",
       "unlock": "Buka kunci"
     },
+    "setup_token": {
+      "title": "Token pemasangan diperlukan",
+      "description": "Instansi ini belum memiliki kata sandi, sehingga tidak dapat dibuka dari mesin lain. Masukkan token pemasangan dari log server, lalu pilih sebuah kata sandi.",
+      "placeholder": "Token pemasangan dari log server",
+      "wrong": "Itu bukan token pemasangan yang ada di log server"
+    },
+    "busy": {
+      "title": "Server sibuk",
+      "description": "Server sedang memeriksa kata sandi lain. Tunggu sebentar, lalu coba lagi."
+    },
+    "throttled": {
+      "title": "Terlalu banyak percobaan",
+      "description": "Terlalu banyak percobaan yang ditolak. Tunggu satu menit, lalu coba lagi."
+    },
     "api": {
       "title": "API tidak dapat dijangkau",
       "description": "MySpeed tidak dapat menjangkau API dari instance ini. Silakan coba lagi nanti."
     },
     "provider": {
-      "interface": "Antarmuka",
+      "interface": "Antarmuka jaringan",
       "server": "Server",
       "server_id": "ID Server",
-      "custom_url": "Custom URL",
+      "server_id_placeholder": "ID server mana pun, atau biarkan kosong",
+      "custom_url": "URL khusus",
       "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Pilih secara otomatis",
       "ookla_license": "Saya telah membaca dan menerima <Eula>EULA</Eula>, <GDPR>kebijakan privasi</GDPR> dan <TOS>ketentuan layanan</TOS> dari Ookla.",
-      "ookla_notice": "By using Ookla, you agree to their <Eula>EULA</Eula>, <GDPR>privacy policy</GDPR> and <TOS>terms of service</TOS>.",
-      "ookla_desc": "Popular provider with global server network",
-      "libre_desc": "Open-source, self-hostable speedtest",
-      "cloudflare_desc": "Fast CDN-based testing"
+      "ookla_notice": "Dengan menggunakan Ookla, Anda menyetujui <Eula>EULA</Eula>, <GDPR>kebijakan privasi</GDPR>, dan <TOS>ketentuan layanan</TOS> mereka.",
+      "ookla_desc": "Penyedia populer dengan jaringan server global",
+      "libre_desc": "Speedtest sumber terbuka yang bisa di-hosting sendiri",
+      "cloudflare_desc": "Pengujian cepat berbasis CDN"
     }
   },
   "dropdown": {
@@ -60,7 +75,7 @@
     "upload": "Kecepatan unggah optimal",
     "download": "Kecepatan unduh optimal",
     "recommendations": "Rekomendasi",
-    "optimal_values": "Optimal values",
+    "optimal_values": "Nilai optimal",
     "change_provider": "Ubah penyedia",
     "password": "Ubah kata sandi",
     "cron": "Atur frekuensi",
@@ -73,31 +88,31 @@
     "dark_mode": "Mode gelap",
     "theme_switched_light": "Beralih ke mode terang",
     "theme_switched_dark": "Beralih ke mode gelap",
-    "preferences": "Preferences",
+    "preferences": "Preferensi",
     "provider": "Tentang penyedia",
     "integrations": "Integrasi"
   },
   "about": {
-    "title": "About MySpeed",
-    "description": "MySpeed is an open-source speedtest analysis software that records your internet speed over a configurable period of time.",
+    "title": "Tentang MySpeed",
+    "description": "MySpeed adalah perangkat lunak analisis speedtest sumber terbuka yang merekam kecepatan internet Anda selama rentang waktu yang dapat diatur.",
     "github": "GitHub",
-    "website": "Website",
-    "donate": "Donate",
-    "translate": "Translate",
-    "made_by": "Made with"
+    "website": "Situs web",
+    "donate": "Donasi",
+    "translate": "Bantu terjemahkan",
+    "made_by": "Dibuat dengan"
   },
   "options": {
     "cron": {
-      "continuous": "Kontinyu (setiap menit)",
-      "continuous_desc": "Every minute - high resource usage",
-      "frequent": "Sangat sering (setiap 30 menit)",
-      "frequent_desc": "Every 30 minutes",
-      "default": "Default (setiap jam)",
-      "default_desc": "Every hour - recommended",
-      "rare": "Jarang (setiap 3 jam)",
-      "rare_desc": "Every 3 hours",
-      "really_rare": "Sangat jarang (setiap 6 jam)",
-      "really_rare_desc": "Every 6 hours"
+      "continuous": "Terus-menerus",
+      "continuous_desc": "Setiap menit - pemakaian sumber daya tinggi",
+      "frequent": "Sangat sering",
+      "frequent_desc": "Setiap 30 menit",
+      "default": "Bawaan",
+      "default_desc": "Setiap jam - disarankan",
+      "rare": "Jarang",
+      "rare_desc": "Setiap 3 jam",
+      "really_rare": "Sangat jarang",
+      "really_rare_desc": "Setiap 6 jam"
     },
     "level": {
       "no_access": "Tidak Ada Akses",
@@ -105,19 +120,31 @@
     }
   },
   "password": {
-    "no_access_desc": "Visitors must enter the password to view anything",
-    "read_access_desc": "Visitors can view data but can't change settings"
+    "no_access_desc": "Pengunjung harus memasukkan kata sandi untuk melihat apa pun",
+    "read_access_desc": "Pengunjung dapat melihat data tetapi tidak dapat mengubah pengaturan"
+  },
+  "locked": {
+    "password_desc": "Instansi ini dilindungi kata sandi. Masuk untuk melihat datanya.",
+    "token_hint": "Server menulis ulang token ke lognya setiap kali menolak sebuah permintaan, paling sering sekali setiap sepuluh menit — jadi memuat ulang halaman ini akan menaruh salinan baru di akhir log.",
+    "enter_token": "Masukkan token pemasangan"
   },
   "pause": {
-    "manual": "Pause Indefinitely",
-    "manual_desc": "Pause until manually resumed",
-    "short": "Short Break",
-    "short_desc": "Pause for 1 hour",
-    "medium": "Medium Break",
-    "medium_desc": "Pause for 6 hours",
-    "long": "Long Break",
-    "long_desc": "Pause for 12 hours",
-    "custom": "Custom Duration"
+    "manual": "Jeda tanpa batas",
+    "manual_desc": "Jeda sampai dilanjutkan secara manual",
+    "short": "Jeda singkat",
+    "short_desc": "Jeda selama 1 jam",
+    "medium": "Jeda sedang",
+    "medium_desc": "Jeda selama 6 jam",
+    "long": "Jeda panjang",
+    "long_desc": "Jeda selama 12 jam",
+    "custom": "Durasi khusus",
+    "quiet_hours": "Jam tenang",
+    "quiet_hours_desc": "Pengujian terjadwal dilewati setiap hari di antara jam-jam ini. Pengujian yang Anda mulai sendiri selalu dijalankan.",
+    "timezone": "Zona waktu",
+    "timezone_server": "Jam server",
+    "timezone_desc": "Jam yang menjadi acuan bagi jam tenang maupun jadwal pengujian.",
+    "quiet_from": "Dari",
+    "quiet_until": "Sampai"
   },
   "page": {
     "overview": "Ringkasan",
@@ -136,25 +163,34 @@
     "manually": "Atur secara manual",
     "new_password": "Atur kata sandi baru",
     "password_placeholder": "Kata sandi baru",
+    "show_password": "Tampilkan kata sandi",
+    "hide_password": "Sembunyikan kata sandi",
+    "confirm_password": "Ulangi",
+    "confirm_password_placeholder": "Kata sandi baru sekali lagi",
+    "password_mismatch": "Kedua kata sandi tidak cocok",
+    "remove_password": "Hapus kata sandi",
+    "remove_password_title": "Hapus kata sandinya?",
+    "remove_password_desc": "Anda akan dikeluarkan dan instansi ini dibiarkan tanpa kata sandi. Setelah itu ia terbuka bagi siapa pun di mesin tempatnya berjalan, dan meminta token pemasangan dari log server kepada setiap mesin lain sampai kata sandi baru ditetapkan.",
     "password_removed": "Kunci kata sandi telah dihapus dan kata sandi yang diatur telah dihapus.",
     "level": "Ubah level",
     "level_title": "Hak untuk pengunjung",
     "cron_title": "Atur frekuensi pengujian",
     "cron_rules": "Aturan Cron",
     "cron_next_test": "Pengujian Berikutnya:",
-    "custom_cron": "Custom cron expression",
-    "schedule_offset": "Offset schedule",
-    "schedule_offset_desc": "Adds a small delay to prevent tests from starting at exact times",
-    "advanced": "Advanced",
+    "custom_cron": "Ekspresi cron khusus",
+    "schedule_offset": "Geser jadwal",
+    "schedule_offset_desc": "Menambahkan sedikit jeda agar pengujian tidak dimulai tepat pada waktu bulat",
+    "advanced": "Lanjutan",
     "time_title": "Tampilkan pengujian dari ... terakhir",
     "download": "Unduh",
     "pause_title": "Jeda speedtest selama...",
     "hours": "Jam",
     "pause": "Jeda",
-    "pause_manual_hint": "Leave empty to pause indefinitely",
+    "pause_manual_hint": "Biarkan kosong untuk menjeda tanpa batas",
     "release_manually": "Lepaskan secara manual",
     "language": "Ubah bahasa",
-    "view_title": "Alihkan tampilan"
+    "view_title": "Alihkan tampilan",
+    "quiet_hours_saved": "Jam tenang tersimpan"
   },
   "header": {
     "title": "MySpeed",
@@ -165,7 +201,7 @@
     "paused": "Speedtest saat ini dijeda. Silakan lanjutkan jika Anda ingin melakukan satu.",
     "running": "Speedtest sudah berjalan. Silakan tunggu sebentar.",
     "admin_login": "Masuk Admin",
-    "servers": "Servers",
+    "servers": "Server",
     "beta": {
       "title": "Versi Beta",
       "description": "Fitur ini masih dalam beta. Jika Anda menemukan bug, silakan laporkan <Link>di sini</Link>."
@@ -198,21 +234,24 @@
     "confirm_reset": "Ya, reset",
     "settings_exported": "Pengaturan telah diekspor",
     "settings_imported": "Pengaturan telah diimpor",
-    "retention": "Data retention",
-    "retention_desc": "How long speedtest results are kept before being automatically deleted.",
-    "retention_saved": "Retention period updated",
+    "retention": "Penyimpanan data",
+    "retention_desc": "Berapa lama hasil speedtest disimpan sebelum dihapus secara otomatis.",
+    "retention_saved": "Masa penyimpanan diperbarui",
     "retention_days_placeholder": "365",
-    "retention_days_suffix": "days",
-    "retention_back": "Back to presets",
+    "retention_days_suffix": "hari",
+    "retention_back": "Kembali ke pilihan bawaan",
     "retention_options": {
-      "week": "7 days",
-      "month": "30 days",
-      "quarter": "90 days",
-      "half_year": "180 days",
-      "year": "1 year (default)",
-      "forever": "Keep forever",
-      "custom": "Custom..."
-    }
+      "week": "7 hari",
+      "month": "30 hari",
+      "quarter": "90 hari",
+      "half_year": "180 hari",
+      "year": "1 tahun (bawaan)",
+      "forever": "Simpan selamanya",
+      "custom": "Khusus..."
+    },
+    "include_secrets": "Sertakan kredensial",
+    "export_redacted_desc": "Kata sandi node, token integrasi, dan kata sandi admin tidak disertakan.",
+    "export_with_secrets_desc": "Berisi kata sandi node, token integrasi, dan kata sandi admin. Simpan di tempat yang aman."
   },
   "latest": {
     "ping": "Ping",
@@ -224,7 +263,12 @@
     "byte_speed_unit": "MB/s",
     "up": "Unggah",
     "latest": "Pengujian terakhir",
-    "before": "yang lalu"
+    "before": "yang lalu",
+    "bufferbloat": "Bufferbloat: menambah {{increase}} ms saat terbebani",
+    "bufferbloat_trend": "Bufferbloat pada pengujian terakhir",
+    "quality": "Saat terbebani",
+    "loaded_latency": "Latensi {{down}} / {{up}} ms",
+    "packet_loss": "Kehilangan paket"
   },
   "info": {
     "recommendations_error": "Anda harus melakukan setidaknya 10 pengujian untuk mendapatkan rata-rata. Tidak masalah apakah pengujian dilakukan secara manual atau otomatis.",
@@ -240,7 +284,19 @@
     },
     "jitter": {
       "title": "Jitter",
-      "description": "Jitter is the variation in ping response times. Lower jitter means a more stable connection, which is important for real-time applications like video calls and gaming."
+      "description": "Jitter adalah variasi waktu respons ping. Jitter yang lebih rendah berarti koneksi yang lebih stabil, dan itu penting untuk aplikasi waktu nyata seperti panggilan video dan permainan."
+    },
+    "loaded_latency": {
+      "title": "Latensi saat terbebani",
+      "description": "Ping yang diukur ketika arah tersebut sedang penuh, bukan ketika jalur sedang menganggur. Inilah angka yang menentukan apakah sebuah panggilan bertahan saat orang lain mulai mengunduh — sebuah koneksi bisa cepat di kedua arah namun tak terpakai selama ada transfer."
+    },
+    "bufferbloat": {
+      "title": "Bufferbloat",
+      "description": "Seberapa besar latensi yang bertambah begitu jalur sibuk: yang terburuk dari kedua latensi saat terbebani, dikurangi ping saat menganggur. Di bawah 5 ms sangat baik; di atas 200 ms membuat panggilan dan permainan tak terpakai selama ada hal lain yang ditransfer. Penilaian mengikuti arah yang terburuk, karena jalur yang bersih saat mengunduh namun buruk penyanggaannya saat mengunggah tetaplah jalur dengan penyanggaan yang buruk."
+    },
+    "packet_loss": {
+      "title": "Kehilangan paket",
+      "description": "Kehilangan paket adalah bagian data yang tidak pernah sampai dan harus dikirim ulang. Nilai apa pun di atas nol terasa sebagai patah-patah pada panggilan dan permainan, jauh sebelum tampak sebagai kecepatan yang lebih rendah. Hanya Ookla yang mengukurnya, jadi pengujian dari penyedia lain membiarkannya kosong alih-alih melaporkan nol."
     },
     "up": {
       "title": "Kecepatan unggah",
@@ -258,13 +314,15 @@
     "minutes": "{{minutes}} menit",
     "hour": "1 jam",
     "hours": "{{hours}} jam",
-    "day": "1 day",
-    "days": "{{days}} days",
+    "day": "1 hari",
+    "days": "{{days}} hari",
     "on": "Pada",
     "at": "Pukul"
   },
   "test": {
     "not_available": "Saat ini tidak ada pengujian yang tersedia",
+    "not_available_in_range": "Tidak ada pengujian antara {{from}} dan {{to}}",
+    "show_all_time": "Tampilkan seluruh riwayat",
     "no_latest": "Tidak ada pengujian saat ini yang tersedia. Silakan lakukan pengujian atau tunggu hingga pengujian berikutnya dilakukan.",
     "loading_more": "Memuat lebih banyak pengujian...",
     "no_more_tests": "Tidak ada lagi pengujian untuk dimuat",
@@ -272,6 +330,11 @@
     "failed": "Pengujian gagal",
     "recheck": "Silakan periksa sebisa mungkin jika ini sering terjadi.",
     "delete": "Hapus Pengujian",
+    "delete_confirm": {
+      "title": "Hapus pengujian?",
+      "description": "Pengujian dari <Bold>{{date}}</Bold> akan dihapus. Tindakan ini tidak dapat dibatalkan. Ingin melanjutkan?",
+      "yes": "Ya, hapus"
+    },
     "deleted": "Pengujian telah dihapus",
     "average": {
       "title": "Kecepatan Rata-rata",
@@ -280,12 +343,41 @@
     "result": {
       "title": "Hasil pengujian",
       "description": "<Link>Pengujian ini</Link> mencapai kecepatan unduh maksimum <Bold>{{down}} Mbps</Bold> dan kecepatan unggah maksimum <Bold>{{up}} Mbps</Bold>. Dibuat <Bold>{{type}}</Bold> dan memakan waktu <Bold>{{duration}} Detik</Bold>.",
-      "jitter": " The connection jitter was <Bold>{{jitter}} ms</Bold>.",
+      "jitter": " Jitter koneksinya adalah <Bold>{{jitter}} ms</Bold>.",
+      "server": " Pengujian dijalankan terhadap <Bold>{{server}}</Bold>.",
       "from_you": "oleh Anda",
       "automatic": "secara otomatis"
     },
     "overview": {
-      "title_range": "Test overview from {{from}} to {{to}}"
+      "title_range": "Ringkasan pengujian dari {{from}} sampai {{to}}"
+    },
+    "details": {
+      "show": "Tampilkan detail",
+      "hide": "Sembunyikan detail",
+      "of_target": "{{percent}}% dari target Anda",
+      "over_target": "{{amount}} {{unit}} di atas target Anda",
+      "under_target": "{{amount}} {{unit}} di bawah target Anda",
+      "on_target": "Tepat pada target Anda",
+      "unchanged": "Tidak berubah sejak pengujian terakhir",
+      "measured_at": "Diukur pukul",
+      "measured_with": "Diukur dengan",
+      "duration": "Durasi",
+      "seconds": "{{seconds}} dtk",
+      "data_used": "Data terpakai",
+      "data_used_value": "{{down}} unduh / {{up}} unggah",
+      "trigger": "Dimulai",
+      "server": "Server",
+      "result": "Hasil lengkap",
+      "open_result": "speedtest.net",
+      "loaded_latency": "Latensi saat terbebani",
+      "loaded_latency_value": "{{down}} ms unduh / {{up}} ms unggah",
+      "packet_loss": "Kehilangan paket",
+      "bufferbloat": "Bufferbloat",
+      "bufferbloat_value": "+{{increase}} ms",
+      "connection": "Koneksi",
+      "isp": "Penyedia",
+      "external_ip": "Alamat eksternal",
+      "changed": "berubah"
     }
   },
   "errors": {
@@ -297,12 +389,28 @@
     "connection_refused": "Pengujian tidak dapat dilakukan karena koneksi ditolak",
     "timed_out": "Koneksi internet tidak stabil selama pengujian",
     "config": "File konfigurasi tidak dapat dimuat",
-    "invalid_view": "Tampilan tidak valid"
+    "invalid_view": "Tampilan tidak valid",
+    "cannot_open_socket": "Tidak dapat membuka koneksi ke server pengujian. Server itu mungkin tidak terjangkau dari antarmuka jaringan yang dipilih.",
+    "latency_failed": "Pengujian latensi gagal, sehingga tidak ada kecepatan yang dapat diukur."
   },
   "statistics": {
-    "average": "Average",
+    "average": "Rata-rata",
+    "compare": {
+      "note": "Perubahan dibandingkan dengan {{from}} – {{to}}"
+    },
+    "downsampled": "Dirata-ratakan · menampilkan {{shown}} dari {{total}} pengujian",
+    "detail": {
+      "title": "Resolusi penuh",
+      "description": "Tampilkan hingga {{max}} titik data alih-alih merata-ratakannya",
+      "complete": "Setiap pengujian dalam rentang ini sudah ditampilkan",
+      "loading": "Memuat seri lengkap…"
+    },
     "export": {
-      "button": "Export"
+      "button": "Ekspor"
+    },
+    "delta": {
+      "up": "naik {{value}}",
+      "down": "turun {{value}}"
     },
     "overview": {
       "total_title": "Total pengujian",
@@ -310,7 +418,16 @@
       "failed_title": "Pengujian gagal",
       "failed_description": "Jumlah pengujian yang gagal",
       "average_title": "Durasi rata-rata",
-      "average_description": "Durasi rata-rata dari pengujian"
+      "average_description": "Durasi rata-rata dari pengujian",
+      "packet_loss_title": "Kehilangan paket",
+      "packet_loss_description": "Rata-rata dari pengujian yang mengukurnya",
+      "peak_title": "Perlambatan saat jam sibuk",
+      "peak_description": "Paling lambat sekitar {{slowest}}, paling cepat sekitar {{fastest}}",
+      "ping_description": "Latensi rata-rata, antara {{min}} dan {{max}}",
+      "span_title": "Rentang durasi",
+      "span_description": "Pengujian terpendek dan terpanjang dalam rentang ini",
+      "density_title": "Pengujian per hari",
+      "density_description": "Selama {{days}} hari"
     },
     "failed": {
       "title": "Pengujian gagal",
@@ -335,38 +452,52 @@
       "max": "Maksimum",
       "avg": "Rata-rata",
       "down": "Nilai unduh",
-      "up": "Nilai unggah"
+      "up": "Nilai unggah",
+      "target": "Target: {{target}}",
+      "consistency": "Konsistensi",
+      "samples": "Pengujian terukur"
     },
-    "failed_test": "Failed test",
+    "failed_test": "Pengujian gagal",
     "hourly": {
-      "title": "Speed by Time of Day",
-      "sample_count": "Tests"
+      "title": "Kecepatan menurut waktu dalam sehari",
+      "sample_count": "Pengujian"
     },
     "consistency": {
-      "title": "Connection Stability",
-      "excellent": "Excellent",
-      "good": "Good",
-      "fair": "Fair",
-      "poor": "Poor"
-    }
+      "title": "Kestabilan koneksi",
+      "excellent": "Sangat baik",
+      "good": "Baik",
+      "fair": "Cukup",
+      "poor": "Buruk",
+      "ping_deviation": "Simpangan lazim",
+      "loaded_latency_average": "Menambah rata-rata {{increase}} ms saat terbebani, dari {{tests}} pengujian",
+      "jitter_detail": "Variasi dalam satu pengujian",
+      "range": "Antara {{min}} dan {{max}}",
+      "sample_count": "Dari {{tests}} pengujian"
+    },
+    "loaded_latency": "Saat terbebani"
   },
   "calendar": {
-    "select_range": "Select date range",
-    "select_start": "Select start date",
-    "select_end": "Select end date",
-    "from": "From",
-    "to": "To",
-    "last_7_days": "Last 7 days",
-    "last_30_days": "Last 30 days",
-    "last_90_days": "Last 90 days",
-    "last_year": "Last year",
-    "mon": "Mon",
-    "tue": "Tue",
-    "wed": "Wed",
-    "thu": "Thu",
-    "fri": "Fri",
-    "sat": "Sat",
-    "sun": "Sun"
+    "select_range": "Pilih rentang tanggal",
+    "all_time": "Seluruh riwayat",
+    "select_start": "Pilih tanggal mulai",
+    "select_end": "Pilih tanggal akhir",
+    "previous_year": "Tahun sebelumnya",
+    "previous_month": "Bulan sebelumnya",
+    "next_month": "Bulan berikutnya",
+    "next_year": "Tahun berikutnya",
+    "from": "Dari",
+    "to": "Sampai",
+    "last_7_days": "7 hari terakhir",
+    "last_30_days": "30 hari terakhir",
+    "last_90_days": "90 hari terakhir",
+    "last_year": "Tahun lalu",
+    "mon": "Sen",
+    "tue": "Sel",
+    "wed": "Rab",
+    "thu": "Kam",
+    "fri": "Jum",
+    "sat": "Sab",
+    "sun": "Min"
   },
   "nodes": {
     "add": "Tambah server",
@@ -380,7 +511,7 @@
     "preview_active": "Menambah dan menghapus server dinonaktifkan selama mode demo.",
     "placeholder": {
       "name": "Instance MySpeed",
-      "url": "https://your-server.com"
+      "url": "https://server-anda.com"
     },
     "group": {
       "name": "Nama server",
@@ -393,9 +524,9 @@
       "success": "Server telah berhasil dihapus"
     },
     "rename": {
-      "title": "Rename server",
-      "placeholder": "New server name",
-      "success": "The server has been renamed successfully"
+      "title": "Ganti nama server",
+      "placeholder": "Nama server baru",
+      "success": "Nama server berhasil diganti"
     },
     "messages": {
       "not_reachable": "Server tidak dapat dijangkau",
@@ -420,26 +551,48 @@
     "discord": {
       "title": "Discord",
       "fields": {
-        "url": "Webhook-URL",
+        "url": "URL Webhook",
         "url_placeholder": "https://discord.com/api/webhooks/...",
         "display_name": "Nama tampilan",
         "display_name_placeholder": "Notifikasi MySpeed",
         "error_message": "Pesan kesalahan",
-        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Galat: %error%",
         "send_failed": "Kirim pesan kesalahan",
         "send_finished": "Kirim pesan selesai",
         "finished_message": "Pesan selesai",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
+    "email": {
+      "title": "Surel",
+      "fields": {
+        "host": "Server SMTP",
+        "port": "Porta",
+        "secure": "Gunakan TLS langsung (porta 465)",
+        "username": "Nama pengguna (opsional)",
+        "password": "Kata sandi (opsional)",
+        "from": "Alamat pengirim",
+        "to": "Alamat penerima (dipisahkan koma)",
+        "send_failed": "Kirim pesan galat",
+        "error_subject": "Subjek saat galat",
+        "error_subject_placeholder": "MySpeed: speedtest gagal",
+        "error_message": "Pesan galat",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Galat: %error%",
+        "send_finished": "Kirim pesan saat selesai",
+        "finished_subject": "Subjek saat selesai",
+        "finished_subject_placeholder": "MySpeed: speedtest selesai",
+        "finished_message": "Pesan saat selesai",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
     "gotify": {
       "title": "Gotify",
       "fields": {
-        "url": "Server-URL",
+        "url": "URL server",
         "key": "Token aplikasi",
         "priority": "Prioritas",
         "error_message": "Pesan kesalahan",
-        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Galat: %error%",
         "send_failed": "Kirim pesan kesalahan",
         "send_finished": "Kirim pesan selesai",
         "finished_message": "Pesan selesai",
@@ -452,7 +605,7 @@
         "token": "Token aplikasi",
         "user_key": "Kunci pengguna",
         "error_message": "Pesan kesalahan",
-        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Galat: %error%",
         "send_failed": "Kirim pesan kesalahan",
         "send_finished": "Kirim pesan selesai",
         "finished_message": "Pesan selesai",
@@ -462,60 +615,80 @@
     "healthChecks": {
       "title": "HealthChecks",
       "fields": {
-        "url": "HealthChecks-URL",
+        "url": "URL HealthChecks",
         "url_placeholder": "https://hc-ping.com/<uuid>",
-        "interval": "Ping interval (minutes)",
+        "interval": "Interval ping (menit)",
         "interval_placeholder": "1"
       }
     },
     "influxdb": {
       "title": "InfluxDB",
       "fields": {
-        "url": "Server-URL",
+        "url": "URL server",
         "url_placeholder": "http://localhost:8086",
-        "org": "Organization",
+        "org": "Organisasi",
         "bucket": "Bucket",
-        "token": "API token",
-        "measurement": "Measurement name",
-        "measurement_placeholder": "speedtests (default)",
-        "host": "Host tag",
-        "host_placeholder": "Defaults to the machine hostname",
-        "tags": "Additional tags",
-        "tags_placeholder": "region=eu,role=primary (comma-separated)"
+        "token": "Token API",
+        "measurement": "Nama pengukuran",
+        "measurement_placeholder": "speedtests (bawaan)",
+        "host": "Tag host",
+        "host_placeholder": "Bawaannya nama host mesin",
+        "tags": "Tag tambahan",
+        "tags_placeholder": "region=eu,role=primary (dipisahkan koma)"
+      }
+    },
+    "mqtt": {
+      "title": "MQTT",
+      "fields": {
+        "host": "Host broker",
+        "port": "Porta",
+        "secure": "Gunakan TLS (porta 8883)",
+        "username": "Nama pengguna (opsional)",
+        "password": "Kata sandi (opsional)",
+        "client_id": "ID klien (opsional)",
+        "topic": "Topik",
+        "error_topic": "Topik galat (opsional)",
+        "retain": "Tahan pesan",
+        "discovery": "Penemuan Home Assistant",
+        "discovery_prefix": "Awalan penemuan (opsional)",
+        "qos": "Kualitas layanan (0 atau 1)",
+        "send_finished": "Terbitkan pengujian yang selesai",
+        "send_failed": "Terbitkan pengujian yang gagal"
       }
     },
     "ntfy": {
       "title": "ntfy",
       "fields": {
-        "url": "Server-URL",
+        "url": "URL server",
         "url_placeholder": "https://ntfy.sh",
-        "topic": "Topic",
+        "topic": "Topik",
         "topic_placeholder": "myspeed-alerts",
-        "token": "Access token",
-        "token_placeholder": "tk_... (optional, for protected servers)",
-        "title": "Notification title",
-        "title_placeholder": "MySpeed (optional)",
-        "tags": "Tags",
-        "tags_placeholder": "warning,satellite (comma-separated)",
-        "priority": "Default priority (1-5)",
+        "token": "Token akses",
+        "token_placeholder": "tk_... (opsional, untuk server terlindungi)",
+        "title": "Judul notifikasi",
+        "title_placeholder": "MySpeed (opsional)",
+        "tags": "Tag",
+        "tags_placeholder": "warning,satellite (dipisahkan koma)",
+        "priority": "Prioritas bawaan (1-5)",
         "priority_placeholder": "3",
-        "error_priority": "Error priority (1-5)",
+        "error_priority": "Prioritas galat (1-5)",
         "error_priority_placeholder": "5",
-        "error_message": "Error message",
-        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
-        "send_failed": "Send error messages",
-        "send_finished": "Send finished messages",
-        "finished_message": "Finished message",
+        "error_message": "Pesan galat",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Galat: %error%",
+        "send_failed": "Kirim pesan galat",
+        "send_finished": "Kirim pesan selesai",
+        "finished_message": "Pesan selesai",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
     "telegram": {
       "title": "Telegram",
       "fields": {
-        "token": "Token Bot",
+        "token": "Token bot",
         "chat_id": "ID Chat",
+        "message_thread_id": "ID topik (opsional)",
         "error_message": "Pesan kesalahan",
-        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Galat: %error%",
         "send_failed": "Kirim pesan kesalahan",
         "send_finished": "Kirim pesan selesai",
         "finished_message": "Pesan selesai",
@@ -525,62 +698,92 @@
     "webhook": {
       "title": "Webhook",
       "fields": {
-        "url": "Webhook-URL",
-        "url_placeholder": "https://your-server.com/hook",
+        "url": "URL Webhook",
+        "url_placeholder": "https://server-anda.com/hook",
         "send_started": "Kirim dimulai",
         "send_failed": "Kirim pesan kesalahan",
         "send_finished": "Kirim pesan selesai",
         "send_alive": "Kirim pesan Keep-Alive",
         "send_recommendations": "Kirim rekomendasi",
         "send_config_updates": "Kirim pembaruan konfigurasi",
-        "interval": "Keep-Alive interval (minutes)",
+        "interval": "Interval Keep-Alive (menit)",
         "interval_placeholder": "1"
       }
-    }
+    },
+    "fields": {
+      "alert_only": "Beri tahu hanya bila sebuah batas tidak tercapai",
+      "alert_ping_above": "Beri tahu bila ping di atas (ms)",
+      "alert_ping_above_placeholder": "mis. 50",
+      "alert_download_below": "Beri tahu bila unduh di bawah (Mbps)",
+      "alert_download_below_placeholder": "mis. 100",
+      "alert_upload_below": "Beri tahu bila unggah di bawah (Mbps)",
+      "alert_upload_below_placeholder": "mis. 20"
+    },
+    "variables": "Variabel yang tersedia",
+    "variables_hint": "Klik untuk menambahkannya ke pesan"
   },
   "common": {
     "back_to_top": "Kembali ke atas"
   },
   "not_found": {
-    "title": "Page not found",
-    "description": "The page you're looking for doesn't exist or has been moved.",
-    "back_home": "Back to Home"
+    "title": "Halaman tidak ditemukan",
+    "description": "Halaman yang Anda cari tidak ada atau telah dipindahkan.",
+    "back_home": "Kembali ke beranda"
   },
   "route_error": {
-    "title": "Oops!",
-    "subtitle": "Something went wrong",
-    "description": "An unexpected error occurred. Please try again or go back to the home page.",
-    "reload": "Reload Page"
+    "title": "Ups!",
+    "subtitle": "Ada yang tidak beres",
+    "description": "Terjadi galat yang tidak terduga. Silakan coba lagi atau kembali ke halaman beranda.",
+    "reload": "Muat ulang halaman"
   },
   "optimal_values": {
-    "title": "Optimal Values",
-    "use_recommended": "Use recommended"
+    "title": "Nilai optimal",
+    "use_recommended": "Gunakan yang disarankan"
   },
   "preferences": {
-    "title": "Preferences",
+    "title": "Preferensi",
     "theme": {
-      "title": "Appearance",
-      "description": "Switch between dark and light interface.",
-      "dark": "Dark",
-      "dark_desc": "Easier on the eyes in low light",
-      "light": "Light",
-      "light_desc": "Brighter look for daytime use"
+      "title": "Tampilan",
+      "description": "Beralih antara antarmuka gelap dan terang.",
+      "dark": "Gelap",
+      "dark_desc": "Lebih nyaman di mata saat cahaya redup",
+      "light": "Terang",
+      "light_desc": "Tampilan lebih cerah untuk penggunaan siang hari"
     },
     "time_format": {
-      "title": "Time format",
-      "description": "How clock times are displayed throughout the app.",
-      "h24": "24-hour",
-      "h24_desc": "Display times like 14:30",
-      "h12": "12-hour",
-      "h12_desc": "Display times like 2:30 PM"
+      "title": "Format waktu",
+      "description": "Bagaimana waktu ditampilkan di seluruh aplikasi.",
+      "h24": "24 jam",
+      "h24_desc": "Menampilkan waktu seperti 14:30",
+      "h12": "12 jam",
+      "h12_desc": "Menampilkan waktu seperti 2:30 PM"
     },
     "speed_unit": {
-      "title": "Speed unit",
-      "description": "Choose how speeds are shown. Values are converted automatically.",
-      "mbps": "Mbps (Megabits per second)",
-      "mbps_desc": "Standard ISP / speedtest unit",
-      "mbytes": "MB/s (Megabytes per second)",
-      "mbytes_desc": "Common in browsers and download managers"
+      "title": "Satuan kecepatan",
+      "description": "Pilih cara kecepatan ditampilkan. Nilainya dikonversi secara otomatis.",
+      "mbps": "Mbps (megabit per detik)",
+      "mbps_desc": "Satuan baku penyedia internet dan speedtest",
+      "mbytes": "MB/s (megabita per detik)",
+      "mbytes_desc": "Umum di peramban dan pengelola unduhan"
     }
+  },
+  "status": {
+    "start": "Mulai pengujian",
+    "running_button": "Berjalan",
+    "paused": "Speedtest sedang dijeda",
+    "never_run": "Belum ada pengujian yang dijalankan",
+    "last_test": "Pengujian terakhir {{time}} lalu",
+    "next_test": "Berikutnya pukul {{time}}",
+    "recent_failures": "{{failures}} gagal dalam sehari terakhir",
+    "phase": {
+      "starting": "Memulai…",
+      "ping": "Mengukur latensi",
+      "download": "Mengukur unduh",
+      "upload": "Mengukur unggah",
+      "measuring": "Mengukur…"
+    },
+    "last_test_now": "Pengujian terakhir baru saja",
+    "elapsed": "{{seconds}} dtk berlalu",
+    "next_test_approx": "Berikutnya sekitar pukul {{time}}"
   }
 }

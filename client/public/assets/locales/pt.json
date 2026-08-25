@@ -31,6 +31,20 @@
       "wrong": "A senha que você digitou está incorreta",
       "unlock": "Desbloquear"
     },
+    "setup_token": {
+      "title": "Token de instalação necessário",
+      "description": "Nenhuma senha está definida nesta instância, então ela não pode ser aberta de outra máquina. Digite o token de instalação que aparece no log do servidor e depois escolha uma senha.",
+      "placeholder": "Token de instalação do log do servidor",
+      "wrong": "Esse não é o token de instalação que está no log do servidor"
+    },
+    "busy": {
+      "title": "Servidor ocupado",
+      "description": "O servidor já está verificando outras senhas. Aguarde um momento e tente novamente."
+    },
+    "throttled": {
+      "title": "Tentativas demais",
+      "description": "Tentativas demais foram recusadas. Aguarde um minuto e tente novamente."
+    },
     "api": {
       "title": "API não alcançável",
       "description": "MySpeed não pôde alcançar a API desta instância. Por favor, tente novamente mais tarde."
@@ -39,6 +53,7 @@
       "interface": "Interface",
       "server": "Servidor",
       "server_id": "ID do servidor",
+      "server_id_placeholder": "Qualquer ID de servidor, ou deixe em branco",
       "custom_url": "URL personalizada",
       "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Escolha automaticamente",
@@ -108,6 +123,11 @@
     "no_access_desc": "Os visitantes precisam digitar a senha para ver qualquer coisa",
     "read_access_desc": "Os visitantes podem ver os dados, mas não podem alterar as configurações"
   },
+  "locked": {
+    "password_desc": "Esta instância é protegida por senha. Entre para ver os dados dela.",
+    "token_hint": "O servidor grava o token no log de novo sempre que recusa uma requisição, no máximo uma vez a cada dez minutos — então recarregar esta página coloca uma cópia nova no fim do log.",
+    "enter_token": "Digitar o token de instalação"
+  },
   "pause": {
     "manual": "Pausar indefinidamente",
     "manual_desc": "Pausar até ser retomado manualmente",
@@ -117,7 +137,14 @@
     "medium_desc": "Pausar por 6 horas",
     "long": "Pausa longa",
     "long_desc": "Pausar por 12 horas",
-    "custom": "Duração personalizada"
+    "custom": "Duração personalizada",
+    "quiet_hours": "Horário de silêncio",
+    "quiet_hours_desc": "Os testes agendados são pulados todos os dias entre esses horários. Os testes que você mesmo inicia sempre são executados.",
+    "timezone": "Fuso horário",
+    "timezone_server": "Relógio do servidor",
+    "timezone_desc": "O relógio pelo qual tanto o horário de silêncio quanto o agendamento dos testes são interpretados.",
+    "quiet_from": "De",
+    "quiet_until": "Até"
   },
   "page": {
     "overview": "Visão geral",
@@ -136,6 +163,14 @@
     "manually": "Definir manualmente",
     "new_password": "Definir uma nova senha",
     "password_placeholder": "Nova senha",
+    "show_password": "Mostrar a senha",
+    "hide_password": "Ocultar a senha",
+    "confirm_password": "Repita",
+    "confirm_password_placeholder": "A nova senha novamente",
+    "password_mismatch": "As duas senhas não coincidem",
+    "remove_password": "Remover a senha",
+    "remove_password_title": "Remover a senha?",
+    "remove_password_desc": "Você é desconectado e esta instância fica sem senha. Ela então se abre para qualquer pessoa na máquina em que está rodando, e pede a todas as outras máquinas o token de instalação do log do servidor até que uma nova senha seja definida.",
     "password_removed": "O bloqueio de senha foi removido e a senha definida foi removida.",
     "level": "Alterar nível",
     "level_title": "Direitos para visitantes",
@@ -154,7 +189,8 @@
     "pause_manual_hint": "Deixe em branco para pausar por tempo indeterminado",
     "release_manually": "Liberar manualmente",
     "language": "Alterar idioma",
-    "view_title": "Alternar visualização"
+    "view_title": "Alternar visualização",
+    "quiet_hours_saved": "Horário de silêncio salvo"
   },
   "header": {
     "title": "MySpeed",
@@ -212,7 +248,10 @@
       "year": "1 ano (padrão)",
       "forever": "Manter para sempre",
       "custom": "Personalizado..."
-    }
+    },
+    "include_secrets": "Incluir as credenciais",
+    "export_redacted_desc": "As senhas dos nós, os tokens das integrações e a senha de administrador ficam de fora.",
+    "export_with_secrets_desc": "Contém as senhas dos nós, os tokens das integrações e a senha de administrador. Guarde em um lugar seguro."
   },
   "latest": {
     "ping": "Ping",
@@ -224,7 +263,12 @@
     "byte_speed_unit": "MB/s",
     "up": "Upload",
     "latest": "Último teste",
-    "before": "antes"
+    "before": "antes",
+    "bufferbloat": "Bufferbloat: acrescenta {{increase}} ms sob carga",
+    "bufferbloat_trend": "Bufferbloat nos últimos testes",
+    "quality": "Sob carga",
+    "loaded_latency": "{{down}} / {{up}} ms de latência",
+    "packet_loss": "Perda de pacotes"
   },
   "info": {
     "recommendations_error": "Você precisa fazer pelo menos 10 testes para obter uma média. Não importa se os testes foram feitos manualmente ou automaticamente.",
@@ -242,6 +286,18 @@
       "title": "Jitter",
       "description": "Jitter é a variação no tempo de resposta. Soltar mais baixo significa uma conexão mais estável, o que é importante para aplicativos em tempo real, como chamadas de vídeo e jogos."
     },
+    "loaded_latency": {
+      "title": "Latência sob carga",
+      "description": "O ping medido enquanto aquela direção estava saturada, em vez de com a linha ociosa. É o número que decide se uma chamada sobrevive a outra pessoa começar um download — uma conexão pode ser rápida nos dois sentidos e ficar inutilizável durante uma transferência."
+    },
+    "bufferbloat": {
+      "title": "Bufferbloat",
+      "description": "Quanta latência a linha ganha assim que fica ocupada: a pior das duas latências sob carga, menos o ping ocioso. Abaixo de 5 ms é excelente; acima de 200 ms chamadas e jogos ficam inutilizáveis enquanto qualquer outra coisa é transferida. A nota sai pela pior direção, porque uma linha limpa na descida e mal armazenada na subida é uma linha mal armazenada."
+    },
+    "packet_loss": {
+      "title": "Perda de pacotes",
+      "description": "A perda de pacotes é a parcela dos dados que nunca chegou e precisou ser reenviada. Qualquer valor acima de zero é sentido como travamentos em chamadas e jogos muito antes de aparecer como uma velocidade menor. Só a Ookla mede isso, então um teste de outro provedor deixa o campo em branco em vez de informar zero."
+    },
     "up": {
       "title": "Velocidade de upload",
       "description": "A velocidade de upload afeta sua experiência de navegação. Quanto mais você obtém, mais rápido seu computador pode enviar dados."
@@ -258,13 +314,15 @@
     "minutes": "{{minutes}} minutos",
     "hour": "1 hora",
     "hours": "{{hours}} horas",
-    "day": "1 day",
-    "days": "{{days}} days",
-    "on": "Ativo",
+    "day": "1 dia",
+    "days": "{{days}} dias",
+    "on": "Em",
     "at": "Às"
   },
   "test": {
     "not_available": "No momento, não há testes disponíveis",
+    "not_available_in_range": "Nenhum teste entre {{from}} e {{to}}",
+    "show_all_time": "Mostrar todo o histórico",
     "no_latest": "Não há nenhum teste disponível no momento. Realize um teste ou aguarde até que o próximo teste seja realizado.",
     "loading_more": "Carregando mais testes...",
     "no_more_tests": "Não há mais testes para carregar",
@@ -272,6 +330,11 @@
     "failed": "Falha no teste",
     "recheck": "Se isso acontecer com frequência, verifique o máximo possível.",
     "delete": "Excluir teste",
+    "delete_confirm": {
+      "title": "Excluir o teste?",
+      "description": "O teste de <Bold>{{date}}</Bold> será excluído. Esta ação não pode ser desfeita. Deseja continuar?",
+      "yes": "Sim, excluir"
+    },
     "deleted": "O teste foi excluído",
     "average": {
       "title": "Velocidade média",
@@ -281,11 +344,40 @@
       "title": "Resultado do teste",
       "description": "<Link>Esse teste</Link> atingiu uma velocidade máxima de download de <Bold>{{down}} Mbps</Bold> e uma velocidade máxima de upload de <Bold>{{up}} Mbps</Bold>. Ele foi criado <Bold>{{type}}</Bold> e levou <Bold>{{duration}} segundos</Bold>.",
       "jitter": " O jitter de conexão foi <Bold>{{jitter}} ms</Bold>.",
+      "server": " O teste foi executado contra <Bold>{{server}}</Bold>.",
       "from_you": "por você",
       "automatic": "automaticamente"
     },
     "overview": {
       "title_range": "Visão geral de teste de {{from}} a {{to}}"
+    },
+    "details": {
+      "show": "Mostrar detalhes",
+      "hide": "Ocultar detalhes",
+      "of_target": "{{percent}}% da sua meta",
+      "over_target": "{{amount}} {{unit}} acima da sua meta",
+      "under_target": "{{amount}} {{unit}} abaixo da sua meta",
+      "on_target": "Exatamente na sua meta",
+      "unchanged": "Sem alteração desde o último teste",
+      "measured_at": "Medido às",
+      "measured_with": "Medido com",
+      "duration": "Duração",
+      "seconds": "{{seconds}} s",
+      "data_used": "Dados usados",
+      "data_used_value": "{{down}} de descida / {{up}} de subida",
+      "trigger": "Iniciado",
+      "server": "Servidor",
+      "result": "Resultado completo",
+      "open_result": "speedtest.net",
+      "loaded_latency": "Latência sob carga",
+      "loaded_latency_value": "{{down}} ms de descida / {{up}} ms de subida",
+      "packet_loss": "Perda de pacotes",
+      "bufferbloat": "Bufferbloat",
+      "bufferbloat_value": "+{{increase}} ms",
+      "connection": "Conexão",
+      "isp": "Provedor",
+      "external_ip": "Endereço externo",
+      "changed": "alterado"
     }
   },
   "errors": {
@@ -297,12 +389,28 @@
     "connection_refused": "O teste não pôde ser realizado porque a conexão foi rejeitada",
     "timed_out": "A conexão com a Internet estava instável durante o período do teste",
     "config": "O arquivo de configuração não pôde ser carregado",
-    "invalid_view": "Visualização inválida"
+    "invalid_view": "Visualização inválida",
+    "cannot_open_socket": "Não foi possível abrir uma conexão com o servidor de teste. Talvez ele esteja inacessível pela interface de rede selecionada.",
+    "latency_failed": "O teste de latência falhou, então nenhuma velocidade pôde ser medida."
   },
   "statistics": {
     "average": "Média",
+    "compare": {
+      "note": "Mudanças em relação a {{from}} – {{to}}"
+    },
+    "downsampled": "Média · mostrando {{shown}} de {{total}} testes",
+    "detail": {
+      "title": "Resolução completa",
+      "description": "Mostrar até {{max}} pontos de dados em vez de tirar a média",
+      "complete": "Todos os testes deste período já estão sendo mostrados",
+      "loading": "Carregando a série completa…"
+    },
     "export": {
       "button": "Exportar"
+    },
+    "delta": {
+      "up": "subiu {{value}}",
+      "down": "caiu {{value}}"
     },
     "overview": {
       "total_title": "Total de testes",
@@ -310,7 +418,16 @@
       "failed_title": "Testes com falha",
       "failed_description": "O número de testes com falha",
       "average_title": "Duração média",
-      "average_description": "A duração média dos testes"
+      "average_description": "A duração média dos testes",
+      "packet_loss_title": "Perda de pacotes",
+      "packet_loss_description": "Média entre os testes que a mediram",
+      "peak_title": "Lentidão no horário de pico",
+      "peak_description": "Mais lento por volta de {{slowest}}, mais rápido por volta de {{fastest}}",
+      "ping_description": "Latência média, entre {{min}} e {{max}}",
+      "span_title": "Variação de duração",
+      "span_description": "O teste mais curto e o mais longo deste período",
+      "density_title": "Testes por dia",
+      "density_description": "Ao longo de {{days}} dias"
     },
     "failed": {
       "title": "Testes com falha",
@@ -335,7 +452,10 @@
       "max": "Máximo",
       "avg": "Média",
       "down": "Valores de download",
-      "up": "Valores de upload"
+      "up": "Valores de upload",
+      "target": "Meta: {{target}}",
+      "consistency": "Regularidade",
+      "samples": "Testes medidos"
     },
     "failed_test": "Teste com falha",
     "hourly": {
@@ -347,13 +467,24 @@
       "excellent": "Excelente",
       "good": "Bom",
       "fair": "Razoável",
-      "poor": "Ruim"
-    }
+      "poor": "Ruim",
+      "ping_deviation": "Desvio típico",
+      "loaded_latency_average": "Acrescenta {{increase}} ms sob carga em média, ao longo de {{tests}} testes",
+      "jitter_detail": "Variação dentro de um teste",
+      "range": "Entre {{min}} e {{max}}",
+      "sample_count": "Ao longo de {{tests}} testes"
+    },
+    "loaded_latency": "Sob carga"
   },
   "calendar": {
     "select_range": "Selecionar período",
+    "all_time": "Todo o histórico",
     "select_start": "Selecionar data de início",
     "select_end": "Selecione a data de término",
+    "previous_year": "Ano anterior",
+    "previous_month": "Mês anterior",
+    "next_month": "Mês seguinte",
+    "next_year": "Ano seguinte",
     "from": "De",
     "to": "Para",
     "last_7_days": "Últimos 7 dias",
@@ -380,7 +511,7 @@
     "preview_active": "A adição e a exclusão de servidores são desativadas durante o modo de demonstração.",
     "placeholder": {
       "name": "Instância MySpeed",
-      "url": "https://your-server.com"
+      "url": "https://seu-servidor.com.br"
     },
     "group": {
       "name": "Nome do servidor",
@@ -418,7 +549,7 @@
       "last_run": "Última corrida antes de "
     },
     "discord": {
-      "title": "Discórdia",
+      "title": "Discord",
       "fields": {
         "url": "URL do site",
         "url_placeholder": "https://discord.com/api/webhooks/...",
@@ -429,6 +560,28 @@
         "send_failed": "Enviar mensagens de erro",
         "send_finished": "Enviar mensagens concluídas",
         "finished_message": "Mensagem finalizada",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
+    "email": {
+      "title": "E-mail",
+      "fields": {
+        "host": "Servidor SMTP",
+        "port": "Porta",
+        "secure": "Usar TLS diretamente (porta 465)",
+        "username": "Nome de usuário (opcional)",
+        "password": "Senha (opcional)",
+        "from": "Endereço do remetente",
+        "to": "Endereços dos destinatários (separados por vírgula)",
+        "send_failed": "Enviar mensagens de erro",
+        "error_subject": "Assunto do erro",
+        "error_subject_placeholder": "MySpeed: o teste de velocidade falhou",
+        "error_message": "Mensagem de erro",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erro: %error%",
+        "send_finished": "Enviar mensagens ao concluir",
+        "finished_subject": "Assunto ao concluir",
+        "finished_subject_placeholder": "MySpeed: teste de velocidade concluído",
+        "finished_message": "Mensagem ao concluir",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -462,7 +615,7 @@
     "healthChecks": {
       "title": "HealthChecks",
       "fields": {
-        "url": "HealthChecks-URL",
+        "url": "URL do HealthChecks",
         "url_placeholder": "https://hc-ping.com/<uuid>",
         "interval": "Intervalo de ping (minutos)",
         "interval_placeholder": "1"
@@ -475,13 +628,32 @@
         "url_placeholder": "http://localhost:8086",
         "org": "Organização",
         "bucket": "Bucket",
-        "token": "Token de API",
+        "token": "Token da API",
         "measurement": "Nome da medição",
         "measurement_placeholder": "testes de velocidade (padrão)",
         "host": "Tag do host",
         "host_placeholder": "O padrão é o hostname da máquina",
         "tags": "Tags adicionais",
         "tags_placeholder": "region=eu,função=primário (separado por vírgulas)"
+      }
+    },
+    "mqtt": {
+      "title": "MQTT",
+      "fields": {
+        "host": "Host do broker",
+        "port": "Porta",
+        "secure": "Usar TLS (porta 8883)",
+        "username": "Nome de usuário (opcional)",
+        "password": "Senha (opcional)",
+        "client_id": "ID do cliente (opcional)",
+        "topic": "Tópico",
+        "error_topic": "Tópico de erro (opcional)",
+        "retain": "Reter as mensagens",
+        "discovery": "Descoberta do Home Assistant",
+        "discovery_prefix": "Prefixo de descoberta (opcional)",
+        "qos": "Qualidade de serviço (0 ou 1)",
+        "send_finished": "Publicar os testes concluídos",
+        "send_failed": "Publicar os testes com falha"
       }
     },
     "ntfy": {
@@ -514,6 +686,7 @@
       "fields": {
         "token": "Token de bot",
         "chat_id": "ID do bate-papo",
+        "message_thread_id": "ID do tópico (opcional)",
         "error_message": "Mensagem de erro",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erro: %error%",
         "send_failed": "Enviar mensagens de erro",
@@ -526,7 +699,7 @@
       "title": "Webhook",
       "fields": {
         "url": "URL do site",
-        "url_placeholder": "https://your-server.com/hook",
+        "url_placeholder": "https://seu-servidor.com.br/hook",
         "send_started": "Enviar iniciado",
         "send_failed": "Enviar mensagens de erro",
         "send_finished": "Enviar mensagens concluídas",
@@ -536,7 +709,18 @@
         "interval": "Intervalo de Keep-Alive (minutos)",
         "interval_placeholder": "1"
       }
-    }
+    },
+    "fields": {
+      "alert_only": "Avisar somente quando um limite não for atingido",
+      "alert_ping_above": "Avisar quando o ping passar de (ms)",
+      "alert_ping_above_placeholder": "ex.: 50",
+      "alert_download_below": "Avisar quando o download ficar abaixo de (Mbps)",
+      "alert_download_below_placeholder": "ex.: 100",
+      "alert_upload_below": "Avisar quando o upload ficar abaixo de (Mbps)",
+      "alert_upload_below_placeholder": "ex.: 20"
+    },
+    "variables": "Variáveis disponíveis",
+    "variables_hint": "Clique para adicioná-la à mensagem"
   },
   "common": {
     "back_to_top": "Voltar ao topo"
@@ -582,5 +766,24 @@
       "mbytes": "MB/s (Megabytes por segundo)",
       "mbytes_desc": "Comum em navegadores e gerentes de download"
     }
+  },
+  "status": {
+    "start": "Iniciar teste",
+    "running_button": "Em execução",
+    "paused": "Os testes de velocidade estão pausados",
+    "never_run": "Nenhum teste foi executado ainda",
+    "last_test": "Último teste há {{time}}",
+    "next_test": "Próximo às {{time}}",
+    "recent_failures": "{{failures}} com falha no último dia",
+    "phase": {
+      "starting": "Iniciando…",
+      "ping": "Medindo a latência",
+      "download": "Medindo o download",
+      "upload": "Medindo o upload",
+      "measuring": "Medindo…"
+    },
+    "last_test_now": "Último teste agora mesmo",
+    "elapsed": "{{seconds}} s decorridos",
+    "next_test_approx": "Próximo às ~{{time}}"
   }
 }

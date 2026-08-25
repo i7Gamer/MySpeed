@@ -31,14 +31,29 @@
       "wrong": "Den indtastede adgangskode er forkert",
       "unlock": "Lås op"
     },
+    "setup_token": {
+      "title": "Installationstoken påkrævet",
+      "description": "Der er ikke sat nogen adgangskode på denne instans, så den kan ikke åbnes fra en anden maskine. Indtast installationstokenet fra serverloggen, og vælg derefter en adgangskode.",
+      "placeholder": "Installationstoken fra serverloggen",
+      "wrong": "Det er ikke installationstokenet i serverloggen"
+    },
+    "busy": {
+      "title": "Serveren er optaget",
+      "description": "Serveren er allerede i gang med at kontrollere andre adgangskoder. Vent et øjeblik, og prøv igen."
+    },
+    "throttled": {
+      "title": "For mange forsøg",
+      "description": "For mange forsøg blev afvist. Vent et minut, og prøv igen."
+    },
     "api": {
       "title": "API ikke tilgængeligt",
       "description": "MySpeed kunne ikke få adgang til API'et for denne instans. Prøv venligst igen senere."
     },
     "provider": {
-      "interface": "Grænseflade",
+      "interface": "Netværkskort",
       "server": "Server",
       "server_id": "Server-ID",
+      "server_id_placeholder": "Et vilkårligt server-ID, eller lad feltet stå tomt",
       "custom_url": "Brugerdefineret URL",
       "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Vælg automatisk",
@@ -108,6 +123,11 @@
     "no_access_desc": "Besøgende skal indtaste adgangskoden for at se noget",
     "read_access_desc": "Besøgende kan se data, men kan ikke ændre indstillinger"
   },
+  "locked": {
+    "password_desc": "Denne instans er beskyttet med en adgangskode. Log ind for at se dens data.",
+    "token_hint": "Serveren skriver tokenet i loggen igen, hver gang den afviser en forespørgsel, dog højst én gang hvert tiende minut — så en genindlæsning af denne side lægger en frisk kopi i bunden af loggen.",
+    "enter_token": "Indtast installationstoken"
+  },
   "pause": {
     "manual": "Pause Uendeligt",
     "manual_desc": "Sæt på pause indtil manuelt genoptaget",
@@ -117,7 +137,14 @@
     "medium_desc": "Pause i 6 timer",
     "long": "Langt Bryd",
     "long_desc": "Pause i 12 timer",
-    "custom": "Brugerdefineret Varighed"
+    "custom": "Brugerdefineret Varighed",
+    "quiet_hours": "Stilletimer",
+    "quiet_hours_desc": "Planlagte tests springes over hver dag mellem disse tidspunkter. Tests, du selv starter, kører altid.",
+    "timezone": "Tidszone",
+    "timezone_server": "Serverens ur",
+    "timezone_desc": "Det ur, som både stilletimerne og testplanen forstås ud fra.",
+    "quiet_from": "Fra",
+    "quiet_until": "Til"
   },
   "page": {
     "overview": "Oversigt",
@@ -136,6 +163,14 @@
     "manually": "Indstil manuelt",
     "new_password": "Indstil en ny adgangskode",
     "password_placeholder": "Ny adgangskode",
+    "show_password": "Vis adgangskoden",
+    "hide_password": "Skjul adgangskoden",
+    "confirm_password": "Gentag den",
+    "confirm_password_placeholder": "Ny adgangskode igen",
+    "password_mismatch": "De to adgangskoder er ikke ens",
+    "remove_password": "Fjern adgangskoden",
+    "remove_password_title": "Fjern adgangskoden?",
+    "remove_password_desc": "Du bliver logget ud, og denne instans står tilbage uden adgangskode. Den åbner derefter for alle på den maskine, den kører på, og beder alle andre maskiner om installationstokenet fra serverloggen, indtil der er sat en ny adgangskode.",
     "password_removed": "Adgangskoden er blevet fjernet.",
     "level": "Skift niveau",
     "level_title": "Rettigheder for besøgende",
@@ -154,7 +189,8 @@
     "pause_manual_hint": "Lad være tom for at holde pause på ubestemt tid",
     "release_manually": "Frigiv manuelt",
     "language": "Skift sprog",
-    "view_title": "Skift visning"
+    "view_title": "Skift visning",
+    "quiet_hours_saved": "Stilletimer gemt"
   },
   "header": {
     "title": "MySpeed",
@@ -175,7 +211,7 @@
     "speedtests": "Hastighedstest",
     "configuration": "Konfiguration",
     "stored_tests": "Gemte tests",
-    "tests": "Test",
+    "tests": "Tests",
     "export_tests": "Eksporter tests",
     "tests_exported": "Testene er blevet eksporteret",
     "csv": "CSV",
@@ -212,7 +248,10 @@
       "year": "1 år (standard)",
       "forever": "Behold for evigt",
       "custom": "Brugerdefineret..."
-    }
+    },
+    "include_secrets": "Medtag loginoplysninger",
+    "export_redacted_desc": "Adgangskoder til noder, integrationstokens og administratoradgangskoden udelades.",
+    "export_with_secrets_desc": "Indeholder adgangskoder til noder, integrationstokens og administratoradgangskoden. Opbevar filen et sikkert sted."
   },
   "latest": {
     "ping": "Ping",
@@ -224,7 +263,12 @@
     "byte_speed_unit": "MB/s",
     "up": "Upload",
     "latest": "Sidste test",
-    "before": "før"
+    "before": "før",
+    "bufferbloat": "Bufferbloat: lægger {{increase}} ms til under belastning",
+    "bufferbloat_trend": "Bufferbloat over de seneste tests",
+    "quality": "Under belastning",
+    "loaded_latency": "{{down}} / {{up}} ms forsinkelse",
+    "packet_loss": "Pakketab"
   },
   "info": {
     "recommendations_error": "Du skal udføre mindst 10 tests for at få et gennemsnit. Det er underordnet, om testene er udført manuelt eller automatisk.",
@@ -242,6 +286,18 @@
       "title": "Jitter",
       "description": "Jitter er variationen i ping responstider. Lavere jitter betyder en mere stabil forbindelse, som er vigtig for real-time applikationer som videoopkald og spil."
     },
+    "loaded_latency": {
+      "title": "Forsinkelse under belastning",
+      "description": "Det ping, der blev målt, mens den retning var mættet, frem for mens linjen lå stille. Det er tallet, der afgør, om et opkald overlever, at en anden starter et download — en forbindelse kan være hurtig begge veje og ubrugelig under en overførsel."
+    },
+    "bufferbloat": {
+      "title": "Bufferbloat",
+      "description": "Hvor meget forsinkelse linjen får, når den først er travl: den værste af de to forsinkelser under belastning, minus pinget i hvile. Under 5 ms er fremragende; over 200 ms gør opkald og spil ubrugelige, mens noget som helst andet overføres. Der bedømmes på den værste retning, for en linje, der er ren nedad og dårligt bufferet opad, er en dårligt bufferet linje."
+    },
+    "packet_loss": {
+      "title": "Pakketab",
+      "description": "Pakketab er den andel af data, der aldrig nåede frem og måtte sendes igen. Alt over nul mærkes som hakken i opkald og spil længe før det viser sig som lavere hastighed. Kun Ookla måler det, så en test fra en anden udbyder lader feltet stå tomt frem for at melde nul."
+    },
     "up": {
       "title": "Upload-hastighed",
       "description": "Upload-hastigheden påvirker din browsing-oplevelse. Jo højere den er, jo hurtigere kan din computer sende data."
@@ -258,13 +314,15 @@
     "minutes": "{{minutes}} minutter",
     "hour": "1 time",
     "hours": "{{hours}} timer",
-    "day": "1 day",
-    "days": "{{days}} days",
+    "day": "1 dag",
+    "days": "{{days}} dage",
     "on": "Den",
     "at": "Kl."
   },
   "test": {
     "not_available": "Der er i øjeblikket ingen tests tilgængelige",
+    "not_available_in_range": "Ingen tests mellem {{from}} og {{to}}",
+    "show_all_time": "Vis hele historikken",
     "no_latest": "Der er ingen aktuel test tilgængelig. Udfør venligst en test eller vent til den næste test udføres.",
     "loading_more": "Indlæser flere tests...",
     "no_more_tests": "Ikke flere tests at indlæse",
@@ -272,6 +330,11 @@
     "failed": "Test mislykkedes",
     "recheck": "Kontroller venligst om muligt, om dette sker ofte.",
     "delete": "Slet test",
+    "delete_confirm": {
+      "title": "Slet testen?",
+      "description": "Testen fra <Bold>{{date}}</Bold> bliver slettet. Denne handling kan ikke fortrydes. Vil du fortsætte?",
+      "yes": "Ja, slet"
+    },
     "deleted": "Testen er blevet slettet",
     "average": {
       "title": "Gennemsnitlig hastighed",
@@ -281,11 +344,40 @@
       "title": "Testresultat",
       "description": "<Link>Denne test</Link> opnåede en maksimal download-hastighed på <Bold>{{down}} Mbps</Bold> og en maksimal upload-hastighed på <Bold>{{up}} Mbps</Bold>. Den blev oprettet <Bold>{{type}}</Bold> og tog <Bold>{{duration}} sekunder</Bold>.",
       "jitter": " Forbindelsen jitter var <Bold>{{jitter}} ms</Bold>.",
+      "server": " Testen kørte mod <Bold>{{server}}</Bold>.",
       "from_you": "af dig",
       "automatic": "automatisk"
     },
     "overview": {
       "title_range": "Test oversigt fra {{from}} til {{to}}"
+    },
+    "details": {
+      "show": "Vis detaljer",
+      "hide": "Skjul detaljer",
+      "of_target": "{{percent}} % af dit mål",
+      "over_target": "{{amount}} {{unit}} over dit mål",
+      "under_target": "{{amount}} {{unit}} under dit mål",
+      "on_target": "Præcis på dit mål",
+      "unchanged": "Uændret siden sidste test",
+      "measured_at": "Målt kl.",
+      "measured_with": "Målt med",
+      "duration": "Varighed",
+      "seconds": "{{seconds}} s",
+      "data_used": "Forbrugte data",
+      "data_used_value": "{{down}} ned / {{up}} op",
+      "trigger": "Startet",
+      "server": "Server",
+      "result": "Fuldt resultat",
+      "open_result": "speedtest.net",
+      "loaded_latency": "Forsinkelse under belastning",
+      "loaded_latency_value": "{{down}} ms ned / {{up}} ms op",
+      "packet_loss": "Pakketab",
+      "bufferbloat": "Bufferbloat",
+      "bufferbloat_value": "+{{increase}} ms",
+      "connection": "Forbindelse",
+      "isp": "Udbyder",
+      "external_ip": "Ekstern adresse",
+      "changed": "ændret"
     }
   },
   "errors": {
@@ -297,12 +389,28 @@
     "connection_refused": "Testen kunne ikke udføres, da forbindelsen blev afvist",
     "timed_out": "Internetforbindelsen var ustabil under testen",
     "config": "Konfigurationsfilen kunne ikke indlæses",
-    "invalid_view": "Ugyldig visning"
+    "invalid_view": "Ugyldig visning",
+    "cannot_open_socket": "Kunne ikke åbne en forbindelse til testserveren. Den er måske ikke tilgængelig fra det valgte netværkskort.",
+    "latency_failed": "Forsinkelsestesten mislykkedes, så der kunne ikke måles nogen hastighed."
   },
   "statistics": {
     "average": "Gennemsnit",
+    "compare": {
+      "note": "Ændringer sammenlignet med {{from}} – {{to}}"
+    },
+    "downsampled": "Gennemsnit · viser {{shown}} af {{total}} tests",
+    "detail": {
+      "title": "Fuld opløsning",
+      "description": "Vis op til {{max}} datapunkter i stedet for at tage gennemsnittet",
+      "complete": "Alle tests i dette interval vises allerede",
+      "loading": "Indlæser hele serien…"
+    },
     "export": {
       "button": "Eksporter"
+    },
+    "delta": {
+      "up": "op {{value}}",
+      "down": "ned {{value}}"
     },
     "overview": {
       "total_title": "Antal tests",
@@ -310,13 +418,22 @@
       "failed_title": "Mislykkede tests",
       "failed_description": "Antallet af mislykkede tests",
       "average_title": "Gennemsnitlig varighed",
-      "average_description": "Den gennemsnitlige varighed af testene"
+      "average_description": "Den gennemsnitlige varighed af testene",
+      "packet_loss_title": "Pakketab",
+      "packet_loss_description": "Gennemsnit på tværs af de tests, der målte det",
+      "peak_title": "Opbremsning i myldretiden",
+      "peak_description": "Langsomst omkring {{slowest}}, hurtigst omkring {{fastest}}",
+      "ping_description": "Gennemsnitlig forsinkelse, mellem {{min}} og {{max}}",
+      "span_title": "Spredning i varighed",
+      "span_description": "Den korteste og den længste test i dette interval",
+      "density_title": "Tests pr. dag",
+      "density_description": "Over {{days}} dage"
     },
     "failed": {
       "title": "Mislykkede tests",
       "success": "Vellykkede",
       "failed": "Mislykkede",
-      "label": "Test"
+      "label": "Tests"
     },
     "speed": {
       "title": "Hastighed"
@@ -331,39 +448,53 @@
       "label": "Antal"
     },
     "values": {
-      "min": "Laveste",
+      "min": "Minimum",
       "max": "Maksimum",
       "avg": "Gennemsnit",
       "down": "Download-værdier",
-      "up": "Upload-værdier"
+      "up": "Upload-værdier",
+      "target": "Mål: {{target}}",
+      "consistency": "Ensartethed",
+      "samples": "Målte tests"
     },
     "failed_test": "Mislykket test",
     "hourly": {
       "title": "Hastighed efter tid på dagen",
-      "sample_count": "Prøvninger"
+      "sample_count": "Tests"
     },
     "consistency": {
       "title": "Forbindelses Stabilitet",
       "excellent": "Fremragende",
       "good": "God",
       "fair": "Fint",
-      "poor": "Dårlig"
-    }
+      "poor": "Dårlig",
+      "ping_deviation": "Typisk afvigelse",
+      "loaded_latency_average": "Lægger i gennemsnit {{increase}} ms til under belastning, over {{tests}} tests",
+      "jitter_detail": "Variation inden for én test",
+      "range": "Mellem {{min}} og {{max}}",
+      "sample_count": "Over {{tests}} tests"
+    },
+    "loaded_latency": "Under belastning"
   },
   "calendar": {
     "select_range": "Vælg datointerval",
+    "all_time": "Hele historikken",
     "select_start": "Vælg startdato",
     "select_end": "Vælg slutdato",
+    "previous_year": "Forrige år",
+    "previous_month": "Forrige måned",
+    "next_month": "Næste måned",
+    "next_year": "Næste år",
     "from": "Fra",
     "to": "Til",
     "last_7_days": "Seneste 7 dage",
     "last_30_days": "Seneste 30 dage",
     "last_90_days": "Seneste 90 dage",
     "last_year": "Sidste år",
-    "mon": "Mon",
+    "mon": "Man",
     "tue": "Tir",
     "wed": "Ons",
-    "thu": "Thu",
+    "thu": "Tor",
     "fri": "Fre",
     "sat": "Lør",
     "sun": "Søn"
@@ -432,6 +563,28 @@
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
+    "email": {
+      "title": "E-mail",
+      "fields": {
+        "host": "SMTP-server",
+        "port": "Port",
+        "secure": "Brug TLS direkte (port 465)",
+        "username": "Brugernavn (valgfrit)",
+        "password": "Adgangskode (valgfrit)",
+        "from": "Afsenderadresse",
+        "to": "Modtageradresser (adskilt af komma)",
+        "send_failed": "Send fejlmeddelelser",
+        "error_subject": "Emne ved fejl",
+        "error_subject_placeholder": "MySpeed: hastighedstesten mislykkedes",
+        "error_message": "Fejlmeddelelse",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Fejl: %error%",
+        "send_finished": "Send beskeder ved afslutning",
+        "finished_subject": "Emne ved afslutning",
+        "finished_subject_placeholder": "MySpeed: hastighedstesten er færdig",
+        "finished_message": "Besked ved afslutning",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
     "gotify": {
       "title": "Gotify",
       "fields": {
@@ -475,13 +628,32 @@
         "url_placeholder": "http://localhost:8086",
         "org": "Organisation",
         "bucket": "Spand",
-        "token": "API token",
+        "token": "API-token",
         "measurement": "Målingens navn",
         "measurement_placeholder": "hastighedsprøvninger (standard)",
         "host": "Vært tag",
         "host_placeholder": "Standard til maskinens værtsnavn",
         "tags": "Yderligere tags",
         "tags_placeholder": "region=eu,role=primær (komma-separeret)"
+      }
+    },
+    "mqtt": {
+      "title": "MQTT",
+      "fields": {
+        "host": "Brokerens vært",
+        "port": "Port",
+        "secure": "Brug TLS (port 8883)",
+        "username": "Brugernavn (valgfrit)",
+        "password": "Adgangskode (valgfrit)",
+        "client_id": "Klient-ID (valgfrit)",
+        "topic": "Emne",
+        "error_topic": "Emne til fejl (valgfrit)",
+        "retain": "Behold beskederne",
+        "discovery": "Home Assistant-registrering",
+        "discovery_prefix": "Registreringspræfiks (valgfrit)",
+        "qos": "Servicekvalitet (0 eller 1)",
+        "send_finished": "Udgiv færdige tests",
+        "send_failed": "Udgiv mislykkede tests"
       }
     },
     "ntfy": {
@@ -495,7 +667,7 @@
         "token_placeholder": "tk_... (valgfri, for beskyttede servere)",
         "title": "Notifikations titel",
         "title_placeholder": "MySpeed (valgfrit)",
-        "tags": "Mærker",
+        "tags": "Tags",
         "tags_placeholder": "advarsel,satellit (kommasepareret)",
         "priority": "Standard prioritet (1-5)",
         "priority_placeholder": "3",
@@ -512,8 +684,9 @@
     "telegram": {
       "title": "Telegram",
       "fields": {
-        "token": "Bot Token",
+        "token": "Bot-token",
         "chat_id": "Chat-ID",
+        "message_thread_id": "Emne-ID (valgfrit)",
         "error_message": "Fejlmeddelelse",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Fejl: %error%",
         "send_failed": "Send fejlmeddelelser",
@@ -536,7 +709,18 @@
         "interval": "Hold-Alive interval (minutter)",
         "interval_placeholder": "1"
       }
-    }
+    },
+    "fields": {
+      "alert_only": "Giv kun besked, når en grænse ikke nås",
+      "alert_ping_above": "Giv besked, når ping er over (ms)",
+      "alert_ping_above_placeholder": "f.eks. 50",
+      "alert_download_below": "Giv besked, når download er under (Mbps)",
+      "alert_download_below_placeholder": "f.eks. 100",
+      "alert_upload_below": "Giv besked, når upload er under (Mbps)",
+      "alert_upload_below_placeholder": "f.eks. 20"
+    },
+    "variables": "Tilgængelige variabler",
+    "variables_hint": "Klik for at føje den til beskeden"
   },
   "common": {
     "back_to_top": "Tilbage til toppen"
@@ -582,5 +766,24 @@
       "mbytes": "MB/s (Megabytes per sekund)",
       "mbytes_desc": "Almindelig i browsere og download ledere"
     }
+  },
+  "status": {
+    "start": "Start test",
+    "running_button": "Kører",
+    "paused": "Hastighedstestene er sat på pause",
+    "never_run": "Der er endnu ikke kørt nogen test",
+    "last_test": "Sidste test for {{time}} siden",
+    "next_test": "Næste kl. {{time}}",
+    "recent_failures": "{{failures}} mislykkedes det seneste døgn",
+    "phase": {
+      "starting": "Starter…",
+      "ping": "Måler forsinkelse",
+      "download": "Måler download",
+      "upload": "Måler upload",
+      "measuring": "Måler…"
+    },
+    "last_test_now": "Sidste test lige nu",
+    "elapsed": "{{seconds}} s forløbet",
+    "next_test_approx": "Næste kl. ~{{time}}"
   }
 }

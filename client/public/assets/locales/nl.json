@@ -9,14 +9,14 @@
     "data_title": "Stel optimale gegevens in",
     "data_subtext": "Selecteer je contractueel overeengekomen snelheden in deze stap",
     "ms": "(in ms)",
-    "mbps": "(in Mbps)",
+    "mbps": "(in Mbit/s)",
     "accept_title": "Accepteer de voorwaarden",
     "accept_subtext": "In deze stap willen we je informeren over de Ookla licentie. Lees het en bevestig dat je het gelezen en geaccepteerd hebt door op \"Gereed\" te klikken."
   },
   "dialog": {
     "okay": "Oké",
     "done": "Klaar",
-    "continue": "Ga verder",
+    "continue": "Doorgaan",
     "apply": "Ja, neem over",
     "update": "Vernieuwen",
     "close": "Sluit",
@@ -31,6 +31,20 @@
       "wrong": "Het ingevoerde wachtwoord is onjuist",
       "unlock": "Ontgrendel"
     },
+    "setup_token": {
+      "title": "Installatietoken vereist",
+      "description": "Op deze instantie is geen wachtwoord ingesteld, dus kan ze niet vanaf een andere machine worden geopend. Voer het installatietoken uit het serverlogboek in en kies daarna een wachtwoord.",
+      "placeholder": "Installatietoken uit het serverlogboek",
+      "wrong": "Dat is niet het installatietoken uit het serverlogboek"
+    },
+    "busy": {
+      "title": "Server bezet",
+      "description": "De server controleert al andere wachtwoorden. Wacht even en probeer het opnieuw."
+    },
+    "throttled": {
+      "title": "Te veel pogingen",
+      "description": "Te veel pogingen zijn geweigerd. Wacht een minuut en probeer het opnieuw."
+    },
     "api": {
       "title": "API niet toegankelijk",
       "description": "MySpeed kon de API van deze instantie niet bereiken. Probeer het later opnieuw."
@@ -39,6 +53,7 @@
       "interface": "Interface",
       "server": "Server",
       "server_id": "Server-ID",
+      "server_id_placeholder": "Een willekeurig server-ID, of laat leeg",
       "custom_url": "Aangepaste URL",
       "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Automatisch kiezen",
@@ -108,6 +123,11 @@
     "no_access_desc": "Bezoekers moeten het wachtwoord invoeren om iets te bekijken",
     "read_access_desc": "Bezoekers kunnen gegevens bekijken maar kunnen de instellingen niet wijzigen"
   },
+  "locked": {
+    "password_desc": "Deze instantie is beveiligd met een wachtwoord. Log in om de gegevens te zien.",
+    "token_hint": "De server schrijft het token telkens opnieuw naar het logboek wanneer hij een verzoek weigert, hooguit eens per tien minuten — door deze pagina te herladen komt er dus een verse kopie onderaan het logboek te staan.",
+    "enter_token": "Installatietoken invoeren"
+  },
   "pause": {
     "manual": "Onbepaalde tijd pauzeren",
     "manual_desc": "Pauzeren tot handmatig hervat",
@@ -117,7 +137,14 @@
     "medium_desc": "Pauze voor 6 uur",
     "long": "Lange Breek",
     "long_desc": "Pauzeer gedurende 12 uur",
-    "custom": "Aangepaste duur"
+    "custom": "Aangepaste duur",
+    "quiet_hours": "Stille uren",
+    "quiet_hours_desc": "Geplande tests worden elke dag tussen deze tijden overgeslagen. Tests die je zelf start, lopen altijd.",
+    "timezone": "Tijdzone",
+    "timezone_server": "Serverklok",
+    "timezone_desc": "De klok waarop zowel de stille uren als het testschema worden beoordeeld.",
+    "quiet_from": "Van",
+    "quiet_until": "Tot"
   },
   "page": {
     "overview": "Overzicht",
@@ -136,6 +163,14 @@
     "manually": "Handmatig instellen",
     "new_password": "Nieuw wachtwoord instellen",
     "password_placeholder": "Nieuw wachtwoord",
+    "show_password": "Wachtwoord tonen",
+    "hide_password": "Wachtwoord verbergen",
+    "confirm_password": "Herhaal het",
+    "confirm_password_placeholder": "Nieuw wachtwoord nogmaals",
+    "password_mismatch": "De twee wachtwoorden komen niet overeen",
+    "remove_password": "Wachtwoord verwijderen",
+    "remove_password_title": "Het wachtwoord verwijderen?",
+    "remove_password_desc": "Je wordt uitgelogd en deze instantie blijft zonder wachtwoord achter. Ze staat dan open voor iedereen op de machine waarop ze draait, en vraagt elke andere machine om het installatietoken uit het serverlogboek totdat er een nieuw wachtwoord is ingesteld.",
     "password_removed": "De wachtwoordvergrendeling is verwijderd en het ingestelde wachtwoord is verwijderd.",
     "level": "Niveau wijzigen",
     "level_title": "Rechten voor bezoekers",
@@ -154,7 +189,8 @@
     "pause_manual_hint": "Laat leeg om voor onbepaalde tijd te pauzeren",
     "release_manually": "Handmatig loslaten",
     "language": "Taal wijzigen",
-    "view_title": "Weergave wijzigen"
+    "view_title": "Weergave wijzigen",
+    "quiet_hours_saved": "Stille uren opgeslagen"
   },
   "header": {
     "title": "MySpeed",
@@ -212,7 +248,10 @@
       "year": "1 jaar (standaard)",
       "forever": "Voor altijd houden",
       "custom": "Aangepast..."
-    }
+    },
+    "include_secrets": "Inloggegevens meenemen",
+    "export_redacted_desc": "Wachtwoorden van nodes, integratietokens en het beheerderswachtwoord blijven weg.",
+    "export_with_secrets_desc": "Bevat wachtwoorden van nodes, integratietokens en het beheerderswachtwoord. Bewaar het op een veilige plek."
   },
   "latest": {
     "ping": "Ping",
@@ -224,7 +263,12 @@
     "byte_speed_unit": "MB/s",
     "up": "Uploaden",
     "latest": "Laatste test",
-    "before": "van"
+    "before": "van",
+    "bufferbloat": "Bufferbloat: voegt {{increase}} ms toe onder belasting",
+    "bufferbloat_trend": "Bufferbloat over de laatste tests",
+    "quality": "Onder belasting",
+    "loaded_latency": "{{down}} / {{up}} ms latentie",
+    "packet_loss": "Pakketverlies"
   },
   "info": {
     "recommendations_error": "Je moet minstens 10 tests doen zodat je een gemiddelde kunt bepalen. Het maakt niet uit of de tests handmatig of automatisch zijn uitgevoerd.",
@@ -242,6 +286,18 @@
       "title": "Jitter",
       "description": "Jitter is de variatie in ping-responstijden. Lagere jitter betekent een stabielere verbinding, wat belangrijk is voor real-time applicaties zoals videogesprekken en gaming."
     },
+    "loaded_latency": {
+      "title": "Latentie onder belasting",
+      "description": "De ping die is gemeten terwijl die richting verzadigd was, in plaats van terwijl de lijn stil lag. Dit is het getal dat bepaalt of een gesprek overleeft wanneer iemand anders een download start — een verbinding kan beide kanten op snel zijn en tijdens een overdracht toch onbruikbaar."
+    },
+    "bufferbloat": {
+      "title": "Bufferbloat",
+      "description": "Hoeveel latentie de lijn erbij krijgt zodra ze bezig is: de slechtste van de twee latenties onder belasting, min de ping in rust. Onder de 5 ms is uitstekend; boven de 200 ms worden gesprekken en games onbruikbaar zolang er iets anders wordt overgedragen. Er wordt beoordeeld op de slechtste richting, want een lijn die schoon is naar beneden en slecht gebufferd naar boven, is een slecht gebufferde lijn."
+    },
+    "packet_loss": {
+      "title": "Pakketverlies",
+      "description": "Pakketverlies is het deel van de gegevens dat nooit is aangekomen en opnieuw verstuurd moest worden. Alles boven nul voel je als haperingen in gesprekken en games, lang voordat het als een lagere snelheid zichtbaar wordt. Alleen Ookla meet het, dus een test van een andere provider laat het leeg in plaats van nul te melden."
+    },
     "up": {
       "title": "Uploadsnelheid",
       "description": "Uploadsnelheid beïnvloedt je surfervaring. Hoe meer u krijgt, hoe sneller uw computer gegevens kan verzenden."
@@ -258,13 +314,15 @@
     "minutes": "{{minutes}} minuten",
     "hour": "1 uur",
     "hours": "{{hours}} uur",
-    "day": "1 day",
-    "days": "{{days}} days",
+    "day": "1 dag",
+    "days": "{{days}} dagen",
     "on": "Op",
     "at": "Op"
   },
   "test": {
     "not_available": "Er zijn momenteel geen tests beschikbaar",
+    "not_available_in_range": "Geen tests tussen {{from}} en {{to}}",
+    "show_all_time": "Volledige geschiedenis tonen",
     "no_latest": "Er is geen huidige test. Voer een test uit of wacht tot de volgende test is uitgevoerd.",
     "loading_more": "Meer tests laden...",
     "no_more_tests": "Geen tests meer om te laden",
@@ -272,6 +330,11 @@
     "failed": "Test mislukt",
     "recheck": "Controleer voor zover mogelijk of dit vaker gebeurt.",
     "delete": "Test verwijderen",
+    "delete_confirm": {
+      "title": "Test verwijderen?",
+      "description": "De test van <Bold>{{date}}</Bold> wordt verwijderd. Deze actie kan niet ongedaan worden gemaakt. Wil je doorgaan?",
+      "yes": "Ja, verwijderen"
+    },
     "deleted": "De test is verwijderd",
     "average": {
       "title": "Gemiddelde snelheid",
@@ -281,11 +344,40 @@
       "title": "Testresultaat",
       "description": "<Link>Deze test</Link> behaalde een maximale downloadsnelheid van <Bold>{{down}} Mbps</Bold> en een maximale uploadsnelheid van <Bold>{{up}} Mbps</Bold>. Hij werd gemaakt <Bold>{{type}}</Bold> en duurde <Bold>{{duration}} Seconden</Bold>.",
       "jitter": " De jitter voor de verbinding was <Bold>{{jitter}} ms</Bold>.",
+      "server": " De test liep tegen <Bold>{{server}}</Bold>.",
       "from_you": "van jou",
       "automatic": "automatisch"
     },
     "overview": {
       "title_range": "Test overzicht van {{from}} naar {{to}}"
+    },
+    "details": {
+      "show": "Details tonen",
+      "hide": "Details verbergen",
+      "of_target": "{{percent}}% van je doel",
+      "over_target": "{{amount}} {{unit}} boven je doel",
+      "under_target": "{{amount}} {{unit}} onder je doel",
+      "on_target": "Precies op je doel",
+      "unchanged": "Onveranderd sinds de vorige test",
+      "measured_at": "Gemeten om",
+      "measured_with": "Gemeten met",
+      "duration": "Duur",
+      "seconds": "{{seconds}} s",
+      "data_used": "Gebruikte data",
+      "data_used_value": "{{down}} omlaag / {{up}} omhoog",
+      "trigger": "Gestart",
+      "server": "Server",
+      "result": "Volledig resultaat",
+      "open_result": "speedtest.net",
+      "loaded_latency": "Latentie onder belasting",
+      "loaded_latency_value": "{{down}} ms omlaag / {{up}} ms omhoog",
+      "packet_loss": "Pakketverlies",
+      "bufferbloat": "Bufferbloat",
+      "bufferbloat_value": "+{{increase}} ms",
+      "connection": "Verbinding",
+      "isp": "Provider",
+      "external_ip": "Extern adres",
+      "changed": "gewijzigd"
     }
   },
   "errors": {
@@ -297,12 +389,28 @@
     "connection_refused": "De test kon niet worden uitgevoerd omdat de verbinding werd geweigerd",
     "timed_out": "De internetverbinding was instabiel tijdens de duur van de test",
     "config": "Het configuratiebestand kon niet worden geladen",
-    "invalid_view": "Ongeldige weergave"
+    "invalid_view": "Ongeldige weergave",
+    "cannot_open_socket": "Kon geen verbinding met de testserver openen. Mogelijk is die niet bereikbaar vanaf de gekozen netwerkinterface.",
+    "latency_failed": "De latentietest is mislukt, dus kon er geen snelheid worden gemeten."
   },
   "statistics": {
     "average": "Gemiddeld",
+    "compare": {
+      "note": "Wijzigingen ten opzichte van {{from}} – {{to}}"
+    },
+    "downsampled": "Gemiddeld · {{shown}} van {{total}} tests getoond",
+    "detail": {
+      "title": "Volledige resolutie",
+      "description": "Tot {{max}} datapunten tonen in plaats van ze te middelen",
+      "complete": "Elke test in dit bereik wordt al getoond",
+      "loading": "De volledige reeks wordt geladen…"
+    },
     "export": {
       "button": "Exporteren"
+    },
+    "delta": {
+      "up": "omhoog {{value}}",
+      "down": "omlaag {{value}}"
     },
     "overview": {
       "total_title": "Totaal testen",
@@ -310,7 +418,16 @@
       "failed_title": "Mislukte tests",
       "failed_description": "Het aantal mislukte tests",
       "average_title": "Gemiddelde duur",
-      "average_description": "De gemiddelde duur van de tests"
+      "average_description": "De gemiddelde duur van de tests",
+      "packet_loss_title": "Pakketverlies",
+      "packet_loss_description": "Gemiddeld over de tests die het gemeten hebben",
+      "peak_title": "Vertraging in de piekuren",
+      "peak_description": "Traagst rond {{slowest}}, snelst rond {{fastest}}",
+      "ping_description": "Gemiddelde latentie, tussen {{min}} en {{max}}",
+      "span_title": "Spreiding in duur",
+      "span_description": "De kortste en de langste test in dit bereik",
+      "density_title": "Tests per dag",
+      "density_description": "Over {{days}} dagen"
     },
     "failed": {
       "title": "Mislukte tests",
@@ -331,39 +448,53 @@
       "label": "Aantal"
     },
     "values": {
-      "min": "Laagste",
-      "max": "Hoogste",
+      "min": "Minimum",
+      "max": "Maximum",
       "avg": "Gemiddeld",
       "down": "Waarden downloaden",
-      "up": "Waarden uploaden"
+      "up": "Waarden uploaden",
+      "target": "Doel: {{target}}",
+      "consistency": "Regelmaat",
+      "samples": "Gemeten tests"
     },
     "failed_test": "Mislukte test",
     "hourly": {
       "title": "Snelheid op dag",
-      "sample_count": "Testen"
+      "sample_count": "Tests"
     },
     "consistency": {
       "title": "Connectie stabiliteit",
       "excellent": "Uitstekend",
       "good": "goed",
       "fair": "Redelijk",
-      "poor": "Onvoldoende"
-    }
+      "poor": "Onvoldoende",
+      "ping_deviation": "Gebruikelijke afwijking",
+      "loaded_latency_average": "Voegt gemiddeld {{increase}} ms toe onder belasting, over {{tests}} tests",
+      "jitter_detail": "Variatie binnen één test",
+      "range": "Tussen {{min}} en {{max}}",
+      "sample_count": "Over {{tests}} tests"
+    },
+    "loaded_latency": "Onder belasting"
   },
   "calendar": {
     "select_range": "Selecteer datumbereik",
+    "all_time": "Volledige geschiedenis",
     "select_start": "Selecteer startdatum",
     "select_end": "Selecteer einddatum",
+    "previous_year": "Vorig jaar",
+    "previous_month": "Vorige maand",
+    "next_month": "Volgende maand",
+    "next_year": "Volgend jaar",
     "from": "van",
     "to": "tot",
     "last_7_days": "Afgelopen 7 dagen",
     "last_30_days": "Laatste 30 dagen",
     "last_90_days": "Last 90 Days",
     "last_year": "Vorig jaar",
-    "mon": "Mon",
+    "mon": "ma",
     "tue": "di",
     "wed": "woe",
-    "thu": "Thu",
+    "thu": "do",
     "fri": "vr",
     "sat": "za",
     "sun": "zo"
@@ -380,7 +511,7 @@
     "preview_active": "Het toevoegen en verwijderen van servers is uitgeschakeld in demomodus.",
     "placeholder": {
       "name": "MySpeed instantie",
-      "url": "https://uw-server.nt"
+      "url": "https://uw-server.nl"
     },
     "group": {
       "name": "Naam server",
@@ -432,6 +563,28 @@
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
+    "email": {
+      "title": "E-mail",
+      "fields": {
+        "host": "SMTP-server",
+        "port": "Poort",
+        "secure": "TLS direct gebruiken (poort 465)",
+        "username": "Gebruikersnaam (optioneel)",
+        "password": "Wachtwoord (optioneel)",
+        "from": "Afzenderadres",
+        "to": "Adressen van ontvangers (gescheiden door komma's)",
+        "send_failed": "Foutmeldingen verzenden",
+        "error_subject": "Onderwerp bij fout",
+        "error_subject_placeholder": "MySpeed: snelheidstest mislukt",
+        "error_message": "Foutmelding",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] fout: %error%",
+        "send_finished": "Voltooide berichten verzenden",
+        "finished_subject": "Onderwerp bij voltooiing",
+        "finished_subject_placeholder": "MySpeed: snelheidstest voltooid",
+        "finished_message": "Voltooid bericht",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
     "gotify": {
       "title": "Gotify",
       "fields": {
@@ -475,7 +628,7 @@
         "url_placeholder": "http://localhost:8086",
         "org": "Rekening",
         "bucket": "Emmer",
-        "token": "API token",
+        "token": "API-token",
         "measurement": "Naam meting",
         "measurement_placeholder": "snelheids (standaard)",
         "host": "Host label",
@@ -484,8 +637,27 @@
         "tags_placeholder": "region=eu,role=primair (komma-gescheiden)"
       }
     },
+    "mqtt": {
+      "title": "MQTT",
+      "fields": {
+        "host": "Broker-host",
+        "port": "Poort",
+        "secure": "TLS gebruiken (poort 8883)",
+        "username": "Gebruikersnaam (optioneel)",
+        "password": "Wachtwoord (optioneel)",
+        "client_id": "Client-ID (optioneel)",
+        "topic": "Onderwerp",
+        "error_topic": "Onderwerp voor fouten (optioneel)",
+        "retain": "Berichten bewaren",
+        "discovery": "Home Assistant-detectie",
+        "discovery_prefix": "Detectievoorvoegsel (optioneel)",
+        "qos": "Quality of service (0 of 1)",
+        "send_finished": "Voltooide tests publiceren",
+        "send_failed": "Mislukte tests publiceren"
+      }
+    },
     "ntfy": {
-      "title": "kant-en-klare",
+      "title": "ntfy",
       "fields": {
         "url": "Server-URL",
         "url_placeholder": "https://ntfy.sh",
@@ -495,7 +667,7 @@
         "token_placeholder": "tk_... (optioneel, voor beschermde servers)",
         "title": "Notificatie titel",
         "title_placeholder": "MySpeed (optioneel)",
-        "tags": "Labels",
+        "tags": "Tags",
         "tags_placeholder": "waarschuwing, satelliet (komma gescheiden)",
         "priority": "Standaard prioriteit (1-5)",
         "priority_placeholder": "3",
@@ -512,8 +684,9 @@
     "telegram": {
       "title": "Telegram",
       "fields": {
-        "token": "Bot Token",
+        "token": "Bot-token",
         "chat_id": "Chat-ID",
+        "message_thread_id": "Onderwerp-ID (optioneel)",
         "error_message": "Foutmelding",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] fout: %error%",
         "send_failed": "Foutberichten verzenden",
@@ -526,7 +699,7 @@
       "title": "Webhook",
       "fields": {
         "url": "Webhook URL",
-        "url_placeholder": "https://uw-server.nt/hook",
+        "url_placeholder": "https://uw-server.nl/hook",
         "send_started": "Gestart met verzenden",
         "send_failed": "Foutberichten verzenden",
         "send_finished": "Volledig ingevuld verzenden",
@@ -536,7 +709,18 @@
         "interval": "Keep-Alive interval (minuten)",
         "interval_placeholder": "1"
       }
-    }
+    },
+    "fields": {
+      "alert_only": "Alleen melden wanneer een grens niet wordt gehaald",
+      "alert_ping_above": "Melden wanneer de ping boven (ms) komt",
+      "alert_ping_above_placeholder": "bijv. 50",
+      "alert_download_below": "Melden wanneer de download onder (Mbit/s) zakt",
+      "alert_download_below_placeholder": "bijv. 100",
+      "alert_upload_below": "Melden wanneer de upload onder (Mbit/s) zakt",
+      "alert_upload_below_placeholder": "bijv. 20"
+    },
+    "variables": "Beschikbare variabelen",
+    "variables_hint": "Klik om hem aan het bericht toe te voegen"
   },
   "common": {
     "back_to_top": "Terug naar boven"
@@ -582,5 +766,24 @@
       "mbytes": "MB/s (Megabytes per seconde)",
       "mbytes_desc": "Veelvoorkomende browsers en downloadmanagers"
     }
+  },
+  "status": {
+    "start": "Test starten",
+    "running_button": "Bezig",
+    "paused": "De snelheidstests staan op pauze",
+    "never_run": "Er is nog geen test uitgevoerd",
+    "last_test": "Laatste test {{time}} geleden",
+    "next_test": "Volgende om {{time}}",
+    "recent_failures": "{{failures}} mislukt in de afgelopen dag",
+    "phase": {
+      "starting": "Starten…",
+      "ping": "Latentie meten",
+      "download": "Download meten",
+      "upload": "Upload meten",
+      "measuring": "Meten…"
+    },
+    "last_test_now": "Laatste test zojuist",
+    "elapsed": "{{seconds}} s verstreken",
+    "next_test_approx": "Volgende om ~{{time}}"
   }
 }
