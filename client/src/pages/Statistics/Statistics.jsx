@@ -121,8 +121,10 @@ const rangeQuery = (dateRange) => {
 
 if (!ChartJS.registry.plugins.get('crosshair')) ChartJS.register(crosshairPlugin);
 
-ChartJS.defaults.color = "hsl(215, 20%, 55%)";
-ChartJS.defaults.font.color = "hsl(215, 20%, 55%)";
+// No default text colour: it was a grey picked for a dark page and set once at
+// import, which no theme change can reach. Every chart names its own tick and
+// legend colour from the palette - see lineChartOptions - so this only ever
+// applied to text that no longer exists.
 ChartJS.defaults.font.family = "Inter, sans-serif";
 ChartJS.defaults.font.weight = 500;
 ChartJS.defaults.font.size = 11;
@@ -432,9 +434,9 @@ export const Statistics = () => {
                                          ranges={{download: deferredStatistics.download, upload: deferredStatistics.upload,
                                              ping: deferredStatistics.ping, jitter: deferredStatistics.jitter}}/>;
             case 'download':
-                return <SpeedChart labels={source.labels} data={source.data} dataKey="download" titleKey={CHART_MODAL_LABELS.download} color="hsl(187, 94%, 43%)" failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
+                return <SpeedChart labels={source.labels} data={source.data} dataKey="download" titleKey={CHART_MODAL_LABELS.download} failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
             case 'upload':
-                return <SpeedChart labels={source.labels} data={source.data} dataKey="upload" titleKey={CHART_MODAL_LABELS.upload} color="hsl(258, 90%, 66%)" failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
+                return <SpeedChart labels={source.labels} data={source.data} dataKey="upload" titleKey={CHART_MODAL_LABELS.upload} failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
             case 'ping':
                 return <PingChart labels={source.labels} data={source.data} failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints}/>;
             case 'hourly':
@@ -499,8 +501,8 @@ export const Statistics = () => {
                 card takes the same share of the row - so the pairing is a
                 property of this order and statisticsReflow.test.js holds it. */}
             <PingChart labels={deferredStatistics.labels} data={deferredStatistics.data} failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('ping')} compact/>
-            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="download" titleKey={CHART_MODAL_LABELS.download} color="hsl(187, 94%, 43%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('download')} compact/>
-            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="upload" titleKey={CHART_MODAL_LABELS.upload} color="hsl(258, 90%, 66%)" failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('upload')} compact/>
+            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="download" titleKey={CHART_MODAL_LABELS.download} failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('download')} compact/>
+            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="upload" titleKey={CHART_MODAL_LABELS.upload} failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('upload')} compact/>
 
             <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages} onClick={() => setExpandedChart('hourly')}/>
 

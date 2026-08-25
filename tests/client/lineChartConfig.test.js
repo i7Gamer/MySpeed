@@ -26,7 +26,7 @@ before(async () => {
 const LABELS = ["2026-08-09T10:00:00.000Z", "2026-08-09T14:00:00.000Z", "2026-08-10T09:00:00.000Z"];
 
 const options = (overrides = {}) => lineChartOptions({
-    themeColors: chartThemeColors(true),
+    themeColors: chartThemeColors(),
     labels: LABELS,
     errors: [null, "Too many requests", null],
     failed: [false, true, false],
@@ -38,17 +38,27 @@ const options = (overrides = {}) => lineChartOptions({
     ...overrides
 });
 
+/*
+ * There is no document here, so every property comes back as the fallback. The
+ * theme's own answers cannot be read without a browser - what the stylesheet
+ * declares and what this asks it for are compared in chartPalette.test.js
+ * instead, which reads the compiled CSS. What is left to check here is that no
+ * caller is ever handed an empty string: chart.js takes one without complaint
+ * and draws the mark in black.
+ */
 describe("chartThemeColors", () => {
-    it("answers both themes with the full palette", () => {
-        for (const dark of [true, false]) {
-            const colors = chartThemeColors(dark);
-            for (const key of ["gridColor", "tickColor", "tooltipBg", "tooltipTitle", "tooltipBody", "tooltipBorder"])
-                assert.ok(colors[key], `${key} missing in ${dark ? "dark" : "light"}`);
-        }
+    const SERIES = ["download", "upload", "ping", "loaded", "jitter", "average", "failed"];
+    const CHROME = ["gridColor", "crosshair", "tickColor", "tooltipBg", "tooltipTitle", "tooltipBody", "tooltipBorder"];
+
+    it("answers every mark and every piece of chrome", () => {
+        const colors = chartThemeColors();
+
+        for (const key of [...SERIES, ...CHROME]) assert.ok(colors[key], `${key} came back empty`);
     });
 
-    it("does not hand the dark palette to the light theme", () => {
-        assert.notEqual(chartThemeColors(true).tooltipBg, chartThemeColors(false).tooltipBg);
+    it("falls back to something visible where there is no document to ask", () => {
+        for (const value of Object.values(chartThemeColors()))
+            assert.match(value, /^#[\da-f]{6}$/i, "the fallback is not a colour a canvas would draw");
     });
 });
 
@@ -230,7 +240,7 @@ describe("parsing the labels", () => {
 
         isSingleDaySeries(labels);
         lineChartOptions({
-            themeColors: chartThemeColors(true), labels, errors: labels.map(() => null),
+            themeColors: chartThemeColors(), labels, errors: labels.map(() => null),
             failed: labels.map(() => false), isSingleDay: false,
             pointStyle: {radius: 3, hoverRadius: 6}, lineTension: 0.35, use12h: false, valueUnit: "ms"
         });
@@ -581,8 +591,12 @@ describe("lineChartOptions", () => {
     });
 
     it("themes the tooltip from the palette", () => {
-        const colors = chartThemeColors(true);
+        const colors = chartThemeColors();
 
         assert.equal(options().plugins.tooltip.backgroundColor, tooltipTheme(colors).backgroundColor);
+    });
+
+    it("hands the crosshair its colour rather than letting the plugin look it up", () => {
+        assert.equal(options().plugins.crosshair.color, chartThemeColors().crosshair);
     });
 });

@@ -1,18 +1,21 @@
 import ChartWrapper from "@/common/components/ChartWrapper";
 import { useMemo, useContext, memo } from "react";
 import { t } from "i18next";
-import { ThemeContext } from "@/common/contexts/Theme";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { convertSpeed, formatHour, getSpeedUnit } from "@/common/utils/FormatUtil";
-import { chartMotion, chartThemeColors, tooltipTheme } from "@/pages/Statistics/charts/lineChartConfig";
+import { chartMotion, tooltipTheme, withAlpha } from "@/pages/Statistics/charts/lineChartConfig";
+import { useChartTheme } from "@/pages/Statistics/charts/useChartTheme";
 import { clickable } from "@/common/utils/Clickable";
 import "./SpeedChart/styles.sass";
 
+// The bars are wide enough that a solid fill would flatten the grid behind
+// them; the border carries the edge at full strength.
+const BAR_FILL_ALPHA = 0.75;
+
 const HourlyChart = memo((props) => {
-    const {isDarkMode} = useContext(ThemeContext);
     const [preferences] = useContext(PreferencesContext);
     const speedUnit = getSpeedUnit(preferences);
-
+    const themeColors = useChartTheme();
 
     const chartData = useMemo(() => {
         if (!props.hourlyAverages) return { labels: [], datasets: [] };
@@ -28,24 +31,22 @@ const HourlyChart = memo((props) => {
                 {
                     label: t("latest.down"),
                     data: props.hourlyAverages.map(h => convertSpeed(h.download, preferences)),
-                    backgroundColor: 'hsla(187, 94%, 43%, 0.75)',
-                    borderColor: 'hsl(187, 94%, 43%)',
+                    backgroundColor: withAlpha(themeColors.download, BAR_FILL_ALPHA),
+                    borderColor: themeColors.download,
                     borderWidth: 1.5,
                     borderRadius: 6
                 },
                 {
                     label: t("latest.up"),
                     data: props.hourlyAverages.map(h => convertSpeed(h.upload, preferences)),
-                    backgroundColor: 'hsla(258, 90%, 66%, 0.75)',
-                    borderColor: 'hsl(258, 90%, 66%)',
+                    backgroundColor: withAlpha(themeColors.upload, BAR_FILL_ALPHA),
+                    borderColor: themeColors.upload,
                     borderWidth: 1.5,
                     borderRadius: 6
                 }
             ]
         };
-    }, [props.hourlyAverages, preferences]);
-
-    const themeColors = useMemo(() => chartThemeColors(isDarkMode), [isDarkMode]);
+    }, [props.hourlyAverages, preferences, themeColors]);
 
     const chartOptions = useMemo(() => ({
         responsive: true,

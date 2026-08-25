@@ -1,21 +1,17 @@
 import ChartWrapper from "@/common/components/ChartWrapper";
 import { useMemo, useContext, memo } from "react";
 import { t } from "i18next";
-import { ThemeContext } from "@/common/contexts/Theme";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { TIME_FORMAT_12H } from "@/common/utils/FormatUtil";
 import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
 import { lineTensionFor, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
 import { clickable } from "@/common/utils/Clickable";
+import { useChartTheme } from "@/pages/Statistics/charts/useChartTheme";
 import {
-    averageLineDataset, chartThemeColors, failedMarkersDataset, failureMarkers,
+    averageLineDataset, failedMarkersDataset, failureMarkers,
     isSingleDaySeries, lineChartOptions, seriesAverage, timePoints, verticalGradientFill
 } from "@/pages/Statistics/charts/lineChartConfig";
 import "./SpeedChart/styles.sass";
-
-const PING_COLOR = 'hsl(38, 92%, 50%)';
-const LOADED_COLOR = 'hsl(217, 91%, 60%)';
-const JITTER_COLOR = 'hsl(280, 70%, 55%)';
 
 // The jitter fill is fainter than the main line's: it is context, not the reading.
 const JITTER_PEAK_ALPHA = 0.15;
@@ -24,7 +20,6 @@ const JITTER_PEAK_ALPHA = 0.15;
 const AVERAGE_ORDER = 4;
 
 const PingChart = memo(({ compact = false, ...props }) => {
-    const {isDarkMode} = useContext(ThemeContext);
     const [preferences] = useContext(PreferencesContext);
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
 
@@ -72,7 +67,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
     const lineTension = useMemo(() => lineTensionFor(filteredData.labels.length),
         [filteredData.labels.length]);
 
-    const themeColors = useMemo(() => chartThemeColors(isDarkMode), [isDarkMode]);
+    const themeColors = useChartTheme();
 
     const chartOptions = useMemo(() => lineChartOptions({
         themeColors,
@@ -92,11 +87,11 @@ const PingChart = memo(({ compact = false, ...props }) => {
             {
                 label: t("latest.ping"),
                 data: timePoints(filteredData.labels, filteredData.data),
-                borderColor: PING_COLOR,
-                backgroundColor: verticalGradientFill(PING_COLOR),
+                borderColor: themeColors.ping,
+                backgroundColor: verticalGradientFill(themeColors.ping),
                 fill: true,
-                pointBackgroundColor: PING_COLOR,
-                pointBorderColor: PING_COLOR,
+                pointBackgroundColor: themeColors.ping,
+                pointBorderColor: themeColors.ping,
                 pointRadius: pointStyle.radius,
                 pointHoverRadius: pointStyle.hoverRadius,
                 spanGaps: true,
@@ -110,11 +105,11 @@ const PingChart = memo(({ compact = false, ...props }) => {
             ...(hasLoadedData ? [{
                 label: t("statistics.loaded_latency"),
                 data: timePoints(filteredData.labels, filteredData.loaded),
-                borderColor: LOADED_COLOR,
+                borderColor: themeColors.loaded,
                 backgroundColor: 'transparent',
                 fill: false,
-                pointBackgroundColor: LOADED_COLOR,
-                pointBorderColor: LOADED_COLOR,
+                pointBackgroundColor: themeColors.loaded,
+                pointBorderColor: themeColors.loaded,
                 pointRadius: pointStyle.radius,
                 pointHoverRadius: pointStyle.hoverRadius,
                 spanGaps: true,
@@ -123,11 +118,11 @@ const PingChart = memo(({ compact = false, ...props }) => {
             ...(hasJitterData ? [{
                 label: t("latest.jitter"),
                 data: timePoints(filteredData.labels, filteredData.jitter),
-                borderColor: JITTER_COLOR,
-                backgroundColor: verticalGradientFill(JITTER_COLOR, JITTER_PEAK_ALPHA),
+                borderColor: themeColors.jitter,
+                backgroundColor: verticalGradientFill(themeColors.jitter, JITTER_PEAK_ALPHA),
                 fill: true,
-                pointBackgroundColor: JITTER_COLOR,
-                pointBorderColor: JITTER_COLOR,
+                pointBackgroundColor: themeColors.jitter,
+                pointBorderColor: themeColors.jitter,
                 pointRadius: pointStyle.radius,
                 pointHoverRadius: pointStyle.hoverRadius,
                 spanGaps: true,
@@ -135,10 +130,10 @@ const PingChart = memo(({ compact = false, ...props }) => {
             }] : []),
             // Left off entirely when nothing was measured: a line at zero is a
             // reading, and a range in which every test failed made none.
-            ...(filteredData.average !== null ? [averageLineDataset(filteredData.labels, filteredData.average, AVERAGE_ORDER)] : []),
-            ...(hasFailedTests ? [failedMarkersDataset(filteredData.labels, failedMarkerData, compact)] : [])
+            ...(filteredData.average !== null ? [averageLineDataset(filteredData.labels, filteredData.average, AVERAGE_ORDER, themeColors.average)] : []),
+            ...(hasFailedTests ? [failedMarkersDataset(filteredData.labels, failedMarkerData, compact, themeColors.failed)] : [])
         ],
-    }), [filteredData, compact, pointStyle, hasJitterData, hasLoadedData, hasFailedTests, failedMarkerData]);
+    }), [filteredData, compact, pointStyle, hasJitterData, hasLoadedData, hasFailedTests, failedMarkerData, themeColors]);
 
     return (
         <div className="chart-container ping-chart" {...clickable(props.onClick)}>

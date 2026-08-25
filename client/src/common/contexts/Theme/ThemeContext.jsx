@@ -43,6 +43,26 @@ export const ThemeProvider = (props) => {
 
     const resolved = resolveTheme(theme, systemDark);
 
+    /*
+     * Stamped during this render, not in an effect after it.
+     *
+     * The charts read their colours off the document - chartThemeColors calls
+     * getComputedStyle - and they do it inside a useMemo, during their own
+     * render. An effect here runs after the children have rendered, so on the
+     * frame a theme changes they would read the properties the outgoing theme
+     * left behind; and the memo is keyed on the resolved theme, which has
+     * already changed, so nothing would ever ask again. The charts would keep
+     * the old palette until something else happened to invalidate them.
+     *
+     * A provider renders before its children, so setting the attribute here
+     * puts it in place in time. Writing an attribute the value it already holds
+     * is a no-op, which is what makes this safe to run on every render.
+     */
+    if (typeof document !== "undefined") document.documentElement.setAttribute("data-theme", resolved);
+
+    // And again after commit, because the render above may be one React throws
+    // away - a concurrent render that never commits would otherwise leave the
+    // document describing a theme the reader never chose.
     useEffect(() => {
         document.documentElement.setAttribute("data-theme", resolved);
     }, [resolved]);
@@ -55,9 +75,10 @@ export const ThemeProvider = (props) => {
     }, []);
 
     /**
-     * `isDarkMode` is kept because the charts still ask in booleans - see
-     * chartThemeColors, which takes one. It is the resolved answer, so a chart
-     * drawn while the theme is "system" follows the machine like everything else.
+     * `isDarkMode` is the resolved answer as a boolean, for the handful of
+     * places that still branch two ways. The charts no longer do - they read
+     * the palette off the document and key their memo on `resolved`, which a
+     * boolean could not have answered once there is more than one dark theme.
      */
     const value = useMemo(() => ({
         theme, setTheme, resolved,

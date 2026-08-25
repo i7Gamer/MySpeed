@@ -12,7 +12,10 @@
  * Lives apart from Statistics.jsx so it can be exercised against a stubbed
  * canvas rather than a rendered chart.
  */
-const CROSSHAIR_COLOUR = 'hsla(215, 20%, 65%, 0.6)';
+// Only where a chart did not say. The colour belongs to the theme now and
+// arrives through the options - see lineChartOptions - because reading a custom
+// property off the document here would mean reading it once per hovered frame.
+const FALLBACK_COLOUR = 'hsla(215, 20%, 65%, 0.6)';
 const DASH_PATTERN = [5, 5];
 const LINE_WIDTH = 1;
 
@@ -36,7 +39,7 @@ export const crosshairPlugin = {
         ctx.moveTo(x, yScale.top);
         ctx.lineTo(x, yScale.bottom);
         ctx.lineWidth = LINE_WIDTH;
-        ctx.strokeStyle = CROSSHAIR_COLOUR;
+        ctx.strokeStyle = chart.options?.plugins?.crosshair?.color || FALLBACK_COLOUR;
         ctx.stroke();
         ctx.restore();
     }

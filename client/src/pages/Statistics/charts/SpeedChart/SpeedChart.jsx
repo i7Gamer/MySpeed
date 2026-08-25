@@ -1,14 +1,14 @@
 import ChartWrapper from "@/common/components/ChartWrapper";
 import { useMemo, useContext, memo } from "react";
 import { t } from "i18next";
-import { ThemeContext } from "@/common/contexts/Theme";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { convertSpeed, getSpeedUnit, TIME_FORMAT_12H } from "@/common/utils/FormatUtil";
 import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
 import { lineTensionFor, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
 import { clickable } from "@/common/utils/Clickable";
+import { useChartTheme } from "@/pages/Statistics/charts/useChartTheme";
 import {
-    averageLineDataset, chartThemeColors, failedMarkersDataset, failureMarkers,
+    averageLineDataset, failedMarkersDataset, failureMarkers,
     isSingleDaySeries, lineChartOptions, seriesAverage, timePoints, verticalGradientFill
 } from "@/pages/Statistics/charts/lineChartConfig";
 import "./styles.sass";
@@ -20,8 +20,7 @@ const AVERAGE_ORDER = 3;
 // still get finer ticks - chart.js scales the step down to fit them.
 const SPEED_TICK_STEP = 100;
 
-export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClick, failed, errors, compact = false, downsampled, dataPoints, rawDataPoints }) => {
-    const {isDarkMode} = useContext(ThemeContext);
+export const SpeedChart = memo(({ labels, data, dataKey, titleKey, onClick, failed, errors, compact = false, downsampled, dataPoints, rawDataPoints }) => {
     const [preferences] = useContext(PreferencesContext);
     const speedUnit = getSpeedUnit(preferences);
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
@@ -51,7 +50,14 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClic
     const lineTension = useMemo(() => lineTensionFor(filteredData.labels.length),
         [filteredData.labels.length]);
 
-    const themeColors = useMemo(() => chartThemeColors(isDarkMode), [isDarkMode]);
+    const themeColors = useChartTheme();
+
+    // The line takes the colour the palette holds for the series it draws.
+    // This was a `color` prop, and Statistics.jsx passed the same two literals
+    // at four call sites - a fifth caller would have chosen its own, and the
+    // download line in one place would not have matched the download line in
+    // another. `dataKey` already names the series; nothing else has to.
+    const seriesColor = themeColors[dataKey] ?? themeColors.download;
 
     const chartOptions = useMemo(() => lineChartOptions({
         themeColors,
@@ -74,11 +80,11 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClic
             {
                 label: t(titleKey),
                 data: timePoints(filteredData.labels, filteredData.data),
-                borderColor: color,
-                backgroundColor: verticalGradientFill(color),
+                borderColor: seriesColor,
+                backgroundColor: verticalGradientFill(seriesColor),
                 fill: true,
-                pointBackgroundColor: color,
-                pointBorderColor: color,
+                pointBackgroundColor: seriesColor,
+                pointBorderColor: seriesColor,
                 pointRadius: pointStyle.radius,
                 pointHoverRadius: pointStyle.hoverRadius,
                 spanGaps: true,
@@ -86,10 +92,10 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClic
             },
             // Left off entirely when nothing was measured: a line at zero is a
             // reading, and a range in which every test failed made none.
-            ...(filteredData.average !== null ? [averageLineDataset(filteredData.labels, filteredData.average, AVERAGE_ORDER)] : []),
-            ...(hasFailedTests ? [failedMarkersDataset(filteredData.labels, failedMarkerData, compact)] : [])
+            ...(filteredData.average !== null ? [averageLineDataset(filteredData.labels, filteredData.average, AVERAGE_ORDER, themeColors.average)] : []),
+            ...(hasFailedTests ? [failedMarkersDataset(filteredData.labels, failedMarkerData, compact, themeColors.failed)] : [])
         ],
-    }), [filteredData, color, titleKey, compact, pointStyle, hasFailedTests, failedMarkerData]);
+    }), [filteredData, seriesColor, themeColors, titleKey, compact, pointStyle, hasFailedTests, failedMarkerData]);
 
     return (
         <div className="chart-container" {...clickable(onClick)}>
