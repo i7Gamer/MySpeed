@@ -83,10 +83,6 @@
     "pause_tests": "Pausar tests",
     "resume_tests": "Continuar tests",
     "language": "Cambiar de idioma",
-    "light_mode": "Modo luz",
-    "dark_mode": "Modo oscuro",
-    "theme_switched_light": "Conmutado a modo luz",
-    "theme_switched_dark": "Cambiar a modo oscuro",
     "preferences": "Preferencias",
     "provider": "Acerca del proveedor",
     "integrations": "Integraciones"
@@ -208,13 +204,15 @@
     "speedtests": "Tests de velocidad",
     "configuration": "Configuración",
     "stored_tests": "Tests almacenados",
-    "tests": "Tests",
+    "tests": "Pruebas",
     "export_tests": "Exportar tests",
     "tests_exported": "Se han exportado los tests",
     "import_tests": "Importar tests",
     "tests_imported": "Se han importado los tests",
+    "tests_imported_partial": "Pruebas importadas: {{imported}}, omitidas: {{skipped}}",
     "import_test_error": "Se ha producido un error al importar los tests",
     "import_config_error": "Se ha producido un error al importar la configuración",
+    "import_config_error_key": "No se pudo importar la configuración: el valor guardado para «{{key}}» no es válido",
     "export": "Exportar",
     "import": "Importar",
     "clear_history": "Eliminar historial",
@@ -320,7 +318,8 @@
     "no_latest": "No hay ningun test en curso. Realice un test o espere hasta que se haya realizado el siguiente.",
     "loading_more": "Cargando más pruebas...",
     "no_more_tests": "No hay que cargar más pruebas",
-    "unknown_error": "Error desconocido:",
+    "unknown_error": "Error desconocido",
+    "unknown_error_detail": "Error desconocido: {{error}}",
     "failed": "Test fallido",
     "recheck": "Por favor, compruebe en la medida de lo posible si esto ocurre más a menudo.",
     "delete": "Borrar test",
@@ -384,7 +383,10 @@
     "config": "No se ha podido cargar el archivo de configuración",
     "invalid_view": "Vista no válida",
     "cannot_open_socket": "No se pudo abrir una conexión con el servidor de test. Puede que no sea accesible desde la interfaz de red seleccionada.",
-    "latency_failed": "El test de latencia falló, así que no se pudo medir ninguna velocidad."
+    "latency_failed": "El test de latencia falló, así que no se pudo medir ninguna velocidad.",
+    "rate_limited": "El proveedor rechazó el test porque se han ejecutado demasiados hace poco. El siguiente se retrasa automáticamente.",
+    "no_measurement": "El test terminó sin informar de ninguna medición.",
+    "impossible_measurement": "El test informó de una medición que no puede ser correcta, así que se descartó."
   },
   "statistics": {
     "average": "Promedio",
@@ -426,7 +428,7 @@
       "title": "Tests fallidos",
       "success": "Exitoso",
       "failed": "Fallido",
-      "label": "Tests"
+      "label": "Pruebas"
     },
     "speed": {
       "title": "Velocidad"
@@ -453,7 +455,7 @@
     "failed_test": "Prueba fallida",
     "hourly": {
       "title": "Velocidad por hora del día",
-      "sample_count": "Tests"
+      "sample_count": "Pruebas"
     },
     "consistency": {
       "title": "Estabilidad de conexión",
@@ -721,10 +723,20 @@
     "theme": {
       "title": "Apariencia",
       "description": "Cambiar entre la interfaz oscura y la luz.",
+      "system": "Sistema",
+      "system_desc": "Seguir la configuración de este dispositivo",
       "dark": "Oscuro",
       "dark_desc": "Más fácil en los ojos con poca luz",
       "light": "Claro",
       "light_desc": "Busca brillante para uso diurno"
+    },
+    "palette": {
+      "title": "Colores",
+      "description": "Elegir los tonos de la interfaz.",
+      "slate_desc": "Gris azulado frío. Los colores que trae MySpeed",
+      "nord_desc": "Azules árticos, contraste más suave",
+      "carbon_desc": "Casi negro y neutro, el contraste más fuerte",
+      "ember_desc": "Marrones cálidos y poca luz azul"
     },
     "time_format": {
       "title": "Formato de hora",
@@ -741,6 +753,14 @@
       "mbps_desc": "Estándar ISP / unidad más rápida",
       "mbytes": "MB/s (Megabytes por segundo)",
       "mbytes_desc": "Común en los administradores de navegadores y descargas"
+    },
+    "grade_values": {
+      "title": "Colores de calificación",
+      "description": "Hasta dónde se lleva una calificación en una medición.",
+      "glyph": "Solo el icono",
+      "glyph_desc": "El icono lleva la calificación",
+      "values": "Icono y cifra",
+      "values_desc": "Colorear también la cifra"
     }
   },
   "status": {

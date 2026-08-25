@@ -18,14 +18,52 @@ import {appLocale} from "@/common/utils/FormatUtil";
 // Taken from FormatUtil rather than written out again here: this was the second
 // copy, and while the two agreed, the three surfaces that had neither did not.
 
-export const chartThemeColors = (isDarkMode) => ({
-    gridColor: isDarkMode ? 'rgba(42, 52, 65, 0.6)' : 'rgba(203, 213, 225, 0.8)',
-    tickColor: isDarkMode ? 'hsl(215, 20%, 50%)' : 'hsl(215, 25%, 40%)',
-    tooltipBg: isDarkMode ? 'hsl(215, 28%, 10%)' : 'hsl(0, 0%, 100%)',
-    tooltipTitle: isDarkMode ? 'hsl(210, 40%, 96%)' : 'hsl(215, 25%, 20%)',
-    tooltipBody: isDarkMode ? 'hsl(215, 20%, 65%)' : 'hsl(215, 15%, 40%)',
-    tooltipBorder: isDarkMode ? 'hsl(215, 25%, 22%)' : 'hsl(215, 20%, 85%)'
-});
+/**
+ * The chart colours, read from the stylesheet that already declares them.
+ *
+ * This was a boolean and a column of hsl() literals - a second palette, in
+ * JavaScript, restating what _colors.sass had already said. The seven
+ * --chart-* properties it duplicated had, between them, zero readers: changing
+ * a chart colour in the stylesheet moved nothing on screen, and the two
+ * palettes were free to drift because nothing compared them.
+ *
+ * A boolean also cannot answer a third theme. It was `isDarkMode`, which the
+ * theme has now outgrown - "system" resolves to one of two, but a palette does
+ * not, and every colour below would have needed another branch.
+ *
+ * Read at call time rather than cached at module scope: the properties change
+ * when the document's data-theme does, and the memo each chart wraps this in is
+ * keyed on the resolved theme so it is asked again whenever that happens.
+ */
+const FALLBACK = "#8b99ab";
+
+export const chartThemeColors = () => {
+    const styles = typeof window !== "undefined" && typeof getComputedStyle === "function"
+        ? getComputedStyle(document.documentElement)
+        : null;
+
+    // Trimmed: a custom property comes back with the whitespace that followed
+    // the colon in the source, and Chart.js hands the string to the canvas
+    // unchanged.
+    const token = (name) => styles?.getPropertyValue(`--${name}`).trim() || FALLBACK;
+
+    return {
+        download: token("chart-download"),
+        upload: token("chart-upload"),
+        ping: token("chart-ping"),
+        loaded: token("chart-loaded"),
+        jitter: token("chart-jitter"),
+        average: token("chart-average"),
+        failed: token("chart-failed"),
+        gridColor: token("chart-grid"),
+        crosshair: token("chart-crosshair"),
+        tickColor: token("chart-tick"),
+        tooltipBg: token("chart-tooltip-bg"),
+        tooltipTitle: token("chart-tooltip-title"),
+        tooltipBody: token("chart-tooltip-body"),
+        tooltipBorder: token("chart-tooltip-border")
+    };
+};
 
 /** Quick draws, no colour/x animation, instant resizes - shared by every chart. */
 export const chartMotion = {
@@ -252,7 +290,39 @@ export const seriesAverage = (values) => {
 /** A failure sits on the axis (0); everything else stays off the series (null). */
 export const failureMarkers = (failed) => failed.map((isFailed) => isFailed ? 0 : null);
 
-const withAlpha = (hsl, alpha) => hsl.replace('hsl', 'hsla').replace(')', `, ${alpha})`);
+/**
+ * A colour at an alpha, whatever notation it arrived in.
+ *
+ * This only knew hsl(): swap the name for `hsla` and put a comma before the
+ * closing bracket. Every colour it was ever handed was an hsl() literal written
+ * three lines away, so that held - and stopped holding the moment the palette
+ * moved into the stylesheet, because a custom property comes back as the hex it
+ * was declared as. The replace would have found nothing to replace and handed
+ * `#0891b2` back unchanged for both stops of a gradient, drawing a flat fill at
+ * full opacity over the chart below it.
+ */
+export const withAlpha = (color, alpha) => {
+    const hex = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(String(color).trim());
+
+    if (hex) {
+        const pairs = hex[1].length === 3 ? [...hex[1]].map((digit) => digit + digit) : hex[1].match(/../g);
+
+        return `rgba(${pairs.map((pair) => parseInt(pair, 16)).join(", ")}, ${alpha})`;
+    }
+
+    // The a-form of whichever function it is. Sliced to three arguments so a
+    // value that already carries an alpha has that one replaced rather than a
+    // second one appended, which is not a colour any canvas would take.
+    const functional = /^(hsl|rgb)a?\((.+)\)$/i.exec(String(color).trim());
+
+    if (functional) {
+        const parts = functional[2].split(",").slice(0, 3).map((part) => part.trim());
+
+        return `${functional[1].toLowerCase()}a(${parts.join(", ")}, ${alpha})`;
+    }
+
+    return color;
+};
 
 const GRADIENT_FLOOR_ALPHA = 0.01;
 const DEFAULT_PEAK_ALPHA = 0.25;
@@ -266,13 +336,17 @@ export const verticalGradientFill = (color, peakAlpha = DEFAULT_PEAK_ALPHA) => (
     return gradient;
 };
 
-const AVERAGE_COLOR = 'hsl(330, 80%, 60%)';
-
-/** The dashed average line. `order` differs per chart - it sits behind the data. */
-export const averageLineDataset = (labels, average, order) => ({
+/**
+ * The dashed average line. `order` differs per chart - it sits behind the data.
+ *
+ * `color` comes from chartThemeColors.average rather than a literal here, so the
+ * line follows the theme like every other mark. Defaulted, because both callers
+ * pass it and a third that forgets should draw a visible line rather than none.
+ */
+export const averageLineDataset = (labels, average, order, color = FALLBACK) => ({
     label: t("statistics.average"),
     data: timePoints(labels, labels.map(() => average)),
-    borderColor: AVERAGE_COLOR,
+    borderColor: color,
     backgroundColor: 'transparent',
     borderWidth: 2,
     borderDash: [6, 4],
@@ -282,17 +356,20 @@ export const averageLineDataset = (labels, average, order) => ({
     order
 });
 
-const FAILED_COLOR = 'hsl(0, 72%, 51%)';
-const FAILED_BORDER_COLOR = 'hsl(0, 84%, 60%)';
-
-/** The red crosses marking failed tests along the axis. */
-export const failedMarkersDataset = (labels, markers, compact) => ({
+/**
+ * The red crosses marking failed tests along the axis.
+ *
+ * One colour where there were two. A crossRot has no interior - the canvas
+ * strokes it - so `pointBackgroundColor` was never what anyone saw, and the two
+ * shades were a distinction with nothing on screen to carry it.
+ */
+export const failedMarkersDataset = (labels, markers, compact, color = FALLBACK) => ({
     label: t("statistics.failed_test"),
     data: timePoints(labels, markers),
     borderColor: 'transparent',
-    backgroundColor: FAILED_COLOR,
-    pointBackgroundColor: FAILED_COLOR,
-    pointBorderColor: FAILED_BORDER_COLOR,
+    backgroundColor: color,
+    pointBackgroundColor: color,
+    pointBorderColor: color,
     pointBorderWidth: compact ? 1 : 2,
     pointRadius: compact ? 3 : 6,
     pointHoverRadius: compact ? 4 : 8,
@@ -391,6 +468,12 @@ export const lineChartOptions = ({
                 },
                 filter: (item) => item.text !== t("statistics.failed_test")
             }
+        },
+        // Handed to the plugin through the options rather than read from the
+        // document inside it: afterDraw runs on every frame the pointer moves,
+        // and this object is already rebuilt whenever the theme changes.
+        crosshair: {
+            color: themeColors.crosshair
         }
     },
     scales: {

@@ -83,10 +83,6 @@
     "pause_tests": "Wstrzymaj testy",
     "resume_tests": "Wznów testy",
     "language": "Zmień język",
-    "light_mode": "Tryb oświetlenia",
-    "dark_mode": "Tryb ciemny",
-    "theme_switched_light": "Przełączony na tryb oświetlenia",
-    "theme_switched_dark": "Przełączony na tryb ciemny",
     "preferences": "Ustawienia",
     "provider": "O dostawcy",
     "integrations": "Integracje"
@@ -213,8 +209,10 @@
     "tests_exported": "Testy zostały wyeksportowane",
     "import_tests": "Importuj testy",
     "tests_imported": "Testy zostały zaimportowane",
+    "tests_imported_partial": "Zaimportowane testy: {{imported}}, pominięte: {{skipped}}",
     "import_test_error": "Wystąpił błąd podczas importu testów",
     "import_config_error": "Wystąpił błąd podczas importu konfiguracji",
+    "import_config_error_key": "Nie udało się zaimportować konfiguracji: zapisana wartość dla „{{key}}” jest nieprawidłowa",
     "export": "Eksportuj",
     "import": "Importuj",
     "clear_history": "Wyczyść historię",
@@ -320,7 +318,8 @@
     "no_latest": "Nie ma aktualnie dostępnego testu. Wykonaj test lub poczekaj na kolejny.",
     "loading_more": "Załaduj więcej testów...",
     "no_more_tests": "Nie musisz ładować więcej testów",
-    "unknown_error": "Nieznany błąd:",
+    "unknown_error": "Nieznany błąd",
+    "unknown_error_detail": "Nieznany błąd: {{error}}",
     "failed": "Test nie powiódł się",
     "recheck": "Sprawdź, czy to zdarza się często.",
     "delete": "Usuń test",
@@ -384,7 +383,10 @@
     "config": "Nie udało się załadować pliku konfiguracyjnego",
     "invalid_view": "Nieprawidłowy widok",
     "cannot_open_socket": "Nie udało się otworzyć połączenia z serwerem testowym. Może być nieosiągalny z wybranego interfejsu sieciowego.",
-    "latency_failed": "Test opóźnienia nie powiódł się, więc nie dało się zmierzyć prędkości."
+    "latency_failed": "Test opóźnienia nie powiódł się, więc nie dało się zmierzyć prędkości.",
+    "rate_limited": "Dostawca odrzucił test, ponieważ ostatnio wykonano ich zbyt wiele. Następny zostanie automatycznie opóźniony.",
+    "no_measurement": "Test zakończył się bez zgłoszenia jakiegokolwiek pomiaru.",
+    "impossible_measurement": "Test zgłosił pomiar, który nie może być prawidłowy, więc został odrzucony."
   },
   "statistics": {
     "average": "Średnia",
@@ -721,10 +723,20 @@
     "theme": {
       "title": "Wygląd",
       "description": "Przełącz między ciemnym i jasnym interfejsem.",
+      "system": "Systemowy",
+      "system_desc": "Podążaj za ustawieniem tego urządzenia",
       "dark": "Ciemny",
       "dark_desc": "Łatwiejsze oczy w małym świetle",
       "light": "Światło",
       "light_desc": "Jasne szukanie użycia w ciągu dnia"
+    },
+    "palette": {
+      "title": "Kolory",
+      "description": "Wybierz barwy, w jakich utrzymany jest interfejs.",
+      "slate_desc": "Chłodna błękitna szarość. Domyślne kolory MySpeed",
+      "nord_desc": "Arktyczne błękity, łagodniejszy kontrast",
+      "carbon_desc": "Prawie czarne i neutralne, najsilniejszy kontrast",
+      "ember_desc": "Ciepłe brązy i mało niebieskiego światła"
     },
     "time_format": {
       "title": "Format czasu",
@@ -741,6 +753,14 @@
       "mbps_desc": "Standardowy ISP / jednostka prędkościowa",
       "mbytes": "MB/s (Megabajty na sekundę)",
       "mbytes_desc": "Często używane w przeglądarkach i menadżerach pobierania"
+    },
+    "grade_values": {
+      "title": "Kolory ocen",
+      "description": "Jak daleko ocena jest przenoszona na odczyt.",
+      "glyph": "Tylko ikona",
+      "glyph_desc": "Ocenę niesie ikona",
+      "values": "Ikona i liczba",
+      "values_desc": "Pokoloruj także liczbę"
     }
   },
   "status": {

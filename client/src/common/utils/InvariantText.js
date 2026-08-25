@@ -37,6 +37,23 @@ export const PRODUCT_NAME = "MySpeed";
 /** The label on the link to the project, which is the site's name. */
 export const GITHUB_LABEL = "GitHub";
 
+/**
+ * What the four colour palettes are called.
+ *
+ * Names, not descriptions. Nord is the Arctic palette by that name and Carbon
+ * is IBM's design system; translating either produces a word for a compass
+ * direction and a word for the element. Slate and Ember are ordinary English
+ * nouns and would translate cleanly, which is the trap - four palettes named
+ * consistently in English and inconsistently everywhere else. The line each
+ * one is described by is a locale key; only the name is fixed.
+ */
+export const PALETTE_NAMES = {
+    slate: "Slate",
+    nord: "Nord",
+    carbon: "Carbon",
+    ember: "Ember"
+};
+
 /** The file formats an export is offered in, by their extensions. */
 export const EXPORT_FORMATS = {csv: "CSV", json: "JSON"};
 

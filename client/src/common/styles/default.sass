@@ -1,8 +1,10 @@
 @use "colors" as *
 @use "grades" as *
 @use "layout" as *
-// The grade palette and the icon-* utilities that carry it, emitted here
-// because this is the one stylesheet App.jsx loads.
+// The palette blocks, the grade palette and the icon-* utilities that carry
+// it. Emitted here because this is the one stylesheet App.jsx loads, and only
+// here - a component that @uses "colors" gets the variables and no output.
+@use "palette-emit"
 @use "grade-palette"
 
 body, html
@@ -22,7 +24,7 @@ body::before
   transform: translateX(-50%)
   width: 150%
   height: 80%
-  background: radial-gradient(ellipse at center, rgba(16, 185, 129, 0.06) 0%, transparent 60%)
+  background: radial-gradient(ellipse at center, rgba(var(--accent-primary-rgb), 0.06) 0%, transparent 60%)
   pointer-events: none
   z-index: 0
 
@@ -30,26 +32,54 @@ body::before
   position: relative
   z-index: 1
 
+// The scrollbar, which had no visible thumb.
+//
+// Three faults, one cause: $light-gray is a border colour and it was being
+// asked to be a control. As a thumb it measured 1.47:1 against the track it
+// sat in and 1.30:1 against a dialog's surface - a scrollbar is a UI control,
+// which answers to 3:1, and at 1.3 there is simply nothing to see. Every
+// dialog that noticed wrote its own copy of these rules with the same colour,
+// so the fix had to be here rather than in each of them.
+//
+// The track and the inset are transparent now instead of $background. They
+// were painted the *page* colour, so inside a dialog - which is $dark-gray -
+// the scrollbar was a near-black stripe on a lighter surface whatever it
+// contained. background-clip keeps the thumb inset without naming a surface,
+// so one rule is right on every one of them.
 ::-webkit-scrollbar
   width: 12px
-  background: $background
+  height: 12px
+  background: transparent
 
 ::-webkit-scrollbar-track
-  background: $background
-  border-radius: 10px
-  margin: 5px
+  background: transparent
 
 ::-webkit-scrollbar-thumb
-  background: $light-gray
+  background: var(--scrollbar-thumb)
   border-radius: 10px
-  border: 3px solid $background
+  // Transparent, and clipped to the padding box: the border is the gap
+  // around the thumb rather than a ring drawn in some surface's colour.
+  border: 3px solid transparent
+  background-clip: padding-box
   min-height: 40px
 
 ::-webkit-scrollbar-thumb:hover
   background: $subtext
+  background-clip: padding-box
 
 ::-webkit-scrollbar-thumb:active
   background: $white
+  background-clip: padding-box
+
+// Firefox has never had any of the above - it answers to the standard
+// properties, which nothing here set, so it drew its own default scrollbar in
+// its own colours against every palette. Behind a support query so it cannot
+// reach Chromium, which now understands both and would let `thin` overrule
+// the width and the shape chosen above.
+@supports not selector(::-webkit-scrollbar)
+  *
+    scrollbar-width: thin
+    scrollbar-color: var(--scrollbar-thumb) transparent
 
 // The overview row's glyphs. Both read the grade their column publishes rather
 // than taking an icon-* class over a colour of their own: the two weigh the
@@ -141,4 +171,10 @@ main
 
 @media (max-width: 730px)
   ::-webkit-scrollbar
-    width: 5px
+    // Wider than the 5px this was. The thumb carries a 3px inset on each
+    // side, which at 5px leaves it less than nothing - so on every screen
+    // under 730px there was no thumb drawn at all, at any contrast.
+    width: 9px
+
+  ::-webkit-scrollbar-thumb
+    border-width: 2px

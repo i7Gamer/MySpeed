@@ -4,7 +4,9 @@
     <meta charset="utf-8" />
     <link rel="icon" href="/assets/img/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#232835" />
+    <!-- Overwritten by themeBoot.js below to the chosen palette's page colour.
+         The value here is only what a browser sees if that script is refused. -->
+    <meta name="theme-color" content="#0f1419" />
     <meta property="og:image" content="/api/opengraph/image" />
     <meta property="og:image:type" content="image/png" />
     <meta name="twitter:title" content="MySpeed" />
@@ -15,6 +17,12 @@
     <link rel="apple-touch-icon" href="/assets/img/logo192.png" />
     <link rel="manifest" href="/manifest.json" />
     <title>MySpeed</title>
+    <!-- Blocking, and before the stylesheet is applied to a paint: it puts
+         data-theme and data-palette on <html> so the first frame is already
+         the reader's colours. Deferring it - or making it a module - would
+         paint Slate dark first and correct it afterwards, which is the flash
+         it exists to remove. See the file for why it is not inline. -->
+    <script src="/themeBoot.js"></script>
   </head>
   <body>
     <div id="root"></div>

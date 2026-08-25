@@ -83,10 +83,6 @@
     "pause_tests": "Pause tests",
     "resume_tests": "Resume tests",
     "language": "Change language",
-    "light_mode": "Light mode",
-    "dark_mode": "Dark mode",
-    "theme_switched_light": "Switched to light mode",
-    "theme_switched_dark": "Switched to dark mode",
     "preferences": "Preferences",
     "provider": "About the provider",
     "integrations": "Integrations"
@@ -213,8 +209,10 @@
     "tests_exported": "The tests have been exported",
     "import_tests": "Import tests",
     "tests_imported": "The tests have been imported",
+    "tests_imported_partial": "Tests imported: {{imported}}, skipped: {{skipped}}",
     "import_test_error": "An error occurred while importing the tests",
     "import_config_error": "An error occurred while importing the configuration",
+    "import_config_error_key": "Could not import the configuration: the stored value for \"{{key}}\" is not valid",
     "export": "Export",
     "import": "Import",
     "clear_history": "Clear history",
@@ -320,7 +318,8 @@
     "no_latest": "There is no current test available. Please perform a test or wait until the next test is performed.",
     "loading_more": "Loading more tests...",
     "no_more_tests": "No more tests to load",
-    "unknown_error": "Unknown error:",
+    "unknown_error": "Unknown error",
+    "unknown_error_detail": "Unknown error: {{error}}",
     "failed": "Test failed",
     "recheck": "Please check as far as possible if this happens often.",
     "delete": "Delete Test",
@@ -384,7 +383,10 @@
     "config": "The configuration file could not be loaded",
     "invalid_view": "Invalid view",
     "cannot_open_socket": "Could not open a connection to the test server. It may be unreachable from the selected network interface.",
-    "latency_failed": "The latency test failed, so no speed could be measured."
+    "latency_failed": "The latency test failed, so no speed could be measured.",
+    "rate_limited": "The provider refused the test because too many have been run recently. The next one is delayed automatically.",
+    "no_measurement": "The test finished without reporting any measurement.",
+    "impossible_measurement": "The test reported a measurement that cannot be right, so it was discarded."
   },
   "statistics": {
     "average": "Average",
@@ -721,10 +723,20 @@
     "theme": {
       "title": "Appearance",
       "description": "Switch between dark and light interface.",
+      "system": "System",
+      "system_desc": "Follow the setting on this device",
       "dark": "Dark",
       "dark_desc": "Easier on the eyes in low light",
       "light": "Light",
       "light_desc": "Brighter look for daytime use"
+    },
+    "palette": {
+      "title": "Colours",
+      "description": "Choose the hues the interface is drawn in.",
+      "slate_desc": "Cool blue-grey. The colours MySpeed ships with",
+      "nord_desc": "Arctic blues, softer contrast",
+      "carbon_desc": "Near-black and neutral, the strongest contrast",
+      "ember_desc": "Warm browns and low blue light"
     },
     "time_format": {
       "title": "Time format",
@@ -741,6 +753,14 @@
       "mbps_desc": "Standard ISP / speedtest unit",
       "mbytes": "MB/s (Megabytes per second)",
       "mbytes_desc": "Common in browsers and download managers"
+    },
+    "grade_values": {
+      "title": "Grade colours",
+      "description": "How far a verdict is carried across a reading.",
+      "glyph": "Glyph only",
+      "glyph_desc": "The icon carries the verdict",
+      "values": "Glyph and figure",
+      "values_desc": "Colour the number too"
     }
   },
   "status": {

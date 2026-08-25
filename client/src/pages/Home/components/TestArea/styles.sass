@@ -16,7 +16,7 @@
   text-align: center
   font-weight: 600
   color: $white
-  box-shadow: 0 0 15px rgba($light-gray, 0.5)
+  box-shadow: 0 0 15px rgba(var(--light-gray-rgb), 0.5)
   animation: slideInDown 0.3s ease-out
 
   span
@@ -94,13 +94,13 @@
   display: flex
   align-items: center
   justify-content: center
-  box-shadow: 0 0 15px rgba($light-gray, 0.5)
+  box-shadow: 0 0 15px rgba(var(--light-gray-rgb), 0.5)
   transition: all 0.3s ease
   animation: slideInUp 0.3s ease-out
   
   &:hover
     transform: translateY(-3px)
-    box-shadow: 0 4px 20px rgba($light-gray, 0.7)
+    box-shadow: 0 4px 20px rgba(var(--light-gray-rgb), 0.7)
     background: $light-gray
     
   &:active

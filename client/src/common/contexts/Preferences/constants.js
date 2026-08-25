@@ -20,6 +20,15 @@ export const SPEED_UNIT_MBYTES = "mbytes";
  * panels and the detail pane all publish the grade on the row and let their
  * parts read it. The stylesheets do the rest - see the graded-value mixin.
  */
+/**
+ * How many points a chart draws when the reader asks for full resolution.
+ *
+ * Here rather than in Statistics.jsx, where it started, because two things
+ * need it now: the request that fetches them, and the sentence in the
+ * preferences dialog that promises how many there will be.
+ */
+export const FULL_DETAIL_POINTS = 1000;
+
 export const GRADE_VALUES_ATTRIBUTE = "data-grade-values";
 export const GRADE_VALUES_ON = "on";
 export const GRADE_VALUES_OFF = "off";

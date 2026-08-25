@@ -20,27 +20,27 @@
   transition: all 0s 0.5s
   animation: 0.5s moveOut cubic-bezier(0.4, 0, 0.2, 1)
 
-.toast-green
-  border-left: 4px solid $accent-primary
+// The colours a caller may ask updateToast for, each bound to the accent that
+// carries its meaning. Orange is neither done nor failed: the outcome that
+// needs reading rather than dismissing - a partly refused import is the first
+// of them, and saying so in the same green as a clean restore is what hid it.
+//
+// One loop rather than a block per colour: the third copy is how a colour
+// nearly shipped with no rule at all, which is the hole
+// importFeedback.test.js now checks every asked-for colour against.
+$toast-accents: (green: $accent-primary, red: $accent-danger, orange: $accent-warning)
 
-  & .toast-content svg
-    color: $accent-primary
+@each $name, $accent in $toast-accents
+  .toast-#{$name}
+    border-left: 4px solid $accent
 
-.toast-green:hover
-  border-color: $light-gray
-  border-left-color: $accent-primary
-  transform: translateX(-4px)
+    & .toast-content svg
+      color: $accent
 
-.toast-red
-  border-left: 4px solid $accent-danger
-
-  & .toast-content svg
-    color: $accent-danger
-
-.toast-red:hover
-  border-color: $light-gray
-  border-left-color: $accent-danger
-  transform: translateX(-4px)
+  .toast-#{$name}:hover
+    border-color: $light-gray
+    border-left-color: $accent
+    transform: translateX(-4px)
 
 .toast-content
   display: flex

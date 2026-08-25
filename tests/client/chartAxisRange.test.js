@@ -52,7 +52,7 @@ const seriesOf = (span) => Array.from({length: POINTS}, (_, index) =>
  */
 const axisOf = (labels, {isSingleDay = false} = {}) => {
     const x = lineChartOptions({
-        themeColors: chartThemeColors(true),
+        themeColors: chartThemeColors(),
         labels,
         errors: labels.map(() => null),
         failed: labels.map(() => false),

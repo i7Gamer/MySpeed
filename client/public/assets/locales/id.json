@@ -83,10 +83,6 @@
     "pause_tests": "Jeda pengujian",
     "resume_tests": "Lanjutkan pengujian",
     "language": "Ubah bahasa",
-    "light_mode": "Mode terang",
-    "dark_mode": "Mode gelap",
-    "theme_switched_light": "Beralih ke mode terang",
-    "theme_switched_dark": "Beralih ke mode gelap",
     "preferences": "Preferensi",
     "provider": "Tentang penyedia",
     "integrations": "Integrasi"
@@ -213,8 +209,10 @@
     "tests_exported": "Pengujian telah diekspor",
     "import_tests": "Impor pengujian",
     "tests_imported": "Pengujian telah diimpor",
+    "tests_imported_partial": "{{imported}} pengujian diimpor, {{skipped}} dilewati",
     "import_test_error": "Terjadi kesalahan saat mengimpor pengujian",
     "import_config_error": "Terjadi kesalahan saat mengimpor konfigurasi",
+    "import_config_error_key": "Konfigurasi tidak dapat diimpor: nilai tersimpan untuk \"{{key}}\" tidak valid",
     "export": "Ekspor",
     "import": "Impor",
     "clear_history": "Hapus riwayat",
@@ -320,7 +318,8 @@
     "no_latest": "Tidak ada pengujian saat ini yang tersedia. Silakan lakukan pengujian atau tunggu hingga pengujian berikutnya dilakukan.",
     "loading_more": "Memuat lebih banyak pengujian...",
     "no_more_tests": "Tidak ada lagi pengujian untuk dimuat",
-    "unknown_error": "Kesalahan tidak dikenal:",
+    "unknown_error": "Galat tidak dikenal",
+    "unknown_error_detail": "Galat tidak dikenal: {{error}}",
     "failed": "Pengujian gagal",
     "recheck": "Silakan periksa sebisa mungkin jika ini sering terjadi.",
     "delete": "Hapus Pengujian",
@@ -384,7 +383,10 @@
     "config": "File konfigurasi tidak dapat dimuat",
     "invalid_view": "Tampilan tidak valid",
     "cannot_open_socket": "Tidak dapat membuka koneksi ke server pengujian. Server itu mungkin tidak terjangkau dari antarmuka jaringan yang dipilih.",
-    "latency_failed": "Pengujian latensi gagal, sehingga tidak ada kecepatan yang dapat diukur."
+    "latency_failed": "Pengujian latensi gagal, sehingga tidak ada kecepatan yang dapat diukur.",
+    "rate_limited": "Penyedia menolak pengujian karena terlalu banyak yang dijalankan baru-baru ini. Yang berikutnya ditunda secara otomatis.",
+    "no_measurement": "Pengujian selesai tanpa melaporkan pengukuran apa pun.",
+    "impossible_measurement": "Pengujian melaporkan pengukuran yang tidak mungkin benar, jadi pengukuran itu dibuang."
   },
   "statistics": {
     "average": "Rata-rata",
@@ -721,10 +723,20 @@
     "theme": {
       "title": "Tampilan",
       "description": "Beralih antara antarmuka gelap dan terang.",
+      "system": "Sistem",
+      "system_desc": "Ikuti pengaturan pada perangkat ini",
       "dark": "Gelap",
       "dark_desc": "Lebih nyaman di mata saat cahaya redup",
       "light": "Terang",
       "light_desc": "Tampilan lebih cerah untuk penggunaan siang hari"
+    },
+    "palette": {
+      "title": "Warna",
+      "description": "Pilih corak warna yang digunakan antarmuka.",
+      "slate_desc": "Biru keabuan dingin. Warna bawaan MySpeed",
+      "nord_desc": "Biru arktik, kontras lebih lembut",
+      "carbon_desc": "Hampir hitam dan netral, kontras paling kuat",
+      "ember_desc": "Cokelat hangat dan minim cahaya biru"
     },
     "time_format": {
       "title": "Format waktu",
@@ -741,6 +753,14 @@
       "mbps_desc": "Satuan baku penyedia internet dan speedtest",
       "mbytes": "MB/s (megabita per detik)",
       "mbytes_desc": "Umum di peramban dan pengelola unduhan"
+    },
+    "grade_values": {
+      "title": "Warna nilai",
+      "description": "Seberapa jauh sebuah penilaian dibawa ke suatu bacaan.",
+      "glyph": "Hanya ikon",
+      "glyph_desc": "Ikon yang membawa penilaian",
+      "values": "Ikon dan angka",
+      "values_desc": "Warnai angkanya juga"
     }
   },
   "status": {

@@ -1,76 +1,368 @@
-$dark-background: #0f1419
-$dark-light-gray: #2a3441
-$dark-dark-gray: #1a2029
-$dark-darker-gray: #151b23
-$dark-white: #e7edf4
-$dark-subtext: #8b99ab
-// What a glyph wears when its row has no verdict to give - a minimum, a test
-// count, the number of tests in a range. Blue, because that is what this
-// interface already says "no judgement here" in, and muted, because five of
-// them on one card must not compete with the graded glyph on the card beside
-// it. Between $subtext, which is already a blue-grey, and the saturated $blue
-// that means "nobody measured this".
-$dark-icon-neutral: #6f93bd
+@use "sass:color"
+@use "sass:math"
+@use "sass:map"
 
-$light-background: #f8fafc
-$light-light-gray: #e2e8f0
-$light-dark-gray: #ffffff
-$light-darker-gray: #f1f5f9
-$light-white: #1e293b
-$light-subtext: #64748b
-$light-icon-neutral: #5478a3
+/// Every colour the interface has, as data.
+///
+/// This file used to be two hand-written blocks - `:root` for dark and
+/// `[data-theme="light"]` for light - and a column of `$hue: #hex` variables
+/// beside them that components reached for directly. Adding a second palette
+/// that way means writing both blocks again and hoping nothing was forgotten,
+/// which is how `--accent-secondary` came to have no light value at all while
+/// three components render text in it: 2.32:1 on a light page.
+///
+/// So the palettes are a map and the blocks are emitted from it. A palette is
+/// one entry; it cannot be half-declared, because the mixin below names every
+/// property and sass fails the build on a missing key.
+///
+/// Every value here was measured, not chosen. What each role answers to:
+///
+///   `white`, `subtext`, `accent-secondary` and the five `grade-*`  4.5:1
+///     They are rendered with `color` - _grades.sass sets the grade on the
+///     figure itself - against the page, the dialog panel, the dialog and the
+///     glass card, whichever is worst.
+///   `on-accent`                                                    4.5:1
+///     The label on an accent-filled control, against that accent. It exists
+///     because three rules in DateRangePicker wrote `color: #fff` on a green
+///     that measures 2.54:1, and a palette with a lighter accent is worse.
+///   `icon-neutral`                                                   3:1
+///     A 36px glyph on a row with no verdict - non-text.
+///   the `chart-*` series                                             3:1
+///     Marks, on the glass card they are drawn on, plus an OKLCH lightness
+///     band (dark 0.48-0.67, light 0.43-0.77) and a CVD separation of
+///     ΔE >= 8 across every pair. paletteContrast.test.js re-derives all of
+///     it from the compiled stylesheet, so a fifth palette is held to the
+///     same bar without anyone remembering to add it to a list.
 
-$blue: #3b82f6
-$orange: #f59e0b
-$green: #10b981
-$red: #ef4444
+// The marks, shared by every palette that does not say otherwise. Assigned in a
+// fixed order and never cycled: `loaded` may repeat `download` because the two
+// are never drawn on the same axes, but it is its own property so a palette can
+// pull them apart without a component changing.
+//
+// Only `ping` moves between the modes - #d97706 measures 2.76:1 on a light page
+// that is not near-white, which Nord's and Ember's are not. `failed` is not here
+// at all: a failure marker is the failure verdict, so it follows `grade-failed`.
+$shared-series: (dark: (download: #0891b2, upload: #8b5cf6, ping: #d97706, loaded: #0891b2, jitter: #9333ea, average: #db2777), light: (download: #0891b2, upload: #8b5cf6, ping: #a85a08, loaded: #0891b2, jitter: #9333ea, average: #db2777))
 
-$cyan: #06b6d4
-$purple: #8b5cf6
-$pink: #ec4899
-$amber: #f59e0b
+// What the mode decides rather than the palette. `glass` is the alpha the card
+// surface is laid on the page at - which is why a mark is checked against the
+// composite and not against `dark-gray`, a token no chart is ever drawn on.
+$mode: (dark: (glass: 0.6, grid: 0.6, wash: rgba(255, 255, 255, 0.03)), light: (glass: 0.85, grid: 0.8, wash: rgba(15, 23, 42, 0.04)))
 
-:root
-  --background: #{$dark-background}
-  --light-gray: #{$dark-light-gray}
-  --dark-gray: #{$dark-dark-gray}
-  --darker-gray: #{$dark-darker-gray}
-  --white: #{$dark-white}
-  --subtext: #{$dark-subtext}
-  --icon-neutral: #{$dark-icon-neutral}
-  --blue: #{$blue}
+$palettes: (slate: (dark: (background: #0f1419,
+      darker-gray: #151b23,
+      dark-gray: #1a2029,
+      light-gray: #2a3441,
+      white: #e7edf4,
+      subtext: #8b99ab,
+      // Blue, because that is what this interface already says "no judgement
+      // here" in, and muted, because five of them on one card must not compete
+      // with the graded glyph on the card beside it.
+      icon-neutral: #6f93bd,
+      glass-on: #1a2029,
+      on-accent: #0f1419,
+      accent-primary: #10b981,
+      accent-secondary: #06b6d4,
+      accent-warning: #f59e0b,
+      accent-danger: #ef4444,
+      grade-good: #10b981,
+      grade-fair: #f59e0b,
+      // A step of their own rather than the accent: a grade is rendered as
+      // text, and the danger and neutral accents measure 4.35:1 and 4.45:1
+      // against the card.
+      // Lightening the accents instead would have fixed the figure and dimmed
+      // the label on every danger button that uses the same token as a fill.
+      grade-poor: #f56565,
+      // Not a verdict: a figure nobody measured. Blue and not red, because "not
+      // measured" and "bad" are different claims - see gradeBelow in TestUtil.
+      grade-none: #4f94f7,
+      grade-failed: #f56565),
+    light: (background: #f8fafc,
+      darker-gray: #f1f5f9,
+      dark-gray: #ffffff,
+      light-gray: #e2e8f0,
+      white: #1e293b,
+      // #64748b, which this was, measures 4.34:1 on the dialog panel.
+      subtext: #617187,
+      icon-neutral: #5478a3,
+      glass-on: #ffffff,
+      on-accent: #ffffff,
+      // The accents re-stepped, not inherited. Every one was chosen against a
+      // near-black ground and light mode simply kept them, which is not a
+      // contrast ratio anybody checked: a grade printed in the old green
+      // measured 2.42:1 and the old amber 2.05:1, under even the 3:1 floor for
+      // large text, and the figure carrying the verdict was the least readable
+      // thing on the page.
+      accent-primary: #047857,
+      accent-secondary: #0e7490,
+      accent-warning: #b45309,
+      // #dc2626 measures 4.41:1 on the dialog panel, where .icon-red renders
+      // every wrong-password and unreachable-node message.
+      accent-danger: #c81e1e,
+      grade-good: #047857,
+      grade-fair: #b45309,
+      grade-poor: #c81e1e,
+      grade-none: #2563eb,
+      grade-failed: #c81e1e)),
+  nord: (dark: (background: #272c36,
+      darker-gray: #2d3340,
+      dark-gray: #323947,
+      light-gray: #434c5e,
+      white: #eceff4,
+      subtext: #9aa5b8,
+      icon-neutral: #8fb4de,
+      glass-on: #323947,
+      on-accent: #272c36,
+      accent-primary: #a3be8c,
+      accent-secondary: #88c0d0,
+      accent-warning: #ebcb8b,
+      // Aurora's #bf616a lightened: as text on this ground it is 4.17:1.
+      accent-danger: #d39197,
+      grade-good: #a3be8c,
+      grade-fair: #ebcb8b,
+      grade-poor: #d39197,
+      grade-none: #8fb4de,
+      grade-failed: #d39197,
+      // Its own marks, and the reason a palette may declare them at all.
+      //
+      // The shared set was validated against a near-black card. Nord's whole
+      // character is a lighter Polar Night ground, and its card composites to
+      // #2e3440, and an expanded chart is drawn straight onto the dialog at
+      // #323947 - where the shared violet, purple and pink measure 2.81, 2.79
+      // and 2.52:1. The alternative was darkening Nord until it fit, which
+      // ends with a palette indistinguishable from Slate.
+      //
+      // So these are the same five hues lifted until each clears 3:1 on every
+      // surface a chart is drawn on here, still inside the dark band and still
+      // far enough apart under every kind of colour blindness. The rule this
+      // establishes is the useful part: a palette may restate any token, and
+      // the tests hold whatever it declares to the same floor.
+      series: (download: #0891b2, upload: #9365ff, ping: #d97706, loaded: #0891b2, jitter: #a958ff, average: #ec3b85)),
+    light: (background: #eceff4,
+      darker-gray: #e5e9f0,
+      dark-gray: #ffffff,
+      light-gray: #d8dee9,
+      white: #2e3440,
+      subtext: #4c566a,
+      icon-neutral: #5e7ca6,
+      glass-on: #ffffff,
+      on-accent: #ffffff,
+      // Snow Storm keeps its surfaces; the Aurora accents cannot be kept. They
+      // are foreground colours for a dark ground - #a3be8c on #eceff4 is 1.9:1
+      // - so these are the same hues at a step that reads as text.
+      accent-primary: #4a6b39,
+      accent-secondary: #2c6478,
+      accent-warning: #7d5f16,
+      accent-danger: #a3323d,
+      grade-good: #4a6b39,
+      grade-fair: #7d5f16,
+      grade-poor: #a3323d,
+      grade-none: #43648f,
+      grade-failed: #a3323d)),
+  carbon: (dark: (background: #0a0a0a,
+      darker-gray: #101010,
+      dark-gray: #161616,
+      light-gray: #2a2a2a,
+      white: #f4f4f4,
+      subtext: #a8a8a8,
+      icon-neutral: #78a9ff,
+      glass-on: #161616,
+      on-accent: #0a0a0a,
+      accent-primary: #42be65,
+      accent-secondary: #3ddbd9,
+      accent-warning: #f1c21b,
+      accent-danger: #fa4d56,
+      grade-good: #42be65,
+      grade-fair: #f1c21b,
+      grade-poor: #fa4d56,
+      grade-none: #78a9ff,
+      grade-failed: #fa4d56),
+    light: (background: #ffffff,
+      darker-gray: #f4f4f4,
+      dark-gray: #ffffff,
+      light-gray: #e0e0e0,
+      white: #161616,
+      subtext: #525252,
+      icon-neutral: #4d6a95,
+      glass-on: #ffffff,
+      on-accent: #ffffff,
+      // Carbon's own -60 steps, which are the ones it publishes as readable.
+      // Yellow has none - the ramp tops out below the bar - so the warning is
+      // a custom step in the same hue.
+      accent-primary: #198038,
+      accent-secondary: #005d5d,
+      accent-warning: #8a6100,
+      accent-danger: #da1e28,
+      grade-good: #198038,
+      grade-fair: #8a6100,
+      grade-poor: #da1e28,
+      grade-none: #0f62fe,
+      grade-failed: #da1e28)),
+  ember: (dark: (background: #1a1614,
+      darker-gray: #1f1a18,
+      dark-gray: #241f1c,
+      light-gray: #3a322d,
+      white: #f5ede4,
+      subtext: #ab9c8d,
+      // The one cool colour in a warm palette, and deliberately so: "nobody
+      // measured this" must not read as a third verdict beside the amber.
+      icon-neutral: #9fb8d4,
+      glass-on: #241f1c,
+      on-accent: #1a1614,
+      accent-primary: #7fb069,
+      accent-secondary: #5cb8b2,
+      accent-warning: #e0a458,
+      accent-danger: #e07871,
+      grade-good: #7fb069,
+      grade-fair: #e0a458,
+      grade-poor: #e07871,
+      grade-none: #9fb8d4,
+      grade-failed: #e07871),
+    light: (background: #faf6f1,
+      darker-gray: #f2ebe2,
+      dark-gray: #ffffff,
+      light-gray: #e8ded2,
+      white: #2b2320,
+      subtext: #6b5d52,
+      icon-neutral: #7d6a58,
+      glass-on: #ffffff,
+      on-accent: #ffffff,
+      // Warm paper rather than white. A palette whose point is the absence of
+      // blue light throws that away on a #ffffff page.
+      accent-primary: #4a7337,
+      accent-secondary: #20686a,
+      accent-warning: #8a5a12,
+      accent-danger: #b03a30,
+      grade-good: #4a7337,
+      grade-fair: #8a5a12,
+      grade-poor: #b03a30,
+      grade-none: #3f6591,
+      grade-failed: #b03a30)))
 
-  --accent-primary: #{$green}
-  --accent-secondary: #{$cyan}
-  --accent-tertiary: #{$purple}
-  --accent-warning: #{$orange}
-  --accent-danger: #{$red}
+/// The palette a document that never got stamped falls back to - the one frame
+/// before ThemeContext runs, and any test that renders without a provider.
+$default-palette: slate
 
-  --glass-bg: rgba(26, 32, 41, 0.6)
+/// A colour as the three numbers rgba() needs.
+///
+/// Three rules already wrote `rgba($light-gray, 0.5)`, and $light-gray is
+/// `var(--light-gray)` - sass cannot evaluate the call, so it emitted
+/// `rgba(var(--light-gray), 0.5)` verbatim, which is invalid at computed-value
+/// time and the browser drops the whole declaration. Those three box-shadows
+/// have never rendered. This is what a rule reaches for instead.
+@function triplet($c)
+  @return #{color.channel($c, "red", $space: rgb)}, #{color.channel($c, "green", $space: rgb)}, #{color.channel($c, "blue", $space: rgb)}
 
-  --chart-download: #{$cyan}
-  --chart-upload: #{$purple}
-  --chart-ping: #{$amber}
-  --chart-average: #{$pink}
-  --chart-grid: rgba(42, 52, 65, 0.6)
-  --chart-tooltip-bg: #{$dark-darker-gray}
-  --chart-tooltip-border: #{$dark-light-gray}
+/// A palette's value for a role, or a failed build.
+///
+/// map.get answers null for a key that is not there, and `--dark-gray: #{null}`
+/// is `--dark-gray: ` - which compiles, ships, and is invalid at computed-value
+/// time, so those surfaces render transparent. Only the keys that happen to
+/// pass through rgba() or triplet() ever threw on their own. This is what makes
+/// "a palette cannot be half-declared" true rather than merely intended.
+/// color.mix, snapped to whole channels.
+///
+/// A mix lands on fractional channels, and sass writes one of those as
+/// `rgb(48.8039215686% 54.05% 60.82%)` - valid, and unreadable in a diff or a
+/// devtools panel, and not something the contrast test's hex parser accepts.
+/// Rounding first means the property holds a plain hex like every other one.
+@function blend($a, $b, $weight)
+  $mixed: color.mix($a, $b, $weight)
+  $channel: math.round(color.channel($mixed, "red", $space: rgb))
+  $green: math.round(color.channel($mixed, "green", $space: rgb))
+  $blue: math.round(color.channel($mixed, "blue", $space: rgb))
 
-[data-theme="light"]
-  --background: #{$light-background}
-  --light-gray: #{$light-light-gray}
-  --dark-gray: #{$light-dark-gray}
-  --darker-gray: #{$light-darker-gray}
-  --white: #{$light-white}
-  --subtext: #{$light-subtext}
-  --icon-neutral: #{$light-icon-neutral}
+  @return rgb($channel, $green, $blue)
 
-  --glass-bg: rgba(255, 255, 255, 0.85)
+@function token($t, $name)
+  $value: map.get($t, $name)
 
-  --chart-grid: rgba(226, 232, 240, 0.8)
-  --chart-tooltip-bg: #{$light-dark-gray}
-  --chart-tooltip-border: #{$light-light-gray}
+  @if $value == null
+    @error "palette entry is missing #{$name}"
 
+  @return $value
+
+@mixin palette-tokens($t, $mode-name)
+  $m: map.get($mode, $mode-name)
+  $series: map.get($shared-series, $mode-name)
+
+  @if map.has-key($t, series)
+    $series: map.merge($series, token($t, series))
+
+  --background: #{token($t, background)}
+  --darker-gray: #{token($t, darker-gray)}
+  --dark-gray: #{token($t, dark-gray)}
+  --light-gray: #{token($t, light-gray)}
+  --white: #{token($t, white)}
+  --subtext: #{token($t, subtext)}
+  --icon-neutral: #{token($t, icon-neutral)}
+
+  // Derived rather than declared, so a palette cannot forget it and a fifth one
+  // gets it right by existing. Most of the way to $subtext: $light-gray, which
+  // this used to be, is a border colour and measured 1.30:1 as a thumb, while
+  // $subtext itself is heavier than a scrollbar wants to be. At 85% the worst
+  // any palette manages is 3.53:1, over the 3:1 a control answers to.
+  --scrollbar-thumb: #{blend(token($t, subtext), token($t, light-gray), 85%)}
+
+  --glass-bg: #{rgba(token($t, glass-on), map.get($m, glass))}
+  // A hover that lifts on a dark ground and settles on a light one. It was
+  // rgba(255, 255, 255, 0.02) either way, so on a light card the affordance
+  // simply was not there.
+  --hover-wash: #{map.get($m, wash)}
+
+  --on-accent: #{token($t, on-accent)}
+  --accent-primary: #{token($t, accent-primary)}
+  --accent-secondary: #{token($t, accent-secondary)}
+  --accent-warning: #{token($t, accent-warning)}
+  --accent-danger: #{token($t, accent-danger)}
+
+  // For the washes: a fill of the same colour at a low alpha, which several
+  // rules pair with a border and a label in the solid colour. Written out as
+  // literals they stayed on the dark-theme hue while the border and the label
+  // moved, and one control was painted in two different greens.
+  --accent-primary-rgb: #{triplet(token($t, accent-primary))}
+  --accent-secondary-rgb: #{triplet(token($t, accent-secondary))}
+  --accent-danger-rgb: #{triplet(token($t, accent-danger))}
+  --light-gray-rgb: #{triplet(token($t, light-gray))}
+
+  --grade-good: #{token($t, grade-good)}
+  --grade-fair: #{token($t, grade-fair)}
+  --grade-poor: #{token($t, grade-poor)}
+  --grade-none: #{token($t, grade-none)}
+  --grade-failed: #{token($t, grade-failed)}
+
+  --chart-download: #{map.get($series, download)}
+  --chart-upload: #{map.get($series, upload)}
+  --chart-ping: #{map.get($series, ping)}
+  --chart-loaded: #{map.get($series, loaded)}
+  --chart-jitter: #{map.get($series, jitter)}
+  // Neither of the next two is told apart by colour: the average is a dashed
+  // line and a failure is a cross. They carry their own shape, which is why
+  // they are outside the categorical check - it would have failed them against
+  // each other for a difference the reader never has to make.
+  --chart-average: #{map.get($series, average)}
+  --chart-failed: #{token($t, grade-failed)}
+
+  --chart-grid: #{rgba(token($t, light-gray), map.get($m, grid))}
+  --chart-crosshair: #{rgba(token($t, subtext), 0.6)}
+
+  // The chart's chrome is the interface's chrome, so it follows the surfaces
+  // rather than restating them: a palette gets it for free and cannot declare
+  // a tooltip that does not match the dialog beside it.
+  //
+  // Emitted in every block rather than on :root once. A var() reference is
+  // substituted on the element that declares it, so a single :root copy
+  // resolved against <html>'s surfaces and every nested scope inherited that
+  // answer already resolved - which is not what a [data-palette] on a preview
+  // means, and made the swatch in the preferences dialog a half-truth.
+  --chart-tick: var(--subtext)
+  --chart-tooltip-bg: var(--darker-gray)
+  --chart-tooltip-title: var(--white)
+  --chart-tooltip-body: var(--subtext)
+  --chart-tooltip-border: var(--light-gray)
+
+// The aliases every component actually reaches for. Bound to the properties, so
+// a rule written against them follows whatever the document says.
 $background: var(--background)
 $light-gray: var(--light-gray)
 $dark-gray: var(--dark-gray)
@@ -78,9 +370,20 @@ $darker-gray: var(--darker-gray)
 $white: var(--white)
 $subtext: var(--subtext)
 $icon-neutral: var(--icon-neutral)
+$on-accent: var(--on-accent)
 
 $accent-primary: var(--accent-primary)
 $accent-secondary: var(--accent-secondary)
-$accent-tertiary: var(--accent-tertiary)
 $accent-warning: var(--accent-warning)
 $accent-danger: var(--accent-danger)
+
+// The hue names, kept because two dozen rules use them and they read better at
+// the call site than the accent they resolve to - but bound now, not literal.
+// They were `$green: #10b981` and the like, so twenty-three rules across twelve
+// files went on painting in the dark theme's colours under every other one:
+// .hover-green and .hover-red on a node card, the delta arrows, the delete item
+// in the context menu. _grade-palette.sass says nothing under components names
+// a colour for a grade; this is what made that untrue.
+$green: var(--grade-good)
+$orange: var(--grade-fair)
+$red: var(--grade-poor)

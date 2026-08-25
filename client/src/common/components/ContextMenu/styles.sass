@@ -49,19 +49,23 @@
     svg
       color: $white
 
+// The accent, not the grade. This wore $red - var(--grade-poor) - beside a
+// wash mixed from --accent-danger-rgb, and under the default palette those
+// are two different reds on one control. Deleting a node is an action, which
+// is what --accent-danger means; --grade-poor is a verdict about a reading.
 .context-menu-danger
-  color: $red
+  color: $accent-danger
 
   svg
-    color: $red
+    color: $accent-danger
 
   &:hover,
   &.context-menu-focused
-    background-color: rgba($red, 0.1)
-    color: $red
+    background-color: rgba(var(--accent-danger-rgb), 0.1)
+    color: $accent-danger
 
     svg
-      color: $red
+      color: $accent-danger
 
 .context-menu-divider
   height: 1px

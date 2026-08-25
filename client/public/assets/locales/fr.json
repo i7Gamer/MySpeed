@@ -83,10 +83,6 @@
     "pause_tests": "Mettre en pause les tests",
     "resume_tests": "Reprendre les tests",
     "language": "Changer de langue",
-    "light_mode": "Mode lumière",
-    "dark_mode": "Mode sombre",
-    "theme_switched_light": "Passage en mode lumière",
-    "theme_switched_dark": "Passage en mode sombre",
     "preferences": "Préférences",
     "provider": "A propos du fournisseur",
     "integrations": "Intégrations"
@@ -213,8 +209,10 @@
     "tests_exported": "Les tests ont été exportés",
     "import_tests": "Tests d'importation",
     "tests_imported": "Les tests ont été importés",
+    "tests_imported_partial": "Tests importés : {{imported}}, ignorés : {{skipped}}",
     "import_test_error": "Une erreur s'est produite lors de l'importation des tests",
     "import_config_error": "Une erreur s'est produite lors de l'importation de la configuration",
+    "import_config_error_key": "Impossible d'importer la configuration : la valeur enregistrée pour « {{key}} » n'est pas valide",
     "export": "Exporter",
     "import": "Importation",
     "clear_history": "Effacer l'historique",
@@ -320,7 +318,8 @@
     "no_latest": "Il n'y a pas de test actuellement disponible. Veuillez effectuer un test ou attendre que le prochain test soit effectué.",
     "loading_more": "Chargement d'autres tests...",
     "no_more_tests": "Plus de tests à charger",
-    "unknown_error": "Erreur inconnue :",
+    "unknown_error": "Erreur inconnue",
+    "unknown_error_detail": "Erreur inconnue : {{error}}",
     "failed": "Échec du Test",
     "recheck": "Veuillez vérifier autant que possible si cela se produit souvent.",
     "delete": "Supprimer le test",
@@ -384,7 +383,10 @@
     "config": "Impossible d’ouvrir le fichier de configuration",
     "invalid_view": "Vue invalide",
     "cannot_open_socket": "Impossible d'ouvrir une connexion vers le serveur de test. Il est peut-être inaccessible depuis l'interface réseau sélectionnée.",
-    "latency_failed": "Le test de latence a échoué, aucun débit n'a donc pu être mesuré."
+    "latency_failed": "Le test de latence a échoué, aucun débit n'a donc pu être mesuré.",
+    "rate_limited": "Le fournisseur a refusé le test car trop de tests ont été lancés récemment. Le suivant est retardé automatiquement.",
+    "no_measurement": "Le test s'est terminé sans signaler la moindre mesure.",
+    "impossible_measurement": "Le test a signalé une mesure qui ne peut pas être correcte, elle a donc été écartée."
   },
   "statistics": {
     "average": "Moyenne",
@@ -721,10 +723,20 @@
     "theme": {
       "title": "Apparence",
       "description": "Basculer entre l'interface sombre et la lumière.",
+      "system": "Système",
+      "system_desc": "Suivre le réglage de cet appareil",
       "dark": "Sombre",
       "dark_desc": "Plus facile sur les yeux à faible lumière",
       "light": "Lumière",
       "light_desc": "Un look plus brillant pour une utilisation journalière"
+    },
+    "palette": {
+      "title": "Couleurs",
+      "description": "Choisir les teintes de l'interface.",
+      "slate_desc": "Gris-bleu froid. Les couleurs livrées avec MySpeed",
+      "nord_desc": "Bleus arctiques, contraste plus doux",
+      "carbon_desc": "Presque noir et neutre, le contraste le plus fort",
+      "ember_desc": "Bruns chauds et peu de lumière bleue"
     },
     "time_format": {
       "title": "Format de l'heure",
@@ -741,6 +753,14 @@
       "mbps_desc": "ISP standard / unité de test de vitesse",
       "mbytes": "Mo/s (mégaoctets par seconde)",
       "mbytes_desc": "Souvent, dans les navigateurs et les gestionnaires de téléchargements"
+    },
+    "grade_values": {
+      "title": "Couleurs des notes",
+      "description": "Jusqu'où une note est portée sur une mesure.",
+      "glyph": "Icône seule",
+      "glyph_desc": "L'icône porte la note",
+      "values": "Icône et chiffre",
+      "values_desc": "Colorer aussi le chiffre"
     }
   },
   "status": {

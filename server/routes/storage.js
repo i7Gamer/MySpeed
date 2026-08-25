@@ -121,11 +121,19 @@ app.put("/config", password(false), previewReadOnly, importBody, async (req, res
     // the first value it cannot read, so "Error importing config" on its own
     // left the operator holding a file that would not go back and every stored
     // value to bisect by hand.
+    //
+    // The key travels as a field of its own as well as inside the sentence, for
+    // the same reason /tests/history sends its counts as fields: the sentence is
+    // English, and the dialog that has to show it speaks fifteen languages. A
+    // caller that only wants to log something still has the message.
     const refusal = result.key
         ? `Error importing config: the stored value for "${result.key}" is not valid`
         : "Error importing config";
 
-    res.status(result.ok ? 200 : 500).json({message: result.ok ? "Config imported" : refusal});
+    res.status(result.ok ? 200 : 500).json({
+        message: result.ok ? "Config imported" : refusal,
+        ...(result.key ? {key: result.key} : {})
+    });
 });
 
 app.delete("/config", password(false), previewReadOnly, async (req, res) => {

@@ -83,10 +83,6 @@
     "pause_tests": "暂停测试",
     "resume_tests": "继续测试",
     "language": "修改语言",
-    "light_mode": "浅色模式",
-    "dark_mode": "深色模式",
-    "theme_switched_light": "已切换到浅色模式",
-    "theme_switched_dark": "已切换到深色模式",
     "preferences": "偏好设置",
     "provider": "关于供应商",
     "integrations": "集成"
@@ -213,8 +209,10 @@
     "tests_exported": "测试已导出",
     "import_tests": "导入测试",
     "tests_imported": "测试已导入",
+    "tests_imported_partial": "已导入 {{imported}} 次测速，跳过 {{skipped}} 次",
     "import_test_error": "导入测速时发生错误",
     "import_config_error": "导入配置时发生错误",
+    "import_config_error_key": "无法导入配置：“{{key}}”的已保存值无效",
     "export": "导出",
     "import": "导入",
     "clear_history": "清除历史记录",
@@ -320,7 +318,8 @@
     "no_latest": "当前没有测试。请执行一个测试或等到下一个测试完成。",
     "loading_more": "加载更多测试记录...",
     "no_more_tests": "已加载全部测试记录",
-    "unknown_error": "未知错误：",
+    "unknown_error": "未知错误",
+    "unknown_error_detail": "未知错误：{{error}}",
     "failed": "测试失败",
     "recheck": "如果这种情况经常发生，请尽可能地检查。",
     "delete": "删除测试",
@@ -384,7 +383,10 @@
     "config": "配置文件不能被加载",
     "invalid_view": "无效视图",
     "cannot_open_socket": "无法与测速服务器建立连接。所选网络接口可能无法访问它。",
-    "latency_failed": "延迟测试失败，因此无法测出速度。"
+    "latency_failed": "延迟测试失败，因此无法测出速度。",
+    "rate_limited": "提供商拒绝了本次测速，因为近期运行的次数过多。下一次会自动延后。",
+    "no_measurement": "测速已结束，但未报告任何测量值。",
+    "impossible_measurement": "测速报告了一个不可能正确的测量值，已将其丢弃。"
   },
   "statistics": {
     "average": "平均",
@@ -721,10 +723,20 @@
     "theme": {
       "title": "外观",
       "description": "在深色和浅色界面之间切换。",
+      "system": "跟随系统",
+      "system_desc": "跟随本设备的设置",
       "dark": "深色",
       "dark_desc": "在弱光下更护眼",
       "light": "浅色",
       "light_desc": "白天使用更明亮"
+    },
+    "palette": {
+      "title": "颜色",
+      "description": "选择界面使用的色调。",
+      "slate_desc": "冷调蓝灰，MySpeed 的默认配色",
+      "nord_desc": "北极蓝调，对比更柔和",
+      "carbon_desc": "近乎纯黑且中性，对比最强",
+      "ember_desc": "暖棕色调，蓝光更少"
     },
     "time_format": {
       "title": "时间格式",
@@ -741,6 +753,14 @@
       "mbps_desc": "标准 ISP / 测速单位",
       "mbytes": "MB/s（兆字节每秒）",
       "mbytes_desc": "常见于浏览器和下载管理器"
+    },
+    "grade_values": {
+      "title": "评级颜色",
+      "description": "评级在一项读数上体现到什么程度。",
+      "glyph": "仅图标",
+      "glyph_desc": "由图标体现评级",
+      "values": "图标和数字",
+      "values_desc": "数字也一并着色"
     }
   },
   "status": {

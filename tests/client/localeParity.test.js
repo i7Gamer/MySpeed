@@ -47,6 +47,25 @@ describe("the locale files", () => {
         assert.ok(Object.keys(source).length > 500, "en.json did not read as the source");
     });
 
+    /**
+     * "named@@0" is what a translation pipeline writes where a string's ICU
+     * placeholder metadata leaked into the value - it is machinery, not a word
+     * in any language, and it renders exactly as written. Dutch shipped it as
+     * the label of the preferences menu item, and the parity checks above are
+     * blind to it: the value is present, non-empty, and different from the
+     * English, which is what a real translation looks like. The artifact has a
+     * shape the words never have, so the shape is what is checked - in every
+     * file including English, since the pipeline touches them all.
+     */
+    it("carries no machine-translation artifact in any value", () => {
+        const leaked = [SOURCE, ...codes].flatMap((code) =>
+            Object.entries(flatten(read(code)))
+                .filter(([, value]) => /@@/.test(String(value)))
+                .map(([key, value]) => `[${code}] ${key} = ${JSON.stringify(value)}`));
+
+        assert.deepEqual(leaked, [], "these values are pipeline metadata, rendered verbatim to the reader");
+    });
+
     for (const code of codes) {
         describe(`${code}.json`, () => {
             const locale = read(code);

@@ -1,0 +1,55 @@
+@use "@/common/styles/colors" as *
+
+.segmented-control
+  display: flex
+  gap: 0.375rem
+  // Wraps rather than squeezing: four palette chips at 320px cannot each hold a
+  // name, and a row that shrinks past its labels is worse than a row that folds.
+  flex-wrap: wrap
+
+.segmented-option
+  // Equal shares of the row, and never narrower than the label inside - the
+  // basis is zero so the widths come from the flex grow rather than from whose
+  // word happens to be longest.
+  flex: 1 1 0
+  min-width: max-content
+  display: flex
+  align-items: center
+  justify-content: center
+  gap: 0.4rem
+  padding: 0.5rem 0.625rem
+  border: 1px solid $light-gray
+  border-radius: 0.625rem
+  cursor: pointer
+  color: $subtext
+  font-size: 0.8rem
+  font-weight: 600
+  text-align: center
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease
+
+  &:hover
+    background-color: var(--hover-wash)
+    color: $white
+
+  &:focus-visible
+    outline: 2px solid $accent-primary
+    outline-offset: 2px
+
+.segmented-option-active
+  border-color: $accent-primary
+  // The accent at a tenth, from the palette's own triplet - so the fill, the
+  // border and the label move together when the palette does.
+  background-color: rgba(var(--accent-primary-rgb), 0.1)
+  color: $white
+
+.segmented-option-icon
+  font-size: 0.9rem
+  flex-shrink: 0
+
+// A choice whose label is a colour rather than a word - the palette chips stack
+// their swatch above their name instead of sitting beside it.
+.segmented-control-stacked
+  .segmented-option
+    flex-direction: column
+    gap: 0.3rem
+    padding: 0.5rem 0.375rem

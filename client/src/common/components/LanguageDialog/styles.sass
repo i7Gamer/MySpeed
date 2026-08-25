@@ -1,7 +1,8 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
 
 .language-dialog
-  width: 22rem
+  width: $settings-dialog-width
 
   .dialog-main
     display: block
@@ -10,23 +11,27 @@
   margin: 1rem 0.5rem
   user-select: none
 
+// What the dialog needs of the viewport around the list: header, footer, the
+// content margins and the dialog area's own padding measured 12rem around a
+// list that just fits, plus a rem of air so the fit is never exact.
+$dialog-chrome-allowance: 13rem
+
 .language-list
-  max-height: 22rem
+  // Six of fifteen languages fitted in the 22rem this was, on a dialog that had
+  // room for more and was narrower than every other one in the same menu.
+  //
+  // Capped against the viewport as well: at a flat 28rem the dialog outgrew a
+  // laptop window, which handed .dialog-main a few pixels of scroll of its own
+  // - and a wheel at the list's bottom chained into them, shifting the whole
+  // dialog up and hiding the last row's bottom border.
+  max-height: min(28rem, calc(100dvh - #{$dialog-chrome-allowance}))
   overflow-y: auto
+  // The wheel stays in the list at its ends. The dialog behind it may
+  // legitimately scroll on a short window - just not because the pointer sat
+  // over a language when the list ran out.
+  overscroll-behavior: contain
   padding-right: 0.25rem
 
-  &::-webkit-scrollbar
-    width: 0.4rem
-
-  &::-webkit-scrollbar-track
-    background: transparent
-
-  &::-webkit-scrollbar-thumb
-    background: $light-gray
-    border-radius: 0.25rem
-
-    &:hover
-      background: $subtext
 
 @media screen and (max-height: 500px)
   .language-list

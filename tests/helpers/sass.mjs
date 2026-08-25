@@ -26,7 +26,45 @@ export const aliasImporter = {
     }
 };
 
-export const compile = (file) => sass.compile(path.join(CLIENT_SRC, file), {importers: [aliasImporter]}).css;
+// Keyed by path, because the stylesheet cannot change inside one run and the
+// suites ask repeatedly: the dialog-width scan alone compiled the same handful
+// of sheets - each pulling in the whole palette module - about twenty times.
+// One process per test file, so the map never outlives the sources it read.
+const compiled = new Map();
+
+export const compile = (file) => {
+    if (!compiled.has(file))
+        compiled.set(file, sass.compile(path.join(CLIENT_SRC, file), {importers: [aliasImporter]}).css);
+
+    return compiled.get(file);
+};
+
+/**
+ * Every custom property the blocks of exactly one selector declare, in source
+ * order.
+ *
+ * The selector is compared whole, not searched for: `[data-theme=light]` is a
+ * substring of every `[data-palette=…][data-theme=light]`, so the indexOf walk
+ * the private copies used read the combined blocks into the plain one - the
+ * "default light" contrast checks were silently re-measuring whichever palette
+ * was emitted last. Later blocks overwrite earlier ones, which is what the
+ * cascade does at equal specificity; a selector with no block answers an empty
+ * object rather than throwing, so a caller can assert absence too.
+ *
+ * Three suites grew a private copy of this walk within one review, which is
+ * the drift the header above records this file existing to end.
+ */
+export const declarationsIn = (css, selector) => {
+    const found = {};
+
+    for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        if (match[1].trim() !== selector) continue;
+
+        for (const [, name, value] of match[2].matchAll(/--([\w-]+):\s*([^;]+);/g)) found[name] = value.trim();
+    }
+
+    return found;
+};
 
 export const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
 

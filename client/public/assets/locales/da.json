@@ -83,10 +83,6 @@
     "pause_tests": "Sæt tests på pause",
     "resume_tests": "Genoptag tests",
     "language": "Skift sprog",
-    "light_mode": "Lys tilstand",
-    "dark_mode": "Mørk tilstand",
-    "theme_switched_light": "Skiftet til lys tilstand",
-    "theme_switched_dark": "Skiftet til mørk tilstand",
     "preferences": "Præferencer",
     "provider": "Om udbyderen",
     "integrations": "Integrationer"
@@ -208,13 +204,15 @@
     "speedtests": "Hastighedstest",
     "configuration": "Konfiguration",
     "stored_tests": "Gemte tests",
-    "tests": "Tests",
+    "tests": "Test",
     "export_tests": "Eksporter tests",
     "tests_exported": "Testene er blevet eksporteret",
     "import_tests": "Importer tests",
     "tests_imported": "Testene er blevet importeret",
+    "tests_imported_partial": "Importerede test: {{imported}}, sprunget over: {{skipped}}",
     "import_test_error": "Der opstod en fejl under import af tests",
     "import_config_error": "Der opstod en fejl under import af konfigurationen",
+    "import_config_error_key": "Konfigurationen kunne ikke importeres: den gemte værdi for \"{{key}}\" er ikke gyldig",
     "export": "Eksport",
     "import": "Import",
     "clear_history": "Ryd historik",
@@ -320,7 +318,8 @@
     "no_latest": "Der er ingen aktuel test tilgængelig. Udfør venligst en test eller vent til den næste test udføres.",
     "loading_more": "Indlæser flere tests...",
     "no_more_tests": "Ikke flere tests at indlæse",
-    "unknown_error": "Ukendt fejl:",
+    "unknown_error": "Ukendt fejl",
+    "unknown_error_detail": "Ukendt fejl: {{error}}",
     "failed": "Test mislykkedes",
     "recheck": "Kontroller venligst om muligt, om dette sker ofte.",
     "delete": "Slet test",
@@ -384,7 +383,10 @@
     "config": "Konfigurationsfilen kunne ikke indlæses",
     "invalid_view": "Ugyldig visning",
     "cannot_open_socket": "Kunne ikke åbne en forbindelse til testserveren. Den er måske ikke tilgængelig fra det valgte netværkskort.",
-    "latency_failed": "Forsinkelsestesten mislykkedes, så der kunne ikke måles nogen hastighed."
+    "latency_failed": "Forsinkelsestesten mislykkedes, så der kunne ikke måles nogen hastighed.",
+    "rate_limited": "Udbyderen afviste testen, fordi der er kørt for mange for nylig. Den næste udskydes automatisk.",
+    "no_measurement": "Testen sluttede uden at rapportere nogen måling.",
+    "impossible_measurement": "Testen rapporterede en måling, der ikke kan være rigtig, så den blev kasseret."
   },
   "statistics": {
     "average": "Gennemsnit",
@@ -426,7 +428,7 @@
       "title": "Mislykkede tests",
       "success": "Vellykkede",
       "failed": "Mislykkede",
-      "label": "Tests"
+      "label": "Test"
     },
     "speed": {
       "title": "Hastighed"
@@ -453,7 +455,7 @@
     "failed_test": "Mislykket test",
     "hourly": {
       "title": "Hastighed efter tid på dagen",
-      "sample_count": "Tests"
+      "sample_count": "Test"
     },
     "consistency": {
       "title": "Forbindelses Stabilitet",
@@ -721,10 +723,20 @@
     "theme": {
       "title": "Udseende",
       "description": "Skift mellem mørk og lys grænseflade.",
+      "system": "System",
+      "system_desc": "Følg indstillingen på denne enhed",
       "dark": "Mørk",
       "dark_desc": "Lettere på øjnene i svagt lys",
       "light": "Lys",
       "light_desc": "Lysere udseende til dagbrug"
+    },
+    "palette": {
+      "title": "Farver",
+      "description": "Vælg, hvilke nuancer grænsefladen vises i.",
+      "slate_desc": "Kølig blågrå. Farverne, som MySpeed leveres med",
+      "nord_desc": "Arktisk blå, blødere kontrast",
+      "carbon_desc": "Næsten sort og neutral, den stærkeste kontrast",
+      "ember_desc": "Varme brune toner og mindre blåt lys"
     },
     "time_format": {
       "title": "Tid format",
@@ -740,7 +752,15 @@
       "mbps": "Mbps (Megabits per sekund)",
       "mbps_desc": "Standard ISP / hastighedstestenhed",
       "mbytes": "MB/s (Megabytes per sekund)",
-      "mbytes_desc": "Almindelig i browsere og download ledere"
+      "mbytes_desc": "Almindelig i browsere og downloadprogrammer"
+    },
+    "grade_values": {
+      "title": "Karakterfarver",
+      "description": "Hvor langt en bedømmelse bæres hen over en måling.",
+      "glyph": "Kun ikonet",
+      "glyph_desc": "Ikonet bærer bedømmelsen",
+      "values": "Ikon og tal",
+      "values_desc": "Farv også tallet"
     }
   },
   "status": {

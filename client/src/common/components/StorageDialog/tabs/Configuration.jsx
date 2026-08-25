@@ -41,11 +41,20 @@ export default ({close}) => {
         if (data === null) return;
 
         const res = await putRequest("/storage/config", data).catch(() => null);
+
+        // A restore is abandoned whole on the first value it cannot read, and the
+        // route names that value. Reading only res.ok left the operator holding a
+        // file that would not go back and every stored key to bisect by hand -
+        // which is exactly what the server had already worked out and sent.
+        const body = res?.ok ? null : await res?.json().catch(() => null);
+
         if (res?.ok) {
             updateToast(t("storage.settings_imported"), "green", faFileImport);
             updateConfig();
         } else {
-            updateToast(t("storage.import_config_error"), "red");
+            updateToast(body?.key
+                ? t("storage.import_config_error_key", {key: body.key})
+                : t("storage.import_config_error"), "red");
         }
         close();
     }
