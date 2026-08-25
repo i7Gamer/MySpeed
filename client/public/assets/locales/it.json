@@ -83,10 +83,6 @@
     "pause_tests": "Test di pausa",
     "resume_tests": "Continua i test",
     "language": "Cambiare la lingua",
-    "light_mode": "Modalità luce",
-    "dark_mode": "Modalità scura",
-    "theme_switched_light": "Passato alla modalità luce",
-    "theme_switched_dark": "Passa alla modalità scura",
     "preferences": "Preferenze",
     "provider": "Informazioni sul fornitore",
     "integrations": "Integrazioni"
@@ -727,6 +723,8 @@
     "theme": {
       "title": "Aspetto",
       "description": "Passa da un'interfaccia scura a un'interfaccia chiara.",
+      "system": "Sistema",
+      "system_desc": "Segui l'impostazione di questo dispositivo",
       "dark": "Scuro",
       "dark_desc": "Più facile sugli occhi in bassa luce",
       "light": "Chiaro",
@@ -747,6 +745,14 @@
       "mbps_desc": "ISP / unità di prova velocità standard",
       "mbytes": "MB/s (Megabyte al secondo)",
       "mbytes_desc": "Comune nei browser e nei gestori di download"
+    },
+    "grade_values": {
+      "title": "Colori dei voti",
+      "description": "Fin dove un voto viene portato su una misurazione.",
+      "glyph": "Solo icona",
+      "glyph_desc": "L'icona porta il voto",
+      "values": "Icona e cifra",
+      "values_desc": "Colora anche il numero"
     }
   },
   "status": {

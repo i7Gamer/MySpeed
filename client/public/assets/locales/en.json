@@ -83,10 +83,6 @@
     "pause_tests": "Pause tests",
     "resume_tests": "Resume tests",
     "language": "Change language",
-    "light_mode": "Light mode",
-    "dark_mode": "Dark mode",
-    "theme_switched_light": "Switched to light mode",
-    "theme_switched_dark": "Switched to dark mode",
     "preferences": "Preferences",
     "provider": "About the provider",
     "integrations": "Integrations"
@@ -727,6 +723,8 @@
     "theme": {
       "title": "Appearance",
       "description": "Switch between dark and light interface.",
+      "system": "System",
+      "system_desc": "Follow the setting on this device",
       "dark": "Dark",
       "dark_desc": "Easier on the eyes in low light",
       "light": "Light",
@@ -747,6 +745,14 @@
       "mbps_desc": "Standard ISP / speedtest unit",
       "mbytes": "MB/s (Megabytes per second)",
       "mbytes_desc": "Common in browsers and download managers"
+    },
+    "grade_values": {
+      "title": "Grade colours",
+      "description": "How far a verdict is carried across a reading.",
+      "glyph": "Glyph only",
+      "glyph_desc": "The icon carries the verdict",
+      "values": "Glyph and figure",
+      "values_desc": "Colour the number too"
     }
   },
   "status": {

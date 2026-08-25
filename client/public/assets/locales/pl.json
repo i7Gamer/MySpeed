@@ -83,10 +83,6 @@
     "pause_tests": "Wstrzymaj testy",
     "resume_tests": "Wznów testy",
     "language": "Zmień język",
-    "light_mode": "Tryb oświetlenia",
-    "dark_mode": "Tryb ciemny",
-    "theme_switched_light": "Przełączony na tryb oświetlenia",
-    "theme_switched_dark": "Przełączony na tryb ciemny",
     "preferences": "Ustawienia",
     "provider": "O dostawcy",
     "integrations": "Integracje"
@@ -727,6 +723,8 @@
     "theme": {
       "title": "Wygląd",
       "description": "Przełącz między ciemnym i jasnym interfejsem.",
+      "system": "Systemowy",
+      "system_desc": "Podążaj za ustawieniem tego urządzenia",
       "dark": "Ciemny",
       "dark_desc": "Łatwiejsze oczy w małym świetle",
       "light": "Światło",
@@ -747,6 +745,14 @@
       "mbps_desc": "Standardowy ISP / jednostka prędkościowa",
       "mbytes": "MB/s (Megabajty na sekundę)",
       "mbytes_desc": "Często używane w przeglądarkach i menadżerach pobierania"
+    },
+    "grade_values": {
+      "title": "Kolory ocen",
+      "description": "Jak daleko ocena jest przenoszona na odczyt.",
+      "glyph": "Tylko ikona",
+      "glyph_desc": "Ocenę niesie ikona",
+      "values": "Ikona i liczba",
+      "values_desc": "Pokoloruj także liczbę"
     }
   },
   "status": {

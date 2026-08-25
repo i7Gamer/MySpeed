@@ -83,10 +83,6 @@
     "pause_tests": "Mettre en pause les tests",
     "resume_tests": "Reprendre les tests",
     "language": "Changer de langue",
-    "light_mode": "Mode lumière",
-    "dark_mode": "Mode sombre",
-    "theme_switched_light": "Passage en mode lumière",
-    "theme_switched_dark": "Passage en mode sombre",
     "preferences": "Préférences",
     "provider": "A propos du fournisseur",
     "integrations": "Intégrations"
@@ -727,6 +723,8 @@
     "theme": {
       "title": "Apparence",
       "description": "Basculer entre l'interface sombre et la lumière.",
+      "system": "Système",
+      "system_desc": "Suivre le réglage de cet appareil",
       "dark": "Sombre",
       "dark_desc": "Plus facile sur les yeux à faible lumière",
       "light": "Lumière",
@@ -747,6 +745,14 @@
       "mbps_desc": "ISP standard / unité de test de vitesse",
       "mbytes": "Mo/s (mégaoctets par seconde)",
       "mbytes_desc": "Souvent, dans les navigateurs et les gestionnaires de téléchargements"
+    },
+    "grade_values": {
+      "title": "Couleurs des notes",
+      "description": "Jusqu'où une note est portée sur une mesure.",
+      "glyph": "Icône seule",
+      "glyph_desc": "L'icône porte la note",
+      "values": "Icône et chiffre",
+      "values_desc": "Colorer aussi le chiffre"
     }
   },
   "status": {

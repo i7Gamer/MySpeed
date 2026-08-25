@@ -83,10 +83,6 @@
     "pause_tests": "Pauzetests",
     "resume_tests": "Doorgaan met testen",
     "language": "Taal wijzigen",
-    "light_mode": "Lichtmodus",
-    "dark_mode": "Donkere modus",
-    "theme_switched_light": "Overgeschakeld op lichtmodus",
-    "theme_switched_dark": "Overgeschakeld naar donkere modus",
     "preferences": "named@@0",
     "provider": "Over de provider",
     "integrations": "Integraties"
@@ -727,6 +723,8 @@
     "theme": {
       "title": "Uiterlijk",
       "description": "Schakel tussen donker en licht interface.",
+      "system": "Systeem",
+      "system_desc": "De instelling van dit apparaat volgen",
       "dark": "Donker",
       "dark_desc": "Makkelijker op de ogen in licht",
       "light": "Licht",
@@ -747,6 +745,14 @@
       "mbps_desc": "Standaard ISP / snelheidstest eenheid",
       "mbytes": "MB/s (Megabytes per seconde)",
       "mbytes_desc": "Veelvoorkomende browsers en downloadmanagers"
+    },
+    "grade_values": {
+      "title": "Beoordelingskleuren",
+      "description": "Hoe ver een oordeel over een meting wordt doorgetrokken.",
+      "glyph": "Alleen pictogram",
+      "glyph_desc": "Het pictogram draagt het oordeel",
+      "values": "Pictogram en getal",
+      "values_desc": "Kleur het getal ook"
     }
   },
   "status": {

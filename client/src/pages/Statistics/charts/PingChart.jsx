@@ -24,7 +24,7 @@ const JITTER_PEAK_ALPHA = 0.15;
 const AVERAGE_ORDER = 4;
 
 const PingChart = memo(({ compact = false, ...props }) => {
-    const [isDarkMode] = useContext(ThemeContext);
+    const {isDarkMode} = useContext(ThemeContext);
     const [preferences] = useContext(PreferencesContext);
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
 

@@ -1,10 +1,11 @@
 import React, {useContext, useState} from "react";
 import {Dialog, DialogHeader, DialogBody, DialogFooter} from "@/common/contexts/Dialog";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
-import {faCheck, faClock, faGauge, faMoon, faPalette, faSun} from "@fortawesome/free-solid-svg-icons";
+import {faCheck, faClock, faDesktop, faDroplet, faGauge, faMoon, faPalette, faSun} from "@fortawesome/free-solid-svg-icons";
 import {t} from "i18next";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {ThemeContext} from "@/common/contexts/Theme";
+import {DEFAULT_THEME, THEME_DARK, THEME_LIGHT, THEME_SYSTEM} from "@/common/contexts/Theme/themeChoice";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
 import {
     PreferencesContext,
@@ -16,9 +17,27 @@ import {
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import "./styles.sass";
 
+// System first, because it is the default and the answer most readers would
+// pick: the theme followed nothing but its own initial value before, so a
+// machine set to light was shown a dark instance and had to be told otherwise.
 const THEME_OPTIONS = [
-    {id: "dark", labelKey: "preferences.theme.dark", descKey: "preferences.theme.dark_desc", icon: faMoon},
-    {id: "light", labelKey: "preferences.theme.light", descKey: "preferences.theme.light_desc", icon: faSun}
+    {id: THEME_SYSTEM, labelKey: "preferences.theme.system", descKey: "preferences.theme.system_desc", icon: faDesktop},
+    {id: THEME_DARK, labelKey: "preferences.theme.dark", descKey: "preferences.theme.dark_desc", icon: faMoon},
+    {id: THEME_LIGHT, labelKey: "preferences.theme.light", descKey: "preferences.theme.light_desc", icon: faSun}
+];
+
+/**
+ * How far a verdict is carried across a reading.
+ *
+ * Two named options rather than a switch: every other control in this dialog is
+ * a list, a boolean toggle would be the only one of its kind, and "glyph only"
+ * says what it does where "off" does not. The preference itself has existed
+ * since 1.3.2 - stamped on the document, read by the stylesheets, covered by a
+ * test - with nothing anywhere that could turn it on.
+ */
+const GRADE_VALUE_OPTIONS = [
+    {id: "glyph", labelKey: "preferences.grade_values.glyph", descKey: "preferences.grade_values.glyph_desc"},
+    {id: "values", labelKey: "preferences.grade_values.values", descKey: "preferences.grade_values.values_desc"}
 ];
 
 const TIME_FORMAT_OPTIONS = [
@@ -57,25 +76,29 @@ const PreferencesSection = ({icon, title, description, options, value, onChange}
 
 export const PreferencesDialog = ({open, onClose}) => {
     const [preferences, updatePreferences] = useContext(PreferencesContext);
-    const [isDarkMode, toggleTheme] = useContext(ThemeContext);
+    const {theme: activeTheme, setTheme: applyTheme} = useContext(ThemeContext);
     const updateToast = useContext(ToastNotificationContext);
     // Read when the dialog opens, not at mount - see useSyncOnOpen. This also
     // replaces the hand-rolled reset the old close handler carried for the
     // same purpose.
     const [timeFormat, setTimeFormat] = useState(null);
     const [speedUnit, setSpeedUnit] = useState(null);
-    const [theme, setTheme] = useState("dark");
+    const [theme, setTheme] = useState(DEFAULT_THEME);
+    const [gradeValues, setGradeValues] = useState(GRADE_VALUE_OPTIONS[0].id);
 
     useSyncOnOpen(open, () => {
         setTimeFormat(preferences.timeFormat);
         setSpeedUnit(preferences.speedUnit);
-        setTheme(isDarkMode ? "dark" : "light");
+        // The chosen theme, not the resolved one: opening the dialog while
+        // "system" is in force must show System selected, not whichever of dark
+        // and light the machine happens to be asking for.
+        setTheme(activeTheme);
+        setGradeValues(preferences.gradeValues ? "values" : "glyph");
     });
 
     const handleSave = (close) => {
-        updatePreferences({timeFormat, speedUnit});
-        const wantsDark = theme === "dark";
-        if (wantsDark !== isDarkMode) toggleTheme();
+        updatePreferences({timeFormat, speedUnit, gradeValues: gradeValues === "values"});
+        if (theme !== activeTheme) applyTheme(theme);
         updateToast(t("dropdown.changes_applied"), "green", faCheck);
         close();
     };
@@ -110,6 +133,14 @@ export const PreferencesDialog = ({open, onClose}) => {
                                 options={SPEED_UNIT_OPTIONS}
                                 value={speedUnit}
                                 onChange={setSpeedUnit}
+                            />
+                            <PreferencesSection
+                                icon={faDroplet}
+                                title={t("preferences.grade_values.title")}
+                                description={t("preferences.grade_values.description")}
+                                options={GRADE_VALUE_OPTIONS}
+                                value={gradeValues}
+                                onChange={setGradeValues}
                             />
                         </div>
                     </DialogBody>

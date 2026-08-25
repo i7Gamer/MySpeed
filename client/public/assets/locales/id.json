@@ -83,10 +83,6 @@
     "pause_tests": "Jeda pengujian",
     "resume_tests": "Lanjutkan pengujian",
     "language": "Ubah bahasa",
-    "light_mode": "Mode terang",
-    "dark_mode": "Mode gelap",
-    "theme_switched_light": "Beralih ke mode terang",
-    "theme_switched_dark": "Beralih ke mode gelap",
     "preferences": "Preferensi",
     "provider": "Tentang penyedia",
     "integrations": "Integrasi"
@@ -727,6 +723,8 @@
     "theme": {
       "title": "Tampilan",
       "description": "Beralih antara antarmuka gelap dan terang.",
+      "system": "Sistem",
+      "system_desc": "Ikuti pengaturan pada perangkat ini",
       "dark": "Gelap",
       "dark_desc": "Lebih nyaman di mata saat cahaya redup",
       "light": "Terang",
@@ -747,6 +745,14 @@
       "mbps_desc": "Satuan baku penyedia internet dan speedtest",
       "mbytes": "MB/s (megabita per detik)",
       "mbytes_desc": "Umum di peramban dan pengelola unduhan"
+    },
+    "grade_values": {
+      "title": "Warna nilai",
+      "description": "Seberapa jauh sebuah penilaian dibawa ke suatu bacaan.",
+      "glyph": "Hanya ikon",
+      "glyph_desc": "Ikon yang membawa penilaian",
+      "values": "Ikon dan angka",
+      "values_desc": "Warnai angkanya juga"
     }
   },
   "status": {

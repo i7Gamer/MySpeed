@@ -9,7 +9,7 @@ import { clickable } from "@/common/utils/Clickable";
 import "./SpeedChart/styles.sass";
 
 const HourlyChart = memo((props) => {
-    const [isDarkMode] = useContext(ThemeContext);
+    const {isDarkMode} = useContext(ThemeContext);
     const [preferences] = useContext(PreferencesContext);
     const speedUnit = getSpeedUnit(preferences);
 

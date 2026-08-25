@@ -21,7 +21,7 @@ const AVERAGE_ORDER = 3;
 const SPEED_TICK_STEP = 100;
 
 export const SpeedChart = memo(({ labels, data, dataKey, titleKey, color, onClick, failed, errors, compact = false, downsampled, dataPoints, rawDataPoints }) => {
-    const [isDarkMode] = useContext(ThemeContext);
+    const {isDarkMode} = useContext(ThemeContext);
     const [preferences] = useContext(PreferencesContext);
     const speedUnit = getSpeedUnit(preferences);
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;

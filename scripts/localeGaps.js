@@ -104,6 +104,7 @@ export const LANGUAGE_SHARED = {
         "integrations.email.fields.port", "integrations.gotify.fields.url",
         "integrations.influxdb.fields.url", "integrations.mqtt.fields.port", "integrations.ntfy.fields.url",
         "integrations.ntfy.fields.tags", "integrations.webhook.fields.url", "status.start",
+        "preferences.theme.system",
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     de: [
@@ -119,6 +120,7 @@ export const LANGUAGE_SHARED = {
         "integrations.ntfy.fields.url", "integrations.ntfy.fields.title_placeholder",
         "integrations.ntfy.fields.tags", "integrations.telegram.fields.token",
         "integrations.telegram.fields.chat_id", "integrations.webhook.fields.url",
+        "preferences.theme.system",
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     es: [

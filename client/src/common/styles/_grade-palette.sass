@@ -1,3 +1,5 @@
+@use "@/common/styles/colors" as *
+
 // What a grade looks like.
 //
 // The vocabulary is the one every grader in TestUtil returns - green, orange,
@@ -18,9 +20,22 @@
 :root
   --grade-good: var(--accent-primary)
   --grade-fair: var(--accent-warning)
-  --grade-poor: var(--accent-danger)
+  // A step of their own rather than the accent, which is what the note above
+  // says this file is for. A grade is rendered as text - the mixin below sets
+  // `color` from it - and $red and $blue measure 4.35:1 and 4.45:1 against the
+  // card surface, just under the 4.5:1 that text answers to. Lightening the
+  // accents instead would have fixed the figure and dimmed the white label on
+  // every danger button that uses the same token as a background.
+  --grade-poor: #{$red-on-dark}
   // Not a verdict: a figure nobody measured. Blue and not red, because "not
   // measured" and "bad" are different claims - see gradeBelow in TestUtil.
+  --grade-none: #{$blue-on-dark}
+  --grade-failed: #{$red-on-dark}
+
+// Light mode reads them off the accents again, because those were re-stepped
+// for a light background in _colors.sass and already clear the bar there.
+[data-theme="light"]
+  --grade-poor: var(--accent-danger)
   --grade-none: var(--blue)
   --grade-failed: var(--accent-danger)
 

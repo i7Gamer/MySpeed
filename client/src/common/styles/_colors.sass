@@ -25,6 +25,21 @@ $orange: #f59e0b
 $green: #10b981
 $red: #ef4444
 
+// The same four hues at a step that survives a light background. Named apart
+// rather than computed, because a darken() would have to be tuned per hue
+// anyway and these are the values that were measured.
+$blue-dark: #2563eb
+$orange-dark: #b45309
+$green-dark: #047857
+$red-dark: #dc2626
+
+// And two one step lighter, for the grade figures on a dark card: rendered as
+// text, $red and $blue measure 4.35:1 and 4.45:1 against it - just under the
+// 4.5:1 text answers to. Only the grades use these; the accents they are drawn
+// from are also button backgrounds, where lightening dims the label on top.
+$red-on-dark: #f56565
+$blue-on-dark: #4f94f7
+
 $cyan: #06b6d4
 $purple: #8b5cf6
 $pink: #ec4899
@@ -66,6 +81,22 @@ $amber: #f59e0b
   --icon-neutral: #{$light-icon-neutral}
 
   --glass-bg: rgba(255, 255, 255, 0.85)
+
+  // The accents, re-stepped rather than inherited.
+  //
+  // Every one of these was chosen against a near-black background and light
+  // mode simply kept them, which is not a contrast ratio anybody checked: a
+  // grade printed in $green on #f8fafc measures 2.42:1 and $orange 2.05:1,
+  // both under even the 3:1 floor for large text. The grades are rendered AS
+  // text - _grades.sass sets `color` from them - so 4.5:1 is the bar, and the
+  // figure carrying the verdict was the least readable thing on a light page.
+  //
+  // Same hues, darker steps: these measure 5.24, 4.80, 4.62 and 4.94 against
+  // the lighter of the two light surfaces.
+  --accent-primary: #{$green-dark}
+  --accent-warning: #{$orange-dark}
+  --accent-danger: #{$red-dark}
+  --blue: #{$blue-dark}
 
   --chart-grid: rgba(226, 232, 240, 0.8)
   --chart-tooltip-bg: #{$light-dark-gray}

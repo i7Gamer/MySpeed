@@ -83,10 +83,6 @@
     "pause_tests": "Sæt tests på pause",
     "resume_tests": "Genoptag tests",
     "language": "Skift sprog",
-    "light_mode": "Lys tilstand",
-    "dark_mode": "Mørk tilstand",
-    "theme_switched_light": "Skiftet til lys tilstand",
-    "theme_switched_dark": "Skiftet til mørk tilstand",
     "preferences": "Præferencer",
     "provider": "Om udbyderen",
     "integrations": "Integrationer"
@@ -727,6 +723,8 @@
     "theme": {
       "title": "Udseende",
       "description": "Skift mellem mørk og lys grænseflade.",
+      "system": "System",
+      "system_desc": "Følg indstillingen på denne enhed",
       "dark": "Mørk",
       "dark_desc": "Lettere på øjnene i svagt lys",
       "light": "Lys",
@@ -747,6 +745,14 @@
       "mbps_desc": "Standard ISP / hastighedstestenhed",
       "mbytes": "MB/s (Megabytes per sekund)",
       "mbytes_desc": "Almindelig i browsere og download ledere"
+    },
+    "grade_values": {
+      "title": "Karakterfarver",
+      "description": "Hvor langt en bedømmelse bæres hen over en måling.",
+      "glyph": "Kun ikonet",
+      "glyph_desc": "Ikonet bærer bedømmelsen",
+      "values": "Ikon og tal",
+      "values_desc": "Farv også tallet"
     }
   },
   "status": {

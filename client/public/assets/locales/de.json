@@ -83,10 +83,6 @@
     "pause_tests": "Tests pausieren",
     "resume_tests": "Tests fortsetzen",
     "language": "Sprache ändern",
-    "light_mode": "Heller Modus",
-    "dark_mode": "Dunkler Modus",
-    "theme_switched_light": "In den hellen Modus geschaltet",
-    "theme_switched_dark": "In den dunklen Modus geschaltet",
     "preferences": "Einstellungen",
     "provider": "Über den Anbieter",
     "integrations": "Integrationen"
@@ -727,6 +723,8 @@
     "theme": {
       "title": "Erscheinung",
       "description": "Zwischen dunkler und heller Schnittstelle wechseln.",
+      "system": "System",
+      "system_desc": "Der Einstellung dieses Geräts folgen",
       "dark": "Dunkel",
       "dark_desc": "Einfacher an den Augen bei niedrigem Licht",
       "light": "Hell",
@@ -747,6 +745,14 @@
       "mbps_desc": "Standard ISP / Speedtest Einheit",
       "mbytes": "MB/s (Megabytes pro Sekunde)",
       "mbytes_desc": "Häufig in Browsern und Download-Managern"
+    },
+    "grade_values": {
+      "title": "Bewertungsfarben",
+      "description": "Wie weit eine Bewertung über einen Messwert getragen wird.",
+      "glyph": "Nur Symbol",
+      "glyph_desc": "Das Symbol trägt die Bewertung",
+      "values": "Symbol und Zahl",
+      "values_desc": "Auch die Zahl einfärben"
     }
   },
   "status": {

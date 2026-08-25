@@ -83,10 +83,6 @@
     "pause_tests": "暂停测试",
     "resume_tests": "继续测试",
     "language": "修改语言",
-    "light_mode": "浅色模式",
-    "dark_mode": "深色模式",
-    "theme_switched_light": "已切换到浅色模式",
-    "theme_switched_dark": "已切换到深色模式",
     "preferences": "偏好设置",
     "provider": "关于供应商",
     "integrations": "集成"
@@ -727,6 +723,8 @@
     "theme": {
       "title": "外观",
       "description": "在深色和浅色界面之间切换。",
+      "system": "跟随系统",
+      "system_desc": "跟随本设备的设置",
       "dark": "深色",
       "dark_desc": "在弱光下更护眼",
       "light": "浅色",
@@ -747,6 +745,14 @@
       "mbps_desc": "标准 ISP / 测速单位",
       "mbytes": "MB/s（兆字节每秒）",
       "mbytes_desc": "常见于浏览器和下载管理器"
+    },
+    "grade_values": {
+      "title": "评级颜色",
+      "description": "评级在一项读数上体现到什么程度。",
+      "glyph": "仅图标",
+      "glyph_desc": "由图标体现评级",
+      "values": "图标和数字",
+      "values_desc": "数字也一并着色"
     }
   },
   "status": {

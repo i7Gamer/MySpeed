@@ -83,10 +83,6 @@
     "pause_tests": "Testleri duraklat",
     "resume_tests": "Testlere devam et",
     "language": "Dili değiştir",
-    "light_mode": "Aydınlık tema",
-    "dark_mode": "Karanlık tema",
-    "theme_switched_light": "Aydınlık temaya geçildi",
-    "theme_switched_dark": "Koyu temaya geçildi",
     "preferences": "Tercihler",
     "provider": "Sağlayıcı hakkında",
     "integrations": "Entegrasyonlar"
@@ -727,6 +723,8 @@
     "theme": {
       "title": "Görünüm",
       "description": "Koyu ve açık arayüz arasında geçiş yapın.",
+      "system": "Sistem",
+      "system_desc": "Bu cihazın ayarını izle",
       "dark": "Koyu",
       "dark_desc": "Az ışıkta gözü daha az yorar",
       "light": "Açık",
@@ -747,6 +745,14 @@
       "mbps_desc": "Standart ISS / hız testi birimi",
       "mbytes": "MB/s (saniyede megabayt)",
       "mbytes_desc": "Tarayıcılarda ve indirme yöneticilerinde yaygın"
+    },
+    "grade_values": {
+      "title": "Derece renkleri",
+      "description": "Bir derecenin ölçüm üzerinde ne kadar ileri taşındığı.",
+      "glyph": "Yalnızca simge",
+      "glyph_desc": "Dereceyi simge taşır",
+      "values": "Simge ve sayı",
+      "values_desc": "Sayıyı da renklendir"
     }
   },
   "status": {
