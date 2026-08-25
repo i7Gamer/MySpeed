@@ -139,7 +139,11 @@ const DetailFact = ({label, children}) => (
  * @param previousConnection the nearest earlier test that names a connection,
  *                           for the "changed" marker - see previousConnection()
  * @param className          appended to the root, for the caller's own chrome
- * @param children           rendered below the facts, for caller-owned actions
+ * @param children           caller-owned actions. Placed as the last cell of the
+ *                           facts grid, so they fill the tail of a ragged final
+ *                           row instead of taking a row of their own - see
+ *                           .detail-actions. A failed test has no facts grid to
+ *                           join, so there they follow the error block.
  */
 export const TestDetails = ({test, previous, previousConnection, className = "", children}) => {
     const [config] = useContext(ConfigContext);
@@ -393,6 +397,10 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                     {/* The raw CLI output, once, rather than only the friendly
                         translation - it is what an issue report needs. */}
                     <code className="detail-error-raw">{test.error}</code>
+                    {/* Outside a grid here, because a failed test has none. The
+                        actions keep their own spacing in this branch - see the
+                        margin .detail-facts takes back off them in the other. */}
+                    {children}
                 </div>
             ) : (
                 <>
@@ -578,11 +586,16 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                                 <ResultLink resultId={test.resultId}/>
                             </DetailFact>
                         )}
+                        {/* Last cell of the grid rather than a block beneath it.
+                            Five facts in a three-column row leave two cells
+                            empty and the actions took a fourth row to
+                            themselves; pinned to the last column they fill one
+                            of those instead, at the same right edge either
+                            way. */}
+                        {children}
                     </div>
                 </>
             )}
-
-            {children}
         </div>
     );
 };

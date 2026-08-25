@@ -270,10 +270,25 @@ $row-min-height: 3rem
     opacity: 1
     transform: translateY(0)
 
+// The delete button, which is the last cell of the facts grid when there is a
+// facts grid - see TestDetails. The last column, not the next free cell: a
+// destructive control whose position moves with however many facts the provider
+// happened to report is worse than one row of whitespace.
+//
+// It keeps the flex block for the failed-test branch, which has no grid to join
+// and where these properties are simply ignored.
 .detail-actions
   display: flex
   justify-content: flex-end
   margin-top: 1.25rem
+  grid-column: -2 / -1
+  justify-self: end
+  align-self: end
+
+// Inside the grid the row gap already separates it, and the margin would push
+// it out of the row it was placed in.
+.detail-facts .detail-actions
+  margin-top: 0
 
 .detail-delete
   display: inline-flex
