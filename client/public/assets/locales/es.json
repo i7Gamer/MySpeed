@@ -204,7 +204,7 @@
     "speedtests": "Tests de velocidad",
     "configuration": "Configuración",
     "stored_tests": "Tests almacenados",
-    "tests": "Tests",
+    "tests": "Pruebas",
     "export_tests": "Exportar tests",
     "tests_exported": "Se han exportado los tests",
     "import_tests": "Importar tests",
@@ -428,7 +428,7 @@
       "title": "Tests fallidos",
       "success": "Exitoso",
       "failed": "Fallido",
-      "label": "Tests"
+      "label": "Pruebas"
     },
     "speed": {
       "title": "Velocidad"
@@ -455,7 +455,7 @@
     "failed_test": "Prueba fallida",
     "hourly": {
       "title": "Velocidad por hora del día",
-      "sample_count": "Tests"
+      "sample_count": "Pruebas"
     },
     "consistency": {
       "title": "Estabilidad de conexión",

@@ -443,8 +443,8 @@
       "label": "Aantal"
     },
     "values": {
-      "min": "Minimum",
-      "max": "Maximum",
+      "min": "Laagste",
+      "max": "Hoogste",
       "avg": "Gemiddeld",
       "down": "Waarden downloaden",
       "up": "Waarden uploaden",

@@ -204,7 +204,7 @@
     "speedtests": "Hastighedstest",
     "configuration": "Konfiguration",
     "stored_tests": "Gemte tests",
-    "tests": "Tests",
+    "tests": "Test",
     "export_tests": "Eksporter tests",
     "tests_exported": "Testene er blevet eksporteret",
     "import_tests": "Importer tests",
@@ -428,7 +428,7 @@
       "title": "Mislykkede tests",
       "success": "Vellykkede",
       "failed": "Mislykkede",
-      "label": "Tests"
+      "label": "Test"
     },
     "speed": {
       "title": "Hastighed"
@@ -455,7 +455,7 @@
     "failed_test": "Mislykket test",
     "hourly": {
       "title": "Hastighed efter tid på dagen",
-      "sample_count": "Tests"
+      "sample_count": "Test"
     },
     "consistency": {
       "title": "Forbindelses Stabilitet",

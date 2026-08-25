@@ -95,12 +95,12 @@ export const LANGUAGE_SHARED = {
     ],
     da: [
         "dialog.okay", "dialog.provider.server", "dropdown.ping", "update.ping_placeholder",
-        "update.download", "update.pause", "header.download", "storage.tests", "storage.import",
+        "update.download", "update.pause", "header.download",  "storage.import",
         "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.down",
         "latest.byte_speed_unit", "latest.up", "info.ping.title", "info.jitter.title",
         "info.bufferbloat.title", "test.details.seconds", "test.details.server", "test.details.bufferbloat",
-        "test.details.bufferbloat_value", "statistics.failed.label", "statistics.values.min",
-        "statistics.hourly.sample_count", "preview.info", "integrations.discord.fields.url",
+        "test.details.bufferbloat_value",  "statistics.values.min",
+         "preview.info", "integrations.discord.fields.url",
         "integrations.email.fields.port", "integrations.gotify.fields.url",
         "integrations.influxdb.fields.url", "integrations.mqtt.fields.port", "integrations.ntfy.fields.url",
         "integrations.ntfy.fields.tags", "integrations.webhook.fields.url", "status.start",
@@ -124,10 +124,10 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     es: [
-        "update.ping_placeholder", "storage.tests", "latest.ping", "latest.ping_unit", "latest.jitter",
+        "update.ping_placeholder",  "latest.ping", "latest.ping_unit", "latest.jitter",
         "latest.jitter_unit", "latest.speed_unit", "latest.byte_speed_unit", "info.ping.title",
         "info.jitter.title", "info.bufferbloat.title", "test.details.seconds", "test.details.bufferbloat",
-        "test.details.bufferbloat_value", "statistics.failed.label", "statistics.hourly.sample_count",
+        "test.details.bufferbloat_value",  
         "preview.info", "integrations.discord.fields.error_message_placeholder",
         "integrations.email.fields.error_message_placeholder",
         "integrations.gotify.fields.error_message_placeholder",
@@ -170,7 +170,7 @@ export const LANGUAGE_SHARED = {
         "latest.jitter", "latest.jitter_unit", "latest.byte_speed_unit", "info.ping.title",
         "info.jitter.title", "info.bufferbloat.title", "test.details.seconds", "test.details.server",
         "test.details.bufferbloat", "test.details.bufferbloat_value", "test.details.isp",
-        "statistics.failed.label", "statistics.values.min", "statistics.values.max",
+        "statistics.failed.label",  
         "statistics.hourly.sample_count", "preview.info", "integrations.influxdb.fields.url",
         "integrations.ntfy.fields.url", "integrations.ntfy.fields.tags",
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
