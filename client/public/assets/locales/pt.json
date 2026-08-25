@@ -209,7 +209,7 @@
     "tests_exported": "Os testes foram exportados",
     "import_tests": "Testes de importação",
     "tests_imported": "Os testes foram importados",
-    "tests_imported_partial": "{{imported}} testes importados, {{skipped}} ignorados",
+    "tests_imported_partial": "Testes importados: {{imported}}, ignorados: {{skipped}}",
     "import_test_error": "Ocorreu um erro ao importar os testes",
     "import_config_error": "Ocorreu um erro ao importar a configuração",
     "import_config_error_key": "Não foi possível importar a configuração: o valor armazenado para \"{{key}}\" não é válido",

@@ -209,7 +209,7 @@
     "tests_exported": "The tests have been exported",
     "import_tests": "Import tests",
     "tests_imported": "The tests have been imported",
-    "tests_imported_partial": "Imported {{imported}} tests, skipped {{skipped}}",
+    "tests_imported_partial": "Tests imported: {{imported}}, skipped: {{skipped}}",
     "import_test_error": "An error occurred while importing the tests",
     "import_config_error": "An error occurred while importing the configuration",
     "import_config_error_key": "Could not import the configuration: the stored value for \"{{key}}\" is not valid",

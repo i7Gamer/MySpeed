@@ -83,7 +83,7 @@
     "pause_tests": "Pauzetests",
     "resume_tests": "Doorgaan met testen",
     "language": "Taal wijzigen",
-    "preferences": "named@@0",
+    "preferences": "Voorkeuren",
     "provider": "Over de provider",
     "integrations": "Integraties"
   },
@@ -209,7 +209,7 @@
     "tests_exported": "De tests zijn geëxporteerd",
     "import_tests": "Tests importeren",
     "tests_imported": "De tests zijn geïmporteerd",
-    "tests_imported_partial": "{{imported}} tests geïmporteerd, {{skipped}} overgeslagen",
+    "tests_imported_partial": "Geïmporteerde tests: {{imported}}, overgeslagen: {{skipped}}",
     "import_test_error": "Er is een fout opgetreden tijdens het importeren van de tests",
     "import_config_error": "Er is een fout opgetreden tijdens het importeren van de configuratie",
     "import_config_error_key": "De configuratie kon niet worden geïmporteerd: de opgeslagen waarde voor \"{{key}}\" is niet geldig",

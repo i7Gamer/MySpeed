@@ -145,3 +145,42 @@ describe("every toast colour a caller asks for", () => {
             "these colours are passed to updateToast and styled nowhere, so the toast renders unmarked");
     });
 });
+
+/**
+ * The partial-import message, at a count of one.
+ *
+ * "Imported {{imported}} tests" is grammatical at every count except the one a
+ * nearly-clean import actually produces: "Imported 1 tests". i18next's plural
+ * suffixes cannot carry this string either - it holds two counts, and a suffix
+ * follows only one - so the shape that works is the one Russian and Ukrainian
+ * already used: the noun as a label, the count after a colon, which no
+ * quantity can disagree with.
+ *
+ * Three locales keep the count beside a word on purpose, because their grammar
+ * does not inflect for it: Chinese counts through a measure word
+ * ("{{imported}} 次"), and Indonesian and Turkish nouns do not change after a
+ * numeral. Every other locale must not put a letter straight after a count.
+ */
+describe("the partial-import message", () => {
+    const LOCALES = path.resolve(CLIENT_SRC, "..", "public", "assets", "locales");
+    const NUMBER_TOLERANT = new Set(["zh", "id", "tr"]);
+
+    const codes = fs.readdirSync(LOCALES).map((file) => path.basename(file, ".json"));
+
+    it("finds the locales to check", () => {
+        assert.ok(codes.length > 10, `only found ${codes.length} locales`);
+        assert.ok(codes.some((code) => NUMBER_TOLERANT.has(code)), "the tolerant locales are not among the files");
+    });
+
+    it("survives a count of one in every locale that inflects", () => {
+        const disagreeing = codes
+            .filter((code) => !NUMBER_TOLERANT.has(code))
+            .map((code) => [code, JSON.parse(fs.readFileSync(path.join(LOCALES, `${code}.json`), "utf8"))
+                .storage?.tests_imported_partial])
+            .filter(([, value]) => !value || /\{\{(?:imported|skipped)\}\}\s*\p{L}/u.test(value))
+            .map(([code, value]) => `[${code}] ${JSON.stringify(value)}`);
+
+        assert.deepEqual(disagreeing, [],
+            "a word straight after the count has to agree with it, and at a count of 1 it does not");
+    });
+});

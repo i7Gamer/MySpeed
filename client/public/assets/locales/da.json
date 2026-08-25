@@ -209,7 +209,7 @@
     "tests_exported": "Testene er blevet eksporteret",
     "import_tests": "Importer tests",
     "tests_imported": "Testene er blevet importeret",
-    "tests_imported_partial": "{{imported}} tests importeret, {{skipped}} sprunget over",
+    "tests_imported_partial": "Importerede test: {{imported}}, sprunget over: {{skipped}}",
     "import_test_error": "Der opstod en fejl under import af tests",
     "import_config_error": "Der opstod en fejl under import af konfigurationen",
     "import_config_error_key": "Konfigurationen kunne ikke importeres: den gemte værdi for \"{{key}}\" er ikke gyldig",
