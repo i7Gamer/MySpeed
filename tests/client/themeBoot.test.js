@@ -79,19 +79,37 @@ describe("the pre-paint script", () => {
     /*
      * Every opening tag is examined for a `src`, rather than the script tags
      * being stripped out and the remainder searched. The stripping version was
-     * the same assertion and CodeQL was right to fail it: a regexp that removes
-     * `<script …></script>` and trusts what is left is the shape of a broken
-     * HTML sanitiser - `</script >` with a space walks straight through it. No
-     * untrusted input reaches this, but a test that reads as a sanitiser is one
-     * somebody eventually copies somewhere it matters.
+     * the same assertion and CodeQL was right to fail it twice: a regexp that
+     * removes `<script …></script>` and trusts what is left is the shape of a
+     * broken HTML sanitiser, and `</script >` with a space walked straight
+     * through it. Nothing untrusted reaches this - it reads a file out of the
+     * repo - but a test that reads as a sanitiser is one somebody eventually
+     * lifts into somewhere it matters, so it is worth writing as though it were.
+     *
+     * Case-insensitive because tag names are: `<SCRIPT>` is the same element,
+     * and it was the second bypass CodeQL named. `\b` rather than a space, so
+     * `<script/src=…>` - a slash is a valid attribute separator - is read as
+     * the external script it is rather than reported as an inline one.
      */
-    it("is a file rather than an inline script", () => {
-        const inline = [...html.matchAll(/<script\b([^>]*)>/g)]
-            .map(([tag, attributes]) => [tag, attributes])
-            .filter(([, attributes]) => !/\bsrc\s*=/.test(attributes))
-            .map(([tag]) => tag);
+    const inlineScriptsIn = (markup) => [...markup.matchAll(/<script\b([^>]*)>/gi)]
+        .filter(([, attributes]) => !/\bsrc\s*=/i.test(attributes))
+        .map(([tag]) => tag);
 
-        assert.deepEqual(inline, [], "an inline script cannot run under script-src 'self'");
+    it("is a file rather than an inline script", () => {
+        assert.deepEqual(inlineScriptsIn(html), [],
+            "an inline script cannot run under script-src 'self'");
+    });
+
+    // The check is only worth having if it catches the forms somebody would
+    // actually write, so it is shown catching them.
+    it("would catch one however it was written", () => {
+        for (const inline of ["<script>go()</script>", "<SCRIPT>go()</SCRIPT>",
+            '<script type="module">go()</script>', "<script >go()</script >"])
+            assert.equal(inlineScriptsIn(html.replace("</head>", `${inline}</head>`)).length, 1, inline);
+
+        for (const external of ['<script src="/a.js"></script>', '<script SRC="/a.js"></script>',
+            '<script/src="/a.js"></script>', '<script defer src="/a.js"></script>'])
+            assert.deepEqual(inlineScriptsIn(html.replace("</head>", `${external}</head>`)), [], external);
     });
 });
 
