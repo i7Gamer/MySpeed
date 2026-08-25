@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-    flatten, localeGaps, mergeLocale, nest, serialise, sharedKeys, UNIVERSAL_SHARED
+    flatten, LANGUAGE_SHARED, localeGaps, mergeLocale, nest, serialise, sharedKeys
 } from "../../scripts/localeGaps.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
@@ -145,45 +145,71 @@ describe("mergeLocale", () => {
     });
 });
 
+/**
+ * There was a second half to this registry once: a UNIVERSAL_SHARED list, for
+ * values identical in every language at the same time.
+ *
+ * It is gone, and so are the keys it named. A value that no language can
+ * translate has no business being offered to a translator - several were duly
+ * translated, and a parity check cannot catch that, because a wrong translation
+ * looks exactly like a right one. They are constants now; see
+ * client/src/common/utils/InvariantText.js.
+ *
+ * What remains is per-language, which is the only kind of allowance that means
+ * anything: French really does write "ms" and "Mbps", and Russian really does
+ * not.
+ */
 describe("the shared-value registry", () => {
     const english = flatten(read("en"));
+    const every = Object.entries(LANGUAGE_SHARED);
+
+    it("finds allowances to check", () => {
+        assert.ok(every.length > 10, `only ${every.length} languages carry a list`);
+    });
 
     it("names only keys English actually has", () => {
-        const unknown = UNIVERSAL_SHARED.filter((key) => !(key in english));
+        const unknown = every.flatMap(([code, keys]) =>
+            keys.filter((key) => !(key in english)).map((key) => `${code}: ${key}`));
 
-        assert.deepEqual(unknown, [], "the universal list names keys that are not in en.json");
+        assert.deepEqual(unknown, [], "these allowances name keys that are not in en.json");
     });
 
-    it("gives a language its own allowances on top of the universal ones", () => {
-        for (const key of UNIVERSAL_SHARED) assert.ok(sharedKeys("de").has(key), `${key} is not shared for German`);
+    it("hands a language its own list and nothing else", () => {
+        assert.deepEqual([...sharedKeys("de")], LANGUAGE_SHARED.de);
+        assert.deepEqual([...sharedKeys("nonexistent")], []);
     });
 
     /**
-     * The registry says "this value is the same in the target language", so a
-     * key on it that carries a whole translatable sentence is a mistake rather
-     * than a shortcut.
+     * An allowance says "this value is the same word in the target language", so
+     * one carrying a whole translatable sentence is a mistake rather than a
+     * shortcut. The notification templates are the exception: they are long, and
+     * every word in them is a %variable% or a unit.
      */
     it("waves through nothing longer than a label", () => {
-        const wordy = UNIVERSAL_SHARED
-            .filter((key) => String(english[key]).split(/\s+/).filter(Boolean).length > 4);
+        const wordy = every.flatMap(([code, keys]) => keys
+            .filter((key) => !/_message_placeholder$/.test(key))
+            .filter((key) => String(english[key]).split(/\s+/).filter(Boolean).length > 4)
+            .map((key) => `${code}: ${key}`));
 
-        assert.deepEqual(wordy, [], "these are sentences, not brand names - they need translating");
+        assert.deepEqual(wordy, [], "these are sentences, not words - they need translating");
     });
 
     /**
-     * The near miss this list invites. Units read as untranslatable and are not:
-     * "ms" is "мс" in Russian and "毫秒" in Chinese, "Mbps" is "Mbit/s" across
-     * much of Europe, "MB/s" is "Mo/s" in French - and the notification
-     * templates carry those same units in among their %variables%. Waving any of
-     * them through here would mean the parity test never asks a new language for
-     * them, and a Ukrainian instance would read "%download% Mbps".
+     * The near miss the old universal list invited, kept as a check on the
+     * per-language ones. A unit may be shared by the languages that use the
+     * English symbol, but never by all of them at once: "ms" is "мс" in Russian
+     * and "毫秒" in Chinese, "Mbps" is "Mbit/s" across much of Europe. An entry
+     * every language carries is a key that should not have been translatable.
      */
-    it("does not wave through the units, or the templates that carry them", () => {
-        const unitBearing = Object.keys(english).filter((key) =>
-            /_unit$|_message_placeholder$/.test(key) || key === "nodes.placeholder.url");
+    it("shares no value across every single language", () => {
+        const codes = every.map(([code]) => code);
+        const counted = new Map();
 
-        assert.ok(unitBearing.length > 10, "the unit-bearing keys could not be found to check");
-        assert.deepEqual(unitBearing.filter((key) => UNIVERSAL_SHARED.includes(key)), [],
-            "these vary by language and must stay translatable");
+        for (const [, keys] of every) for (const key of keys) counted.set(key, (counted.get(key) ?? 0) + 1);
+
+        const universal = [...counted].filter(([, count]) => count === codes.length).map(([key]) => key);
+
+        assert.deepEqual(universal, [],
+            "no language translates these, so they belong in InvariantText.js rather than the locales");
     });
 });

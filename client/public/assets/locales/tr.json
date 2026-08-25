@@ -55,7 +55,6 @@
       "server_id": "Sunucu Kimliği",
       "server_id_placeholder": "Herhangi bir sunucu kimliği ya da boş bırakın",
       "custom_url": "Özel URL",
-      "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Otomatik olarak seçin",
       "ookla_license": "Ookla'nın <Eula>EULA</Eula>'sını, <GDPR>gizlilik politikasını</GDPR> ve <TOS>hizmet şartlarını</TOS> okudum ve kabul ediyorum.",
       "ookla_notice": "Ookla'yı kullanarak <Eula>EULA</Eula>, <GDPR>gizlilik politikası</GDPR> ve <TOS>hizmet şartları</TOS> hükümlerini kabul etmiş olursunuz.",
@@ -95,7 +94,6 @@
   "about": {
     "title": "MySpeed hakkında",
     "description": "MySpeed, internet hızınızı yapılandırılabilir bir süre boyunca kaydeden açık kaynaklı bir hız testi analiz yazılımıdır.",
-    "github": "GitHub",
     "website": "Web sitesi",
     "donate": "Bağış yap",
     "translate": "Çeviriye katkıda bulun",
@@ -193,7 +191,6 @@
     "quiet_hours_saved": "Sessiz saatler kaydedildi"
   },
   "header": {
-    "title": "MySpeed",
     "running_tooltip": "Speedtest çalışıyor",
     "start_tooltip": "Speedtest'i başlat",
     "new_update": "Güncelleme mevcut",
@@ -214,8 +211,6 @@
     "tests": "Testler",
     "export_tests": "İhracat testleri",
     "tests_exported": "Testler dışa aktarıldı",
-    "csv": "CSV",
-    "json": "JSON",
     "import_tests": "İthalat testleri",
     "tests_imported": "Testler içe aktarıldı",
     "import_test_error": "Testler içe aktarılırken bir hata oluştu",
@@ -237,7 +232,6 @@
     "retention": "Veri saklama",
     "retention_desc": "Hız testi sonuçlarının otomatik olarak silinmeden önce ne kadar süre saklanacağı.",
     "retention_saved": "Saklama süresi güncellendi",
-    "retention_days_placeholder": "365",
     "retention_days_suffix": "gün",
     "retention_back": "Hazır seçeneklere dön",
     "retention_options": {
@@ -368,7 +362,6 @@
       "trigger": "Başlatılma",
       "server": "Sunucu",
       "result": "Tam sonuç",
-      "open_result": "speedtest.net",
       "loaded_latency": "Yük altında gecikme",
       "loaded_latency_value": "{{down}} ms indirme / {{up}} ms yükleme",
       "packet_loss": "Paket kaybı",
@@ -549,10 +542,8 @@
       "last_run": "Son çalıştırma öncesi "
     },
     "discord": {
-      "title": "Discord",
       "fields": {
         "url": "Webhook URL'si",
-        "url_placeholder": "https://discord.com/api/webhooks/...",
         "display_name": "Görünen ad",
         "display_name_placeholder": "MySpeed bildirimi",
         "error_message": "Hata mesajı",
@@ -586,7 +577,6 @@
       }
     },
     "gotify": {
-      "title": "Gotify",
       "fields": {
         "url": "Sunucu URL'si",
         "key": "Uygulama belirteci",
@@ -600,7 +590,6 @@
       }
     },
     "pushover": {
-      "title": "Pushover",
       "fields": {
         "token": "Uygulama belirteci",
         "user_key": "Kullanıcı anahtarı",
@@ -613,19 +602,14 @@
       }
     },
     "healthChecks": {
-      "title": "HealthChecks",
       "fields": {
         "url": "HealthChecks URL'si",
-        "url_placeholder": "https://hc-ping.com/<uuid>",
-        "interval": "Ping aralığı (dakika)",
-        "interval_placeholder": "1"
+        "interval": "Ping aralığı (dakika)"
       }
     },
     "influxdb": {
-      "title": "InfluxDB",
       "fields": {
         "url": "Sunucu URL'si",
-        "url_placeholder": "http://localhost:8086",
         "org": "Kuruluş",
         "bucket": "Bucket",
         "token": "API anahtarı",
@@ -638,7 +622,6 @@
       }
     },
     "mqtt": {
-      "title": "MQTT",
       "fields": {
         "host": "Broker ana bilgisayarı",
         "port": "Bağlantı noktası",
@@ -657,10 +640,8 @@
       }
     },
     "ntfy": {
-      "title": "ntfy",
       "fields": {
         "url": "Sunucu URL'si",
-        "url_placeholder": "https://ntfy.sh",
         "topic": "Konu",
         "topic_placeholder": "myspeed-alerts",
         "token": "Erişim anahtarı",
@@ -670,9 +651,7 @@
         "tags": "Etiketler",
         "tags_placeholder": "warning,satellite (virgülle ayrılmış)",
         "priority": "Varsayılan öncelik (1-5)",
-        "priority_placeholder": "3",
         "error_priority": "Hata önceliği (1-5)",
-        "error_priority_placeholder": "5",
         "error_message": "Hata mesajı",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Hata: %error%",
         "send_failed": "Hata mesajlarını gönder",
@@ -682,7 +661,6 @@
       }
     },
     "telegram": {
-      "title": "Telegram",
       "fields": {
         "token": "Bot anahtarı",
         "chat_id": "Sohbet Kimliği",
@@ -696,7 +674,6 @@
       }
     },
     "webhook": {
-      "title": "Webhook",
       "fields": {
         "url": "Webhook URL'si",
         "url_placeholder": "https://sunucunuz.com/hook",
@@ -706,8 +683,7 @@
         "send_alive": "Keep-Alive mesajlarını gönder",
         "send_recommendations": "Tavsiyeleri gönder",
         "send_config_updates": "Yapılandırma güncellemelerini gönder",
-        "interval": "Keep-Alive aralığı (dakika)",
-        "interval_placeholder": "1"
+        "interval": "Keep-Alive aralığı (dakika)"
       }
     },
     "fields": {

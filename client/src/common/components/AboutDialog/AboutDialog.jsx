@@ -12,6 +12,7 @@ import { jsonRequest } from "@/common/utils/RequestUtil";
 import { ConfigContext } from "@/common/contexts/Config";
 import { PROJECT_URL, RELEASES_URL } from "@/index";
 import {withBasePath} from "@/common/utils/BasePath";
+import {GITHUB_LABEL} from "@/common/utils/InvariantText";
 
 export const AboutDialog = ({ open, onClose }) => {
   const [config] = useContext(ConfigContext);
@@ -29,7 +30,7 @@ export const AboutDialog = ({ open, onClose }) => {
   }, [open, config.viewMode]);
 
   const links = [
-    { icon: faGithub, label: t("about.github"), url: PROJECT_URL },
+    { icon: faGithub, label: GITHUB_LABEL, url: PROJECT_URL },
     // Was a "Website" link to a site this fork does not have; a link to the
     // downloads is useful where a second link to the same repository was not.
     { icon: faDownload, label: t("header.download"), url: RELEASES_URL },

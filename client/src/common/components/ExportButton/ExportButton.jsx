@@ -8,6 +8,7 @@ import { useAlert } from "@/common/contexts/Alert";
 import { useClickOutside } from "@/common/hooks/useClickOutside";
 import { exportFilename } from "./filename";
 import "./styles.sass";
+import {EXPORT_FORMATS} from "@/common/utils/InvariantText";
 
 export const ExportButton = ({ dateRange, allTime = false }) => {
     const alert = useAlert();
@@ -141,11 +142,11 @@ export const ExportButton = ({ dateRange, allTime = false }) => {
                 <div className="export-dropdown" ref={dropdownRef}>
                     <button type="button" className="export-option" onClick={() => handleExport('csv')}>
                         <FontAwesomeIcon icon={faFileLines} />
-                        <span>{t("storage.csv")}</span>
+                        <span>{EXPORT_FORMATS.csv}</span>
                     </button>
                     <button type="button" className="export-option" onClick={() => handleExport('json')}>
                         <FontAwesomeIcon icon={faCode} />
-                        <span>{t("storage.json")}</span>
+                        <span>{EXPORT_FORMATS.json}</span>
                     </button>
                 </div>
             )}

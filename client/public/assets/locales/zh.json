@@ -55,7 +55,6 @@
       "server_id": "服务器ID",
       "server_id_placeholder": "任意服务器 ID，或留空",
       "custom_url": "自定义 URL",
-      "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "自动选择",
       "ookla_license": "我已阅读并接受 Ookla 的<Eula>EULA</Eula>、<GDPR>隐私政策</GDPR>和<TOS>服务条款</TOS>。",
       "ookla_notice": "使用 Ookla 即表示您同意其<Eula>最终用户许可协议</Eula>、<GDPR>隐私政策</GDPR>和<TOS>服务条款</TOS>。",
@@ -95,7 +94,6 @@
   "about": {
     "title": "关于 MySpeed",
     "description": "MySpeed 是一款开源测速分析软件，可在可配置的时间段内记录您的网速。",
-    "github": "GitHub",
     "website": "官网",
     "donate": "捐赠",
     "translate": "翻译",
@@ -193,7 +191,6 @@
     "quiet_hours_saved": "静默时段已保存"
   },
   "header": {
-    "title": "MySpeed",
     "running_tooltip": "运行测速",
     "start_tooltip": "开始测速",
     "new_update": "可提供最新信息",
@@ -214,8 +211,6 @@
     "tests": "测速",
     "export_tests": "导出测试",
     "tests_exported": "测试已导出",
-    "csv": "CSV",
-    "json": "JSON",
     "import_tests": "导入测试",
     "tests_imported": "测试已导入",
     "import_test_error": "导入测速时发生错误",
@@ -237,7 +232,6 @@
     "retention": "数据保留",
     "retention_desc": "测速结果在自动删除前保留多长时间。",
     "retention_saved": "保留期已更新",
-    "retention_days_placeholder": "365",
     "retention_days_suffix": "天",
     "retention_back": "返回预设",
     "retention_options": {
@@ -368,7 +362,6 @@
       "trigger": "启动方式",
       "server": "服务器",
       "result": "完整结果",
-      "open_result": "speedtest.net",
       "loaded_latency": "负载下的延迟",
       "loaded_latency_value": "下载 {{down}} 毫秒 / 上传 {{up}} 毫秒",
       "packet_loss": "丢包率",
@@ -549,10 +542,8 @@
       "last_run": "最后一次前 "
     },
     "discord": {
-      "title": "Discord",
       "fields": {
         "url": "Webhook URL",
-        "url_placeholder": "https://discord.com/api/webhooks/...",
         "display_name": "显示名称",
         "display_name_placeholder": "MySpeed 通知",
         "error_message": "测速失败的信息内容",
@@ -586,7 +577,6 @@
       }
     },
     "gotify": {
-      "title": "Gotify",
       "fields": {
         "url": "服务器网址",
         "key": "应用令牌",
@@ -600,7 +590,6 @@
       }
     },
     "pushover": {
-      "title": "Pushover",
       "fields": {
         "token": "应用程序令牌",
         "user_key": "用户密钥",
@@ -613,19 +602,14 @@
       }
     },
     "healthChecks": {
-      "title": "HealthChecks",
       "fields": {
         "url": "健康检查网址",
-        "url_placeholder": "https://hc-ping.com/<uuid>",
-        "interval": "Ping 间隔（分钟）",
-        "interval_placeholder": "1"
+        "interval": "Ping 间隔（分钟）"
       }
     },
     "influxdb": {
-      "title": "InfluxDB",
       "fields": {
         "url": "服务器 URL",
-        "url_placeholder": "http://localhost:8086",
         "org": "组织",
         "bucket": "存储桶",
         "token": "API 令牌",
@@ -638,7 +622,6 @@
       }
     },
     "mqtt": {
-      "title": "MQTT",
       "fields": {
         "host": "Broker 主机",
         "port": "端口",
@@ -657,10 +640,8 @@
       }
     },
     "ntfy": {
-      "title": "ntfy",
       "fields": {
         "url": "服务器 URL",
-        "url_placeholder": "https://ntfy.sh",
         "topic": "主题",
         "topic_placeholder": "myspeed-alerts",
         "token": "访问令牌",
@@ -670,9 +651,7 @@
         "tags": "标签",
         "tags_placeholder": "warning,satellite（逗号分隔）",
         "priority": "默认优先级（1-5）",
-        "priority_placeholder": "3",
         "error_priority": "错误优先级（1-5）",
-        "error_priority_placeholder": "5",
         "error_message": "错误消息",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] 错误: %error%",
         "send_failed": "发送错误消息",
@@ -682,7 +661,6 @@
       }
     },
     "telegram": {
-      "title": "Telegram",
       "fields": {
         "token": "机器人令牌",
         "chat_id": "聊天ID",
@@ -696,7 +674,6 @@
       }
     },
     "webhook": {
-      "title": "Webhook",
       "fields": {
         "url": "Webhook URL",
         "url_placeholder": "https://你的服务器.cn/hook",
@@ -706,8 +683,7 @@
         "send_alive": "发送生动的信息",
         "send_recommendations": "发送建议",
         "send_config_updates": "发送配置更新",
-        "interval": "Keep-Alive 间隔（分钟）",
-        "interval_placeholder": "1"
+        "interval": "Keep-Alive 间隔（分钟）"
       }
     },
     "fields": {

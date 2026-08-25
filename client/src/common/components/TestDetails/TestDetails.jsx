@@ -22,6 +22,7 @@ import {
     downloadInfo, jitterInfo, loadedLatencyInfo, packetLossInfo, pingInfo, uploadInfo
 } from "@/common/utils/MetricInfo";
 import "./styles.sass";
+import {OOKLA_RESULT_HOST} from "@/common/utils/InvariantText";
 
 const RESULT_URL = "https://www.speedtest.net/result/c/";
 
@@ -112,7 +113,7 @@ const DetailMetric = ({icon, label, value, unit, level, percent, targetLabel, ch
 const ResultLink = ({resultId}) => (
     <a href={RESULT_URL + resultId} target="_blank" rel="noreferrer"
        onClick={(event) => event.stopPropagation()}>
-        {t("test.details.open_result")}
+        {OOKLA_RESULT_HOST}
         <FontAwesomeIcon icon={faUpRightFromSquare} className="detail-link-icon"/>
     </a>
 );

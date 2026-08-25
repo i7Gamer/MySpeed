@@ -55,7 +55,6 @@
       "server_id": "Server-ID",
       "server_id_placeholder": "Een willekeurig server-ID, of laat leeg",
       "custom_url": "Aangepaste URL",
-      "custom_url_placeholder": "https://speed.test/backend/",
       "choose_automatically": "Automatisch kiezen",
       "ookla_license": "Ik heb de <Eula>EULA</Eula>, <GDPR>het privacybeleid</GDPR> en <TOS>de servicevoorwaarden</TOS> van Ookla gelezen en accepteer deze.",
       "ookla_notice": "Door Oowa te gebruiken, gaat u akkoord met hun <Eula>EULA</Eula>, <GDPR>privacy policy</GDPR> and <TOS>Terms of Service</TOS>.",
@@ -95,7 +94,6 @@
   "about": {
     "title": "Over MySpeed",
     "description": "MySpeed is een open-source snelheidstest analysesoftware die uw internet snelheid registreert over een configureerbare periode.",
-    "github": "GitHub",
     "website": "website",
     "donate": "Doneren",
     "translate": "Vertalen",
@@ -193,7 +191,6 @@
     "quiet_hours_saved": "Stille uren opgeslagen"
   },
   "header": {
-    "title": "MySpeed",
     "running_tooltip": "Snelheidstest wordt uitgevoerd",
     "start_tooltip": "Snelheidstest starten",
     "new_update": "Update beschikbaar",
@@ -214,8 +211,6 @@
     "tests": "Tests",
     "export_tests": "Tests exporteren",
     "tests_exported": "De tests zijn geëxporteerd",
-    "csv": "CSV",
-    "json": "JSON",
     "import_tests": "Tests importeren",
     "tests_imported": "De tests zijn geïmporteerd",
     "import_test_error": "Er is een fout opgetreden tijdens het importeren van de tests",
@@ -237,7 +232,6 @@
     "retention": "Behoud van gegevens",
     "retention_desc": "Hoe lang de snelheidstest resultaten worden bewaard voordat ze automatisch worden verwijderd.",
     "retention_saved": "Behoud periode bijgewerkt",
-    "retention_days_placeholder": "365",
     "retention_days_suffix": "Dagen",
     "retention_back": "Terug naar voorinstellingen",
     "retention_options": {
@@ -368,7 +362,6 @@
       "trigger": "Gestart",
       "server": "Server",
       "result": "Volledig resultaat",
-      "open_result": "speedtest.net",
       "loaded_latency": "Latentie onder belasting",
       "loaded_latency_value": "{{down}} ms omlaag / {{up}} ms omhoog",
       "packet_loss": "Pakketverlies",
@@ -549,10 +542,8 @@
       "last_run": "Laatst voor "
     },
     "discord": {
-      "title": "Discord",
       "fields": {
         "url": "Webhook URL",
-        "url_placeholder": "https://discord.com/api/webhooks/...",
         "display_name": "Naam weergeven",
         "display_name_placeholder": "MySpeed-melding",
         "error_message": "Foutmelding",
@@ -586,7 +577,6 @@
       }
     },
     "gotify": {
-      "title": "Gotify",
       "fields": {
         "url": "Server URL",
         "key": "Toepassen token",
@@ -600,7 +590,6 @@
       }
     },
     "pushover": {
-      "title": "Pushover",
       "fields": {
         "token": "App-token",
         "user_key": "Gebruikers sleutel",
@@ -613,19 +602,14 @@
       }
     },
     "healthChecks": {
-      "title": "HealthChecks",
       "fields": {
         "url": "URL gezondheidscontrole",
-        "url_placeholder": "https://hc-ping.com/<uuid>",
-        "interval": "Ping interval (minuten)",
-        "interval_placeholder": "1"
+        "interval": "Ping interval (minuten)"
       }
     },
     "influxdb": {
-      "title": "InfluxDB",
       "fields": {
         "url": "Server-URL",
-        "url_placeholder": "http://localhost:8086",
         "org": "Rekening",
         "bucket": "Emmer",
         "token": "API-token",
@@ -638,7 +622,6 @@
       }
     },
     "mqtt": {
-      "title": "MQTT",
       "fields": {
         "host": "Broker-host",
         "port": "Poort",
@@ -657,10 +640,8 @@
       }
     },
     "ntfy": {
-      "title": "ntfy",
       "fields": {
         "url": "Server-URL",
-        "url_placeholder": "https://ntfy.sh",
         "topic": "Onderwerp",
         "topic_placeholder": "myspeed-meldingen",
         "token": "Toegangstoken token",
@@ -670,9 +651,7 @@
         "tags": "Tags",
         "tags_placeholder": "waarschuwing, satelliet (komma gescheiden)",
         "priority": "Standaard prioriteit (1-5)",
-        "priority_placeholder": "3",
         "error_priority": "Foutprioriteit (1-5)",
-        "error_priority_placeholder": "5",
         "error_message": "Foutmelding",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] fout: %error%",
         "send_failed": "Foutmeldingen verzenden",
@@ -682,7 +661,6 @@
       }
     },
     "telegram": {
-      "title": "Telegram",
       "fields": {
         "token": "Bot-token",
         "chat_id": "Chat-ID",
@@ -696,7 +674,6 @@
       }
     },
     "webhook": {
-      "title": "Webhook",
       "fields": {
         "url": "Webhook URL",
         "url_placeholder": "https://uw-server.nl/hook",
@@ -706,8 +683,7 @@
         "send_alive": "Stuur levendige berichten",
         "send_recommendations": "Stuur aanbevelingen",
         "send_config_updates": "Configuratie-updates verzenden",
-        "interval": "Keep-Alive interval (minuten)",
-        "interval_placeholder": "1"
+        "interval": "Keep-Alive interval (minuten)"
       }
     },
     "fields": {
