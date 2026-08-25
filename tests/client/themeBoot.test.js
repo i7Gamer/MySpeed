@@ -76,11 +76,22 @@ describe("the pre-paint script", () => {
      * An inline script would be refused, and refused silently as far as the
      * reader is concerned: the page would simply flash again.
      */
+    /*
+     * Every opening tag is examined for a `src`, rather than the script tags
+     * being stripped out and the remainder searched. The stripping version was
+     * the same assertion and CodeQL was right to fail it: a regexp that removes
+     * `<script …></script>` and trusts what is left is the shape of a broken
+     * HTML sanitiser - `</script >` with a space walks straight through it. No
+     * untrusted input reaches this, but a test that reads as a sanitiser is one
+     * somebody eventually copies somewhere it matters.
+     */
     it("is a file rather than an inline script", () => {
-        const body = html.replace(/<script src="[^"]*"><\/script>/g, "");
+        const inline = [...html.matchAll(/<script\b([^>]*)>/g)]
+            .map(([tag, attributes]) => [tag, attributes])
+            .filter(([, attributes]) => !/\bsrc\s*=/.test(attributes))
+            .map(([tag]) => tag);
 
-        assert.doesNotMatch(body, /<script(?![^>]*\bsrc=)/,
-            "an inline script cannot run under script-src 'self'");
+        assert.deepEqual(inline, [], "an inline script cannot run under script-src 'self'");
     });
 });
 
