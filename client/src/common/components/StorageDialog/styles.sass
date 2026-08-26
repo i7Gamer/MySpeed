@@ -81,6 +81,19 @@
   align-items: center
   gap: 1rem
 
+  .storage-row-actions .dialog-btn
+    // One width down the column. Each button was as wide as its own word, so
+    // Save came out 70px, CSV 67, JSON 77, Import 79 and Delete 80 - a 13px
+    // spread, close enough to read as a mistake rather than as a difference.
+    //
+    // The floor is measured rather than picked: across the twenty-three
+    // locales the widest stable label is Italian's "Importazione" at 143px, so
+    // this holds all of them and the column stays even in every language. The
+    // two transient labels - "Saving..." and the delete confirmation - are
+    // free to grow past it, because a button that visibly changes while it is
+    // armed is the whole point of them.
+    min-width: 9rem
+
   .storage-row-label
     display: flex
     align-items: center
@@ -88,6 +101,11 @@
     // The export row carries a hint under its title, so the icon and heading
     // wrap onto one line and the hint takes the next.
     flex-wrap: wrap
+    // The words yield, not the row. Giving the buttons one width put German
+    // exactly flush - "Datenaufbewahrung" plus a 9rem button came to the row's
+    // width to the pixel - and the next translation would have gone over. A
+    // flex item will not shrink past its content without this.
+    min-width: 0
 
     svg
       color: $subtext

@@ -391,3 +391,82 @@ describe("the scrollbar", () => {
             "these carry their own scrollbar rules, which is how the colour got fixed everywhere except here");
     });
 });
+
+/**
+ * The three optimal values, side by side.
+ *
+ * Each column was as wide as whichever was wider, its 7.5rem input or its
+ * header - and the row was three of those plus two 1.5rem gaps, which comes to
+ * exactly the 408px the dialog has inside its padding. Zero slack by
+ * construction, so English spilled 2px past each edge on sub-pixel rounding
+ * alone: the left border of the ping field and the right border of the upload
+ * field were cut off by the dialog.
+ *
+ * Every other language made it worse, because the header carries the unit and
+ * the unit is translated. Measured against the real render: French spilled 50px
+ * each side, Ukrainian 46, Swedish 27, Norwegian 11, Polish 8, Russian 4. Eight
+ * of the fourteen languages checked were cut.
+ *
+ * Widening alone could not fix that - French needs 508px of content, so the
+ * shared settings width would have had to reach 34rem to hold it, and the next
+ * translation would start the argument again. So the columns share the row
+ * instead of adding up to it: three equal parts of whatever width there is,
+ * with the header free to wrap inside its part. The row can then never be wider
+ * than what holds it, in any language, and the extra width the dialog was given
+ * is what keeps the wrapping rare rather than what prevents the overflow.
+ */
+describe("the optimal values row", () => {
+    const css = compile("common/components/OptimalValuesDialog/styles.sass");
+
+    const ruleFor = (selector) => {
+        const at = css.indexOf(`${selector} {`);
+
+        assert.notEqual(at, -1, `${selector} has no rule`);
+        return css.slice(at, css.indexOf("}", at));
+    };
+
+    it("shares the row out rather than adding up to it", () => {
+        const rule = ruleFor(".optimal-values-content .optimal-values-speeds .optimal-values-speed");
+
+        assert.match(rule, /flex:\s*1\s+1\s+0/,
+            "a column sized to its own content makes the row as wide as the three of them together");
+        assert.match(rule, /min-width:\s*0/,
+            "without this a flex item refuses to shrink past its content, which is the overflow");
+    });
+
+    it("lets the field fill the column it is given", () => {
+        const rule = ruleFor(
+            ".optimal-values-content .optimal-values-speeds .optimal-values-speed input");
+
+        assert.match(rule, /width:\s*100%/,
+            "a field pinned in rem sets the column's width instead of taking it");
+    });
+});
+
+/**
+ * The buttons down the right of the storage dialog.
+ *
+ * Each was as wide as its own label, which put Save at 70px, CSV at 67, JSON at
+ * 77, Import at 79 and Delete at 80 - a 13px spread down one column, close
+ * enough to read as a mistake rather than as a difference.
+ *
+ * The floor is measured rather than chosen: across the twenty-three locales the
+ * widest stable label is Italian's "Importazione" at 143px, so 9rem holds every
+ * one of them and the column is even in every language. The two transient
+ * labels - "Saving..." and the delete confirmation - are allowed past it, since
+ * a button that visibly changes while it is armed is the point of them.
+ */
+describe("the storage dialog's buttons", () => {
+    const css = compile("common/components/StorageDialog/styles.sass");
+
+    it("share one width", () => {
+        const at = css.indexOf(".storage-row-actions .dialog-btn {");
+        assert.notEqual(at, -1, "the buttons are sized one at a time again");
+
+        const [, width] = /min-width:\s*([\d.]+)rem/.exec(css.slice(at, css.indexOf("}", at))) ?? [];
+
+        assert.ok(width !== undefined, "no shared floor, so each button is as wide as its own word");
+        assert.ok(parseFloat(width) >= 9,
+            `${width}rem is under the 143px the widest translated label needs`);
+    });
+});

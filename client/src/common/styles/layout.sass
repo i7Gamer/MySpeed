@@ -22,7 +22,15 @@ $page-max-width: 1600px
 //
 // Not the storage dialog, which is a tabbed table and genuinely wider, nor the
 // welcome and integration dialogs, which size to their content.
-$settings-dialog-width: 28rem
+//
+// It was 28rem, which the optimal-values dialog fitted into exactly: three
+// fields and two gaps came to 408px inside 408px of room. With no slack at all
+// English spilled 2px past each edge on rounding alone, and French - where the
+// labels are one long word each - by 50px. The row shares itself out now
+// rather than adding up to itself, so it cannot overflow at any width; this is
+// the room that keeps a long translation from having to wrap, not the thing
+// holding the layout together. Measured across fifteen languages.
+$settings-dialog-width: 32rem
 
 // A dialog whose rows put a long value beside its label rather than under it.
 //
