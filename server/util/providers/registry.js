@@ -2,6 +2,7 @@ import path from 'node:path';
 import * as loadOokla from './loadOokla.js';
 import * as loadLibre from './loadLibre.js';
 import * as loadCloudflare from './loadCloudflare.js';
+import * as loadIperf3 from './loadIperf3.js';
 
 /**
  * How long each LibreSpeed measurement phase runs, in seconds.
@@ -13,6 +14,68 @@ import * as loadCloudflare from './loadCloudflare.js';
  * the price of a number that means anything.
  */
 export const LIBRE_DURATION_SECONDS = 15;
+
+/**
+ * How long each iperf3 direction runs, how many streams carry it, and how much
+ * of the start is thrown away.
+ *
+ * Ten seconds is iperf3's own default and the figure every published
+ * measurement is quoted at. It is per direction, so a test costs twice this
+ * plus the latency sample - comfortably inside the run's own timeout.
+ *
+ * The omitted seconds are TCP slow start: the connection spends its first
+ * moments discovering how fast it may go, and averaging that in reports less
+ * than the line carries. iperf3 measures them and leaves them out rather than
+ * simply starting late, which is why the figure is `--omit` rather than a
+ * shorter `--time`.
+ */
+export const IPERF_DURATION_SECONDS = 10;
+export const IPERF_STREAMS = 4;
+export const IPERF_OMIT_SECONDS = 1;
+
+/**
+ * How long the control connection may take to come up.
+ *
+ * Without it a host that accepts nothing - the usual case for a LAN target
+ * that has been switched off - holds the run until its own three-minute
+ * timeout, which is reported as a test that did not finish rather than as a
+ * server that could not be reached. In milliseconds, as iperf3 takes it.
+ */
+export const IPERF_CONNECT_TIMEOUT_MS = 5000;
+
+/** iperf3's own default port, used when a target names a host and no port. */
+export const IPERF_DEFAULT_PORT = 5201;
+
+/**
+ * A target's `host:port`, split - with iperf3's default port when it names
+ * only a host.
+ *
+ * Exported because the same reading has to be made twice from different
+ * places: here, to build the arguments, and by the runner, to know where to
+ * time its handshakes. Two readings of one string is two chances to disagree
+ * about which port was meant.
+ *
+ * The last colon separates them, so a bracketed IPv6 literal keeps its own.
+ */
+export const splitEndpoint = (endpoint) => {
+    const value = String(endpoint ?? "").trim();
+    const separator = value.lastIndexOf(":");
+
+    // No colon at all, or the only colons are inside an unbracketed IPv6
+    // literal - which is a host, not a host and a port.
+    if (separator === -1 || (value.includes(":", 0) && !value.startsWith("[")
+        && value.indexOf(":") !== separator))
+        return {host: value, port: IPERF_DEFAULT_PORT};
+
+    const host = value.slice(0, separator);
+    const port = Number(value.slice(separator + 1));
+
+    if (!Number.isInteger(port) || port < 1 || port > 65535)
+        return {host: value, port: IPERF_DEFAULT_PORT};
+
+    // A bracketed literal keeps the brackets off the host it is dialled by.
+    return {host: host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host, port};
+};
 
 /**
  * One descriptor per provider - the whole of what makes a provider one.
@@ -104,6 +167,81 @@ export const REGISTRY = {
         // one gives an object keyed by index that the parser quietly reads as
         // a measurement of zero.
         isResult: (data) => !Array.isArray(data)
+    },
+    iperf3: {
+        binaryName: "iperf3",
+        loader: loadIperf3,
+        listName: "iperf3",
+        // Nothing to list: an iperf3 server is a host the operator runs, named
+        // on the target itself, not one of a provider's published fleet.
+        serverList: null,
+        streamsProgress: true,
+        /*
+         * Fetched the first time a target actually uses it, rather than at
+         * boot with the others.
+         *
+         * The three speedtest CLIs are what a default install measures with,
+         * so having them on disk before the first scheduled run is worth the
+         * download. iperf3 measures against a server the operator runs
+         * themselves, which most instances do not have - and the static build
+         * is some sixteen megabytes. ensureBinary already asks the loader
+         * before every run and costs one existsSync once the file is there, so
+         * an instance that does add an iperf3 target gets it on the first test
+         * rather than never.
+         */
+        downloadedOnDemand: true,
+        /*
+         * iperf3 measures throughput and reports no latency of any kind, where
+         * the other three talk to a backend that answers one. The runner
+         * measures it instead - see iperfLatency - because the ping column is
+         * not optional: every row on the overview is graded on one, and
+         * storing the failure placeholder on a run that succeeded would read
+         * as a broken line.
+         */
+        providesLatency: false,
+        // One direction per invocation - see runsOf. The download runs first,
+        // as it does for every other provider, so the phases the interface
+        // shows arrive in the order it draws them.
+        runs: [
+            {key: "download", args: ["-R"]},
+            {key: "upload", args: []}
+        ],
+        buildArgs(target, iface) {
+            const {host, port} = splitEndpoint(target.endpoint);
+
+            const args = [
+                '--client', host,
+                '--port', String(port),
+                // Line-delimited, which is what the shared parser reads and
+                // what carries the interval records the progress bar follows.
+                // Plain --json pretty-prints one object across many lines, and
+                // none of them parse on their own.
+                '--json-stream',
+                '--time', String(IPERF_DURATION_SECONDS),
+                // Several streams, because one TCP connection is limited by
+                // its window over a long fat path and will under-report a fast
+                // line badly. Four is what a speedtest does.
+                '--parallel', String(IPERF_STREAMS),
+                // The first seconds are TCP working out how fast it may go,
+                // and averaging them in reports less than the line carries.
+                '--omit', String(IPERF_OMIT_SECONDS),
+                // Bounds the one thing that would otherwise hang until the
+                // run's own three-minute timeout: a host that accepts nothing.
+                '--connect-timeout', String(IPERF_CONNECT_TIMEOUT_MS),
+                // The interface every other provider is also bound to, so the
+                // measurement describes the line the instance is watching.
+                '--bind', iface.address
+            ];
+
+            return {args, temporaryServer: null};
+        },
+        // The end event, and only one that carried something: a run that fails
+        // reports {"event":"error",...} and then an empty end event, and
+        // taking that for the result would store a failure as a test that
+        // produced nothing.
+        isResult: (data) => data.event === "end" && data.data
+            && Object.keys(data.data).length > 0,
+        errorOf: (data) => data.event === "error" ? data.data : undefined
     }
 };
 

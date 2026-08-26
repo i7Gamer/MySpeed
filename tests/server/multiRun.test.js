@@ -66,7 +66,11 @@ describe("how the runner performs them", () => {
     it("answers a single run flat and several of them keyed", () => {
         assert.match(run, /\{\.\.\.results\[null\], elapsed\}/,
             "a one-run provider's result changed shape, which every existing parser reads");
-        assert.match(run, /\{runs: results, elapsed\}/);
+        // The latency and the address travel with the runs because neither is
+        // in them: iperf3 measures no latency at all, and the address it
+        // dialled belongs to the start event rather than the end one a parser
+        // is handed.
+        assert.match(run, /\{runs: results, latency, endpoint, elapsed\}/);
     });
 
     // The direction is passed down because the CLI's own records do not name

@@ -25,13 +25,16 @@ describe("the provider registry", () => {
     });
 
     it("lists the shipped providers", () => {
-        assert.deepEqual(providerIds(), ["ookla", "libre", "cloudflare"]);
+        assert.deepEqual(providerIds(), ["ookla", "libre", "cloudflare", "iperf3"]);
     });
 
     it("names the server list only for providers that have one", () => {
         assert.equal(REGISTRY.ookla.serverList, "ookla");
         assert.equal(REGISTRY.libre.serverList, "libre");
         assert.equal(REGISTRY.cloudflare.serverList, null);
+        // An iperf3 server is a host the operator runs, named on the target
+        // itself - there is no fleet to list.
+        assert.equal(REGISTRY.iperf3.serverList, null);
     });
 
     it("streams progress only where the CLI reports it", () => {

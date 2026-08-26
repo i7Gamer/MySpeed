@@ -4,7 +4,8 @@ import { parseProgressLine } from './providers/progress.js';
 import { isMuslLinux, MUSL_CLOUDFLARE_REASON } from './providers/libc.js';
 import * as interfacesModule from '../util/loadInterfaces.js';
 import * as config from '../controller/config.js';
-import { REGISTRY, descriptor, binaryPath as providerBinaryPath } from './providers/registry.js';
+import { REGISTRY, descriptor, splitEndpoint, binaryPath as providerBinaryPath } from './providers/registry.js';
+import { measureLatency } from './providers/iperfLatency.js';
 import { toErrorMessage } from './helpers.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -542,6 +543,23 @@ export default async (mode, serverId, serverUrl, onProgress) => {
         const runs = runsOf(provider);
         const results = {};
 
+        /*
+         * The latency, for a provider whose CLI does not measure one.
+         *
+         * Before the transfers rather than after, for two reasons: it is the
+         * idle latency that the ping column holds - taken afterwards it would
+         * be measured over a line whose buffers the test had just filled - and
+         * it is the first phase every other provider reports, so the bar moves
+         * in the order the interface draws.
+         */
+        let latency = null;
+        const endpoint = provider.providesLatency === false ? splitEndpoint(serverUrl) : null;
+
+        if (endpoint) {
+            onProgress?.({phase: "ping", progress: 0, speed: null});
+            latency = await measureLatency({...endpoint, localAddress: interfaceIp});
+        }
+
         // Sequentially, and that is load-bearing rather than incidental: the
         // single-active-process invariant the shutdown depends on holds only
         // while one CLI is live at a time, and two transfers measured at once
@@ -555,7 +573,10 @@ export default async (mode, serverId, serverUrl, onProgress) => {
         // hands the parser the set, keyed by direction, for it to merge.
         return runs === SINGLE_RUN || runs.length === 1 && runs[0].key === null
             ? {...results[null], elapsed}
-            : {runs: results, elapsed};
+            // `endpoint` travels with the runs because the address dialled is
+            // not in them: under --json-stream it belongs to the start event,
+            // and a parser is handed the end event alone.
+            : {runs: results, latency, endpoint, elapsed};
     } finally {
         // However the test ended, including a throw from any of its runs - a
         // file naming a backend, credentials included, must not outlive the run

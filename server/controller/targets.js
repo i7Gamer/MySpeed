@@ -21,9 +21,59 @@ const DIGITS = /^\d+$/;
 // than a value to quietly ignore.
 const takesServerId = (provider) => REGISTRY[provider]?.serverList !== null;
 
-// Providers whose targets carry an endpoint of their own. Only libre today;
-// iperf3 joins when its registry entry lands.
-const takesEndpoint = (provider) => provider === "libre";
+// Providers whose targets carry an endpoint of their own, and what kind.
+// libre's is a URL to a backend; iperf3's is a host and port.
+const takesEndpoint = (provider) => provider === "libre" || provider === "iperf3";
+
+// And the one that cannot do without it: a libre target with no endpoint uses
+// the public backend list, where an iperf3 target with no host has nothing to
+// measure against at all.
+const requiresEndpoint = (provider) => provider === "iperf3";
+
+const PORT_DIGITS = /^\d+$/;
+const MAX_PORT = 65535;
+
+/**
+ * What is wrong with an iperf3 target's `host[:port]`, or null when nothing is.
+ *
+ * Deliberately not a URL and not held to one: an iperf3 server is a host the
+ * operator runs, dialled directly, and there is no scheme to speak of.
+ *
+ * Deliberately not held to the address rules the node list applies either.
+ * Those exist to stop this server being aimed at private addresses on the
+ * operator's behalf, and here the operator is aiming it at their own machine
+ * on purpose - a LAN host, or loopback, is the ordinary case and the main
+ * reason to want this provider. What is refused is only what cannot be dialled.
+ */
+export const iperfEndpointProblem = (endpoint) => {
+    const value = String(endpoint).trim();
+
+    if (value === "") return "The target needs a host to measure against";
+    if (/\s/.test(value)) return "The host cannot contain spaces";
+    if (value.includes("/") || value.includes("@"))
+        return "Give a host and port, like 10.0.0.5:5201 - not a URL";
+
+    // The last colon separates the port, so a bracketed IPv6 literal keeps its
+    // own. splitEndpoint reads it the same way when the run is built.
+    const separator = value.lastIndexOf(":");
+    const bracketed = value.startsWith("[");
+    const hasPort = separator !== -1
+        && (bracketed ? value.indexOf("]") < separator : value.indexOf(":") === separator);
+
+    const host = hasPort ? value.slice(0, separator) : value;
+
+    if (host === "" || host === "[]") return "The target needs a host to measure against";
+
+    if (hasPort) {
+        const port = value.slice(separator + 1);
+
+        if (!PORT_DIGITS.test(port)) return "The port must be digits";
+        if (Number(port) < 1 || Number(port) > MAX_PORT)
+            return `The port must be between 1 and ${MAX_PORT}`;
+    }
+
+    return null;
+};
 
 const optimalProblem = (value, name) => {
     if (value === undefined || value === null) return null;
@@ -50,14 +100,25 @@ export const targetProblem = (target) => {
     if (target.endpoint !== undefined && target.endpoint !== null) {
         if (!takesEndpoint(target.provider)) return "This provider takes no endpoint";
 
-        let url;
-        try {
-            url = new URL(target.endpoint);
-        } catch {
-            return "The endpoint must be a URL";
-        }
+        if (target.provider === "iperf3") {
+            const problem = iperfEndpointProblem(target.endpoint);
+            if (problem) return problem;
+        } else {
+            let url;
+            try {
+                url = new URL(target.endpoint);
+            } catch {
+                return "The endpoint must be a URL";
+            }
 
-        if (!ALLOWED_PROTOCOLS.has(url.protocol)) return "The endpoint's protocol is not allowed";
+            if (!ALLOWED_PROTOCOLS.has(url.protocol)) return "The endpoint's protocol is not allowed";
+        }
+    } else if (requiresEndpoint(target.provider)) {
+        // Refused at the door rather than at the first run: a target that can
+        // never measure anything would otherwise be created happily and then
+        // fail on a schedule, with the reason three clicks away in a row's
+        // error column.
+        return "An iperf3 target needs the host of the iperf3 server to measure against";
     }
 
     return optimalProblem(target.optimalPing, "ping")

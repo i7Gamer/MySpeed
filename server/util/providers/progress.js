@@ -1,7 +1,19 @@
-import { roundSpeed } from './parseData.js';
+import { BITS_PER_BYTE, roundSpeed } from './parseData.js';
+import { IPERF_DURATION_SECONDS } from './registry.js';
+
+/**
+ * The length one iperf3 transfer is measured over, as the progress bar reads
+ * it - the same figure the arguments ask for, so a change to the run's length
+ * cannot leave the bar filling at the wrong rate.
+ */
+const IPERF_PROGRESS_SECONDS = IPERF_DURATION_SECONDS;
 
 // The phases a run moves through, in the order it runs them.
 export const PHASE_ORDER = ["ping", "download", "upload"];
+
+// The two that move data, which are the only ones a transfer's own progress
+// records can describe.
+export const TRANSFER_PHASES = ["download", "upload"];
 
 // What the run reports before it has entered the first phase.
 export const PHASE_START = "start";
@@ -34,7 +46,8 @@ const clamp = (value) => {
  * run finished before the row had been written.
  */
 export const parseProgressLine = (mode, line, phase) => {
-    if (mode !== "ookla" || typeof line !== "string" || !line.startsWith("{")) return null;
+    if (typeof line !== "string" || !line.startsWith("{")) return null;
+    if (mode !== "ookla" && mode !== "iperf3") return null;
 
     let data;
     try {
@@ -44,6 +57,8 @@ export const parseProgressLine = (mode, line, phase) => {
         return null;
     }
 
+    if (mode === "iperf3") return iperf3Progress(data, phase);
+
     if (data.type === "testStart") return {phase: PHASE_START, progress: 0, speed: null};
     if (!PHASE_ORDER.includes(data.type)) return null;
 
@@ -51,6 +66,42 @@ export const parseProgressLine = (mode, line, phase) => {
     const speed = Number.isFinite(detail.bandwidth) ? roundSpeed(detail.bandwidth) : null;
 
     return {phase: data.type, progress: clamp(detail.progress), speed};
+};
+
+/**
+ * One line of iperf3's --json-stream output, as progress.
+ *
+ * Its records name no phase - an interval describes whichever direction this
+ * invocation was started for, and only the runner knows which - so the phase
+ * is passed in beside the line. A run with no phase is not one of the two
+ * transfers and has nothing to report.
+ *
+ * How far through comes from the interval's own clock against the duration the
+ * arguments asked for, because iperf3 states no fraction. The omitted warm-up
+ * intervals are skipped: they run before the measurement and would take the
+ * bar to a tenth and then back to nothing.
+ */
+export const iperf3Progress = (data, phase) => {
+    // The two transfer phases only. The latency phase is reported by the
+    // runner itself - it is measured before the CLI is started at all - so an
+    // interval record can never belong to it.
+    if (!TRANSFER_PHASES.includes(phase) || data.event !== "interval") return null;
+
+    const sum = data.data?.sum ?? {};
+    if (sum.omitted) return null;
+
+    // Bits per second, where roundSpeed takes bytes - see BITS_PER_BYTE. The
+    // live readout and the stored figure have to be the same measurement, or
+    // the bar reports eight times what the row ends up holding.
+    const speed = Number.isFinite(sum.bits_per_second)
+        ? roundSpeed(sum.bits_per_second / BITS_PER_BYTE) : null;
+    const elapsed = Number(sum.end);
+
+    return {
+        phase,
+        progress: Number.isFinite(elapsed) ? clamp(elapsed / IPERF_PROGRESS_SECONDS) : 0,
+        speed
+    };
 };
 
 /**

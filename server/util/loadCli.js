@@ -1,9 +1,17 @@
 import { REGISTRY } from './providers/registry.js';
 
-// Every registered provider is fetched regardless of which ones the targets
-// use, so adding a target later costs nothing. Named so a failure can say
-// which one it was.
+/**
+ * The CLIs fetched at boot, regardless of which ones the targets use, so
+ * adding a target later costs nothing. Named so a failure can say which one it
+ * was.
+ *
+ * Except the ones that ask to be left until they are wanted - see
+ * downloadedOnDemand. A provider that most instances will never measure with
+ * is a download most instances should not pay for, and ensureBinary fetches it
+ * before the first run that needs it.
+ */
 const PROVIDERS = Object.values(REGISTRY)
+    .filter((entry) => !entry.downloadedOnDemand)
     .map((entry) => ({name: entry.listName, provider: entry.loader}));
 
 /**
