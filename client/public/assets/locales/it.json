@@ -15,7 +15,7 @@
   },
   "dialog": {
     "okay": "Ok",
-    "done": "Pronto",
+    "done": "Fatto",
     "continue": "Continua",
     "update": "Aggiornamento",
     "close": "Chiudere",
@@ -73,7 +73,7 @@
     "password": "Modifica della password",
     "cron": "Impostazione della frequenza",
     "storage": "Gestire l'archiviazione",
-    "pause_tests": "Test di pausa",
+    "pause_tests": "Metti in pausa i test",
     "resume_tests": "Continua i test",
     "language": "Cambiare la lingua",
     "preferences": "Preferenze",
@@ -83,7 +83,7 @@
   "about": {
     "title": "Informazioni Su MySpeed",
     "description": "MySpeed è un software di analisi di speedtest open-source che registra la velocità di internet in un periodo di tempo configurabile.",
-    "translate": "Trasla"
+    "translate": "Traduci"
   },
   "options": {
     "cron": {
@@ -113,7 +113,7 @@
     "enter_token": "Inserisci il token di installazione"
   },
   "pause": {
-    "manual": "Pausa Indefinitamente",
+    "manual": "Pausa indefinita",
     "manual_desc": "Pausa fino al riavvio manuale",
     "short": "Breve Interruzione",
     "short_desc": "Pausa per 1 ora",
@@ -155,7 +155,7 @@
     "schedule_offset": "Sfasa la pianificazione",
     "schedule_offset_desc": "Aggiunge un piccolo ritardo per evitare che i test inizino in orari esatti",
     "pause_title": "Test di velocità in pausa per...",
-    "hours": "Orario",
+    "hours": "Ore",
     "pause": "Pausa",
     "language": "Cambiare la lingua",
     "quiet_hours_saved": "Ore di silenzio salvate"
@@ -172,9 +172,9 @@
     "configuration": "Configurazione",
     "stored_tests": "Test memorizzati",
     "tests": "Test",
-    "export_tests": "Test di esportazione",
+    "export_tests": "Esporta i test",
     "tests_exported": "I test sono stati esportati",
-    "import_tests": "Test di importazione",
+    "import_tests": "Importa i test",
     "tests_imported": "I test sono stati importati",
     "tests_imported_partial": "Test importati: {{imported}}, saltati: {{skipped}}",
     "import_test_error": "Si è verificato un errore durante l'importazione dei test",
@@ -186,7 +186,7 @@
     "history_cleared": "La cronologia è stata cancellata",
     "delete": "Elimina",
     "confirm_delete": "Sì, elimina",
-    "export_settings": "Impostazioni di esportazione",
+    "export_settings": "Esporta le impostazioni",
     "import_settings": "Importazione delle impostazioni",
     "factory_reset": "Reset di fabbrica",
     "factory_reset_completed": "Il reset di fabbrica è stato completato",
@@ -262,7 +262,7 @@
     }
   },
   "time": {
-    "now": "Solo ora",
+    "now": "Proprio ora",
     "seconds": "{{seconds}} secondi",
     "minute": "1 minuto",
     "minutes": "{{minutes}} minuti",
@@ -303,7 +303,7 @@
       "under_target": "{{amount}} {{unit}} sotto il tuo obiettivo",
       "on_target": "Esattamente sul tuo obiettivo",
       "unchanged": "Invariato dall'ultimo test",
-      "measured_at": "Misurato alle",
+      "measured_at": "Misurato il",
       "measured_with": "Misurato con",
       "seconds": "{{seconds}} s",
       "data_used": "Dati usati",
@@ -373,8 +373,8 @@
       "min": "Minimo",
       "max": "Massimo",
       "avg": "Media",
-      "down": "Scarica i valori",
-      "up": "Caricare i valori",
+      "down": "Valori di download",
+      "up": "Valori di upload",
       "target": "Obiettivo: {{target}}",
       "consistency": "Regolarità",
       "samples": "Test misurati"
@@ -435,7 +435,7 @@
     },
     "delete": {
       "title": "Cancellare il server",
-      "description": "Il server <Bold>{{name}}</Bold> (#{{id}}) è stato cancellato. Questa azione non può essere annullata. Si vuole continuare?",
+      "description": "Il server <Bold>{{name}}</Bold> (#{{id}}) verrà cancellato. Questa azione non può essere annullata. Si vuole continuare?",
       "yes": "Sì, eliminare",
       "success": "Il server è stato cancellato con successo"
     },
@@ -453,7 +453,7 @@
   "preview": {
     "title": "Modalità demo",
     "info": "DEMO",
-    "description": "Attualmente sei in modalità demo. Alcune funzioni sono disabilitate e alcune impostazioni non possono essere modificate. Se vuoi utilizzare tutte le funzioni, puoi installare MySpeed <Link></Link> sul tuo server."
+    "description": "Attualmente sei in modalità demo. Alcune funzioni sono disabilitate e alcune impostazioni non possono essere modificate. Se vuoi utilizzare tutte le funzioni, puoi <Link>installare MySpeed</Link> sul tuo server."
   },
   "integrations": {
     "none_active": "Questa integrazione non è attiva. <br/><Bold>Aggiungi</Bold>",
@@ -472,8 +472,8 @@
         "error_message": "Messaggio di errore",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Errore: %error%",
         "send_failed": "Inviare messaggi di errore",
-        "send_finished": "Inviare compilato",
-        "finished_message": "Messaggio completato",
+        "send_finished": "Inviare messaggi al termine",
+        "finished_message": "Messaggio al termine",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -507,8 +507,8 @@
         "error_message": "Messaggio di errore",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Errore: %error%",
         "send_failed": "Inviare messaggi di errore",
-        "send_finished": "Inviare compilato",
-        "finished_message": "Messaggio completato",
+        "send_finished": "Inviare messaggi al termine",
+        "finished_message": "Messaggio al termine",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -520,13 +520,13 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Errore: %error%",
         "send_failed": "Invia messaggi di errore",
         "send_finished": "Invia messaggi finiti",
-        "finished_message": "Messaggio finito",
+        "finished_message": "Messaggio al termine",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
     "healthChecks": {
       "fields": {
-        "url": "URL Controlli sanitari",
+        "url": "URL di HealthChecks",
         "interval": "Intervallo di ping (minuti)"
       }
     },
@@ -534,12 +534,12 @@
       "fields": {
         "url": "Url Del Server",
         "org": "Organizzazione",
-        "bucket": "Secchio",
+        "bucket": "Bucket",
         "token": "Token API",
         "measurement": "Nome della misura",
         "measurement_placeholder": "speedtests (predefinito)",
         "host": "Tag host",
-        "host_placeholder": "Predefiniti al nome host della macchina",
+        "host_placeholder": "Per impostazione predefinita, il nome host della macchina",
         "tags": "Tag aggiuntivi",
         "tags_placeholder": "region=eu,role=primario (separati da virgola)"
       }
@@ -579,7 +579,7 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Errore: %error%",
         "send_failed": "Invia messaggi di errore",
         "send_finished": "Invia messaggi finiti",
-        "finished_message": "Messaggio terminato",
+        "finished_message": "Messaggio al termine",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -591,8 +591,8 @@
         "error_message": "Messaggio di errore",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Errore: %error%",
         "send_failed": "Inviare messaggi di errore",
-        "send_finished": "Inviare compilato",
-        "finished_message": "Messaggio completato",
+        "send_finished": "Inviare messaggi al termine",
+        "finished_message": "Messaggio al termine",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -600,17 +600,17 @@
       "fields": {
         "url": "URL Webhook",
         "url_placeholder": "https://vostro-server.it/hook",
-        "send_started": "Inizio invio",
+        "send_started": "Inviare messaggi di avvio",
         "send_failed": "Inviare messaggi di errore",
-        "send_finished": "Inviare compilato",
-        "send_alive": "Inviare messaggi vivaci",
+        "send_finished": "Inviare messaggi al termine",
+        "send_alive": "Inviare messaggi Keep-Alive",
         "send_recommendations": "Inviare raccomandazioni",
         "send_config_updates": "Inviare gli aggiornamenti della configurazione",
         "interval": "Intervallo di mantenimento vivo (minuti)"
       }
     },
     "fields": {
-      "alert_only": "Avvisa solo quando un limite non viene raggiunto",
+      "alert_only": "Avvisa solo quando un limite non viene rispettato",
       "alert_ping_above": "Avvisa quando il ping supera (ms)",
       "alert_ping_above_placeholder": "es. 50",
       "alert_download_below": "Avvisa quando il download scende sotto (Mbps)",
@@ -637,7 +637,7 @@
   },
   "optimal_values": {
     "title": "Valori Ottimali",
-    "use_recommended": "Uso raccomandato"
+    "use_recommended": "Usa i valori consigliati"
   },
   "preferences": {
     "title": "Preferenze",
@@ -663,9 +663,9 @@
       "title": "Formato orario",
       "description": "Come gli orari dell'orologio vengono visualizzati in tutta l'app.",
       "h24": "24 ore",
-      "h24_desc": "Orari di visualizzazione come 14:30",
+      "h24_desc": "Mostra gli orari come 14:30",
       "h12": "12 Ore",
-      "h12_desc": "Orari di visualizzazione come 2:30 PM"
+      "h12_desc": "Mostra gli orari come 2:30 PM"
     },
     "speed_unit": {
       "title": "Unità di velocità",

@@ -1,5 +1,5 @@
 {
-  "failed": "Nie powodzenie",
+  "failed": "Niepowodzenie",
   "welcome": {
     "step": "Krok",
     "title": "Witamy w MySpeed!",
@@ -76,7 +76,7 @@
     "pause_tests": "Wstrzymaj testy",
     "resume_tests": "Wznów testy",
     "language": "Zmień język",
-    "preferences": "Ustawienia",
+    "preferences": "Preferencje",
     "provider": "O dostawcy",
     "integrations": "Integracje"
   },
@@ -152,7 +152,7 @@
     "cron_title": "Ustaw częstotliwość testów",
     "cron_next_test": "Następny test:",
     "custom_cron": "Własne wyrażenie crona",
-    "schedule_offset": "Harmonogram przesunięcia",
+    "schedule_offset": "Przesunięcie harmonogramu",
     "schedule_offset_desc": "Dodaje niewielkie opóźnienie, aby zapobiec uruchamianiu testów w ściśle określonym czasie",
     "pause_title": "Wstrzymaj testy prędkości na...",
     "hours": "Godziny",
@@ -262,21 +262,21 @@
     }
   },
   "time": {
-    "now": "Właśnie teraz",
-    "seconds": "{{seconds}} sekund",
-    "minute": "1 minuta",
-    "minutes": "{{minutes}} minut",
-    "hour": "1 godzina",
-    "hours": "{{hours}} godzin",
-    "day": "1 dzień",
-    "days": "{{days}} dni"
+    "now": "chwilą",
+    "seconds": "{{seconds}} sekundami",
+    "minute": "1 minutą",
+    "minutes": "{{minutes}} minutami",
+    "hour": "1 godziną",
+    "hours": "{{hours}} godzinami",
+    "day": "1 dniem",
+    "days": "{{days}} dniami"
   },
   "test": {
     "not_available": "Obecnie nie ma dostępnych testów",
     "not_available_in_range": "Brak testów między {{from}} a {{to}}",
     "show_all_time": "Pokaż całą historię",
-    "loading_more": "Załaduj więcej testów...",
-    "no_more_tests": "Nie musisz ładować więcej testów",
+    "loading_more": "Ładowanie kolejnych testów...",
+    "no_more_tests": "Nie ma więcej testów do załadowania",
     "unknown_error": "Nieznany błąd",
     "unknown_error_detail": "Nieznany błąd: {{error}}",
     "failed": "Test nie powiódł się",
@@ -303,7 +303,7 @@
       "under_target": "{{amount}} {{unit}} poniżej Twojego celu",
       "on_target": "Dokładnie na Twoim celu",
       "unchanged": "Bez zmian od poprzedniego testu",
-      "measured_at": "Zmierzono o",
+      "measured_at": "Zmierzono",
       "measured_with": "Zmierzono za pomocą",
       "seconds": "{{seconds}} s",
       "data_used": "Zużyte dane",
@@ -315,7 +315,7 @@
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Połączenie",
-      "changed": "zmienił się"
+      "changed": "zmiana"
     }
   },
   "errors": {
@@ -527,17 +527,17 @@
     "healthChecks": {
       "fields": {
         "url": "URL HealthChecks",
-        "interval": "Odstęp między pingiem (minuty)"
+        "interval": "Interwał pingów (minuty)"
       }
     },
     "influxdb": {
       "fields": {
         "url": "Adres serwera",
         "org": "Organizacja",
-        "bucket": "Wiadro",
+        "bucket": "Bucket",
         "token": "Token API",
         "measurement": "Nazwa pomiaru",
-        "measurement_placeholder": "próby prędkościowe (domyślne)",
+        "measurement_placeholder": "speedtests (domyślnie)",
         "host": "Tag hosta",
         "host_placeholder": "Domyślnie nazwa hosta maszyny",
         "tags": "Dodatkowe tagi",
@@ -566,7 +566,7 @@
       "fields": {
         "url": "Adres serwera",
         "topic": "Temat",
-        "topic_placeholder": "tajemnicze alerty",
+        "topic_placeholder": "myspeed-alerts",
         "token": "Token dostępu",
         "token_placeholder": "tk_... (opcjonalnie, dla chronionych serwerów)",
         "title": "Tytuł powiadomienia",
@@ -578,8 +578,8 @@
         "error_message": "Komunikat o błędzie",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Błąd: %error%",
         "send_failed": "Wyślij komunikaty o błędach",
-        "send_finished": "Wysyłanie zakończonych wiadomości",
-        "finished_message": "Wiadomość zakończona",
+        "send_finished": "Wysyłaj komunikaty o zakończeniu",
+        "finished_message": "Komunikat o zakończeniu",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -606,11 +606,11 @@
         "send_alive": "Wyślij komunikaty o aktywności",
         "send_recommendations": "Wyślij rekomendacje",
         "send_config_updates": "Wyślij aktualizacje konfiguracji",
-        "interval": "Zachowaj interwał na żywo (minuty)"
+        "interval": "Interwał Keep-Alive (minuty)"
       }
     },
     "fields": {
-      "alert_only": "Powiadamiaj tylko wtedy, gdy limit nie został osiągnięty",
+      "alert_only": "Powiadamiaj tylko wtedy, gdy limit zostanie naruszony",
       "alert_ping_above": "Powiadom, gdy ping przekroczy (ms)",
       "alert_ping_above_placeholder": "np. 50",
       "alert_download_below": "Powiadom, gdy pobieranie spadnie poniżej (Mbps)",
@@ -640,16 +640,16 @@
     "use_recommended": "Użyj rekomendowanych"
   },
   "preferences": {
-    "title": "Ustawienia",
+    "title": "Preferencje",
     "theme": {
       "title": "Wygląd",
       "description": "Przełącz między ciemnym i jasnym interfejsem.",
       "system": "Systemowy",
       "system_desc": "Podążaj za ustawieniem tego urządzenia",
       "dark": "Ciemny",
-      "dark_desc": "Łatwiejsze oczy w małym świetle",
-      "light": "Światło",
-      "light_desc": "Jasne szukanie użycia w ciągu dnia"
+      "dark_desc": "Łagodniejszy dla oczu przy słabym świetle",
+      "light": "Jasny",
+      "light_desc": "Jaśniejszy wygląd do użytku w ciągu dnia"
     },
     "palette": {
       "title": "Kolory",
@@ -671,7 +671,7 @@
       "title": "Jednostka prędkości",
       "description": "Wybierz jak wyświetlane są prędkości. Wartości są automatycznie konwertowane.",
       "mbps": "Mb/s (Megabity na sekundę)",
-      "mbps_desc": "Standardowy ISP / jednostka prędkościowa",
+      "mbps_desc": "Standardowa jednostka ISP / testów prędkości",
       "mbytes": "MB/s (Megabajty na sekundę)",
       "mbytes_desc": "Często używane w przeglądarkach i menadżerach pobierania"
     },
@@ -689,9 +689,9 @@
     "running_button": "W toku",
     "paused": "Testy prędkości są wstrzymane",
     "never_run": "Żaden test nie został jeszcze wykonany",
-    "last_test": "Ostatni test {{time}} temu",
+    "last_test": "Ostatni test przed {{time}}",
     "next_test": "Następny o {{time}}",
-    "recent_failures": "{{failures}} nieudanych w ciągu ostatniej doby",
+    "recent_failures": "Nieudane w ciągu ostatniej doby: {{failures}}",
     "phase": {
       "starting": "Uruchamianie…",
       "ping": "Pomiar opóźnienia",

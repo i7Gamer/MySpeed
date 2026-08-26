@@ -57,7 +57,7 @@
       "choose_automatically": "Choisis automatiquement",
       "ookla_license": "J'ai lu et j'accepte le <Eula>CLUF</Eula>, la <GDPR>politique de confidentialité</GDPR> et les <TOS>conditions de service</TOS> d'Ookla.",
       "ookla_desc": "Fournisseur populaire avec un réseau de serveurs globaux",
-      "libre_desc": "Open-source, auto-hostable speedtest",
+      "libre_desc": "Speedtest open source et auto-hébergeable",
       "cloudflare_desc": "Test rapide basé sur CDN"
     }
   },
@@ -113,8 +113,8 @@
     "enter_token": "Saisir le jeton d'installation"
   },
   "pause": {
-    "manual": "Suspendre définitivement",
-    "manual_desc": "Pause avant reprise manuelle",
+    "manual": "Suspendre indéfiniment",
+    "manual_desc": "Pause jusqu'à la reprise manuelle",
     "short": "Pause courte",
     "short_desc": "Pause pour 1 heure",
     "medium": "Pause moyenne",
@@ -152,7 +152,7 @@
     "cron_title": "Définir la fréquence de test",
     "cron_next_test": "Test suivant :",
     "custom_cron": "Expression cron personnalisée",
-    "schedule_offset": "Horaire de décalage",
+    "schedule_offset": "Décaler la planification",
     "schedule_offset_desc": "Ajoute un petit délai pour empêcher les tests de démarrer à l'heure exacte",
     "pause_title": "Mettre en pause les tests de vitesse pour...",
     "hours": "Heures",
@@ -172,9 +172,9 @@
     "configuration": "Configuration",
     "stored_tests": "Tests enregistrés",
     "tests": "Tests",
-    "export_tests": "Tests d'exportation",
+    "export_tests": "Exporter les tests",
     "tests_exported": "Les tests ont été exportés",
-    "import_tests": "Tests d'importation",
+    "import_tests": "Importer les tests",
     "tests_imported": "Les tests ont été importés",
     "tests_imported_partial": "Tests importés : {{imported}}, ignorés : {{skipped}}",
     "import_test_error": "Une erreur s'est produite lors de l'importation des tests",
@@ -186,8 +186,8 @@
     "history_cleared": "L'historique a été effacé",
     "delete": "Supprimer",
     "confirm_delete": "Oui, supprimer",
-    "export_settings": "Paramètres d'exportation",
-    "import_settings": "Paramètres d'importation",
+    "export_settings": "Exporter les paramètres",
+    "import_settings": "Importer les paramètres",
     "factory_reset": "Réinitialisation d'usine",
     "factory_reset_completed": "La réinitialisation d'usine a été effectuée",
     "reset": "Remise à zéro",
@@ -272,7 +272,7 @@
     "days": "{{days}} jours"
   },
   "test": {
-    "not_available": "Il n'y a actuellement aucun type disponible",
+    "not_available": "Il n'y a actuellement aucun test disponible",
     "not_available_in_range": "Aucun test entre {{from}} et {{to}}",
     "show_all_time": "Afficher tout l'historique",
     "loading_more": "Chargement d'autres tests...",
@@ -303,7 +303,7 @@
       "under_target": "{{amount}} {{unit}} en dessous de votre objectif",
       "on_target": "Exactement sur votre objectif",
       "unchanged": "Inchangé depuis le dernier test",
-      "measured_at": "Mesuré à",
+      "measured_at": "Mesuré le",
       "measured_with": "Mesuré avec",
       "seconds": "{{seconds}} s",
       "data_used": "Données utilisées",
@@ -373,8 +373,8 @@
       "min": "Minimum",
       "max": "Maximum",
       "avg": "Moyenne",
-      "down": "Télécharger les valeurs",
-      "up": "Charger des valeurs",
+      "down": "Valeurs de téléchargement",
+      "up": "Valeurs de téléversement",
       "target": "Objectif : {{target}}",
       "consistency": "Régularité",
       "samples": "Tests mesurés"
@@ -462,7 +462,7 @@
     "create": "Créer",
     "activity": {
       "never_executed": "Jamais exécuté",
-      "last_run": "Dernière exécution avant "
+      "last_run": "Dernière exécution : "
     },
     "discord": {
       "fields": {
@@ -473,7 +473,7 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erreur : %error%",
         "send_failed": "Envoyer les messages d'erreur",
         "send_finished": "Envoyer les messages terminés",
-        "finished_message": "Message terminé",
+        "finished_message": "Message de fin",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% - %ping% ms, %download% Mbps %upload% Mbps"
       }
     },
@@ -508,7 +508,7 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erreur : %error%",
         "send_failed": "Envoyer des messages d'erreur",
         "send_finished": "Envoyer les messages terminés",
-        "finished_message": "Message terminé",
+        "finished_message": "Message de fin",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% - %ping% ms, %download% Mbps %upload% Mbps"
       }
     },
@@ -520,13 +520,13 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erreur : %error%",
         "send_failed": "Envoyer des messages d'erreur",
         "send_finished": "Envoyer des messages terminés",
-        "finished_message": "Message terminé",
+        "finished_message": "Message de fin",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% - %ping% ms, %download% Mbps %upload% Mbps"
       }
     },
     "healthChecks": {
       "fields": {
-        "url": "Examens de santé-URL",
+        "url": "URL de HealthChecks",
         "interval": "Intervalle de ping (minutes)"
       }
     },
@@ -537,7 +537,7 @@
         "bucket": "Bucket",
         "token": "Jeton d'API",
         "measurement": "Nom de la mesure",
-        "measurement_placeholder": "tests de vitesse (par défaut)",
+        "measurement_placeholder": "speedtests (par défaut)",
         "host": "Balise Hôte",
         "host_placeholder": "Par défaut le nom d'hôte de la machine",
         "tags": "Tags supplémentaires",
@@ -566,7 +566,7 @@
       "fields": {
         "url": "URL du serveur",
         "topic": "Sujet",
-        "topic_placeholder": "alertes myspeed",
+        "topic_placeholder": "alertes-myspeed",
         "token": "Jeton d'accès",
         "token_placeholder": "tk_... (facultatif, pour les serveurs protégés)",
         "title": "Titre de la notification",
@@ -579,7 +579,7 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erreur : %error%",
         "send_failed": "Envoyer des messages d'erreur",
         "send_finished": "Envoyer les messages terminés",
-        "finished_message": "Message terminé",
+        "finished_message": "Message de fin",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% - %ping% ms, %download% Mbps %upload% Mbps"
       }
     },
@@ -592,7 +592,7 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erreur : %error%",
         "send_failed": "Envoyer des messages d'erreur",
         "send_finished": "Envoyer les messages terminés",
-        "finished_message": "Message terminé",
+        "finished_message": "Message de fin",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% - %ping% ms, %download% Mbps %upload% Mbps"
       }
     },
@@ -600,7 +600,7 @@
       "fields": {
         "url": "URL du Webhook",
         "url_placeholder": "https://votre-serveur.com/hook",
-        "send_started": "Envoi commencé",
+        "send_started": "Envoyer les messages de début",
         "send_failed": "Envoyer des messages d'erreur",
         "send_finished": "Envoyer les messages terminés",
         "send_alive": "Envoyer des messages Keep-Alive",
@@ -610,7 +610,7 @@
       }
     },
     "fields": {
-      "alert_only": "Notifier uniquement lorsqu'une limite n'est pas atteinte",
+      "alert_only": "Notifier uniquement lorsqu'une limite n'est pas respectée",
       "alert_ping_above": "Notifier lorsque le ping dépasse (ms)",
       "alert_ping_above_placeholder": "p. ex. 50",
       "alert_download_below": "Notifier lorsque le téléchargement est inférieur à (Mbps)",
@@ -643,13 +643,13 @@
     "title": "Préférences",
     "theme": {
       "title": "Apparence",
-      "description": "Basculer entre l'interface sombre et la lumière.",
+      "description": "Basculer entre l'interface sombre et l'interface claire.",
       "system": "Système",
       "system_desc": "Suivre le réglage de cet appareil",
       "dark": "Sombre",
       "dark_desc": "Plus facile sur les yeux à faible lumière",
-      "light": "Lumière",
-      "light_desc": "Un look plus brillant pour une utilisation journalière"
+      "light": "Clair",
+      "light_desc": "Un look plus lumineux pour une utilisation de jour"
     },
     "palette": {
       "title": "Couleurs",
@@ -662,10 +662,10 @@
     "time_format": {
       "title": "Format de l'heure",
       "description": "Comment les heures de l'horloge sont affichées dans l'application.",
-      "h24": "24 heures sur 24",
+      "h24": "24 heures",
       "h24_desc": "Afficher les heures comme 14:30",
       "h12": "12 heures",
-      "h12_desc": "Afficher les heures comme 14h30"
+      "h12_desc": "Afficher les heures comme 2:30 PM"
     },
     "speed_unit": {
       "title": "Unité de vitesse",

@@ -57,7 +57,7 @@
       "choose_automatically": "Automatisch kiezen",
       "ookla_license": "Ik heb de <Eula>EULA</Eula>, <GDPR>het privacybeleid</GDPR> en <TOS>de servicevoorwaarden</TOS> van Ookla gelezen en accepteer deze.",
       "ookla_desc": "Populaire provider met globaal servernetwerk",
-      "libre_desc": "Open-source, zelforganisatie snelheidstest",
+      "libre_desc": "Open-source, zelf te hosten snelheidstest",
       "cloudflare_desc": "Snel CDN-gebaseerd testen"
     }
   },
@@ -73,7 +73,7 @@
     "password": "Wachtwoord wijzigen",
     "cron": "Frequentie instellen",
     "storage": "Opslag beheren",
-    "pause_tests": "Pauzetests",
+    "pause_tests": "Tests pauzeren",
     "resume_tests": "Doorgaan met testen",
     "language": "Taal wijzigen",
     "preferences": "Voorkeuren",
@@ -88,7 +88,7 @@
   "options": {
     "cron": {
       "continuous": "Doorlopend",
-      "continuous_desc": "Elke minuut - hoog gebruik van grondstoffen",
+      "continuous_desc": "Elke minuut - hoog verbruik van systeembronnen",
       "frequent": "Heel vaak",
       "frequent_desc": "Elke 30 minuten",
       "default": "Standaard",
@@ -115,11 +115,11 @@
   "pause": {
     "manual": "Onbepaalde tijd pauzeren",
     "manual_desc": "Pauzeren tot handmatig hervat",
-    "short": "Korte Breek",
+    "short": "Korte pauze",
     "short_desc": "Pauze gedurende 1 uur",
-    "medium": "Medium Breek",
+    "medium": "Middellange pauze",
     "medium_desc": "Pauze voor 6 uur",
-    "long": "Lange Breek",
+    "long": "Lange pauze",
     "long_desc": "Pauzeer gedurende 12 uur",
     "custom": "Aangepaste duur",
     "quiet_hours": "Stille uren",
@@ -197,7 +197,7 @@
     "retention": "Behoud van gegevens",
     "retention_desc": "Hoe lang de snelheidstest resultaten worden bewaard voordat ze automatisch worden verwijderd.",
     "retention_saved": "Behoud periode bijgewerkt",
-    "retention_days_suffix": "Dagen",
+    "retention_days_suffix": "dagen",
     "retention_back": "Terug naar voorinstellingen",
     "retention_options": {
       "week": "7 dagen",
@@ -217,10 +217,10 @@
     "ping_unit": "ms",
     "jitter": "Jitter",
     "jitter_unit": "ms",
-    "down": "Downloaden",
+    "down": "Download",
     "speed_unit": "Mbit/s",
     "byte_speed_unit": "MB/s",
-    "up": "Uploaden",
+    "up": "Upload",
     "latest": "Laatste test",
     "bufferbloat": "Bufferbloat: voegt {{increase}} ms toe onder belasting",
     "bufferbloat_trend": "Bufferbloat over de laatste tests",
@@ -293,7 +293,7 @@
       "automatic": "automatisch"
     },
     "overview": {
-      "title_range": "Test overzicht van {{from}} naar {{to}}"
+      "title_range": "Testoverzicht van {{from}} tot {{to}}"
     },
     "details": {
       "show": "Details tonen",
@@ -303,7 +303,7 @@
       "under_target": "{{amount}} {{unit}} onder je doel",
       "on_target": "Precies op je doel",
       "unchanged": "Onveranderd sinds de vorige test",
-      "measured_at": "Gemeten om",
+      "measured_at": "Gemeten op",
       "measured_with": "Gemeten met",
       "seconds": "{{seconds}} s",
       "data_used": "Gebruikte data",
@@ -373,19 +373,19 @@
       "min": "Laagste",
       "max": "Hoogste",
       "avg": "Gemiddeld",
-      "down": "Waarden downloaden",
-      "up": "Waarden uploaden",
+      "down": "Downloadwaarden",
+      "up": "Uploadwaarden",
       "target": "Doel: {{target}}",
       "consistency": "Regelmaat",
       "samples": "Gemeten tests"
     },
     "failed_test": "Mislukte test",
     "hourly": {
-      "title": "Snelheid op dag",
+      "title": "Snelheid door de dag heen",
       "sample_count": "Tests"
     },
     "consistency": {
-      "title": "Connectie stabiliteit",
+      "title": "Verbindingsstabiliteit",
       "ping_deviation": "Gebruikelijke afwijking",
       "loaded_latency_average": "Voegt gemiddeld {{increase}} ms toe onder belasting, over {{tests}} tests",
       "jitter_detail": "Variatie binnen één test",
@@ -405,7 +405,7 @@
     "next_year": "Volgend jaar",
     "last_7_days": "Afgelopen 7 dagen",
     "last_30_days": "Laatste 30 dagen",
-    "last_90_days": "Last 90 Days",
+    "last_90_days": "Laatste 90 dagen",
     "last_year": "Vorig jaar",
     "mon": "ma",
     "tue": "di",
@@ -435,7 +435,7 @@
     },
     "delete": {
       "title": "Server verwijderen",
-      "description": "De server <Bold>{{name}}</Bold> (#{{id}}) is verwijderd. Deze actie kan niet ongedaan worden gemaakt. Wilt u doorgaan?",
+      "description": "De server <Bold>{{name}}</Bold> (#{{id}}) wordt verwijderd. Deze actie kan niet ongedaan worden gemaakt. Wilt u doorgaan?",
       "yes": "Ja, verwijderen",
       "success": "De server is succesvol verwijderd"
     },
@@ -462,17 +462,17 @@
     "create": "Voeg toe",
     "activity": {
       "never_executed": "Nooit uitgevoerd",
-      "last_run": "Laatst voor "
+      "last_run": "Laatste uitvoering: "
     },
     "discord": {
       "fields": {
         "url": "Webhook URL",
-        "display_name": "Naam weergeven",
+        "display_name": "Weergavenaam",
         "display_name_placeholder": "MySpeed-melding",
         "error_message": "Foutmelding",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] fout: %error%",
         "send_failed": "Foutberichten verzenden",
-        "send_finished": "Volledig ingevuld verzenden",
+        "send_finished": "Voltooide berichten verzenden",
         "finished_message": "Voltooid bericht",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
@@ -502,12 +502,12 @@
     "gotify": {
       "fields": {
         "url": "Server URL",
-        "key": "Toepassen token",
+        "key": "App-token",
         "priority": "Prioriteit",
         "error_message": "Foutmelding",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] fout: %error%",
         "send_failed": "Foutberichten verzenden",
-        "send_finished": "Volledig ingevuld verzenden",
+        "send_finished": "Voltooide berichten verzenden",
         "finished_message": "Voltooid bericht",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
@@ -526,18 +526,18 @@
     },
     "healthChecks": {
       "fields": {
-        "url": "URL gezondheidscontrole",
+        "url": "HealthChecks-URL",
         "interval": "Ping interval (minuten)"
       }
     },
     "influxdb": {
       "fields": {
         "url": "Server-URL",
-        "org": "Rekening",
-        "bucket": "Emmer",
+        "org": "Organisatie",
+        "bucket": "Bucket",
         "token": "API-token",
         "measurement": "Naam meting",
-        "measurement_placeholder": "snelheids (standaard)",
+        "measurement_placeholder": "speedtests (standaard)",
         "host": "Host label",
         "host_placeholder": "Standaard de hostnaam van de machine",
         "tags": "Extra tags",
@@ -567,7 +567,7 @@
         "url": "Server-URL",
         "topic": "Onderwerp",
         "topic_placeholder": "myspeed-meldingen",
-        "token": "Toegangstoken token",
+        "token": "Toegangstoken",
         "token_placeholder": "tk_... (optioneel, voor beschermde servers)",
         "title": "Notificatie titel",
         "title_placeholder": "MySpeed (optioneel)",
@@ -591,7 +591,7 @@
         "error_message": "Foutmelding",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] fout: %error%",
         "send_failed": "Foutberichten verzenden",
-        "send_finished": "Volledig ingevuld verzenden",
+        "send_finished": "Voltooide berichten verzenden",
         "finished_message": "Voltooid bericht",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
@@ -600,17 +600,17 @@
       "fields": {
         "url": "Webhook URL",
         "url_placeholder": "https://uw-server.nl/hook",
-        "send_started": "Gestart met verzenden",
+        "send_started": "Startberichten verzenden",
         "send_failed": "Foutberichten verzenden",
-        "send_finished": "Volledig ingevuld verzenden",
-        "send_alive": "Stuur levendige berichten",
+        "send_finished": "Voltooide berichten verzenden",
+        "send_alive": "Keep-Alive-berichten verzenden",
         "send_recommendations": "Stuur aanbevelingen",
         "send_config_updates": "Configuratie-updates verzenden",
         "interval": "Keep-Alive interval (minuten)"
       }
     },
     "fields": {
-      "alert_only": "Alleen melden wanneer een grens niet wordt gehaald",
+      "alert_only": "Alleen melden wanneer een limiet wordt geschonden",
       "alert_ping_above": "Melden wanneer de ping boven (ms) komt",
       "alert_ping_above_placeholder": "bijv. 50",
       "alert_download_below": "Melden wanneer de download onder (Mbit/s) zakt",
@@ -660,7 +660,7 @@
       "ember_desc": "Warme bruintinten en weinig blauw licht"
     },
     "time_format": {
-      "title": "Tijd formaat",
+      "title": "Tijdformaat",
       "description": "Hoe kloktijden worden weergegeven in de app.",
       "h24": "24-uurs",
       "h24_desc": "Geeft tijden weer als 14:30",
@@ -668,9 +668,9 @@
       "h12_desc": "Geeft tijden weer als 2:30 PM"
     },
     "speed_unit": {
-      "title": "Snelheid eenheid",
+      "title": "Snelheidseenheid",
       "description": "Kies hoe snelheden worden weergegeven. Waarden worden automatisch geconverteerd.",
-      "mbps": "Mbps (Megabits per seconde)",
+      "mbps": "Mbit/s (megabit per seconde)",
       "mbps_desc": "Standaard ISP / snelheidstest eenheid",
       "mbytes": "MB/s (Megabytes per seconde)",
       "mbytes_desc": "Gebruikelijk in browsers en downloadmanagers"

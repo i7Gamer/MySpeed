@@ -15,11 +15,11 @@
   },
   "dialog": {
     "okay": "Добре",
-    "done": "Готов",
+    "done": "Готово",
     "continue": "Продължи",
     "update": "Актуализация",
     "close": "Затвори",
-    "unset": "Премахване на",
+    "unset": "Премахване",
     "retry": "Опитайте отново",
     "login": "Влезте в системата",
     "save": "Запази",
@@ -28,7 +28,7 @@
       "title": "Изисква се парола",
       "placeholder": "Вашата парола",
       "wrong": "Въведената от вас парола е неправилна",
-      "unlock": "Отключване на"
+      "unlock": "Отключване"
     },
     "setup_token": {
       "title": "Необходим е инсталационен код",
@@ -73,11 +73,11 @@
     "password": "Промяна на паролата",
     "cron": "Задаване на честота",
     "storage": "Управление на съхранението",
-    "pause_tests": "Тестове за пауза",
+    "pause_tests": "Пауза на тестовете",
     "resume_tests": "Продължи тестове",
     "language": "Промяна на езика",
     "preferences": "Предпочитания",
-    "provider": "Щодо провайдера",
+    "provider": "За доставчика",
     "integrations": "Интеграции"
   },
   "about": {
@@ -147,7 +147,7 @@
     "remove_password_title": "Да се премахне ли паролата?",
     "remove_password_desc": "Ще бъдете отписани и тази инсталация ще остане без парола. След това тя се отваря за всеки на машината, на която работи, и иска от всяка друга машина инсталационния код от дневника на сървъра, докато не бъде зададена нова парола.",
     "password_removed": "Заключването с парола е премахнато и зададената парола е премахната.",
-    "level": "Ниво на промяна",
+    "level": "Промяна на нивото",
     "level_title": "Права на посетителите",
     "cron_title": "Задаване на тестова честота",
     "cron_next_test": "Следващ тест:",
@@ -172,11 +172,11 @@
     "configuration": "Конфигурация",
     "stored_tests": "Съхранени тестове",
     "tests": "Тестове",
-    "export_tests": "Тестове за износ",
+    "export_tests": "Експортиране на тестове",
     "tests_exported": "Тестовете са експортирани",
-    "import_tests": "Тестове за внос",
+    "import_tests": "Импортиране на тестове",
     "tests_imported": "Тестовете са импортирани",
-    "tests_imported_partial": "Импортирани теста: {{imported}}, пропуснати: {{skipped}}",
+    "tests_imported_partial": "Импортирани тестове: {{imported}}, пропуснати: {{skipped}}",
     "import_test_error": "Възникна грешка при импортирането на тестовете",
     "import_config_error": "Възникна грешка при импортирането на конфигурацията",
     "import_config_error_key": "Конфигурацията не можа да бъде импортирана: запазената стойност за „{{key}}“ е невалидна",
@@ -184,13 +184,13 @@
     "import": "Импорт",
     "clear_history": "Изчистване на историята",
     "history_cleared": "Историята е изчистена",
-    "delete": "Изтриване на",
+    "delete": "Изтриване",
     "confirm_delete": "Да, изтрийте",
-    "export_settings": "Настройки за експортиране",
-    "import_settings": "Настройки за импортиране",
+    "export_settings": "Експортиране на настройки",
+    "import_settings": "Импортиране на настройки",
     "factory_reset": "Възстановяване на фабричните настройки",
     "factory_reset_completed": "Възстановяването на фабричните настройки е завършено",
-    "reset": "Нулиране на",
+    "reset": "Нулиране",
     "confirm_reset": "Да, нулиране",
     "settings_exported": "Настройките са експортирани",
     "settings_imported": "Настройките са импортирани",
@@ -220,7 +220,7 @@
     "down": "Изтегляне",
     "speed_unit": "Mbit/s",
     "byte_speed_unit": "MB/s",
-    "up": "Качване на",
+    "up": "Качване",
     "latest": "Последен тест",
     "bufferbloat": "Bufferbloat: добавя {{increase}} ms при натоварване",
     "bufferbloat_trend": "Bufferbloat през последните тестове",
@@ -230,7 +230,7 @@
   },
   "info": {
     "recommendations_error": "Трябва да направите поне 10 теста, за да може да се определи средната стойност. Няма значение дали тестовете са извършени ръчно или автоматично.",
-    "recommendations_info": "Въз основа на резултатите от последните 10 теста беше установено, че оптималният пинг е <Bold>{{ping}} ms</Bold>, а изтеглянето е <Bold>{{down}}. Mbit/s</Bold>, а качването при <Bold>{{up}}. Mbit/s</Bold>. Най-добре е да използвате договора си за интернет като ориентир и да го приемете само ако съвпада с него.",
+    "recommendations_info": "Въз основа на резултатите от последните 10 теста беше установено, че оптималният пинг е <Bold>{{ping}} ms</Bold>, изтеглянето — <Bold>{{down}} Mbit/s</Bold>, а качването — <Bold>{{up}} Mbit/s</Bold>. Най-добре е да използвате договора си за интернет като ориентир и да приемете стойностите само ако съвпадат с него.",
     "update": "Налична е актуализация на версия {{version}}. Вижте <Changes>промените</Changes> и <DLLink>изтеглете актуализацията</DLLink>.",
     "down": {
       "title": "Скорост на изтегляне",
@@ -262,12 +262,12 @@
     }
   },
   "time": {
-    "now": "Точно сега",
+    "now": "малко",
     "seconds": "{{seconds}} секунди",
     "minute": "1 минута",
     "minutes": "{{minutes}} минути",
     "hour": "1 час",
-    "hours": "{{hours}} часове",
+    "hours": "{{hours}} часа",
     "day": "1 ден",
     "days": "{{days}} дни"
   },
@@ -290,7 +290,7 @@
     "deleted": "Тестът е изтрит",
     "result": {
       "from_you": "от вас",
-      "automatic": "автоматичен"
+      "automatic": "автоматично"
     },
     "overview": {
       "title_range": "Преглед на тестовете от {{from}} до {{to}}"
@@ -303,7 +303,7 @@
       "under_target": "{{amount}} {{unit}} под целта ви",
       "on_target": "Точно на целта ви",
       "unchanged": "Без промяна от последния тест",
-      "measured_at": "Измерено в",
+      "measured_at": "Измерено",
       "measured_with": "Измерено с",
       "seconds": "{{seconds}} с",
       "data_used": "Използвани данни",
@@ -374,7 +374,7 @@
       "max": "Максимум",
       "avg": "Средно",
       "down": "Стойности за изтегляне",
-      "up": "Качване на стойности",
+      "up": "Стойности за качване",
       "target": "Цел: {{target}}",
       "consistency": "Постоянство",
       "samples": "Измерени тестове"
@@ -406,7 +406,7 @@
     "last_7_days": "Последните 7 дни",
     "last_30_days": "Последните 30 дни",
     "last_90_days": "Последните 90 дни",
-    "last_year": "Миналата година",
+    "last_year": "Последната година",
     "mon": "Пон",
     "tue": "Вто",
     "wed": "Сря",
@@ -417,7 +417,7 @@
   },
   "nodes": {
     "add": "Добавяне на сървър",
-    "create": "Добавяне на",
+    "create": "Добавяне",
     "this_server": "Този сървър",
     "created": "Сървърът е добавен успешно",
     "password_required": "За този възел е необходима парола",
@@ -435,7 +435,7 @@
     },
     "delete": {
       "title": "Изтриване на сървър",
-      "description": "Сървърът <Bold>{{name}}</Bold> (#{{id}}) е изтрит. Това действие не може да бъде отменено. Искате ли да продължите?",
+      "description": "Сървърът <Bold>{{name}}</Bold> (#{{id}}) ще бъде изтрит. Това действие не може да бъде отменено. Искате ли да продължите?",
       "yes": "Да, изтрийте",
       "success": "Сървърът е успешно изтрит"
     },
@@ -456,10 +456,10 @@
     "description": "В момента сте в демо режим. Някои функции са деактивирани и някои настройки не могат да бъдат променяни. Ако искате да използвате всички функции, можете да <Link>инсталирате MySpeed</Link> на собствения си сървър."
   },
   "integrations": {
-    "none_active": "Тази интеграция не е активна. <br/><Bold>Добавяне на</Bold>",
+    "none_active": "Тази интеграция не е активна. <br/><Bold>Създаване</Bold>",
     "preview_active": "Интеграциите са деактивирани по време на демо режим.",
     "display_name": "Име на интеграцията",
-    "create": "Добавяне на",
+    "create": "Създаване",
     "activity": {
       "never_executed": "Никога не е изпълняван",
       "last_run": "Последно преди "
@@ -467,13 +467,13 @@
     "discord": {
       "fields": {
         "url": "URL адрес на Webhook",
-        "display_name": "Показвайте името",
+        "display_name": "Показвано име",
         "display_name_placeholder": "Известие за MySpeed",
         "error_message": "Съобщение за грешка",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Грешка: %error%",
         "send_failed": "Изпращане на съобщения за грешки",
-        "send_finished": "Броят на извършените тестове",
-        "finished_message": "Завършено съобщение",
+        "send_finished": "Изпращане на съобщения при завършване",
+        "finished_message": "Съобщение при завършване",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -507,8 +507,8 @@
         "error_message": "Съобщение за грешка",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Грешка: %error%",
         "send_failed": "Изпращане на съобщения за грешки",
-        "send_finished": "Изпратете попълнен",
-        "finished_message": "Завършено съобщение",
+        "send_finished": "Изпращане на съобщения при завършване",
+        "finished_message": "Съобщение при завършване",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -519,14 +519,14 @@
         "error_message": "Съобщение за грешка",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Грешка: %error%",
         "send_failed": "Изпращане на съобщения за грешки",
-        "send_finished": "Изпращане на завършени съобщения",
-        "finished_message": "Завършено съобщение",
+        "send_finished": "Изпращане на съобщения при завършване",
+        "finished_message": "Съобщение при завършване",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
     "healthChecks": {
       "fields": {
-        "url": "URL адрес за здравни прегледи",
+        "url": "URL адрес на HealthChecks",
         "interval": "Интервал на ping (минути)"
       }
     },
@@ -591,8 +591,8 @@
         "error_message": "Съобщение за грешка",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Грешка: %error%",
         "send_failed": "Изпращане на съобщения за грешки",
-        "send_finished": "Изпратете попълнен",
-        "finished_message": "Завършено съобщение",
+        "send_finished": "Изпращане на съобщения при завършване",
+        "finished_message": "Съобщение при завършване",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -600,17 +600,17 @@
       "fields": {
         "url": "URL адрес на Webhook",
         "url_placeholder": "https://вашия-сървър.bg/hook",
-        "send_started": "Започнато изпращане",
+        "send_started": "Изпращане на съобщения при стартиране",
         "send_failed": "Изпращане на съобщения за грешки",
-        "send_finished": "Изпратете попълнен",
-        "send_alive": "Изпращане на оживени съобщения",
+        "send_finished": "Изпращане на съобщения при завършване",
+        "send_alive": "Изпращане на Keep-Alive съобщения",
         "send_recommendations": "Изпращане на препоръки",
         "send_config_updates": "Изпращане на актуализации на конфигурацията",
         "interval": "Интервал Keep-Alive (минути)"
       }
     },
     "fields": {
-      "alert_only": "Известяване само когато не е достигнат лимит",
+      "alert_only": "Известяване само при нарушаване на лимит",
       "alert_ping_above": "Известяване, когато ping е над (ms)",
       "alert_ping_above_placeholder": "напр. 50",
       "alert_download_below": "Известяване, когато изтеглянето е под (Mbit/s)",
@@ -691,7 +691,7 @@
     "never_run": "Все още не е изпълнен нито един тест",
     "last_test": "Последен тест преди {{time}}",
     "next_test": "Следващ в {{time}}",
-    "recent_failures": "{{failures}} неуспешни през последния ден",
+    "recent_failures": "Неуспешни през последния ден: {{failures}}",
     "phase": {
       "starting": "Стартиране…",
       "ping": "Измерване на закъснението",

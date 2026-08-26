@@ -11,7 +11,7 @@
     "ms": "(ms cinsinden)",
     "mbps": "(Mbps cinsinden)",
     "accept_title": "Şartları kabul edin",
-    "accept_subtext": "Bu adımda sizi Ookla lisansı hakkında bilgilendirmek istiyoruz. Okuyun ve \"Bitti\" butonuna tıklayarak okuduğunuzu ve kabul ettiğinizi onaylayın."
+    "accept_subtext": "Bu adımda sizi Ookla lisansı hakkında bilgilendirmek istiyoruz. Okuyun ve \"Tamamlandı\" butonuna tıklayarak okuduğunuzu ve kabul ettiğinizi onaylayın."
   },
   "dialog": {
     "okay": "Tamam",
@@ -19,7 +19,7 @@
     "continue": "Devam et",
     "update": "Güncelle",
     "close": "Kapat",
-    "unset": "Kaldırmak",
+    "unset": "Kaldır",
     "retry": "Tekrar deneyin",
     "login": "Giriş yap",
     "save": "Kaydet",
@@ -172,9 +172,9 @@
     "configuration": "Yapılandırma",
     "stored_tests": "Saklanan testler",
     "tests": "Testler",
-    "export_tests": "İhracat testleri",
+    "export_tests": "Testleri dışa aktar",
     "tests_exported": "Testler dışa aktarıldı",
-    "import_tests": "İthalat testleri",
+    "import_tests": "Testleri içe aktar",
     "tests_imported": "Testler içe aktarıldı",
     "tests_imported_partial": "{{imported}} test içe aktarıldı, {{skipped}} atlandı",
     "import_test_error": "Testler içe aktarılırken bir hata oluştu",
@@ -184,9 +184,9 @@
     "import": "İçe aktar",
     "clear_history": "Geçmişi temizle",
     "history_cleared": "Geçmiş temizlendi",
-    "delete": "Silme",
+    "delete": "Sil",
     "confirm_delete": "Evet, silin",
-    "export_settings": "Dışa aktarma ayarları",
+    "export_settings": "Ayarları dışa aktar",
     "import_settings": "Ayarları içe aktar",
     "factory_reset": "Fabrika ayarlarına sıfırlama",
     "factory_reset_completed": "Fabrika ayarlarına sıfırlama işlemi tamamlandı",
@@ -289,7 +289,7 @@
     },
     "deleted": "Test silindi",
     "result": {
-      "from_you": "siz tarafından",
+      "from_you": "sizin tarafınızdan",
       "automatic": "otomatik olarak"
     },
     "overview": {
@@ -462,7 +462,7 @@
     "create": "Ekle",
     "activity": {
       "never_executed": "Hiç çalıştırılmadı",
-      "last_run": "Son çalıştırma öncesi "
+      "last_run": "Son çalıştırma: "
     },
     "discord": {
       "fields": {
@@ -473,7 +473,7 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Hata: %error%",
         "send_failed": "Hata mesajlarını gönder",
         "send_finished": "Tamamlanan mesajları gönder",
-        "finished_message": "Tamamlanan mesaj",
+        "finished_message": "Tamamlanma mesajı",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -518,8 +518,8 @@
         "user_key": "Kullanıcı anahtarı",
         "error_message": "Hata mesajı",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Hata: %error%",
-        "send_failed": "Hata mesajları gönderme",
-        "send_finished": "Tamamlanan mesajları gönderme",
+        "send_failed": "Hata mesajlarını gönder",
+        "send_finished": "Tamamlanma mesajlarını gönder",
         "finished_message": "Bitti mesajı",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
@@ -600,7 +600,7 @@
       "fields": {
         "url": "Webhook URL'si",
         "url_placeholder": "https://sunucunuz.com/hook",
-        "send_started": "Göndermeye başla",
+        "send_started": "Başlangıç mesajlarını gönder",
         "send_failed": "Hata mesajlarını gönder",
         "send_finished": "Tamamlanan mesajları gönder",
         "send_alive": "Keep-Alive mesajlarını gönder",
@@ -610,7 +610,7 @@
       }
     },
     "fields": {
-      "alert_only": "Yalnızca bir sınıra ulaşılamadığında bildir",
+      "alert_only": "Yalnızca bir sınır ihlal edildiğinde bildir",
       "alert_ping_above": "Ping şu değerin üzerine çıkınca bildir (ms)",
       "alert_ping_above_placeholder": "örn. 50",
       "alert_download_below": "İndirme şu değerin altına düşünce bildir (Mbps)",

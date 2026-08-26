@@ -303,7 +303,7 @@
       "under_target": "{{amount}} {{unit}} under målet ditt",
       "on_target": "Nøyaktig på målet ditt",
       "unchanged": "Uendret siden forrige test",
-      "measured_at": "Målt kl.",
+      "measured_at": "Målt den",
       "measured_with": "Målt med",
       "seconds": "{{seconds}} s",
       "data_used": "Dataforbruk",

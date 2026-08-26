@@ -120,6 +120,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     da: [
+        "integrations.influxdb.fields.bucket",
         "dialog.okay", "dialog.provider.server", "update.pause", "header.download",  "storage.import",
         "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.down",
         "latest.byte_speed_unit", "latest.up", "info.ping.title", "info.jitter.title",
@@ -133,6 +134,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     de: [
+        "integrations.influxdb.fields.bucket",
         "welcome.ms", "dialog.okay", "dialog.provider.server", "storage.speedtests", "storage.tests", "latest.ping", "latest.ping_unit", "latest.jitter",
         "latest.jitter_unit", "latest.down", "latest.byte_speed_unit", "latest.up", "info.ping.title",
         "info.jitter.title", "info.bufferbloat.title", "test.details.seconds", "test.details.server",
@@ -147,6 +149,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     es: [
+        "integrations.influxdb.fields.bucket",
         "latest.ping", "latest.ping_unit", "latest.jitter",
         "latest.jitter_unit", "latest.speed_unit", "latest.byte_speed_unit", "info.ping.title",
         "info.jitter.title", "info.bufferbloat.title", "test.details.seconds", "test.details.bufferbloat",
@@ -187,6 +190,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     it: [
+        "integrations.influxdb.fields.bucket",
         "welcome.ms", "welcome.mbps", "dialog.provider.server", "latest.ping",
         "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
         "latest.byte_speed_unit", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
@@ -222,6 +226,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     nl: [
+        "latest.down", "latest.up", "integrations.healthChecks.fields.url", "integrations.influxdb.fields.bucket",
         "welcome.ms", "dialog.provider.interface", "dialog.provider.server", "header.servers", "storage.tests", "storage.reset", "latest.ping", "latest.ping_unit",
         "latest.jitter", "latest.jitter_unit", "latest.byte_speed_unit", "info.ping.title",
         "info.jitter.title", "info.bufferbloat.title", "test.details.seconds", "test.details.server",
@@ -230,6 +235,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     pl: [
+        "integrations.ntfy.fields.topic_placeholder", "integrations.influxdb.fields.bucket",
         "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit",
         "latest.speed_unit", "latest.byte_speed_unit", "info.ping.title", "info.jitter.title",
         "info.bufferbloat.title", "test.details.seconds", "test.details.bufferbloat",
@@ -246,6 +252,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     ru: [
+        "integrations.ntfy.fields.topic_placeholder",
         "latest.jitter", "info.jitter.title", "info.bufferbloat.title", "test.details.bufferbloat"
     ],
     sv: [

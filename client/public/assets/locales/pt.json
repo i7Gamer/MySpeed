@@ -57,7 +57,7 @@
       "choose_automatically": "Escolha automaticamente",
       "ookla_license": "Eu li e aceito o <Eula>EULA</Eula>, <GDPR>a política de privacidade</GDPR> e os <TOS>termos de serviço</TOS> da Ookla.",
       "ookla_desc": "Provedor popular com uma rede global de servidores",
-      "libre_desc": "Velocidade de código aberto, auto-hostable",
+      "libre_desc": "Speedtest de código aberto e auto-hospedável",
       "cloudflare_desc": "Teste rápido baseado em CDN."
     }
   },
@@ -152,7 +152,7 @@
     "cron_title": "Definir frequência de teste",
     "cron_next_test": "Próximo Teste:",
     "custom_cron": "Expressão cron personalizada",
-    "schedule_offset": "Programação de deslocamento",
+    "schedule_offset": "Deslocar o agendamento",
     "schedule_offset_desc": "Adiciona um pequeno atraso para evitar que os testes comecem exatamente na hora marcada",
     "pause_title": "Pausar testes de velocidade por...",
     "hours": "Horas",
@@ -172,9 +172,9 @@
     "configuration": "Configuração",
     "stored_tests": "Testes armazenados",
     "tests": "Testes",
-    "export_tests": "Testes de exportação",
+    "export_tests": "Exportar testes",
     "tests_exported": "Os testes foram exportados",
-    "import_tests": "Testes de importação",
+    "import_tests": "Importar testes",
     "tests_imported": "Os testes foram importados",
     "tests_imported_partial": "Testes importados: {{imported}}, ignorados: {{skipped}}",
     "import_test_error": "Ocorreu um erro ao importar os testes",
@@ -186,7 +186,7 @@
     "history_cleared": "O histórico foi apagado",
     "delete": "Excluir",
     "confirm_delete": "Sim, excluir",
-    "export_settings": "Configurações de exportação",
+    "export_settings": "Exportar configurações",
     "import_settings": "Importar configurações",
     "factory_reset": "Reinicialização de fábrica",
     "factory_reset_completed": "A redefinição de fábrica foi concluída",
@@ -195,7 +195,7 @@
     "settings_exported": "As configurações foram exportadas",
     "settings_imported": "As configurações foram importadas",
     "retention": "Retenção de dados",
-    "retention_desc": "Por quanto tempo os resultados do Speedtest ficam guardados antes de serem excluídos automaticamente?",
+    "retention_desc": "Por quanto tempo os resultados do Speedtest ficam guardados antes de serem excluídos automaticamente.",
     "retention_saved": "Período de retenção atualizado",
     "retention_days_suffix": "dias",
     "retention_back": "Voltar às predefinições",
@@ -263,7 +263,7 @@
   },
   "time": {
     "now": "Agora mesmo",
-    "seconds": "{{seconds}} Segundos",
+    "seconds": "{{seconds}} segundos",
     "minute": "1 minuto",
     "minutes": "{{minutes}} minutos",
     "hour": "1 hora",
@@ -303,7 +303,7 @@
       "under_target": "{{amount}} {{unit}} abaixo da sua meta",
       "on_target": "Exatamente na sua meta",
       "unchanged": "Sem alteração desde o último teste",
-      "measured_at": "Medido às",
+      "measured_at": "Medido em",
       "measured_with": "Medido com",
       "seconds": "{{seconds}} s",
       "data_used": "Dados usados",
@@ -462,18 +462,18 @@
     "create": "Criar",
     "activity": {
       "never_executed": "Nunca executado",
-      "last_run": "Última corrida antes de "
+      "last_run": "Última execução: "
     },
     "discord": {
       "fields": {
-        "url": "URL do site",
+        "url": "URL do webhook",
         "display_name": "Nome de exibição",
         "display_name_placeholder": "Notificação MySpeed",
         "error_message": "Mensagem de erro",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erro: %error%",
         "send_failed": "Enviar mensagens de erro",
         "send_finished": "Enviar mensagens concluídas",
-        "finished_message": "Mensagem finalizada",
+        "finished_message": "Mensagem ao concluir",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -508,7 +508,7 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erro: %error%",
         "send_failed": "Enviar mensagens de erro",
         "send_finished": "Enviar mensagens concluídas",
-        "finished_message": "Mensagem finalizada",
+        "finished_message": "Mensagem ao concluir",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -520,7 +520,7 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erro: %error%",
         "send_failed": "Enviar mensagens de erro",
         "send_finished": "Enviar mensagens concluídas",
-        "finished_message": "Mensagem finalizada",
+        "finished_message": "Mensagem ao concluir",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -537,7 +537,7 @@
         "bucket": "Bucket",
         "token": "Token da API",
         "measurement": "Nome da medição",
-        "measurement_placeholder": "testes de velocidade (padrão)",
+        "measurement_placeholder": "speedtests (padrão)",
         "host": "Tag do host",
         "host_placeholder": "O padrão é o hostname da máquina",
         "tags": "Tags adicionais",
@@ -579,7 +579,7 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erro: %error%",
         "send_failed": "Enviar mensagens de erro",
         "send_finished": "Enviar mensagens concluídas",
-        "finished_message": "Mensagem concluída",
+        "finished_message": "Mensagem ao concluir",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -592,15 +592,15 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erro: %error%",
         "send_failed": "Enviar mensagens de erro",
         "send_finished": "Enviar mensagens concluídas",
-        "finished_message": "Mensagem finalizada",
+        "finished_message": "Mensagem ao concluir",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
     "webhook": {
       "fields": {
-        "url": "URL do site",
+        "url": "URL do webhook",
         "url_placeholder": "https://seu-servidor.com.br/hook",
-        "send_started": "Enviar iniciado",
+        "send_started": "Enviar mensagens de início",
         "send_failed": "Enviar mensagens de erro",
         "send_finished": "Enviar mensagens concluídas",
         "send_alive": "Enviar mensagens Keep-Alive",
@@ -610,7 +610,7 @@
       }
     },
     "fields": {
-      "alert_only": "Avisar somente quando um limite não for atingido",
+      "alert_only": "Avisar somente quando um limite não for cumprido",
       "alert_ping_above": "Avisar quando o ping passar de (ms)",
       "alert_ping_above_placeholder": "ex.: 50",
       "alert_download_below": "Avisar quando o download ficar abaixo de (Mbps)",
@@ -673,7 +673,7 @@
       "mbps": "Mbps (Megabits por segundo)",
       "mbps_desc": "Unidade padrão de ISP / velocidade",
       "mbytes": "MB/s (Megabytes por segundo)",
-      "mbytes_desc": "Comum em navegadores e gerentes de download"
+      "mbytes_desc": "Comum em navegadores e gerenciadores de download"
     },
     "grade_values": {
       "title": "Cores das notas",

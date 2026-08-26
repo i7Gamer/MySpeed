@@ -76,7 +76,7 @@
     "pause_tests": "Tests pausieren",
     "resume_tests": "Tests fortsetzen",
     "language": "Sprache ändern",
-    "preferences": "Einstellungen",
+    "preferences": "Darstellung",
     "provider": "Über den Anbieter",
     "integrations": "Integrationen"
   },
@@ -104,7 +104,7 @@
     }
   },
   "password": {
-    "no_access_desc": "Besucher müssen das Passwort eingeben um irgendetwas zu sehen",
+    "no_access_desc": "Besucher müssen das Passwort eingeben, um irgendetwas zu sehen",
     "read_access_desc": "Besucher können Daten ansehen, können aber Einstellungen nicht ändern"
   },
   "locked": {
@@ -152,7 +152,7 @@
     "cron_title": "Test-Häufigkeit einstellen",
     "cron_next_test": "Nächster Test:",
     "custom_cron": "Eigener Cron-Ausdruck",
-    "schedule_offset": "Versatz Zeitplan",
+    "schedule_offset": "Zeitplan-Versatz",
     "schedule_offset_desc": "Fügt eine kleine Verzögerung hinzu, um zu verhindern, dass Tests zu exakten Zeiten starten können",
     "pause_title": "Speedtests pausieren für...",
     "hours": "Stunden",
@@ -194,10 +194,10 @@
     "confirm_reset": "Ja, zurücksetzen",
     "settings_exported": "Die Einstellungen wurden exportiert",
     "settings_imported": "Die Einstellungen wurden importiert",
-    "retention": "Vorratsdatenspeicherung",
+    "retention": "Datenaufbewahrung",
     "retention_desc": "Wie lange die Geschwindigkeitstest-Ergebnisse beibehalten werden, bevor sie automatisch gelöscht werden.",
     "retention_saved": "Speicherzeitraum aktualisiert",
-    "retention_days_suffix": "tage",
+    "retention_days_suffix": "Tage",
     "retention_back": "Zurück zu den Voreinstellungen",
     "retention_options": {
       "week": "7 Tage",
@@ -353,7 +353,7 @@
       "down": "{{value}} niedriger"
     },
     "overview": {
-      "total_title": "Insgesamte Tests",
+      "total_title": "Tests insgesamt",
       "total_description": "Die Anzahl der ausgeführten Tests",
       "failed_title": "Fehlgeschlagene Tests",
       "failed_description": "Die Anzahl der fehlgeschlagenen Tests",
@@ -462,7 +462,7 @@
     "create": "Hinzufügen",
     "activity": {
       "never_executed": "Nie ausgeführt",
-      "last_run": "Zuletzt vor "
+      "last_run": "Letzte Ausführung: "
     },
     "discord": {
       "fields": {
@@ -534,12 +534,12 @@
       "fields": {
         "url": "Server-URL",
         "org": "Organisation",
-        "bucket": "Eimer",
+        "bucket": "Bucket",
         "token": "API token",
         "measurement": "Name der Messung",
         "measurement_placeholder": "speedtests (Standard)",
         "host": "Host-Tag",
-        "host_placeholder": "Standardwerte für den Rechnernamen",
+        "host_placeholder": "Standardmäßig der Hostname des Rechners",
         "tags": "Zusätzliche Tags",
         "tags_placeholder": "region=eu,role=primär (kommagetrennt)"
       }
@@ -579,7 +579,7 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Fehler: %error%",
         "send_failed": "Fehlermeldungen senden",
         "send_finished": "Fertige Nachrichten senden",
-        "finished_message": "Abgeschlossene Nachricht",
+        "finished_message": "Abgeschlossen-Nachricht",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -603,10 +603,10 @@
         "send_started": "Gestartete senden",
         "send_failed": "Fehlernachrichten senden",
         "send_finished": "Abgeschlossene senden",
-        "send_alive": "Lebendig-Nachrichten senden",
+        "send_alive": "Keep-Alive-Nachrichten senden",
         "send_recommendations": "Empfehlungen senden",
         "send_config_updates": "Konfigurations-Updates senden",
-        "interval": "Laufendes Intervall (Minuten)"
+        "interval": "Keep-Alive-Intervall (Minuten)"
       }
     },
     "fields": {
@@ -640,14 +640,14 @@
     "use_recommended": "Empfohlen verwenden"
   },
   "preferences": {
-    "title": "Einstellungen",
+    "title": "Darstellung",
     "theme": {
       "title": "Erscheinung",
-      "description": "Zwischen dunkler und heller Schnittstelle wechseln.",
+      "description": "Zwischen dunkler und heller Oberfläche wechseln.",
       "system": "System",
       "system_desc": "Der Einstellung dieses Geräts folgen",
       "dark": "Dunkel",
-      "dark_desc": "Einfacher an den Augen bei niedrigem Licht",
+      "dark_desc": "Angenehmer für die Augen bei wenig Licht",
       "light": "Hell",
       "light_desc": "Helleres Aussehen für den Tag"
     },
@@ -670,7 +670,7 @@
     "speed_unit": {
       "title": "Geschwindigkeitseinheit",
       "description": "Wählen Sie, wie Geschwindigkeit angezeigt wird. Werte werden automatisch konvertiert.",
-      "mbps": "Mbps (Megabits pro Sekunde)",
+      "mbps": "Mbit/s (Megabit pro Sekunde)",
       "mbps_desc": "Standard ISP / Speedtest Einheit",
       "mbytes": "MB/s (Megabytes pro Sekunde)",
       "mbytes_desc": "Häufig in Browsern und Download-Managern"

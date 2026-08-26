@@ -11,7 +11,7 @@
     "ms": "(en ms)",
     "mbps": "(en Mbps)",
     "accept_title": "Acepta las condiciones",
-    "accept_subtext": "En este paso, nos gustaría informarte sobre la licencia de Ookla. Léela y confirma que la has leído y aceptado haciendo clic en \"Hecho\"."
+    "accept_subtext": "En este paso, nos gustaría informarte sobre la licencia de Ookla. Léela y confirma que la has leído y aceptado haciendo clic en \"Listo\"."
   },
   "dialog": {
     "okay": "Vale",
@@ -25,10 +25,10 @@
     "save": "Guardar",
     "saving": "Guardando...",
     "password": {
-      "title": "Constraseña requerida",
+      "title": "Contraseña requerida",
       "placeholder": "Tu contraseña",
       "wrong": "La contraseña introducida es incorrecta",
-      "unlock": "Quitar contraseña"
+      "unlock": "Desbloquear"
     },
     "setup_token": {
       "title": "Se requiere el token de instalación",
@@ -57,7 +57,7 @@
       "choose_automatically": "Elige automáticamente",
       "ookla_license": "He leído y acepto <Eula>el CLUF</Eula>, la <GDPR>política de privacidad</GDPR> y las <TOS>condiciones de servicio</TOS> de Ookla.",
       "ookla_desc": "Proveedor popular con red global de servidores",
-      "libre_desc": "Pruebas veloces autohostables de código abierto",
+      "libre_desc": "Speedtest de código abierto y autoalojable",
       "cloudflare_desc": "Pruebas rápidas basadas en CDN"
     }
   },
@@ -81,7 +81,7 @@
     "integrations": "Integraciones"
   },
   "about": {
-    "title": "Acerca de mi velocidad",
+    "title": "Acerca de MySpeed",
     "description": "MySpeed es un software de análisis de velocidad de código abierto que registra su velocidad de Internet en un período de tiempo configurable.",
     "translate": "Traducir"
   },
@@ -115,9 +115,9 @@
   "pause": {
     "manual": "Pausar indefinidamente",
     "manual_desc": "Pausar hasta reanudar manualmente",
-    "short": "Break corto",
+    "short": "Descanso corto",
     "short_desc": "Pausa por 1 hora",
-    "medium": "Rompe medio",
+    "medium": "Descanso medio",
     "medium_desc": "Pausa por 6 horas",
     "long": "Descanso largo",
     "long_desc": "Pausa por 12 horas",
@@ -152,7 +152,7 @@
     "cron_title": "Ajustar la frecuencia de los tests",
     "cron_next_test": "Próximo test:",
     "custom_cron": "Expresión cron personalizada",
-    "schedule_offset": "Programación de Ofset",
+    "schedule_offset": "Desplazar la programación",
     "schedule_offset_desc": "Añade un pequeño retraso para evitar que las pruebas comiencen en horas exactas",
     "pause_title": "Pausar tests durante:",
     "hours": "Horas",
@@ -267,7 +267,7 @@
     "minute": "1 minuto",
     "minutes": "{{minutes}} minutos",
     "hour": "1 hora",
-    "hours": "{{hours}} hora",
+    "hours": "{{hours}} horas",
     "day": "1 día",
     "days": "{{days}} días"
   },
@@ -276,7 +276,7 @@
     "not_available_in_range": "No hay tests entre {{from}} y {{to}}",
     "show_all_time": "Mostrar todo el historial",
     "loading_more": "Cargando más pruebas...",
-    "no_more_tests": "No hay que cargar más pruebas",
+    "no_more_tests": "No hay más tests que cargar",
     "unknown_error": "Error desconocido",
     "unknown_error_detail": "Error desconocido: {{error}}",
     "failed": "Test fallido",
@@ -289,7 +289,7 @@
     },
     "deleted": "El test fue eliminado",
     "result": {
-      "from_you": "de ti",
+      "from_you": "por ti",
       "automatic": "automático"
     },
     "overview": {
@@ -303,7 +303,7 @@
       "under_target": "{{amount}} {{unit}} por debajo de tu objetivo",
       "on_target": "Justo en tu objetivo",
       "unchanged": "Sin cambios desde el último test",
-      "measured_at": "Medido a las",
+      "measured_at": "Medido el",
       "measured_with": "Medido con",
       "seconds": "{{seconds}} s",
       "data_used": "Datos usados",
@@ -324,7 +324,7 @@
     "no_permission": "MySpeed no tiene autorización para iniciar este test",
     "resource_unavailable": "El test no se ha podido realizar porque el recurso no estaba disponible temporalmente",
     "no_route": "No se ha podido realizar el test porque no existía ninguna ruta hacia el host",
-    "connection_refused": "No se ha podido realizar el test porque no existía ninguna ruta hacia el host",
+    "connection_refused": "No se ha podido realizar el test porque la conexión fue rechazada",
     "timed_out": "La conexión a Internet era inestable durante el test",
     "config": "No se ha podido cargar el archivo de configuración",
     "cannot_open_socket": "No se pudo abrir una conexión con el servidor de test. Puede que no sea accesible desde la interfaz de red seleccionada.",
@@ -373,8 +373,8 @@
       "min": "Mínimo",
       "max": "Máximo",
       "avg": "Media",
-      "down": "Velodidad de descarga",
-      "up": "Velodidad de subida",
+      "down": "Valores de descarga",
+      "up": "Valores de subida",
       "target": "Objetivo: {{target}}",
       "consistency": "Regularidad",
       "samples": "Tests medidos"
@@ -435,7 +435,7 @@
     },
     "delete": {
       "title": "Eliminar servidor",
-      "description": "El servidor <Bold>{{name}}</Bold> (#{{id}}) ha sido eliminado. Esta acción no se puede deshacer. ¿Desea continuar?",
+      "description": "El servidor <Bold>{{name}}</Bold> (#{{id}}) será eliminado. Esta acción no se puede deshacer. ¿Desea continuar?",
       "yes": "Sí, eliminar",
       "success": "El servidor se ha eliminado correctamente"
     },
@@ -462,12 +462,12 @@
     "create": "Añadir",
     "activity": {
       "never_executed": "Nunca ejecutado",
-      "last_run": "Antes "
+      "last_run": "Última ejecución: "
     },
     "discord": {
       "fields": {
         "url": "URL del webhook",
-        "display_name": "Mostrar nombre",
+        "display_name": "Nombre para mostrar",
         "display_name_placeholder": "MySpeed Notificación",
         "error_message": "Mensaje de error",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
@@ -532,12 +532,12 @@
     },
     "influxdb": {
       "fields": {
-        "url": "Servidor-URL",
+        "url": "URL del servidor",
         "org": "Organización",
-        "bucket": "Cubo",
+        "bucket": "Bucket",
         "token": "Token de API",
         "measurement": "Nombre de medición",
-        "measurement_placeholder": "pruebas de velocidad (por defecto)",
+        "measurement_placeholder": "speedtests (por defecto)",
         "host": "Etiqueta Host",
         "host_placeholder": "Por defecto al nombre de host de la máquina",
         "tags": "Etiquetas adicionales",
@@ -564,13 +564,13 @@
     },
     "ntfy": {
       "fields": {
-        "url": "Servidor-URL",
+        "url": "URL del servidor",
         "topic": "Tema",
         "topic_placeholder": "mi-alertas",
         "token": "Token de acceso",
         "token_placeholder": "tk_... (opcional, para servidores protegidos)",
         "title": "Título de notificación",
-        "title_placeholder": "Mi Velocidad (opcional)",
+        "title_placeholder": "MySpeed (opcional)",
         "tags": "Etiquetas",
         "tags_placeholder": "aviso, satélite (separado por comas)",
         "priority": "Prioridad por defecto (1-5)",
@@ -610,7 +610,7 @@
       }
     },
     "fields": {
-      "alert_only": "Avisar solo cuando no se alcance un límite",
+      "alert_only": "Avisar solo cuando no se cumpla un límite",
       "alert_ping_above": "Avisar cuando el ping supere (ms)",
       "alert_ping_above_placeholder": "p. ej. 50",
       "alert_download_below": "Avisar cuando la descarga baje de (Mbps)",
@@ -643,13 +643,13 @@
     "title": "Preferencias",
     "theme": {
       "title": "Apariencia",
-      "description": "Cambiar entre la interfaz oscura y la luz.",
+      "description": "Cambiar entre la interfaz oscura y la clara.",
       "system": "Sistema",
       "system_desc": "Seguir la configuración de este dispositivo",
       "dark": "Oscuro",
       "dark_desc": "Más fácil en los ojos con poca luz",
       "light": "Claro",
-      "light_desc": "Busca brillante para uso diurno"
+      "light_desc": "Aspecto más brillante para el uso diurno"
     },
     "palette": {
       "title": "Colores",
@@ -671,9 +671,9 @@
       "title": "Unidad de velocidad",
       "description": "Elija cómo se muestran las velocidades. Los valores se convierten automáticamente.",
       "mbps": "Mbps (Megabits por segundo)",
-      "mbps_desc": "Estándar ISP / unidad más rápida",
+      "mbps_desc": "Unidad estándar de ISP y speedtest",
       "mbytes": "MB/s (Megabytes por segundo)",
-      "mbytes_desc": "Común en los administradores de navegadores y descargas"
+      "mbytes_desc": "Común en navegadores y gestores de descargas"
     },
     "grade_values": {
       "title": "Colores de calificación",

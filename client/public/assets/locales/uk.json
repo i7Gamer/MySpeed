@@ -303,7 +303,7 @@
       "under_target": "{{amount}} {{unit}} нижче вашої цілі",
       "on_target": "Точно на вашій цілі",
       "unchanged": "Без змін від минулого тесту",
-      "measured_at": "Виміряно о",
+      "measured_at": "Виміряно",
       "measured_with": "Виміряно за допомогою",
       "seconds": "{{seconds}} с",
       "data_used": "Витрачено даних",
@@ -338,7 +338,7 @@
     "compare": {
       "note": "Зміни порівняно з {{from}} – {{to}}"
     },
-    "downsampled": "Усереднено · показано {{shown}} із {{total}} тестів",
+    "downsampled": "Усереднено · показано {{shown}} із {{total}}",
     "detail": {
       "title": "Повна роздільна здатність",
       "description": "Показувати до {{max}} точок даних замість усереднення",
@@ -462,7 +462,7 @@
     "create": "Створити",
     "activity": {
       "never_executed": "Ніколи не виконувався",
-      "last_run": "Останній запуск перед "
+      "last_run": "Останній запуск: "
     },
     "discord": {
       "fields": {
@@ -472,8 +472,8 @@
         "error_message": "Повідомлення про помилку",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Помилка: %error%",
         "send_failed": "Надсилати повідомлення про помилки",
-        "send_finished": "Надсилати завершені повідомлення",
-        "finished_message": "Завершене повідомлення",
+        "send_finished": "Надсилати повідомлення про завершення",
+        "finished_message": "Повідомлення про завершення",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% мс, %download% Мбіт/с, %upload% Мбіт/с"
       }
     },
@@ -507,8 +507,8 @@
         "error_message": "Повідомлення про помилку",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Помилка: %error%",
         "send_failed": "Надсилати повідомлення про помилки",
-        "send_finished": "Надсилати завершені повідомлення",
-        "finished_message": "Завершене повідомлення",
+        "send_finished": "Надсилати повідомлення про завершення",
+        "finished_message": "Повідомлення про завершення",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% мс, %download% Мбіт/с, %upload% Мбіт/с"
       }
     },
@@ -519,8 +519,8 @@
         "error_message": "Повідомлення про помилку",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Помилка: %error%",
         "send_failed": "Надсилати повідомлення про помилки",
-        "send_finished": "Надсилати завершені повідомлення",
-        "finished_message": "Завершене повідомлення",
+        "send_finished": "Надсилати повідомлення про завершення",
+        "finished_message": "Повідомлення про завершення",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% мс, %download% Мбіт/с, %upload% Мбіт/с"
       }
     },
@@ -591,8 +591,8 @@
         "error_message": "Повідомлення про помилку",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Помилка: %error%",
         "send_failed": "Надсилати повідомлення про помилки",
-        "send_finished": "Надсилати завершені повідомлення",
-        "finished_message": "Завершене повідомлення",
+        "send_finished": "Надсилати повідомлення про завершення",
+        "finished_message": "Повідомлення про завершення",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% мс, %download% Мбіт/с, %upload% Мбіт/с"
       }
     },
@@ -600,9 +600,9 @@
       "fields": {
         "url": "URL вебхука",
         "url_placeholder": "https://ваш-сервер.ua/hook",
-        "send_started": "Надсилати запущено",
+        "send_started": "Надсилати повідомлення про запуск",
         "send_failed": "Надсилати повідомлення про помилки",
-        "send_finished": "Надсилати завершені повідомлення",
+        "send_finished": "Надсилати повідомлення про завершення",
         "send_alive": "Надсилати повідомлення Keep-Alive",
         "send_recommendations": "Надсилати рекомендації",
         "send_config_updates": "Надсилати оновлення конфігурації",
@@ -610,7 +610,7 @@
       }
     },
     "fields": {
-      "alert_only": "Сповіщати лише тоді, коли межу не досягнуто",
+      "alert_only": "Сповіщати лише тоді, коли межу порушено",
       "alert_ping_above": "Сповіщати, коли пінг вищий за (мс)",
       "alert_ping_above_placeholder": "напр. 50",
       "alert_download_below": "Сповіщати, коли завантаження нижче за (Мбіт/с)",
@@ -644,7 +644,7 @@
     "theme": {
       "title": "Вигляд",
       "description": "Перемикання між темним і світлим інтерфейсом.",
-      "system": "Системна",
+      "system": "Системний",
       "system_desc": "Слідувати налаштуванню цього пристрою",
       "dark": "Темний",
       "dark_desc": "Легше для очей при слабкому освітленні",
@@ -691,7 +691,7 @@
     "never_run": "Жодного тесту ще не виконано",
     "last_test": "Останній тест {{time}} тому",
     "next_test": "Наступний о {{time}}",
-    "recent_failures": "{{failures}} невдалих за останню добу",
+    "recent_failures": "Невдалих за останню добу: {{failures}}",
     "phase": {
       "starting": "Запуск…",
       "ping": "Вимірювання затримки",

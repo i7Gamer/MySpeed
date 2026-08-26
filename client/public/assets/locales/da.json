@@ -87,15 +87,15 @@
   },
   "options": {
     "cron": {
-      "continuous": "Kontinuerlig (hvert minut)",
+      "continuous": "Kontinuerlig",
       "continuous_desc": "Hvert minut - højt ressourceforbrug",
-      "frequent": "Meget ofte (hvert 30. minut)",
+      "frequent": "Meget ofte",
       "frequent_desc": "Hvert 30. minut",
-      "default": "Standard (hver time)",
+      "default": "Standard",
       "default_desc": "Hver time - anbefalet",
-      "rare": "Sjældent (hver 3. time)",
+      "rare": "Sjældent",
       "rare_desc": "Hver 3. time",
-      "really_rare": "Meget sjældent (hver 6. time)",
+      "really_rare": "Meget sjældent",
       "really_rare_desc": "Hver 6. time"
     },
     "level": {
@@ -115,11 +115,11 @@
   "pause": {
     "manual": "Pause Uendeligt",
     "manual_desc": "Sæt på pause indtil manuelt genoptaget",
-    "short": "Kort Pause",
+    "short": "Kort pause",
     "short_desc": "Pause i 1 time",
-    "medium": "Mellemstor Bryd",
+    "medium": "Mellemlang pause",
     "medium_desc": "Pause i 6 timer",
-    "long": "Langt Bryd",
+    "long": "Lang pause",
     "long_desc": "Pause i 12 timer",
     "custom": "Brugerdefineret Varighed",
     "quiet_hours": "Stilletimer",
@@ -152,7 +152,7 @@
     "cron_title": "Indstil testfrekvens",
     "cron_next_test": "Næste test:",
     "custom_cron": "Tilpasset cron udtryk",
-    "schedule_offset": "Forskydnings tidsplan",
+    "schedule_offset": "Forskyd tidsplanen",
     "schedule_offset_desc": "Tilføjer en lille forsinkelse for at forhindre test i at starte på nøjagtige tidspunkter",
     "pause_title": "Sæt speedtests på pause i...",
     "hours": "Timer",
@@ -195,8 +195,8 @@
     "settings_exported": "Indstillingerne er blevet eksporteret",
     "settings_imported": "Indstillingerne er blevet importeret",
     "retention": "Opbevaring af data",
-    "retention_desc": "Hvor lange hastighedstestresultater bevares, før de automatisk slettes.",
-    "retention_saved": "Tilbageholdelsesperiode opdateret",
+    "retention_desc": "Hvor længe hastighedstestresultater bevares, før de automatisk slettes.",
+    "retention_saved": "Opbevaringsperiode opdateret",
     "retention_days_suffix": "dage",
     "retention_back": "Tilbage til forudindstillinger",
     "retention_options": {
@@ -303,7 +303,7 @@
       "under_target": "{{amount}} {{unit}} under dit mål",
       "on_target": "Præcis på dit mål",
       "unchanged": "Uændret siden sidste test",
-      "measured_at": "Målt kl.",
+      "measured_at": "Målt den",
       "measured_with": "Målt med",
       "seconds": "{{seconds}} s",
       "data_used": "Forbrugte data",
@@ -385,7 +385,7 @@
       "sample_count": "Test"
     },
     "consistency": {
-      "title": "Forbindelses Stabilitet",
+      "title": "Forbindelsesstabilitet",
       "ping_deviation": "Typisk afvigelse",
       "loaded_latency_average": "Lægger i gennemsnit {{increase}} ms til under belastning, over {{tests}} tests",
       "jitter_detail": "Variation inden for én test",
@@ -534,11 +534,11 @@
       "fields": {
         "url": "Server-URL",
         "org": "Organisation",
-        "bucket": "Spand",
+        "bucket": "Bucket",
         "token": "API-token",
         "measurement": "Målingens navn",
-        "measurement_placeholder": "hastighedsprøvninger (standard)",
-        "host": "Vært tag",
+        "measurement_placeholder": "speedtests (standard)",
+        "host": "Host-tag",
         "host_placeholder": "Standard til maskinens værtsnavn",
         "tags": "Yderligere tags",
         "tags_placeholder": "region=eu,role=primær (komma-separeret)"
@@ -566,8 +566,8 @@
       "fields": {
         "url": "Server-URL",
         "topic": "Emne",
-        "topic_placeholder": "minspeed-advarsler",
-        "token": "Adgang til token",
+        "topic_placeholder": "myspeed-advarsler",
+        "token": "Adgangstoken",
         "token_placeholder": "tk_... (valgfri, for beskyttede servere)",
         "title": "Notifikations titel",
         "title_placeholder": "MySpeed (valgfrit)",
@@ -606,11 +606,11 @@
         "send_alive": "Send Keep-Alive-beskeder",
         "send_recommendations": "Send anbefalinger",
         "send_config_updates": "Send konfigurationsopdateringer",
-        "interval": "Hold-Alive interval (minutter)"
+        "interval": "Keep-Alive-interval (minutter)"
       }
     },
     "fields": {
-      "alert_only": "Giv kun besked, når en grænse ikke nås",
+      "alert_only": "Giv kun besked, når en grænse ikke overholdes",
       "alert_ping_above": "Giv besked, når ping er over (ms)",
       "alert_ping_above_placeholder": "f.eks. 50",
       "alert_download_below": "Giv besked, når download er under (Mbps)",
@@ -660,15 +660,15 @@
       "ember_desc": "Varme brune toner og mindre blåt lys"
     },
     "time_format": {
-      "title": "Tid format",
-      "description": "Hvordan ur gange vises i hele appen.",
+      "title": "Tidsformat",
+      "description": "Hvordan klokkeslæt vises i hele appen.",
       "h24": "24-timers",
       "h24_desc": "Vis tider som 14:30",
       "h12": "12-timers",
       "h12_desc": "Vis tider som 2:30 PM"
     },
     "speed_unit": {
-      "title": "Hastighed enhed",
+      "title": "Hastighedsenhed",
       "description": "Vælg hvordan hastigheder vises. Værdier konverteres automatisk.",
       "mbps": "Mbps (Megabits per sekund)",
       "mbps_desc": "Standard ISP / hastighedstestenhed",

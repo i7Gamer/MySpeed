@@ -11,7 +11,7 @@
     "ms": "(i ms)",
     "mbps": "(i Mbps)",
     "accept_title": "Glac leis na téarmaí",
-    "accept_subtext": "Sa chéim seo, ba mhaith linn tú a chur ar an eolas faoin gceadúnas Ookla. Léigh é agus deimhnigh gur léigh tú é agus go nglacann tú leis trí chliceáil ar “Críochnaithe”."
+    "accept_subtext": "Sa chéim seo, ba mhaith linn tú a chur ar an eolas faoin gceadúnas Ookla. Léigh é agus deimhnigh gur léigh tú é agus go nglacann tú leis trí chliceáil ar “Déanta”."
   },
   "dialog": {
     "okay": "Ceart go leor",
@@ -82,7 +82,7 @@
   },
   "about": {
     "title": "Maidir le MySpeed",
-    "description": "Is bogearraí anailíse tástála luais foinse oscailte é MySpeed ​​a thaifeadann luas d’idirlín thar thréimhse ama inchumraithe.",
+    "description": "Is bogearraí anailíse tástála luais foinse oscailte é MySpeed a thaifeadann luas d’idirlín thar thréimhse ama inchumraithe.",
     "translate": "Aistrigh"
   },
   "options": {
@@ -172,9 +172,9 @@
     "configuration": "Cumraíocht",
     "stored_tests": "Tástálacha stóráilte",
     "tests": "Tástálacha",
-    "export_tests": "Tástálacha easpórtála",
+    "export_tests": "Easpórtáil tástálacha",
     "tests_exported": "Tá na tástálacha onnmhairithe",
-    "import_tests": "Tástálacha allmhairithe",
+    "import_tests": "Iompórtáil tástálacha",
     "tests_imported": "Tá na tástálacha allmhairithe",
     "tests_imported_partial": "Tástálacha iompórtáilte: {{imported}}, fágtha ar lár: {{skipped}}",
     "import_test_error": "Tharla earráid agus na tástálacha á n-iompórtáil",
@@ -186,8 +186,8 @@
     "history_cleared": "Tá an stair glanta",
     "delete": "Scrios",
     "confirm_delete": "Sea, scrios",
-    "export_settings": "Socruithe easpórtála",
-    "import_settings": "Socruithe allmhairithe",
+    "export_settings": "Easpórtáil socruithe",
+    "import_settings": "Iompórtáil socruithe",
     "factory_reset": "Athshocrú monarchan",
     "factory_reset_completed": "Tá an athshocrú monarchan críochnaithe",
     "reset": "Athshocraigh",
@@ -197,7 +197,7 @@
     "retention": "Coinneáil sonraí",
     "retention_desc": "Cé chomh fada a choimeádtar torthaí tástála luais sula scriostar iad go huathoibríoch.",
     "retention_saved": "Tréimhse choinneála nuashonraithe",
-    "retention_days_suffix": "laethanta",
+    "retention_days_suffix": "lá",
     "retention_back": "Ar ais chuig réamhshocruithe",
     "retention_options": {
       "week": "7 lá",
@@ -267,7 +267,7 @@
     "minute": "1 nóiméad",
     "minutes": "{{minutes}} nóiméad",
     "hour": "1 uair an chloig",
-    "hours": "{{hours}} uaireanta",
+    "hours": "{{hours}} uair an chloig",
     "day": "1 lá",
     "days": "{{days}} lá"
   },
@@ -373,8 +373,8 @@
       "min": "Íosmhéid",
       "max": "Uasmhéid",
       "avg": "Meán",
-      "down": "Luachanna a íoslódáil",
-      "up": "Uaslódáil luachanna",
+      "down": "Luachanna íoslódála",
+      "up": "Luachanna uaslódála",
       "target": "Sprioc: {{target}}",
       "consistency": "Comhsheasmhacht",
       "samples": "Tástálacha tomhaiste"
@@ -462,7 +462,7 @@
     "create": "Cruthaigh",
     "activity": {
       "never_executed": "Níor ritheadh riamh é",
-      "last_run": "An rith dheireanach roimhe seo "
+      "last_run": "An rith deireanach: "
     },
     "discord": {
       "fields": {
@@ -526,7 +526,7 @@
     },
     "healthChecks": {
       "fields": {
-        "url": "URL Seiceálacha Sláinte",
+        "url": "URL HealthChecks",
         "interval": "Eatramh ping (nóiméid)"
       }
     },
@@ -537,7 +537,7 @@
         "bucket": "Buicéad",
         "token": "Comhartha API",
         "measurement": "Ainm tomhais",
-        "measurement_placeholder": "tástálacha luais (réamhshocraithe)",
+        "measurement_placeholder": "speedtests (réamhshocraithe)",
         "host": "Clib óstach",
         "host_placeholder": "Réamhshocraítear ainm óstach an mheaisín",
         "tags": "Clibeanna breise",
@@ -600,7 +600,7 @@
       "fields": {
         "url": "URL-Crúca Gréasáin",
         "url_placeholder": "https://do-fhreastalai.com/hook",
-        "send_started": "Cuireadh tús leis an seoladh",
+        "send_started": "Seol teachtaireachtaí tosaithe",
         "send_failed": "Seol teachtaireachtaí earráide",
         "send_finished": "Seol teachtaireachtaí críochnaithe",
         "send_alive": "Seol teachtaireachtaí Coinnigh Beo",
@@ -670,9 +670,9 @@
     "speed_unit": {
       "title": "Aonad luais",
       "description": "Roghnaigh conas a thaispeántar luasanna. Déantar luachanna a thiontú go huathoibríoch.",
-      "mbps": "Mbps (Meigibhiotáin in aghaidh an tsoicind)",
+      "mbps": "Mbps (Meigighiotáin in aghaidh an tsoicind)",
       "mbps_desc": "Aonad caighdeánach ISP / tástála luais",
-      "mbytes": "MB/s (Meigibhit in aghaidh an tsoicind)",
+      "mbytes": "MB/s (Meigibhearta in aghaidh an tsoicind)",
       "mbytes_desc": "Coitianta i mbrabhsálaithe agus i mbainisteoirí íoslódála"
     },
     "grade_values": {

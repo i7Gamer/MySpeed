@@ -303,7 +303,7 @@
       "under_target": "{{amount}} {{unit}} di bawah target Anda",
       "on_target": "Tepat pada target Anda",
       "unchanged": "Tidak berubah sejak pengujian terakhir",
-      "measured_at": "Diukur pukul",
+      "measured_at": "Diukur pada",
       "measured_with": "Diukur dengan",
       "seconds": "{{seconds}} dtk",
       "data_used": "Data terpakai",
@@ -462,7 +462,7 @@
     "create": "Buat",
     "activity": {
       "never_executed": "Tidak pernah dieksekusi",
-      "last_run": "Terakhir dijalankan sebelum "
+      "last_run": "Terakhir dijalankan: "
     },
     "discord": {
       "fields": {
@@ -600,7 +600,7 @@
       "fields": {
         "url": "URL Webhook",
         "url_placeholder": "https://server-anda.com/hook",
-        "send_started": "Kirim dimulai",
+        "send_started": "Kirim pesan dimulai",
         "send_failed": "Kirim pesan kesalahan",
         "send_finished": "Kirim pesan selesai",
         "send_alive": "Kirim pesan Keep-Alive",
@@ -610,7 +610,7 @@
       }
     },
     "fields": {
-      "alert_only": "Beri tahu hanya bila sebuah batas tidak tercapai",
+      "alert_only": "Beri tahu hanya bila sebuah batas dilanggar",
       "alert_ping_above": "Beri tahu bila ping di atas (ms)",
       "alert_ping_above_placeholder": "mis. 50",
       "alert_download_below": "Beri tahu bila unduh di bawah (Mbps)",
