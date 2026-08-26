@@ -2,6 +2,7 @@ import React, {createContext, useCallback, useEffect, useMemo, useState} from "r
 import {readStored, writeStored} from "@/common/utils/Storage";
 import {normaliseTheme, resolveTheme} from "./themeChoice";
 import {normalisePalette} from "./paletteChoice";
+import {watchMediaQuery} from "./mediaQuery";
 
 export const ThemeContext = createContext({});
 
@@ -37,11 +38,10 @@ export const ThemeProvider = (props) => {
     useEffect(() => {
         if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
 
-        const query = window.matchMedia(DARK_QUERY);
-        const onChange = (event) => setSystemDark(event.matches);
-
-        query.addEventListener("change", onChange);
-        return () => query.removeEventListener("change", onChange);
+        // Through the shim, not addEventListener directly: Safari before 14
+        // has only the older addListener spelling, and subscribing here threw
+        // the whole provider - and with it the tree - on those engines.
+        return watchMediaQuery(window.matchMedia(DARK_QUERY), (event) => setSystemDark(event.matches));
     }, []);
 
     const resolved = resolveTheme(theme, systemDark);
