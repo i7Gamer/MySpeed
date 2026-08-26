@@ -56,25 +56,23 @@
   gap: 0.5rem
 
 /*
- * A setting is a pair: some words and the control that answers them. It was
- * drawn as a label at one edge and a control at the other with the dialog's
- * whole width in between, and `space-between` widening that gap every time the
- * dialog grew - so a toggle ended up a long way from the words it belonged to
- * and nothing on screen tied the two together.
+ * A setting is a pair: some words and the control that answers them, with the
+ * dialog's width between them. Something has to carry the eye across that.
  *
- * The provider cards immediately above already solve this, by drawing a border
- * around the pair. These take the same shape, read off that stylesheet by
- * settingsDialogs.test.js so the two cannot drift: the same border, radius,
- * padding and gap, and the words take the slack so the control sits against
- * the card's edge rather than across a void from its label.
+ * On most of these rows the control does it itself. An input and a select draw
+ * their own border, so the row ends in a visible object and the pair reads as
+ * a pair; a card around one of those is a rounded rectangle fourteen pixels
+ * outside another rounded rectangle - heavier, and saying nothing the field
+ * was not already saying.
+ *
+ * What every row does need is for the words to take the slack rather than the
+ * gap taking it. `space-between` put the label at one edge and the control at
+ * the other and widened the space between them every time the dialog grew.
  */
 .provider-setting
   display: flex
   align-items: center
   gap: 1rem
-  padding: 0.875rem 1.125rem
-  border: 1px solid $light-gray
-  border-radius: 0.75rem
 
   &-label
     display: flex
@@ -84,8 +82,8 @@
     // to the label rather than being a gap between two floating things.
     flex: 1 1 auto
     // Wrapping rather than nowrap: a long translation - "Benutzerdefinierte
-    // URL", "Benachrichtigungen & Empfehlungen" - now takes a second line
-    // inside its card instead of pushing the field out of the row.
+    // URL", "Benachrichtigungen & Empfehlungen" - takes a second line instead
+    // of pushing the field out of the row.
     min-width: 0
 
     svg
@@ -99,6 +97,25 @@
       font-size: 1rem
       font-weight: 500
       color: $subtext
+
+/*
+ * The rows whose control brings no edge of its own.
+ *
+ * A toggle is a small pill against the far margin, so the distance between it
+ * and its label is exactly the void it looks like - and these two sit at the
+ * bottom of the dialog where that distance is widest. The border is what makes
+ * the pair a pair, and the provider cards immediately above are where its
+ * shape comes from: read off that stylesheet by settingsDialogs.test.js, so a
+ * change to the card is a change to these.
+ *
+ * Marked on the row in the JSX rather than found here with :has(), which
+ * nothing in this client uses yet - somebody adding a row should see which
+ * kind it is where they are writing it.
+ */
+.provider-setting-switch
+  padding: 0.875rem 1.125rem
+  border: 1px solid $light-gray
+  border-radius: 0.75rem
 
 .provider-input
   // A share of the row rather than a fixed width. Pinned to 14rem it could not
@@ -120,12 +137,6 @@
   display: grid
   grid-template-columns: repeat(3, 1fr)
   gap: 0.75rem
-  // The values the switch above reveals, in a panel of their own. Left bare
-  // among the setting cards it was the one block in the column with no edge -
-  // three fields running the full width while every neighbour sat inset.
-  padding: 0.875rem 1.125rem
-  border: 1px solid $light-gray
-  border-radius: 0.75rem
 
 .target-optimal
   display: flex

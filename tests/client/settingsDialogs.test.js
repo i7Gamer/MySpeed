@@ -199,13 +199,23 @@ describe("the targets manager and its editor", () => {
 });
 
 /**
- * The rows of the target editor, and the cards above them.
+ * The rows of the target editor, and which of them get an edge drawn round
+ * them.
  *
- * A setting was a label and a control with the dialog's whole width between
- * them and nothing tying the two together - so the toggles at the bottom sat a
- * long way from the words they answered to, and every field floated at a
- * distance from its own description. The provider cards directly above solve
- * exactly this, by drawing a border around the pair.
+ * A setting is a label and a control with the dialog's width between them, and
+ * something has to tie the two together over that distance. For most of these
+ * rows the control does it itself: an input and a select draw their own border,
+ * so the row already ends in a visible object and the eye carries from the
+ * words to it. Drawing a card round those puts a rounded rectangle fourteen
+ * pixels outside another rounded rectangle, which reads as heavier without
+ * saying anything new.
+ *
+ * A toggle brings no edge. It is a small pill against the far margin, and the
+ * gap between it and its label is the void it looks like. That is the row that
+ * needs the border, and the provider cards immediately above are where its
+ * shape comes from.
+ *
+ * So: a row is carded when its control has no border of its own.
  */
 describe("a setting row in the target editor", () => {
     const settings = compile("common/components/TargetsDialog/styles.sass");
@@ -223,25 +233,29 @@ describe("a setting row in the target editor", () => {
 
     /**
      * Read off the cards rather than written here, so the two cannot drift:
-     * a change to the provider card's shape is a change to these.
+     * a change to the provider card's shape is a change to the switch rows.
      */
-    for (const property of ["border", "border-radius", "padding", "gap"]) {
-        it(`takes the provider card's ${property}`, () => {
-            assert.equal(value(ruleFor(settings, ".provider-setting"), property),
+    for (const property of ["border", "border-radius", "padding"]) {
+        it(`gives a switch row the provider card's ${property}`, () => {
+            assert.equal(value(ruleFor(settings, ".provider-setting-switch"), property),
                 value(ruleFor(cards, ".selectable-option"), property),
-                `the setting rows and the cards above them disagree about ${property}`);
+                `the switch rows and the cards above them disagree about ${property}`);
         });
     }
 
-    it("sits in a column spaced like the list of cards", () => {
-        assert.equal(value(ruleFor(settings, ".provider-settings"), "gap"),
-            value(ruleFor(cards, ".selectable-list"), "gap"));
+    it("draws no second border round a field that has one already", () => {
+        const rule = ruleFor(settings, ".provider-setting");
+
+        assert.equal(value(rule, "border"), undefined,
+            "an input and a select draw their own edge; a card around them is a box in a box");
+        assert.equal(value(rule, "padding"), undefined,
+            "padding here insets the field from a border the row does not have");
     });
 
     /**
      * The label has to take the slack, not the gap: with `space-between` doing
      * it, the words ended where they ended and the control sat at the far side
-     * of a void. Inside a border the same distance reads as a row.
+     * of a void. This holds for both kinds of row.
      */
     it("gives the words the slack rather than the space between them", () => {
         const rule = ruleFor(settings, ".provider-setting-label");
@@ -249,7 +263,22 @@ describe("a setting row in the target editor", () => {
         assert.match(value(rule, "flex") ?? "", /^1\s/,
             "the label does not take the row's spare width, so it opens a gap instead");
         assert.doesNotMatch(ruleFor(settings, ".provider-setting"), /justify-content:\s*space-between/,
-            "space-between pushes the pair apart across the whole card");
+            "space-between pushes the pair apart across the whole row");
+    });
+
+    /**
+     * The class is written on the row rather than found with :has(), which
+     * nothing in this client uses yet: a reader adding a row sees in the JSX
+     * which kind it is, instead of it being decided for them by a selector in
+     * another file.
+     */
+    it("is marked as a switch row where the row is written", () => {
+        const jsx = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+        const rows = [...jsx.matchAll(/className="provider-setting[^"]*"/g)].map(([match]) => match);
+        const switches = rows.filter((row) => row.includes("provider-setting-switch"));
+
+        assert.equal(switches.length, 2,
+            `${switches.length} rows are marked as switch rows; the editor has two toggles`);
     });
 });
 

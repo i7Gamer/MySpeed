@@ -266,7 +266,12 @@ export const TargetEditor = ({open, onClose, target}) => {
                                     </div>
                                 )}
 
-                                <div className="provider-setting">
+                                {/* -switch on both of these: a toggle brings no
+                                    border of its own, so the row draws one to
+                                    tie the pill to the words it answers to.
+                                    The rows above end in a field, which has an
+                                    edge already. */}
+                                <div className="provider-setting provider-setting-switch">
                                     <div className="provider-setting-label">
                                         <h3>{t("targets.alerts")}</h3>
                                     </div>
@@ -274,7 +279,7 @@ export const TargetEditor = ({open, onClose, target}) => {
                                                   label={t("targets.alerts")}/>
                                 </div>
 
-                                <div className="provider-setting">
+                                <div className="provider-setting provider-setting-switch">
                                     <div className="provider-setting-label">
                                         <h3>{t("targets.own_optimals")}</h3>
                                     </div>
