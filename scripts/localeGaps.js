@@ -93,6 +93,19 @@ export const LANGUAGE_SHARED = {
         "integrations.influxdb.fields.bucket", "integrations.ntfy.fields.topic_placeholder",
         ...TEMPLATES("discord", "gotify", "pushover", "ntfy", "telegram")
     ],
+    cs: [
+        "dialog.provider.server", "update.ping_placeholder", "storage.export", "storage.import",
+        "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
+        "latest.byte_speed_unit", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
+        "test.details.seconds", "test.details.server", "test.details.bufferbloat",
+        "test.details.bufferbloat_value", "statistics.export.button", "statistics.values.min",
+        "statistics.values.max", "nodes.placeholder.url", "preview.info",
+        "integrations.email.fields.host", "integrations.email.fields.port",
+        "integrations.influxdb.fields.bucket", "integrations.influxdb.fields.token",
+        "integrations.mqtt.fields.port", "integrations.ntfy.fields.topic_placeholder",
+        "integrations.webhook.fields.url_placeholder",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
     da: [
         "dialog.okay", "dialog.provider.server", "dropdown.ping", "update.ping_placeholder",
         "update.download", "update.pause", "header.download",  "storage.import",
@@ -172,6 +185,33 @@ export const LANGUAGE_SHARED = {
         "test.details.bufferbloat_value", "test.details.isp", "preview.info",
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
+    ja: [
+        "latest.ping", "latest.ping_unit", "latest.jitter_unit", "latest.speed_unit",
+        "latest.byte_speed_unit", "update.ping_placeholder", "info.ping.title",
+        "test.details.bufferbloat_value", "nodes.placeholder.url",
+        "integrations.webhook.fields.url_placeholder", "integrations.ntfy.fields.topic_placeholder",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
+    ko: [
+        "latest.ping_unit", "latest.jitter_unit", "latest.speed_unit", "latest.byte_speed_unit",
+        "test.details.bufferbloat_value", "nodes.placeholder.url",
+        "integrations.ntfy.fields.topic_placeholder", "integrations.webhook.fields.url_placeholder",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
+    nb: [
+        "dialog.provider.server", "dropdown.ping", "update.ping_placeholder", "update.pause",
+        "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
+        "latest.byte_speed_unit", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
+        "test.details.seconds", "test.details.server", "test.details.bufferbloat",
+        "test.details.bufferbloat_value", "statistics.values.min", "preview.info",
+        "integrations.discord.fields.url", "integrations.email.fields.port",
+        "integrations.gotify.fields.url", "integrations.healthChecks.fields.url",
+        "integrations.influxdb.fields.url", "integrations.influxdb.fields.bucket",
+        "integrations.mqtt.fields.port", "integrations.ntfy.fields.url",
+        "integrations.ntfy.fields.topic_placeholder", "integrations.webhook.fields.url",
+        "preferences.theme.system", "status.start",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
     nl: [
         "welcome.ms", "dialog.provider.interface", "dialog.provider.server", "update.ping_placeholder",
         "header.servers", "storage.tests", "storage.reset", "latest.ping", "latest.ping_unit",
@@ -202,6 +242,19 @@ export const LANGUAGE_SHARED = {
     ru: [
         "latest.jitter", "info.jitter.title", "info.bufferbloat.title", "test.details.bufferbloat"
     ],
+    sv: [
+        "dialog.provider.server", "dropdown.ping", "update.ping_placeholder", "latest.ping",
+        "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.byte_speed_unit",
+        "info.ping.title", "info.jitter.title", "info.bufferbloat.title", "test.details.seconds",
+        "test.details.server", "test.details.bufferbloat", "test.details.bufferbloat_value",
+        "preview.info", "integrations.discord.fields.url", "integrations.email.fields.port",
+        "integrations.gotify.fields.url", "integrations.healthChecks.fields.url",
+        "integrations.influxdb.fields.url", "integrations.influxdb.fields.bucket",
+        "integrations.mqtt.fields.port", "integrations.ntfy.fields.url",
+        "integrations.ntfy.fields.topic_placeholder", "integrations.webhook.fields.url",
+        "preferences.theme.system",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
     tr: [
         "update.ping_placeholder", "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit",
         "latest.byte_speed_unit", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
@@ -215,6 +268,11 @@ export const LANGUAGE_SHARED = {
     ],
     zh: [
         "latest.speed_unit", "latest.byte_speed_unit", "integrations.ntfy.fields.topic_placeholder"
+    ],
+    "zh-tw": [
+        "latest.ping", "latest.speed_unit", "latest.byte_speed_unit", "info.ping.title",
+        "integrations.ntfy.fields.topic_placeholder", "integrations.influxdb.fields.bucket",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ]
 };
 

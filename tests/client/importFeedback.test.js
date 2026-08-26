@@ -141,13 +141,14 @@ describe("every toast colour a caller asks for", () => {
  * already used: the noun as a label, the count after a colon, which no
  * quantity can disagree with.
  *
- * Three locales keep the count beside a word on purpose, because their grammar
- * does not inflect for it: Chinese counts through a measure word
- * ("{{imported}} 次"), and Indonesian and Turkish nouns do not change after a
- * numeral. Every other locale must not put a letter straight after a count.
+ * Some locales keep the count beside a word on purpose, because their grammar
+ * does not inflect for it: both Chinese files count through a measure word
+ * ("{{imported}} 次"), Japanese and Korean count through counters (件, 개) the
+ * same way, and Indonesian and Turkish nouns do not change after a numeral.
+ * Every other locale must not put a letter straight after a count.
  */
 describe("the partial-import message", () => {
-    const NUMBER_TOLERANT = new Set(["zh", "id", "tr"]);
+    const NUMBER_TOLERANT = new Set(["zh", "zh-tw", "ja", "ko", "id", "tr"]);
 
     const codes = localeCodes();
 

@@ -52,7 +52,9 @@ export const languages = [
     {name: 'English', code: 'en', flag: flag('en')},
     {name: 'Deutsch', code: 'de', flag: flag('de')},
     {name: 'Български', code: 'bg', flag: flag('bg')},
-    {name: '中文', code: 'zh', flag: flag('zh')},
+    // Named apart from 繁體中文 below since the day both shipped - a bare 中文
+    // stopped saying which one it was.
+    {name: '简体中文', code: 'zh', flag: flag('zh')},
     {name: 'Nederlands', code: 'nl', flag: flag('nl')},
     {name: 'Français', code: 'fr', flag: flag('fr')},
     // Rebuilt from Crowdin's 2026-08-19 state and completed in-repo: the
@@ -67,7 +69,26 @@ export const languages = [
     {name: 'Polski', code: 'pl', flag: flag('pl')},
     {name: 'Türkçe', code: 'tr', flag: flag('tr')},
     {name: 'Bahasa Indonesia', code: 'id', flag: flag('id')},
-    {name: 'Українська', code: 'uk', flag: flag('ua')}
+    {name: 'Українська', code: 'uk', flag: flag('ua')},
+    /*
+     * The six below are authored in-repo rather than through Crowdin, pending
+     * native review - the same standing Gaeilge has above.
+     *
+     * Two codes deserve a note. Norwegian is "nb" (Bokmål), which is what
+     * browsers send; a browser that says only "no" falls back to English until
+     * someone asks for the alias. Traditional Chinese is spelled "zh-tw" in
+     * lowercase so the tests' lowercase code checks keep holding - and this
+     * comment must never name that character class literally, because the
+     * inventory test reads this list up to the first closing bracket. The
+     * detector seeds from navigator.language's first segment, so a zh-TW
+     * browser arrives at Simplified and picks Traditional by hand.
+     */
+    {name: 'Čeština', code: 'cs', flag: flag('cz')},
+    {name: 'Norsk', code: 'nb', flag: flag('no')},
+    {name: 'Svenska', code: 'sv', flag: flag('se')},
+    {name: '日本語', code: 'ja', flag: flag('jp')},
+    {name: '한국어', code: 'ko', flag: flag('kr')},
+    {name: '繁體中文', code: 'zh-tw', flag: flag('tw')}
 ]
 
 /*
@@ -87,10 +108,10 @@ i18n.use(initReactI18next).use(LanguageDetector).use(HttpApi).init({
     supportedLngs: languages.map(lang => lang.code),
     fallbackLng: FALLBACK_LANGUAGE,
     // Seeds the store, rather than replacing the backend: with
-    // partialBundledLanguages the other fifteen are still fetched on demand,
+    // partialBundledLanguages every other language is still fetched on demand,
     // and English is simply already there. Without that flag `resources` turns
-    // the HTTP backend off altogether and a sixteen-language interface silently
-    // becomes an English one that still offers to change language.
+    // the HTTP backend off altogether and a twenty-two-language interface
+    // silently becomes an English one that still offers to change language.
     resources: {[FALLBACK_LANGUAGE]: {translation: englishTranslations}},
     partialBundledLanguages: true,
     // Values are printed, not injected as markup. i18next escapes them by

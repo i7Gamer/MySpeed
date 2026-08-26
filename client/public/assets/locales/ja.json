@@ -1,0 +1,785 @@
+{
+  "failed": "失敗",
+  "welcome": {
+    "step": "ステップ",
+    "title": "MySpeed へようこそ！",
+    "subtext": "MySpeed の初期設定を行いましょう。ご安心ください、すぐに終わります。",
+    "provider_title": "プロバイダーを選択",
+    "provider_subtext": "ここで使用するプロバイダーを選択してください。選択したプロバイダーがテストを実行します。",
+    "data_title": "最適な値を設定",
+    "data_subtext": "このステップでは、契約上の回線速度を選択してください。",
+    "ms": "（ms 単位）",
+    "mbps": "（Mbps 単位）",
+    "accept_title": "規約に同意",
+    "accept_subtext": "このステップでは、Ookla のライセンスについてご案内します。内容を読み、「完了」をクリックして、読んだうえで同意したことを確認してください。"
+  },
+  "dialog": {
+    "okay": "OK",
+    "done": "完了",
+    "continue": "続行",
+    "apply": "はい、適用します",
+    "update": "更新",
+    "close": "閉じる",
+    "unset": "解除",
+    "retry": "再試行",
+    "login": "ログイン",
+    "save": "保存",
+    "saving": "保存中...",
+    "password": {
+      "title": "パスワードが必要です",
+      "placeholder": "パスワード",
+      "wrong": "入力されたパスワードが正しくありません",
+      "unlock": "ロック解除"
+    },
+    "setup_token": {
+      "title": "セットアップトークンが必要です",
+      "description": "このインスタンスにはパスワードが設定されていないため、他のマシンからは開けません。サーバーログに記載されているセットアップトークンを入力し、パスワードを設定してください。",
+      "placeholder": "サーバーログのセットアップトークン",
+      "wrong": "サーバーログに記載されているセットアップトークンと一致しません"
+    },
+    "busy": {
+      "title": "サーバーがビジー状態です",
+      "description": "サーバーは現在ほかのパスワードを確認しています。しばらく待ってから、もう一度お試しください。"
+    },
+    "throttled": {
+      "title": "試行回数が多すぎます",
+      "description": "拒否された試行が多すぎます。1 分ほど待ってから、もう一度お試しください。"
+    },
+    "api": {
+      "title": "API に接続できません",
+      "description": "MySpeed はこのインスタンスの API に接続できませんでした。しばらくしてからもう一度お試しください。"
+    },
+    "provider": {
+      "interface": "インターフェース",
+      "server": "サーバー",
+      "server_id": "サーバー ID",
+      "server_id_placeholder": "任意のサーバー ID、または空欄",
+      "custom_url": "カスタム URL",
+      "choose_automatically": "自動で選択",
+      "ookla_license": "Ookla の<Eula>EULA</Eula>、<GDPR>プライバシーポリシー</GDPR>、<TOS>利用規約</TOS>を読み、同意します。",
+      "ookla_notice": "Ookla を使用すると、同社の<Eula>EULA</Eula>、<GDPR>プライバシーポリシー</GDPR>、<TOS>利用規約</TOS>に同意したことになります。",
+      "ookla_desc": "世界中にサーバー網を持つ定番のプロバイダー",
+      "libre_desc": "オープンソースでセルフホスト可能なスピードテスト",
+      "cloudflare_desc": "CDN ベースの高速なテスト"
+    }
+  },
+  "dropdown": {
+    "settings": "設定",
+    "changes_applied": "変更を保存しました。",
+    "language_changed": "言語を変更しました。",
+    "provider_changed": "プロバイダーを変更しました。",
+    "changes_unsaved": "変更は適用されませんでした。入力内容を確認してください。",
+    "invalid": "入力が無効です",
+    "ping": "最適な Ping",
+    "upload": "最適な上り速度",
+    "download": "最適な下り速度",
+    "recommendations": "推奨値",
+    "optimal_values": "最適値",
+    "change_provider": "プロバイダーを変更",
+    "password": "パスワードを変更",
+    "cron": "頻度を設定",
+    "time": "期間を設定",
+    "storage": "ストレージを管理",
+    "pause_tests": "テストを一時停止",
+    "resume_tests": "テストを再開",
+    "language": "言語を変更",
+    "preferences": "環境設定",
+    "provider": "プロバイダーについて",
+    "integrations": "連携"
+  },
+  "about": {
+    "title": "MySpeed について",
+    "description": "MySpeed は、設定した期間にわたってインターネット速度を記録する、オープンソースのスピードテスト分析ソフトウェアです。",
+    "website": "ウェブサイト",
+    "donate": "寄付",
+    "translate": "翻訳",
+    "made_by": "心を込めて開発"
+  },
+  "options": {
+    "cron": {
+      "continuous": "常時",
+      "continuous_desc": "毎分実行 — リソース使用量が多くなります",
+      "frequent": "高頻度",
+      "frequent_desc": "30 分ごと",
+      "default": "標準",
+      "default_desc": "1 時間ごと — 推奨",
+      "rare": "低頻度",
+      "rare_desc": "3 時間ごと",
+      "really_rare": "ごく低頻度",
+      "really_rare_desc": "6 時間ごと"
+    },
+    "level": {
+      "no_access": "アクセス不可",
+      "read_access": "読み取り専用アクセス"
+    }
+  },
+  "password": {
+    "no_access_desc": "訪問者は、パスワードを入力するまで何も閲覧できません",
+    "read_access_desc": "訪問者はデータを閲覧できますが、設定は変更できません"
+  },
+  "locked": {
+    "password_desc": "このインスタンスはパスワードで保護されています。サインインするとデータを閲覧できます。",
+    "token_hint": "サーバーはリクエストを拒否するたびに（最大で 10 分に 1 回）トークンをログに書き直します。そのため、このページを再読み込みすると、ログの末尾に新しいトークンが出力されます。",
+    "enter_token": "セットアップトークンを入力"
+  },
+  "pause": {
+    "manual": "無期限に一時停止",
+    "manual_desc": "手動で再開するまで一時停止",
+    "short": "短い休止",
+    "short_desc": "1 時間一時停止",
+    "medium": "中程度の休止",
+    "medium_desc": "6 時間一時停止",
+    "long": "長い休止",
+    "long_desc": "12 時間一時停止",
+    "custom": "カスタム期間",
+    "quiet_hours": "サイレント時間",
+    "quiet_hours_desc": "毎日この時間帯には、スケジュールされたテストはスキップされます。自分で開始したテストは常に実行されます。",
+    "timezone": "タイムゾーン",
+    "timezone_server": "サーバーの時計",
+    "timezone_desc": "サイレント時間とテストスケジュールの両方の基準となる時計です。",
+    "quiet_from": "開始",
+    "quiet_until": "終了"
+  },
+  "page": {
+    "overview": "概要",
+    "statistics": "統計"
+  },
+  "update": {
+    "ping_title": "最適な Ping を設定 (ms)",
+    "ping_placeholder": "Ping (ms)",
+    "upload_title": "最適な上り速度を設定 (Mbps)",
+    "upload_placeholder": "上り速度 (Mbps)",
+    "download_title": "最適な下り速度を設定 (Mbps)",
+    "download_placeholder": "下り速度 (Mbps)",
+    "recommendations_title": "最適な推奨値",
+    "recommendations_set": "自動の推奨値を設定しますか？",
+    "provider_title": "スピードテストのプロバイダーを設定",
+    "manually": "手動で設定",
+    "new_password": "新しいパスワードを設定",
+    "password_placeholder": "新しいパスワード",
+    "show_password": "パスワードを表示",
+    "hide_password": "パスワードを非表示",
+    "confirm_password": "もう一度入力",
+    "confirm_password_placeholder": "新しいパスワードを再入力",
+    "password_mismatch": "パスワードが一致しません",
+    "remove_password": "パスワードを削除",
+    "remove_password_title": "パスワードを削除しますか？",
+    "remove_password_desc": "サインアウトされ、このインスタンスはパスワードなしの状態になります。以後、実行中のマシン上では誰でも開けるようになり、他のマシンからのアクセスには、新しいパスワードが設定されるまでサーバーログのセットアップトークンが要求されます。",
+    "password_removed": "パスワードによるロックが解除され、設定されていたパスワードは削除されました。",
+    "level": "権限を変更",
+    "level_title": "訪問者の権限",
+    "cron_title": "テスト頻度を設定",
+    "cron_rules": "cron ルール",
+    "cron_next_test": "次のテスト:",
+    "custom_cron": "カスタム cron 式",
+    "schedule_offset": "スケジュールをずらす",
+    "schedule_offset_desc": "ちょうどの時刻にテストが始まらないよう、わずかな遅延を加えます",
+    "advanced": "詳細設定",
+    "time_title": "表示するテストの期間...",
+    "download": "ダウンロード",
+    "pause_title": "スピードテストを一時停止する期間...",
+    "hours": "時間",
+    "pause": "一時停止",
+    "pause_manual_hint": "空欄のままにすると無期限に一時停止します",
+    "release_manually": "手動で解除",
+    "language": "言語を変更",
+    "view_title": "表示を切り替え",
+    "quiet_hours_saved": "サイレント時間を保存しました"
+  },
+  "header": {
+    "running_tooltip": "スピードテストを実行中",
+    "start_tooltip": "スピードテストを開始",
+    "new_update": "アップデートがあります",
+    "download": "ダウンロード",
+    "paused": "スピードテストは現在一時停止中です。テストを実行するには再開してください。",
+    "running": "スピードテストは既に実行中です。しばらくお待ちください。",
+    "admin_login": "管理者ログイン",
+    "servers": "サーバー",
+    "beta": {
+      "title": "ベータ版",
+      "description": "この機能はまだベータ版です。不具合を見つけた場合は、<Link>こちら</Link>から報告してください。"
+    }
+  },
+  "storage": {
+    "speedtests": "スピードテスト",
+    "configuration": "設定",
+    "stored_tests": "保存されているテスト",
+    "tests": "テスト",
+    "export_tests": "テストをエクスポート",
+    "tests_exported": "テストをエクスポートしました",
+    "import_tests": "テストをインポート",
+    "tests_imported": "テストをインポートしました",
+    "tests_imported_partial": "インポートしたテスト: {{imported}}、スキップ: {{skipped}}",
+    "import_test_error": "テストのインポート中にエラーが発生しました",
+    "import_config_error": "設定のインポート中にエラーが発生しました",
+    "import_config_error_key": "設定をインポートできませんでした:「{{key}}」の保存値が無効です",
+    "export": "エクスポート",
+    "import": "インポート",
+    "clear_history": "履歴を消去",
+    "history_cleared": "履歴を消去しました",
+    "delete": "削除",
+    "confirm_delete": "はい、削除します",
+    "export_settings": "設定をエクスポート",
+    "import_settings": "設定をインポート",
+    "factory_reset": "初期状態にリセット",
+    "factory_reset_completed": "初期状態へのリセットが完了しました",
+    "reset": "リセット",
+    "confirm_reset": "はい、リセットします",
+    "settings_exported": "設定をエクスポートしました",
+    "settings_imported": "設定をインポートしました",
+    "retention": "データ保持期間",
+    "retention_desc": "スピードテストの結果を自動削除するまでの保持期間です。",
+    "retention_saved": "保持期間を更新しました",
+    "retention_days_suffix": "日",
+    "retention_back": "プリセットに戻る",
+    "retention_options": {
+      "week": "7 日",
+      "month": "30 日",
+      "quarter": "90 日",
+      "half_year": "180 日",
+      "year": "1 年（デフォルト）",
+      "forever": "無期限に保持",
+      "custom": "カスタム..."
+    },
+    "include_secrets": "認証情報を含める",
+    "export_redacted_desc": "ノードのパスワード、連携トークン、管理者パスワードは含まれません。",
+    "export_with_secrets_desc": "ノードのパスワード、連携トークン、管理者パスワードが含まれます。安全な場所に保管してください。"
+  },
+  "latest": {
+    "ping": "Ping",
+    "ping_unit": "ms",
+    "jitter": "ジッター",
+    "jitter_unit": "ms",
+    "down": "ダウンロード",
+    "speed_unit": "Mbps",
+    "byte_speed_unit": "MB/s",
+    "up": "アップロード",
+    "latest": "最新のテスト",
+    "before": "前",
+    "bufferbloat": "バッファブロート: 負荷時に {{increase}} ms 増加",
+    "bufferbloat_trend": "直近のテストにおけるバッファブロート",
+    "quality": "負荷時",
+    "loaded_latency": "レイテンシー {{down}} / {{up}} ms",
+    "packet_loss": "パケットロス"
+  },
+  "info": {
+    "recommendations_error": "平均を算出するには、少なくとも 10 回のテストが必要です。テストが手動か自動かは問いません。",
+    "recommendations_info": "直近 10 回のテストに基づくと、最適な Ping は <Bold>{{ping}} ms</Bold>、ダウンロードは <Bold>{{down}} Mbps</Bold>、アップロードは <Bold>{{up}} Mbps</Bold> でした。契約しているインターネット回線の内容を基準にし、それと合致する場合にのみ採用することをおすすめします。",
+    "update": "バージョン {{version}} へのアップデートが利用可能です。<Changes>変更内容を確認</Changes>して、<DLLink>アップデートをダウンロード</DLLink>してください。",
+    "down": {
+      "title": "ダウンロード速度",
+      "description": "ダウンロード速度はブラウジング体験に影響します。速いほど、コンピューターがデータを受信するのが速くなります。"
+    },
+    "ping": {
+      "title": "Ping",
+      "description": "Ping は、各プロバイダーがどれだけ速く応答するかを示します。時間が短いほど良好です。"
+    },
+    "jitter": {
+      "title": "ジッター",
+      "description": "ジッターは Ping 応答時間のばらつきです。ジッターが小さいほど接続が安定していることを意味し、ビデオ通話やゲームなどのリアルタイム用途で重要になります。"
+    },
+    "loaded_latency": {
+      "title": "負荷時のレイテンシー",
+      "description": "回線が空いているときではなく、その方向の帯域が使い切られている間に測定した Ping です。ほかの誰かがダウンロードを始めても通話が持ちこたえられるかを決める数値で、上下とも速い回線が転送中には使いものにならない、ということも起こり得ます。"
+    },
+    "bufferbloat": {
+      "title": "バッファブロート",
+      "description": "回線が混み合ったときにレイテンシーがどれだけ増えるかを示します。2 つの負荷時レイテンシーのうち悪い方から、アイドル時の Ping を引いた値です。5 ms 未満なら極めて良好、200 ms を超えると、何かを転送している間は通話やゲームが使いものになりません。下りはきれいでも上りのバッファリングがひどい回線は、ひどくバッファリングされた回線そのものなので、悪い方を基準に評価されます。"
+    },
+    "packet_loss": {
+      "title": "パケットロス",
+      "description": "パケットロスは、届かずに再送が必要になったデータの割合です。ゼロを超えると、速度の低下として現れるよりずっと前に、通話やゲームのカクつきとして体感されます。これを測定するのは Ookla だけなので、他のプロバイダーのテストではゼロと報告される代わりに空欄になります。"
+    },
+    "up": {
+      "title": "アップロード速度",
+      "description": "アップロード速度はブラウジング体験に影響します。速いほど、コンピューターがデータを送信するのが速くなります。"
+    },
+    "latest": {
+      "title": "最新のテスト",
+      "description": "最後のテストがいつ実行されたかを示す時刻です。この場合、最後のテストは <Bold>{{date}}</Bold> の <Bold>{{time}}</Bold> に実行されました。"
+    }
+  },
+  "time": {
+    "now": "たった今",
+    "seconds": "{{seconds}} 秒",
+    "minute": "1 分",
+    "minutes": "{{minutes}} 分",
+    "hour": "1 時間",
+    "hours": "{{hours}} 時間",
+    "day": "1 日",
+    "days": "{{days}} 日",
+    "on": "日付:",
+    "at": "時刻:"
+  },
+  "test": {
+    "not_available": "現在、利用できるテストはありません",
+    "not_available_in_range": "{{from}} から {{to}} の間にテストはありません",
+    "show_all_time": "全期間を表示",
+    "no_latest": "現在のテストがありません。テストを実行するか、次のテストが実行されるまでお待ちください。",
+    "loading_more": "さらにテストを読み込んでいます...",
+    "no_more_tests": "読み込むテストはこれ以上ありません",
+    "unknown_error": "不明なエラー",
+    "unknown_error_detail": "不明なエラー: {{error}}",
+    "failed": "テスト失敗",
+    "recheck": "頻繁に発生する場合は、できる範囲で確認してください。",
+    "delete": "テストを削除",
+    "delete_confirm": {
+      "title": "テストを削除しますか？",
+      "description": "<Bold>{{date}}</Bold> のテストを削除します。この操作は元に戻せません。続行しますか？",
+      "yes": "はい、削除します"
+    },
+    "deleted": "テストを削除しました",
+    "average": {
+      "title": "平均速度",
+      "description": "<Bold>{{amount}}</Bold> 件のテストの結果、<Bold>{{date}}</Bold> の平均ダウンロード速度は <Bold>{{down}} Mbps</Bold>、平均アップロード速度は <Bold>{{up}} Mbps</Bold> でした。テストの所要時間は平均 <Bold>{{duration}} 秒</Bold>でした。"
+    },
+    "result": {
+      "title": "テスト結果",
+      "description": "<Link>このテスト</Link>は最大ダウンロード速度 <Bold>{{down}} Mbps</Bold>、最大アップロード速度 <Bold>{{up}} Mbps</Bold> を記録しました。テストは<Bold>{{type}}</Bold>作成され、<Bold>{{duration}} 秒</Bold>かかりました。",
+      "jitter": "接続のジッターは <Bold>{{jitter}} ms</Bold> でした。",
+      "server": "テストは <Bold>{{server}}</Bold> に対して実行されました。",
+      "from_you": "あなたによって",
+      "automatic": "自動的に"
+    },
+    "overview": {
+      "title_range": "{{from}} から {{to}} までのテスト概要"
+    },
+    "details": {
+      "show": "詳細を表示",
+      "hide": "詳細を非表示",
+      "of_target": "目標の {{percent}}%",
+      "over_target": "目標を {{amount}} {{unit}} 上回っています",
+      "under_target": "目標を {{amount}} {{unit}} 下回っています",
+      "on_target": "ちょうど目標どおり",
+      "unchanged": "前回のテストから変化なし",
+      "measured_at": "測定日時",
+      "measured_with": "測定方法",
+      "duration": "所要時間",
+      "seconds": "{{seconds}} 秒",
+      "data_used": "使用データ量",
+      "data_used_value": "下り {{down}} / 上り {{up}}",
+      "trigger": "開始方法",
+      "server": "サーバー",
+      "result": "完全な結果",
+      "loaded_latency": "負荷時のレイテンシー",
+      "loaded_latency_value": "下り {{down}} ms / 上り {{up}} ms",
+      "packet_loss": "パケットロス",
+      "bufferbloat": "バッファブロート",
+      "bufferbloat_value": "+{{increase}} ms",
+      "connection": "接続",
+      "isp": "プロバイダー",
+      "external_ip": "外部アドレス",
+      "changed": "変更あり"
+    }
+  },
+  "errors": {
+    "network_unreachable": "テスト中にインターネット接続が不安定でした",
+    "took_too_long": "テストに時間がかかりすぎたため中止されました",
+    "no_permission": "MySpeed にこのテストを開始する権限がありません",
+    "resource_unavailable": "リソースが一時的に利用できなかったため、テストを実行できませんでした",
+    "no_route": "ホストへのルートがなかったため、テストを実行できませんでした",
+    "connection_refused": "接続が拒否されたため、テストを実行できませんでした",
+    "timed_out": "テスト中にインターネット接続が不安定でした",
+    "config": "設定ファイルを読み込めませんでした",
+    "invalid_view": "無効な表示です",
+    "cannot_open_socket": "テストサーバーへの接続を開けませんでした。選択したネットワークインターフェースからは到達できない可能性があります。",
+    "latency_failed": "レイテンシーテストに失敗したため、速度を測定できませんでした。",
+    "rate_limited": "短時間に実行されたテストが多すぎるため、プロバイダーがテストを拒否しました。次のテストは自動的に延期されます。",
+    "no_measurement": "テストは終了しましたが、測定値が報告されませんでした。",
+    "impossible_measurement": "テストがあり得ない測定値を報告したため、破棄されました。"
+  },
+  "statistics": {
+    "average": "平均",
+    "compare": {
+      "note": "{{from}} – {{to}} と比較した変化"
+    },
+    "downsampled": "平均化 · {{total}} 件中 {{shown}} 件のテストを表示",
+    "detail": {
+      "title": "フル解像度",
+      "description": "平均化せず、最大 {{max}} 件のデータポイントを表示します",
+      "complete": "この範囲のテストはすべて表示されています",
+      "loading": "完全なデータを読み込んでいます…"
+    },
+    "export": {
+      "button": "エクスポート"
+    },
+    "delta": {
+      "up": "{{value}} 上昇",
+      "down": "{{value}} 下降"
+    },
+    "overview": {
+      "total_title": "テスト総数",
+      "total_description": "実行されたテストの数",
+      "failed_title": "失敗したテスト",
+      "failed_description": "失敗したテストの数",
+      "average_title": "平均所要時間",
+      "average_description": "テストの平均所要時間",
+      "packet_loss_title": "パケットロス",
+      "packet_loss_description": "測定できたテストの平均",
+      "peak_title": "ピーク時間帯の速度低下",
+      "peak_description": "最も遅いのは {{slowest}} 頃、最も速いのは {{fastest}} 頃",
+      "ping_description": "平均レイテンシー（{{min}} 〜 {{max}}）",
+      "span_title": "所要時間のばらつき",
+      "span_description": "この範囲で最も短いテストと最も長いテスト",
+      "density_title": "1 日あたりのテスト数",
+      "density_description": "{{days}} 日間の集計"
+    },
+    "failed": {
+      "title": "失敗したテスト",
+      "success": "成功",
+      "failed": "失敗",
+      "label": "テスト"
+    },
+    "speed": {
+      "title": "速度"
+    },
+    "manual": {
+      "title": "手動テスト",
+      "yes": "手動で作成",
+      "no": "自動で作成"
+    },
+    "duration": {
+      "title": "テスト所要時間",
+      "label": "件数"
+    },
+    "values": {
+      "min": "最小",
+      "max": "最大",
+      "avg": "平均",
+      "down": "ダウンロード値",
+      "up": "アップロード値",
+      "target": "目標: {{target}}",
+      "consistency": "一貫性",
+      "samples": "測定されたテスト"
+    },
+    "failed_test": "失敗したテスト",
+    "hourly": {
+      "title": "時間帯別の速度",
+      "sample_count": "テスト"
+    },
+    "consistency": {
+      "title": "接続の安定性",
+      "excellent": "非常に良い",
+      "good": "良い",
+      "fair": "普通",
+      "poor": "悪い",
+      "ping_deviation": "標準的なばらつき",
+      "loaded_latency_average": "{{tests}} 件のテストで、負荷時に平均 {{increase}} ms 増加",
+      "jitter_detail": "テスト内での変動",
+      "range": "{{min}} 〜 {{max}} の間",
+      "sample_count": "{{tests}} 件のテストに基づく"
+    },
+    "loaded_latency": "負荷時"
+  },
+  "calendar": {
+    "select_range": "日付範囲を選択",
+    "all_time": "全期間",
+    "select_start": "開始日を選択",
+    "select_end": "終了日を選択",
+    "previous_year": "前年",
+    "previous_month": "前月",
+    "next_month": "翌月",
+    "next_year": "翌年",
+    "from": "開始",
+    "to": "終了",
+    "last_7_days": "過去 7 日間",
+    "last_30_days": "過去 30 日間",
+    "last_90_days": "過去 90 日間",
+    "last_year": "過去 1 年間",
+    "mon": "月",
+    "tue": "火",
+    "wed": "水",
+    "thu": "木",
+    "fri": "金",
+    "sat": "土",
+    "sun": "日"
+  },
+  "nodes": {
+    "add": "サーバーを追加",
+    "create": "追加",
+    "this_server": "このサーバー",
+    "created": "サーバーを追加しました",
+    "password_required": "このノードにはパスワードが必要です",
+    "update_password": "このノードのパスワードを更新してください",
+    "password_outdated": "パスワードが古くなっています",
+    "password_updated": "パスワードを更新しました",
+    "preview_active": "デモモード中は、サーバーの追加と削除は無効になっています。",
+    "placeholder": {
+      "name": "MySpeed インスタンス",
+      "url": "https://your-server.com"
+    },
+    "group": {
+      "name": "サーバー名",
+      "url": "サーバーアドレス"
+    },
+    "delete": {
+      "title": "サーバーを削除",
+      "description": "サーバー <Bold>{{name}}</Bold>（#{{id}}）を削除します。この操作は元に戻せません。続行しますか？",
+      "yes": "はい、削除します",
+      "success": "サーバーを削除しました"
+    },
+    "rename": {
+      "title": "サーバー名を変更",
+      "placeholder": "新しいサーバー名",
+      "success": "サーバー名を変更しました"
+    },
+    "messages": {
+      "not_reachable": "サーバーに接続できません",
+      "password_changed": "パスワードが変更されました",
+      "tests_pending": "テスト結果を待っています"
+    }
+  },
+  "preview": {
+    "title": "デモモード",
+    "info": "デモ",
+    "description": "現在デモモードです。一部の機能は無効になっており、一部の設定は変更できません。すべての機能を使いたい場合は、自分のサーバーに <Link>MySpeed をインストール</Link>できます。"
+  },
+  "integrations": {
+    "none_active": "この連携は有効になっていません。<br/><Bold>作成</Bold>",
+    "preview_active": "デモモード中は連携が無効になっています。",
+    "display_name": "連携名",
+    "create": "作成",
+    "activity": {
+      "never_executed": "一度も実行されていません",
+      "last_run": "前回の実行からの経過: "
+    },
+    "discord": {
+      "fields": {
+        "url": "Webhook URL",
+        "display_name": "表示名",
+        "display_name_placeholder": "MySpeed 通知",
+        "error_message": "エラーメッセージ",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] エラー: %error%",
+        "send_failed": "エラーメッセージを送信",
+        "send_finished": "完了メッセージを送信",
+        "finished_message": "完了メッセージ",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
+    "email": {
+      "title": "メール",
+      "fields": {
+        "host": "SMTP サーバー",
+        "port": "ポート",
+        "secure": "TLS を直接使用（ポート 465）",
+        "username": "ユーザー名（省略可）",
+        "password": "パスワード（省略可）",
+        "from": "送信元アドレス",
+        "to": "宛先アドレス（カンマ区切り）",
+        "send_failed": "エラーメッセージを送信",
+        "error_subject": "エラー時の件名",
+        "error_subject_placeholder": "MySpeed: スピードテスト失敗",
+        "error_message": "エラーメッセージ",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] エラー: %error%",
+        "send_finished": "完了メッセージを送信",
+        "finished_subject": "完了時の件名",
+        "finished_subject_placeholder": "MySpeed: スピードテスト完了",
+        "finished_message": "完了メッセージ",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
+    "gotify": {
+      "fields": {
+        "url": "サーバー URL",
+        "key": "アプリトークン",
+        "priority": "優先度",
+        "error_message": "エラーメッセージ",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] エラー: %error%",
+        "send_failed": "エラーメッセージを送信",
+        "send_finished": "完了メッセージを送信",
+        "finished_message": "完了メッセージ",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
+    "pushover": {
+      "fields": {
+        "token": "アプリトークン",
+        "user_key": "ユーザーキー",
+        "error_message": "エラーメッセージ",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] エラー: %error%",
+        "send_failed": "エラーメッセージを送信",
+        "send_finished": "完了メッセージを送信",
+        "finished_message": "完了メッセージ",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
+    "healthChecks": {
+      "fields": {
+        "url": "HealthChecks URL",
+        "interval": "Ping 間隔（分）"
+      }
+    },
+    "influxdb": {
+      "fields": {
+        "url": "サーバー URL",
+        "org": "組織",
+        "bucket": "バケット",
+        "token": "API トークン",
+        "measurement": "測定名",
+        "measurement_placeholder": "speedtests（デフォルト）",
+        "host": "ホストタグ",
+        "host_placeholder": "デフォルトはマシンのホスト名",
+        "tags": "追加タグ",
+        "tags_placeholder": "region=eu,role=primary（カンマ区切り）"
+      }
+    },
+    "mqtt": {
+      "fields": {
+        "host": "ブローカーホスト",
+        "port": "ポート",
+        "secure": "TLS を使用（ポート 8883）",
+        "username": "ユーザー名（省略可）",
+        "password": "パスワード（省略可）",
+        "client_id": "クライアント ID（省略可）",
+        "topic": "トピック",
+        "error_topic": "エラートピック（省略可）",
+        "retain": "メッセージを保持（Retain）",
+        "discovery": "Home Assistant ディスカバリー",
+        "discovery_prefix": "ディスカバリープレフィックス（省略可）",
+        "qos": "QoS（0 または 1）",
+        "send_finished": "完了したテストをパブリッシュ",
+        "send_failed": "失敗したテストをパブリッシュ"
+      }
+    },
+    "ntfy": {
+      "fields": {
+        "url": "サーバー URL",
+        "topic": "トピック",
+        "topic_placeholder": "myspeed-alerts",
+        "token": "アクセストークン",
+        "token_placeholder": "tk_...（省略可、保護されたサーバー用）",
+        "title": "通知タイトル",
+        "title_placeholder": "MySpeed（省略可）",
+        "tags": "タグ",
+        "tags_placeholder": "warning,satellite（カンマ区切り）",
+        "priority": "デフォルト優先度（1〜5）",
+        "error_priority": "エラー優先度（1〜5）",
+        "error_message": "エラーメッセージ",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] エラー: %error%",
+        "send_failed": "エラーメッセージを送信",
+        "send_finished": "完了メッセージを送信",
+        "finished_message": "完了メッセージ",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
+    "telegram": {
+      "fields": {
+        "token": "ボットトークン",
+        "chat_id": "チャット ID",
+        "message_thread_id": "トピック ID（省略可）",
+        "error_message": "エラーメッセージ",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] エラー: %error%",
+        "send_failed": "エラーメッセージを送信",
+        "send_finished": "完了メッセージを送信",
+        "finished_message": "完了メッセージ",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
+    "webhook": {
+      "fields": {
+        "url": "Webhook URL",
+        "url_placeholder": "https://your-server.com/hook",
+        "send_started": "開始を送信",
+        "send_failed": "エラーメッセージを送信",
+        "send_finished": "完了メッセージを送信",
+        "send_alive": "Keep-Alive メッセージを送信",
+        "send_recommendations": "推奨値を送信",
+        "send_config_updates": "設定の更新を送信",
+        "interval": "Keep-Alive 間隔（分）"
+      }
+    },
+    "fields": {
+      "alert_only": "しきい値を外れたときのみ通知",
+      "alert_ping_above": "Ping が次の値を超えたら通知（ms）",
+      "alert_ping_above_placeholder": "例: 50",
+      "alert_download_below": "ダウンロードが次の値を下回ったら通知（Mbps）",
+      "alert_download_below_placeholder": "例: 100",
+      "alert_upload_below": "アップロードが次の値を下回ったら通知（Mbps）",
+      "alert_upload_below_placeholder": "例: 20"
+    },
+    "variables": "使用できる変数",
+    "variables_hint": "クリックするとメッセージに追加されます"
+  },
+  "common": {
+    "back_to_top": "トップに戻る"
+  },
+  "not_found": {
+    "title": "ページが見つかりません",
+    "description": "お探しのページは存在しないか、移動されました。",
+    "back_home": "ホームに戻る"
+  },
+  "route_error": {
+    "title": "おっと！",
+    "subtitle": "問題が発生しました",
+    "description": "予期しないエラーが発生しました。もう一度試すか、ホームページに戻ってください。",
+    "reload": "ページを再読み込み"
+  },
+  "optimal_values": {
+    "title": "最適値",
+    "use_recommended": "推奨値を使用"
+  },
+  "preferences": {
+    "title": "環境設定",
+    "theme": {
+      "title": "外観",
+      "description": "ダークとライトの外観を切り替えます。",
+      "system": "システム",
+      "system_desc": "このデバイスの設定に合わせた表示",
+      "dark": "ダーク",
+      "dark_desc": "暗い場所でも目にやさしい表示",
+      "light": "ライト",
+      "light_desc": "日中の使用に適した明るい表示"
+    },
+    "palette": {
+      "title": "カラー",
+      "description": "インターフェースの配色を選択します。",
+      "slate_desc": "クールなブルーグレー。MySpeed 標準の配色",
+      "nord_desc": "北欧調のブルー、やわらかなコントラスト",
+      "carbon_desc": "黒に近いニュートラルで、最も強いコントラスト",
+      "ember_desc": "暖かなブラウンで、ブルーライト控えめ"
+    },
+    "time_format": {
+      "title": "時刻表示",
+      "description": "アプリ全体での時刻の表示形式です。",
+      "h24": "24 時間制",
+      "h24_desc": "14:30 のように表示",
+      "h12": "12 時間制",
+      "h12_desc": "2:30 PM のように表示"
+    },
+    "speed_unit": {
+      "title": "速度の単位",
+      "description": "速度の表示方法を選択します。値は自動的に換算されます。",
+      "mbps": "Mbps（メガビット毎秒）",
+      "mbps_desc": "ISP やスピードテストの標準的な単位",
+      "mbytes": "MB/s（メガバイト毎秒）",
+      "mbytes_desc": "ブラウザーやダウンロードマネージャーで一般的"
+    },
+    "grade_values": {
+      "title": "評価カラー",
+      "description": "評価の色を表示のどこまで反映するかを設定します。",
+      "glyph": "アイコンのみ",
+      "glyph_desc": "アイコンだけで評価を示します",
+      "values": "アイコンと数値",
+      "values_desc": "数値にも色を付けます"
+    }
+  },
+  "status": {
+    "start": "テストを開始",
+    "running_button": "実行中",
+    "paused": "スピードテストは一時停止中です",
+    "never_run": "まだテストは実行されていません",
+    "last_test": "前回のテストは {{time}}前",
+    "next_test": "次回は {{time}}",
+    "recent_failures": "過去 1 日で {{failures}} 件失敗",
+    "phase": {
+      "starting": "開始しています…",
+      "ping": "レイテンシーを測定中",
+      "download": "ダウンロードを測定中",
+      "upload": "アップロードを測定中",
+      "measuring": "測定中…"
+    },
+    "last_test_now": "前回のテストはたった今",
+    "elapsed": "{{seconds}} 秒経過",
+    "next_test_approx": "次回はおよそ {{time}}"
+  }
+}
