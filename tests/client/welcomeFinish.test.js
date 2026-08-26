@@ -36,7 +36,8 @@ class StubRequestError extends Error {
  * instance answers every one of them: previewReadOnly sits on PATCH
  * /api/config/:key and refuses it 403 whoever is asking.
  */
-const runFinish = async ({previewMode = false, refuse = []} = {}) => {
+const runFinish = async ({previewMode = false, refuse = [], provider = "ookla",
+                             endpoint = ""} = {}) => {
     const patched = [];
     const created = [];
     const stored = new Map();
@@ -47,7 +48,11 @@ const runFinish = async ({previewMode = false, refuse = []} = {}) => {
 
     const finish = finishWith({
         config: {previewMode, ping: "0", download: "0", upload: "0"},
-        provider: "ookla",
+        provider,
+        endpoint,
+        // The wizard's own copy of the rule the server enforces, so a provider
+        // that cannot measure without an address is created carrying one.
+        requiresEndpoint: (current) => current === "iperf3",
         ping: 50,
         download: 100,
         upload: 40,
@@ -61,7 +66,8 @@ const runFinish = async ({previewMode = false, refuse = []} = {}) => {
             created.push({path, body});
             return {ok: !refuse.includes(path), status: refuse.includes(path) ? 403 : 200};
         },
-        providerById: (id) => ({ookla: {id: "ookla", name: "Ookla"}})[id] ?? null,
+        providerById: (id) => ({ookla: {id: "ookla", name: "Ookla"},
+            iperf3: {id: "iperf3", name: "iperf3"}})[id] ?? null,
         assertOk: async (response, _path) => {
             if (response.ok) return response;
             throw new StubRequestError(response.status,
@@ -160,5 +166,40 @@ describe("finishing the wizard on an ordinary instance", () => {
         assert.equal(closed, false, "the wizard closed over a setup that was not saved");
         assert.equal(toasts.length, 1);
         assert.equal(toasts[0].colour, "red");
+    });
+});
+
+/**
+ * A provider that cannot measure without an address of its own.
+ *
+ * The wizard sent `{name, provider}` for all four cards alike, so the iperf3
+ * one was refused by the server every time - on the one dialog nobody can
+ * close and that has no way back to the step where the choice was made.
+ */
+describe("finishing the wizard on a provider that needs an address", () => {
+    it("creates the target with the address that was typed", async () => {
+        const {created} = await runFinish({provider: "iperf3", endpoint: " 10.0.0.5:5201 "});
+
+        assert.deepEqual(created, [
+            {path: "/targets", body: {name: "iperf3", provider: "iperf3",
+                // Trimmed here rather than at the server, which judges the row
+                // it would become: a padded host is a host it refuses.
+                endpoint: "10.0.0.5:5201"}}
+        ]);
+    });
+
+    /**
+     * Only where the provider cannot do without one. A LibreSpeed target
+     * measures against the public backend list until the manager gives it an
+     * address, and an endpoint on a provider that takes none is exactly what
+     * the server refuses - so a stale value left behind by switching cards
+     * must not travel with the row.
+     */
+    it("sends no address for a provider that does not need one", async () => {
+        const {created} = await runFinish({provider: "ookla", endpoint: "10.0.0.5:5201"});
+
+        assert.deepEqual(created, [
+            {path: "/targets", body: {name: "Ookla", provider: "ookla"}}
+        ]);
     });
 });

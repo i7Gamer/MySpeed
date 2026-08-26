@@ -9,11 +9,12 @@ import OoklaLicense from "./steps/OoklaLicense";
 import {assertOk, patchRequest, putRequest, RequestError} from "@/common/utils/RequestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
 import {TargetsContext} from "@/common/contexts/Targets";
-import {providerById} from "@/common/components/TargetsDialog/providers";
+import {providerById, requiresEndpoint} from "@/common/components/TargetsDialog/providers";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {faExclamationTriangle} from "@fortawesome/free-solid-svg-icons";
 import {t} from "i18next";
 import {writeStored} from "@/common/utils/Storage";
+import {PROVIDER_STEP, canAdvance, lastStep} from "./welcomeStep";
 
 export const WelcomeDialog = ({open, onClose}) => {
     const [config, reloadConfig] = useContext(ConfigContext);
@@ -21,6 +22,9 @@ export const WelcomeDialog = ({open, onClose}) => {
     const updateToast = useContext(ToastNotificationContext);
     const [step, setStep] = useState(1);
     const [provider, setProvider] = useState("ookla");
+    // Where a provider that has no server pool of its own measures. Held here
+    // rather than in the chooser, because finish() is what has to send it.
+    const [endpoint, setEndpoint] = useState("");
     const [ping, setPing] = useState(0);
     const [download, setDownload] = useState(0);
     const [upload, setUpload] = useState(0);
@@ -71,8 +75,17 @@ export const WelcomeDialog = ({open, onClose}) => {
                 // target, named after its provider - the manager dialog is
                 // where it earns a better name. PUT rather than a config
                 // PATCH: the provider stopped being a config key.
-                await assertOk(await putRequest("/targets",
-                    {name: providerById(provider)?.name ?? provider, provider}), "targets");
+                await assertOk(await putRequest("/targets", {
+                    name: providerById(provider)?.name ?? provider,
+                    provider,
+                    // Only where the provider cannot do without one. A
+                    // LibreSpeed target measures against the public backend
+                    // list until the manager gives it an address of its own,
+                    // and the server refuses an endpoint on a provider that
+                    // takes none - so a value left behind by switching cards
+                    // must not travel with the row.
+                    ...(requiresEndpoint(provider) ? {endpoint: endpoint.trim()} : {})
+                }), "targets");
                 await patch("/config/ping", ping);
                 await patch("/config/download", download);
                 await patch("/config/upload", upload);
@@ -90,8 +103,15 @@ export const WelcomeDialog = ({open, onClose}) => {
         close();
     };
 
+    // Whether the step showing may be left at all - see welcomeStep.js. The
+    // button below is dead while this is false, and the handler asks again, so
+    // a step the server would refuse cannot be left however it is pressed.
+    const mayAdvance = canAdvance({step, provider, endpoint});
+
     const continueStep = (close) => {
-        if (step === (provider === "ookla" ? 4 : 3)) {
+        if (!canAdvance({step, provider, endpoint})) return;
+
+        if (step === lastStep(provider)) {
             finish(close);
         } else {
             setAnimating(true);
@@ -113,15 +133,17 @@ export const WelcomeDialog = ({open, onClose}) => {
                 <div className="welcome-banner">
                     <div className={`welcome-inner ${animating ? 'slide-in' : ''}`}>
                         {step === 1 && <Greetings/>}
-                        {step === 2 && <ProviderChooser provider={provider} setProvider={setProvider}/>}
+                        {step === PROVIDER_STEP && <ProviderChooser provider={provider} setProvider={setProvider}
+                                                                    endpoint={endpoint} setEndpoint={setEndpoint}/>}
                         {step === 3 && <DataHelper ping={ping} setPing={setPing} download={download}
                                                    setDownload={setDownload} upload={upload} setUpload={setUpload}/>}
                         {step === 4 && provider === "ookla" && <OoklaLicense/>}
                     </div>
                     <div className="welcome-actions">
-                        <h3>{t("welcome.step")} {step}/{provider === "ookla" ? 4 : 3}</h3>
-                        <button type="button" className="dialog-btn" onClick={() => continueStep(forceClose)}>
-                            {step === (provider === "ookla" ? 4 : 3) ? t("dialog.done") : t("dialog.continue")}
+                        <h3>{t("welcome.step")} {step}/{lastStep(provider)}</h3>
+                        <button type="button" className="dialog-btn" disabled={!mayAdvance}
+                                onClick={() => continueStep(forceClose)}>
+                            {step === lastStep(provider) ? t("dialog.done") : t("dialog.continue")}
                         </button>
                     </div>
                 </div>

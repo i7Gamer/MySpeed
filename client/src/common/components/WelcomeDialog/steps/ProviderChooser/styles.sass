@@ -15,3 +15,44 @@
 
   .provider-list
     margin-top: 1.25rem
+
+  .provider-endpoint
+    display: flex
+    align-items: center
+    justify-content: space-between
+    // The floor between the label and the field once a long translation has
+    // eaten the room space-between would otherwise leave - the same reason
+    // DataHelper's narrow rows carry one.
+    gap: 0.75rem
+    margin-top: 1.25rem
+
+    .provider-endpoint-label
+      display: flex
+      align-items: center
+      gap: 0.5rem
+      white-space: nowrap
+
+      svg
+        font-size: 1.1rem
+        color: $green
+
+      h3
+        margin: 0
+        font-size: 1rem
+        font-weight: 500
+        color: $subtext
+
+    .dialog-input
+      box-sizing: border-box
+      // Half the row, so a long label and a long placeholder each keep their
+      // own side rather than one pushing the other out of the dialog.
+      width: 50%
+
+@media screen and (max-width: 600px)
+  .provider-chooser .provider-endpoint
+    flex-direction: column
+    align-items: stretch
+    gap: 0.5rem
+
+    .dialog-input
+      width: 100%
