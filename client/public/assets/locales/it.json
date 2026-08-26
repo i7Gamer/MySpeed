@@ -462,7 +462,7 @@
     "create": "Aggiungi",
     "activity": {
       "never_executed": "Mai eseguito",
-      "last_run": "Mai eseguito "
+      "last_run": "Ultima esecuzione: "
     },
     "discord": {
       "fields": {
