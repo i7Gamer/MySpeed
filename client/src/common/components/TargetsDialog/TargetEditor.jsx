@@ -287,7 +287,13 @@ export const TargetEditor = ({open, onClose, target}) => {
                                         {optimalFields.map(({label, unit, value, set, placeholder}) => (
                                             <label key={label} className="target-optimal">
                                                 <span className="target-optimal-label">
-                                                    {label} <span className="target-optimal-unit">({unit})</span>
+                                                    {/* No brackets of our own: welcome.ms is "(in ms)"
+                                                        and welcome.mbps is "(in Mbps)" - the locale
+                                                        writes the parenthetical whole, because where
+                                                        the bracket goes is part of the translation.
+                                                        Adding a pair here read "Ping ((in ms))" in all
+                                                        twenty-three languages. */}
+                                                    {label} <span className="target-optimal-unit">{unit}</span>
                                                 </span>
                                                 <input type="number" className="dialog-input" min="0"
                                                        placeholder={placeholder || ""}

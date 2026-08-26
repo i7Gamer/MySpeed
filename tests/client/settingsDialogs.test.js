@@ -172,6 +172,85 @@ describe("the targets manager and its editor", () => {
         assert.match(rule, /flex:/,
             "the field takes no share of the row, so it cannot grow into it");
     });
+
+    /**
+     * In the editor the fields sit under one another, so a reader sees them as
+     * a column - and a column whose members are different lengths reads as
+     * ragged rather than as deliberate. Taking whatever its own label left over
+     * gave them four widths within 48px of each other, which is close enough to
+     * look like a mistake and far enough to see.
+     *
+     * The interface select in the manager is the opposite case: one row, alone,
+     * holding a value that needed 311px and options needing 415. It keeps the
+     * width of its dialog, which is what the commit before this one gave it.
+     */
+    it("draws every field in the editor at one width", () => {
+        const at = css.indexOf(".provider-dialog-wrapper .provider-input {");
+        assert.notEqual(at, -1, "the editor no longer sizes its fields together");
+
+        const rule = css.slice(at, css.indexOf("}", at));
+        const [, grow] = /flex:\s*(\d+)/.exec(rule) ?? [];
+
+        assert.equal(grow, "0",
+            "a field that grows takes what its row leaves it, which is a different width per row");
+        assert.match(rule, /flex:\s*0\s+0\s+\d/,
+            "the fields need a shared basis, not a share of each row");
+    });
+});
+
+/**
+ * The rows of the target editor, and the cards above them.
+ *
+ * A setting was a label and a control with the dialog's whole width between
+ * them and nothing tying the two together - so the toggles at the bottom sat a
+ * long way from the words they answered to, and every field floated at a
+ * distance from its own description. The provider cards directly above solve
+ * exactly this, by drawing a border around the pair.
+ */
+describe("a setting row in the target editor", () => {
+    const settings = compile("common/components/TargetsDialog/styles.sass");
+    const cards = compile("common/components/SelectableOption/styles.sass");
+
+    const ruleFor = (css, selector) => {
+        const at = css.indexOf(`${selector} {`);
+
+        assert.notEqual(at, -1, `${selector} has no rule`);
+        return css.slice(at, css.indexOf("}", at));
+    };
+
+    const value = (rule, property) =>
+        (new RegExp(`(?:^|[;{])\\s*${property}:\\s*([^;]+)`).exec(rule) ?? [])[1]?.trim();
+
+    /**
+     * Read off the cards rather than written here, so the two cannot drift:
+     * a change to the provider card's shape is a change to these.
+     */
+    for (const property of ["border", "border-radius", "padding", "gap"]) {
+        it(`takes the provider card's ${property}`, () => {
+            assert.equal(value(ruleFor(settings, ".provider-setting"), property),
+                value(ruleFor(cards, ".selectable-option"), property),
+                `the setting rows and the cards above them disagree about ${property}`);
+        });
+    }
+
+    it("sits in a column spaced like the list of cards", () => {
+        assert.equal(value(ruleFor(settings, ".provider-settings"), "gap"),
+            value(ruleFor(cards, ".selectable-list"), "gap"));
+    });
+
+    /**
+     * The label has to take the slack, not the gap: with `space-between` doing
+     * it, the words ended where they ended and the control sat at the far side
+     * of a void. Inside a border the same distance reads as a row.
+     */
+    it("gives the words the slack rather than the space between them", () => {
+        const rule = ruleFor(settings, ".provider-setting-label");
+
+        assert.match(value(rule, "flex") ?? "", /^1\s/,
+            "the label does not take the row's spare width, so it opens a gap instead");
+        assert.doesNotMatch(ruleFor(settings, ".provider-setting"), /justify-content:\s*space-between/,
+            "space-between pushes the pair apart across the whole card");
+    });
 });
 
 /**

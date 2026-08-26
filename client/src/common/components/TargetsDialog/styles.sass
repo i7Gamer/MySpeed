@@ -13,6 +13,23 @@
   .dialog-main
     display: block
 
+  /*
+   * One width for every field here, whatever its label says.
+   *
+   * In this dialog the fields sit under one another and read as a column, and
+   * a field that takes whatever its own label leaves over gives that column
+   * four widths inside 48px of each other - close enough to look like a
+   * mistake and far enough to see. The basis is the narrowest of them, so the
+   * longest label still fits beside its field on one line.
+   *
+   * Scoped here rather than onto .provider-input, which the manager also uses:
+   * its interface select is alone on its row and holds a value needing 311px,
+   * so it keeps the full width of the dialog it is in.
+   */
+  .provider-input
+    flex: 0 0 18rem
+    max-width: 100%
+
 .provider-content
   margin: 1rem 0.5rem
   user-select: none
@@ -34,36 +51,52 @@
   border-top: 1px solid $light-gray
   display: flex
   flex-direction: column
-  gap: 0.75rem
+  // The gap the provider cards are listed at - these rows are now the same
+  // kind of object, and a column of them should breathe the same way.
+  gap: 0.5rem
 
+/*
+ * A setting is a pair: some words and the control that answers them. It was
+ * drawn as a label at one edge and a control at the other with the dialog's
+ * whole width in between, and `space-between` widening that gap every time the
+ * dialog grew - so a toggle ended up a long way from the words it belonged to
+ * and nothing on screen tied the two together.
+ *
+ * The provider cards immediately above already solve this, by drawing a border
+ * around the pair. These take the same shape, read off that stylesheet by
+ * settingsDialogs.test.js so the two cannot drift: the same border, radius,
+ * padding and gap, and the words take the slack so the control sits against
+ * the card's edge rather than across a void from its label.
+ */
 .provider-setting
   display: flex
   align-items: center
-  justify-content: space-between
   gap: 1rem
+  padding: 0.875rem 1.125rem
+  border: 1px solid $light-gray
+  border-radius: 0.75rem
 
   &-label
     display: flex
     align-items: center
     gap: 0.6rem
-    flex-shrink: 0
-    // A column for the values to start from. While every field was pinned to
-    // 14rem they lined up by being identical; now that they grow, each one
-    // began wherever its own label happened to end - four different left edges
-    // down one dialog. A floor rather than a fixed width, so a label longer
-    // than this - a translated "Alerts & recommendations" - keeps its own row
-    // instead of being truncated to fit a column it was never going to fit.
-    min-width: 9rem
-    white-space: nowrap
+    // The words take the spare width, so the distance to the control belongs
+    // to the label rather than being a gap between two floating things.
+    flex: 1 1 auto
+    // Wrapping rather than nowrap: a long translation - "Benutzerdefinierte
+    // URL", "Benachrichtigungen & Empfehlungen" - now takes a second line
+    // inside its card instead of pushing the field out of the row.
+    min-width: 0
 
     svg
       color: $subtext
       font-size: 1rem
       width: 1rem
+      flex-shrink: 0
 
     h3
       margin: 0
-      font-size: 0.95rem
+      font-size: 1rem
       font-weight: 500
       color: $subtext
 
@@ -87,6 +120,12 @@
   display: grid
   grid-template-columns: repeat(3, 1fr)
   gap: 0.75rem
+  // The values the switch above reveals, in a panel of their own. Left bare
+  // among the setting cards it was the one block in the column with no edge -
+  // three fields running the full width while every neighbour sat inset.
+  padding: 0.875rem 1.125rem
+  border: 1px solid $light-gray
+  border-radius: 0.75rem
 
 .target-optimal
   display: flex
