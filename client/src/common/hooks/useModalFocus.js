@@ -229,6 +229,11 @@ export const useModalFocus = (dialogRef, {open, holdsFocus = open, initialFocus,
             // inside, so the second half is an early-out saying what this means
             // rather than a guard - removing it changes no behaviour, and no
             // test can tell the two apart.
+            // Superseded rather than stacked: a burst of focusout events used
+            // to queue one timer per event. Each was a no-op past the first -
+            // the re-check inside answers for that - but the cleanup below can
+            // only clear the handle it still holds.
+            clearTimeout(recovery);
             recovery = setTimeout(() => {
                 if (dialog.isConnected && !dialog.contains(document.activeElement)) seat();
             }, 0);
