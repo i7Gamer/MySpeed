@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { KILL_GRACE, exitError, hasExited, terminate } from "../../server/util/speedtest.js";
+import { EventEmitter } from "node:events";
+import {
+    KILL_GRACE, SHUTDOWN_EXIT_WAIT, SHUTDOWN_KILL_GRACE, exitError, hasExited, terminate,
+    trackProcess, untrackProcess, waitForActiveProcessExit
+} from "../../server/util/speedtest.js";
+import { SHUTDOWN_GRACE_MS } from "../../server/util/shutdown.js";
 
 /**
  * What happens to a CLI that will not go when it is asked, and to one that goes
@@ -103,6 +108,92 @@ describe("terminate", () => {
 
     it("allows a grace period rather than escalating at once", () => {
         assert.ok(KILL_GRACE >= 1000, "a grace shorter than a second is not a grace");
+    });
+});
+
+/**
+ * The other half of ending a run on shutdown: knowing that it has ended.
+ *
+ * terminateActiveProcess only *starts* the ending - SIGTERM at once, SIGKILL a
+ * second later on a timer that is deliberately unref'd. On a quiet shutdown the
+ * listeners close in milliseconds and exit(0) won that race: the escalation
+ * never fired, and a CLI that ignores SIGTERM outlived the server. Docker tears
+ * the namespace down and takes the orphan with it, and Windows' kill() cannot
+ * be ignored, so the survivor was the bare Linux install.
+ */
+describe("waitForActiveProcessExit", () => {
+    /** A child the wait can listen to, still running until told otherwise. */
+    const listeningChild = () =>
+        Object.assign(new EventEmitter(), {exitCode: null, signalCode: null, kill: () => true});
+
+    it("answers at once when nothing is tracked", async () => {
+        untrackProcess(trackProcess(listeningChild()));
+
+        assert.equal(await waitForActiveProcessExit(10), true);
+    });
+
+    it("answers at once when the tracked child has already gone", async () => {
+        const child = listeningChild();
+        child.exitCode = 0;
+        trackProcess(child);
+
+        try {
+            assert.equal(await waitForActiveProcessExit(10), true);
+        } finally {
+            untrackProcess(child);
+        }
+    });
+
+    it("holds the exit until the child closes", async () => {
+        const child = trackProcess(listeningChild());
+
+        try {
+            const wait = waitForActiveProcessExit(1000);
+
+            let settled = false;
+            wait.then(() => { settled = true; });
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            assert.equal(settled, false, "the wait resolved before the child had closed");
+
+            child.exitCode = 143;
+            child.emit("close", 143);
+
+            assert.equal(await wait, true);
+        } finally {
+            untrackProcess(child);
+        }
+    });
+
+    // A child that cannot die must not hold the shutdown for ever - the
+    // deadline in shutdown.js would exit anyway, but giving up here keeps
+    // db.close() on the ordinary path instead of being skipped by that exit.
+    it("gives up on a child that never closes", async () => {
+        const child = trackProcess(listeningChild());
+
+        // The wait's own timer is deliberately unref'd, and this fake holds no
+        // event-loop handle the way a real ChildProcess does - so without a
+        // ref'd timer of the test's own, the loop drains and the runner
+        // cancels the file mid-flight.
+        const hold = setTimeout(() => undefined, 1000);
+
+        try {
+            assert.equal(await waitForActiveProcessExit(20), false);
+            assert.equal(child.listenerCount("close"), 0, "the abandoned wait left its listener behind");
+        } finally {
+            clearTimeout(hold);
+            untrackProcess(child);
+        }
+    });
+
+    /**
+     * The default wait sits between the two deadlines it has to respect: after
+     * SHUTDOWN_KILL_GRACE, or it would stop waiting before the SIGKILL it is
+     * waiting out has even been sent - and inside SHUTDOWN_GRACE_MS, which
+     * outranks everything and must keep the last word.
+     */
+    it("waits past the escalation and stays inside the shutdown deadline", () => {
+        assert.ok(SHUTDOWN_EXIT_WAIT > SHUTDOWN_KILL_GRACE);
+        assert.ok(SHUTDOWN_EXIT_WAIT < SHUTDOWN_GRACE_MS);
     });
 });
 

@@ -298,4 +298,17 @@ describe("the server's own shutdown", () => {
         assert.match(call, /onStop/);
         assert.match(call, /stopTimer\(\)/);
     });
+
+    /**
+     * The kill in onStop only starts the ending: SIGTERM at once, SIGKILL a
+     * second later on an unref'd timer. On a quiet shutdown exit(0) used to win
+     * that race and orphan a CLI that ignores SIGTERM - so the cleanup waits
+     * for the child, and only then closes the handle the child would have
+     * written its result into.
+     */
+    it("waits for the CLI child before it closes the database", () => {
+        assert.match(call, /waitForActiveProcessExit/, "the exit no longer waits for the run it signalled");
+        assert.ok(call.indexOf("waitForActiveProcessExit") < call.indexOf("db.close()"),
+            "the database closed while the child could still be writing into it");
+    });
 });

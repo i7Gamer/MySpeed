@@ -17,7 +17,7 @@ import { initialize as initializeIntegrations } from './controller/integrations.
 import { requestInterfaces } from './util/loadInterfaces.js';
 import { load as loadCli } from './util/loadCli.js';
 import { removeOld } from './tasks/speedtest.js';
-import { markShutdown, terminateActiveProcess } from './util/speedtest.js';
+import { markShutdown, terminateActiveProcess, waitForActiveProcessExit } from './util/speedtest.js';
 import { createShutdown } from './util/shutdown.js';
 import {
     clearedReport, noConfigReport, RESET_NO_CONFIG, resetPassword, wantsPasswordReset
@@ -160,8 +160,19 @@ const shutdown = createShutdown({
      * through this handle. Swallowed, because a database that has already gone
      * away is exactly when this rejects, and there is nothing left to do about
      * it at this point.
+     *
+     * And after the child, which onStop only *signalled*: the SIGKILL
+     * escalation is an unref'd one-second timer, and on a quiet shutdown the
+     * exit used to land in milliseconds - before it fired - orphaning a CLI
+     * that ignores SIGTERM on exactly the platforms with no namespace to tear
+     * it down. The wait is capped well inside the shutdown deadline, and the
+     * ordering is the same statement as the paragraph above: the child writes
+     * its result through the handle this closes.
      */
-    onCleanup: () => db.close().catch(() => undefined)
+    onCleanup: async () => {
+        await waitForActiveProcessExit();
+        await db.close().catch(() => undefined);
+    }
 });
 
 // Registering these is also what makes the signals deliverable: the runtime

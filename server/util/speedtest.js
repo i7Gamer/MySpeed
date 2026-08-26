@@ -142,6 +142,56 @@ export const terminate = (child, graceMs = KILL_GRACE) => {
 };
 
 /**
+ * How long the exit waits for the child terminateActiveProcess signalled.
+ *
+ * Longer than SHUTDOWN_KILL_GRACE, or the wait would give up before the SIGKILL
+ * it exists to wait out has even been sent - and comfortably inside shutdown.js's
+ * SHUTDOWN_GRACE_MS deadline, which outranks everything and keeps the last word.
+ * cliTermination.test.js holds the ordering of the three.
+ */
+export const SHUTDOWN_EXIT_WAIT = 2000;
+
+/**
+ * Resolves once the tracked run is actually gone, or after timeoutMs.
+ *
+ * terminateActiveProcess only *starts* the ending: SIGTERM at once, SIGKILL a
+ * second later on a timer that is deliberately unref'd. On a quiet shutdown the
+ * listeners close in milliseconds and exit(0) won that race - the escalation
+ * never fired, and a CLI that ignores SIGTERM outlived the server. Docker tears
+ * the namespace down and takes the orphan with it, and Windows' kill() cannot be
+ * ignored, so the survivor was the bare Linux install - exactly the machine the
+ * tracker's own comment promises to cover.
+ *
+ * 'close' rather than 'exit', as the run's own promise settles: gone means the
+ * pipes have drained too. Answers true when the child is gone and false when the
+ * wait gave up - the caller proceeds either way, this only decides when.
+ */
+export const waitForActiveProcessExit = (timeoutMs = SHUTDOWN_EXIT_WAIT) =>
+    new Promise((resolve) => {
+        if (activeProcess === null || hasExited(activeProcess)) return resolve(true);
+
+        const child = activeProcess;
+
+        const onClose = () => {
+            clearTimeout(timer);
+            resolve(true);
+        };
+
+        // A child that cannot die - wedged in uninterruptible IO, or SIGKILL
+        // lost to a zombie reaper - must not hold the shutdown. The deadline in
+        // shutdown.js would exit regardless; giving up here keeps the cleanup
+        // behind this wait on the ordinary path instead of being skipped by
+        // that exit.
+        const timer = setTimeout(() => {
+            child.removeListener("close", onClose);
+            resolve(false);
+        }, timeoutMs);
+        timer.unref?.();
+
+        child.once("close", onClose);
+    });
+
+/**
  * The failure an exit code implies, or null when the streams already said
  * everything worth saying.
  *
