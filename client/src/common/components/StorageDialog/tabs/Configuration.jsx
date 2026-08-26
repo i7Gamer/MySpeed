@@ -84,13 +84,20 @@ export default ({close}) => {
                     <p className="storage-row-hint">
                         {t(includeSecrets ? "storage.export_with_secrets_desc" : "storage.export_redacted_desc")}
                     </p>
-                </div>
-                <div className="storage-row-actions">
+                    {/* Under the words rather than beside the button: this
+                        chooses what the export contains, so it belongs to the
+                        row's description and not to its actions. Sitting in
+                        the button cluster, it also took the button out of line
+                        with Import and Reset on any language long enough to
+                        wrap the row - and its own text ended up stranded in
+                        the middle of it. */}
                     <label className="storage-row-toggle">
                         <span>{t("storage.include_secrets")}</span>
                         <ToggleSwitch checked={includeSecrets} onChange={setIncludeSecrets}
                                       label={t("storage.include_secrets")}/>
                     </label>
+                </div>
+                <div className="storage-row-actions">
                     <button className="dialog-btn" onClick={exportConfig}>{t("storage.export")}</button>
                 </div>
             </div>

@@ -84,7 +84,11 @@
 .storage-row
   display: flex
   justify-content: space-between
-  align-items: center
+  // Against the top of the row, not its middle. Most of these are a single
+  // line and it makes no difference; the export row is three - a heading, a
+  // hint and the credentials switch - and centring left its button floating
+  // beside the switch, a long way from the words it acts on.
+  align-items: flex-start
   gap: 1rem
   // One width for the buttons costs room, and the room comes off the label.
   // Rather than crush the words - Russian, Portuguese, Catalan and Dutch were
@@ -94,8 +98,10 @@
   flex-wrap: wrap
 
   .storage-row-actions
-    // Keeps them against the right edge on the line they wrap onto, where
-    // space-between has nothing left to push them with.
+    // Holds the buttons against the right edge on a line they wrap onto, where
+    // space-between has nothing left to push them with. Safe now that these
+    // carry nothing but buttons: while the export row's toggle was in here,
+    // this stranded its words in the middle of the row.
     margin-left: auto
 
   .storage-row-actions .dialog-btn
@@ -120,8 +126,25 @@
     flex-wrap: wrap
     // The words yield, not the row. Giving the buttons one width put German
     // exactly flush - "Datenaufbewahrung" plus a 9rem button came to the row's
-    // width to the pixel - and the next translation would have gone over. A
-    // flex item will not shrink past its content without this.
+    // width to the pixel - and the next translation would have gone over.
+    //
+    // A small basis rather than `auto` or zero, because flex wraps before it
+    // shrinks: the line is composed from each item's hypothetical size, and
+    // only then is what is left shared out.
+    //
+    // At `auto` the export row's hint - a whole sentence - made the label's
+    // hypothetical size the width of that sentence, so the row wrapped in
+    // every language and the button left the line its heading was on. At zero
+    // nothing ever wraps, which crushed the other tab: German's
+    // "Datenaufbewahrung" and Catalan's equivalent are single words with no
+    // break in them, and beside a select and a button there was no room left
+    // to put them in.
+    //
+    // 12rem is the hinge. A row with one button clears it and stays on one
+    // line, hint wrapping inside the label. A row carrying a select as well
+    // does not, and wraps - which is the right answer there, because the label
+    // then has the full width for a word that cannot be broken.
+    flex: 1 1 12rem
     min-width: 0
 
     svg
@@ -149,6 +172,27 @@
       color: $subtext
       opacity: 0.8
 
+    // Under the hint and indented to the same place: it chooses what this row
+    // exports, so it belongs to the row's description rather than beside its
+    // button - where it took the button out of the column Import and Reset
+    // are in, and stranded its own words mid-row on any language long enough
+    // to wrap.
+    .storage-row-toggle
+      display: flex
+      align-items: center
+      gap: 0.5rem
+      cursor: pointer
+      font-size: 0.85rem
+      color: $subtext
+      flex-basis: 100%
+      padding-left: 1.6rem
+      margin-top: 0.6rem
+      // The words may wrap; the switch beside them may not be squeezed.
+      min-width: 0
+
+      span
+        min-width: 0
+
   .storage-row-value
     font-size: 1rem
     font-weight: 600
@@ -159,15 +203,6 @@
     display: flex
     gap: 0.5rem
     align-items: center
-
-    .storage-row-toggle
-      display: flex
-      align-items: center
-      gap: 0.5rem
-      cursor: pointer
-      font-size: 0.85rem
-      color: $subtext
-      white-space: nowrap
 
   .dialog-btn
     padding: 0.5rem 1rem
