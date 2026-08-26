@@ -15,6 +15,7 @@ import {
     faExclamationTriangle
 } from "@fortawesome/free-solid-svg-icons";
 import {ConfigContext} from "@/common/contexts/Config";
+import {hasOpenOverlay} from "@/common/contexts/Dialog";
 import {takePasswordUnsetMark} from "@/common/utils/PasswordSetup";
 import {useClickOutside} from "@/common/hooks/useClickOutside";
 import {clickable} from "@/common/utils/Clickable";
@@ -72,15 +73,37 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
     useClickOutside(isOpen, [ref], switchDropdown,
         {ignore: (target) => target.closest?.("#open-header")});
 
+    /**
+     * Escape, on the same event every overlay answers.
+     *
+     * This listened on keyup, and it was the only overlay in the app that did:
+     * the Dialog, the alert, the chart modal and the date picker all close on
+     * keydown. The press a dialog had answered - and preventDefault()ed -
+     * therefore still closed this menu on its release, the release being a
+     * fresh event with nothing prevented on it.
+     *
+     * event.key rather than event.code, which names the physical key: a
+     * keyboard with Escape remapped onto another key says "CapsLock" there,
+     * and the menu would not close at all.
+     *
+     * hasOpenOverlay as well as defaultPrevented, and both are needed:
+     * document listeners run in registration order, and this one is registered
+     * on mount while a dialog's arrives only once it opens - so on a shared
+     * press this handler runs first, before the dialog has had its turn to
+     * prevent anything. The password dialog the effect above opens over an
+     * open menu is exactly that shape.
+     */
     useEffect(() => {
         const onPress = event => {
-            if (event.code === "Escape" && isOpen) {
-                switchDropdown();
-            }
+            if (!isOpen) return;
+            if (event.key !== "Escape" || event.defaultPrevented || hasOpenOverlay()) return;
+
+            event.preventDefault();
+            switchDropdown();
         }
 
-        document.addEventListener("keyup", onPress);
-        return () => document.removeEventListener("keyup", onPress);
+        document.addEventListener("keydown", onPress);
+        return () => document.removeEventListener("keydown", onPress);
         // The prop is listed rather than narrowed away: this only swaps one
         // document listener for another, which costs nothing, and a handler
         // holding the parent's previous closure is a real way for Escape to
