@@ -19,6 +19,8 @@ import IndonesianFlag from "@/common/assets/languages/id.webp";
 // The locale is keyed by language ("uk") and the flag by country ("ua"), as
 // Portuguese is already keyed "pt" against a "br" flag.
 import UkrainianFlag from "@/common/assets/languages/ua.webp";
+// Irish the same way: the locale is "ga", the flag "ie".
+import IrishFlag from "@/common/assets/languages/ie.webp";
 import {readStored, writeStored} from "@/common/utils/Storage";
 import {supportedLanguage} from "@/common/utils/LanguageChoice";
 import {withBasePath} from "@/common/utils/BasePath";
@@ -52,6 +54,10 @@ export const languages = [
     {name: '中文', code: 'zh', flag: ChineseFlag},
     {name: 'Nederlands', code: 'nl', flag: DutchFlag},
     {name: 'Français', code: 'fr', flag: FranceFlag},
+    // Two thirds translated as of its Crowdin state of 2026-08-19; the rest
+    // falls back to English per key. Listed deliberately at that level - the
+    // locale inventory test is what keeps a *silent* half-language out.
+    {name: 'Gaeilge', code: 'ga', flag: IrishFlag},
     {name: 'Italiano', code: 'it', flag: ItalianFlag},
     {name: 'Português do Brasil', code: 'pt', flag: PortugueseBrazilFlag},
     {name: 'Русский', code: 'ru', flag: RussianFlag},
@@ -80,9 +86,9 @@ i18n.use(initReactI18next).use(LanguageDetector).use(HttpApi).init({
     supportedLngs: languages.map(lang => lang.code),
     fallbackLng: FALLBACK_LANGUAGE,
     // Seeds the store, rather than replacing the backend: with
-    // partialBundledLanguages the other fourteen are still fetched on demand,
+    // partialBundledLanguages the other fifteen are still fetched on demand,
     // and English is simply already there. Without that flag `resources` turns
-    // the HTTP backend off altogether and a fifteen-language interface silently
+    // the HTTP backend off altogether and a sixteen-language interface silently
     // becomes an English one that still offers to change language.
     resources: {[FALLBACK_LANGUAGE]: {translation: englishTranslations}},
     partialBundledLanguages: true,

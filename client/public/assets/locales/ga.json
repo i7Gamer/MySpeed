@@ -1,0 +1,785 @@
+{
+  "failed": "Theip air",
+  "welcome": {
+    "step": "Céim",
+    "title": "Fáilte go dtí MySpeed!",
+    "subtext": "Socraímis MySpeed ​​den chéad uair. Ná bíodh imní ort, ní thógfaidh sé i bhfad.",
+    "provider_title": "Roghnaigh soláthraí",
+    "provider_subtext": "Roghnaigh an soláthraí is mian leat a úsáid anseo. Déanfaidh an soláthraí seo do thástálacha ansin.",
+    "data_title": "Socraigh sonraí is fearr",
+    "data_subtext": "Roghnaigh do luasanna comhaontaithe conarthach sa chéim seo",
+    "ms": "(i ms)",
+    "mbps": "(i Mbps)",
+    "accept_title": "Glac leis na téarmaí",
+    "accept_subtext": "Sa chéim seo, ba mhaith linn tú a chur ar an eolas faoin gceadúnas Ookla. Léigh é agus deimhnigh gur léigh tú é agus go nglacann tú leis trí chliceáil ar “Críochnaithe”."
+  },
+  "dialog": {
+    "okay": "Ceart go leor",
+    "done": "Déanta",
+    "continue": "Lean ar aghaidh",
+    "apply": "Sea, cuir isteach",
+    "update": "Nuashonrú",
+    "close": "Dún",
+    "unset": "Bain",
+    "retry": "Bain triail eile as",
+    "login": "Logáil Isteach",
+    "save": "Sábháil",
+    "saving": "Ag sábháil...",
+    "password": {
+      "title": "Pasfhocal ag teastáil",
+      "placeholder": "Do phasfhocal",
+      "wrong": "Tá an focal faire a chuir tú isteach mícheart",
+      "unlock": "Díghlasáil"
+    },
+    "setup_token": {
+      "title": "Comhartha socraithe ag teastáil",
+      "description": "Níl aon phasfhocal socraithe ar an ásc seo, mar sin ní féidir é a oscailt ó mheaisín eile. Cuir isteach an comhartha socraithe ó loga an fhreastalaí, ansin roghnaigh pasfhocal.",
+      "placeholder": "An comhartha socraithe ó loga an fhreastalaí",
+      "wrong": "Ní hé sin an comhartha socraithe atá i loga an fhreastalaí"
+    },
+    "busy": {
+      "title": "Freastalaí gnóthach",
+      "description": "Tá an freastalaí ag seiceáil pasfhocal eile cheana féin. Fan nóiméad, ansin bain triail eile as."
+    },
+    "throttled": {
+      "title": "An iomarca iarrachtaí",
+      "description": "Diúltaíodh don iomarca iarrachtaí. Fan nóiméad, ansin bain triail eile as."
+    },
+    "api": {
+      "title": "Ní féidir teacht ar an API",
+      "description": "Níorbh fhéidir le MySpeed ​​teacht ar API an cháis seo. Déan iarracht arís ar ball."
+    },
+    "provider": {
+      "interface": "Comhéadan",
+      "server": "Freastalaí",
+      "server_id": "ID an fhreastalaí",
+      "server_id_placeholder": "ID freastalaí ar bith, nó fág folamh é",
+      "custom_url": "URL Saincheaptha",
+      "choose_automatically": "Roghnaigh go huathoibríoch",
+      "ookla_license": "Léigh mé agus glacaim le <Eula>EULA</Eula>, <GDPR>polasaí príobháideachta</GDPR> agus <TOS>téarmaí seirbhíse</TOS> Ookla.",
+      "ookla_notice": "Trí Ookla a úsáid, aontaíonn tú lena <Eula>EULA</Eula>, <GDPR>polasaí príobháideachta</GDPR> agus <TOS>téarmaí seirbhíse</TOS>.",
+      "ookla_desc": "Soláthraí coitianta le líonra freastalaí domhanda",
+      "libre_desc": "Tástáil luais foinse oscailte, féin-óstála",
+      "cloudflare_desc": "Tástáil thapa bunaithe ar CDN"
+    }
+  },
+  "dropdown": {
+    "settings": "Socruithe",
+    "changes_applied": "Tá do chuid athruithe sábháilte.",
+    "language_changed": "Tá an teanga athraithe.",
+    "provider_changed": "Tá an soláthraí athraithe.",
+    "changes_unsaved": "Níor cuireadh do chuid athruithe i bhfeidhm. Seiceáil do ionchur.",
+    "invalid": "Ionchur neamhbhailí",
+    "ping": "Ping is fearr",
+    "upload": "Luas suas is fearr",
+    "download": "Luas síos is fearr",
+    "recommendations": "Moltaí",
+    "optimal_values": "Luachanna is fearr",
+    "change_provider": "Athraigh soláthraí",
+    "password": "Athraigh an focal faire",
+    "cron": "Socraigh minicíocht",
+    "time": "Socraigh tréimhse",
+    "storage": "Bainistigh stóráil",
+    "pause_tests": "Cuir tástálacha ar sos",
+    "resume_tests": "Atosú tástálacha",
+    "language": "Athraigh teanga",
+    "preferences": "Roghanna",
+    "provider": "Maidir leis an soláthraí",
+    "integrations": "Comhtháthúcháin"
+  },
+  "about": {
+    "title": "Maidir le MySpeed",
+    "description": "Is bogearraí anailíse tástála luais foinse oscailte é MySpeed ​​a thaifeadann luas d’idirlín thar thréimhse ama inchumraithe.",
+    "website": "Suíomh Gréasáin",
+    "donate": "Tabhair Síntiús",
+    "translate": "Aistrigh",
+    "made_by": "Déanta le"
+  },
+  "options": {
+    "cron": {
+      "continuous": "Leanúnach",
+      "continuous_desc": "Gach nóiméad - úsáid ard acmhainní",
+      "frequent": "Go minic",
+      "frequent_desc": "Gach 30 nóiméad",
+      "default": "Réamhshocrú",
+      "default_desc": "Gach uair an chloig - molta",
+      "rare": "Is annamh",
+      "rare_desc": "Gach 3 uair an chloig",
+      "really_rare": "An-annamh",
+      "really_rare_desc": "Gach 6 uair an chloig"
+    },
+    "level": {
+      "no_access": "Gan Rochtain",
+      "read_access": "Rochtain Léite Amháin"
+    }
+  },
+  "password": {
+    "no_access_desc": "Caithfidh cuairteoirí an focal faire a iontráil chun aon rud a fheiceáil",
+    "read_access_desc": "Is féidir le cuairteoirí sonraí a fheiceáil ach ní féidir leo socruithe a athrú"
+  },
+  "locked": {
+    "password_desc": "Tá an t-ásc seo faoi chosaint pasfhocail. Logáil isteach chun a chuid sonraí a fheiceáil.",
+    "token_hint": "Scríobhann an freastalaí an comhartha chuig a loga arís gach uair a dhiúltaíonn sé d'iarratas, uair amháin ar a mhéad gach deich nóiméad - mar sin cuireann athlódáil an leathanaigh seo cóip úr ag deireadh an loga.",
+    "enter_token": "Cuir isteach an comhartha socraithe"
+  },
+  "pause": {
+    "manual": "Sos Éiginnte",
+    "manual_desc": "Sos go dtí go n-atosófar de láimh",
+    "short": "Sos Gearr",
+    "short_desc": "Sos ar feadh 1 uair an chloig",
+    "medium": "Sos Meánach",
+    "medium_desc": "Sos ar feadh 6 uair an chloig",
+    "long": "Sos Fada",
+    "long_desc": "Sos ar feadh 12 uair an chloig",
+    "custom": "Fad Saincheaptha",
+    "quiet_hours": "Uaireanta ciúine",
+    "quiet_hours_desc": "Ní ritear tástálacha sceidealta idir na hamanna seo gach lá. Ritheann tástálacha a thosaíonn tú féin i gcónaí.",
+    "timezone": "Crios ama",
+    "timezone_server": "Clog an fhreastalaí",
+    "timezone_desc": "An clog a dtugtar breith ar na huaireanta ciúine agus ar sceideal na dtástálacha araon air.",
+    "quiet_from": "Ó",
+    "quiet_until": "Go dtí"
+  },
+  "page": {
+    "overview": "Forbhreathnú",
+    "statistics": "Staitisticí"
+  },
+  "update": {
+    "ping_title": "Socraigh an ping is fearr (ms)",
+    "ping_placeholder": "Ping (ms)",
+    "upload_title": "Socraigh an luas suas is fearr (Mbps)",
+    "upload_placeholder": "Luas suas (Mbps)",
+    "download_title": "Socraigh an luas síos is fearr (Mbps)",
+    "download_placeholder": "Luas síos (Mbps)",
+    "recommendations_title": "Moltaí is fearr",
+    "recommendations_set": "Moltaí uathoibríocha a shocrú?",
+    "provider_title": "Socraigh soláthraí tástála luais",
+    "manually": "Socraigh de láimh",
+    "new_password": "Socraigh pasfhocal nua",
+    "password_placeholder": "Pasfhocal nua",
+    "show_password": "Taispeáin an pasfhocal",
+    "hide_password": "Folaigh an pasfhocal",
+    "confirm_password": "Cuir isteach arís é",
+    "confirm_password_placeholder": "An pasfhocal nua arís",
+    "password_mismatch": "Ní hionann an dá phasfhocal",
+    "remove_password": "Bain an pasfhocal",
+    "remove_password_title": "An pasfhocal a bhaint?",
+    "remove_password_desc": "Tá tú logáilte amach agus fágtar an t-ásc seo gan phasfhocal. Osclaíonn sé ansin d'aon duine ar an meaisín a bhfuil sé ag rith air, agus iarrann sé an comhartha socraithe ó loga an fhreastalaí ar gach meaisín eile go dtí go socraítear pasfhocal nua.",
+    "password_removed": "Baineadh an glas pasfhocail agus baineadh an pasfhocal socraithe.",
+    "level": "Athraigh leibhéal",
+    "level_title": "Cearta do chuairteoirí",
+    "cron_title": "Socraigh minicíocht tástála",
+    "cron_rules": "Riail Cron",
+    "cron_next_test": "An chéad tástáil eile:",
+    "custom_cron": "Sloinntiú cron saincheaptha",
+    "schedule_offset": "Sceideal fritháireamh",
+    "schedule_offset_desc": "Cuireann sé moill bheag leis chun cosc ​​a chur ar thástálacha tosú ag amanna beachta",
+    "advanced": "Ardleibhéil",
+    "time_title": "Taispeáin tástálacha an ceann deireanach ...",
+    "download": "Íoslódáil",
+    "pause_title": "Cuir tástálacha luais ar sos le haghaidh...",
+    "hours": "Uaireanta",
+    "pause": "Sos",
+    "pause_manual_hint": "Fág folamh le sos a chur air go ceann tréimhse éiginnte",
+    "release_manually": "Scaoil de láimh",
+    "language": "Athraigh teanga",
+    "view_title": "Athraigh an radharc",
+    "quiet_hours_saved": "Sábháladh na huaireanta ciúine"
+  },
+  "header": {
+    "running_tooltip": "Tástáil Luas ag rith",
+    "start_tooltip": "Tosaigh an tástáil luais",
+    "new_update": "Nuashonrú ar fáil",
+    "download": "Íoslódáil",
+    "paused": "Tá tástálacha luais ar sos faoi láthair. Lean orthu más mian leat ceann a dhéanamh.",
+    "running": "Tá tástáil luais ar siúl cheana féin. Fan nóiméad le do thoil.",
+    "admin_login": "Logáil Isteach Riarthóra",
+    "servers": "Freastalaithe",
+    "beta": {
+      "title": "Leagan Béite",
+      "description": "Tá an ghné seo fós i mbéite. Má aimsíonn tú aon fhabhtanna, cuir in iúl iad <Link>anseo</Link>."
+    }
+  },
+  "storage": {
+    "speedtests": "Tástálacha luais",
+    "configuration": "Cumraíocht",
+    "stored_tests": "Tástálacha stóráilte",
+    "tests": "Tástálacha",
+    "export_tests": "Tástálacha easpórtála",
+    "tests_exported": "Tá na tástálacha onnmhairithe",
+    "import_tests": "Tástálacha allmhairithe",
+    "tests_imported": "Tá na tástálacha allmhairithe",
+    "tests_imported_partial": "Tástálacha iompórtáilte: {{imported}}, fágtha ar lár: {{skipped}}",
+    "import_test_error": "Tharla earráid agus na tástálacha á n-iompórtáil",
+    "import_config_error": "Tharla earráid agus an chumraíocht á hallmhairiú",
+    "import_config_error_key": "Níorbh fhéidir an chumraíocht a iompórtáil: níl an luach stóráilte le haghaidh \"{{key}}\" bailí",
+    "export": "Easpórtáil",
+    "import": "Iompórtáil",
+    "clear_history": "Glan stair",
+    "history_cleared": "Tá an stair glanta",
+    "delete": "Scrios",
+    "confirm_delete": "Sea, scrios",
+    "export_settings": "Socruithe easpórtála",
+    "import_settings": "Socruithe allmhairithe",
+    "factory_reset": "Athshocrú monarchan",
+    "factory_reset_completed": "Tá an athshocrú monarchan críochnaithe",
+    "reset": "Athshocraigh",
+    "confirm_reset": "Sea, athshocraigh",
+    "settings_exported": "Tá na socruithe onnmhairithe",
+    "settings_imported": "Tá na socruithe allmhairithe",
+    "retention": "Coinneáil sonraí",
+    "retention_desc": "Cé chomh fada a choimeádtar torthaí tástála luais sula scriostar iad go huathoibríoch.",
+    "retention_saved": "Tréimhse choinneála nuashonraithe",
+    "retention_days_suffix": "laethanta",
+    "retention_back": "Ar ais chuig réamhshocruithe",
+    "retention_options": {
+      "week": "7 lá",
+      "month": "30 lá",
+      "quarter": "90 lá",
+      "half_year": "180 lá",
+      "year": "1 bhliain (réamhshocraithe)",
+      "forever": "Coinnigh go deo",
+      "custom": "Saincheaptha..."
+    },
+    "include_secrets": "Cuir dintiúir san áireamh",
+    "export_redacted_desc": "Fágtar pasfhocail nód, comharthaí comhtháthaithe agus pasfhocal an riarthóra ar lár.",
+    "export_with_secrets_desc": "Tá pasfhocail nód, comharthaí comhtháthaithe agus pasfhocal an riarthóra ann. Coinnigh in áit shábháilte é."
+  },
+  "latest": {
+    "ping": "Ping",
+    "ping_unit": "ms",
+    "jitter": "Jitter",
+    "jitter_unit": "ms",
+    "down": "Íoslódáil",
+    "speed_unit": "Mbps",
+    "byte_speed_unit": "MB/s",
+    "up": "Uaslódáil",
+    "latest": "Tástáil dheireanach",
+    "before": "roimhe",
+    "bufferbloat": "Bufferbloat: cuireann sé {{increase}} ms leis faoi ualach",
+    "bufferbloat_trend": "Bufferbloat thar na tástálacha deireanacha",
+    "quality": "Faoi ualach",
+    "loaded_latency": "{{down}} / {{up}} ms aga folaigh",
+    "packet_loss": "Caillteanas paicéad"
+  },
+  "info": {
+    "recommendations_error": "Caithfidh tú 10 dtástáil ar a laghad a dhéanamh chun meán a fháil. Is cuma má rinneadh na tástálacha de láimh nó go huathoibríoch.",
+    "recommendations_info": "Bunaithe ar na 10 dtástáil dheireanacha, fuarthas amach gurbh é an ping is fearr ná <Bold>{{ping}} ms</Bold>, an íoslódáil ag <Bold>{{down}} Mbps</Bold> agus an uaslódáil ag <Bold>{{up}} Mbps</Bold>. Is fearr duit féin a threorú ar do chonradh idirlín agus gan glacadh leis ach amháin má chomhlíonann sé sin.",
+    "update": "Tá nuashonrú ar leagan {{version}} ar fáil. Féach <Changes>na hathruithe</Changes> agus <DLLink>íoslódáil an nuashonrú</DLLink>.",
+    "down": {
+      "title": "Luas íoslódála",
+      "description": "Bíonn tionchar ag luas íoslódála ar do thaithí brabhsála. Dá mhéad a gheobhaidh tú, is ea is tapúla is féidir le do ríomhaire sonraí a fháil."
+    },
+    "ping": {
+      "title": "Ping",
+      "description": "Léiríonn an ping duit cé chomh tapa agus a fhreagraíonn an soláthraí faoi seach. Dá giorra an t-am, is amhlaidh is fearr."
+    },
+    "jitter": {
+      "title": "Jitter",
+      "description": "Is éard atá i gceist le jitter ná an t-athrú in amanna freagartha ping. Ciallaíonn jitter níos ísle nasc níos cobhsaí, rud atá tábhachtach d'fheidhmchláir fíor-ama ar nós glaonna físe agus cearrbhachas."
+    },
+    "loaded_latency": {
+      "title": "Aga folaigh faoi ualach",
+      "description": "An ping a tomhaiseadh fad a bhí an treo sin sáithithe, seachas fad a bhí an líne díomhaoin. Is é an uimhir é a chinneann an mairfidh glao nuair a thosaíonn duine eile íoslódáil - is féidir le nasc a bheith tapa sa dá threo agus gan a bheith inúsáidte le linn aistrithe."
+    },
+    "bufferbloat": {
+      "title": "Bufferbloat",
+      "description": "An méid aga folaigh a fhaigheann an líne nuair a bhíonn sí gnóthach: an ceann is measa den dá aga folaigh faoi ualach, lúide an ping díomhaoin. Tá faoi bhun 5 ms ar fheabhas; fágann os cionn 200 ms glaonna agus cluichí do-úsáidte fad a bhíonn aon rud eile á aistriú. Grádaítear ar an treo is measa í, mar is líne dhrochmhaolánaithe í líne atá glan síos agus drochmhaolánaithe suas."
+    },
+    "packet_loss": {
+      "title": "Caillteanas paicéad",
+      "description": "Is é caillteanas paicéad an sciar de na sonraí nár tháinig riamh agus ab éigean a sheoladh arís. Braitear aon rud os cionn náid mar stadanna i nglaonna agus i gcluichí i bhfad sula léirítear é mar luas níos ísle. Ní thomhaiseann ach Ookla é, mar sin fágann tástáil ó sholáthraí eile bán é seachas náid a thuairisciú."
+    },
+    "up": {
+      "title": "Luas uaslódála",
+      "description": "Bíonn tionchar ag luas uaslódála ar do thaithí brabhsála. Dá mhéad a gheobhaidh tú, is ea is tapúla is féidir le do ríomhaire sonraí a sheoladh."
+    },
+    "latest": {
+      "title": "Tástáil dheireanach",
+      "description": "Seo an t-am a thaispeánann duit cathain a rinneadh an tástáil dheireanach. Sa chás seo, rinneadh an ceann deireanach ar <Bold>{{date}}</Bold> ag <Bold>{{time}}</Bold>."
+    }
+  },
+  "time": {
+    "now": "Díreach anois",
+    "seconds": "{{seconds}} soicind",
+    "minute": "1 nóiméad",
+    "minutes": "{{minutes}} nóiméad",
+    "hour": "1 uair an chloig",
+    "hours": "{{hours}} uaireanta",
+    "day": "1 lá",
+    "days": "{{days}} lá",
+    "on": "Ar",
+    "at": "Ag"
+  },
+  "test": {
+    "not_available": "Níl aon tástálacha ar fáil faoi láthair",
+    "not_available_in_range": "Níl aon tástálacha idir {{from}} agus {{to}}",
+    "show_all_time": "Taispeáin an t-am ar fad",
+    "no_latest": "Níl aon tástáil reatha ar fáil. Déan tástáil nó fan go dtí go ndéanfar an chéad tástáil eile.",
+    "loading_more": "Ag lódáil tuilleadh tástálacha...",
+    "no_more_tests": "Níl aon tástálacha eile le luchtú",
+    "unknown_error": "Earráid anaithnid",
+    "unknown_error_detail": "Earráid anaithnid: {{error}}",
+    "failed": "Theip ar an tástáil",
+    "recheck": "Seiceáil a mhéid is féidir leat an dtarlaíonn sé seo go minic.",
+    "delete": "Scrios Tástáil",
+    "delete_confirm": {
+      "title": "An tástáil a scriosadh?",
+      "description": "Scriosfar an tástáil ó <Bold>{{date}}</Bold>. Ní féidir an gníomh seo a chealú. Ar mhaith leat leanúint ar aghaidh?",
+      "yes": "Sea, scrios"
+    },
+    "deleted": "Scriosadh an tástáil",
+    "average": {
+      "title": "Meánluas",
+      "description": "<Bold>{{amount}}</Bold> Léirigh tástálacha gur éirigh leis luas íoslódála meánach de <Bold>{{down}} Mbps </Bold> agus luas uaslódála de <Bold>{{up}} Mbps</Bold> a bhaint amach ar <Bold>{{date}}</Bold>. Thóg na tástálacha meán de <Bold>{{duration}} soicind</Bold>."
+    },
+    "result": {
+      "title": "Toradh tástála",
+      "description": "<Link>Bhain an tástáil seo</Link> uasluas íoslódála amach de <Bold>{{down}} Mbps</Bold> agus uasluas uaslódála de <Bold>{{up}} Mbps</Bold>. Cruthaíodh í <Bold>{{type}}</Bold> agus mhair sí <Bold>{{duration}} soicind</Bold>.",
+      "jitter": " Ba é <Bold>{{jitter}} ms</Bold> an crith sa nasc.",
+      "server": " Rith an tástáil in aghaidh <Bold>{{server}}</Bold>.",
+      "from_you": "agat",
+      "automatic": "go huathoibríoch"
+    },
+    "overview": {
+      "title_range": "Forbhreathnú tástála ó {{from}} go {{to}}"
+    },
+    "details": {
+      "show": "Taispeáin sonraí",
+      "hide": "Folaigh sonraí",
+      "of_target": "{{percent}}% de do sprioc",
+      "over_target": "{{amount}} {{unit}} os cionn do sprice",
+      "under_target": "{{amount}} {{unit}} faoi bhun do sprice",
+      "on_target": "Díreach ar do sprioc",
+      "unchanged": "Gan athrú ón tástáil dheireanach",
+      "measured_at": "Tomhaiste ag",
+      "measured_with": "Tomhaiste le",
+      "duration": "Fad",
+      "seconds": "{{seconds}} s",
+      "data_used": "Sonraí úsáidte",
+      "data_used_value": "{{down}} síos / {{up}} suas",
+      "trigger": "Tosaithe",
+      "server": "Freastalaí",
+      "result": "Toradh iomlán",
+      "loaded_latency": "Aga folaigh faoi ualach",
+      "loaded_latency_value": "{{down}} ms síos / {{up}} ms suas",
+      "packet_loss": "Caillteanas paicéad",
+      "bufferbloat": "Bufferbloat",
+      "bufferbloat_value": "+{{increase}} ms",
+      "connection": "Nasc",
+      "isp": "Soláthraí",
+      "external_ip": "Seoladh seachtrach",
+      "changed": "athraithe"
+    }
+  },
+  "errors": {
+    "network_unreachable": "Bhí an nasc Idirlín éagobhsaí le linn na tástála",
+    "took_too_long": "Thóg an tástáil ró-fhada agus cuireadh ar ceal í",
+    "no_permission": "Níl cead ag MySpeed ​​an tástáil seo a thosú",
+    "resource_unavailable": "Níorbh fhéidir an tástáil a dhéanamh mar nach raibh an acmhainn ar fáil go sealadach",
+    "no_route": "Níorbh fhéidir an tástáil a dhéanamh mar nach raibh aon bhealach chuig an óstach ann",
+    "connection_refused": "Níorbh fhéidir an tástáil a dhéanamh mar gur diúltaíodh don nasc",
+    "timed_out": "Bhí an nasc Idirlín éagobhsaí le linn na tástála",
+    "config": "Níorbh fhéidir an comhad cumraíochta a luchtú",
+    "invalid_view": "Radharc neamhbhailí",
+    "cannot_open_socket": "Níorbh fhéidir nasc a oscailt chuig an bhfreastalaí tástála. Seans nach féidir teacht air ón gcomhéadan líonra roghnaithe.",
+    "latency_failed": "Theip ar an tástáil aga folaigh, mar sin níorbh fhéidir aon luas a thomhas.",
+    "rate_limited": "Dhiúltaigh an soláthraí don tástáil mar go ndearnadh an iomarca le déanaí. Cuirtear moill ar an gcéad cheann eile go huathoibríoch.",
+    "no_measurement": "Chríochnaigh an tástáil gan aon tomhas a thuairisciú.",
+    "impossible_measurement": "Thuairiscigh an tástáil tomhas nach féidir a bheith ceart, mar sin caitheadh amach é."
+  },
+  "statistics": {
+    "average": "Meán",
+    "compare": {
+      "note": "Athruithe i gcomparáid le {{from}} – {{to}}"
+    },
+    "downsampled": "Meánaithe · {{shown}} as {{total}} tástáil ar taispeáint",
+    "detail": {
+      "title": "Taifeach iomlán",
+      "description": "Taispeáin suas le {{max}} pointe sonraí in ionad iad a mheánú",
+      "complete": "Tá gach tástáil sa raon seo ar taispeáint cheana féin",
+      "loading": "An tsraith iomlán á lódáil…"
+    },
+    "export": {
+      "button": "Easpórtáil"
+    },
+    "delta": {
+      "up": "suas {{value}}",
+      "down": "síos {{value}}"
+    },
+    "overview": {
+      "total_title": "Iomlán na dtástálacha",
+      "total_description": "Líon na dtástálacha a rinneadh",
+      "failed_title": "Tástálacha teipthe",
+      "failed_description": "Líon na dtástálacha nár éirigh leo",
+      "average_title": "Meánfhad",
+      "average_description": "Meánfhad na dtástálacha",
+      "packet_loss_title": "Caillteanas paicéad",
+      "packet_loss_description": "Meán thar na tástálacha a thomhais é",
+      "peak_title": "Moilliú buaicuaire",
+      "peak_description": "Is moille é thart ar {{slowest}}, is tapúla é thart ar {{fastest}}",
+      "ping_description": "Meán-aga folaigh, idir {{min}} agus {{max}}",
+      "span_title": "Réimse faid",
+      "span_description": "An tástáil is giorra agus an ceann is faide sa raon seo",
+      "density_title": "Tástálacha in aghaidh an lae",
+      "density_description": "Thar {{days}} lá"
+    },
+    "failed": {
+      "title": "Tástálacha teipthe",
+      "success": "Rathúil",
+      "failed": "Theip air",
+      "label": "Tástálacha"
+    },
+    "speed": {
+      "title": "Luas"
+    },
+    "manual": {
+      "title": "Tástálacha láimhe",
+      "yes": "Cruthaithe de láimh",
+      "no": "Cruthaithe go huathoibríoch"
+    },
+    "duration": {
+      "title": "Fad na tástála",
+      "label": "Méid"
+    },
+    "values": {
+      "min": "Íosmhéid",
+      "max": "Uasmhéid",
+      "avg": "Meán",
+      "down": "Luachanna a íoslódáil",
+      "up": "Uaslódáil luachanna",
+      "target": "Sprioc: {{target}}",
+      "consistency": "Comhsheasmhacht",
+      "samples": "Tástálacha tomhaiste"
+    },
+    "failed_test": "Theip ar an tástáil",
+    "hourly": {
+      "title": "Luas de réir Am an Lae",
+      "sample_count": "Tástálacha"
+    },
+    "consistency": {
+      "title": "Cobhsaíocht Nasc",
+      "excellent": "Sármhaith",
+      "good": "Maith",
+      "fair": "Cóir",
+      "poor": "Bocht",
+      "ping_deviation": "Diall tipiciúil",
+      "loaded_latency_average": "Cuireann sé {{increase}} ms leis faoi ualach ar an meán, thar {{tests}} tástáil",
+      "jitter_detail": "Athrú laistigh de thástáil",
+      "range": "Idir {{min}} agus {{max}}",
+      "sample_count": "Thar {{tests}} tástáil"
+    },
+    "loaded_latency": "Faoi ualach"
+  },
+  "calendar": {
+    "select_range": "Roghnaigh raon dáta",
+    "all_time": "An t-am ar fad",
+    "select_start": "Roghnaigh dáta tosaithe",
+    "select_end": "Roghnaigh dáta deiridh",
+    "previous_year": "An bhliain roimhe seo",
+    "previous_month": "An mhí roimhe seo",
+    "next_month": "An chéad mhí eile",
+    "next_year": "An chéad bhliain eile",
+    "from": "Ó",
+    "to": "Chuig",
+    "last_7_days": "7 lá anuas",
+    "last_30_days": "30 lá anuas",
+    "last_90_days": "90 lá anuas",
+    "last_year": "Anuraidh",
+    "mon": "Luan",
+    "tue": "Máirt",
+    "wed": "Céad",
+    "thu": "Déar",
+    "fri": "Aoine",
+    "sat": "Sath",
+    "sun": "Domh"
+  },
+  "nodes": {
+    "add": "Cuir freastalaí leis",
+    "create": "Cuir leis",
+    "this_server": "An freastalaí seo",
+    "created": "Tá an freastalaí curtha leis go rathúil",
+    "password_required": "Éilíonn an nód seo pasfhocal",
+    "update_password": "Nuashonraigh pasfhocal an nóid seo le do thoil",
+    "password_outdated": "Pasfhocal atá as dáta",
+    "password_updated": "Tá an focal faire nuashonraithe go rathúil",
+    "preview_active": "Tá cur leis agus scriosadh freastalaithe díchumasaithe le linn mód taispeána.",
+    "placeholder": {
+      "name": "Ásc MySpeed",
+      "url": "https://do-fhreastalai.com"
+    },
+    "group": {
+      "name": "Ainm an fhreastalaí",
+      "url": "Seoladh an fhreastalaí"
+    },
+    "delete": {
+      "title": "Scrios an freastalaí",
+      "description": "Scriosfar an freastalaí <Bold>{{name}}</Bold> (#{{id}}). Ní ​​féidir an gníomh seo a chealú. Ar mhaith leat leanúint ar aghaidh?",
+      "yes": "Sea, scrios",
+      "success": "Scriosadh an freastalaí go rathúil"
+    },
+    "rename": {
+      "title": "Athainmnigh an freastalaí",
+      "placeholder": "Ainm nua freastalaí",
+      "success": "Athainmníodh an freastalaí go rathúil"
+    },
+    "messages": {
+      "not_reachable": "Ní féidir teacht ar an bhfreastalaí",
+      "password_changed": "Pasfhocal athraithe",
+      "tests_pending": "Torthaí tástála ar feitheamh"
+    }
+  },
+  "preview": {
+    "title": "Mód taispeána",
+    "info": "DEMO",
+    "description": "Tá tú i mód taispeána faoi láthair. Tá roinnt gnéithe díchumasaithe agus ní féidir roinnt socruithe a athrú. Más mian leat gach gné a úsáid, is féidir leat <Link>MySpeed</Link> a shuiteáil ar do fhreastalaí féin."
+  },
+  "integrations": {
+    "none_active": "Níl an comhtháthú seo gníomhach. <br/><Bold>Cruthaigh</Bold>",
+    "preview_active": "Tá comhtháthú díchumasaithe le linn mód taispeána.",
+    "display_name": "Ainm an chomhtháthaithe",
+    "create": "Cruthaigh",
+    "activity": {
+      "never_executed": "Níor ritheadh riamh é",
+      "last_run": "An rith dheireanach roimhe seo "
+    },
+    "discord": {
+      "fields": {
+        "url": "URL-Crúca Gréasáin",
+        "display_name": "Ainm taispeána",
+        "display_name_placeholder": "Fógra MySpeed",
+        "error_message": "Teachtaireacht earráide",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Earráid: %error%",
+        "send_failed": "Seol teachtaireachtaí earráide",
+        "send_finished": "Seol teachtaireachtaí críochnaithe",
+        "finished_message": "Teachtaireacht críochnaithe",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
+    "email": {
+      "title": "Ríomhphost",
+      "fields": {
+        "host": "Freastalaí SMTP",
+        "port": "Port",
+        "secure": "Úsáid TLS go díreach (port 465)",
+        "username": "Ainm úsáideora (roghnach)",
+        "password": "Pasfhocal (roghnach)",
+        "from": "Seoladh an tseoltóra",
+        "to": "Seoltaí na bhfaighteoirí (scartha le camóga)",
+        "send_failed": "Seol teachtaireachtaí earráide",
+        "error_subject": "Ábhar earráide",
+        "error_subject_placeholder": "MySpeed: theip ar an tástáil luais",
+        "error_message": "Teachtaireacht earráide",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Earráid: %error%",
+        "send_finished": "Seol teachtaireachtaí críochnaithe",
+        "finished_subject": "Ábhar críochnaithe",
+        "finished_subject_placeholder": "MySpeed: tástáil luais críochnaithe",
+        "finished_message": "Teachtaireacht críochnaithe",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
+    "gotify": {
+      "fields": {
+        "url": "URL an fhreastalaí",
+        "key": "Comhartha aip",
+        "priority": "Tosaíocht",
+        "error_message": "Teachtaireacht earráide",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Earráid: %error%",
+        "send_failed": "Seol teachtaireachtaí earráide",
+        "send_finished": "Seol teachtaireachtaí críochnaithe",
+        "finished_message": "Teachtaireacht críochnaithe",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
+    "pushover": {
+      "fields": {
+        "token": "Comhartha aip",
+        "user_key": "Eochair úsáideora",
+        "error_message": "Teachtaireacht earráide",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Earráid: %error%",
+        "send_failed": "Seol teachtaireachtaí earráide",
+        "send_finished": "Seol teachtaireachtaí críochnaithe",
+        "finished_message": "Teachtaireacht críochnaithe",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
+    "healthChecks": {
+      "fields": {
+        "url": "URL Seiceálacha Sláinte",
+        "interval": "Eatramh ping (nóiméid)"
+      }
+    },
+    "influxdb": {
+      "fields": {
+        "url": "URL an fhreastalaí",
+        "org": "Eagraíocht",
+        "bucket": "Buicéad",
+        "token": "Comhartha API",
+        "measurement": "Ainm tomhais",
+        "measurement_placeholder": "tástálacha luais (réamhshocraithe)",
+        "host": "Clib óstach",
+        "host_placeholder": "Réamhshocraítear ainm óstach an mheaisín",
+        "tags": "Clibeanna breise",
+        "tags_placeholder": "region=eu,role=primary (scartha le camóga)"
+      }
+    },
+    "mqtt": {
+      "fields": {
+        "host": "Óstach an bhróicéara",
+        "port": "Port",
+        "secure": "Úsáid TLS (port 8883)",
+        "username": "Ainm úsáideora (roghnach)",
+        "password": "Pasfhocal (roghnach)",
+        "client_id": "ID cliaint (roghnach)",
+        "topic": "Topaic",
+        "error_topic": "Topaic earráide (roghnach)",
+        "retain": "Coinnigh teachtaireachtaí",
+        "discovery": "Fionnachtain Home Assistant",
+        "discovery_prefix": "Réimír fionnachtana (roghnach)",
+        "qos": "Cáilíocht seirbhíse (0 nó 1)",
+        "send_finished": "Foilsigh tástálacha críochnaithe",
+        "send_failed": "Foilsigh tástálacha teipthe"
+      }
+    },
+    "ntfy": {
+      "fields": {
+        "url": "URL an fhreastalaí",
+        "topic": "Topaic",
+        "topic_placeholder": "foláirimh-luas",
+        "token": "Comhartha rochtana",
+        "token_placeholder": "tk_... (roghnach, le haghaidh freastalaithe faoi chosaint)",
+        "title": "Teideal an fhógra",
+        "title_placeholder": "MySpeed (roghnach)",
+        "tags": "Clibeanna",
+        "tags_placeholder": "rabhadh, satailít (scartha le camóga)",
+        "priority": "Tosaíocht réamhshocraithe (1-5)",
+        "error_priority": "Tosaíocht earráide (1-5)",
+        "error_message": "Teachtaireacht earráide",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Earráid: %error%",
+        "send_failed": "Seol teachtaireachtaí earráide",
+        "send_finished": "Seol teachtaireachtaí críochnaithe",
+        "finished_message": "Teachtaireacht críochnaithe",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
+    "telegram": {
+      "fields": {
+        "token": "Comhartha Bot",
+        "chat_id": "Aitheantas Comhrá",
+        "message_thread_id": "ID topaice (roghnach)",
+        "error_message": "Teachtaireacht earráide",
+        "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Earráid: %error%",
+        "send_failed": "Seol teachtaireachtaí earráide",
+        "send_finished": "Seol teachtaireachtaí críochnaithe",
+        "finished_message": "Teachtaireacht críochnaithe",
+        "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
+      }
+    },
+    "webhook": {
+      "fields": {
+        "url": "URL-Crúca Gréasáin",
+        "url_placeholder": "https://do-fhreastalai.com/hook",
+        "send_started": "Cuireadh tús leis an seoladh",
+        "send_failed": "Seol teachtaireachtaí earráide",
+        "send_finished": "Seol teachtaireachtaí críochnaithe",
+        "send_alive": "Seol teachtaireachtaí Coinnigh Beo",
+        "send_recommendations": "Seol moltaí",
+        "send_config_updates": "Seol nuashonruithe cumraíochta",
+        "interval": "Eatramh Coinnigh-Beo (nóiméid)"
+      }
+    },
+    "fields": {
+      "alert_only": "Ná cuir in iúl ach nuair a chailltear teorainn",
+      "alert_ping_above": "Cuir in iúl nuair atá an ping os cionn (ms)",
+      "alert_ping_above_placeholder": "m.sh. 50",
+      "alert_download_below": "Cuir in iúl nuair atá an íoslódáil faoi bhun (Mbps)",
+      "alert_download_below_placeholder": "m.sh. 100",
+      "alert_upload_below": "Cuir in iúl nuair atá an uaslódáil faoi bhun (Mbps)",
+      "alert_upload_below_placeholder": "m.sh. 20"
+    },
+    "variables": "Athróga ar fáil",
+    "variables_hint": "Cliceáil chun é a chur leis an teachtaireacht"
+  },
+  "common": {
+    "back_to_top": "Ar ais go barr"
+  },
+  "not_found": {
+    "title": "Leathanach gan aimsiú",
+    "description": "Níl an leathanach atá á lorg agat ann nó tá sé bogtha.",
+    "back_home": "Ar ais go dtí an Baile"
+  },
+  "route_error": {
+    "title": "Úps!",
+    "subtitle": "Chuaigh rud éigin mícheart",
+    "description": "Tharla earráid gan choinne. Déan iarracht arís nó téigh ar ais chuig an leathanach baile.",
+    "reload": "Athlódáil an Leathanach"
+  },
+  "optimal_values": {
+    "title": "Luachanna Optamacha",
+    "use_recommended": "Úsáid molta"
+  },
+  "preferences": {
+    "title": "Roghanna",
+    "theme": {
+      "title": "Dealramh",
+      "description": "Athraigh idir comhéadan dorcha agus geal.",
+      "system": "Córas",
+      "system_desc": "Lean an socrú ar an ngléas seo",
+      "dark": "Dorcha",
+      "dark_desc": "Níos éasca ar na súile i solas íseal",
+      "light": "Solas",
+      "light_desc": "Cuma níos gile le húsáid i rith an lae"
+    },
+    "palette": {
+      "title": "Dathanna",
+      "description": "Roghnaigh na dathanna a dtarraingítear an comhéadan iontu.",
+      "slate_desc": "Liathghorm fionnuar. Na dathanna a thagann le MySpeed",
+      "nord_desc": "Gorm Artach, codarsnacht níos boige",
+      "carbon_desc": "Beagnach dubh agus neodrach, an chodarsnacht is láidre",
+      "ember_desc": "Dathanna donna teolaí agus solas gorm íseal"
+    },
+    "time_format": {
+      "title": "Formáid ama",
+      "description": "Conas a thaispeántar amanna an chloig ar fud an aip.",
+      "h24": "24 uair an chloig",
+      "h24_desc": "Taispeáin amanna cosúil le 14:30",
+      "h12": "12 uair an chloig",
+      "h12_desc": "Taispeáin amanna cosúil le 2:30 PM"
+    },
+    "speed_unit": {
+      "title": "Aonad luais",
+      "description": "Roghnaigh conas a thaispeántar luasanna. Déantar luachanna a thiontú go huathoibríoch.",
+      "mbps": "Mbps (Meigibhiotáin in aghaidh an tsoicind)",
+      "mbps_desc": "Aonad caighdeánach ISP / tástála luais",
+      "mbytes": "MB/s (Meigibhit in aghaidh an tsoicind)",
+      "mbytes_desc": "Coitianta i mbrabhsálaithe agus i mbainisteoirí íoslódála"
+    },
+    "grade_values": {
+      "title": "Dathanna grádaithe",
+      "description": "Cé chomh fada a iompraítear breithiúnas trasna léimh.",
+      "glyph": "Glif amháin",
+      "glyph_desc": "Iompraíonn an deilbhín an breithiúnas",
+      "values": "Glif agus figiúr",
+      "values_desc": "Dathaigh an uimhir freisin"
+    }
+  },
+  "status": {
+    "start": "Tosaigh tástáil",
+    "running_button": "Ag rith",
+    "paused": "Tá tástálacha luais ar sos",
+    "never_run": "Níor rith aon tástáil fós",
+    "last_test": "An tástáil dheireanach {{time}} ó shin",
+    "next_test": "An chéad cheann eile ag {{time}}",
+    "recent_failures": "Theip ar {{failures}} le lá anuas",
+    "phase": {
+      "starting": "Ag tosú…",
+      "ping": "Aga folaigh á thomhas",
+      "download": "Íoslódáil á tomhas",
+      "upload": "Uaslódáil á tomhas",
+      "measuring": "Ag tomhas…"
+    },
+    "last_test_now": "An tástáil dheireanach díreach anois",
+    "elapsed": "{{seconds}}s caite",
+    "next_test_approx": "An chéad cheann eile ag ~{{time}}"
+  }
+}

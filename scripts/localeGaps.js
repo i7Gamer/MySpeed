@@ -147,6 +147,14 @@ export const LANGUAGE_SHARED = {
         "integrations.ntfy.fields.tags",
         ...TEMPLATES("email")
     ],
+    ga: [
+        "update.ping_placeholder", "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit",
+        "latest.speed_unit", "latest.byte_speed_unit", "info.ping.title", "info.jitter.title",
+        "info.bufferbloat.title", "test.details.seconds", "test.details.bufferbloat",
+        "test.details.bufferbloat_value", "preview.info", "integrations.email.fields.port",
+        "integrations.mqtt.fields.port",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
     id: [
         "dialog.provider.server", "update.ping_placeholder", "storage.reset", "latest.ping",
         "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
