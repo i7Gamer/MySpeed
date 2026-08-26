@@ -119,6 +119,11 @@ Menü ein richtiges Passwort fest. Bei jedem Neustart wird ein neues Token erzeu
 gespeichert wird es nie. In einem vertrauenswürdigen Netz lässt sich das mit
 `ALLOW_NO_PASSWORD=true` überspringen – bei einer öffentlichen Adresse nicht.
 
+Hinter Authelia, Authentik oder einem anderen Forward-Auth-Proxy lässt sich die
+Anmeldung ganz an den Proxy abgeben: `TRUSTED_AUTH_HEADER` und
+`TRUSTED_AUTH_PROXIES` aus der Tabelle unten setzen, und die Passwortabfrage
+erscheint nie.
+
 #### Wenn das Passwort nicht mehr funktioniert
 
 Das Setup-Token gilt nur für eine Instanz *ohne* Passwort und hilft deshalb nicht
@@ -203,6 +208,8 @@ Die Bindung des Ports an `127.0.0.1` sorgt dafür, dass der Container ausschlie�
 | `TRUST_PROXY` | nicht gesetzt | Anzahl vorgelagerter Proxys (`1`) oder ein Preset wie `loopback`. Hinter einem Reverse Proxy nötig, damit die Ratenbegrenzung echte Client-Adressen sieht. `true` wird als `1` gelesen: Express würde die Adresse sonst einem Header entnehmen, den der Aufrufer selbst schreibt. |
 | `BASE_PATH` | nicht gesetzt | Die gesamte Anwendung aus einem Unterverzeichnis ausliefern - `/internet_speed` - bei einem Proxy, der anhand eines Pfad-Präfixes routet, ohne es zu entfernen. Den Präfix ermittelt der Client selbst, mehr ist nicht einzustellen. |
 | `ALLOW_NO_PASSWORD` | `false` | Eine Instanz ohne Passwort für alle erreichbar machen. Nur im lokalen Netz. |
+| `TRUSTED_AUTH_HEADER` | nicht gesetzt | Die Anmeldung eines Reverse Proxys akzeptieren statt nach dem Passwort zu fragen: Anfragen mit diesem Header – `Remote-User` bei Authelia und Authentik – gelten als Betreiber. Wirkt nur zusammen mit `TRUSTED_AUTH_PROXIES`, und der Proxy muss den Header aus eingehenden Anfragen entfernen, was Forward-Auth-Middlewares standardmäßig tun. |
+| `TRUSTED_AUTH_PROXIES` | nicht gesetzt | Die einzigen Adressen, die diesen Header behaupten dürfen: kommagetrennte Adressen und Subnetze – `172.18.0.5,10.0.0.0/8`. Geprüft wird die Adresse des Sockets, nie ein weitergeleiteter Header. Ohne diese Variable bleibt die Header-Anmeldung aus. |
 | `FRAME_ANCESTORS` | `'none'` | CSP-Ursprünge, die MySpeed in einem iframe einbetten dürfen – etwa Dashboards wie Homepage oder Heimdall. |
 | `HTTPS_REDIRECT` | `true` | Netzwerk-Anfragen auf den HTTPS-Listener umleiten, wenn in `data/certs` ein Zertifikat liegt. Auf `false` setzen, wenn ein Proxy TLS übernimmt und `TRUST_PROXY` nicht gesetzt ist. |
 | `ALLOW_LOCAL_NODES` | `false` | Erlaubt Nodes auf Loopback- und Link-Local-Adressen. Standardmäßig aus, damit eine Node-URL den Host nicht abtasten kann. |

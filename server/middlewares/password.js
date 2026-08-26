@@ -5,6 +5,7 @@ import { announceSetupToken, matchesSetupToken } from '../util/setupToken.js';
 import { isLoopbackRequest } from '../util/clientAddress.js';
 import { clientKey } from '../util/clientKey.js';
 import { isValidSession, SESSION_COOKIE } from '../util/session.js';
+import { trustedProxyUser } from '../util/trustedProxyAuth.js';
 import { readCookie } from '../util/cookies.js';
 import { PASSWORD_REQUIRED, SERVER_BUSY, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS } from '../util/authOutcome.js';
 
@@ -404,6 +405,18 @@ export default (allowViewAccess) => async (req, res, next) => {
     // page, which is the whole reason the client no longer keeps the password.
     // Checked before anything else so the common request does no work at all.
     if (isValidSession(readCookie(req, SESSION_COOKIE))) {
+        req.viewMode = false;
+        return next();
+    }
+
+    // A proxy the operator has vouched for already signed this caller in
+    // (upstream #767: Authelia, Authentik, forward-auth setups). The check is
+    // pure - socket address against the configured proxies, header present -
+    // so like the session it costs no database read and no comparison, and an
+    // unconfigured instance never reaches this either: the trusted header
+    // admits the caller before handleUnconfigured would ask for the setup
+    // token, which is right, because the proxy has done the asking.
+    if (trustedProxyUser(req) !== null) {
         req.viewMode = false;
         return next();
     }

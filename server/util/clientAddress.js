@@ -2,6 +2,14 @@ import { trustsProxy } from './trustProxy.js';
 
 const IPV4_MAPPED_PREFIX = "::ffff:";
 
+/**
+ * The address as its own family: a v4 address that arrived through a
+ * dual-stack socket reads "::ffff:172.16.0.5", which is IPv4 to every rule
+ * written about it and IPv6 to a literal comparison.
+ */
+export const normaliseAddress = (address) =>
+    address.startsWith(IPV4_MAPPED_PREFIX) ? address.slice(IPV4_MAPPED_PREFIX.length) : address;
+
 // Any of these means something relayed the request, so the socket address
 // belongs to the relay rather than to the caller.
 const FORWARDING_HEADERS = ["x-forwarded-for", "forwarded", "x-real-ip", "x-client-ip"];
@@ -38,9 +46,7 @@ export const isLoopbackRequest = (req) => {
     const address = req.socket?.remoteAddress;
     if (typeof address !== "string") return false;
 
-    const normalised = address.startsWith(IPV4_MAPPED_PREFIX)
-        ? address.slice(IPV4_MAPPED_PREFIX.length)
-        : address;
+    const normalised = normaliseAddress(address);
 
     return normalised === "::1" || normalised.startsWith("127.");
 };
