@@ -174,13 +174,10 @@
   border-top: 1px solid $light-gray
   cursor: pointer
 
-  input[type="checkbox"]
-    width: 1.1rem
-    height: 1.1rem
+  // The box draws itself now - see components/Checkbox. All this row still
+  // owns is where it sits against the first line of the sentence beside it.
+  .checkbox
     margin-top: 0.15rem
-    flex-shrink: 0
-    accent-color: $accent-primary
-    cursor: pointer
 
   span
     color: $subtext

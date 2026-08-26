@@ -70,6 +70,12 @@
 
 .storage-manager
   flex: 1
+  // It sits beside the tab list in a flex row, and a flex item will not shrink
+  // past its own content without this - so the widest row set the width of the
+  // panel and every row in it hung the same distance past the dialog's edge.
+  // Russian was 20px over on all four rows, Dutch 47, including rows whose own
+  // contents fitted with room to spare.
+  min-width: 0
   display: flex
   flex-direction: column
   gap: 1rem
@@ -80,6 +86,17 @@
   justify-content: space-between
   align-items: center
   gap: 1rem
+  // One width for the buttons costs room, and the room comes off the label.
+  // Rather than crush the words - Russian, Portuguese, Catalan and Dutch were
+  // all being cut - the buttons take their own line when the two no longer fit
+  // on one. They stay against the right edge there, so the column of them
+  // reads the same either way.
+  flex-wrap: wrap
+
+  .storage-row-actions
+    // Keeps them against the right edge on the line they wrap onto, where
+    // space-between has nothing left to push them with.
+    margin-left: auto
 
   .storage-row-actions .dialog-btn
     // One width down the column. Each button was as wide as its own word, so
@@ -111,12 +128,18 @@
       color: $subtext
       font-size: 1rem
       width: 1rem
+      flex-shrink: 0
 
     h3
       margin: 0
       font-size: 1rem
       font-weight: 500
       color: $subtext
+      // And once more at this level. The label above may shrink, but the
+      // heading inside it is a flex item of its own and would not - so the
+      // words were cut off at the label's edge instead of wrapping onto the
+      // second line the label already allows for its hint.
+      min-width: 0
 
     .storage-row-hint
       flex-basis: 100%

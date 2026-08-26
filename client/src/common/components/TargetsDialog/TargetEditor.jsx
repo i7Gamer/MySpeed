@@ -13,6 +13,7 @@ import {TargetsContext} from "@/common/contexts/Targets";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
 import ToggleSwitch from "@/common/components/ToggleSwitch";
+import Checkbox from "@/common/components/Checkbox";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import {CUSTOM_BACKEND_PLACEHOLDER, IPERF_HOST_PLACEHOLDER} from "@/common/utils/InvariantText";
 import {providers, requiresEndpoint, takesEndpoint, takesServerId} from "./providers";
@@ -311,11 +312,12 @@ export const TargetEditor = ({open, onClose, target}) => {
 
                             {provider === "ookla" && (
                                 <label className="provider-license">
-                                    <input
-                                        type="checkbox"
-                                        checked={acceptedOokla}
-                                        onChange={(e) => setAcceptedOokla(e.target.checked)}
-                                    />
+                                    {/* No `label` here on purpose: the <label>
+                                        this sits inside names the input with
+                                        the licence sentence beside it, and an
+                                        aria-label would replace that with
+                                        something shorter and worse. */}
+                                    <Checkbox checked={acceptedOokla} onChange={setAcceptedOokla}/>
                                     <span>
                                         <Trans components={{
                                             Eula: <a href="https://www.speedtest.net/about/eula" target="_blank" rel="noreferrer"/>,
