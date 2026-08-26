@@ -17,7 +17,6 @@
     "okay": "Ok",
     "done": "Ferdig",
     "continue": "Fortsett",
-    "apply": "Ja, bruk",
     "update": "Oppdater",
     "close": "Lukk",
     "unset": "Fjern",
@@ -57,7 +56,6 @@
       "custom_url": "Egendefinert URL",
       "choose_automatically": "Velg automatisk",
       "ookla_license": "Jeg har lest og godtar <Eula>EULA</Eula>, <GDPR>personvernerklæringen</GDPR> og <TOS>vilkårene for bruk</TOS> til Ookla.",
-      "ookla_notice": "Ved å bruke Ookla godtar du deres <Eula>EULA</Eula>, <GDPR>personvernerklæring</GDPR> og <TOS>vilkår for bruk</TOS>.",
       "ookla_desc": "Populær leverandør med globalt servernettverk",
       "libre_desc": "Hastighetstest med åpen kildekode, kan driftes selv",
       "cloudflare_desc": "Rask CDN-basert testing"
@@ -70,15 +68,10 @@
     "provider_changed": "Leverandøren er endret.",
     "changes_unsaved": "Endringene dine ble ikke lagret. Kontroller det du skrev inn.",
     "invalid": "Ugyldig inndata",
-    "ping": "Optimal ping",
-    "upload": "Optimal opplastingshastighet",
-    "download": "Optimal nedlastingshastighet",
-    "recommendations": "Anbefalinger",
     "optimal_values": "Optimale verdier",
     "change_provider": "Bytt leverandør",
     "password": "Endre passord",
     "cron": "Angi frekvens",
-    "time": "Angi periode",
     "storage": "Administrer lagring",
     "pause_tests": "Sett tester på pause",
     "resume_tests": "Gjenoppta tester",
@@ -90,10 +83,7 @@
   "about": {
     "title": "Om MySpeed",
     "description": "MySpeed er en analyseprogramvare for hastighetstester med åpen kildekode som registrerer internetthastigheten din over en konfigurerbar tidsperiode.",
-    "website": "Nettsted",
-    "donate": "Doner",
-    "translate": "Oversett",
-    "made_by": "Laget med"
+    "translate": "Oversett"
   },
   "options": {
     "cron": {
@@ -145,16 +135,7 @@
     "statistics": "Statistikk"
   },
   "update": {
-    "ping_title": "Angi optimal ping (ms)",
-    "ping_placeholder": "Ping (ms)",
-    "upload_title": "Angi optimal opplastingshastighet (Mbps)",
-    "upload_placeholder": "Opplastingshastighet (Mbps)",
-    "download_title": "Angi optimal nedlastingshastighet (Mbps)",
-    "download_placeholder": "Nedlastingshastighet (Mbps)",
-    "recommendations_title": "Optimale anbefalinger",
-    "recommendations_set": "Angi automatiske anbefalinger?",
     "provider_title": "Velg hastighetstest-leverandør",
-    "manually": "Angi manuelt",
     "new_password": "Angi et nytt passord",
     "password_placeholder": "Nytt passord",
     "show_password": "Vis passordet",
@@ -169,36 +150,22 @@
     "level": "Endre nivå",
     "level_title": "Rettigheter for besøkende",
     "cron_title": "Angi testfrekvens",
-    "cron_rules": "Cron-regel",
     "cron_next_test": "Neste test:",
     "custom_cron": "Egendefinert cron-uttrykk",
     "schedule_offset": "Forskyv tidsplanen",
     "schedule_offset_desc": "Legger til en liten forsinkelse for å hindre at tester starter på nøyaktige tidspunkter",
-    "advanced": "Avansert",
-    "time_title": "Vis tester fra de siste ...",
-    "download": "Last ned",
     "pause_title": "Sett hastighetstester på pause i...",
     "hours": "Timer",
     "pause": "Pause",
-    "pause_manual_hint": "La stå tomt for å pause på ubestemt tid",
-    "release_manually": "Gjenoppta manuelt",
     "language": "Bytt språk",
-    "view_title": "Bytt visning",
     "quiet_hours_saved": "Stille timer lagret"
   },
   "header": {
-    "running_tooltip": "Hastighetstest kjører",
-    "start_tooltip": "Start hastighetstest",
     "new_update": "Oppdatering tilgjengelig",
     "download": "Last ned",
-    "paused": "Hastighetstester er satt på pause. Gjenoppta dem hvis du vil kjøre en.",
     "running": "En hastighetstest kjører allerede. Vent et øyeblikk.",
     "admin_login": "Admin-pålogging",
-    "servers": "Servere",
-    "beta": {
-      "title": "Betaversjon",
-      "description": "Denne funksjonen er fortsatt i beta. Hvis du finner feil, kan du rapportere dem <Link>her</Link>."
-    }
+    "servers": "Servere"
   },
   "storage": {
     "speedtests": "Hastighetstester",
@@ -255,7 +222,6 @@
     "byte_speed_unit": "MB/s",
     "up": "Opplasting",
     "latest": "Siste test",
-    "before": "siden",
     "bufferbloat": "Bufferbloat: legger til {{increase}} ms under belastning",
     "bufferbloat_trend": "Bufferbloat over de siste testene",
     "quality": "Under belastning",
@@ -293,10 +259,6 @@
     "up": {
       "title": "Opplastingshastighet",
       "description": "Opplastingshastigheten påvirker nettopplevelsen din. Jo mer du har, desto raskere kan datamaskinen din sende data."
-    },
-    "latest": {
-      "title": "Siste test",
-      "description": "Dette er tidspunktet som viser når den siste testen ble kjørt. I dette tilfellet fant den siste sted den <Bold>{{date}}</Bold> kl. <Bold>{{time}}</Bold>."
     }
   },
   "time": {
@@ -307,15 +269,12 @@
     "hour": "1 time",
     "hours": "{{hours}} timer",
     "day": "1 dag",
-    "days": "{{days}} dager",
-    "on": "Den",
-    "at": "Kl."
+    "days": "{{days}} dager"
   },
   "test": {
     "not_available": "Det er for øyeblikket ingen tester tilgjengelig",
     "not_available_in_range": "Ingen tester mellom {{from}} og {{to}}",
     "show_all_time": "Vis hele perioden",
-    "no_latest": "Det finnes ingen aktuell test. Utfør en test eller vent til neste test kjøres.",
     "loading_more": "Laster inn flere tester...",
     "no_more_tests": "Ingen flere tester å laste inn",
     "unknown_error": "Ukjent feil",
@@ -329,15 +288,7 @@
       "yes": "Ja, slett"
     },
     "deleted": "Testen er slettet",
-    "average": {
-      "title": "Gjennomsnittshastighet",
-      "description": "<Bold>{{amount}}</Bold> tester har vist at det den <Bold>{{date}}</Bold> ble oppnådd en gjennomsnittlig nedlastingshastighet på <Bold>{{down}} Mbps </Bold> og en opplastingshastighet på <Bold>{{up}} Mbps</Bold>. Testene tok i gjennomsnitt <Bold>{{duration}} sekunder</Bold>."
-    },
     "result": {
-      "title": "Testresultat",
-      "description": "<Link>Denne testen</Link> oppnådde en maksimal nedlastingshastighet på <Bold>{{down}} Mbps</Bold> og en maksimal opplastingshastighet på <Bold>{{up}} Mbps</Bold>. Den ble opprettet <Bold>{{type}}</Bold> og tok <Bold>{{duration}} sekunder</Bold>.",
-      "jitter": " Jitteren i forbindelsen var <Bold>{{jitter}} ms</Bold>.",
-      "server": " Testen kjørte mot <Bold>{{server}}</Bold>.",
       "from_you": "av deg",
       "automatic": "automatisk"
     },
@@ -354,21 +305,16 @@
       "unchanged": "Uendret siden forrige test",
       "measured_at": "Målt kl.",
       "measured_with": "Målt med",
-      "duration": "Varighet",
       "seconds": "{{seconds}} s",
       "data_used": "Dataforbruk",
       "data_used_value": "{{down}} ned / {{up}} opp",
       "trigger": "Startet",
       "server": "Server",
       "result": "Fullt resultat",
-      "loaded_latency": "Forsinkelse under belastning",
-      "loaded_latency_value": "{{down}} ms ned / {{up}} ms opp",
       "packet_loss": "Pakketap",
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Tilkobling",
-      "isp": "Leverandør",
-      "external_ip": "Ekstern adresse",
       "changed": "endret"
     }
   },
@@ -381,7 +327,6 @@
     "connection_refused": "Testen kunne ikke utføres fordi tilkoblingen ble avvist",
     "timed_out": "Internettforbindelsen var ustabil under testen",
     "config": "Konfigurasjonsfilen kunne ikke lastes inn",
-    "invalid_view": "Ugyldig visning",
     "cannot_open_socket": "Kunne ikke åpne en tilkobling til testserveren. Den kan være utilgjengelig fra det valgte nettverksgrensesnittet.",
     "latency_failed": "Forsinkelsestesten mislyktes, så ingen hastighet kunne måles.",
     "rate_limited": "Leverandøren avviste testen fordi det er kjørt for mange i det siste. Den neste utsettes automatisk.",
@@ -424,24 +369,6 @@
       "density_title": "Tester per dag",
       "density_description": "Over {{days}} dager"
     },
-    "failed": {
-      "title": "Mislykkede tester",
-      "success": "Vellykkede",
-      "failed": "Mislykkede",
-      "label": "Tester"
-    },
-    "speed": {
-      "title": "Hastighet"
-    },
-    "manual": {
-      "title": "Manuelle tester",
-      "yes": "Opprettet manuelt",
-      "no": "Opprettet automatisk"
-    },
-    "duration": {
-      "title": "Testvarighet",
-      "label": "Antall"
-    },
     "values": {
       "min": "Minimum",
       "max": "Maksimum",
@@ -459,10 +386,6 @@
     },
     "consistency": {
       "title": "Forbindelsesstabilitet",
-      "excellent": "Utmerket",
-      "good": "God",
-      "fair": "Middels",
-      "poor": "Dårlig",
       "ping_deviation": "Typisk avvik",
       "loaded_latency_average": "Legger i gjennomsnitt til {{increase}} ms under belastning, over {{tests}} tester",
       "jitter_detail": "Variasjon innenfor én test",
@@ -480,8 +403,6 @@
     "previous_month": "Forrige måned",
     "next_month": "Neste måned",
     "next_year": "Neste år",
-    "from": "Fra",
-    "to": "Til",
     "last_7_days": "Siste 7 dager",
     "last_30_days": "Siste 30 dager",
     "last_90_days": "Siste 90 dager",

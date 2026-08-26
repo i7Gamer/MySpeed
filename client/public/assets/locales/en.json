@@ -17,7 +17,6 @@
     "okay": "Okay",
     "done": "Done",
     "continue": "Continue",
-    "apply": "Yes, apply",
     "update": "Update",
     "close": "Close",
     "unset": "Remove",
@@ -57,7 +56,6 @@
       "custom_url": "Custom URL",
       "choose_automatically": "Choose automatically",
       "ookla_license": "I have read and accept the <Eula>EULA</Eula>, <GDPR>privacy policy</GDPR> and <TOS>terms of service</TOS> of Ookla.",
-      "ookla_notice": "By using Ookla, you agree to their <Eula>EULA</Eula>, <GDPR>privacy policy</GDPR> and <TOS>terms of service</TOS>.",
       "ookla_desc": "Popular provider with global server network",
       "libre_desc": "Open-source, self-hostable speedtest",
       "cloudflare_desc": "Fast CDN-based testing"
@@ -70,15 +68,10 @@
     "provider_changed": "The provider has been changed.",
     "changes_unsaved": "Your changes were not applied. Check your input.",
     "invalid": "Input invalid",
-    "ping": "Optimal ping",
-    "upload": "Optimal up-speed",
-    "download": "Optimal down-speed",
-    "recommendations": "Recommendations",
     "optimal_values": "Optimal values",
     "change_provider": "Change provider",
     "password": "Change password",
     "cron": "Set frequency",
-    "time": "Set period",
     "storage": "Manage storage",
     "pause_tests": "Pause tests",
     "resume_tests": "Resume tests",
@@ -90,10 +83,7 @@
   "about": {
     "title": "About MySpeed",
     "description": "MySpeed is an open-source speedtest analysis software that records your internet speed over a configurable period of time.",
-    "website": "Website",
-    "donate": "Donate",
-    "translate": "Translate",
-    "made_by": "Made with"
+    "translate": "Translate"
   },
   "options": {
     "cron": {
@@ -145,16 +135,7 @@
     "statistics": "Statistics"
   },
   "update": {
-    "ping_title": "Set optimal ping (ms)",
-    "ping_placeholder": "Ping (ms)",
-    "upload_title": "Set optimal up-speed (Mbps)",
-    "upload_placeholder": "Up speed (Mbps)",
-    "download_title": "Set optimal down-speed (Mbps)",
-    "download_placeholder": "Down speed (Mbps)",
-    "recommendations_title": "Optimal recommendations",
-    "recommendations_set": "Set automatic recommendations?",
     "provider_title": "Set speedtest provider",
-    "manually": "Set manually",
     "new_password": "Set a new password",
     "password_placeholder": "New password",
     "show_password": "Show password",
@@ -169,36 +150,22 @@
     "level": "Change level",
     "level_title": "Rights for visitors",
     "cron_title": "Set test frequency",
-    "cron_rules": "Cron rule",
     "cron_next_test": "Next Test:",
     "custom_cron": "Custom cron expression",
     "schedule_offset": "Offset schedule",
     "schedule_offset_desc": "Adds a small delay to prevent tests from starting at exact times",
-    "advanced": "Advanced",
-    "time_title": "Show tests of the last ...",
-    "download": "Download",
     "pause_title": "Pause speedtests for...",
     "hours": "Hours",
     "pause": "Pause",
-    "pause_manual_hint": "Leave empty to pause indefinitely",
-    "release_manually": "Release manually",
     "language": "Change language",
-    "view_title": "Switch view",
     "quiet_hours_saved": "Quiet hours saved"
   },
   "header": {
-    "running_tooltip": "Speedtest running",
-    "start_tooltip": "Start speedtest",
     "new_update": "Update available",
     "download": "Download",
-    "paused": "Speedtests are currently paused. Please continue them if you want to do one.",
     "running": "A speedtest is already running. Please wait a moment.",
     "admin_login": "Admin Login",
-    "servers": "Servers",
-    "beta": {
-      "title": "Beta Version",
-      "description": "This feature is still in beta. If you find any bugs, please report them <Link>here</Link>."
-    }
+    "servers": "Servers"
   },
   "storage": {
     "speedtests": "Speedtests",
@@ -255,7 +222,6 @@
     "byte_speed_unit": "MB/s",
     "up": "Upload",
     "latest": "Last test",
-    "before": "before",
     "bufferbloat": "Bufferbloat: adds {{increase}} ms under load",
     "bufferbloat_trend": "Bufferbloat over the last tests",
     "quality": "Under load",
@@ -293,10 +259,6 @@
     "up": {
       "title": "Upload speed",
       "description": "Upload speed affects your browsing experience. The more you get, the faster your computer can send data."
-    },
-    "latest": {
-      "title": "Last test",
-      "description": "This is the time that shows you when the last test was run. In this case, the last one took place on <Bold>{{date}}</Bold> at <Bold>{{time}}</Bold>."
     }
   },
   "time": {
@@ -307,15 +269,12 @@
     "hour": "1 hour",
     "hours": "{{hours}} hours",
     "day": "1 day",
-    "days": "{{days}} days",
-    "on": "On",
-    "at": "At"
+    "days": "{{days}} days"
   },
   "test": {
     "not_available": "There are currently no tests available",
     "not_available_in_range": "No tests between {{from}} and {{to}}",
     "show_all_time": "Show all time",
-    "no_latest": "There is no current test available. Please perform a test or wait until the next test is performed.",
     "loading_more": "Loading more tests...",
     "no_more_tests": "No more tests to load",
     "unknown_error": "Unknown error",
@@ -329,15 +288,7 @@
       "yes": "Yes, delete"
     },
     "deleted": "The test has been deleted",
-    "average": {
-      "title": "Average Speed",
-      "description": "<Bold>{{amount}}</Bold> Tests have shown that on <Bold>{{date}}</Bold> an average download speed of <Bold>{{down}} Mbps </Bold> and an upload speed of <Bold>{{up}} Mbps</Bold> was passed. The tests took an average of <Bold>{{duration}} Seconds</Bold>."
-    },
     "result": {
-      "title": "Test result",
-      "description": "<Link>This test</Link> achieved a maximum download speed of <Bold>{{down}} Mbps</Bold> and a maximum upload speed of <Bold>{{up}} Mbps</Bold>. It was created <Bold>{{type}}</Bold> and took <Bold>{{duration}} Seconds</Bold>.",
-      "jitter": " The connection jitter was <Bold>{{jitter}} ms</Bold>.",
-      "server": " The test ran against <Bold>{{server}}</Bold>.",
       "from_you": "by you",
       "automatic": "automatically"
     },
@@ -354,21 +305,16 @@
       "unchanged": "Unchanged since the last test",
       "measured_at": "Measured at",
       "measured_with": "Measured with",
-      "duration": "Duration",
       "seconds": "{{seconds}} s",
       "data_used": "Data used",
       "data_used_value": "{{down}} down / {{up}} up",
       "trigger": "Started",
       "server": "Server",
       "result": "Full result",
-      "loaded_latency": "Latency under load",
-      "loaded_latency_value": "{{down}} ms down / {{up}} ms up",
       "packet_loss": "Packet loss",
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Connection",
-      "isp": "Provider",
-      "external_ip": "External address",
       "changed": "changed"
     }
   },
@@ -381,7 +327,6 @@
     "connection_refused": "The test could not be performed because the connection was rejected",
     "timed_out": "Internet connection was unstable during the time of the test",
     "config": "The configuration file could not be loaded",
-    "invalid_view": "Invalid view",
     "cannot_open_socket": "Could not open a connection to the test server. It may be unreachable from the selected network interface.",
     "latency_failed": "The latency test failed, so no speed could be measured.",
     "rate_limited": "The provider refused the test because too many have been run recently. The next one is delayed automatically.",
@@ -424,24 +369,6 @@
       "density_title": "Tests per day",
       "density_description": "Across {{days}} days"
     },
-    "failed": {
-      "title": "Failed tests",
-      "success": "Successful",
-      "failed": "Failed",
-      "label": "Tests"
-    },
-    "speed": {
-      "title": "Speed"
-    },
-    "manual": {
-      "title": "Manual tests",
-      "yes": "Created manually",
-      "no": "Created automatically"
-    },
-    "duration": {
-      "title": "Test duration",
-      "label": "Amount"
-    },
     "values": {
       "min": "Minimum",
       "max": "Maximum",
@@ -459,10 +386,6 @@
     },
     "consistency": {
       "title": "Connection Stability",
-      "excellent": "Excellent",
-      "good": "Good",
-      "fair": "Fair",
-      "poor": "Poor",
       "ping_deviation": "Typical deviation",
       "loaded_latency_average": "Adds {{increase}} ms under load on average, across {{tests}} tests",
       "jitter_detail": "Variation within a test",
@@ -480,8 +403,6 @@
     "previous_month": "Previous month",
     "next_month": "Next month",
     "next_year": "Next year",
-    "from": "From",
-    "to": "To",
     "last_7_days": "Last 7 days",
     "last_30_days": "Last 30 days",
     "last_90_days": "Last 90 days",

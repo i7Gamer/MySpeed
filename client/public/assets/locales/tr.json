@@ -17,7 +17,6 @@
     "okay": "Tamam",
     "done": "Tamamlandı",
     "continue": "Devam et",
-    "apply": "Evet, uygula",
     "update": "Güncelle",
     "close": "Kapat",
     "unset": "Kaldırmak",
@@ -57,7 +56,6 @@
       "custom_url": "Özel URL",
       "choose_automatically": "Otomatik olarak seçin",
       "ookla_license": "Ookla'nın <Eula>EULA</Eula>'sını, <GDPR>gizlilik politikasını</GDPR> ve <TOS>hizmet şartlarını</TOS> okudum ve kabul ediyorum.",
-      "ookla_notice": "Ookla'yı kullanarak <Eula>EULA</Eula>, <GDPR>gizlilik politikası</GDPR> ve <TOS>hizmet şartları</TOS> hükümlerini kabul etmiş olursunuz.",
       "ookla_desc": "Küresel sunucu ağına sahip popüler sağlayıcı",
       "libre_desc": "Açık kaynaklı, kendi sunucunuzda barındırılabilir hız testi",
       "cloudflare_desc": "CDN tabanlı hızlı test"
@@ -70,15 +68,10 @@
     "provider_changed": "Sağlayıcı değiştirildi.",
     "changes_unsaved": "Değişiklikleriniz uygulanamadı. Girişinizi kontrol edin.",
     "invalid": "Geçersiz giriş",
-    "ping": "Optimum ping",
-    "upload": "Optimum yükleme hızı",
-    "download": "Optimum indirme hızı",
-    "recommendations": "Öneriler",
     "optimal_values": "Optimum değerler",
     "change_provider": "Sağlayıcıyı değiştirin",
     "password": "Şifre Değiştir",
     "cron": "Frekans ayarlama",
-    "time": "Süreyi ayarla",
     "storage": "Depolamayı yönetin",
     "pause_tests": "Testleri duraklat",
     "resume_tests": "Testlere devam et",
@@ -90,10 +83,7 @@
   "about": {
     "title": "MySpeed hakkında",
     "description": "MySpeed, internet hızınızı yapılandırılabilir bir süre boyunca kaydeden açık kaynaklı bir hız testi analiz yazılımıdır.",
-    "website": "Web sitesi",
-    "donate": "Bağış yap",
-    "translate": "Çeviriye katkıda bulun",
-    "made_by": "Şununla yapıldı:"
+    "translate": "Çeviriye katkıda bulun"
   },
   "options": {
     "cron": {
@@ -145,16 +135,7 @@
     "statistics": "İstatistikler"
   },
   "update": {
-    "ping_title": "Optimum ping ayarla (ms)",
-    "ping_placeholder": "Ping (ms)",
-    "upload_title": "Optimum yükleme hızı ayarla (Mbps)",
-    "upload_placeholder": "Yükleme hızı (Mbps)",
-    "download_title": "Optimum indirme hızı ayarla (Mbps)",
-    "download_placeholder": "İndirme hızı (Mbps)",
-    "recommendations_title": "Optimum öneriler",
-    "recommendations_set": "Otomatik tavsiyeleri ayarla?",
     "provider_title": "Speedtest sağlayıcısını ayarla",
-    "manually": "Manuel olarak ayarla",
     "new_password": "Yeni bir şifre belirle",
     "password_placeholder": "Yeni şifre",
     "show_password": "Parolayı göster",
@@ -169,36 +150,22 @@
     "level": "Seviyeyi değiştir",
     "level_title": "Ziyaretçiler için haklar",
     "cron_title": "Test sıklığını ayarla",
-    "cron_rules": "Cron kuralı",
     "cron_next_test": "Sonraki test:",
     "custom_cron": "Özel cron ifadesi",
     "schedule_offset": "Planı kaydır",
     "schedule_offset_desc": "Testlerin tam saatlerde başlamasını önlemek için küçük bir gecikme ekler",
-    "advanced": "Gelişmiş",
-    "time_title": "Son testleri göster ...",
-    "download": "İndir",
     "pause_title": "Speedtestleri duraklat...",
     "hours": "Saatler",
     "pause": "Duraklat",
-    "pause_manual_hint": "Süresiz duraklatmak için boş bırakın",
-    "release_manually": "Manuel olarak bırak",
     "language": "Dili Değiştir",
-    "view_title": "Görünümü Değiştir",
     "quiet_hours_saved": "Sessiz saatler kaydedildi"
   },
   "header": {
-    "running_tooltip": "Speedtest çalışıyor",
-    "start_tooltip": "Speedtest'i başlat",
     "new_update": "Güncelleme mevcut",
     "download": "İndir",
-    "paused": "Speedtestler şu anda duraklatıldı. Bir tane yapmak isterseniz devam edin.",
     "running": "Bir speedtest zaten çalışıyor. Lütfen biraz bekleyin.",
     "admin_login": "Yönetici Girişi",
-    "servers": "Sunucular",
-    "beta": {
-      "title": "Beta Sürümü",
-      "description": "Bu özellik hala beta aşamasında. Herhangi bir hata bulursanız lütfen bunları <Link>buradan</Link> bildirin."
-    }
+    "servers": "Sunucular"
   },
   "storage": {
     "speedtests": "Hız testleri",
@@ -255,7 +222,6 @@
     "byte_speed_unit": "MB/s",
     "up": "Yükleme",
     "latest": "Son test",
-    "before": "önce",
     "bufferbloat": "Bufferbloat: yük altında {{increase}} ms ekliyor",
     "bufferbloat_trend": "Son testlerdeki bufferbloat",
     "quality": "Yük altında",
@@ -293,10 +259,6 @@
     "up": {
       "title": "Yükleme hızı",
       "description": "Yükleme hızı, tarama deneyiminizi etkiler. Ne kadar yüksek olursa, bilgisayarınız o kadar hızlı veri gönderebilir."
-    },
-    "latest": {
-      "title": "Son test",
-      "description": "Bu, son testin ne zaman yapıldığını size gösteren bir zamandır. Bu durumda, sonuncusu <Bold>{{date}}</Bold>'tarihinde <Bold>{{time}}</Bold> saatinde gerçekleşmiştir."
     }
   },
   "time": {
@@ -307,15 +269,12 @@
     "hour": "1 saat",
     "hours": "{{hours}} saat",
     "day": "1 gün",
-    "days": "{{days}} gün",
-    "on": "Tarih",
-    "at": "Saat"
+    "days": "{{days}} gün"
   },
   "test": {
     "not_available": "Şu anda kullanılabilir test yok",
     "not_available_in_range": "{{from}} ile {{to}} arasında test yok",
     "show_all_time": "Tüm geçmişi göster",
-    "no_latest": "Şu anda geçerli bir test yok. Lütfen bir test yapın veya bir sonraki testin yapılmasını bekleyin.",
     "loading_more": "Daha fazla test yükleniyor...",
     "no_more_tests": "Yüklenecek başka test yok",
     "unknown_error": "Bilinmeyen hata",
@@ -329,15 +288,7 @@
       "yes": "Evet, sil"
     },
     "deleted": "Test silindi",
-    "average": {
-      "title": "Ortalama hız",
-      "description": "<Bold>{{amount}}</Bold> Test, <Bold>{{date}}</Bold> tarihinde ortalama bir indirme hızı olan <Bold>{{down}} Mbps </Bold> ve bir yükleme hızı olan <Bold>{{up}} Mbps</Bold> geçti. Testlerin ortalaması <Bold>{{duration}} Saniye</Bold> sürdü."
-    },
     "result": {
-      "title": "Test sonucu",
-      "description": "<Link>Bu testte</Link> maksimum indirme hızı <Bold>{{down}} M</Bold> bps ve maksimum yükleme hızı <Bold>{{up}} Mbps</Bold> olarak elde edilmiştir. Oluşturuldu <Bold>{{type}}</Bold> ve <Bold>{{duration}} saniye</Bold> sürdü.",
-      "jitter": " Bağlantı jitter değeri <Bold>{{jitter}} ms</Bold> idi.",
-      "server": " Test <Bold>{{server}}</Bold> üzerinde çalıştırıldı.",
       "from_you": "siz tarafından",
       "automatic": "otomatik olarak"
     },
@@ -354,21 +305,16 @@
       "unchanged": "Son testten bu yana değişmedi",
       "measured_at": "Ölçüm zamanı",
       "measured_with": "Ölçüm aracı",
-      "duration": "Süre",
       "seconds": "{{seconds}} sn",
       "data_used": "Kullanılan veri",
       "data_used_value": "{{down}} indirme / {{up}} yükleme",
       "trigger": "Başlatılma",
       "server": "Sunucu",
       "result": "Tam sonuç",
-      "loaded_latency": "Yük altında gecikme",
-      "loaded_latency_value": "{{down}} ms indirme / {{up}} ms yükleme",
       "packet_loss": "Paket kaybı",
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Bağlantı",
-      "isp": "Sağlayıcı",
-      "external_ip": "Dış adres",
       "changed": "değişti"
     }
   },
@@ -381,7 +327,6 @@
     "connection_refused": "Bağlantı reddedildiği için test yapılamadı",
     "timed_out": "Testin yapıldığı sırada internet bağlantısı dengesizdi",
     "config": "Konfigürasyon dosyası yüklenemedi",
-    "invalid_view": "Geçersiz görünüm",
     "cannot_open_socket": "Test sunucusuna bağlantı açılamadı. Seçilen ağ arayüzünden erişilemiyor olabilir.",
     "latency_failed": "Gecikme testi başarısız oldu, bu yüzden hiçbir hız ölçülemedi.",
     "rate_limited": "Sağlayıcı testi reddetti, çünkü kısa süre içinde çok fazla test çalıştırıldı. Sonraki otomatik olarak ertelenir.",
@@ -424,24 +369,6 @@
       "density_title": "Günlük test sayısı",
       "density_description": "{{days}} gün boyunca"
     },
-    "failed": {
-      "title": "Başarısız testler",
-      "success": "Başarılı",
-      "failed": "Başarısız",
-      "label": "Testler"
-    },
-    "speed": {
-      "title": "Hız"
-    },
-    "manual": {
-      "title": "Manuel testler",
-      "yes": "Manuel olarak oluşturuldu",
-      "no": "Otomatik olarak oluşturuldu"
-    },
-    "duration": {
-      "title": "Test süresi",
-      "label": "Miktar"
-    },
     "values": {
       "min": "En küçük",
       "max": "En büyük",
@@ -459,10 +386,6 @@
     },
     "consistency": {
       "title": "Bağlantı kararlılığı",
-      "excellent": "Mükemmel",
-      "good": "İyi",
-      "fair": "Orta",
-      "poor": "Zayıf",
       "ping_deviation": "Tipik sapma",
       "loaded_latency_average": "{{tests}} test boyunca yük altında ortalama {{increase}} ms ekliyor",
       "jitter_detail": "Tek bir test içindeki değişim",
@@ -480,8 +403,6 @@
     "previous_month": "Önceki ay",
     "next_month": "Sonraki ay",
     "next_year": "Sonraki yıl",
-    "from": "Başlangıç",
-    "to": "Bitiş",
     "last_7_days": "Son 7 gün",
     "last_30_days": "Son 30 gün",
     "last_90_days": "Son 90 gün",

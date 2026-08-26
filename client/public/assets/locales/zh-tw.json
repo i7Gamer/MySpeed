@@ -17,7 +17,6 @@
     "okay": "好",
     "done": "完成",
     "continue": "繼續",
-    "apply": "是的，套用",
     "update": "更新",
     "close": "關閉",
     "unset": "移除",
@@ -57,7 +56,6 @@
       "custom_url": "自訂 URL",
       "choose_automatically": "自動選擇",
       "ookla_license": "我已閱讀並接受 Ookla 的 <Eula>EULA</Eula>、<GDPR>隱私權政策</GDPR>與<TOS>服務條款</TOS>。",
-      "ookla_notice": "使用 Ookla 即表示您同意其 <Eula>EULA</Eula>、<GDPR>隱私權政策</GDPR>與<TOS>服務條款</TOS>。",
       "ookla_desc": "熱門供應商，擁有遍布全球的伺服器網路",
       "libre_desc": "開放原始碼、可自行架設的速度測試",
       "cloudflare_desc": "以 CDN 為基礎的快速測試"
@@ -70,15 +68,10 @@
     "provider_changed": "供應商已變更。",
     "changes_unsaved": "您的變更未被套用。請檢查您的輸入。",
     "invalid": "輸入無效",
-    "ping": "最佳 Ping",
-    "upload": "最佳上傳速度",
-    "download": "最佳下載速度",
-    "recommendations": "建議值",
     "optimal_values": "最佳值",
     "change_provider": "變更供應商",
     "password": "變更密碼",
     "cron": "設定頻率",
-    "time": "設定期間",
     "storage": "管理儲存空間",
     "pause_tests": "暫停測試",
     "resume_tests": "恢復測試",
@@ -90,10 +83,7 @@
   "about": {
     "title": "關於 MySpeed",
     "description": "MySpeed 是一款開放原始碼的速度測試分析軟體，可在可設定的期間內持續記錄您的網路速度。",
-    "website": "官方網站",
-    "donate": "贊助",
-    "translate": "翻譯",
-    "made_by": "用"
+    "translate": "翻譯"
   },
   "options": {
     "cron": {
@@ -145,16 +135,7 @@
     "statistics": "統計"
   },
   "update": {
-    "ping_title": "設定最佳 Ping（毫秒）",
-    "ping_placeholder": "Ping（毫秒）",
-    "upload_title": "設定最佳上傳速度（Mbps）",
-    "upload_placeholder": "上傳速度（Mbps）",
-    "download_title": "設定最佳下載速度（Mbps）",
-    "download_placeholder": "下載速度（Mbps）",
-    "recommendations_title": "最佳建議值",
-    "recommendations_set": "要套用自動建議值嗎？",
     "provider_title": "設定速度測試供應商",
-    "manually": "手動設定",
     "new_password": "設定新密碼",
     "password_placeholder": "新密碼",
     "show_password": "顯示密碼",
@@ -169,36 +150,22 @@
     "level": "變更權限",
     "level_title": "訪客的權限",
     "cron_title": "設定測試頻率",
-    "cron_rules": "Cron 規則",
     "cron_next_test": "下次測試：",
     "custom_cron": "自訂 cron 運算式",
     "schedule_offset": "排程偏移",
     "schedule_offset_desc": "加入少許延遲，避免測試每次都在固定時刻準時開始",
-    "advanced": "進階",
-    "time_title": "顯示過去…的測試",
-    "download": "下載",
     "pause_title": "暫停速度測試…",
     "hours": "小時",
     "pause": "暫停",
-    "pause_manual_hint": "留空表示無限期暫停",
-    "release_manually": "手動解除",
     "language": "變更語言",
-    "view_title": "切換檢視",
     "quiet_hours_saved": "勿擾時段已儲存"
   },
   "header": {
-    "running_tooltip": "速度測試進行中",
-    "start_tooltip": "開始速度測試",
     "new_update": "有可用的更新",
     "download": "下載",
-    "paused": "速度測試目前已暫停。若要執行測試，請先恢復測試。",
     "running": "已有一項速度測試正在進行。請稍候片刻。",
     "admin_login": "管理員登入",
-    "servers": "伺服器",
-    "beta": {
-      "title": "Beta 版",
-      "description": "此功能仍在 Beta 階段。若您發現任何錯誤，請至<Link>這裡</Link>回報。"
-    }
+    "servers": "伺服器"
   },
   "storage": {
     "speedtests": "速度測試",
@@ -255,7 +222,6 @@
     "byte_speed_unit": "MB/s",
     "up": "上傳",
     "latest": "上次測試",
-    "before": "前",
     "bufferbloat": "緩衝膨脹：負載下增加 {{increase}} 毫秒",
     "bufferbloat_trend": "最近幾次測試的緩衝膨脹",
     "quality": "負載下",
@@ -293,10 +259,6 @@
     "up": {
       "title": "上傳速度",
       "description": "上傳速度會影響您的瀏覽體驗。數值越高，您的電腦傳送資料的速度就越快。"
-    },
-    "latest": {
-      "title": "上次測試",
-      "description": "這個時間顯示上次測試的執行時刻。此處的上次測試是在 <Bold>{{date}}</Bold> 的 <Bold>{{time}}</Bold> 進行的。"
     }
   },
   "time": {
@@ -307,15 +269,12 @@
     "hour": "1 小時",
     "hours": "{{hours}} 小時",
     "day": "1 天",
-    "days": "{{days}} 天",
-    "on": "於",
-    "at": "在"
+    "days": "{{days}} 天"
   },
   "test": {
     "not_available": "目前沒有可用的測試",
     "not_available_in_range": "{{from}} 至 {{to}} 之間沒有測試",
     "show_all_time": "顯示全部時間",
-    "no_latest": "目前沒有最新的測試結果。請執行一次測試，或等待下一次測試執行。",
     "loading_more": "正在載入更多測試…",
     "no_more_tests": "沒有更多測試可載入",
     "unknown_error": "未知錯誤",
@@ -329,15 +288,7 @@
       "yes": "是的，刪除"
     },
     "deleted": "測試已刪除",
-    "average": {
-      "title": "平均速度",
-      "description": "共 <Bold>{{amount}}</Bold> 次測試顯示，在 <Bold>{{date}}</Bold> 的平均下載速度為 <Bold>{{down}} Mbps </Bold>，平均上傳速度為 <Bold>{{up}} Mbps</Bold>。測試平均耗時 <Bold>{{duration}} 秒</Bold>。"
-    },
     "result": {
-      "title": "測試結果",
-      "description": "<Link>這次測試</Link>的最高下載速度為 <Bold>{{down}} Mbps</Bold>，最高上傳速度為 <Bold>{{up}} Mbps</Bold>。它是<Bold>{{type}}</Bold>建立的，耗時 <Bold>{{duration}} 秒</Bold>。",
-      "jitter": " 連線抖動為 <Bold>{{jitter}} 毫秒</Bold>。",
-      "server": " 本次測試使用的伺服器為 <Bold>{{server}}</Bold>。",
       "from_you": "由您",
       "automatic": "自動"
     },
@@ -354,21 +305,16 @@
       "unchanged": "與上次測試相同",
       "measured_at": "測量時間",
       "measured_with": "測量方式",
-      "duration": "耗時",
       "seconds": "{{seconds}} 秒",
       "data_used": "使用流量",
       "data_used_value": "下載 {{down}} / 上傳 {{up}}",
       "trigger": "啟動方式",
       "server": "伺服器",
       "result": "完整結果",
-      "loaded_latency": "負載下的延遲",
-      "loaded_latency_value": "下載 {{down}} 毫秒 / 上傳 {{up}} 毫秒",
       "packet_loss": "封包遺失",
       "bufferbloat": "緩衝膨脹",
       "bufferbloat_value": "+{{increase}} 毫秒",
       "connection": "連線",
-      "isp": "供應商",
-      "external_ip": "對外位址",
       "changed": "已變更"
     }
   },
@@ -381,7 +327,6 @@
     "connection_refused": "由於連線遭到拒絕，無法執行測試",
     "timed_out": "測試期間網際網路連線不穩定",
     "config": "無法載入設定檔",
-    "invalid_view": "無效的檢視",
     "cannot_open_socket": "無法與測試伺服器建立連線。所選的網路介面可能無法連上它。",
     "latency_failed": "延遲測試失敗，因此無法測量速度。",
     "rate_limited": "由於近期執行的測試過多，供應商拒絕了本次測試。下一次測試將自動延後。",
@@ -424,24 +369,6 @@
       "density_title": "每日測試次數",
       "density_description": "共 {{days}} 天"
     },
-    "failed": {
-      "title": "失敗的測試",
-      "success": "成功",
-      "failed": "失敗",
-      "label": "測試"
-    },
-    "speed": {
-      "title": "速度"
-    },
-    "manual": {
-      "title": "手動測試",
-      "yes": "手動建立",
-      "no": "自動建立"
-    },
-    "duration": {
-      "title": "測試耗時",
-      "label": "數量"
-    },
     "values": {
       "min": "最小值",
       "max": "最大值",
@@ -459,10 +386,6 @@
     },
     "consistency": {
       "title": "連線穩定性",
-      "excellent": "優秀",
-      "good": "良好",
-      "fair": "普通",
-      "poor": "不佳",
       "ping_deviation": "典型偏差",
       "loaded_latency_average": "在 {{tests}} 次測試中，負載下平均增加 {{increase}} 毫秒",
       "jitter_detail": "單次測試內的波動",
@@ -480,8 +403,6 @@
     "previous_month": "上個月",
     "next_month": "下個月",
     "next_year": "下一年",
-    "from": "從",
-    "to": "至",
     "last_7_days": "最近 7 天",
     "last_30_days": "最近 30 天",
     "last_90_days": "最近 90 天",

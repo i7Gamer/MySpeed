@@ -17,7 +17,6 @@
     "okay": "Baik",
     "done": "Selesai",
     "continue": "Lanjutkan",
-    "apply": "Ya, terapkan",
     "update": "Perbarui",
     "close": "Tutup",
     "unset": "Hapus",
@@ -57,7 +56,6 @@
       "custom_url": "URL khusus",
       "choose_automatically": "Pilih secara otomatis",
       "ookla_license": "Saya telah membaca dan menerima <Eula>EULA</Eula>, <GDPR>kebijakan privasi</GDPR> dan <TOS>ketentuan layanan</TOS> dari Ookla.",
-      "ookla_notice": "Dengan menggunakan Ookla, Anda menyetujui <Eula>EULA</Eula>, <GDPR>kebijakan privasi</GDPR>, dan <TOS>ketentuan layanan</TOS> mereka.",
       "ookla_desc": "Penyedia populer dengan jaringan server global",
       "libre_desc": "Speedtest sumber terbuka yang bisa di-hosting sendiri",
       "cloudflare_desc": "Pengujian cepat berbasis CDN"
@@ -70,15 +68,10 @@
     "provider_changed": "Penyedia telah diubah.",
     "changes_unsaved": "Perubahan Anda tidak diterapkan. Periksa masukan Anda.",
     "invalid": "Masukan tidak valid",
-    "ping": "Ping optimal",
-    "upload": "Kecepatan unggah optimal",
-    "download": "Kecepatan unduh optimal",
-    "recommendations": "Rekomendasi",
     "optimal_values": "Nilai optimal",
     "change_provider": "Ubah penyedia",
     "password": "Ubah kata sandi",
     "cron": "Atur frekuensi",
-    "time": "Atur periode",
     "storage": "Kelola penyimpanan",
     "pause_tests": "Jeda pengujian",
     "resume_tests": "Lanjutkan pengujian",
@@ -90,10 +83,7 @@
   "about": {
     "title": "Tentang MySpeed",
     "description": "MySpeed adalah perangkat lunak analisis speedtest sumber terbuka yang merekam kecepatan internet Anda selama rentang waktu yang dapat diatur.",
-    "website": "Situs web",
-    "donate": "Donasi",
-    "translate": "Bantu terjemahkan",
-    "made_by": "Dibuat dengan"
+    "translate": "Bantu terjemahkan"
   },
   "options": {
     "cron": {
@@ -145,16 +135,7 @@
     "statistics": "Statistik"
   },
   "update": {
-    "ping_title": "Atur ping optimal (ms)",
-    "ping_placeholder": "Ping (ms)",
-    "upload_title": "Atur kecepatan unggah optimal (Mbps)",
-    "upload_placeholder": "Kecepatan unggah (Mbps)",
-    "download_title": "Atur kecepatan unduh optimal (Mbps)",
-    "download_placeholder": "Kecepatan unduh (Mbps)",
-    "recommendations_title": "Rekomendasi optimal",
-    "recommendations_set": "Atur rekomendasi otomatis?",
     "provider_title": "Atur penyedia speedtest",
-    "manually": "Atur secara manual",
     "new_password": "Atur kata sandi baru",
     "password_placeholder": "Kata sandi baru",
     "show_password": "Tampilkan kata sandi",
@@ -169,36 +150,22 @@
     "level": "Ubah level",
     "level_title": "Hak untuk pengunjung",
     "cron_title": "Atur frekuensi pengujian",
-    "cron_rules": "Aturan Cron",
     "cron_next_test": "Pengujian Berikutnya:",
     "custom_cron": "Ekspresi cron khusus",
     "schedule_offset": "Geser jadwal",
     "schedule_offset_desc": "Menambahkan sedikit jeda agar pengujian tidak dimulai tepat pada waktu bulat",
-    "advanced": "Lanjutan",
-    "time_title": "Tampilkan pengujian dari ... terakhir",
-    "download": "Unduh",
     "pause_title": "Jeda speedtest selama...",
     "hours": "Jam",
     "pause": "Jeda",
-    "pause_manual_hint": "Biarkan kosong untuk menjeda tanpa batas",
-    "release_manually": "Lepaskan secara manual",
     "language": "Ubah bahasa",
-    "view_title": "Alihkan tampilan",
     "quiet_hours_saved": "Jam tenang tersimpan"
   },
   "header": {
-    "running_tooltip": "Speedtest sedang berjalan",
-    "start_tooltip": "Mulai speedtest",
     "new_update": "Pembaruan tersedia",
     "download": "Unduh",
-    "paused": "Speedtest saat ini dijeda. Silakan lanjutkan jika Anda ingin melakukan satu.",
     "running": "Speedtest sudah berjalan. Silakan tunggu sebentar.",
     "admin_login": "Masuk Admin",
-    "servers": "Server",
-    "beta": {
-      "title": "Versi Beta",
-      "description": "Fitur ini masih dalam beta. Jika Anda menemukan bug, silakan laporkan <Link>di sini</Link>."
-    }
+    "servers": "Server"
   },
   "storage": {
     "speedtests": "Speedtest",
@@ -255,7 +222,6 @@
     "byte_speed_unit": "MB/s",
     "up": "Unggah",
     "latest": "Pengujian terakhir",
-    "before": "yang lalu",
     "bufferbloat": "Bufferbloat: menambah {{increase}} ms saat terbebani",
     "bufferbloat_trend": "Bufferbloat pada pengujian terakhir",
     "quality": "Saat terbebani",
@@ -293,10 +259,6 @@
     "up": {
       "title": "Kecepatan unggah",
       "description": "Kecepatan unggah mempengaruhi pengalaman menjelajah Anda. Semakin banyak yang Anda dapatkan, semakin cepat komputer Anda dapat mengirim data."
-    },
-    "latest": {
-      "title": "Pengujian terakhir",
-      "description": "Ini adalah waktu yang menunjukkan kapan pengujian terakhir dijalankan. Dalam hal ini, yang terakhir berlangsung pada <Bold>{{date}}</Bold> pada <Bold>{{time}}</Bold>."
     }
   },
   "time": {
@@ -307,15 +269,12 @@
     "hour": "1 jam",
     "hours": "{{hours}} jam",
     "day": "1 hari",
-    "days": "{{days}} hari",
-    "on": "Pada",
-    "at": "Pukul"
+    "days": "{{days}} hari"
   },
   "test": {
     "not_available": "Saat ini tidak ada pengujian yang tersedia",
     "not_available_in_range": "Tidak ada pengujian antara {{from}} dan {{to}}",
     "show_all_time": "Tampilkan seluruh riwayat",
-    "no_latest": "Tidak ada pengujian saat ini yang tersedia. Silakan lakukan pengujian atau tunggu hingga pengujian berikutnya dilakukan.",
     "loading_more": "Memuat lebih banyak pengujian...",
     "no_more_tests": "Tidak ada lagi pengujian untuk dimuat",
     "unknown_error": "Galat tidak dikenal",
@@ -329,15 +288,7 @@
       "yes": "Ya, hapus"
     },
     "deleted": "Pengujian telah dihapus",
-    "average": {
-      "title": "Kecepatan Rata-rata",
-      "description": "<Bold>{{amount}}</Bold> Pengujian telah menunjukkan bahwa pada <Bold>{{date}}</Bold> kecepatan unduh rata-rata <Bold>{{down}} Mbps </Bold> dan kecepatan unggah <Bold>{{up}} Mbps</Bold> tercapai. Pengujian memakan waktu rata-rata <Bold>{{duration}} Detik</Bold>."
-    },
     "result": {
-      "title": "Hasil pengujian",
-      "description": "<Link>Pengujian ini</Link> mencapai kecepatan unduh maksimum <Bold>{{down}} Mbps</Bold> dan kecepatan unggah maksimum <Bold>{{up}} Mbps</Bold>. Dibuat <Bold>{{type}}</Bold> dan memakan waktu <Bold>{{duration}} Detik</Bold>.",
-      "jitter": " Jitter koneksinya adalah <Bold>{{jitter}} ms</Bold>.",
-      "server": " Pengujian dijalankan terhadap <Bold>{{server}}</Bold>.",
       "from_you": "oleh Anda",
       "automatic": "secara otomatis"
     },
@@ -354,21 +305,16 @@
       "unchanged": "Tidak berubah sejak pengujian terakhir",
       "measured_at": "Diukur pukul",
       "measured_with": "Diukur dengan",
-      "duration": "Durasi",
       "seconds": "{{seconds}} dtk",
       "data_used": "Data terpakai",
       "data_used_value": "{{down}} unduh / {{up}} unggah",
       "trigger": "Dimulai",
       "server": "Server",
       "result": "Hasil lengkap",
-      "loaded_latency": "Latensi saat terbebani",
-      "loaded_latency_value": "{{down}} ms unduh / {{up}} ms unggah",
       "packet_loss": "Kehilangan paket",
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Koneksi",
-      "isp": "Penyedia",
-      "external_ip": "Alamat eksternal",
       "changed": "berubah"
     }
   },
@@ -381,7 +327,6 @@
     "connection_refused": "Pengujian tidak dapat dilakukan karena koneksi ditolak",
     "timed_out": "Koneksi internet tidak stabil selama pengujian",
     "config": "File konfigurasi tidak dapat dimuat",
-    "invalid_view": "Tampilan tidak valid",
     "cannot_open_socket": "Tidak dapat membuka koneksi ke server pengujian. Server itu mungkin tidak terjangkau dari antarmuka jaringan yang dipilih.",
     "latency_failed": "Pengujian latensi gagal, sehingga tidak ada kecepatan yang dapat diukur.",
     "rate_limited": "Penyedia menolak pengujian karena terlalu banyak yang dijalankan baru-baru ini. Yang berikutnya ditunda secara otomatis.",
@@ -424,24 +369,6 @@
       "density_title": "Pengujian per hari",
       "density_description": "Selama {{days}} hari"
     },
-    "failed": {
-      "title": "Pengujian gagal",
-      "success": "Berhasil",
-      "failed": "Gagal",
-      "label": "Pengujian"
-    },
-    "speed": {
-      "title": "Kecepatan"
-    },
-    "manual": {
-      "title": "Pengujian manual",
-      "yes": "Dibuat secara manual",
-      "no": "Dibuat secara otomatis"
-    },
-    "duration": {
-      "title": "Durasi pengujian",
-      "label": "Jumlah"
-    },
     "values": {
       "min": "Minimum",
       "max": "Maksimum",
@@ -459,10 +386,6 @@
     },
     "consistency": {
       "title": "Kestabilan koneksi",
-      "excellent": "Sangat baik",
-      "good": "Baik",
-      "fair": "Cukup",
-      "poor": "Buruk",
       "ping_deviation": "Simpangan lazim",
       "loaded_latency_average": "Menambah rata-rata {{increase}} ms saat terbebani, dari {{tests}} pengujian",
       "jitter_detail": "Variasi dalam satu pengujian",
@@ -480,8 +403,6 @@
     "previous_month": "Bulan sebelumnya",
     "next_month": "Bulan berikutnya",
     "next_year": "Tahun berikutnya",
-    "from": "Dari",
-    "to": "Sampai",
     "last_7_days": "7 hari terakhir",
     "last_30_days": "30 hari terakhir",
     "last_90_days": "90 hari terakhir",

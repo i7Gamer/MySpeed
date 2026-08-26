@@ -17,7 +17,6 @@
     "okay": "OK",
     "done": "Hotovo",
     "continue": "Pokračovat",
-    "apply": "Ano, použít",
     "update": "Aktualizovat",
     "close": "Zavřít",
     "unset": "Odebrat",
@@ -57,7 +56,6 @@
       "custom_url": "Vlastní URL",
       "choose_automatically": "Vybrat automaticky",
       "ookla_license": "Přečetl(a) jsem si a přijímám <Eula>EULA</Eula>, <GDPR>zásady ochrany osobních údajů</GDPR> a <TOS>podmínky služby</TOS> společnosti Ookla.",
-      "ookla_notice": "Používáním služby Ookla souhlasíte s jejich <Eula>EULA</Eula>, <GDPR>zásadami ochrany osobních údajů</GDPR> a <TOS>podmínkami služby</TOS>.",
       "ookla_desc": "Oblíbený poskytovatel s globální sítí serverů",
       "libre_desc": "Open-source test rychlosti, který lze provozovat na vlastním serveru",
       "cloudflare_desc": "Rychlé testování přes CDN"
@@ -70,15 +68,10 @@
     "provider_changed": "Poskytovatel byl změněn.",
     "changes_unsaved": "Vaše změny nebyly použity. Zkontrolujte zadané údaje.",
     "invalid": "Neplatný vstup",
-    "ping": "Optimální ping",
-    "upload": "Optimální rychlost nahrávání",
-    "download": "Optimální rychlost stahování",
-    "recommendations": "Doporučení",
     "optimal_values": "Optimální hodnoty",
     "change_provider": "Změnit poskytovatele",
     "password": "Změnit heslo",
     "cron": "Nastavit frekvenci",
-    "time": "Nastavit období",
     "storage": "Správa úložiště",
     "pause_tests": "Pozastavit testy",
     "resume_tests": "Obnovit testy",
@@ -90,10 +83,7 @@
   "about": {
     "title": "O aplikaci MySpeed",
     "description": "MySpeed je open-source software pro analýzu rychlosti, který zaznamenává rychlost vašeho internetu po nastavitelnou dobu.",
-    "website": "Web",
-    "donate": "Přispět",
-    "translate": "Přeložit",
-    "made_by": "Vytvořeno s"
+    "translate": "Přeložit"
   },
   "options": {
     "cron": {
@@ -145,16 +135,7 @@
     "statistics": "Statistiky"
   },
   "update": {
-    "ping_title": "Nastavit optimální ping (ms)",
-    "ping_placeholder": "Ping (ms)",
-    "upload_title": "Nastavit optimální rychlost nahrávání (Mbps)",
-    "upload_placeholder": "Rychlost nahrávání (Mbps)",
-    "download_title": "Nastavit optimální rychlost stahování (Mbps)",
-    "download_placeholder": "Rychlost stahování (Mbps)",
-    "recommendations_title": "Optimální doporučení",
-    "recommendations_set": "Nastavit automatická doporučení?",
     "provider_title": "Nastavit poskytovatele testů rychlosti",
-    "manually": "Nastavit ručně",
     "new_password": "Nastavte nové heslo",
     "password_placeholder": "Nové heslo",
     "show_password": "Zobrazit heslo",
@@ -169,36 +150,22 @@
     "level": "Změnit úroveň",
     "level_title": "Práva návštěvníků",
     "cron_title": "Nastavit frekvenci testů",
-    "cron_rules": "Pravidlo cron",
     "cron_next_test": "Další test:",
     "custom_cron": "Vlastní výraz cron",
     "schedule_offset": "Posunout plán",
     "schedule_offset_desc": "Přidá malé zpoždění, aby testy nezačínaly v přesných časech",
-    "advanced": "Pokročilé",
-    "time_title": "Zobrazit testy za posledních ...",
-    "download": "Stáhnout",
     "pause_title": "Pozastavit testy rychlosti na...",
     "hours": "Hodiny",
     "pause": "Pozastavit",
-    "pause_manual_hint": "Ponechte prázdné pro pozastavení na neurčito",
-    "release_manually": "Obnovit ručně",
     "language": "Změnit jazyk",
-    "view_title": "Přepnout zobrazení",
     "quiet_hours_saved": "Tiché hodiny uloženy"
   },
   "header": {
-    "running_tooltip": "Probíhá test rychlosti",
-    "start_tooltip": "Spustit test rychlosti",
     "new_update": "K dispozici je aktualizace",
     "download": "Stáhnout",
-    "paused": "Testy rychlosti jsou momentálně pozastaveny. Pokud chcete test provést, nejprve je obnovte.",
     "running": "Test rychlosti již probíhá. Počkejte prosím chvíli.",
     "admin_login": "Přihlášení správce",
-    "servers": "Servery",
-    "beta": {
-      "title": "Beta verze",
-      "description": "Tato funkce je stále ve fázi beta. Pokud narazíte na chyby, nahlaste je prosím <Link>zde</Link>."
-    }
+    "servers": "Servery"
   },
   "storage": {
     "speedtests": "Testy rychlosti",
@@ -255,7 +222,6 @@
     "byte_speed_unit": "MB/s",
     "up": "Nahrávání",
     "latest": "Poslední test",
-    "before": "před",
     "bufferbloat": "Bufferbloat: při zátěži přidává {{increase}} ms",
     "bufferbloat_trend": "Bufferbloat v posledních testech",
     "quality": "Při zátěži",
@@ -293,10 +259,6 @@
     "up": {
       "title": "Rychlost nahrávání",
       "description": "Rychlost nahrávání ovlivňuje váš zážitek z prohlížení. Čím je vyšší, tím rychleji může váš počítač odesílat data."
-    },
-    "latest": {
-      "title": "Poslední test",
-      "description": "Tento čas ukazuje, kdy proběhl poslední test. V tomto případě se uskutečnil dne <Bold>{{date}}</Bold> v <Bold>{{time}}</Bold>."
     }
   },
   "time": {
@@ -307,15 +269,12 @@
     "hour": "1 hodinou",
     "hours": "{{hours}} hodinami",
     "day": "1 dnem",
-    "days": "{{days}} dny",
-    "on": "Dne",
-    "at": "V"
+    "days": "{{days}} dny"
   },
   "test": {
     "not_available": "Momentálně nejsou k dispozici žádné testy",
     "not_available_in_range": "Žádné testy mezi {{from}} a {{to}}",
     "show_all_time": "Zobrazit celou historii",
-    "no_latest": "Není k dispozici žádný aktuální test. Proveďte prosím test, nebo počkejte na další naplánovaný test.",
     "loading_more": "Načítání dalších testů...",
     "no_more_tests": "Žádné další testy k načtení",
     "unknown_error": "Neznámá chyba",
@@ -329,15 +288,7 @@
       "yes": "Ano, smazat"
     },
     "deleted": "Test byl smazán",
-    "average": {
-      "title": "Průměrná rychlost",
-      "description": "Testy provedené dne <Bold>{{date}}</Bold> (počet: <Bold>{{amount}}</Bold>) ukázaly průměrnou rychlost stahování <Bold>{{down}} Mbps </Bold> a průměrnou rychlost nahrávání <Bold>{{up}} Mbps</Bold>. Průměrná doba trvání testu byla <Bold>{{duration}} s</Bold>."
-    },
     "result": {
-      "title": "Výsledek testu",
-      "description": "<Link>Tento test</Link> dosáhl maximální rychlosti stahování <Bold>{{down}} Mbps</Bold> a maximální rychlosti nahrávání <Bold>{{up}} Mbps</Bold>. Byl spuštěn <Bold>{{type}}</Bold> a trval <Bold>{{duration}} s</Bold>.",
-      "jitter": " Jitter připojení byl <Bold>{{jitter}} ms</Bold>.",
-      "server": " Test proběhl proti serveru <Bold>{{server}}</Bold>.",
       "from_you": "vámi",
       "automatic": "automaticky"
     },
@@ -354,21 +305,16 @@
       "unchanged": "Beze změny od posledního testu",
       "measured_at": "Změřeno",
       "measured_with": "Změřeno pomocí",
-      "duration": "Doba trvání",
       "seconds": "{{seconds}} s",
       "data_used": "Přenesená data",
       "data_used_value": "{{down}} staženo / {{up}} nahráno",
       "trigger": "Spuštěno",
       "server": "Server",
       "result": "Úplný výsledek",
-      "loaded_latency": "Odezva při zátěži",
-      "loaded_latency_value": "{{down}} ms stahování / {{up}} ms nahrávání",
       "packet_loss": "Ztráta paketů",
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Připojení",
-      "isp": "Poskytovatel",
-      "external_ip": "Externí adresa",
       "changed": "změna"
     }
   },
@@ -381,7 +327,6 @@
     "connection_refused": "Test nebylo možné provést, protože připojení bylo odmítnuto",
     "timed_out": "Internetové připojení bylo během testu nestabilní",
     "config": "Konfigurační soubor se nepodařilo načíst",
-    "invalid_view": "Neplatné zobrazení",
     "cannot_open_socket": "Nepodařilo se otevřít spojení s testovacím serverem. Ze zvoleného síťového rozhraní může být nedostupný.",
     "latency_failed": "Test odezvy selhal, takže rychlost nebylo možné změřit.",
     "rate_limited": "Poskytovatel test odmítl, protože jich v poslední době proběhlo příliš mnoho. Další test je automaticky odložen.",
@@ -424,24 +369,6 @@
       "density_title": "Testů za den",
       "density_description": "Za období {{days}} dní"
     },
-    "failed": {
-      "title": "Neúspěšné testy",
-      "success": "Úspěšné",
-      "failed": "Neúspěšné",
-      "label": "Testy"
-    },
-    "speed": {
-      "title": "Rychlost"
-    },
-    "manual": {
-      "title": "Ruční testy",
-      "yes": "Spuštěno ručně",
-      "no": "Spuštěno automaticky"
-    },
-    "duration": {
-      "title": "Doba trvání testu",
-      "label": "Počet"
-    },
     "values": {
       "min": "Minimum",
       "max": "Maximum",
@@ -459,10 +386,6 @@
     },
     "consistency": {
       "title": "Stabilita připojení",
-      "excellent": "Vynikající",
-      "good": "Dobrá",
-      "fair": "Uspokojivá",
-      "poor": "Špatná",
       "ping_deviation": "Typická odchylka",
       "loaded_latency_average": "Při zátěži přidává v průměru {{increase}} ms, napříč {{tests}} testy",
       "jitter_detail": "Kolísání v rámci testu",
@@ -480,8 +403,6 @@
     "previous_month": "Předchozí měsíc",
     "next_month": "Další měsíc",
     "next_year": "Další rok",
-    "from": "Od",
-    "to": "Do",
     "last_7_days": "Posledních 7 dní",
     "last_30_days": "Posledních 30 dní",
     "last_90_days": "Posledních 90 dní",

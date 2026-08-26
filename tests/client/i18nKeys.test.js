@@ -108,8 +108,9 @@ describe("i18n keys", () => {
          * test.average.description were the speedtest result dialog, which the
          * inline detail view replaced. Nothing renders them any more, so they
          * are deliberately not pinned here: asserting on a dead string's
-         * placeholders reads like a live contract. The keys themselves still
-         * sit in every locale file, which is Crowdin's to clean up.
+         * placeholders reads like a live contract. The keys themselves were
+         * removed from every locale file along with the rest of the dead set,
+         * and the reachability check below keeps the set from growing back.
          */
     });
 
@@ -179,6 +180,64 @@ describe("i18n keys", () => {
                     assert.ok(actual.has(name),
                         `${file}: ${key} drops the "${name}" placeholder that en.json provides`);
             }
+        });
+    });
+
+    /**
+     * The reverse direction: every key the source locale defines must be
+     * reachable from the source tree. Three interface rewrites (f095cd71,
+     * b236dffd, 13861186) each left their retired keys in the locale files
+     * "for Crowdin", and the pile had grown to 65 dead keys before anyone
+     * counted. Under full parity a dead key is not free: it costs a
+     * translation in every shipped language, so a key nothing renders is
+     * removed rather than kept.
+     *
+     * A key counts as reachable when its dotted path appears literally
+     * anywhere in client/src, or when it matches one of the dynamic families
+     * below, each named for the builder that assembles it. A key named only
+     * in a comment also counts as reachable, so the check errs toward
+     * keeping - it exists to catch the wholesale leftovers of a removed
+     * feature, not to litigate single strings.
+     */
+    describe("keys the source locale defines", () => {
+        const DYNAMIC_KEY_FAMILIES = [
+            // statistics.delta.${delta.direction} - Delta.jsx
+            /^statistics\.delta\.(up|down)$/,
+            // "dropdown." + (paused ? "resume_tests" : "pause_tests") - DropdownComponent.jsx
+            /^dropdown\.(pause|resume)_tests$/,
+            // options.cron.${preset.id} and its _desc - FrequencyDialog.jsx
+            /^options\.cron\.[a-z_]+$/,
+            // pause.${preset.id} and its _desc - PauseDialog.jsx
+            /^pause\.[a-z]+(_desc)?$/,
+            // dialog.provider.${current.id}_desc - ProviderDialog.jsx and the
+            // welcome dialog's ProviderChooser
+            /^dialog\.provider\.[a-z]+_desc$/,
+            // status.phase.${status.phase} - StatusBarComponent.jsx
+            /^status\.phase\.[a-z]+$/,
+            // storage.retention_options.${preset.id} - the storage dialog's
+            // Speedtests tab
+            /^storage\.retention_options\.[a-z_]+$/,
+            // test.details.${distance.direction}_target - TestDetails.jsx
+            /^test\.details\.(over|under)_target$/,
+            // "test.result." + (custom ? "from_you" : "automatic") - TestDetails.jsx
+            /^test\.result\.(from_you|automatic)$/,
+            // preferences.${key}.description and preferences.palette.${id}_desc
+            // - PreferencesInfo.js
+            /^preferences\.[a-z_]+\.description$/,
+            /^preferences\.palette\.[a-z]+_desc$/,
+            // integrations.${name}.fields.${field}${suffix}, with the shared
+            // integrations.fields.${field}${suffix} fallback - IntegrationDialog.jsx
+            /^integrations\.[a-zA-Z]+\.fields\.[a-z_]+$/,
+            /^integrations\.fields\.[a-z_]+$/
+        ];
+
+        it("are all reachable from the source tree", () => {
+            const blob = sources.map(({code}) => code).join("\n");
+            const dead = [...knownKeys].filter((key) =>
+                !blob.includes(key) && !DYNAMIC_KEY_FAMILIES.some((family) => family.test(key)));
+
+            assert.deepEqual(dead, [],
+                "keys nothing renders: remove them from every locale, or register the dynamic family that builds them");
         });
     });
 });

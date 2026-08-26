@@ -17,7 +17,6 @@
     "okay": "Oké",
     "done": "Klaar",
     "continue": "Doorgaan",
-    "apply": "Ja, neem over",
     "update": "Vernieuwen",
     "close": "Sluit",
     "unset": "Verwijder",
@@ -57,7 +56,6 @@
       "custom_url": "Aangepaste URL",
       "choose_automatically": "Automatisch kiezen",
       "ookla_license": "Ik heb de <Eula>EULA</Eula>, <GDPR>het privacybeleid</GDPR> en <TOS>de servicevoorwaarden</TOS> van Ookla gelezen en accepteer deze.",
-      "ookla_notice": "Door Oowa te gebruiken, gaat u akkoord met hun <Eula>EULA</Eula>, <GDPR>privacy policy</GDPR> and <TOS>Terms of Service</TOS>.",
       "ookla_desc": "Populaire provider met globaal servernetwerk",
       "libre_desc": "Open-source, zelforganisatie snelheidstest",
       "cloudflare_desc": "Snel CDN-gebaseerd testen"
@@ -70,15 +68,10 @@
     "provider_changed": "De provider is gewijzigd.",
     "changes_unsaved": "Je wijzigingen zijn niet geaccepteerd. Controleer je invoer.",
     "invalid": "Invoer ongeldig",
-    "ping": "Optimale ping",
-    "upload": "Optimale snelheid",
-    "download": "Optimale daalsnelheid",
-    "recommendations": "Optimale waarden",
     "optimal_values": "Optimale waarden",
     "change_provider": "Verander van leverancier",
     "password": "Wachtwoord wijzigen",
     "cron": "Frequentie instellen",
-    "time": "Ingestelde periode",
     "storage": "Opslag beheren",
     "pause_tests": "Pauzetests",
     "resume_tests": "Doorgaan met testen",
@@ -90,10 +83,7 @@
   "about": {
     "title": "Over MySpeed",
     "description": "MySpeed is een open-source snelheidstest analysesoftware die uw internet snelheid registreert over een configureerbare periode.",
-    "website": "website",
-    "donate": "Doneren",
-    "translate": "Vertalen",
-    "made_by": "Gemaakt met"
+    "translate": "Vertalen"
   },
   "options": {
     "cron": {
@@ -145,16 +135,7 @@
     "statistics": "Statistieken"
   },
   "update": {
-    "ping_title": "Optimale ping instellen (ms)",
-    "ping_placeholder": "Ping (ms)",
-    "upload_title": "Optimale snelheid instellen (Mbit/s)",
-    "upload_placeholder": "Omhoog snelheid (Mbit/s)",
-    "download_title": "Optimale downsnelheid instellen (Mbit/s)",
-    "download_placeholder": "Neerwaartse snelheid (Mbit/s)",
-    "recommendations_title": "Optimale aanbevelingen",
-    "recommendations_set": "Automatische aanbevelingen instellen?",
     "provider_title": "Snelheidstest-provider instellen",
-    "manually": "Handmatig instellen",
     "new_password": "Nieuw wachtwoord instellen",
     "password_placeholder": "Nieuw wachtwoord",
     "show_password": "Wachtwoord tonen",
@@ -169,36 +150,22 @@
     "level": "Niveau wijzigen",
     "level_title": "Rechten voor bezoekers",
     "cron_title": "Testfrequentie instellen",
-    "cron_rules": "Cron-regel",
     "cron_next_test": "Volgende test:",
     "custom_cron": "Aangepaste cron expressie",
     "schedule_offset": "Verschuiving schema",
     "schedule_offset_desc": "Voegt een kleine vertraging toe om te voorkomen dat testen op exacte tijdstippen starten",
-    "advanced": "Geavanceerd",
-    "time_title": "Tests van de laatste ...",
-    "download": "Downloaden",
     "pause_title": "Snelheidstests pauzeren voor...",
     "hours": "Uren",
     "pause": "Pauze",
-    "pause_manual_hint": "Laat leeg om voor onbepaalde tijd te pauzeren",
-    "release_manually": "Handmatig loslaten",
     "language": "Taal wijzigen",
-    "view_title": "Weergave wijzigen",
     "quiet_hours_saved": "Stille uren opgeslagen"
   },
   "header": {
-    "running_tooltip": "Snelheidstest wordt uitgevoerd",
-    "start_tooltip": "Snelheidstest starten",
     "new_update": "Update beschikbaar",
     "download": "Downloaden",
-    "paused": "Snelheidstests zijn momenteel gepauzeerd. Ga door als je er een wilt doen.",
     "running": "Er wordt al een snelheidstest uitgevoerd. Een ogenblik geduld alstublieft.",
     "admin_login": "Beheerderslogin",
-    "servers": "Servers",
-    "beta": {
-      "title": "Beta-versie",
-      "description": "Deze functie is nog in betafase. Als je bugs vindt, meld ze dan <Link>hier</Link>."
-    }
+    "servers": "Servers"
   },
   "storage": {
     "speedtests": "Snelheidstests",
@@ -255,7 +222,6 @@
     "byte_speed_unit": "MB/s",
     "up": "Uploaden",
     "latest": "Laatste test",
-    "before": "van",
     "bufferbloat": "Bufferbloat: voegt {{increase}} ms toe onder belasting",
     "bufferbloat_trend": "Bufferbloat over de laatste tests",
     "quality": "Onder belasting",
@@ -293,10 +259,6 @@
     "up": {
       "title": "Uploadsnelheid",
       "description": "Uploadsnelheid beïnvloedt je surfervaring. Hoe meer u krijgt, hoe sneller uw computer gegevens kan verzenden."
-    },
-    "latest": {
-      "title": "Laatste test",
-      "description": "Dit is de tijd die aangeeft wanneer de laatste test is uitgevoerd. In dit geval vond de laatste plaats op <Bold>{{date}}</Bold> om <Bold>{{time}}</Bold>."
     }
   },
   "time": {
@@ -307,15 +269,12 @@
     "hour": "1 uur",
     "hours": "{{hours}} uur",
     "day": "1 dag",
-    "days": "{{days}} dagen",
-    "on": "Op",
-    "at": "Op"
+    "days": "{{days}} dagen"
   },
   "test": {
     "not_available": "Er zijn momenteel geen tests beschikbaar",
     "not_available_in_range": "Geen tests tussen {{from}} en {{to}}",
     "show_all_time": "Volledige geschiedenis tonen",
-    "no_latest": "Er is geen huidige test. Voer een test uit of wacht tot de volgende test is uitgevoerd.",
     "loading_more": "Meer tests laden...",
     "no_more_tests": "Geen tests meer om te laden",
     "unknown_error": "Onbekende fout",
@@ -329,15 +288,7 @@
       "yes": "Ja, verwijderen"
     },
     "deleted": "De test is verwijderd",
-    "average": {
-      "title": "Gemiddelde snelheid",
-      "description": "<Bold>{{amount}}</Bold> Tests hebben uitgewezen dat op <Bold>{{date}}</Bold> een gemiddelde downloadsnelheid van <Bold>{{down}} Mbit/s</Bold> en een uploadsnelheid van <Bold>{{up}} Mbit/s</Bold> werd gehaald. De tests duurden gemiddeld <Bold>{{duration}} seconden</Bold>."
-    },
     "result": {
-      "title": "Testresultaat",
-      "description": "<Link>Deze test</Link> behaalde een maximale downloadsnelheid van <Bold>{{down}} Mbps</Bold> en een maximale uploadsnelheid van <Bold>{{up}} Mbps</Bold>. Hij werd gemaakt <Bold>{{type}}</Bold> en duurde <Bold>{{duration}} Seconden</Bold>.",
-      "jitter": " De jitter voor de verbinding was <Bold>{{jitter}} ms</Bold>.",
-      "server": " De test liep tegen <Bold>{{server}}</Bold>.",
       "from_you": "van jou",
       "automatic": "automatisch"
     },
@@ -354,21 +305,16 @@
       "unchanged": "Onveranderd sinds de vorige test",
       "measured_at": "Gemeten om",
       "measured_with": "Gemeten met",
-      "duration": "Duur",
       "seconds": "{{seconds}} s",
       "data_used": "Gebruikte data",
       "data_used_value": "{{down}} omlaag / {{up}} omhoog",
       "trigger": "Gestart",
       "server": "Server",
       "result": "Volledig resultaat",
-      "loaded_latency": "Latentie onder belasting",
-      "loaded_latency_value": "{{down}} ms omlaag / {{up}} ms omhoog",
       "packet_loss": "Pakketverlies",
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Verbinding",
-      "isp": "Provider",
-      "external_ip": "Extern adres",
       "changed": "gewijzigd"
     }
   },
@@ -381,7 +327,6 @@
     "connection_refused": "De test kon niet worden uitgevoerd omdat de verbinding werd geweigerd",
     "timed_out": "De internetverbinding was instabiel tijdens de duur van de test",
     "config": "Het configuratiebestand kon niet worden geladen",
-    "invalid_view": "Ongeldige weergave",
     "cannot_open_socket": "Kon geen verbinding met de testserver openen. Mogelijk is die niet bereikbaar vanaf de gekozen netwerkinterface.",
     "latency_failed": "De latentietest is mislukt, dus kon er geen snelheid worden gemeten.",
     "rate_limited": "De provider heeft de test geweigerd omdat er kort geleden te veel zijn uitgevoerd. De volgende wordt automatisch uitgesteld.",
@@ -424,24 +369,6 @@
       "density_title": "Tests per dag",
       "density_description": "Over {{days}} dagen"
     },
-    "failed": {
-      "title": "Mislukte tests",
-      "success": "Succesvol",
-      "failed": "Mislukt",
-      "label": "Tests"
-    },
-    "speed": {
-      "title": "Snelheid"
-    },
-    "manual": {
-      "title": "Handmatige tests",
-      "yes": "Handmatig gemaakt",
-      "no": "Automatisch aangemaakt"
-    },
-    "duration": {
-      "title": "Duur van de test",
-      "label": "Aantal"
-    },
     "values": {
       "min": "Laagste",
       "max": "Hoogste",
@@ -459,10 +386,6 @@
     },
     "consistency": {
       "title": "Connectie stabiliteit",
-      "excellent": "Uitstekend",
-      "good": "goed",
-      "fair": "Redelijk",
-      "poor": "Onvoldoende",
       "ping_deviation": "Gebruikelijke afwijking",
       "loaded_latency_average": "Voegt gemiddeld {{increase}} ms toe onder belasting, over {{tests}} tests",
       "jitter_detail": "Variatie binnen één test",
@@ -480,8 +403,6 @@
     "previous_month": "Vorige maand",
     "next_month": "Volgende maand",
     "next_year": "Volgend jaar",
-    "from": "van",
-    "to": "tot",
     "last_7_days": "Afgelopen 7 dagen",
     "last_30_days": "Laatste 30 dagen",
     "last_90_days": "Last 90 Days",

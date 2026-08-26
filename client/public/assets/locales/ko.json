@@ -17,7 +17,6 @@
     "okay": "확인",
     "done": "완료",
     "continue": "계속",
-    "apply": "예, 적용합니다",
     "update": "업데이트",
     "close": "닫기",
     "unset": "제거",
@@ -57,7 +56,6 @@
       "custom_url": "사용자 지정 URL",
       "choose_automatically": "자동 선택",
       "ookla_license": "Ookla의 <Eula>EULA</Eula>, <GDPR>개인정보 처리방침</GDPR> 및 <TOS>서비스 약관</TOS>을 읽었으며 이에 동의합니다.",
-      "ookla_notice": "Ookla를 사용하면 해당 <Eula>EULA</Eula>, <GDPR>개인정보 처리방침</GDPR> 및 <TOS>서비스 약관</TOS>에 동의하는 것으로 간주됩니다.",
       "ookla_desc": "글로벌 서버 네트워크를 갖춘 인기 제공업체",
       "libre_desc": "오픈소스, 자체 호스팅 가능한 속도 테스트",
       "cloudflare_desc": "빠른 CDN 기반 테스트"
@@ -70,15 +68,10 @@
     "provider_changed": "제공업체가 변경되었습니다.",
     "changes_unsaved": "변경 사항이 적용되지 않았습니다. 입력을 확인하세요.",
     "invalid": "잘못된 입력",
-    "ping": "최적 핑",
-    "upload": "최적 업로드 속도",
-    "download": "최적 다운로드 속도",
-    "recommendations": "권장값",
     "optimal_values": "최적 값",
     "change_provider": "제공업체 변경",
     "password": "비밀번호 변경",
     "cron": "빈도 설정",
-    "time": "기간 설정",
     "storage": "저장소 관리",
     "pause_tests": "테스트 일시 중지",
     "resume_tests": "테스트 재개",
@@ -90,10 +83,7 @@
   "about": {
     "title": "MySpeed 정보",
     "description": "MySpeed는 설정 가능한 기간 동안 인터넷 속도를 기록하는 오픈소스 속도 테스트 분석 소프트웨어입니다.",
-    "website": "웹사이트",
-    "donate": "후원",
-    "translate": "번역",
-    "made_by": "제작:"
+    "translate": "번역"
   },
   "options": {
     "cron": {
@@ -145,16 +135,7 @@
     "statistics": "통계"
   },
   "update": {
-    "ping_title": "최적 핑 설정 (ms)",
-    "ping_placeholder": "핑 (ms)",
-    "upload_title": "최적 업로드 속도 설정 (Mbps)",
-    "upload_placeholder": "업로드 속도 (Mbps)",
-    "download_title": "최적 다운로드 속도 설정 (Mbps)",
-    "download_placeholder": "다운로드 속도 (Mbps)",
-    "recommendations_title": "최적 권장값",
-    "recommendations_set": "자동 권장값을 설정할까요?",
     "provider_title": "속도 테스트 제공업체 설정",
-    "manually": "수동 설정",
     "new_password": "새 비밀번호 설정",
     "password_placeholder": "새 비밀번호",
     "show_password": "비밀번호 표시",
@@ -169,36 +150,22 @@
     "level": "권한 변경",
     "level_title": "방문자 권한",
     "cron_title": "테스트 빈도 설정",
-    "cron_rules": "Cron 규칙",
     "cron_next_test": "다음 테스트:",
     "custom_cron": "사용자 지정 cron 표현식",
     "schedule_offset": "일정 오프셋",
     "schedule_offset_desc": "테스트가 정각에 시작되지 않도록 약간의 지연을 추가합니다",
-    "advanced": "고급",
-    "time_title": "지난 ... 동안의 테스트 표시",
-    "download": "다운로드",
     "pause_title": "속도 테스트 일시 중지...",
     "hours": "시간",
     "pause": "일시 중지",
-    "pause_manual_hint": "무기한 일시 중지하려면 비워 두세요",
-    "release_manually": "수동으로 해제",
     "language": "언어 변경",
-    "view_title": "보기 전환",
     "quiet_hours_saved": "조용한 시간이 저장되었습니다"
   },
   "header": {
-    "running_tooltip": "속도 테스트 실행 중",
-    "start_tooltip": "속도 테스트 시작",
     "new_update": "업데이트 사용 가능",
     "download": "다운로드",
-    "paused": "속도 테스트가 현재 일시 중지되어 있습니다. 테스트를 실행하려면 먼저 재개해 주세요.",
     "running": "속도 테스트가 이미 실행 중입니다. 잠시 기다려 주세요.",
     "admin_login": "관리자 로그인",
-    "servers": "서버",
-    "beta": {
-      "title": "베타 버전",
-      "description": "이 기능은 아직 베타 단계입니다. 버그를 발견하면 <Link>여기</Link>에 신고해 주세요."
-    }
+    "servers": "서버"
   },
   "storage": {
     "speedtests": "속도 테스트",
@@ -255,7 +222,6 @@
     "byte_speed_unit": "MB/s",
     "up": "업로드",
     "latest": "마지막 테스트",
-    "before": "전",
     "bufferbloat": "버퍼블로트: 부하 시 {{increase}} ms 증가",
     "bufferbloat_trend": "최근 테스트의 버퍼블로트",
     "quality": "부하 시",
@@ -293,10 +259,6 @@
     "up": {
       "title": "업로드 속도",
       "description": "업로드 속도는 인터넷 사용 경험에 영향을 줍니다. 속도가 빠를수록 컴퓨터가 데이터를 더 빠르게 보낼 수 있습니다."
-    },
-    "latest": {
-      "title": "마지막 테스트",
-      "description": "마지막 테스트가 실행된 시간을 보여줍니다. 이 경우 마지막 테스트는 <Bold>{{date}}</Bold> <Bold>{{time}}</Bold>에 실행되었습니다."
     }
   },
   "time": {
@@ -307,15 +269,12 @@
     "hour": "1시간",
     "hours": "{{hours}}시간",
     "day": "1일",
-    "days": "{{days}}일",
-    "on": "날짜",
-    "at": "시각"
+    "days": "{{days}}일"
   },
   "test": {
     "not_available": "현재 이용 가능한 테스트가 없습니다",
     "not_available_in_range": "{{from}}부터 {{to}}까지 테스트가 없습니다",
     "show_all_time": "전체 기간 보기",
-    "no_latest": "현재 표시할 테스트가 없습니다. 테스트를 실행하거나 다음 테스트가 실행될 때까지 기다려 주세요.",
     "loading_more": "테스트를 더 불러오는 중...",
     "no_more_tests": "더 불러올 테스트가 없습니다",
     "unknown_error": "알 수 없는 오류",
@@ -329,15 +288,7 @@
       "yes": "예, 삭제합니다"
     },
     "deleted": "테스트가 삭제되었습니다",
-    "average": {
-      "title": "평균 속도",
-      "description": "<Bold>{{amount}}</Bold>회의 테스트 결과, <Bold>{{date}}</Bold>에 평균 다운로드 속도 <Bold>{{down}} Mbps</Bold>와 평균 업로드 속도 <Bold>{{up}} Mbps</Bold>를 기록했습니다. 테스트에는 평균 <Bold>{{duration}}초</Bold>가 걸렸습니다."
-    },
     "result": {
-      "title": "테스트 결과",
-      "description": "<Link>이 테스트</Link>는 최대 다운로드 속도 <Bold>{{down}} Mbps</Bold>와 최대 업로드 속도 <Bold>{{up}} Mbps</Bold>를 기록했습니다. 이 테스트는 <Bold>{{type}}</Bold>으로 생성되었으며 <Bold>{{duration}}초</Bold>가 걸렸습니다.",
-      "jitter": " 연결 지터는 <Bold>{{jitter}} ms</Bold>였습니다.",
-      "server": " 테스트는 <Bold>{{server}}</Bold> 서버를 대상으로 실행되었습니다.",
       "from_you": "수동",
       "automatic": "자동"
     },
@@ -354,21 +305,16 @@
       "unchanged": "마지막 테스트 이후 변동 없음",
       "measured_at": "측정 시각",
       "measured_with": "측정 도구",
-      "duration": "소요 시간",
       "seconds": "{{seconds}}초",
       "data_used": "사용된 데이터",
       "data_used_value": "다운로드 {{down}} / 업로드 {{up}}",
       "trigger": "시작 방식",
       "server": "서버",
       "result": "전체 결과",
-      "loaded_latency": "부하 시 지연 시간",
-      "loaded_latency_value": "다운로드 {{down}} ms / 업로드 {{up}} ms",
       "packet_loss": "패킷 손실",
       "bufferbloat": "버퍼블로트",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "연결",
-      "isp": "제공업체",
-      "external_ip": "외부 주소",
       "changed": "변경됨"
     }
   },
@@ -381,7 +327,6 @@
     "connection_refused": "연결이 거부되어 테스트를 수행할 수 없었습니다",
     "timed_out": "테스트 중 인터넷 연결이 불안정했습니다",
     "config": "구성 파일을 불러올 수 없습니다",
-    "invalid_view": "잘못된 보기",
     "cannot_open_socket": "테스트 서버에 연결할 수 없습니다. 선택한 네트워크 인터페이스에서 접근할 수 없는 서버일 수 있습니다.",
     "latency_failed": "지연 시간 테스트가 실패하여 속도를 측정할 수 없었습니다.",
     "rate_limited": "최근에 테스트가 너무 많이 실행되어 제공업체가 테스트를 거부했습니다. 다음 테스트는 자동으로 지연됩니다.",
@@ -424,24 +369,6 @@
       "density_title": "일일 테스트 수",
       "density_description": "{{days}}일 동안"
     },
-    "failed": {
-      "title": "실패한 테스트",
-      "success": "성공",
-      "failed": "실패",
-      "label": "테스트"
-    },
-    "speed": {
-      "title": "속도"
-    },
-    "manual": {
-      "title": "수동 테스트",
-      "yes": "수동으로 생성됨",
-      "no": "자동으로 생성됨"
-    },
-    "duration": {
-      "title": "테스트 소요 시간",
-      "label": "개수"
-    },
     "values": {
       "min": "최소",
       "max": "최대",
@@ -459,10 +386,6 @@
     },
     "consistency": {
       "title": "연결 안정성",
-      "excellent": "매우 우수",
-      "good": "양호",
-      "fair": "보통",
-      "poor": "나쁨",
       "ping_deviation": "일반적인 편차",
       "loaded_latency_average": "{{tests}}회 테스트 평균, 부하 시 {{increase}} ms 증가",
       "jitter_detail": "테스트 내 변동",
@@ -480,8 +403,6 @@
     "previous_month": "이전 달",
     "next_month": "다음 달",
     "next_year": "다음 해",
-    "from": "시작",
-    "to": "종료",
     "last_7_days": "최근 7일",
     "last_30_days": "최근 30일",
     "last_90_days": "최근 90일",

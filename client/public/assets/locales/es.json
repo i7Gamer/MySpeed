@@ -17,7 +17,6 @@
     "okay": "Vale",
     "done": "Listo",
     "continue": "Continuar",
-    "apply": "De acuerdo",
     "update": "Cambiar",
     "close": "Cerrar",
     "unset": "Eliminar",
@@ -57,7 +56,6 @@
       "custom_url": "URL personalizada",
       "choose_automatically": "Elige automáticamente",
       "ookla_license": "He leído y acepto <Eula>el CLUF</Eula>, la <GDPR>política de privacidad</GDPR> y las <TOS>condiciones de servicio</TOS> de Ookla.",
-      "ookla_notice": "Al usar Ookla, aceptas sus <Eula>EULA</Eula>, <GDPR>política de privacidad</GDPR> y <TOS>condiciones de servicio</TOS>.",
       "ookla_desc": "Proveedor popular con red global de servidores",
       "libre_desc": "Pruebas veloces autohostables de código abierto",
       "cloudflare_desc": "Pruebas rápidas basadas en CDN"
@@ -70,15 +68,10 @@
     "provider_changed": "Se ha cambiado el proveedor",
     "changes_unsaved": "Tus cambios no han sido aceptados. Comprueba los datos",
     "invalid": "Datos inválidos",
-    "ping": "Ping óptimo",
-    "upload": "Velocidad de subida óptima",
-    "download": "Velocidad de descarga óptima",
-    "recommendations": "Valores óptimos",
     "optimal_values": "Valores óptimos",
     "change_provider": "Cambiar de proveedor",
     "password": "Cambiar la contraseña",
     "cron": "Ajustar frecuencia",
-    "time": "Cambiar período",
     "storage": "Gestionar almacenamiento",
     "pause_tests": "Pausar tests",
     "resume_tests": "Continuar tests",
@@ -90,10 +83,7 @@
   "about": {
     "title": "Acerca de mi velocidad",
     "description": "MySpeed es un software de análisis de velocidad de código abierto que registra su velocidad de Internet en un período de tiempo configurable.",
-    "website": "Sitio web",
-    "donate": "Donar",
-    "translate": "Traducir",
-    "made_by": "Hecho con"
+    "translate": "Traducir"
   },
   "options": {
     "cron": {
@@ -145,16 +135,7 @@
     "statistics": "Estadísticas"
   },
   "update": {
-    "ping_title": "Establecer ping óptimo (ms)",
-    "ping_placeholder": "Ping (ms)",
-    "upload_title": "Velocidad de subida óptima (Mbps)",
-    "upload_placeholder": "Velocidad de subida (Mbps)",
-    "download_title": "Velocidad de descarga óptima (Mbps)",
-    "download_placeholder": "Velocidad de descarga (Mbps)",
-    "recommendations_title": "Recomendaciones óptimas",
-    "recommendations_set": "¿Usar valores recomendados?",
     "provider_title": "Establecer proveedor de tests de Velocidad",
-    "manually": "Ajustar manualmente",
     "new_password": "Establecer nueva contraseña",
     "password_placeholder": "Nueva contraseña",
     "show_password": "Mostrar contraseña",
@@ -169,36 +150,22 @@
     "level": "Nivel de cambio",
     "level_title": "Derechos de los visitantes",
     "cron_title": "Ajustar la frecuencia de los tests",
-    "cron_rules": "Regla cron",
     "cron_next_test": "Próximo test:",
     "custom_cron": "Expresión cron personalizada",
     "schedule_offset": "Programación de Ofset",
     "schedule_offset_desc": "Añade un pequeño retraso para evitar que las pruebas comiencen en horas exactas",
-    "advanced": "Avanzado",
-    "time_title": "Mostrar los tests de los últimos:",
-    "download": "Descargar",
     "pause_title": "Pausar tests durante:",
     "hours": "Horas",
     "pause": "Pausar",
-    "pause_manual_hint": "Dejar vacío para pausar indefinidamente",
-    "release_manually": "Reanudar manualmente",
     "language": "Cambiar de idioma",
-    "view_title": "Cambiar interfaz",
     "quiet_hours_saved": "Horas de silencio guardadas"
   },
   "header": {
-    "running_tooltip": "Test de velocidad en marcha",
-    "start_tooltip": "Ejecutar test de velocidad",
     "new_update": "Actualización disponible",
     "download": "Descarga",
-    "paused": "Los tests de velocidad están pausados. Por favor, continúe si desea realizar uno.",
     "running": "Ya se está realizando un test de velocidad. Espera un momento.",
     "admin_login": "Inicio de sesión de administrador",
-    "servers": "Servidores",
-    "beta": {
-      "title": "Versión beta",
-      "description": "Esta función está todavía en beta. Si encuentras algún error, notifícalo <Link>aquí</Link>."
-    }
+    "servers": "Servidores"
   },
   "storage": {
     "speedtests": "Tests de velocidad",
@@ -255,7 +222,6 @@
     "byte_speed_unit": "MB/s",
     "up": "Subida",
     "latest": "Último test",
-    "before": "hace",
     "bufferbloat": "Bufferbloat: añade {{increase}} ms bajo carga",
     "bufferbloat_trend": "Bufferbloat en los últimos tests",
     "quality": "Bajo carga",
@@ -293,10 +259,6 @@
     "up": {
       "title": "Velocidad de subida",
       "description": "La velocidad de subida afecta a tu experiencia de navegación. Cuanto mayor sea, más rápido podrás enviar datos."
-    },
-    "latest": {
-      "title": "Último test",
-      "description": "La hora cuándo se realizó el último test. En este caso, la última tuvo lugar el día <Bold>{{date}}</Bold> a las <Bold>{{time}}</Bold>."
     }
   },
   "time": {
@@ -307,15 +269,12 @@
     "hour": "1 hora",
     "hours": "{{hours}} hora",
     "day": "1 día",
-    "days": "{{days}} días",
-    "on": "El",
-    "at": "A las"
+    "days": "{{days}} días"
   },
   "test": {
     "not_available": "Actualmente no hay tests disponibles",
     "not_available_in_range": "No hay tests entre {{from}} y {{to}}",
     "show_all_time": "Mostrar todo el historial",
-    "no_latest": "No hay ningun test en curso. Realice un test o espere hasta que se haya realizado el siguiente.",
     "loading_more": "Cargando más pruebas...",
     "no_more_tests": "No hay que cargar más pruebas",
     "unknown_error": "Error desconocido",
@@ -329,15 +288,7 @@
       "yes": "Sí, borrar"
     },
     "deleted": "El test fue eliminado",
-    "average": {
-      "title": "Velocidad media",
-      "description": "<Bold>{{amount}}</Bold> Los tests indican que el <Bold>{{date}}</Bold> hubo una velocidad media de descarga de <Bold>{{down}} Mbit/s</Bold> y una velocidad de subida de <Bold>{{up}} Mbit/s</Bold>. Los tests duraron una media de <Bold>{{duration}} segundos</Bold>."
-    },
     "result": {
-      "title": "Resultado del test",
-      "description": "<Link>Este test</Link> alcanzó una velocidad de descarga máxima de <Bold>{{down}} Mbps</Bold> y una velocidad de subida máxima de <Bold>{{up}} Mbps</Bold>. Se creó <Bold>{{type}}</Bold> y tardó <Bold>{{duration}} Segundos</Bold>.",
-      "jitter": " El jitter de conexión era <Bold>{{jitter}} ms</Bold>.",
-      "server": " El test se ejecutó contra <Bold>{{server}}</Bold>.",
       "from_you": "de ti",
       "automatic": "automático"
     },
@@ -354,21 +305,16 @@
       "unchanged": "Sin cambios desde el último test",
       "measured_at": "Medido a las",
       "measured_with": "Medido con",
-      "duration": "Duración",
       "seconds": "{{seconds}} s",
       "data_used": "Datos usados",
       "data_used_value": "{{down}} de bajada / {{up}} de subida",
       "trigger": "Iniciado",
       "server": "Servidor",
       "result": "Resultado completo",
-      "loaded_latency": "Latencia bajo carga",
-      "loaded_latency_value": "{{down}} ms de bajada / {{up}} ms de subida",
       "packet_loss": "Pérdida de paquetes",
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Conexión",
-      "isp": "Proveedor",
-      "external_ip": "Dirección externa",
       "changed": "cambiado"
     }
   },
@@ -381,7 +327,6 @@
     "connection_refused": "No se ha podido realizar el test porque no existía ninguna ruta hacia el host",
     "timed_out": "La conexión a Internet era inestable durante el test",
     "config": "No se ha podido cargar el archivo de configuración",
-    "invalid_view": "Vista no válida",
     "cannot_open_socket": "No se pudo abrir una conexión con el servidor de test. Puede que no sea accesible desde la interfaz de red seleccionada.",
     "latency_failed": "El test de latencia falló, así que no se pudo medir ninguna velocidad.",
     "rate_limited": "El proveedor rechazó el test porque se han ejecutado demasiados hace poco. El siguiente se retrasa automáticamente.",
@@ -424,24 +369,6 @@
       "density_title": "Tests por día",
       "density_description": "A lo largo de {{days}} días"
     },
-    "failed": {
-      "title": "Tests fallidos",
-      "success": "Exitoso",
-      "failed": "Fallido",
-      "label": "Pruebas"
-    },
-    "speed": {
-      "title": "Velocidad"
-    },
-    "manual": {
-      "title": "Tests manuales",
-      "yes": "Manual",
-      "no": "Programado"
-    },
-    "duration": {
-      "title": "Duración del test",
-      "label": "Número"
-    },
     "values": {
       "min": "Mínimo",
       "max": "Máximo",
@@ -459,10 +386,6 @@
     },
     "consistency": {
       "title": "Estabilidad de conexión",
-      "excellent": "Excelente",
-      "good": "Bueno",
-      "fair": "Aceptable",
-      "poor": "Deficiente",
       "ping_deviation": "Desviación típica",
       "loaded_latency_average": "Añade {{increase}} ms bajo carga de media, en {{tests}} tests",
       "jitter_detail": "Variación dentro de un test",
@@ -480,8 +403,6 @@
     "previous_month": "Mes anterior",
     "next_month": "Mes siguiente",
     "next_year": "Año siguiente",
-    "from": "De",
-    "to": "A",
     "last_7_days": "Últimos 7 días",
     "last_30_days": "Últimos 30 días",
     "last_90_days": "Últimos 90 días",

@@ -17,7 +17,6 @@
     "okay": "好的",
     "done": "准备就绪",
     "continue": "继续",
-    "apply": "应用",
     "update": "更新",
     "close": "关闭",
     "unset": "移除",
@@ -57,7 +56,6 @@
       "custom_url": "自定义 URL",
       "choose_automatically": "自动选择",
       "ookla_license": "我已阅读并接受 Ookla 的<Eula>EULA</Eula>、<GDPR>隐私政策</GDPR>和<TOS>服务条款</TOS>。",
-      "ookla_notice": "使用 Ookla 即表示您同意其<Eula>最终用户许可协议</Eula>、<GDPR>隐私政策</GDPR>和<TOS>服务条款</TOS>。",
       "ookla_desc": "拥有全球服务器网络的流行提供商",
       "libre_desc": "开源、可自托管的测速工具",
       "cloudflare_desc": "基于 CDN 的快速测试"
@@ -70,15 +68,10 @@
     "provider_changed": "提供已变更。",
     "changes_unsaved": "你的修改没有被接受。请检查你的输入。",
     "invalid": "输入无效",
-    "ping": "最佳的延迟",
-    "upload": "最佳的上传速度",
-    "download": "最佳的下载速度",
-    "recommendations": "最优值",
     "optimal_values": "最佳值",
     "change_provider": "更换提供商",
     "password": "更改密码",
     "cron": "设置测试频率",
-    "time": "设置期限",
     "storage": "管理存储",
     "pause_tests": "暂停测试",
     "resume_tests": "继续测试",
@@ -90,10 +83,7 @@
   "about": {
     "title": "关于 MySpeed",
     "description": "MySpeed 是一款开源测速分析软件，可在可配置的时间段内记录您的网速。",
-    "website": "官网",
-    "donate": "捐赠",
-    "translate": "翻译",
-    "made_by": "用"
+    "translate": "翻译"
   },
   "options": {
     "cron": {
@@ -145,16 +135,7 @@
     "statistics": "统计"
   },
   "update": {
-    "ping_title": "设置最佳延迟 (ms)",
-    "ping_placeholder": "延迟 (ms)",
-    "upload_title": "设置最佳上传速度 (Mbit/s)",
-    "upload_placeholder": "上传速度 (Mbit/s)",
-    "download_title": "设置最佳下载速度 (Mbit/s)",
-    "download_placeholder": "下载速度 (Mbit/s)",
-    "recommendations_title": "最优建议",
-    "recommendations_set": "设置自动推荐？",
     "provider_title": "设置测速提供商",
-    "manually": "手动设置",
     "new_password": "设置新密码",
     "password_placeholder": "新密码",
     "show_password": "显示密码",
@@ -169,36 +150,22 @@
     "level": "修改访问权限",
     "level_title": "游客的权限",
     "cron_title": "设置测试频率",
-    "cron_rules": "克隆规则",
     "cron_next_test": "下一次测试：",
     "custom_cron": "自定义 Cron 表达式",
     "schedule_offset": "偏移计划",
     "schedule_offset_desc": "添加小幅延迟以防止测试在整点启动",
-    "advanced": "高级",
-    "time_title": "显示最后一次测试...",
-    "download": "下载",
     "pause_title": "测速暂停了，因为...",
     "hours": "小时",
     "pause": "暂停",
-    "pause_manual_hint": "留空以无限期暂停",
-    "release_manually": "手动释放",
     "language": "改变语言",
-    "view_title": "修改视图",
     "quiet_hours_saved": "静默时段已保存"
   },
   "header": {
-    "running_tooltip": "运行测速",
-    "start_tooltip": "开始测速",
     "new_update": "可提供最新信息",
     "download": "下载",
-    "paused": "测速目前已暂停。如果你想参加，请继续。",
     "running": "测速已经在进行中。请稍等片刻。",
     "admin_login": "管理员登录",
-    "servers": "服务器",
-    "beta": {
-      "title": "测试版本",
-      "description": "该功能仍处于测试阶段。如果你发现错误，请报告 <Link>这里</Link>."
-    }
+    "servers": "服务器"
   },
   "storage": {
     "speedtests": "测速",
@@ -255,7 +222,6 @@
     "byte_speed_unit": "MB/s",
     "up": "上传",
     "latest": "最后一次测速",
-    "before": "从",
     "bufferbloat": "缓冲膨胀：负载下增加 {{increase}} 毫秒",
     "bufferbloat_trend": "最近几次测速的缓冲膨胀",
     "quality": "负载下",
@@ -293,10 +259,6 @@
     "up": {
       "title": "上传速度",
       "description": "上传速度会影响你的浏览体验。你的测速值越大，你的计算机发送数据的速度就越快。"
-    },
-    "latest": {
-      "title": "最后一次测速",
-      "description": "这是向您显示最后一次测速的时间。在这种情况下，最后一次发生在<Bold>{{date}}</Bold>，<Bold>{{time}}</Bold>。"
     }
   },
   "time": {
@@ -307,15 +269,12 @@
     "hour": "1小时",
     "hours": "{{hours}} 小时",
     "day": "1 天",
-    "days": "{{days}} 天",
-    "on": "于",
-    "at": "在"
+    "days": "{{days}} 天"
   },
   "test": {
     "not_available": "目前没有任何测试",
     "not_available_in_range": "{{from}} 至 {{to}} 之间没有测速",
     "show_all_time": "显示全部历史",
-    "no_latest": "当前没有测试。请执行一个测试或等到下一个测试完成。",
     "loading_more": "加载更多测试记录...",
     "no_more_tests": "已加载全部测试记录",
     "unknown_error": "未知错误",
@@ -329,15 +288,7 @@
       "yes": "是，删除"
     },
     "deleted": "该测试被删除",
-    "average": {
-      "title": "平均速度",
-      "description": "<Bold>{{amount}}</Bold>次测试结果显示，在<Bold>{{date}}</Bold>的平均下载速度为<Bold>{{down}} Mbit/s</Bold>，上传速度为<Bold>{{up}} Mbit/s</Bold>。测试平均持续时间为<Bold>{{duration}} 秒</Bold>。"
-    },
     "result": {
-      "title": "测试结果",
-      "description": "<Link>该测试</Link>的最高下载速度为<Bold>{{down}} Mbps</Bold>，最高上传速度为<Bold>{{up}} Mbps</Bold>。创建 <Bold>{{type}}</Bold>耗时<Bold>{{duration}} 秒</Bold>。",
-      "jitter": " 连接抖动为 <Bold>{{jitter}} 毫秒</Bold>。",
-      "server": " 该测速是针对 <Bold>{{server}}</Bold> 运行的。",
       "from_you": "来自你的",
       "automatic": "自动"
     },
@@ -354,21 +305,16 @@
       "unchanged": "与上次测速相比没有变化",
       "measured_at": "测量时间",
       "measured_with": "测量方式",
-      "duration": "用时",
       "seconds": "{{seconds}} 秒",
       "data_used": "消耗流量",
       "data_used_value": "下载 {{down}} / 上传 {{up}}",
       "trigger": "启动方式",
       "server": "服务器",
       "result": "完整结果",
-      "loaded_latency": "负载下的延迟",
-      "loaded_latency_value": "下载 {{down}} 毫秒 / 上传 {{up}} 毫秒",
       "packet_loss": "丢包率",
       "bufferbloat": "缓冲膨胀",
       "bufferbloat_value": "+{{increase}} 毫秒",
       "connection": "连接",
-      "isp": "运营商",
-      "external_ip": "外部地址",
       "changed": "已变更"
     }
   },
@@ -381,7 +327,6 @@
     "connection_refused": "由于连接被拒绝，测试无法进行。",
     "timed_out": "在测试期间，互联网连接不稳定。",
     "config": "配置文件不能被加载",
-    "invalid_view": "无效视图",
     "cannot_open_socket": "无法与测速服务器建立连接。所选网络接口可能无法访问它。",
     "latency_failed": "延迟测试失败，因此无法测出速度。",
     "rate_limited": "提供商拒绝了本次测速，因为近期运行的次数过多。下一次会自动延后。",
@@ -424,24 +369,6 @@
       "density_title": "每天测速次数",
       "density_description": "共 {{days}} 天"
     },
-    "failed": {
-      "title": "测试结果",
-      "success": "成功的",
-      "failed": "失败",
-      "label": "测速"
-    },
-    "speed": {
-      "title": "速度"
-    },
-    "manual": {
-      "title": "测试来源",
-      "yes": "手动创建",
-      "no": "自动创建"
-    },
-    "duration": {
-      "title": "测试时间",
-      "label": "数量"
-    },
     "values": {
       "min": "最小值",
       "max": "最大值",
@@ -459,10 +386,6 @@
     },
     "consistency": {
       "title": "连接稳定性",
-      "excellent": "优秀",
-      "good": "良好",
-      "fair": "一般",
-      "poor": "较差",
       "ping_deviation": "典型偏差",
       "loaded_latency_average": "在 {{tests}} 次测速中，负载下平均增加 {{increase}} 毫秒",
       "jitter_detail": "单次测速内的波动",
@@ -480,8 +403,6 @@
     "previous_month": "上个月",
     "next_month": "下个月",
     "next_year": "下一年",
-    "from": "从",
-    "to": "至",
     "last_7_days": "最近 7 天",
     "last_30_days": "最近 30 天",
     "last_90_days": "最近 90 天",

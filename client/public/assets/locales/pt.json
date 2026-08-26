@@ -17,7 +17,6 @@
     "okay": "Ok",
     "done": "Concluído",
     "continue": "Continuar",
-    "apply": "Sim, aplicar",
     "update": "Atualizar",
     "close": "Fechar",
     "unset": "Remover",
@@ -57,7 +56,6 @@
       "custom_url": "URL personalizada",
       "choose_automatically": "Escolha automaticamente",
       "ookla_license": "Eu li e aceito o <Eula>EULA</Eula>, <GDPR>a política de privacidade</GDPR> e os <TOS>termos de serviço</TOS> da Ookla.",
-      "ookla_notice": "Ao usar o Ookla, você concorda com <Eula>o EULA</Eula>, <GDPR>a política de privacidade</GDPR> e <TOS>os termos de serviço</TOS> deles.",
       "ookla_desc": "Provedor popular com uma rede global de servidores",
       "libre_desc": "Velocidade de código aberto, auto-hostable",
       "cloudflare_desc": "Teste rápido baseado em CDN."
@@ -70,15 +68,10 @@
     "provider_changed": "O provedor foi alterado.",
     "changes_unsaved": "Suas alterações não foram aplicadas. Verifique sua entrada.",
     "invalid": "Entrada inválida",
-    "ping": "Ping ótimo",
-    "upload": "Velocidade de upload ótima",
-    "download": "Velocidade de download ótima",
-    "recommendations": "Recomendações",
     "optimal_values": "Valores ideais",
     "change_provider": "Mudar de provedor",
     "password": "Alterar senha",
     "cron": "Definir frequência",
-    "time": "Definir período",
     "storage": "Gerenciar o armazenamento",
     "pause_tests": "Pausar testes",
     "resume_tests": "Retomar testes",
@@ -90,10 +83,7 @@
   "about": {
     "title": "Sobre o MySpeed",
     "description": "O MySpeed é um software de código aberto para análise de testes de velocidade que registra a velocidade da sua internet durante um período de tempo configurável.",
-    "website": "Site",
-    "donate": "Doar",
-    "translate": "Traduzir",
-    "made_by": "Feito com"
+    "translate": "Traduzir"
   },
   "options": {
     "cron": {
@@ -145,16 +135,7 @@
     "statistics": "Estatísticas"
   },
   "update": {
-    "ping_title": "Definir pingue ótimo (ms)",
-    "ping_placeholder": "Ping (ms)",
-    "upload_title": "Definir velocidade de ‘upload’ ótima (Mbps)",
-    "upload_placeholder": "Velocidade de ‘upload’ (Mbps)",
-    "download_title": "Definir velocidade de download ótima (Mbps)",
-    "download_placeholder": "Velocidade de download (Mbps)",
-    "recommendations_title": "Recomendações ótimas",
-    "recommendations_set": "Definir recomendações automáticas?",
     "provider_title": "Definir o provedor do speedtest",
-    "manually": "Definir manualmente",
     "new_password": "Definir uma nova senha",
     "password_placeholder": "Nova senha",
     "show_password": "Mostrar a senha",
@@ -169,36 +150,22 @@
     "level": "Alterar nível",
     "level_title": "Direitos para visitantes",
     "cron_title": "Definir frequência de teste",
-    "cron_rules": "Regra Cron",
     "cron_next_test": "Próximo Teste:",
     "custom_cron": "Expressão cron personalizada",
     "schedule_offset": "Programação de deslocamento",
     "schedule_offset_desc": "Adiciona um pequeno atraso para evitar que os testes comecem exatamente na hora marcada",
-    "advanced": "Avançado",
-    "time_title": "Mostrar testes dos últimos ...",
-    "download": "Baixar",
     "pause_title": "Pausar testes de velocidade por...",
     "hours": "Horas",
     "pause": "Pausar",
-    "pause_manual_hint": "Deixe em branco para pausar por tempo indeterminado",
-    "release_manually": "Liberar manualmente",
     "language": "Alterar idioma",
-    "view_title": "Alternar visualização",
     "quiet_hours_saved": "Horário de silêncio salvo"
   },
   "header": {
-    "running_tooltip": "Teste de velocidade em execução",
-    "start_tooltip": "Iniciar teste de velocidade",
     "new_update": "Atualização disponível",
     "download": "Baixar",
-    "paused": "Os testes de velocidade estão atualmente pausados. Por favor, continue-os se quiser realizar um.",
     "running": "Um teste de velocidade já está em andamento. Por favor, aguarde um momento.",
     "admin_login": "Login de Administrador",
-    "servers": "Servidores",
-    "beta": {
-      "title": "\"Versão Beta",
-      "description": "Este recurso ainda está em beta. Se encontrar algum erro, por favor, relate <Link>aqui</Link>."
-    }
+    "servers": "Servidores"
   },
   "storage": {
     "speedtests": "Testes de velocidade",
@@ -255,7 +222,6 @@
     "byte_speed_unit": "MB/s",
     "up": "Upload",
     "latest": "Último teste",
-    "before": "antes",
     "bufferbloat": "Bufferbloat: acrescenta {{increase}} ms sob carga",
     "bufferbloat_trend": "Bufferbloat nos últimos testes",
     "quality": "Sob carga",
@@ -293,10 +259,6 @@
     "up": {
       "title": "Velocidade de upload",
       "description": "A velocidade de upload afeta sua experiência de navegação. Quanto mais você obtém, mais rápido seu computador pode enviar dados."
-    },
-    "latest": {
-      "title": "Último teste",
-      "description": "Este é o horário que mostra quando o último teste foi executado. Neste caso, o último ocorreu em <Bold>{{date}}</Bold> às <Bold>{{time}}</Bold>."
     }
   },
   "time": {
@@ -307,15 +269,12 @@
     "hour": "1 hora",
     "hours": "{{hours}} horas",
     "day": "1 dia",
-    "days": "{{days}} dias",
-    "on": "Em",
-    "at": "Às"
+    "days": "{{days}} dias"
   },
   "test": {
     "not_available": "No momento, não há testes disponíveis",
     "not_available_in_range": "Nenhum teste entre {{from}} e {{to}}",
     "show_all_time": "Mostrar todo o histórico",
-    "no_latest": "Não há nenhum teste disponível no momento. Realize um teste ou aguarde até que o próximo teste seja realizado.",
     "loading_more": "Carregando mais testes...",
     "no_more_tests": "Não há mais testes para carregar",
     "unknown_error": "Erro desconhecido",
@@ -329,15 +288,7 @@
       "yes": "Sim, excluir"
     },
     "deleted": "O teste foi excluído",
-    "average": {
-      "title": "Velocidade média",
-      "description": "<Bold>{{amount}}</Bold> Os testes mostraram que, em <Bold>{{date}}</Bold> você obteve uma velocidade média de download de <Bold>{{down}} Mbps </Bold> e uma velocidade de upload de <Bold>{{up}} Mbps</Bold>. Os testes levaram uma média de <Bold>{{duration}} segundos</Bold>."
-    },
     "result": {
-      "title": "Resultado do teste",
-      "description": "<Link>Esse teste</Link> atingiu uma velocidade máxima de download de <Bold>{{down}} Mbps</Bold> e uma velocidade máxima de upload de <Bold>{{up}} Mbps</Bold>. Ele foi criado <Bold>{{type}}</Bold> e levou <Bold>{{duration}} segundos</Bold>.",
-      "jitter": " O jitter de conexão foi <Bold>{{jitter}} ms</Bold>.",
-      "server": " O teste foi executado contra <Bold>{{server}}</Bold>.",
       "from_you": "por você",
       "automatic": "automaticamente"
     },
@@ -354,21 +305,16 @@
       "unchanged": "Sem alteração desde o último teste",
       "measured_at": "Medido às",
       "measured_with": "Medido com",
-      "duration": "Duração",
       "seconds": "{{seconds}} s",
       "data_used": "Dados usados",
       "data_used_value": "{{down}} de descida / {{up}} de subida",
       "trigger": "Iniciado",
       "server": "Servidor",
       "result": "Resultado completo",
-      "loaded_latency": "Latência sob carga",
-      "loaded_latency_value": "{{down}} ms de descida / {{up}} ms de subida",
       "packet_loss": "Perda de pacotes",
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Conexão",
-      "isp": "Provedor",
-      "external_ip": "Endereço externo",
       "changed": "alterado"
     }
   },
@@ -381,7 +327,6 @@
     "connection_refused": "O teste não pôde ser realizado porque a conexão foi rejeitada",
     "timed_out": "A conexão com a Internet estava instável durante o período do teste",
     "config": "O arquivo de configuração não pôde ser carregado",
-    "invalid_view": "Visualização inválida",
     "cannot_open_socket": "Não foi possível abrir uma conexão com o servidor de teste. Talvez ele esteja inacessível pela interface de rede selecionada.",
     "latency_failed": "O teste de latência falhou, então nenhuma velocidade pôde ser medida.",
     "rate_limited": "O provedor recusou o teste porque muitos foram executados recentemente. O próximo é adiado automaticamente.",
@@ -424,24 +369,6 @@
       "density_title": "Testes por dia",
       "density_description": "Ao longo de {{days}} dias"
     },
-    "failed": {
-      "title": "Testes com falha",
-      "success": "Bem-sucedido",
-      "failed": "Falhou",
-      "label": "Testes"
-    },
-    "speed": {
-      "title": "Velocidade"
-    },
-    "manual": {
-      "title": "Testes manuais",
-      "yes": "Criado manualmente",
-      "no": "Criado automaticamente"
-    },
-    "duration": {
-      "title": "Duração do teste",
-      "label": "Valor"
-    },
     "values": {
       "min": "Mínimo",
       "max": "Máximo",
@@ -459,10 +386,6 @@
     },
     "consistency": {
       "title": "Estabilidade da conexão",
-      "excellent": "Excelente",
-      "good": "Bom",
-      "fair": "Razoável",
-      "poor": "Ruim",
       "ping_deviation": "Desvio típico",
       "loaded_latency_average": "Acrescenta {{increase}} ms sob carga em média, ao longo de {{tests}} testes",
       "jitter_detail": "Variação dentro de um teste",
@@ -480,8 +403,6 @@
     "previous_month": "Mês anterior",
     "next_month": "Mês seguinte",
     "next_year": "Ano seguinte",
-    "from": "De",
-    "to": "Para",
     "last_7_days": "Últimos 7 dias",
     "last_30_days": "Últimos 30 dias",
     "last_90_days": "Últimos 90 dias",

@@ -17,7 +17,6 @@
     "okay": "OK",
     "done": "完了",
     "continue": "続行",
-    "apply": "はい、適用します",
     "update": "更新",
     "close": "閉じる",
     "unset": "解除",
@@ -57,7 +56,6 @@
       "custom_url": "カスタム URL",
       "choose_automatically": "自動で選択",
       "ookla_license": "Ookla の<Eula>EULA</Eula>、<GDPR>プライバシーポリシー</GDPR>、<TOS>利用規約</TOS>を読み、同意します。",
-      "ookla_notice": "Ookla を使用すると、同社の<Eula>EULA</Eula>、<GDPR>プライバシーポリシー</GDPR>、<TOS>利用規約</TOS>に同意したことになります。",
       "ookla_desc": "世界中にサーバー網を持つ定番のプロバイダー",
       "libre_desc": "オープンソースでセルフホスト可能なスピードテスト",
       "cloudflare_desc": "CDN ベースの高速なテスト"
@@ -70,15 +68,10 @@
     "provider_changed": "プロバイダーを変更しました。",
     "changes_unsaved": "変更は適用されませんでした。入力内容を確認してください。",
     "invalid": "入力が無効です",
-    "ping": "最適な Ping",
-    "upload": "最適な上り速度",
-    "download": "最適な下り速度",
-    "recommendations": "推奨値",
     "optimal_values": "最適値",
     "change_provider": "プロバイダーを変更",
     "password": "パスワードを変更",
     "cron": "頻度を設定",
-    "time": "期間を設定",
     "storage": "ストレージを管理",
     "pause_tests": "テストを一時停止",
     "resume_tests": "テストを再開",
@@ -90,10 +83,7 @@
   "about": {
     "title": "MySpeed について",
     "description": "MySpeed は、設定した期間にわたってインターネット速度を記録する、オープンソースのスピードテスト分析ソフトウェアです。",
-    "website": "ウェブサイト",
-    "donate": "寄付",
-    "translate": "翻訳",
-    "made_by": "心を込めて開発"
+    "translate": "翻訳"
   },
   "options": {
     "cron": {
@@ -145,16 +135,7 @@
     "statistics": "統計"
   },
   "update": {
-    "ping_title": "最適な Ping を設定 (ms)",
-    "ping_placeholder": "Ping (ms)",
-    "upload_title": "最適な上り速度を設定 (Mbps)",
-    "upload_placeholder": "上り速度 (Mbps)",
-    "download_title": "最適な下り速度を設定 (Mbps)",
-    "download_placeholder": "下り速度 (Mbps)",
-    "recommendations_title": "最適な推奨値",
-    "recommendations_set": "自動の推奨値を設定しますか？",
     "provider_title": "スピードテストのプロバイダーを設定",
-    "manually": "手動で設定",
     "new_password": "新しいパスワードを設定",
     "password_placeholder": "新しいパスワード",
     "show_password": "パスワードを表示",
@@ -169,36 +150,22 @@
     "level": "権限を変更",
     "level_title": "訪問者の権限",
     "cron_title": "テスト頻度を設定",
-    "cron_rules": "cron ルール",
     "cron_next_test": "次のテスト:",
     "custom_cron": "カスタム cron 式",
     "schedule_offset": "スケジュールをずらす",
     "schedule_offset_desc": "ちょうどの時刻にテストが始まらないよう、わずかな遅延を加えます",
-    "advanced": "詳細設定",
-    "time_title": "表示するテストの期間...",
-    "download": "ダウンロード",
     "pause_title": "スピードテストを一時停止する期間...",
     "hours": "時間",
     "pause": "一時停止",
-    "pause_manual_hint": "空欄のままにすると無期限に一時停止します",
-    "release_manually": "手動で解除",
     "language": "言語を変更",
-    "view_title": "表示を切り替え",
     "quiet_hours_saved": "サイレント時間を保存しました"
   },
   "header": {
-    "running_tooltip": "スピードテストを実行中",
-    "start_tooltip": "スピードテストを開始",
     "new_update": "アップデートがあります",
     "download": "ダウンロード",
-    "paused": "スピードテストは現在一時停止中です。テストを実行するには再開してください。",
     "running": "スピードテストは既に実行中です。しばらくお待ちください。",
     "admin_login": "管理者ログイン",
-    "servers": "サーバー",
-    "beta": {
-      "title": "ベータ版",
-      "description": "この機能はまだベータ版です。不具合を見つけた場合は、<Link>こちら</Link>から報告してください。"
-    }
+    "servers": "サーバー"
   },
   "storage": {
     "speedtests": "スピードテスト",
@@ -255,7 +222,6 @@
     "byte_speed_unit": "MB/s",
     "up": "アップロード",
     "latest": "最新のテスト",
-    "before": "前",
     "bufferbloat": "バッファブロート: 負荷時に {{increase}} ms 増加",
     "bufferbloat_trend": "直近のテストにおけるバッファブロート",
     "quality": "負荷時",
@@ -293,10 +259,6 @@
     "up": {
       "title": "アップロード速度",
       "description": "アップロード速度はブラウジング体験に影響します。速いほど、コンピューターがデータを送信するのが速くなります。"
-    },
-    "latest": {
-      "title": "最新のテスト",
-      "description": "最後のテストがいつ実行されたかを示す時刻です。この場合、最後のテストは <Bold>{{date}}</Bold> の <Bold>{{time}}</Bold> に実行されました。"
     }
   },
   "time": {
@@ -307,15 +269,12 @@
     "hour": "1 時間",
     "hours": "{{hours}} 時間",
     "day": "1 日",
-    "days": "{{days}} 日",
-    "on": "日付:",
-    "at": "時刻:"
+    "days": "{{days}} 日"
   },
   "test": {
     "not_available": "現在、利用できるテストはありません",
     "not_available_in_range": "{{from}} から {{to}} の間にテストはありません",
     "show_all_time": "全期間を表示",
-    "no_latest": "現在のテストがありません。テストを実行するか、次のテストが実行されるまでお待ちください。",
     "loading_more": "さらにテストを読み込んでいます...",
     "no_more_tests": "読み込むテストはこれ以上ありません",
     "unknown_error": "不明なエラー",
@@ -329,15 +288,7 @@
       "yes": "はい、削除します"
     },
     "deleted": "テストを削除しました",
-    "average": {
-      "title": "平均速度",
-      "description": "<Bold>{{amount}}</Bold> 件のテストの結果、<Bold>{{date}}</Bold> の平均ダウンロード速度は <Bold>{{down}} Mbps</Bold>、平均アップロード速度は <Bold>{{up}} Mbps</Bold> でした。テストの所要時間は平均 <Bold>{{duration}} 秒</Bold>でした。"
-    },
     "result": {
-      "title": "テスト結果",
-      "description": "<Link>このテスト</Link>は最大ダウンロード速度 <Bold>{{down}} Mbps</Bold>、最大アップロード速度 <Bold>{{up}} Mbps</Bold> を記録しました。テストは<Bold>{{type}}</Bold>作成され、<Bold>{{duration}} 秒</Bold>かかりました。",
-      "jitter": "接続のジッターは <Bold>{{jitter}} ms</Bold> でした。",
-      "server": "テストは <Bold>{{server}}</Bold> に対して実行されました。",
       "from_you": "あなたによって",
       "automatic": "自動的に"
     },
@@ -354,21 +305,16 @@
       "unchanged": "前回のテストから変化なし",
       "measured_at": "測定日時",
       "measured_with": "測定方法",
-      "duration": "所要時間",
       "seconds": "{{seconds}} 秒",
       "data_used": "使用データ量",
       "data_used_value": "下り {{down}} / 上り {{up}}",
       "trigger": "開始方法",
       "server": "サーバー",
       "result": "完全な結果",
-      "loaded_latency": "負荷時のレイテンシー",
-      "loaded_latency_value": "下り {{down}} ms / 上り {{up}} ms",
       "packet_loss": "パケットロス",
       "bufferbloat": "バッファブロート",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "接続",
-      "isp": "プロバイダー",
-      "external_ip": "外部アドレス",
       "changed": "変更あり"
     }
   },
@@ -381,7 +327,6 @@
     "connection_refused": "接続が拒否されたため、テストを実行できませんでした",
     "timed_out": "テスト中にインターネット接続が不安定でした",
     "config": "設定ファイルを読み込めませんでした",
-    "invalid_view": "無効な表示です",
     "cannot_open_socket": "テストサーバーへの接続を開けませんでした。選択したネットワークインターフェースからは到達できない可能性があります。",
     "latency_failed": "レイテンシーテストに失敗したため、速度を測定できませんでした。",
     "rate_limited": "短時間に実行されたテストが多すぎるため、プロバイダーがテストを拒否しました。次のテストは自動的に延期されます。",
@@ -424,24 +369,6 @@
       "density_title": "1 日あたりのテスト数",
       "density_description": "{{days}} 日間の集計"
     },
-    "failed": {
-      "title": "失敗したテスト",
-      "success": "成功",
-      "failed": "失敗",
-      "label": "テスト"
-    },
-    "speed": {
-      "title": "速度"
-    },
-    "manual": {
-      "title": "手動テスト",
-      "yes": "手動で作成",
-      "no": "自動で作成"
-    },
-    "duration": {
-      "title": "テスト所要時間",
-      "label": "件数"
-    },
     "values": {
       "min": "最小",
       "max": "最大",
@@ -459,10 +386,6 @@
     },
     "consistency": {
       "title": "接続の安定性",
-      "excellent": "非常に良い",
-      "good": "良い",
-      "fair": "普通",
-      "poor": "悪い",
       "ping_deviation": "標準的なばらつき",
       "loaded_latency_average": "{{tests}} 件のテストで、負荷時に平均 {{increase}} ms 増加",
       "jitter_detail": "テスト内での変動",
@@ -480,8 +403,6 @@
     "previous_month": "前月",
     "next_month": "翌月",
     "next_year": "翌年",
-    "from": "開始",
-    "to": "終了",
     "last_7_days": "過去 7 日間",
     "last_30_days": "過去 30 日間",
     "last_90_days": "過去 90 日間",
