@@ -126,6 +126,48 @@ export const probeAll = async (adapters, probe = probeAddress) => {
 };
 
 /**
+ * One usable external address per adapter, straight from the operating system -
+ * no probe involved.
+ *
+ * The probe's answer used to be the price of admission: an adapter whose
+ * request to Cloudflare failed was not listed at all, which conflated "can
+ * reach one CDN at boot" with "exists". A docker bridge with restrictive DNS,
+ * an ipvlan without a route to that CDN, a firewall blocking exactly that host
+ * (upstream #806) all run speedtests fine and were invisible - and the
+ * invisibility cascaded: insertDefaults seeded NO_INTERFACE, validateInput
+ * refused the adapter's name when the operator typed it, and every run threw
+ * "no usable address" before the CLI could say what was actually wrong. Listed
+ * unprobed, the worst case is a test failing with the provider's own error,
+ * which is the truth.
+ *
+ * Address choice mirrors resolveInterfaces: IPv4 first when there is one.
+ */
+export const externalAddresses = (adapters) => {
+    const external = {};
+
+    for (const [name, addresses] of Object.entries(adapters)) {
+        const usable = addresses.filter((entry) => !entry.internal).map((entry) => entry.address);
+
+        if (usable.length === 0) continue;
+
+        external[name] = usable.find((address) => address.includes(".")) ?? usable[0];
+    }
+
+    return external;
+};
+
+/**
+ * Adapter names with the ones that answered this round first.
+ *
+ * resolveFallback picks available[0] when it has to choose, and the map now
+ * holds adapters the probe could not vouch for. A fresh install on a healthy
+ * network must still land on an adapter that demonstrably reaches the
+ * internet, so the round's answered names lead and the merely-present trail.
+ */
+export const preferAnswered = (answered, all) =>
+    [...answered, ...all.filter((name) => !answered.includes(name))];
+
+/**
  * How many consecutive rounds the configured adapter has to be missing before
  * its absence is written to the configuration.
  *
@@ -215,6 +257,17 @@ export const requestInterfaces = async () => {
 
     const resolved = resolveInterfaces(interfaces, interfacesResult, Object.keys(interfacesNode));
 
+    // Once listed, an adapter persists through resolveInterfaces until the
+    // operating system drops it - so this admits each one once, and the
+    // warning does not repeat every round for a virtual adapter that will
+    // never answer.
+    for (const [name, address] of Object.entries(externalAddresses(interfacesNode))) {
+        if (resolved[name]) continue;
+
+        resolved[name] = address;
+        console.warn(`Interface ${name} did not answer the connectivity probe; listed anyway with IP ${address}`);
+    }
+
     // Mutated rather than reassigned: the exported binding is read through a
     // namespace import in several places, and replacing the object would leave
     // any of them that happened to hold it looking at the old map.
@@ -227,7 +280,8 @@ export const requestInterfaces = async () => {
 
     const currentInterface = await config.getValue("interface");
 
-    const decision = resolveFallback(currentInterface, Object.keys(interfaces), missingRounds);
+    const decision = resolveFallback(currentInterface,
+        preferAnswered(Object.keys(interfacesResult), Object.keys(interfaces)), missingRounds);
     missingRounds = decision.missingRounds;
 
     if (decision.write === null) {
