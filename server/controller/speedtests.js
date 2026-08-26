@@ -543,8 +543,11 @@ export const removeOld = async () => {
  */
 export const retentionCutoffFilter = (cutoff) => ({[Op.lte]: cutoff.toISOString()});
 
-export const getLatest = async () => {
-    let latest = await tests.findOne({order: [["created", "DESC"]]});
+export const getLatest = async (targetId = undefined) => {
+    let latest = await tests.findOne({
+        order: [["created", "DESC"]],
+        ...(targetId !== undefined && {where: {targetId}})
+    });
     if (latest === null) return undefined;
     if (latest.error === null) delete latest.error;
     if (latest.resultId === null) delete latest.resultId;

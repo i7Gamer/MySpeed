@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, api, seedTests, setConfig } from "./helpers/boot.js";
+import { bootServer, api, seedTarget, seedTests, setConfig } from "./helpers/boot.js";
 
 let server;
 let resetFailedAttempts;
@@ -400,5 +400,68 @@ describe("concurrent scrapes", () => {
 
         assert.equal(scrapes.length, CONCURRENT);
         for (const {text} of scrapes) assert.match(text, /myspeed_/);
+    });
+});
+
+/**
+ * The label plan that makes multi-target additive rather than breaking: the
+ * primary target's series carry target="" - which is, to Prometheus, the same
+ * series identity as no target label at all - while every further target
+ * exports the same metric names under its own name. A dashboard built before
+ * targets existed keeps following exactly the series it always followed.
+ */
+describe("what a second target exports", () => {
+    let primary;
+    let second;
+
+    beforeEach(async () => {
+        primary = await seedTarget({provider: "ookla", name: "WAN"});
+        const targets = await import("../../server/controller/targets.js");
+        second = await targets.create({name: "NAS", provider: "cloudflare"});
+
+        await seedTests(server.tests, [
+            {created: "2026-08-26T10:00:00.000Z", ping: 9, download: 250, upload: 50, targetId: primary.id},
+            {created: "2026-08-26T10:01:00.000Z", ping: 0.4, download: 941, upload: 938, targetId: second.id}
+        ]);
+    });
+
+    it("keeps the primary's series identity unlabeled", async () => {
+        const {text} = await metrics();
+        const line = text.split("\n").find((row) =>
+            row.startsWith("myspeed_ping{") && row.includes('target=""'));
+
+        assert.ok(line, "the primary target's series carries a non-empty target label");
+        assert.equal(parseFloat(line.slice(line.lastIndexOf(" ") + 1)), 9);
+    });
+
+    it("exports the second target on the same family, under its own name", async () => {
+        const {text} = await metrics();
+        const line = text.split("\n").find((row) =>
+            row.startsWith("myspeed_ping{") && row.includes('target="NAS"'));
+
+        assert.ok(line, "the second target exports no series of its own");
+        assert.match(line, /provider="cloudflare"/);
+        assert.equal(parseFloat(line.slice(line.lastIndexOf(" ") + 1)), 0.4);
+    });
+
+    it("maps every configured target in myspeed_target_info", async () => {
+        const {text} = await metrics();
+
+        assert.match(text, /myspeed_target_info\{[^}]*target="WAN"[^}]*provider="ookla"[^}]*\} 1/);
+        assert.match(text, /myspeed_target_info\{[^}]*target="NAS"[^}]*provider="cloudflare"[^}]*\} 1/);
+    });
+
+    // The instance-wide server gauge keeps meaning what it meant: the primary
+    // target's latest, not whichever member happened to run last.
+    it("keeps myspeed_server on the primary target", async () => {
+        await seedTests(server.tests, [
+            {created: "2026-08-26T10:00:00.000Z", ping: 9, serverId: 49631, targetId: primary.id},
+            {created: "2026-08-26T10:01:00.000Z", ping: 0.4, serverId: 7, targetId: second.id}
+        ]);
+
+        const {text} = await metrics();
+        const line = text.split("\n").find((row) => row.startsWith("myspeed_server "));
+
+        assert.equal(parseFloat(line.slice(line.lastIndexOf(" ") + 1)), 49631);
     });
 });

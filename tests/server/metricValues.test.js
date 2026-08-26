@@ -53,7 +53,12 @@ describe("metricValue", () => {
  * from a raw column - which is the property that broke.
  */
 describe("the metrics route", () => {
-    const collect = bodyOf(readSource("server/routes/prometheus.js"), "const collect = async");
+    // The per-target rework split the scrape in two: collect() walks the
+    // targets, setSeries() sets one target's gauges. The guards being pinned
+    // live where the values are read, so both bodies are the subject.
+    const source = readSource("server/routes/prometheus.js");
+    const collect = bodyOf(source, "const collect = async")
+        + bodyOf(source, "const setSeries = (latest");
 
     /*
      * Every numeric column the route reads, checked at the point it is read
