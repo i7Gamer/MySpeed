@@ -72,6 +72,8 @@ const triggerActivity = async (id, error) => {
 export const triggerEvent = async (name, data) => {
     if (!events[name]) return;
 
+    const tasks = [];
+
     for (const module of events[name]) {
         const active = await getActiveByName(module.module);
         for (const integration of active) {
@@ -87,7 +89,7 @@ export const triggerEvent = async (name, data) => {
             // whether the integration still delivers, and must not overwrite
             // what the last actual send found out.
             if (suppressesEvent(name, module.module, integration, data)) {
-                await triggerActivity(integration.id).catch(() => undefined);
+                tasks.push(triggerActivity(integration.id).catch(() => undefined));
                 continue;
             }
 
@@ -95,14 +97,31 @@ export const triggerEvent = async (name, data) => {
             // whole fan-out, so every integration registered after it missed
             // the event with nothing said - and the throw could come from a
             // stored value the validator should never have accepted.
-            try {
-                await module.callback(integration, data, (error = false) => triggerActivity(integration.id, error));
-            } catch (e) {
-                console.error(`Integration "${module.module}" failed to handle ${name}: ${e?.message ?? e}`);
-                await triggerActivity(integration.id, true).catch(() => undefined);
-            }
+            //
+            // Promise.resolve().then(...) rather than calling the callback
+            // here, so a callback that throws before its first await is caught
+            // by the same handler as one that rejects.
+            tasks.push(Promise.resolve()
+                .then(() => module.callback(integration, data, (error = false) => triggerActivity(integration.id, error)))
+                .catch((e) => {
+                    console.error(`Integration "${module.module}" failed to handle ${name}: ${e?.message ?? e}`);
+                    return triggerActivity(integration.id, true).catch(() => undefined);
+                }));
         }
     }
+
+    /*
+     * Dispatched together rather than awaited one after another. Every send is
+     * bounded by OUTBOUND_TIMEOUT, but with several integrations configured
+     * one dead endpoint still held every later notification for its full ten
+     * seconds - and the message most likely to be queued behind a slow send is
+     * the failure alert, the one least able to afford arriving late.
+     *
+     * The database reads above stay sequential, and their failure still
+     * belongs to the caller. allSettled is belt over braces: every task in the
+     * list already handles its own rejection.
+     */
+    await Promise.allSettled(tasks);
 }
 
 export const clearPingState = (id) => {
