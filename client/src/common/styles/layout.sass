@@ -24,6 +24,16 @@ $page-max-width: 1600px
 // welcome and integration dialogs, which size to their content.
 $settings-dialog-width: 28rem
 
+// A dialog whose rows put a long value beside its label rather than under it.
+//
+// The settings dialogs pair a label with a number or a switch, and 28rem is
+// generous for that. The targets manager pairs one with an interface name and
+// its address, a speedtest server with its sponsor and city, or a backend URL -
+// values that need two hundred more pixels than the label does, on a row that
+// also carries five controls. Written here beside the number it is measured
+// against, so the difference between them is a decision rather than a habit.
+$wide-dialog-width: 36rem
+
 // Between the rows on the overview and between the cards in the statistics.
 $card-gap: 0.75rem
 

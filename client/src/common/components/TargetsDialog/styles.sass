@@ -1,14 +1,13 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/layout" as *
 
-// Wider than the settings dialogs: a row carries a name, its detail and five
-// controls, and at 28rem the controls would fold under the text on every row.
-$targets-dialog-width: 34rem
-
-// The editor keeps the provider dialog's width and classes - it is that
-// dialog, grown a name and a grading section.
+// The editor is reached by a button inside the manager, so it takes the
+// manager's width: drawn at the settings width it made the dialog jump inward
+// when it opened and outward again when it closed. Its own rows carry the same
+// long values the manager's do - a server with its sponsor and city, a backend
+// URL - and had the same 224px to show them in.
 .provider-dialog-wrapper
-  width: $settings-dialog-width
+  width: $wide-dialog-width
   max-width: 95vw
 
   .dialog-main
@@ -48,6 +47,13 @@ $targets-dialog-width: 34rem
     align-items: center
     gap: 0.6rem
     flex-shrink: 0
+    // A column for the values to start from. While every field was pinned to
+    // 14rem they lined up by being identical; now that they grow, each one
+    // began wherever its own label happened to end - four different left edges
+    // down one dialog. A floor rather than a fixed width, so a label longer
+    // than this - a translated "Alerts & recommendations" - keeps its own row
+    // instead of being truncated to fit a column it was never going to fit.
+    min-width: 9rem
     white-space: nowrap
 
     svg
@@ -62,9 +68,14 @@ $targets-dialog-width: 34rem
       color: $subtext
 
 .provider-input
-  width: 14rem
-  min-width: 14rem
-  max-width: 14rem
+  // A share of the row rather than a fixed width. Pinned to 14rem it could not
+  // use the room the dialog has: the interface select showed 224px of a value
+  // needing 311, and of options needing 415. 14rem stays as the basis, so a
+  // row whose label is long still starts from the width this was drawn at.
+  flex: 1 1 14rem
+  // Without this the basis is a floor and the field pushes the label off the
+  // row instead of sharing it - flex items refuse to shrink past their content.
+  min-width: 0
   height: 2.5rem
   box-sizing: border-box
   margin: 0 !important
@@ -131,7 +142,7 @@ $targets-dialog-width: 34rem
 
 // The manager: the round as rows.
 .targets-dialog-wrapper
-  width: $targets-dialog-width
+  width: $wide-dialog-width
   max-width: 95vw
 
   .dialog-main
@@ -225,6 +236,10 @@ $targets-dialog-width: 34rem
     gap: 0.5rem
 
   .provider-input
+    // The row stacks here, so the main axis is vertical and the basis above
+    // would be read as a height - a 14rem-tall select, stretched by the grow.
+    // The field takes the full width of the column instead.
+    flex: none
     width: 100%
     min-width: 0
     max-width: none

@@ -82,6 +82,99 @@ describe("every dialog in the settings menu", () => {
 });
 
 /**
+ * The width a dialog asks for is the width it gets.
+ *
+ * `.dialog` carries a shared max-width so that a dialog stating no width of its
+ * own cannot span a wide screen. That is a floor against accidents, not a width
+ * policy - but it was written as `min(500px, 90vw)`, which is a policy, and it
+ * quietly outranked every dialog that asked for more. Three were let out by
+ * name; the targets manager was not, so it declared 34rem, recorded in a comment
+ * why it needed to be wider than the rest, and was drawn at 500px.
+ *
+ * Nothing could see it. The declaration and the cap are in different files, the
+ * cap's escape list is in neither dialog's stylesheet, and settingsDialogs above
+ * excuses the manager from the width check entirely - so the one dialog whose
+ * width was being overridden was also the one nothing was measuring.
+ *
+ * So the shared rule keeps the dialog on the screen and nothing else: it may
+ * measure itself against the viewport, and may not carry a length that competes
+ * with what a stylesheet has deliberately said.
+ */
+describe("the shared dialog rule", () => {
+    const css = compile("common/contexts/Dialog/styles.sass");
+
+    const dialogRule = () => {
+        const at = css.indexOf(".dialog {");
+
+        assert.notEqual(at, -1, "the shared dialog rule is gone");
+        return css.slice(at, css.indexOf("}", at));
+    };
+
+    it("keeps a dialog on the screen", () => {
+        assert.match(dialogRule(), /max-width:/, "a dialog with no width of its own is unbounded");
+    });
+
+    it("measures that against the viewport rather than against a number", () => {
+        const [, cap] = /max-width:\s*([^;]+);/.exec(dialogRule()) ?? [];
+
+        assert.doesNotMatch(cap, /\d\s*(px|rem|em)\b/,
+            `the shared cap is "${cap}", which silently overrides any dialog that asks for more `
+            + "- and the dialog doing the asking has no way to see it");
+    });
+
+    /**
+     * The escape hatch that cap needed. Three dialogs were listed by name to
+     * be let past it, which is a list that has to be remembered: the manager
+     * was given a wider width and never added, and the miss was invisible.
+     */
+    it("needs no list of dialogs excused from it", () => {
+        assert.doesNotMatch(css, /&\.[a-z-]+-(?:dialog|wrapper)[a-z-]*,?\s*\n\s*(?:&[^\n]*\n\s*)*max-width/,
+            "a cap that some dialogs have to be named out of is a rule nobody can apply from "
+            + "the file that declares a width");
+    });
+});
+
+/**
+ * The manager and the editor it opens are one screen's worth of the same job,
+ * and the editor is reached by a button inside the manager. Drawn narrower, it
+ * makes the dialog jump inward when it opens and outward when it closes.
+ */
+describe("the targets manager and its editor", () => {
+    const css = compile("common/components/TargetsDialog/styles.sass");
+
+    const widthOf = (selector) => {
+        const at = css.indexOf(`.${selector} {`);
+
+        assert.notEqual(at, -1, `${selector} has no rule`);
+        return (/width:\s*([^;]+);/.exec(css.slice(at, css.indexOf("}", at))) ?? [])[1];
+    };
+
+    it("are the same width as each other", () => {
+        assert.equal(widthOf("provider-dialog-wrapper"), widthOf("targets-dialog-wrapper"),
+            "the dialog changes size when the editor opens over the list that opened it");
+    });
+
+    /**
+     * The rows carry a label and a value side by side, and the values are the
+     * long ones: an interface name with its address, a server with its sponsor
+     * and city, a backend URL. Pinned to one width they could not use the room
+     * the dialog was widened to give them - the interface select showed 224px
+     * of a value needing 311, and of options needing 415.
+     */
+    it("lets a field use the width the dialog has", () => {
+        const at = css.indexOf(".provider-input {");
+        assert.notEqual(at, -1, "the shared field rule is gone");
+
+        const rule = css.slice(at, css.indexOf("}", at));
+
+        assert.doesNotMatch(rule, /max-width:\s*\d+(?:\.\d+)?(?:rem|px)/,
+            "the field is pinned to a fixed width, so a wider dialog cannot help it");
+        assert.match(rule, /flex:/,
+            "the field takes no share of the row, so it cannot grow into it");
+    });
+});
+
+/**
  * The list that scrolls inside the language dialog.
  *
  * Raising it to 28rem made the dialog taller than a laptop viewport leaves

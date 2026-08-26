@@ -35,17 +35,19 @@
   animation: fadeIn 0.3s
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3)
   min-width: 320px
-  max-width: min(500px, 90vw)
+  // Only what keeps a dialog on the screen. This was min(500px, 90vw), which
+  // is a width policy rather than a bound, and it outranked every stylesheet
+  // that asked for more: the targets manager declared 34rem, wrote down why it
+  // needed to be wider than the rest, and was drawn at 500px. Three dialogs
+  // were let past by name and it was the fourth that needed it - a list that
+  // has to be remembered, kept in neither the file that declares a width nor
+  // the test that checks them.
+  max-width: 90vw
   max-height: calc(100vh - 2rem)
   box-sizing: border-box
   display: flex
   flex-direction: column
   flex-shrink: 0
-
-  &.storage-dialog-wrapper,
-  &.integration-dialog,
-  &.welcome-dialog
-    max-width: 90vw
 
 .dialog-hidden
   visibility: hidden
