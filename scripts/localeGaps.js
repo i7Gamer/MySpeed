@@ -93,6 +93,19 @@ export const LANGUAGE_SHARED = {
         "integrations.influxdb.fields.bucket", "integrations.ntfy.fields.topic_placeholder",
         ...TEMPLATES("discord", "gotify", "pushover", "ntfy", "telegram")
     ],
+    ca: [
+        "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
+        "latest.byte_speed_unit", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
+        "test.details.seconds", "test.details.bufferbloat", "test.details.bufferbloat_value", "preview.info",
+        "integrations.email.fields.port", "integrations.influxdb.fields.bucket", "integrations.mqtt.fields.port",
+        "integrations.discord.fields.error_message_placeholder",
+        "integrations.email.fields.error_message_placeholder",
+        "integrations.gotify.fields.error_message_placeholder",
+        "integrations.pushover.fields.error_message_placeholder",
+        "integrations.ntfy.fields.error_message_placeholder",
+        "integrations.telegram.fields.error_message_placeholder",
+        ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
+    ],
     cs: [
         "dialog.provider.server", "storage.export", "storage.import",
         "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",

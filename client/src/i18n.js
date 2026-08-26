@@ -71,7 +71,7 @@ export const languages = [
     {name: 'Bahasa Indonesia', code: 'id', flag: flag('id')},
     {name: 'Українська', code: 'uk', flag: flag('ua')},
     /*
-     * The six below are authored in-repo rather than through Crowdin, pending
+     * The seven below are authored in-repo rather than through Crowdin, pending
      * native review - the same standing Gaeilge has above.
      *
      * Two codes deserve a note. Norwegian is "nb" (Bokmål), which is what
@@ -88,7 +88,11 @@ export const languages = [
     {name: 'Svenska', code: 'sv', flag: flag('se')},
     {name: '日本語', code: 'ja', flag: flag('jp')},
     {name: '한국어', code: 'ko', flag: flag('kr')},
-    {name: '繁體中文', code: 'zh-tw', flag: flag('tw')}
+    {name: '繁體中文', code: 'zh-tw', flag: flag('tw')},
+    // The Senyera rather than a state flag, because Catalan is not one
+    // country's language - it is the flag every Catalan-speaking region
+    // shares a form of.
+    {name: 'Català', code: 'ca', flag: flag('ca')}
 ]
 
 /*
