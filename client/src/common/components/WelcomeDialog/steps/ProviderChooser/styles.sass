@@ -2,11 +2,16 @@
 
 .provider-chooser
 
+  // The wizard draws a banner instead of a DialogHeader, so this is the only
+  // title on the screen - it plays the part .dialog-text plays everywhere
+  // else, and every other dialog draws that in $white. Painted in $subtext at
+  // 500 it was both the same colour as its own subtitle and lighter than it,
+  // since `body, html` sets 600; the step read as a caption above a paragraph.
   h2
     margin: 0 0 0.75rem
     font-size: 1.15rem
-    font-weight: 500
-    color: $subtext
+    font-weight: 600
+    color: $white
 
   p
     margin: 0

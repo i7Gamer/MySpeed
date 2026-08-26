@@ -25,13 +25,14 @@ export const listSources = (dir) =>
  * read at its flat, .js-only contract. Three suites grew a private copy of
  * this walk within one review, each starting with the same fifteen lines.
  */
-export const walkSources = (dir) => fs.readdirSync(path.join(root, dir), {withFileTypes: true})
-    .flatMap((entry) => {
-        const relative = `${dir}/${entry.name}`;
+export const walkSources = (dir, match = /\.jsx?$/) =>
+    fs.readdirSync(path.join(root, dir), {withFileTypes: true})
+        .flatMap((entry) => {
+            const relative = `${dir}/${entry.name}`;
 
-        if (entry.isDirectory()) return walkSources(relative);
-        return /\.jsx?$/.test(entry.name) ? [{path: relative, source: readSource(relative)}] : [];
-    });
+            if (entry.isDirectory()) return walkSources(relative, match);
+            return match.test(entry.name) ? [{path: relative, source: readSource(relative)}] : [];
+        });
 
 const LOCALES_DIR = "client/public/assets/locales";
 

@@ -168,6 +168,11 @@ $targets-dialog-width: 34rem
       margin: 0
       font-size: 0.95rem
       font-weight: 600
+      // Said outright, because nothing above it says it: `body, html` sets no
+      // colour, so a heading with none of its own paints in the browser's
+      // default. Every target's name was black on the dark dialog - 1.28:1,
+      // and dimmer than the provider line underneath it, which had a colour.
+      color: $white
       white-space: nowrap
       overflow: hidden
       text-overflow: ellipsis
