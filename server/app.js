@@ -17,6 +17,7 @@ import sessionRoutes from './routes/session.js';
 import speedtestsRoutes from './routes/speedtests.js';
 import systemRoutes from './routes/system.js';
 import storageRoutes, { isLargeBodyPath } from './routes/storage.js';
+import { isAssetPath } from './util/staticAssets.js';
 import recommendationsRoutes from './routes/recommendations.js';
 import nodesRoutes from './routes/nodes.js';
 import integrationsRoutes from './routes/integrations.js';
@@ -174,12 +175,21 @@ app.use("/api*all", (req, res) => res.status(404).json({message: "Route not foun
 let buildPath = path.join(process.cwd(), 'build');
 let buildExists = fs.existsSync(buildPath);
 
+// A dotted path that reached the fallback is a build asset that does not exist
+// - see util/staticAssets.js - and index.html wearing its name is worse than a
+// plain 404. The dev-mode branch below stays unguarded on purpose: it serves an
+// instruction page, and there is no build whose assets could go missing.
+const spaFallback = (serveIndex) => (req, res) => {
+    if (isAssetPath(req.path)) return res.status(404).end();
+    return serveIndex(req, res);
+};
+
 if (buildExists) {
     app.use(express.static(buildPath));
-    app.get('*all', (req, res) => res.sendFile(path.join(buildPath, 'index.html')));
+    app.get('*all', spaFallback((req, res) => res.sendFile(path.join(buildPath, 'index.html'))));
 } else if (embeddedClient) {
     app.use(embeddedClient.createEmbeddedMiddleware());
-    app.get('*all', embeddedClient.createEmbeddedFallback());
+    app.get('*all', spaFallback(embeddedClient.createEmbeddedFallback()));
 } else {
     app.get("*all", (req, res) => res.status(500).type('html').send(devModeHtml));
 }
