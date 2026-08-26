@@ -1,24 +1,29 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, seedTests } from "./helpers/boot.js";
+import { bootServer, seedTarget, seedTests } from "./helpers/boot.js";
 
 let server;
 let recommendations;
 let createRecommendations;
+let target;
 
 const MS_PER_MINUTE = 60000;
 const minutesAgo = (minutes) => new Date(Date.now() - minutes * MS_PER_MINUTE).toISOString();
 
-// Ten successes with a known best in each column, oldest values worst.
+// Ten successes with a known best in each column, oldest values worst. Every
+// row belongs to the seeded target: the sample reads the first scheduled
+// alerts target's rows and nothing else.
 const successes = () => Array.from({length: 10}, (_, i) => ({
     created: minutesAgo(20 - i),
+    targetId: target.id,
     ping: 30 - i,            // best (lowest) is 21
     download: 100 + i * 10,  // best (highest) is 190
     upload: 50 + i * 5       // best (highest) is 95
 }));
 
 const failure = (overrides = {}) => ({
-    created: minutesAgo(1), ping: -1, download: -1, upload: -1, time: null,
+    created: minutesAgo(1), targetId: target.id,
+    ping: -1, download: -1, upload: -1, time: null,
     jitter: null, packetLoss: null, downloadLatency: null, uploadLatency: null,
     error: "Too many requests", ...overrides
 });
@@ -31,6 +36,7 @@ const unmeasured = () => Array.from({length: RECOMMENDATION_SAMPLE},
 
 before(async () => {
     server = await bootServer();
+    target = await seedTarget({provider: "ookla"});
     recommendations = await import("../../server/controller/recommendations.js");
     ({createRecommendations} = await import("../../server/tasks/speedtest.js"));
 });
@@ -83,7 +89,7 @@ describe("createRecommendations", () => {
     it("never reads a failure's -1 placeholders as a best value", async () => {
         // Eleven successes, so the sample is full even with the failure newest:
         // a -1 ping would win "lowest" if the failure leaked into the sample.
-        await seedTests(server.tests, [...successes(), {created: minutesAgo(30), ping: 25}, failure()]);
+        await seedTests(server.tests, [...successes(), {created: minutesAgo(30), targetId: target.id, ping: 25}, failure()]);
 
         await createRecommendations();
 

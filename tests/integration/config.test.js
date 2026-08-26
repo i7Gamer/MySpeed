@@ -141,35 +141,9 @@ describe("validateInput", () => {
         });
     });
 
-    describe("provider", () => {
-        it("accepts the three supported providers", async () => {
-            for (const provider of ["ookla", "libre", "cloudflare"])
-                assert.equal(await accepts("provider", provider), provider);
-        });
-
-        it("rejects anything else", async () => {
-            await rejects("provider", "speedtest.net");
-        });
-    });
-
-    describe("server ids and urls", () => {
-        it("accepts a numeric server id or the unset sentinel", async () => {
-            assert.equal(await accepts("ooklaId", "1234"), "1234");
-            assert.equal(await accepts("libreId", "none"), "none");
-        });
-
-        it("rejects a non-numeric server id", async () => {
-            await rejects("ooklaId", "frankfurt");
-        });
-
-        it("accepts a valid libre url", async () => {
-            assert.equal(await accepts("libreUrl", "https://speed.example.net"), "https://speed.example.net");
-        });
-
-        it("rejects a malformed libre url", async () => {
-            await rejects("libreUrl", "not a url");
-        });
-    });
+    // The provider, server-id and libre-url keys used to be judged here; they
+    // live on the target rows now, judged by targetProblem and exercised
+    // through /api/targets in targets.test.js.
 
     describe("cron", () => {
         it("accepts a valid expression", async () => {
@@ -406,12 +380,9 @@ describe("the validateInput contract the PATCH route reads", () => {
         {key: "download", accepted: "250", refused: "fast"},
         {key: "ping", accepted: "25.9", refused: "soon"},
         {key: "retentionDays", accepted: "30", refused: "forever"},
-        {key: "provider", accepted: "libre", refused: "speedtest.net"},
         {key: "cron", accepted: "0 * * * *", refused: "every hour please"},
         {key: "scheduleOffset", accepted: "false", refused: "yes"},
         {key: "passwordLevel", accepted: "read", refused: "write"},
-        {key: "ooklaId", accepted: "1234", refused: "frankfurt"},
-        {key: "libreUrl", accepted: "https://speed.example.net", refused: "not a url"},
         {key: "password", accepted: "Hunter2!", refused: "none"}
     ];
 

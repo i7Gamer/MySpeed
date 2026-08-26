@@ -1,5 +1,8 @@
 import config from '../models/Config.js';
 import node from '../models/Node.js';
+import targetsModel from '../models/Targets.js';
+import { listAll as listAllTargets, targetProblem } from './targets.js';
+import { legacyTarget } from '../migrations/0013-add-targets.js';
 import test from '../models/Speedtests.js';
 import recommendations from '../models/Recommendations.js';
 import integration from '../models/IntegrationData.js';
@@ -16,7 +19,6 @@ import { destroyAllSessions } from '../util/session.js';
 import { QUIET_HOURS_OFF, isValidTimeOfDay } from '../util/quietHours.js';
 import { isKnownTimeZone } from '../util/timezone.js';
 import { withoutUrlCredentials } from '../util/urlCredentials.js';
-import { ALLOWED_PROTOCOLS } from '../util/safeUrl.js';
 
 // Exported for the scheduler's fallback: an invalid stored cron at boot is
 // replaced by this default rather than by a silence with no schedule in it.
@@ -26,10 +28,6 @@ export const configDefaults = {
     upload: "50",
     cron: "0 * * * *",
     scheduleOffset: "true",
-    provider: "none",
-    ooklaId: "none",
-    libreId: "none",
-    libreUrl: "none",
     password: "none",
     passwordLevel: "none",
     interface: "none",
@@ -102,32 +100,24 @@ const THRESHOLD_KEYS = ["ping", "download", "upload"];
  * Keys a restore may write the default for rather than refusing the whole file.
  *
  * The thresholds are here because a stored "1.2.3" was legal when it was saved
- * and cannot be kept now. libreUrl joined them for the same reason and by the
- * same route: it was checked with a bare `new URL()` until the scheme check was
- * added, and `new URL("localhost:8080")` does not throw - it reads "localhost:"
- * as the scheme - so a bare host and port was stored behind a 200 and carried
- * verbatim into every backup taken since. Restoring one refused the entire
- * import, nodes and integrations and history included, over an address the CLI
- * could never have fetched.
- *
- * Its default is "none", which means "choose a server automatically", so the
- * instance comes back working with one setting to re-enter. That is the whole
- * test for membership here: a value this instance cannot act on, whose default
- * is a working state rather than a guess. A cron it cannot parse is not on the
- * list and must not be - the default schedule is a different schedule, and
- * restoring one would be restoring a different instance.
+ * and cannot be kept now. The test for membership: a value this instance
+ * cannot act on, whose default is a working state rather than a guess. A cron
+ * it cannot parse is not on the list and must not be - the default schedule is
+ * a different schedule, and restoring one would be restoring a different
+ * instance. (libreUrl once sat here for the same reason; it lives on the
+ * target rows now, which the import judges separately.)
  */
-const RESTORABLE_AS_DEFAULT = [...THRESHOLD_KEYS, "libreUrl"];
+const RESTORABLE_AS_DEFAULT = [...THRESHOLD_KEYS];
 
 /**
  * Stored values that are URLs an operator may have put a credential in.
  *
- * libreUrl is the librespeed backend, and it is already withheld from an
- * untrusted reader by GET /api/config - so shipping it verbatim in a redacted
- * backup handed that same caller a value the live API refuses them. A URL is
- * allowed userinfo, so the credential travels in the address itself.
+ * Empty since the libre backend URL moved onto its target row - the same
+ * stripping now happens in exportConfig's targets section and the targets
+ * routes. Kept, with its two readers below, because the next credential-shaped
+ * config value belongs here and the machinery should not need rebuilding.
  */
-const CREDENTIAL_BEARING_KEYS = ["libreUrl"];
+const CREDENTIAL_BEARING_KEYS = [];
 
 // What the announcement says instead of a password. A sentinel for the
 // consumer, not a value: nothing is meant to read it back.
@@ -336,35 +326,8 @@ export const validateInput = async (key, value) => {
     if (THRESHOLD_KEYS.includes(key) && !THRESHOLD_NUMBER.test(value.toString()))
         return "You need to provide a number in order to change this";
 
-    if ((key === "ooklaId" || key === "libreId") && (/[^0-9]/.test(value) && value !== "none"))
-        return "You need to provide a number in order to change this";
-
-    /*
-     * The scheme as well as the shape.
-     *
-     * `new URL()` parses `javascript:`, `data:` and `file:` perfectly happily,
-     * so this accepted, stored and displayed values that are not addresses of
-     * anything the server can fetch - and the only sign of it was a speedtest
-     * failing later for a reason that named none of it.
-     *
-     * Judged by the set safeUrl already holds a node URL and a webhook target
-     * to, rather than by a list of its own. Two lists drift, and this is the
-     * third value of the same kind.
-     */
-    if (key === "libreUrl" && value !== "none") {
-        try {
-            if (!ALLOWED_PROTOCOLS.has(new URL(value).protocol))
-                return "You need to provide a valid URL";
-        } catch {
-            return "You need to provide a valid URL";
-        }
-    }
-
     if (key === "passwordLevel" && !["none", "read"].includes(value))
         return "You need to provide either none or read-access";
-
-    if (key === "provider" && !["ookla", "libre", "cloudflare"].includes(value))
-        return "You need to provide a valid provider";
 
     // "none" is the stored sentinel for "no password configured". Letting it
     // through as a chosen password stored the literal string, which
@@ -513,6 +476,14 @@ export const exportConfig = async ({includeSecrets = false} = {}) => {
 
     obj.recommendations = await recommendations.findAll();
 
+    // The targets, with the one credential-shaped column treated the way a
+    // node URL is: a libre endpoint is a URL and a URL is allowed userinfo,
+    // so a redacted export strips it rather than shipping it verbatim.
+    const targetRows = await listAllTargets();
+    obj.targets = includeSecrets ? targetRows
+        : targetRows.map((row) => ({...row,
+            endpoint: row.endpoint === null ? null : withoutUrlCredentials(row.endpoint)}));
+
     const integrationRows = await integration.findAll();
     obj.integrations = includeSecrets ? integrationRows : withoutSecrets(integrationRows);
 
@@ -602,6 +573,54 @@ export const importConfig = async (obj) => {
         return REFUSED;
     }
 
+    /*
+     * The targets: from the file's own section, or folded out of the four
+     * legacy keys an export from before targets existed carries in its
+     * config block. Both restore; a file with neither restores none. Every
+     * row is judged before anything is touched, the way the config values
+     * are, and by the same judgement the API applies - a backup must not be
+     * a way past targetProblem.
+     */
+    let targetRows = asRows(obj.targets);
+
+    if (targetRows === null) {
+        // A backend URL an older version accepted but the current validator
+        // cannot read takes the thresholds' trade: the endpoint is dropped -
+        // "choose a server automatically" - rather than the whole restore
+        // refused over an address the CLI could never have fetched. A fold
+        // that still cannot be read restores no target at all; the file's own
+        // targets section below gets no such grace, because its rows were
+        // validated when they were written.
+        const folded = legacyTarget(obj.config ?? {});
+
+        targetRows = [];
+        if (folded !== null) {
+            if (targetProblem(folded) !== null) folded.endpoint = null;
+            if (targetProblem(folded) === null) targetRows.push(folded);
+        }
+    }
+
+    if (targetRows.length > MAX_IMPORTED_ROWS) return {ok: false, key: "targets"};
+    if (targetRows.some((row) => targetProblem(row) !== null)) return {ok: false, key: "targets"};
+
+    targetRows = targetRows.map((row, index) => ({
+        // The id survives so the history's targetId column keeps pointing at
+        // the right rows on a same-instance restore; a legacy fold has none
+        // and takes the next free one.
+        id: row.id,
+        name: row.name.trim(),
+        provider: row.provider,
+        serverId: row.serverId ?? null,
+        endpoint: row.endpoint ?? null,
+        enabled: Boolean(row.enabled ?? true),
+        alerts: Boolean(row.alerts ?? true),
+        optimalPing: row.optimalPing ?? null,
+        optimalDownload: row.optimalDownload ?? null,
+        optimalUpload: row.optimalUpload ?? null,
+        sortOrder: Number.isInteger(row.sortOrder) ? row.sortOrder : index,
+        created: typeof row.created === "string" ? row.created : new Date().toISOString()
+    }));
+
     const updates = [];
     for (const key in obj.config ?? {}) {
         // hasOwn for the same reason as validateInput: a hand-edited backup
@@ -688,6 +707,9 @@ export const importConfig = async (obj) => {
 
             for (const {key, model} of IMPORTED_TABLES)
                 await model.bulkCreate(rows[key], {transaction});
+
+            await targetsModel.destroy({where: {}, transaction});
+            if (targetRows.length > 0) await targetsModel.bulkCreate(targetRows, {transaction});
         });
     } catch {
         return REFUSED;
@@ -742,6 +764,7 @@ export const factoryReset = async () => {
         await node.destroy({where: {}, transaction});
         await recommendations.destroy({where: {}, transaction});
         await integration.destroy({where: {}, transaction});
+        await targetsModel.destroy({where: {}, transaction});
     });
 
     // The reset put the password back to the unprotected sentinel without going

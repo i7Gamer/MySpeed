@@ -3,6 +3,8 @@ import * as tests from '../controller/speedtests.js';
 import * as pauseController from '../controller/pause.js';
 import * as config from '../controller/config.js';
 import * as testTask from '../tasks/speedtest.js';
+import * as targets from '../controller/targets.js';
+import { isPreviewInstance } from '../util/previewMode.js';
 import password from '../middlewares/password.js';
 import previewReadOnly from '../middlewares/previewReadOnly.js';
 import { ALL_TIME_RANGE, parseDateRange } from '../util/dateRange.js';
@@ -25,6 +27,16 @@ const RECENT_FAILURE_WINDOW_MS = RECENT_FAILURE_WINDOW_HOURS * 60 * 60 * 1000;
 // scroll cursor can be compared against - the same pattern importTests holds
 // its input to.
 const CREATED_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/**
+ * The ?target= filter, three-valued: undefined when absent (no filter), a
+ * number when usable, null when malformed - the caller answers the 400, so
+ * the message lives beside the route the way the other parameter guards do.
+ */
+const parseTargetParam = (value) => {
+    if (value === undefined) return undefined;
+    return /^\d+$/.test(value) ? Number(value) : null;
+};
 
 
 app.get("/", password(true), async (req, res) => {
@@ -61,7 +73,11 @@ app.get("/", password(true), async (req, res) => {
         ? {created: req.query.after, id: req.query.afterId}
         : null;
 
-    const entries = await tests.listTests(req.query.afterId, req.query.limit, range, after);
+    const target = parseTargetParam(req.query.target);
+    if (target !== undefined && target === null)
+        return res.status(400).json({message: "You need to provide a correct number in the target parameter"});
+
+    const entries = await tests.listTests(req.query.afterId, req.query.limit, range, after, target);
 
     // A viewer sees the measurements, not who the connection is: the operator's
     // provider and address are the operator's to see. A demo visitor is the
@@ -101,9 +117,14 @@ app.get("/statistics", password(true), async (req, res) => {
     if (points !== undefined && /[^0-9]/.test(points))
         return res.status(400).json({message: "You need to provide a correct number in the points parameter"});
 
+    const target = parseTargetParam(req.query.target);
+    if (target !== undefined && target === null)
+        return res.status(400).json({message: "You need to provide a correct number in the target parameter"});
+
     res.json(await tests.listStatistics(range, {
         zone: timezone.zone,
         maxPoints: points,
+        target,
         // The summary of the window immediately before the range, for the
         // period-over-period deltas. Opt-in: it costs a second table scan.
         // Nothing precedes all time, so it is never compared.
@@ -122,7 +143,11 @@ app.get("/export", password(true), async (req, res) => {
         return res.status(400).json({ message: range.message });
     }
 
-    const exportData = await tests.exportTests(range);
+    const target = parseTargetParam(req.query.target);
+    if (target !== undefined && target === null)
+        return res.status(400).json({message: "You need to provide a correct number in the target parameter"});
+
+    const exportData = await tests.exportTests(range, target);
 
     if (isUntrustedReader(req)) exportData.forEach(stripConnectionIdentity);
 
@@ -139,13 +164,26 @@ app.get("/export", password(true), async (req, res) => {
 
 app.post("/run", password(false), async (req, res) => {
     if (pauseController.currentState) return res.status(410).json({message: "The speedtests are currently paused"});
-    if (await config.getValue("provider") === "none") return res.status(410).json({message: "No provider selected"});
+    if (!isPreviewInstance() && await targets.count() === 0)
+        return res.status(410).json({message: "No targets configured"});
     if (testTask.isRunning()) return res.status(409).json({message: "An speedtest is already running"});
+
+    // A named target runs alone - the per-row run button in the targets
+    // dialog, and the one way a disabled (manual-only) target ever runs.
+    // Without one, the whole round of enabled targets runs.
+    const targetId = req.body?.targetId;
+
+    if (targetId !== undefined) {
+        if (!/^\d+$/.test(String(targetId)))
+            return res.status(400).json({message: "You need to provide a numeric targetId"});
+        if (await targets.getOne(Number(targetId)) === null)
+            return res.status(404).json({message: "The target does not exist"});
+    }
 
     // Deliberately not awaited: a speedtest runs for 30-60s and holding the
     // connection open that long trips the default read timeout of every common
     // reverse proxy. The client follows progress via GET /speedtests/status.
-    testTask.create("custom").catch(error =>
+    testTask.create("custom", targetId === undefined ? undefined : Number(targetId)).catch(error =>
         console.error(`The manually started speedtest failed: ${error?.message ?? error}`));
 
     res.json({message: "Speedtest successfully created"});

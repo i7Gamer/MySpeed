@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, setConfig } from "./helpers/boot.js";
+import { bootServer, seedTarget, setConfig } from "./helpers/boot.js";
 import { FIRST_BACKOFF_MS, forgetAllBackoff, recordRateLimit } from "../../server/util/rateLimitBackoff.js";
 
 /**
@@ -46,7 +46,7 @@ beforeEach(async () => {
     timer.stopTimer();
     forgetAllBackoff();
     await server.tests.destroy({where: {}});
-    await setConfig(server.config, "provider", PROVIDER);
+    await seedTarget({provider: PROVIDER});
     // The offset would put a thirty-second sleep in front of every run here, and
     // none of these assertions are about it.
     await setConfig(server.config, "scheduleOffset", "false");

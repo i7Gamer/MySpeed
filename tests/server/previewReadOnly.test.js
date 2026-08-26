@@ -359,7 +359,8 @@ describe("every read route decides what a demo may have", () => {
         "speedtests.js /:id": "one test, stripped",
         "storage.js /": "how much disk the database uses",
         "system.js /version": "the running version, which the footer shows",
-        "system.js /server/:provider": "the public server lists, which are the provider's"
+        "system.js /server/:provider": "the public server lists, which are the provider's",
+        "targets.js /": "the target names and providers the interface labels by, with endpoints and server ids withheld"
     };
 
     /** Refused on a demo, and each must carry the guard that refuses it. */

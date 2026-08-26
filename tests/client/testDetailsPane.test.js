@@ -65,8 +65,10 @@ describe("the pane shows every stored column", () => {
     const columns = [...model.matchAll(/^ {4}([a-zA-Z]+): \{/gm)].map(([, name]) => name);
 
     // `id` is the primary key: a row number is not a measurement, and nothing a
-    // reader can do with it.
-    const INTERNAL = ["id"];
+    // reader can do with it. `targetId` is exempt only until the Target fact
+    // lands in the client - the pane will read it to resolve the target's
+    // name, and this entry comes off the list in that same change.
+    const INTERNAL = ["id", "targetId"];
 
     it("finds the model's columns to check", () => {
         assert.ok(columns.length > 10, `expected the model's columns, got ${columns.join(", ")}`);

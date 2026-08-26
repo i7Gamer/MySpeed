@@ -11,7 +11,8 @@ import { failedPayload, finishedPayload } from '../util/notificationPayload.js';
 import { FAILED_TEST, UNMEASURED_LATENCY, impossibleMeasurement, isFailedTest, isMeasuredLatency, usableFigure }
     from '../util/testOutcome.js';
 import { isRateLimitMessage } from '../util/providers/cliOutput.js';
-import { clearBackoff, recordRateLimit } from '../util/rateLimitBackoff.js';
+import { backoffRemainingMs, clearBackoff, recordRateLimit } from '../util/rateLimitBackoff.js';
+import * as targetsController from '../controller/targets.js';
 
 // The placeholder a failed test stores in every numeric column. The client
 // tells a failure apart by it, so it is not a value anyone should read as one.
@@ -29,7 +30,10 @@ let _isRunning = false;
 // the Ookla CLI does: librespeed's --json suppresses its verbose output and
 // cfspeedtest's silences everything but the result, so those runs never report
 // a fraction at all and must not be drawn as one sitting at zero.
-const NO_PROGRESS = {phase: null, progress: null, speed: null, startedAt: null};
+// `target` names the round member currently measuring - null outside a round
+// and on instances from before targets existed, so every added field is
+// additive and /status keeps its shape for an older reader.
+const NO_PROGRESS = {phase: null, progress: null, speed: null, startedAt: null, target: null};
 
 let _progress = {...NO_PROGRESS};
 
@@ -42,7 +46,24 @@ const updateProgress = ({phase, progress, speed}) => {
         // The latency phase measures no throughput, so it reports none rather
         // than leaving the previous phase's figure on screen.
         speed: speed ?? null,
-        startedAt: _progress.startedAt
+        startedAt: _progress.startedAt,
+        target: _progress.target
+    };
+};
+
+/**
+ * Marks the next round member as the one measuring. The phase and fraction
+ * start over - they describe this target's run, not the round - while
+ * startedAt keeps the round's own beginning, which is what the elapsed
+ * counter in the status bar counts.
+ */
+const beginTarget = (target, index, count) => {
+    _progress = {
+        ..._progress,
+        phase: PHASE_START,
+        progress: null,
+        speed: null,
+        target: target.id === null ? null : {id: target.id, name: target.name, index, count}
     };
 };
 
@@ -86,7 +107,13 @@ const lowestRealPing = (ping) => isMeasuredLatency(ping) && ping > UNMEASURED_LA
  * silently stopped updating until the failure aged out of the newest page.
  */
 export const createRecommendations = async () => {
-    const list = await tests.listSuccessful(RECOMMENDATION_SAMPLE);
+    // The sample describes one line, so it comes from one target: the first
+    // scheduled one that takes part in alerting. A gigabit LAN box mixed into
+    // the sample would recommend numbers no WAN target can meet.
+    const primary = await targetsController.alertsTarget();
+    if (!primary) return;
+
+    const list = await tests.listSuccessful(RECOMMENDATION_SAMPLE, primary.id);
     if (list.length < RECOMMENDATION_SAMPLE) return;
 
     let recommendations = {ping: Infinity, down: 0, up: 0};
@@ -146,28 +173,13 @@ const simulatePreviewRun = async () => {
     }
 };
 
-export const run = async (retryAuto = false) => {
-    // The retry is the same logical test, so integrations are told it started
-    // once rather than twice.
-    setRunning(true, !retryAuto);
-    let mode = await config.getValue("provider");
+export const run = async (target, retryAuto = false) => {
+    const mode = target.provider;
 
-    if (mode === "none") {
-        setRunning(false);
-        throw {message: "No provider selected"};
-    }
+    let serverId = target.serverId ?? undefined;
+    let serverUrl = target.endpoint ?? undefined;
 
-    let serverId = mode === "cloudflare" ? 0 : await config.getValue(mode + "Id");
-    let serverUrl = mode === "libre" ? await config.getValue("libreUrl") : undefined;
-
-    if (serverId === "none")
-        serverId = undefined;
-    
-    if (serverUrl === "none")
-        serverUrl = undefined;
-
-    if (mode === "libre" && serverUrl)
-        serverId = undefined;
+    if (serverUrl) serverId = undefined;
 
     // Both branches carry the callback: the retry is the same logical run, and a
     // bar that stopped moving the moment a test fell back to automatic server
@@ -201,42 +213,97 @@ export const run = async (retryAuto = false) => {
     return {...speedtest, serverId}
 }
 
-export const create = async (type = "auto", retried = false) => {
+/**
+ * The stand-in a demo round runs instead of a stored target. Its null id keeps
+ * targetId off the fabricated rows, and alerts stays on so a demo behaves the
+ * way the single-provider instance always did.
+ */
+const PREVIEW_TARGET = Object.freeze({id: null, name: null, provider: "preview", alerts: true});
+
+const roundMembers = async (targetId) => {
+    if (process.env.PREVIEW_MODE === "true") return [PREVIEW_TARGET];
+
+    if (targetId !== undefined) {
+        const one = await targetsController.getOne(targetId);
+        return one ? [one] : [];
+    }
+
+    return await targetsController.roundTargets();
+};
+
+/**
+ * Whether the provider is still inside the hold a refusal earned, and says so
+ * when it is. Asked per round member rather than once for the round: the holds
+ * are per provider, and an Ookla refusal is no reason to skip the iperf3 box
+ * standing next to it.
+ */
+const MS_PER_MINUTE = 60_000;
+
+const heldByBackoff = (provider) => {
+    const remaining = backoffRemainingMs(provider);
+
+    if (remaining === 0) return false;
+
+    console.warn(`The ${provider} provider refused the last test for too many requests. `
+        + `Skipping its targets this round - trying again in ${Math.ceil(remaining / MS_PER_MINUTE)} minutes.`);
+
+    return true;
+};
+
+export const create = async (type = "auto", targetId = undefined) => {
     // The guard has to latch synchronously: POST /speedtests/run no longer awaits
     // this call, so checking after an await would let two requests slip past.
-    if (_isRunning && !retried) return 500;
-    if (!retried) _isRunning = true;
+    // One latch for the whole round - targets run strictly in sequence, which
+    // is also what keeps util/speedtest.js's single activeProcess invariant.
+    if (_isRunning) return 500;
+    _isRunning = true;
 
     try {
-        // Awaited, not returned: a bare return would settle the finally before
-        // the retry it hands back has finished.
-        return await execute(type, retried);
+        return await executeRound(type, targetId);
     } finally {
         // The one guarantee that the latch is dropped however this ends. It
         // used to be cleared only on the paths that were thought of, so a throw
         // from the failure handler - which is where a broken database or a
         // failing notification surfaces - wedged every later speedtest.
-        // A retried call shares the outer call's latch and must not clear it.
-        if (!retried) _isRunning = false;
+        _isRunning = false;
     }
 }
 
-const execute = async (type, retried) => {
-    const mode = await config.getValue("provider");
+const executeRound = async (type, targetId) => {
+    const members = await roundMembers(targetId);
 
-    if (mode === "none") return 400;
+    if (members.length === 0) return 400;
+
+    // Once per round, however many members it has: the integrations hear one
+    // "running", and the progress clock starts here. A pretended run tells
+    // them nothing - a demo has no business firing anybody's webhook.
+    setRunning(true, members[0].provider !== "preview");
+
+    try {
+        for (const [index, target] of members.entries()) {
+            beginTarget(target, index + 1, members.length);
+
+            // Only the scheduled rounds honour a hold - a test started by hand
+            // is somebody asking for one now. The skip is per target, so the
+            // rest of the round still runs.
+            if (type === "auto" && heldByBackoff(target.provider)) continue;
+
+            await executeTarget(target, type);
+        }
+    } finally {
+        // The round is over on every path, including a throw from a member's
+        // failure handler - the same guarantee the latch has, for the same
+        // reason: tasks/integrations.js reads this state for its keep-alive.
+        setRunning(false, false);
+    }
+};
+
+const executeTarget = async (target, type, retried = false) => {
+    const mode = target.provider === "preview" ? "preview" : target.provider;
 
     try {
         let test;
-        if (process.env.PREVIEW_MODE === "true") {
-            // The same latch a real run sets - run() is the only other caller
-            // of setRunning(true), and this branch skips run(), so the demo's
-            // whole test used to answer {running: true, phase: null,
-            // startedAt: null} on the status endpoint: the instance whose job
-            // is showing the interface showed a run reporting nothing. Minus
-            // the integration notice, which a pretended test has no business
-            // sending.
-            setRunning(true, false);
+        if (mode === "preview") {
             await simulatePreviewRun();
             test = {
                 ping: {latency: Math.floor(Math.random() * 25) + 5, jitter: Math.random() * 5 + 0.5},
@@ -244,7 +311,7 @@ const execute = async (type, retried) => {
                 upload: {bandwidth: 125 * 100000 * (Math.random() + 0.5), elapsed: 10000},
             }
         } else {
-            test = await run(retried);
+            test = await run(target, retried);
         }
 
         // The parser names the provider itself, so the row cannot end up
@@ -252,7 +319,7 @@ const execute = async (type, retried) => {
         // mode, where the generated result is ookla-shaped whatever is configured.
         let {ping, jitter, download, upload, time, resultId, serverName, serverHost, serverLocation,
             packetLoss, downloadLatency, uploadLatency, isp, externalIp, provider,
-            bytesDownloaded, bytesUploaded} = await parseData.parseData(process.env.PREVIEW_MODE === "true" ?
+            bytesDownloaded, bytesUploaded} = await parseData.parseData(mode === "preview" ?
             parseData.OOKLA : mode, test);
 
         /*
@@ -299,7 +366,7 @@ const execute = async (type, retried) => {
         // The provider is answering again, so whatever hold a previous refusal
         // earned is over - including the escalation, which a completed test is
         // the only thing that disproves.
-        clearBackoff(mode);
+        if (mode !== "preview") clearBackoff(mode);
 
         /*
          * The nullable figures ask a different question and get a different
@@ -309,21 +376,23 @@ const execute = async (type, retried) => {
          * which is the opposite of what the guard above is for.
          */
         let testResult = await tests.create({ping, download, upload, time, serverId, type,
+            targetId: target.id,
             resultId, jitter: usableFigure(jitter), serverName, serverHost, serverLocation,
             packetLoss: usableFigure(packetLoss),
             downloadLatency: usableFigure(downloadLatency), uploadLatency: usableFigure(uploadLatency),
             isp, externalIp, provider, bytesDownloaded, bytesUploaded});
-        console.log(`Test #${testResult.id} was executed successfully in ${time}s. 🏓 ${ping} (±${jitter ?? 'N/A'}) ⬇ ${download}️ ⬆ ${upload}️`);
+        console.log(`Test #${testResult.id}${target.name ? ` (${target.name})` : ""} was executed successfully in ${time}s. 🏓 ${ping} (±${jitter ?? 'N/A'}) ⬇ ${download}️ ⬆ ${upload}️`);
         createRecommendations().catch(err =>
             console.error(`Could not update the recommendations: ${toErrorMessage(err)}`));
-        setRunning(false);
         // Everything the row records, not the five figures this used to send:
         // a webhook is how MySpeed feeds anything else, and a consumer that
         // cannot tell which provider or server produced a number can do little
-        // with it.
-        sendFinished(finishedPayload({...testResult, provider, ping, jitter, download, upload, time,
+        // with it. A target that opted out of alerting sends nothing - it is
+        // the diagnostic box, not the line being watched.
+        if (target.alerts) sendFinished(finishedPayload({...testResult, provider, ping, jitter, download, upload, time,
             packetLoss, downloadLatency, uploadLatency, serverId, serverName, serverHost, serverLocation,
-            isp, externalIp, resultId, bytesDownloaded, bytesUploaded})).catch(err =>
+            isp, externalIp, resultId, bytesDownloaded, bytesUploaded,
+            targetId: target.id, targetName: target.name})).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
     } catch (e) {
         console.log(e)
@@ -351,41 +420,25 @@ const execute = async (type, retried) => {
         // Not while the process is leaving: the shutdown has just killed the
         // child this failure reports, and a retry would spawn a fresh one after
         // the only moment terminateActiveProcess could reach it - the orphan
-        // trackProcess exists to prevent, rebuilt one line further down.
-        if (!retried && !isShuttingDown() && !rateLimited) return await create(type, true);
+        // trackProcess exists to prevent, rebuilt one line further down. The
+        // retry is this target's alone: the round carries on to the next
+        // member whatever happens here.
+        if (!retried && !isShuttingDown() && !rateLimited) return await executeTarget(target, type, true);
 
-        /*
-         * The run is over however the rest of this goes.
-         *
-         * setRunning(false, false) sat at the end, behind the awaited write and
-         * the awaited notification, so a rejection from either - a database
-         * that has gone away is the realistic one - skipped it. `setState("ping")`
-         * then never ran, and tasks/integrations.js was left at
-         * `currentState === "running"` for the life of the process: the
-         * minutePassed keep-alive that webhook's send_alive and healthChecks
-         * depend on stopped firing, silently and permanently, and the progress
-         * bar kept a stale phase and startedAt. The success path already clears
-         * the flag before its un-awaited notification; this is the same order.
-         */
-        try {
-            // The provider is recorded on a failure too: nothing was parsed, but
-            // which provider could not complete is the first thing a reader of the
-            // error wants, and the setting may have changed by the time they look.
-            let testResult = await tests.create({ping: FAILED, download: FAILED, upload: FAILED, time: null,
-                serverId: 0, type, error: message, provider: mode});
-            // Not awaited, the way the success path above does it. triggerEvent
-            // works through the integrations one at a time and each outbound
-            // call has a ten second timeout, so a few endpoints that have gone
-            // unreachable - the very situation this notification describes -
-            // held the run open for the sum of their timeouts. The finally
-            // below still ran, but "the run is over" arrived a minute late, and
-            // the next scheduled test was refused for all of it.
-            sendError(failedPayload({...testResult, provider: mode, error: message})).catch(err =>
-                console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
-            console.log(`Test #${testResult.id} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
-        } finally {
-            setRunning(false, false);
-        }
+        // The provider is recorded on a failure too: nothing was parsed, but
+        // which provider could not complete is the first thing a reader of the
+        // error wants, and the target may have changed by the time they look.
+        let testResult = await tests.create({ping: FAILED, download: FAILED, upload: FAILED, time: null,
+            serverId: 0, type, error: message, provider: mode, targetId: target.id});
+        // Not awaited, the way the success path above does it. triggerEvent
+        // works through the integrations one at a time and each outbound
+        // call has a ten second timeout, so a few endpoints that have gone
+        // unreachable - the very situation this notification describes -
+        // held the run open for the sum of their timeouts.
+        if (target.alerts) sendError(failedPayload({...testResult, provider: mode, error: message,
+            targetId: target.id, targetName: target.name})).catch(err =>
+            console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
+        console.log(`Test #${testResult.id} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
     }
 }
 

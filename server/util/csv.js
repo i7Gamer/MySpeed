@@ -3,7 +3,7 @@
 // columns are inserted before it rather than appended.
 export const CSV_COLUMNS = ["id", "ping", "jitter", "download", "upload", "time", "type", "created", "provider",
     "serverId", "serverName", "serverHost", "serverLocation", "packetLoss", "downloadLatency", "uploadLatency", "isp", "externalIp",
-    "bytesDownloaded", "bytesUploaded", "resultId", "error"];
+    "bytesDownloaded", "bytesUploaded", "resultId", "targetName", "error"];
 
 export const CSV_HEADER = `${CSV_COLUMNS.join(",")}\n`;
 

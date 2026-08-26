@@ -164,11 +164,11 @@ describe("GET /api/speedtests", () => {
 });
 
 describe("POST /api/speedtests/run", () => {
-    // provider defaults to "none", so this never starts a real speedtest.
-    it("refuses to start without a provider", async () => {
+    // A fresh instance has no targets, so this never starts a real speedtest.
+    it("refuses to start without a target", async () => {
         const {status, body} = await api(server.baseUrl, "/speedtests/run", {method: "POST"});
         assert.equal(status, 410);
-        assert.match(body.message, /provider/i);
+        assert.match(body.message, /target/i);
     });
 
     /*

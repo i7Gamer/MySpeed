@@ -449,11 +449,17 @@ describe("import validation", () => {
  * here as a deliberate omission. Adding a column then forces the choice
  * instead of silently skipping it.
  */
-// Every attribute is exported today. serverId used to be excluded as "an
-// internal reference", but it is the id the Ookla CLI is pointed at with
-// --server-id and the label the Prometheus exporter emits - and leaving it out
-// meant an export/import round trip reset every row to the column's 0 default.
-const NOT_EXPORTED = {};
+// serverId used to be excluded as "an internal reference", but it is the id
+// the Ookla CLI is pointed at with --server-id and the label the Prometheus
+// exporter emits - and leaving it out meant an export/import round trip reset
+// every row to the column's 0 default.
+const NOT_EXPORTED = {
+    // Exported as targetName instead: the raw id is meaningless outside this
+    // instance, while the name says which line the row measured. The import
+    // deliberately ignores the column either way - names do not survive a
+    // move between instances.
+    targetId: "exported as targetName"
+};
 
 describe("what the exporter carries", () => {
     const exportedFields = async () => {

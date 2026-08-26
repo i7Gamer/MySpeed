@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, setConfig } from "./helpers/boot.js";
+import { bootServer, seedTarget, setConfig } from "./helpers/boot.js";
 import { isQuietHour, QUIET_HOURS_OFF } from "../../server/util/quietHours.js";
 
 /**
@@ -61,7 +61,7 @@ const setWindow = async (start, end) => {
 beforeEach(async () => {
     timer.stopTimer();
     await server.tests.destroy({where: {}});
-    await setConfig(server.config, "provider", "cloudflare");
+    await seedTarget({provider: "cloudflare"});
 });
 
 /** Lets runTask get as far as its delay before the test interferes. */

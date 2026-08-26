@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, api, setConfig } from "./helpers/boot.js";
+import { bootServer, api, seedTarget, setConfig } from "./helpers/boot.js";
 
 let server;
 let nodeModel;
@@ -259,13 +259,6 @@ describe("PUT /api/storage/config", () => {
             assert.equal(await server.config.getValue("passwordLevel"), "none");
         });
 
-        it("restores an unpinned server over a pinned one", async () => {
-            await setConfig(server.config, "ooklaId", "49631");
-
-            assert.equal((await restore({ooklaId: "none"})).status, 200);
-            assert.equal(await server.config.getValue("ooklaId"), "none");
-        });
-
         it("restores the default schedule over a changed one", async () => {
             await setConfig(server.config, "cron", "*/15 * * * *");
 
@@ -273,17 +266,14 @@ describe("PUT /api/storage/config", () => {
             assert.equal(await server.config.getValue("cron"), "0 * * * *");
         });
 
-        /**
-         * Why the skip existed. `provider: "none"` is the stored sentinel for
-         * "not chosen yet" and validateInput refuses it as user input, so the
-         * default has to be written without being validated - not skipped.
+        /*
+         * The skip-validation-not-the-write branch used to be proven with
+         * `provider: "none"`, a sentinel validateInput refused as user input.
+         * The provider moved onto the target rows and no current default is
+         * refused any more, so the cron case above is the mechanism's whole
+         * observable surface; the branch itself stays as defence for the next
+         * sentinel default.
          */
-        it("restores a sentinel default validateInput refuses as user input", async () => {
-            await setConfig(server.config, "provider", "ookla");
-
-            assert.equal((await restore({provider: "none"})).status, 200);
-            assert.equal(await server.config.getValue("provider"), "none");
-        });
     });
 });
 
@@ -337,52 +327,55 @@ describe("PUT /api/storage/config with a threshold an older version accepted", (
 });
 
 /**
- * And the same for a librespeed URL an older version accepted.
+ * And the same for the provider keys of an older export.
  *
- * That value was checked with a bare `new URL()` until the scheme check was
- * added, and `new URL("localhost:8080")` does not throw - it reads "localhost:"
- * as the scheme. So a bare host and port, which is a natural thing to type for a
- * backend on the LAN, was stored behind a 200 and carried verbatim into every
- * backup taken since. Restoring one of those files now refused the whole import:
- * the nodes, the integrations and the recorded history were all left behind by a
- * URL the instance could never have fetched anyway.
- *
- * The default is written instead, which for this key means "choose a server
- * automatically" - the same trade the thresholds above make, and for the same
- * reason. A value the current validator cannot read is one this instance cannot
- * act on, so the restore completes without it and the setting is the one thing
- * that does not survive.
+ * An export from before targets carries provider/ooklaId/libreId/libreUrl in
+ * its config block; the import folds them into the one target they describe.
+ * The fold takes the thresholds' trade for a backend URL the current
+ * validator cannot read - `new URL("localhost:8080")` reads "localhost:" as
+ * the scheme, so an older version stored such values behind a 200 and every
+ * backup since carries them verbatim. The endpoint is dropped - "choose a
+ * server automatically" - rather than the whole restore refused over an
+ * address the CLI could never have fetched.
  */
-describe("PUT /api/storage/config with a librespeed URL an older version accepted", () => {
+describe("PUT /api/storage/config with the provider keys of an older export", () => {
     const restore = (config) => importConfig({
         config, nodes: [{name: "new", url: "http://10.0.0.9:5216"}], integrations: [], recommendations: []
     });
 
+    const storedTargets = async () =>
+        await (await import("../../server/controller/targets.js")).listAll();
+
     ["localhost:8080", "speed.lan:8080/backend", "nas:3000"].forEach((stored) => {
         it(`restores everything else when libreUrl is ${JSON.stringify(stored)}`, async () => {
-            await setConfig(server.config, "libreUrl", "none");
-
-            const {status} = await restore({libreUrl: stored});
+            const {status} = await restore({provider: "libre", libreUrl: stored});
 
             assert.equal(status, 200, "the whole backup is refused over one unusable backend URL");
-            assert.equal(await server.config.getValue("libreUrl"), "none",
-                "a URL the CLI cannot fetch was restored anyway");
+
+            const [target] = await storedTargets();
+            assert.equal(target.provider, "libre");
+            assert.equal(target.endpoint, null, "a URL the CLI cannot fetch was restored anyway");
             // Its identity rather than the count, for the reason given above.
             assert.equal((await nodeModel.findOne()).name, "new", "the nodes were not restored");
         });
     });
 
     it("keeps a URL it can still read", async () => {
-        assert.equal((await restore({libreUrl: "https://speed.example.net/backend"})).status, 200);
-        assert.equal(await server.config.getValue("libreUrl"), "https://speed.example.net/backend",
-            "a URL the check accepts was replaced by the default anyway");
+        assert.equal((await restore({provider: "libre", libreUrl: "https://speed.example.net/backend"})).status, 200);
+        assert.equal((await storedTargets())[0].endpoint, "https://speed.example.net/backend",
+            "a URL the check accepts was dropped anyway");
     });
 
-    // The sentinel is the default, so it takes the shipped-default path rather
-    // than the validator at all - but it still has to come back as itself.
-    it("keeps the unset sentinel", async () => {
-        assert.equal((await restore({libreUrl: "none"})).status, 200);
-        assert.equal(await server.config.getValue("libreUrl"), "none");
+    it("reads the unset sentinel as automatic selection", async () => {
+        assert.equal((await restore({provider: "libre", libreUrl: "none"})).status, 200);
+        assert.equal((await storedTargets())[0].endpoint, null);
+    });
+
+    it("restores an unpinned server over a pinned one", async () => {
+        await seedTarget({provider: "ookla", serverId: "49631"});
+
+        assert.equal((await restore({provider: "ookla", ooklaId: "none"})).status, 200);
+        assert.equal((await storedTargets())[0].serverId, null);
     });
 
     // Tolerating this one must not tolerate the next thing that cannot be read:

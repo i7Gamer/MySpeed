@@ -26,23 +26,22 @@ const bodyFrom = (declaration) => bodyOf(source, declaration);
 describe("the failure handler", () => {
     const handler = bodyFrom("} catch (e) {");
 
-    it("clears the running state in a finally", () => {
-        assert.match(handler, /finally\s*\{[^}]*setRunning\(false,\s*false\)/s,
+    // The release moved up a level when runs became rounds: executeRound's
+    // finally owns it now, which covers a throw from any member's failure
+    // handler - the same guarantee, one home for however many targets run.
+    it("clears the running state in the round's finally", () => {
+        const round = bodyFrom("const executeRound");
+
+        assert.match(round, /finally\s*\{[^}]*setRunning\(false,\s*false\)/s,
             "the running state is released only on the path where nothing threw");
+        assert.match(round.slice(round.indexOf("try {"), round.indexOf("} finally")),
+            /await executeTarget\(/,
+            "the members run outside the guarded block, so the finally covers nothing");
     });
 
     it("still records the failed test and notifies", () => {
         assert.match(handler, /tests\.create\(/, "the failed row is no longer written");
         assert.match(handler, /sendError\(/, "the integrations are no longer told");
-    });
-
-    // The write and the notification are inside the guarded block, or the
-    // finally has nothing to guard.
-    it("guards the write and the notification, not just the log", () => {
-        const guarded = handler.slice(handler.indexOf("try {"), handler.indexOf("} finally"));
-
-        assert.match(guarded, /tests\.create\(/);
-        assert.match(guarded, /sendError\(/);
     });
 
     /**
@@ -83,8 +82,8 @@ describe("the failure handler", () => {
  */
 describe("both endings", () => {
     // The run itself. `create` above is only the latch around it; the two
-    // notifications and both releases live in here.
-    const execute = bodyFrom("const execute = async");
+    // notifications live in here, one round member at a time.
+    const execute = bodyFrom("const executeTarget = async");
 
     it("tell the integrations without waiting for them", () => {
         for (const send of ["sendFinished", "sendError"]) {

@@ -6,7 +6,6 @@ import { CronExpressionParser } from "cron-parser";
 import { create as createSpeedtest } from './speedtest.js';
 import { isQuietHour } from '../util/quietHours.js';
 import { serverZone, zoneFromName } from '../util/timezone.js';
-import { backoffRemainingMs } from '../util/rateLimitBackoff.js';
 import errorHandler from "../util/errorHandler.js";
 
 const MS_PER_MINUTE = 60_000;
@@ -270,32 +269,6 @@ const withinQuietHours = async () => isQuietHour(new Date(),
     // ever stops being true.
     zoneFromName(await config.getValue("timezone")));
 
-/**
- * Whether the provider is still inside the hold a refusal earned, and says so
- * when it is.
- *
- * One home for the message, because the question is asked twice: once before the
- * schedule offset and once on the far side of it, the same way the pause and the
- * quiet hours are. The sleep is up to five minutes, and a run started by hand
- * during it can be refused and record a hold that did not exist when this run
- * began.
- *
- * Only the scheduled runs are held, which is the rule the quiet hours already
- * follow for the reason their own module gives: a test started by hand is
- * somebody asking for one now, and refusing that would be a fault rather than a
- * courtesy. So this is consulted here rather than inside create().
- */
-const heldByBackoff = (provider) => {
-    const remaining = backoffRemainingMs(provider);
-
-    if (remaining === 0) return false;
-
-    console.warn(`The ${provider} provider refused the last test for too many requests. `
-        + `Skipping this one - trying again in ${Math.ceil(remaining / MS_PER_MINUTE)} minutes.`);
-
-    return true;
-};
-
 export const runTask = async () => {
     if (pauseController.currentState) {
         console.warn("Speedtests currently paused. Trying again later...");
@@ -319,8 +292,9 @@ export const runTask = async () => {
         return;
     }
 
-    if (heldByBackoff(await config.getValue("provider"))) return;
-
+    // The rate-limit holds are consulted inside the round rather than here:
+    // they are per provider, and a mixed round should skip only the provider
+    // that refused, not the iperf3 box standing next to it.
     const scheduleOffset = await config.getValue("scheduleOffset");
 
     if (scheduleOffset === "true" && currentCron) {
@@ -338,10 +312,6 @@ export const runTask = async () => {
         // those reads were in flight was seen by no guard at all and one test
         // still fired from the schedule that had just been replaced.
         const quietHoursBegan = await withinQuietHours();
-        // Read again for the same reason, and here rather than after the guards:
-        // the provider can be changed while the offset sleeps, and asking for it
-        // below would put an await between the last guard and the speedtest.
-        const provider = await config.getValue("provider");
 
         if (scheduleChangedSince(startedIn)) {
             console.warn("The schedule changed during the delay. Skipping this test...");
@@ -357,8 +327,6 @@ export const runTask = async () => {
             console.warn("Quiet hours began during delay. Skipping this test...");
             return;
         }
-
-        if (heldByBackoff(provider)) return;
     }
 
     await createSpeedtest("auto");

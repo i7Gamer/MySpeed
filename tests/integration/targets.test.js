@@ -1,0 +1,172 @@
+import { describe, it, before, after, beforeEach } from "node:test";
+import assert from "node:assert/strict";
+import { bootServer, api, setConfig } from "./helpers/boot.js";
+
+/**
+ * The targets API end to end: the list an operator manages, what a read-only
+ * visitor may know of it, and the round semantics the rows drive - including
+ * the manual-only shape, where a disabled target never joins the schedule but
+ * still runs by name.
+ */
+
+let server;
+let targets;
+
+before(async () => {
+    server = await bootServer();
+    targets = await import("../../server/controller/targets.js");
+});
+
+after(async () => {
+    await server?.close();
+});
+
+beforeEach(async () => {
+    await targets.removeAll();
+    await server.tests.destroy({where: {}});
+});
+
+const put = (body) => api(server.baseUrl, "/targets", {
+    method: "PUT", headers: {"content-type": "application/json"}, body: JSON.stringify(body)
+});
+
+const patch = (path, body) => api(server.baseUrl, `/targets${path}`, {
+    method: "PATCH", headers: {"content-type": "application/json"}, body: JSON.stringify(body)
+});
+
+describe("PUT /api/targets", () => {
+    it("creates a target and answers its id", async () => {
+        const {status, body} = await put({name: "Frankfurt", provider: "ookla", serverId: "1234"});
+
+        assert.equal(status, 200);
+        assert.ok(Number.isInteger(body.id));
+
+        const [row] = await targets.listAll();
+        assert.equal(row.name, "Frankfurt");
+        assert.equal(row.serverId, "1234");
+        // sqlite hands a boolean back as 1 under the global raw:true.
+        assert.equal(Boolean(row.enabled), true);
+    });
+
+    it("refuses what targetProblem refuses, naming the problem", async () => {
+        const {status, body} = await put({name: "x", provider: "ookla", serverId: "12a4"});
+
+        assert.equal(status, 400);
+        assert.match(body.message, /server/i);
+    });
+
+    it("assigns round order by arrival", async () => {
+        await put({name: "first", provider: "ookla"});
+        await put({name: "second", provider: "cloudflare"});
+
+        const rows = await targets.listAll();
+        assert.deepEqual(rows.map((row) => row.name), ["first", "second"]);
+        assert.ok(rows[0].sortOrder < rows[1].sortOrder);
+    });
+
+    it("ignores fields the server assigns", async () => {
+        await put({name: "sneaky", provider: "ookla", id: 999, sortOrder: -5, created: "then"});
+
+        const [row] = await targets.listAll();
+        assert.notEqual(row.id, 999);
+        assert.equal(row.sortOrder, 0);
+    });
+});
+
+describe("PATCH /api/targets/:id", () => {
+    it("judges the row it would become, not the fragment that arrived", async () => {
+        const {body: {id}} = await put({name: "own", provider: "libre"});
+
+        // An endpoint is legal on libre - and this same fragment must be
+        // refused once the row is an ookla target.
+        assert.equal((await patch(`/${id}`, {endpoint: "https://speed.example.net"})).status, 200);
+        assert.equal((await patch(`/${id}`, {provider: "ookla"})).status, 400,
+            "the merged row carries a libre endpoint into a provider that takes none");
+    });
+
+    it("404s a target that does not exist", async () => {
+        assert.equal((await patch("/999999", {name: "ghost"})).status, 404);
+    });
+
+    it("reorders the round by the given id sequence", async () => {
+        const {body: {id: first}} = await put({name: "first", provider: "ookla"});
+        const {body: {id: second}} = await put({name: "second", provider: "cloudflare"});
+
+        assert.equal((await patch("/order", {ids: [second, first]})).status, 200);
+        assert.deepEqual((await targets.listAll()).map((row) => row.name), ["second", "first"]);
+    });
+});
+
+describe("DELETE /api/targets/:id", () => {
+    it("removes the target and leaves its history rows orphaned, not gone", async () => {
+        const {body: {id}} = await put({name: "gone", provider: "ookla"});
+        await server.tests.create({ping: 10, download: 100, upload: 50, targetId: id,
+            created: new Date().toISOString()});
+
+        assert.equal((await api(server.baseUrl, `/targets/${id}`, {method: "DELETE"})).status, 200);
+
+        assert.equal((await targets.listAll()).length, 0);
+        const [row] = await server.tests.findAll();
+        assert.equal(row.targetId, id, "the history was cascaded away with the target");
+    });
+});
+
+describe("what a read-only visitor may know", () => {
+    it("withholds endpoints, server ids and the alerts flag", async () => {
+        await put({name: "own", provider: "libre", endpoint: "https://user:secret@speed.example.net",
+            optimalPing: 5});
+        await setConfig(server.config, "password", "Hunter2!");
+        await setConfig(server.config, "passwordLevel", "read");
+
+        try {
+            const {status, body} = await api(server.baseUrl, "/targets");
+
+            assert.equal(status, 200);
+            assert.equal(body[0].name, "own");
+            assert.equal(body[0].provider, "libre");
+            assert.equal(body[0].optimalPing, 5, "the grading loses its limits");
+            assert.ok(!("endpoint" in body[0]), "the endpoint - credential included - reached a viewer");
+            assert.ok(!("serverId" in body[0]), "the server id reached a viewer");
+            assert.ok(!("alerts" in body[0]));
+        } finally {
+            await setConfig(server.config, "password", "none");
+            await setConfig(server.config, "passwordLevel", "none");
+        }
+    });
+});
+
+describe("the manual-only target", () => {
+    it("never joins the round but runs by name", async () => {
+        const {body: {id}} = await put({name: "diagnostic", provider: "cloudflare", enabled: false});
+
+        assert.deepEqual(await targets.roundTargets(), [], "a disabled target joined the round");
+
+        // No CLI is installed here, so the run fails in milliseconds - what
+        // matters is that the row it writes belongs to the named target.
+        const {status} = await api(server.baseUrl, "/speedtests/run", {
+            method: "POST", headers: {"content-type": "application/json"},
+            body: JSON.stringify({targetId: id})
+        });
+        assert.equal(status, 200);
+
+        for (let attempt = 0; attempt < 50; attempt++) {
+            if (await server.tests.count() > 0) break;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
+        const [row] = await server.tests.findAll();
+        assert.equal(row.targetId, id, "the manual run did not record against its target");
+        assert.equal(row.provider, "cloudflare");
+    });
+
+    it("is not runnable by a name that does not exist", async () => {
+        await put({name: "any", provider: "ookla"});
+
+        const {status} = await api(server.baseUrl, "/speedtests/run", {
+            method: "POST", headers: {"content-type": "application/json"},
+            body: JSON.stringify({targetId: 999999})
+        });
+
+        assert.equal(status, 404);
+    });
+});

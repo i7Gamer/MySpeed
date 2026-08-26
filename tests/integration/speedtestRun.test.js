@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, api, seedTests, setConfig } from "./helpers/boot.js";
+import { bootServer, api, seedTarget, seedTests, setConfig } from "./helpers/boot.js";
 
 let server;
 
@@ -36,11 +36,11 @@ const waitForTest = async (timeoutMs = 15000) => {
 
 describe("a speedtest that cannot start", () => {
     beforeEach(async () => {
-        await setConfig(server.config, "provider", "ookla");
+        await seedTarget({provider: "ookla"});
     });
 
     after(async () => {
-        await setConfig(server.config, "provider", "cloudflare");
+        await seedTarget({provider: "cloudflare"});
     });
 
     /**
@@ -86,7 +86,7 @@ describe("a speedtest that cannot start", () => {
     // it exists to rule out. The LibreSpeed CLI is equally absent here, so this
     // run fails through the same handler.
     it("names the provider it actually ran, not a fixed one", async () => {
-        await setConfig(server.config, "provider", "libre");
+        await seedTarget({provider: "libre"});
 
         await api(server.baseUrl, "/speedtests/run", {method: "POST"});
         const test = await waitForTest();

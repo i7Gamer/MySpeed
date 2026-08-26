@@ -120,6 +120,14 @@ export default db.define("speedtests", {
         type: Sequelize.STRING,
         allowNull: true
     },
+    // Which target measured the row. Nullable, and deliberately not a foreign
+    // key: a deleted target's history is still history, and the interface
+    // falls back to the provider column for an orphan.
+    targetId: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+        defaultValue: null
+    },
     time: {
         type: Sequelize.INTEGER,
         defaultValue: 0

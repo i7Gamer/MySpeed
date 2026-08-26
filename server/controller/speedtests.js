@@ -4,6 +4,7 @@ import { buildStatistics, STATISTICS_COLUMNS } from '../util/statistics.js';
 import { previousRange } from '../util/dateRange.js';
 import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER } from '../util/testOutcome.js';
 import { getValue } from './config.js';
+import * as targetsController from './targets.js';
 import db from '../config/database.js';
 
 const DEFAULT_RETENTION_DAYS = 365;
@@ -54,7 +55,7 @@ export const create = async ({
     resultId = null, error = null, jitter = null, serverName = null, serverHost = null, serverLocation = null,
     packetLoss = null, downloadLatency = null, uploadLatency = null,
     isp = null, externalIp = null, provider = null,
-    bytesDownloaded = null, bytesUploaded = null
+    bytesDownloaded = null, bytesUploaded = null, targetId = null
 }) => {
     // The timestamp travels back out with the id: the integrations are told
     // when the test was recorded, and reading it off the row here is what makes
@@ -64,7 +65,7 @@ export const create = async ({
 
     const row = await tests.create({ping, jitter, download, upload, error, serverId, serverName, serverHost, serverLocation, type,
         resultId, time, packetLoss, downloadLatency, uploadLatency, isp, externalIp, provider,
-        bytesDownloaded, bytesUploaded, created});
+        bytesDownloaded, bytesUploaded, targetId, created});
 
     return {id: row.id, created};
 }
@@ -141,8 +142,10 @@ export const LIST_ORDER = [["created", "DESC"], ["id", "DESC"]];
  * every write guarantees that format, so a lexicographic comparison is
  * chronological on every backend the project supports.
  */
-export const listFilter = ({after, afterId, range} = {}) => {
+export const listFilter = ({after, afterId, range, target} = {}) => {
     const conditions = [];
+
+    if (target !== undefined) conditions.push({targetId: target});
 
     if (range) conditions.push({created: {[Op.between]: [range.from.toISOString(), range.to.toISOString()]}});
 
@@ -164,11 +167,11 @@ export const listFilter = ({after, afterId, range} = {}) => {
     return conditions.length === 1 ? conditions[0] : {[Op.and]: conditions};
 };
 
-export const listTests = async (afterId, limit, range = null, after = null) => {
+export const listTests = async (afterId, limit, range = null, after = null, target = undefined) => {
     limit = Math.min(parseInt(limit) || DEFAULT_TEST_LIMIT, MAX_TEST_LIMIT);
 
     let dbEntries = await tests.findAll({
-        where: listFilter({after, afterId, range}),
+        where: listFilter({after, afterId, range, target}),
         order: LIST_ORDER,
         limit
     });
@@ -189,8 +192,13 @@ export const listTests = async (afterId, limit, range = null, after = null) => {
  * failed test among the newest ten shrank the sample below the required size
  * and the recommendations silently stopped updating until the failure aged out.
  */
-export const listSuccessful = async (limit) => tests.findAll({
-    where: SUCCESSFUL_TEST_FILTER,
+export const listSuccessful = async (limit, targetId = undefined) => tests.findAll({
+    // The sample describes one target's line when one is named - mixing a LAN
+    // box's gigabit rows into a WAN target's sample is how a recommendation
+    // stops meaning anything.
+    where: targetId === undefined
+        ? SUCCESSFUL_TEST_FILTER
+        : {[Op.and]: [SUCCESSFUL_TEST_FILTER, {targetId}]},
     order: LIST_ORDER,
     limit
 });
@@ -383,8 +391,11 @@ const findEvery = async (query = {}) => tests.findAll({order: [["created", "ASC"
 // (create() uses toISOString(), importTests() rejects anything else) - so a
 // lexicographic BETWEEN is chronologically correct on every supported backend.
 // Filtering here rather than in JS keeps the whole table out of memory.
-const findInRange = async ({from, to}, query = {}) => findEvery({
-    where: {created: {[Op.between]: [from.toISOString(), to.toISOString()]}},
+const findInRange = async ({from, to}, query = {}, target = undefined) => findEvery({
+    where: {
+        created: {[Op.between]: [from.toISOString(), to.toISOString()]},
+        ...(target !== undefined && {targetId: target})
+    },
     ...query
 });
 
@@ -415,7 +426,11 @@ const previousSummary = async (range, options) => {
     const previous = previousRange(range, options);
     if (!previous.valid) return null;
 
-    const statistics = buildStatistics(await findInRange(previous, STATISTICS_QUERY), previous, options);
+    // The comparison answers for the same slice the range does - a filtered
+    // window compared against everyone's previous window would report a delta
+    // between two different questions.
+    const statistics = buildStatistics(
+        await findInRange(previous, STATISTICS_QUERY, options.target), previous, options);
 
     return {
         ...Object.fromEntries(SUMMARY_KEYS.map((key) => [key, statistics[key]])),
@@ -469,9 +484,10 @@ const extentOf = (entries) => {
  * there is no previous window to compare it against.
  */
 export const listStatistics = async (range, options = {}) => {
+    const targetWhere = options.target !== undefined ? {where: {targetId: options.target}} : {};
     const entries = range
-        ? await findInRange(range, STATISTICS_QUERY)
-        : await findEvery(STATISTICS_QUERY);
+        ? await findInRange(range, STATISTICS_QUERY, options.target)
+        : await findEvery({...STATISTICS_QUERY, ...targetWhere});
 
     const covered = range ?? extentOf(entries);
 
@@ -539,7 +555,16 @@ export const getLatest = async () => {
 // about what leaves the database. The cost is that a new column is exported as
 // empty until it is named here - which is how the server name and host stayed
 // out of every export from the moment they were added.
-export const exportTests = async (range) => (await findInRange(range)).map(entry => ({
+export const exportTests = async (range, target = undefined) => {
+    // Resolved to names, because an export is read by people and other tools:
+    // a bare targetId is meaningless outside this instance, while the name
+    // says which line the row measured. Orphaned and pre-target rows export
+    // null, and the import deliberately ignores the column - names do not
+    // survive a move between instances.
+    const names = Object.fromEntries((await targetsController.listAll())
+        .map((row) => [row.id, row.name]));
+
+    return (await findInRange(range, {}, target)).map(entry => ({
     id: entry.id,
     ping: entry.ping,
     jitter: entry.jitter,
@@ -569,5 +594,7 @@ export const exportTests = async (range) => (await findInRange(range)).map(entry
     // long before it was exported, and left out of every export until the
     // column guard in retentionAndExport asked why.
     resultId: entry.resultId,
+    targetName: names[entry.targetId] ?? null,
     error: entry.error
 }));
+};

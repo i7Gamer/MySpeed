@@ -33,10 +33,13 @@ const FINISHED_KEYS = [
     // Where the provider's own report of this run can be read.
     "resultId",
     // What the run cost in traffic.
-    "bytesDownloaded", "bytesUploaded"
+    "bytesDownloaded", "bytesUploaded",
+    // Which round member measured it. Null on instances from before targets
+    // existed; templates naming %targetName% read as unmeasured there.
+    "targetId", "targetName"
 ];
 
-const FAILED_KEYS = ["id", "created", "provider", "error"];
+const FAILED_KEYS = ["id", "created", "provider", "error", "targetId", "targetName"];
 
 /**
  * A record reduced to exactly the advertised keys.
