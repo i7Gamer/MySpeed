@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readSource } from "../helpers/source.js";
-import { LIBRE_DURATION_SECONDS } from "../../server/util/speedtest.js";
+import { LIBRE_DURATION_SECONDS } from "../../server/util/providers/registry.js";
 
 /**
  * How long a LibreSpeed run measures for.
@@ -15,7 +15,7 @@ import { LIBRE_DURATION_SECONDS } from "../../server/util/speedtest.js";
  * is a decision someone has to write down, not a literal that drifts.
  */
 describe("the librespeed measurement window", () => {
-    const source = readSource("server/util/speedtest.js");
+    const source = readSource("server/util/providers/registry.js");
 
     it("matches the CLI's own default", () => {
         assert.equal(LIBRE_DURATION_SECONDS, 15);
@@ -27,5 +27,6 @@ describe("the librespeed measurement window", () => {
 
     it("keeps no hard-coded duration beside it", () => {
         assert.doesNotMatch(source, /--duration=\d/);
+        assert.doesNotMatch(readSource("server/util/speedtest.js"), /--duration=/);
     });
 });

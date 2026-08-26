@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { descriptor } from '../util/providers/registry.js';
 
 let ooklaServers;
 let libreServers;
@@ -61,6 +62,11 @@ export const getOoklaServers = () => {
 }
 
 export const getByMode = (mode) => {
-    if (mode === "ookla") return getOoklaServers();
-    if (mode === "libre") return getLibreServers();
+    // Answered through the registry so a provider's "has a server list at
+    // all" lives in one place; null there means undefined here, which is what
+    // cloudflare always answered.
+    const list = descriptor(mode).serverList;
+
+    if (list === "ookla") return getOoklaServers();
+    if (list === "libre") return getLibreServers();
 }

@@ -79,8 +79,13 @@ describe("a run that wrote one", () => {
     });
 
     it("writes it under the name it later removes", () => {
-        assert.match(run, /temporaryServer = path\.join/, "the file is written under some other name");
+        // The name is chosen in the registry's buildArgs and handed over as
+        // {path, content}; the run writes and later removes that same path.
+        assert.match(run, /temporaryServer = built\.temporaryServer\.path/,
+            "the file is written under some other name");
         assert.match(run, /removeTemporaryServer\(temporaryServer\)/,
             "the file removed is not the file written");
+        assert.match(readSource("server/util/providers/registry.js"), /libre_custom\.json/,
+            "the registry no longer names the custom-server file");
     });
 });

@@ -1,4 +1,5 @@
 import { truncate } from '../helpers.js';
+import { descriptor } from './registry.js';
 
 /**
  * The one wording a refusal is stored under, whichever provider refused and
@@ -74,11 +75,7 @@ const capError = (message) => truncate(message, MAX_ERROR_LENGTH);
  * `{...result, elapsed}`, and spreading an array gives an object keyed by index
  * that parseCloudflare quietly reads as a measurement of zero.
  */
-const isResult = (mode, data) => {
-    if (mode === "ookla") return data.type === "result";
-    if (mode === "cloudflare") return !Array.isArray(data);
-    return true;
-};
+const isResult = (mode, data) => descriptor(mode).isResult(data);
 
 // Whatever a CLI wrote that was not one of its own JSON records, i.e. the part
 // a human wrote for a human.

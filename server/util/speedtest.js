@@ -4,9 +4,7 @@ import { parseProgressLine } from './providers/progress.js';
 import { isMuslLinux, MUSL_CLOUDFLARE_REASON } from './providers/libc.js';
 import * as interfacesModule from '../util/loadInterfaces.js';
 import * as config from '../controller/config.js';
-import * as loadLibre from './providers/loadLibre.js';
-import * as loadOokla from './providers/loadOokla.js';
-import * as loadCloudflare from './providers/loadCloudflare.js';
+import { REGISTRY, descriptor, binaryPath as providerBinaryPath } from './providers/registry.js';
 import { toErrorMessage } from './helpers.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,17 +14,6 @@ const CLI_TIMEOUT = 180 * MS_PER_SECOND;
 
 // How long a CLI gets to honour SIGTERM before it is killed outright.
 export const KILL_GRACE = 5 * MS_PER_SECOND;
-
-/**
- * How long each LibreSpeed measurement phase runs, in seconds.
- *
- * librespeed-cli's own default. It ran at 5 for a while, and upstream #694's
- * doubled upload readings are what a window that short looks like: TCP spends
- * its first seconds filling buffers at above line rate, and on a five-second
- * sample that spike is most of the average. Three times the data per run is
- * the price of a number that means anything.
- */
-export const LIBRE_DURATION_SECONDS = 15;
 
 /**
  * Whether the child is actually gone.
@@ -261,9 +248,11 @@ export const missingBinaryMessage = (mode, binaryPath, errorCode, musl = isMuslL
 
 /**
  * The module that knows how to fetch each provider's CLI, by the mode that runs
- * it. Injectable so the recovery below is testable without the network.
+ * it - the registry's loaders, in the map shape ensureBinary can be handed a
+ * fake of. Injectable so the recovery below is testable without the network.
  */
-const PROVIDER_LOADERS = {ookla: loadOokla, libre: loadLibre, cloudflare: loadCloudflare};
+const PROVIDER_LOADERS = Object.fromEntries(
+    Object.entries(REGISTRY).map(([id, entry]) => [id, entry.loader]));
 
 /**
  * Makes sure the CLI this run is about to spawn is actually on disk.
@@ -380,9 +369,11 @@ export const streamAccumulator = ({headLimit = MAX_STREAM_HEAD, tailLimit = MAX_
 };
 
 export default async (mode, serverId, serverUrl, onProgress) => {
-    const binaryPath = mode === "ookla" ? './bin/speedtest' + (process.platform === "win32" ? ".exe" : "")
-        : mode === "libre" ? './bin/librespeed-cli' + (process.platform === "win32" ? ".exe" : "")
-            : './bin/cfspeedtest' + (process.platform === "win32" ? ".exe" : "");
+    // Throws for a mode the registry does not know - the old ternary's else
+    // branch handed anything unrecognised cfspeedtest's path instead, and the
+    // run then failed naming a binary that had nothing to do with it.
+    const provider = descriptor(mode);
+    const binaryPath = providerBinaryPath(mode);
 
     if (!interfacesModule.interfaces) throw new Error("No interfaces found");
 
@@ -399,53 +390,19 @@ export default async (mode, serverId, serverUrl, onProgress) => {
     await ensureBinary(mode, binaryPath);
 
     const startTime = new Date().getTime();
-    let args;
 
-    // The custom-server file, when this run writes one. Held out here because
-    // what removes it is the handler that ends the run, not the branch that
-    // wrote it.
+    const built = provider.buildArgs({serverId, endpoint: serverUrl},
+        {name: currentInterface, address: interfaceIp});
+    const args = built.args;
+
+    // The custom-server file, when this run writes one. buildArgs answers it
+    // as {path, content} rather than writing it, so the side effect lives
+    // here, beside the handler that ends the run and removes it again.
     let temporaryServer = null;
 
-    if (mode === "ookla") {
-        // jsonl rather than json: the CLI reports each phase as it goes instead
-        // of only the finished result, which is what the interface follows a run
-        // with. The final record is the same result either way.
-        args = ['--accept-license', '--accept-gdpr', '--format=jsonl'];
-
-        if (process.platform === "win32") {
-            args.push('--ip=' + interfaceIp);
-        } else {
-            args.push('--interface=' + currentInterface);
-        }
-
-        if (serverId) args.push(`--server-id=${serverId}`);
-    } else if (mode === "libre") {
-        args = ['--json', '--duration=' + LIBRE_DURATION_SECONDS, '--source=' + interfaceIp];
-        if (serverUrl) {
-            const customServerConfig = [{
-                id: 1,
-                name: "Custom Server",
-                server: serverUrl,
-                dlURL: "garbage.php",
-                ulURL: "empty.php",
-                pingURL: "empty.php",
-                getIpURL: "getIP.php"
-            }];
-            temporaryServer = path.join('data', 'servers', 'libre_custom.json');
-            fs.writeFileSync(temporaryServer, JSON.stringify(customServerConfig));
-            args.push(`--local-json=${temporaryServer}`);
-            args.push('--server=1');
-        } else if (serverId) {
-            args.push(`--server=${serverId}`);
-        }
-    } else if (mode === "cloudflare") {
-        args = ['--output-format=json'];
-
-        if (interfaceIp.includes(':')) {
-            args.push('--ipv6=' + interfaceIp);
-        } else {
-            args.push('--ipv4=' + interfaceIp);
-        }
+    if (built.temporaryServer) {
+        temporaryServer = built.temporaryServer.path;
+        fs.writeFileSync(temporaryServer, built.temporaryServer.content);
     }
 
     let result;
@@ -488,7 +445,7 @@ export default async (mode, serverId, serverUrl, onProgress) => {
         const text = buffer.toString();
         stdout.append(text);
 
-        if (!onProgress) return;
+        if (!onProgress || !provider.streamsProgress) return;
 
         const lines = (incomplete + text).split('\n');
         incomplete = lines.pop();
