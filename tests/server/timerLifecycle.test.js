@@ -184,3 +184,45 @@ describe("an offset run that is still waiting", () => {
         assert.equal(timer.scheduleChangedSince(startedIn), false);
     });
 });
+
+/**
+ * The moment the sleeping run will wake, which is what the status bar needs.
+ *
+ * With the offset enabled the 19:00 job fires and then sleeps for up to five
+ * minutes before it tests anything. The countdown is cron arithmetic from now,
+ * so any status poll during that sleep answered the slot AFTER the pending one
+ * - the bar rolled from "~19:00" to "~19:30" while the 19:00 test was still on
+ * its way, which read as it having been skipped.
+ */
+describe("the pending offset run", () => {
+    it("has no wake moment while nothing sleeps", () => {
+        assert.equal(timer.pendingRunAt(), null);
+    });
+
+    it("names the wake moment while a run sleeps its offset", async () => {
+        const sleeping = timer.delayRun(5000);
+        const at = timer.pendingRunAt();
+
+        assert.ok(at, "a sleeping delay reports no wake moment");
+
+        const inMs = new Date(at).getTime() - Date.now();
+        assert.ok(inMs > 3500 && inMs <= 5100, `the wake moment is ${inMs}ms out rather than ~5s`);
+
+        timer.stopTimer();
+        await sleeping;
+    });
+
+    it("forgets the moment once the delay is released", async () => {
+        const sleeping = timer.delayRun(5000);
+        timer.stopTimer();
+        await sleeping;
+
+        assert.equal(timer.pendingRunAt(), null, "a released delay still reports a wake moment");
+    });
+
+    it("forgets the moment once the delay elapses", async () => {
+        await timer.delayRun(10);
+
+        assert.equal(timer.pendingRunAt(), null);
+    });
+});
