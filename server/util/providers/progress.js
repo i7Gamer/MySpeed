@@ -33,7 +33,7 @@ const clamp = (value) => {
  * that is the outcome, and announcing it here would have the interface call the
  * run finished before the row had been written.
  */
-export const parseProgressLine = (mode, line) => {
+export const parseProgressLine = (mode, line, phase) => {
     if (mode !== "ookla" || typeof line !== "string" || !line.startsWith("{")) return null;
 
     let data;

@@ -77,6 +77,26 @@ const capError = (message) => truncate(message, MAX_ERROR_LENGTH);
  */
 const isResult = (mode, data) => descriptor(mode).isResult(data);
 
+/**
+ * The failure a parsed line reports, or undefined when it reports none.
+ *
+ * Three of the CLIs say so in an `error` member, which is the default. iperf3
+ * under --json-stream says it as an event instead -
+ * {"event":"error","data":"unable to connect to server ..."} - where `data` is
+ * the message and there is no `error` member anywhere. Read only as `data.error`
+ * that line carried no failure at all, and the empty {"event":"end","data":{}}
+ * that follows it would have been taken for the result: a run that could not
+ * reach its target would have been stored as a test that produced nothing, with
+ * the timeout blamed for it.
+ *
+ * A provider states its own reader; the three that do not keep the member.
+ */
+const errorOf = (mode, data) => {
+    const provider = descriptor(mode);
+
+    return provider.errorOf ? provider.errorOf(data) : data.error;
+};
+
 // Whatever a CLI wrote that was not one of its own JSON records, i.e. the part
 // a human wrote for a human.
 const plainTextLines = (text) => text.trim().split('\n')
@@ -128,10 +148,12 @@ export const parseCliOutput = (mode, stdout, stderr) => {
              * be stored as "[object Object]", and walk past isRateLimitMessage
              * carrying the one wording the backoff exists to recognise.
              */
-            if (data.error) {
-                const message = typeof data.error === "string" ? data.error
-                    : typeof data.error?.message === "string" ? data.error.message
-                        : JSON.stringify(data.error);
+            const reported = errorOf(mode, data);
+
+            if (reported) {
+                const message = typeof reported === "string" ? reported
+                    : typeof reported?.message === "string" ? reported.message
+                        : JSON.stringify(reported);
 
                 result.error = normaliseError(message);
             }

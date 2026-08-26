@@ -368,6 +368,25 @@ export const streamAccumulator = ({headLimit = MAX_STREAM_HEAD, tailLimit = MAX_
     };
 };
 
+/**
+ * The runs one test is made of, in the order they happen.
+ *
+ * Every provider but one measures both directions in a single invocation and
+ * declares nothing here, which is this single unnamed run. iperf3 measures one
+ * direction per invocation, so it declares two - and they are sequential rather
+ * than iperf3's own --bidir because a bidirectional test has the directions
+ * contending for the same line: on an asymmetric connection the upload's
+ * acknowledgements eat into the download, and a figure measured that way cannot
+ * be compared with the other providers' on the same chart, which is what the
+ * chart is for.
+ *
+ * The key names the direction for the progress readout and for the parser that
+ * merges the runs; a single unnamed run is handed back exactly as it always was.
+ */
+export const SINGLE_RUN = [{key: null, args: []}];
+
+export const runsOf = (provider) => provider.runs ?? SINGLE_RUN;
+
 export default async (mode, serverId, serverUrl, onProgress) => {
     // Throws for a mode the registry does not know - the old ternary's else
     // branch handed anything unrecognised cfspeedtest's path instead, and the
@@ -405,101 +424,142 @@ export default async (mode, serverId, serverUrl, onProgress) => {
         fs.writeFileSync(temporaryServer, built.temporaryServer.content);
     }
 
-    let result;
-    const stdout = streamAccumulator();
-    const stderr = streamAccumulator();
+    /**
+     * One invocation of the CLI, start to finish.
+     *
+     * Its own function because a test can be more than one of them - see
+     * runsOf - and everything in here is per-invocation: the child, its
+     * timeout, its escalation, its two stream accumulators and the tracker
+     * entry the shutdown reaches for. The temporary server file is not, so it
+     * stays outside, written once before the first run and taken away after
+     * the last however that went.
+     */
+    const runOnce = async (runArgs, phase) => {
+        let result;
+        const stdout = streamAccumulator();
+        const stderr = streamAccumulator();
 
-    // A CLI that accepts the connection and then stalls would hold the run lock
-    // for the lifetime of the process, and no scheduled test would ever run
-    // again.
-    //
-    // The timer is kept here rather than passed to spawn as its `timeout`
-    // option: when a spawn fails outright - a missing binary, which is exactly
-    // what a fresh install before the download has finished looks like - node
-    // emits 'error' and 'close' within milliseconds but never clears that timer,
-    // and the whole process then stays alive until it fires. Owning it means it
-    // is cleared however the run ends.
-    const testProcess = trackProcess(spawn(binaryPath, args, {windowsHide: true}));
+        // A CLI that accepts the connection and then stalls would hold the run
+        // lock for the lifetime of the process, and no scheduled test would
+        // ever run again.
+        //
+        // The timer is kept here rather than passed to spawn as its `timeout`
+        // option: when a spawn fails outright - a missing binary, which is
+        // exactly what a fresh install before the download has finished looks
+        // like - node emits 'error' and 'close' within milliseconds but never
+        // clears that timer, and the whole process then stays alive until it
+        // fires. Owning it means it is cleared however the run ends.
+        const testProcess = trackProcess(spawn(binaryPath, [...args, ...runArgs], {windowsHide: true}));
 
-    let timedOut = false;
-    let escalation;
-    const timeout = setTimeout(() => {
-        timedOut = true;
-        escalation = terminate(testProcess);
-    }, CLI_TIMEOUT);
+        let timedOut = false;
+        let escalation;
+        const timeout = setTimeout(() => {
+            timedOut = true;
+            escalation = terminate(testProcess);
+        }, CLI_TIMEOUT);
 
-    testProcess.stderr.on('data', (buffer) => {
-        // Accumulated, not overwritten: stderr arrives in arbitrary chunks, so
-        // keeping only the last one reported whatever fragment happened to
-        // land last rather than the actual failure. Bounded - see
-        // streamAccumulator - so a CLI wedged in a logging loop cannot grow
-        // the heap for its whole three-minute timeout.
-        stderr.append(buffer.toString());
-    });
+        testProcess.stderr.on('data', (buffer) => {
+            // Accumulated, not overwritten: stderr arrives in arbitrary chunks,
+            // so keeping only the last one reported whatever fragment happened
+            // to land last rather than the actual failure. Bounded - see
+            // streamAccumulator - so a CLI wedged in a logging loop cannot grow
+            // the heap for its whole three-minute timeout.
+            stderr.append(buffer.toString());
+        });
 
-    // Holds the tail of a chunk that ended mid-line: the CLI writes one record
-    // per line, but a read can split one anywhere.
-    let incomplete = '';
+        // Holds the tail of a chunk that ended mid-line: the CLI writes one
+        // record per line, but a read can split one anywhere.
+        let incomplete = '';
 
-    testProcess.stdout.on('data', (buffer) => {
-        const text = buffer.toString();
-        stdout.append(text);
+        testProcess.stdout.on('data', (buffer) => {
+            const text = buffer.toString();
+            stdout.append(text);
 
-        if (!onProgress || !provider.streamsProgress) return;
+            if (!onProgress || !provider.streamsProgress) return;
 
-        const lines = (incomplete + text).split('\n');
-        incomplete = lines.pop();
+            const lines = (incomplete + text).split('\n');
+            incomplete = lines.pop();
 
-        for (const line of lines) {
-            const update = parseProgressLine(mode, line.trim());
-            if (update) onProgress(update);
-        }
-    });
+            for (const line of lines) {
+                // The phase is passed in for a provider whose output does not
+                // name one: iperf3's interval records describe whichever
+                // direction this invocation was started for, and only the
+                // caller knows which that is.
+                const update = parseProgressLine(mode, line.trim(), phase);
+                if (update) onProgress(update);
+            }
+        });
 
-    // Everything the end of a run has to let go of, however it ended. The two
-    // handlers below repeated this between them, which is how the temporary
-    // server file came to be cleaned up by neither.
-    const finish = () => {
-        clearTimeout(timeout);
-        clearTimeout(escalation);
-        untrackProcess(testProcess);
-        removeTemporaryServer(temporaryServer);
+        // Everything the end of a run has to let go of, however it ended. The
+        // two handlers below repeated this between them, which is how the
+        // temporary server file came to be cleaned up by neither.
+        const finish = () => {
+            clearTimeout(timeout);
+            clearTimeout(escalation);
+            untrackProcess(testProcess);
+        };
+
+        await new Promise((resolve, reject) => {
+            // A binary that is not there is the one spawn failure whose own
+            // message explains nothing, so it gets one that does. Everything
+            // else is rejected as-is: wrapping it in {message: e} gave the
+            // wrapper a `message` key holding an Error, which the caller then
+            // stored verbatim in a string column.
+            testProcess.on('error', (error) => {
+                finish();
+
+                const missing = missingBinaryMessage(mode, binaryPath, error.code);
+                reject(missing ? new Error(missing) : error);
+            });
+
+            // 'close' rather than 'exit': the process can exit while its pipes
+            // still hold output, and parsing then would read a truncated result.
+            testProcess.on('close', (code) => {
+                finish();
+                result = parseCliOutput(mode, stdout.value(), stderr.value());
+
+                // The exit code has the last word when the streams had nothing
+                // to say. Without it a run that failed instantly and explained
+                // itself nowhere the parser looks was reported as "test timed
+                // out".
+                const failure = exitError(code, result);
+                if (failure) result.error = failure;
+
+                resolve();
+            });
+        });
+
+        // A killed run has whatever output it managed before the signal, which
+        // is not a measurement - it has to say it timed out rather than report
+        // half a test as a result.
+        if (timedOut) throw new Error(`The speedtest did not finish within ${CLI_TIMEOUT / MS_PER_SECOND} seconds`);
+        if (result.error) throw new Error(result.error);
+
+        return result;
     };
 
-    await new Promise((resolve, reject) => {
-        // A binary that is not there is the one spawn failure whose own message
-        // explains nothing, so it gets one that does. Everything else is
-        // rejected as-is: wrapping it in {message: e} gave the wrapper a
-        // `message` key holding an Error, which the caller then stored verbatim
-        // in a string column.
-        testProcess.on('error', (error) => {
-            finish();
+    try {
+        const runs = runsOf(provider);
+        const results = {};
 
-            const missing = missingBinaryMessage(mode, binaryPath, error.code);
-            reject(missing ? new Error(missing) : error);
-        });
+        // Sequentially, and that is load-bearing rather than incidental: the
+        // single-active-process invariant the shutdown depends on holds only
+        // while one CLI is live at a time, and two transfers measured at once
+        // would contend for the line they are measuring.
+        for (const run of runs) results[run.key] = await runOnce(run.args, run.key);
 
-        // 'close' rather than 'exit': the process can exit while its pipes still
-        // hold output, and parsing then would read a truncated result.
-        testProcess.on('close', (code) => {
-            finish();
-            result = parseCliOutput(mode, stdout.value(), stderr.value());
+        const elapsed = new Date().getTime() - startTime;
 
-            // The exit code has the last word when the streams had nothing to
-            // say. Without it a run that failed instantly and explained itself
-            // nowhere the parser looks was reported as "test timed out".
-            const failure = exitError(code, result);
-            if (failure) result.error = failure;
-
-            resolve();
-        });
-    });
-
-    // A killed run has whatever output it managed before the signal, which is
-    // not a measurement - it has to say it timed out rather than report half a
-    // test as a result.
-    if (timedOut) throw new Error(`The speedtest did not finish within ${CLI_TIMEOUT / MS_PER_SECOND} seconds`);
-
-    if (result.error) throw new Error(result.error);
-    return {...result, elapsed: new Date().getTime() - startTime};
+        // A provider that declares no runs is answered exactly as it always
+        // was, with its one result spread flat; one that declares several
+        // hands the parser the set, keyed by direction, for it to merge.
+        return runs === SINGLE_RUN || runs.length === 1 && runs[0].key === null
+            ? {...results[null], elapsed}
+            : {runs: results, elapsed};
+    } finally {
+        // However the test ended, including a throw from any of its runs - a
+        // file naming a backend, credentials included, must not outlive the run
+        // that needed it.
+        removeTemporaryServer(temporaryServer);
+    }
 }
