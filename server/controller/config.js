@@ -18,7 +18,9 @@ import { isKnownTimeZone } from '../util/timezone.js';
 import { withoutUrlCredentials } from '../util/urlCredentials.js';
 import { ALLOWED_PROTOCOLS } from '../util/safeUrl.js';
 
-const configDefaults = {
+// Exported for the scheduler's fallback: an invalid stored cron at boot is
+// replaced by this default rather than by a silence with no schedule in it.
+export const configDefaults = {
     ping: "25",
     download: "100",
     upload: "50",

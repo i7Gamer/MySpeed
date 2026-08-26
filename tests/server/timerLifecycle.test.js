@@ -53,6 +53,29 @@ describe("the speedtest schedule", () => {
         assert.notEqual(first.nextInvocation(), null);
     });
 
+    /**
+     * With nothing running there is nothing to protect, and the refusal above
+     * turns into the opposite of protection: a stored cron that validateInput
+     * never saw - a hand-edited database, or one written before validation
+     * existed - reached the boot's startTimer, was refused in silence, and no
+     * schedule existed at all. Tests simply never ran again, with nothing in
+     * the log to say why.
+     */
+    it("schedules the default cron when an invalid one arrives with nothing running", () => {
+        timer.startTimer("not a cron expression");
+
+        const job = timer.currentJob();
+        assert.notEqual(job, undefined, "an invalid stored cron left no schedule at all");
+        assert.notEqual(job.nextInvocation(), null);
+    });
+
+    it("names the default it falls back to rather than a copy of it", () => {
+        const startTimer = bodyIn("server/tasks/timer.js", "export const startTimer");
+
+        assert.match(startTimer, /configDefaults\.cron/,
+            "the fallback schedule must be the configured default, not a duplicated literal");
+    });
+
     it("drops the job on stopTimer", () => {
         timer.startTimer(DISTANT_CRON);
         const first = timer.currentJob();

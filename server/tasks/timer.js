@@ -145,7 +145,26 @@ const getRandomDelay = (cron) => {
 };
 
 export const startTimer = (cron, timezone) => {
-    if (!isValidCron(cron)) return;
+    /*
+     * An invalid cron means different things depending on what is running.
+     * With a schedule up, refusing it and keeping the running one is the
+     * protection: the operator's working schedule survives a bad reschedule.
+     * With nothing up - the boot path, handed a stored value validateInput
+     * never saw, from a hand-edited database or one written before validation
+     * existed - the same refusal used to be silent and total: no schedule
+     * existed at all, tests never ran again, and nothing said why. The stored
+     * value is left alone either way, for the operator to see and fix.
+     */
+    if (!isValidCron(cron)) {
+        if (job !== undefined) {
+            console.warn(`The cron "${cron}" is not valid; keeping the running schedule.`);
+            return;
+        }
+
+        console.warn(`The stored cron "${cron}" is not valid; ` +
+            `scheduling the default "${config.configDefaults.cron}" instead.`);
+        cron = config.configDefaults.cron;
+    }
 
     // Before the assignment, not left to the caller. Every caller happens to
     // stop first today, but the module holds exactly one job reference and
