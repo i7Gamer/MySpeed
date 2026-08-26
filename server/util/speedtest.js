@@ -317,6 +317,57 @@ export const removeTemporaryServer = (file) => {
     }
 };
 
+/**
+ * What a run may keep of what its CLI printed.
+ *
+ * Both streams were accumulated without bound for the run's whole three-minute
+ * timeout, so a CLI wedged in a logging loop could grow the heap as fast as a
+ * pipe can carry - the stored reason is capped at two thousand characters, but
+ * only after the whole of both streams had been held to produce it.
+ *
+ * Both ends are kept and the middle is dropped, because the two things worth
+ * keeping live at opposite ends: a failure explains itself in its opening lines,
+ * and with --format=jsonl the Ookla CLI writes its progress records first and
+ * the result record *last* - a healthy minute-long test writes more progress
+ * than any sane head-only cap allows, so capping the head alone would throw
+ * away the very line the run exists to produce. The joint always carries its
+ * own newline, so the head's torn last line and the tail's torn first line
+ * stay two lines - each parses as chatter and is skipped, rather than fusing
+ * into one line that says something neither of them said.
+ */
+export const MAX_STREAM_HEAD = 1024 * 1024;
+export const MAX_STREAM_TAIL = 256 * 1024;
+
+export const streamAccumulator = ({headLimit = MAX_STREAM_HEAD, tailLimit = MAX_STREAM_TAIL} = {}) => {
+    let head = "";
+    let tail = "";
+    let truncated = false;
+
+    return {
+        append(text) {
+            if (!truncated) {
+                if (head.length + text.length <= headLimit) {
+                    head += text;
+                    return;
+                }
+
+                const room = headLimit - head.length;
+                head += text.slice(0, room);
+                text = text.slice(room);
+                truncated = true;
+            }
+
+            tail = (tail + text).slice(-tailLimit);
+        },
+        value() {
+            return truncated ? `${head}\n${tail}` : head;
+        },
+        get truncated() {
+            return truncated;
+        }
+    };
+};
+
 export default async (mode, serverId, serverUrl, onProgress) => {
     const binaryPath = mode === "ookla" ? './bin/speedtest' + (process.platform === "win32" ? ".exe" : "")
         : mode === "libre" ? './bin/librespeed-cli' + (process.platform === "win32" ? ".exe" : "")
@@ -387,8 +438,8 @@ export default async (mode, serverId, serverUrl, onProgress) => {
     }
 
     let result;
-    let stdout = '';
-    let stderr = '';
+    const stdout = streamAccumulator();
+    const stderr = streamAccumulator();
 
     // A CLI that accepts the connection and then stalls would hold the run lock
     // for the lifetime of the process, and no scheduled test would ever run
@@ -412,8 +463,10 @@ export default async (mode, serverId, serverUrl, onProgress) => {
     testProcess.stderr.on('data', (buffer) => {
         // Accumulated, not overwritten: stderr arrives in arbitrary chunks, so
         // keeping only the last one reported whatever fragment happened to
-        // land last rather than the actual failure.
-        stderr += buffer.toString();
+        // land last rather than the actual failure. Bounded - see
+        // streamAccumulator - so a CLI wedged in a logging loop cannot grow
+        // the heap for its whole three-minute timeout.
+        stderr.append(buffer.toString());
     });
 
     // Holds the tail of a chunk that ended mid-line: the CLI writes one record
@@ -422,7 +475,7 @@ export default async (mode, serverId, serverUrl, onProgress) => {
 
     testProcess.stdout.on('data', (buffer) => {
         const text = buffer.toString();
-        stdout += text;
+        stdout.append(text);
 
         if (!onProgress) return;
 
@@ -462,7 +515,7 @@ export default async (mode, serverId, serverUrl, onProgress) => {
         // hold output, and parsing then would read a truncated result.
         testProcess.on('close', (code) => {
             finish();
-            result = parseCliOutput(mode, stdout, stderr);
+            result = parseCliOutput(mode, stdout.value(), stderr.value());
 
             // The exit code has the last word when the streams had nothing to
             // say. Without it a run that failed instantly and explained itself
