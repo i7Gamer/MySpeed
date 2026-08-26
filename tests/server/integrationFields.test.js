@@ -182,6 +182,34 @@ describe("pushover credentials", () => {
     }
 });
 
+describe("gotify key", () => {
+    /**
+     * Gotify v2 issued 15-character application tokens, and the pattern
+     * demanded exactly fifteen. v3 (July 2026) issues "gtfya."-prefixed
+     * tokens of ~49 characters, so a v3 server's key could not be saved at
+     * all - upstream #1613. Fifteen stays as the floor, not the size.
+     *
+     * Assembled at run time like the telegram token above: a literal in the
+     * issued shape is what secret scanners alert on.
+     */
+    const V2_TOKEN_LENGTH = 15;
+    const V3_SECRET_LENGTH = 43;
+    const v2Token = "A".repeat(V2_TOKEN_LENGTH);
+    const v3Token = ["gtfya", "S".repeat(V3_SECRET_LENGTH)].join(".");
+
+    it("accepts the 15-character token v2 issues", () => {
+        assert.equal(accepts(setupGotify, "key", v2Token), true);
+    });
+
+    it("accepts the longer gtfya-prefixed token v3 issues", () => {
+        assert.equal(accepts(setupGotify, "key", v3Token), true);
+    });
+
+    it("still rejects a token shorter than v2's", () => {
+        assert.equal(accepts(setupGotify, "key", v2Token.slice(0, V2_TOKEN_LENGTH - 1)), false);
+    });
+});
+
 describe("discord webhook url", () => {
     const TOKEN = "8-x_qQqZ0vRk9pLmN3bV1cX2zY4wU5tS6rQ7pO8nM9lK0jI1hG2fE3dC4bA5";
 

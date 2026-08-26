@@ -68,7 +68,9 @@ export default (registerEvent) => {
             // so the old pattern matched a url *inside* the value. See
             // tests/server/integrationFields.test.js for what that let through.
             {name: "url", type: "text", required: true, regex: /^https?:\/\/\S+$/},
-            {name: "key", type: "text", required: true, secret: true, regex: /^.{15}$/},
+            // Fifteen is v2's exact token length and v3's floor: v3 issues
+            // longer, "gtfya."-prefixed tokens, so the length is open-ended.
+            {name: "key", type: "text", required: true, secret: true, regex: /^.{15,}$/},
             {name: "priority", type: "text", required: true, regex: /^[0-9]$/},
             {name: "send_finished", type: "boolean", required: false},
             {name: "finished_message", type: "textarea", required: false},
