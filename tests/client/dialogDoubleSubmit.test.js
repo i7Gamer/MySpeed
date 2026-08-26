@@ -30,9 +30,13 @@ const DIALOGS = [
         buttons: ['dialog.update', 'update.remove_password']
     },
     {
-        what: "the provider dialog",
-        file: "common/components/ProviderDialog/ProviderDialog.jsx",
-        buttons: ['dialog.update']
+        // The provider dialog's successor: same chain of writes, same lock.
+        // Its one button carries two labels - "update" over a row, "add" over
+        // a blank - so the shared per-key scan below cannot name it; its own
+        // assertion follows the loop.
+        what: "the target editor",
+        file: "common/components/TargetsDialog/TargetEditor.jsx",
+        buttons: []
     }
 ];
 
@@ -68,4 +72,15 @@ describe("a dialog cannot be submitted twice at once", () => {
             });
         }
     }
+
+    // The target editor's save button, recognised by its handler rather than
+    // by a single label - see its DIALOGS entry.
+    it(`the target editor's save button shows the lock`, () => {
+        const source = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+        const tag = source.match(/<button(?:(?!<button)[^])*?save\(close\)(?:(?!<button)[^])*?>/)?.[0];
+
+        assert.ok(tag, "the save button is no longer recognisable by its handler");
+        assert.match(tag, /disabled=\{[^}]*saving/,
+            "the save button stays pressable while the request runs");
+    });
 });

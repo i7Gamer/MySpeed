@@ -38,10 +38,12 @@ class StubRequestError extends Error {
  */
 const runFinish = async ({previewMode = false, refuse = []} = {}) => {
     const patched = [];
+    const created = [];
     const stored = new Map();
     const toasts = [];
     const closed = [];
     const reloaded = [];
+    const targetsReloaded = [];
 
     const finish = finishWith({
         config: {previewMode, ping: "0", download: "0", upload: "0"},
@@ -53,6 +55,13 @@ const runFinish = async ({previewMode = false, refuse = []} = {}) => {
             patched.push({path, value: body.value});
             return {ok: !refuse.includes(path), status: refuse.includes(path) ? 403 : 200};
         },
+        // The provider write became the creation of the instance's first
+        // target - a PUT to a list, not a PATCH to a config key.
+        putRequest: async (path, body) => {
+            created.push({path, body});
+            return {ok: !refuse.includes(path), status: refuse.includes(path) ? 403 : 200};
+        },
+        providerById: (id) => ({ookla: {id: "ookla", name: "Ookla"}})[id] ?? null,
         assertOk: async (response, _path) => {
             if (response.ok) return response;
             throw new StubRequestError(response.status,
@@ -67,12 +76,14 @@ const runFinish = async ({previewMode = false, refuse = []} = {}) => {
         updateToast: (message, colour) => toasts.push({message, colour}),
         faExclamationTriangle: "icon",
         t: (key) => key,
-        reloadConfig: () => reloaded.push(true)
+        reloadConfig: () => reloaded.push(true),
+        reloadTargets: () => targetsReloaded.push(true)
     });
 
     await finish(() => closed.push(true));
 
-    return {patched, stored, toasts, closed: closed.length > 0, reloaded: reloaded.length > 0};
+    return {patched, created, stored, toasts, closed: closed.length > 0,
+        reloaded: reloaded.length > 0, targetsReloaded: targetsReloaded.length > 0};
 };
 
 /**
@@ -88,43 +99,59 @@ const runFinish = async ({previewMode = false, refuse = []} = {}) => {
  */
 describe("finishing the wizard on a preview instance", () => {
     it("writes nothing at all", async () => {
-        const {patched} = await runFinish({previewMode: true, refuse: ["/config/provider"]});
+        const {patched, created} = await runFinish({previewMode: true, refuse: ["/targets"]});
 
         assert.deepEqual(patched, [],
             "the wizard tried to configure an instance that refuses every write");
+        assert.deepEqual(created, [],
+            "the wizard tried to create a target on an instance that refuses every write");
     });
 
     it("closes instead of trapping the visitor behind it", async () => {
-        const {closed, toasts} = await runFinish({previewMode: true, refuse: ["/config/provider"]});
+        const {closed, toasts} = await runFinish({previewMode: true, refuse: ["/targets"]});
 
         assert.equal(closed, true, "the demo's welcome dialog cannot be dismissed");
         assert.deepEqual(toasts, [], "the visitor was shown an error they cannot act on");
     });
 
     it("remembers that it has been shown, so a reload does not reopen it", async () => {
-        const {stored} = await runFinish({previewMode: true, refuse: ["/config/provider"]});
+        const {stored} = await runFinish({previewMode: true, refuse: ["/targets"]});
 
         assert.equal(stored.get("welcomeShown"), "true");
     });
 });
 
 /**
- * The ordinary install is untouched: all four values are still written, and a
- * genuine refusal still holds the wizard open rather than closing over a setup
- * that did not stick.
+ * The ordinary install: the chosen provider becomes the instance's first
+ * target, the three thresholds are still written, and a genuine refusal still
+ * holds the wizard open rather than closing over a setup that did not stick.
  */
 describe("finishing the wizard on an ordinary instance", () => {
-    it("writes the provider and all three targets", async () => {
-        const {patched, closed, reloaded} = await runFinish();
+    it("creates the first target and writes all three thresholds", async () => {
+        const {patched, created, closed, reloaded, targetsReloaded} = await runFinish();
 
+        assert.deepEqual(created, [
+            {path: "/targets", body: {name: "Ookla", provider: "ookla"}}
+        ]);
         assert.deepEqual(patched, [
-            {path: "/config/provider", value: "ookla"},
             {path: "/config/ping", value: 50},
             {path: "/config/download", value: 100},
             {path: "/config/upload", value: 40}
         ]);
         assert.equal(reloaded, true);
         assert.equal(closed, true);
+        assert.equal(targetsReloaded, true,
+            "the wizard reopens on the next render: it is keyed on the list it never re-read");
+    });
+
+    // The refusal that used to trap every demo visitor, on a real instance:
+    // a refused creation must not close the wizard over nothing.
+    it("stays open when the target creation is refused", async () => {
+        const {toasts, closed} = await runFinish({refuse: ["/targets"]});
+
+        assert.equal(closed, false, "the wizard closed over a target that was not created");
+        assert.equal(toasts.length, 1);
+        assert.equal(toasts[0].colour, "red");
     });
 
     it("stays open and says so when a write is refused", async () => {

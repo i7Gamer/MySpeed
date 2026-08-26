@@ -178,3 +178,14 @@ main
 
   ::-webkit-scrollbar-thumb
     border-width: 2px
+// The mark a target is recognised by everywhere one is named: the manager's
+// rows, the chip row, the date cell of a mixed list and the detail pane's
+// Target fact. One definition, because it is the same mark in all of them -
+// only the colour varies, and that is set inline from the chart series
+// palette (see targetColour).
+.target-dot
+  display: inline-block
+  width: 0.65rem
+  height: 0.65rem
+  border-radius: 50%
+  flex-shrink: 0

@@ -1,0 +1,237 @@
+@use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
+
+// Wider than the settings dialogs: a row carries a name, its detail and five
+// controls, and at 28rem the controls would fold under the text on every row.
+$targets-dialog-width: 34rem
+
+// The editor keeps the provider dialog's width and classes - it is that
+// dialog, grown a name and a grading section.
+.provider-dialog-wrapper
+  width: $settings-dialog-width
+  max-width: 95vw
+
+  .dialog-main
+    display: block
+
+.provider-content
+  margin: 1rem 0.5rem
+  user-select: none
+
+.provider-list
+  margin-bottom: 1.25rem
+
+  .selectable-option-image
+    width: 1.75rem
+    height: 1.75rem
+    border-radius: 0.3rem
+
+.target-name-setting
+  margin-bottom: 1.25rem
+
+.provider-settings
+  margin-top: 1.25rem
+  padding-top: 1.25rem
+  border-top: 1px solid $light-gray
+  display: flex
+  flex-direction: column
+  gap: 0.75rem
+
+.provider-setting
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 1rem
+
+  &-label
+    display: flex
+    align-items: center
+    gap: 0.6rem
+    flex-shrink: 0
+    white-space: nowrap
+
+    svg
+      color: $subtext
+      font-size: 1rem
+      width: 1rem
+
+    h3
+      margin: 0
+      font-size: 0.95rem
+      font-weight: 500
+      color: $subtext
+
+.provider-input
+  width: 14rem
+  min-width: 14rem
+  max-width: 14rem
+  height: 2.5rem
+  box-sizing: border-box
+  margin: 0 !important
+  padding: 0.6rem 0.875rem
+  font-size: 0.95rem
+  text-align: left
+
+.target-optimals
+  display: grid
+  grid-template-columns: repeat(3, 1fr)
+  gap: 0.75rem
+
+.target-optimal
+  display: flex
+  flex-direction: column
+  gap: 0.35rem
+  min-width: 0
+
+  &-label
+    font-size: 0.85rem
+    color: $subtext
+    white-space: nowrap
+    overflow: hidden
+    text-overflow: ellipsis
+
+  &-unit
+    font-size: 0.75rem
+
+  input
+    width: 100%
+    min-width: 0
+    box-sizing: border-box
+    margin: 0 !important
+    height: 2.5rem
+    padding: 0.6rem 0.75rem
+    font-size: 0.95rem
+    text-align: left
+
+.provider-license
+  display: flex
+  align-items: flex-start
+  gap: 0.75rem
+  margin: 0
+  margin-top: 1.25rem
+  padding-top: 1.25rem
+  border-top: 1px solid $light-gray
+  cursor: pointer
+
+  input[type="checkbox"]
+    width: 1.1rem
+    height: 1.1rem
+    margin-top: 0.15rem
+    flex-shrink: 0
+    accent-color: $accent-primary
+    cursor: pointer
+
+  span
+    color: $subtext
+    font-size: 0.9rem
+    line-height: 1.5
+
+  a
+    color: $accent-primary
+
+// The manager: the round as rows.
+.targets-dialog-wrapper
+  width: $targets-dialog-width
+  max-width: 95vw
+
+  .dialog-main
+    display: block
+
+.targets-content
+  margin: 1rem 0.5rem
+  user-select: none
+
+.targets-description
+  margin: 0 0 1rem 0
+  color: $subtext
+  font-size: 0.9rem
+  line-height: 1.5
+
+.targets-list
+  display: flex
+  flex-direction: column
+  gap: 0.5rem
+
+.target-row
+  display: flex
+  align-items: center
+  gap: 0.75rem
+  padding: 0.6rem 0.75rem
+  border: 1px solid $light-gray
+  border-radius: 0.5rem
+
+  &-text
+    flex: 1
+    min-width: 0
+
+    h3
+      margin: 0
+      font-size: 0.95rem
+      font-weight: 600
+      white-space: nowrap
+      overflow: hidden
+      text-overflow: ellipsis
+
+    p
+      margin: 0
+      color: $subtext
+      font-size: 0.8rem
+      white-space: nowrap
+      overflow: hidden
+      text-overflow: ellipsis
+
+  &-actions
+    display: flex
+    align-items: center
+    gap: 0.35rem
+    flex-shrink: 0
+
+.target-reorder
+  display: flex
+  flex-direction: column
+
+  .target-action
+    height: 1.1rem
+    font-size: 0.7rem
+
+.target-action
+  background: none
+  border: none
+  padding: 0.25rem
+  color: $subtext
+  cursor: pointer
+  border-radius: 0.3rem
+  line-height: 1
+
+  &:hover:not(:disabled)
+    color: $white
+
+  &:disabled
+    opacity: 0.35
+    cursor: default
+
+  &-danger:hover:not(:disabled)
+    color: $accent-danger
+
+@media screen and (max-width: 520px)
+  .provider-setting
+    flex-direction: column
+    align-items: flex-start
+    gap: 0.5rem
+
+  .provider-input
+    width: 100%
+    min-width: 0
+    max-width: none
+
+  .target-optimals
+    grid-template-columns: 1fr
+
+  .target-row
+    flex-wrap: wrap
+
+    &-text
+      flex-basis: 60%
+
+    &-actions
+      margin-left: auto

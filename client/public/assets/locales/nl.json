@@ -65,11 +65,10 @@
     "settings": "Instellingen",
     "changes_applied": "De wijzigingen zijn opgeslagen.",
     "language_changed": "De taal is veranderd.",
-    "provider_changed": "De provider is gewijzigd.",
     "changes_unsaved": "Je wijzigingen zijn niet geaccepteerd. Controleer je invoer.",
     "invalid": "Invoer ongeldig",
     "optimal_values": "Optimale waarden",
-    "change_provider": "Verander van leverancier",
+    "targets": "Testdoelen",
     "password": "Wachtwoord wijzigen",
     "cron": "Frequentie instellen",
     "storage": "Opslag beheren",
@@ -135,7 +134,6 @@
     "statistics": "Statistieken"
   },
   "update": {
-    "provider_title": "Snelheidstest-provider instellen",
     "new_password": "Nieuw wachtwoord instellen",
     "password_placeholder": "Nieuw wachtwoord",
     "show_password": "Wachtwoord tonen",
@@ -305,6 +303,7 @@
       "unchanged": "Onveranderd sinds de vorige test",
       "measured_at": "Gemeten op",
       "measured_with": "Gemeten met",
+      "target": "Doel",
       "seconds": "{{seconds}} s",
       "data_used": "Gebruikte data",
       "data_used_value": "{{down}} omlaag / {{up}} omhoog",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "Laatste test zojuist",
     "elapsed": "{{seconds}} s verstreken",
-    "next_test_approx": "Volgende om ~{{time}}"
+    "next_test_approx": "Volgende om ~{{time}}",
+    "target_of": "Doel {{index}} van {{count}}"
+  },
+  "targets": {
+    "title": "Testdoelen",
+    "description": "Elke geplande test meet elk ingepland doel één keer, achter elkaar. Doelen buiten het schema lopen alleen vanaf hier.",
+    "add": "Doel toevoegen",
+    "edit_title": "Doel bewerken",
+    "name": "Naam",
+    "name_placeholder": "bijv. Amsterdam",
+    "scheduled": "Ingepland",
+    "alerts": "Meldingen & aanbevelingen",
+    "own_optimals": "Eigen optimale waarden",
+    "all": "Alle doelen",
+    "saved": "Het doel is opgeslagen.",
+    "removed": "Het doel is verwijderd.",
+    "run_now": "Test nu starten",
+    "move_up": "Omhoog verplaatsen",
+    "move_down": "Omlaag verplaatsen",
+    "delete_confirm": {
+      "title": "Dit doel verwijderen?",
+      "description": "<Bold>{{name}}</Bold> wordt verwijderd. De tests die het al heeft gemeten, blijven in de geschiedenis.",
+      "yes": "Verwijderen"
+    }
   }
 }

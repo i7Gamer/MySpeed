@@ -9,7 +9,6 @@ import {markPasswordUnset} from "@/common/utils/PasswordSetup";
 import {
     apiErrorDialog, busyDialog, passwordRequiredDialog, setupTokenDialog, throttledDialog
 } from "@/common/contexts/Config/dialog";
-import WelcomeDialog from "@/common/components/WelcomeDialog";
 import LockedNotice from "@/common/components/LockedNotice";
 import {useNavigate} from "react-router-dom";
 import {configOutcome, failureOutcome} from "@/common/contexts/Config/configOutcome";
@@ -24,7 +23,6 @@ export const ConfigProvider = (props) => {
     // nothing to explain. Held as an object because the type itself may be
     // undefined - an older node answers 401 with no type at all.
     const [locked, setLocked] = useState(null);
-    const [welcomeShown, setWelcomeShown] = useState(false);
     const navigate = useNavigate();
 
 
@@ -182,14 +180,11 @@ export const ConfigProvider = (props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(reloadConfig, []);
 
-    useEffect(() => {
-        if (config.previewMode && !readStored("welcomeShown")) setWelcomeShown(true);
-        if (!config.previewMode && config.provider === "none") setWelcomeShown(true);
-    }, [config]);
-
+    // The welcome wizard used to hang here, keyed on provider === "none".
+    // "Not set up yet" became an empty target list, so it moved to the
+    // TargetsProvider - which is where that emptiness is known.
     return (
         <ConfigContext.Provider value={[config, reloadConfig, checkConfig]}>
-            <WelcomeDialog open={welcomeShown} onClose={() => setWelcomeShown(false)}/>
             {locked && <LockedNotice type={locked.type} onRetry={() => askForCredential(locked.type)}/>}
             {props.children}
         </ConfigContext.Provider>

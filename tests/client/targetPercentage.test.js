@@ -29,9 +29,13 @@ describe("the target percentage on the value cards", () => {
     });
 
     it("is fed that optimum by the page, on both cards and in both modals", () => {
-        assert.equal((statistics.match(/target=\{config\?\.download}/g) ?? []).length, 2);
-        assert.equal((statistics.match(/target=\{config\?\.upload}/g) ?? []).length, 2);
+        // Through resolveLimits rather than the raw config: with a target
+        // chipped, the cards grade against that target's own optima, and the
+        // unfiltered view still falls back to the instance-wide settings.
+        assert.equal((statistics.match(/target=\{gradeLimits\.download}/g) ?? []).length, 2);
+        assert.equal((statistics.match(/target=\{gradeLimits\.upload}/g) ?? []).length, 2);
         assert.match(statistics, /import \{ConfigContext} from "@\/common\/contexts\/Config"/);
+        assert.match(statistics, /const gradeLimits = resolveLimits\(/);
     });
 
     // The min and max of a range are single tests. A percentage on the slowest

@@ -20,7 +20,9 @@ import { readSource } from "../helpers/source.js";
  * the person who filed this were twenty servers in the wrong country, with no
  * visible way to name a different one.
  */
-const source = readSource("client/src/common/components/ProviderDialog/ProviderDialog.jsx");
+// The dialog grew into the target editor when providers became per-target;
+// the free-text id moved with it, gates and all.
+const source = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
 
 /** The block that renders the free-text id, from its label back to its guard. */
 const idBlock = () => {

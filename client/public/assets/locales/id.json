@@ -65,11 +65,10 @@
     "settings": "Pengaturan",
     "changes_applied": "Perubahan Anda telah disimpan.",
     "language_changed": "Bahasa telah diubah.",
-    "provider_changed": "Penyedia telah diubah.",
     "changes_unsaved": "Perubahan Anda tidak diterapkan. Periksa masukan Anda.",
     "invalid": "Masukan tidak valid",
     "optimal_values": "Nilai optimal",
-    "change_provider": "Ubah penyedia",
+    "targets": "Tujuan pengujian",
     "password": "Ubah kata sandi",
     "cron": "Atur frekuensi",
     "storage": "Kelola penyimpanan",
@@ -135,7 +134,6 @@
     "statistics": "Statistik"
   },
   "update": {
-    "provider_title": "Atur penyedia speedtest",
     "new_password": "Atur kata sandi baru",
     "password_placeholder": "Kata sandi baru",
     "show_password": "Tampilkan kata sandi",
@@ -305,6 +303,7 @@
       "unchanged": "Tidak berubah sejak pengujian terakhir",
       "measured_at": "Diukur pada",
       "measured_with": "Diukur dengan",
+      "target": "Tujuan",
       "seconds": "{{seconds}} dtk",
       "data_used": "Data terpakai",
       "data_used_value": "{{down}} unduh / {{up}} unggah",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "Pengujian terakhir baru saja",
     "elapsed": "{{seconds}} dtk berlalu",
-    "next_test_approx": "Berikutnya sekitar pukul {{time}}"
+    "next_test_approx": "Berikutnya sekitar pukul {{time}}",
+    "target_of": "Tujuan {{index}} dari {{count}}"
+  },
+  "targets": {
+    "title": "Tujuan pengujian",
+    "description": "Setiap pengujian terjadwal mengukur setiap tujuan terjadwal satu kali, satu per satu. Tujuan di luar jadwal hanya dijalankan dari sini.",
+    "add": "Tambah tujuan",
+    "edit_title": "Sunting tujuan",
+    "name": "Nama",
+    "name_placeholder": "mis. Jakarta",
+    "scheduled": "Terjadwal",
+    "alerts": "Peringatan & rekomendasi",
+    "own_optimals": "Nilai optimal sendiri",
+    "all": "Semua tujuan",
+    "saved": "Tujuan telah disimpan.",
+    "removed": "Tujuan telah dihapus.",
+    "run_now": "Jalankan pengujian sekarang",
+    "move_up": "Pindahkan ke atas",
+    "move_down": "Pindahkan ke bawah",
+    "delete_confirm": {
+      "title": "Hapus tujuan ini?",
+      "description": "<Bold>{{name}}</Bold> akan dihapus. Pengujian yang sudah diukurnya tetap tersimpan di riwayat.",
+      "yes": "Hapus"
+    }
   }
 }

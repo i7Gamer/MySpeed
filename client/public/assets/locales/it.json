@@ -65,11 +65,10 @@
     "settings": "Impostazioni",
     "changes_applied": "Le modifiche sono state salvate.",
     "language_changed": "La lingua è stata modificata.",
-    "provider_changed": "Il fornitore è stato cambiato.",
     "changes_unsaved": "Le modifiche non sono state accettate. Verificare l'inserimento.",
     "invalid": "Ingresso non valido",
     "optimal_values": "Valori ottimali",
-    "change_provider": "Cambia fornitore",
+    "targets": "Destinazioni di test",
     "password": "Modifica della password",
     "cron": "Impostazione della frequenza",
     "storage": "Gestire l'archiviazione",
@@ -135,7 +134,6 @@
     "statistics": "Statistiche"
   },
   "update": {
-    "provider_title": "Imposta il provider speedtest",
     "new_password": "Impostare una nuova password",
     "password_placeholder": "Nuova password",
     "show_password": "Mostra la password",
@@ -305,6 +303,7 @@
       "unchanged": "Invariato dall'ultimo test",
       "measured_at": "Misurato il",
       "measured_with": "Misurato con",
+      "target": "Destinazione",
       "seconds": "{{seconds}} s",
       "data_used": "Dati usati",
       "data_used_value": "{{down}} in discesa / {{up}} in salita",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "Ultimo test proprio ora",
     "elapsed": "{{seconds}} s trascorsi",
-    "next_test_approx": "Il prossimo alle ~{{time}}"
+    "next_test_approx": "Il prossimo alle ~{{time}}",
+    "target_of": "Destinazione {{index}} di {{count}}"
+  },
+  "targets": {
+    "title": "Destinazioni di test",
+    "description": "Ogni test pianificato misura una volta tutte le destinazioni pianificate, una dopo l'altra. Le destinazioni fuori dalla pianificazione si avviano solo da qui.",
+    "add": "Aggiungi destinazione",
+    "edit_title": "Modifica destinazione",
+    "name": "Nome",
+    "name_placeholder": "es. Milano",
+    "scheduled": "Pianificata",
+    "alerts": "Avvisi e raccomandazioni",
+    "own_optimals": "Valori ottimali propri",
+    "all": "Tutte le destinazioni",
+    "saved": "La destinazione è stata salvata.",
+    "removed": "La destinazione è stata rimossa.",
+    "run_now": "Avvia un test ora",
+    "move_up": "Sposta su",
+    "move_down": "Sposta giù",
+    "delete_confirm": {
+      "title": "Eliminare questa destinazione?",
+      "description": "<Bold>{{name}}</Bold> verrà eliminata. I test che ha già misurato restano nello storico.",
+      "yes": "Elimina"
+    }
   }
 }

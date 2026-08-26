@@ -135,7 +135,10 @@ export const LANGUAGE_SHARED = {
     ],
     de: [
         "integrations.influxdb.fields.bucket",
-        "welcome.ms", "dialog.okay", "dialog.provider.server", "storage.speedtests", "storage.tests", "latest.ping", "latest.ping_unit", "latest.jitter",
+        "welcome.ms", "dialog.okay", "dialog.provider.server", "storage.speedtests", "storage.tests",
+        // The target editor's name field. German writes the noun the same way.
+        "targets.name",
+        "latest.ping", "latest.ping_unit", "latest.jitter",
         "latest.jitter_unit", "latest.down", "latest.byte_speed_unit", "latest.up", "info.ping.title",
         "info.jitter.title", "info.bufferbloat.title", "test.details.seconds", "test.details.server",
         "test.details.bufferbloat", "test.details.bufferbloat_value", "statistics.hourly.sample_count", "preview.info", "integrations.discord.fields.url",

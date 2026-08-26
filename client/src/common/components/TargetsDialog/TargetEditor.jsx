@@ -1,81 +1,90 @@
 import {Dialog, DialogHeader, DialogBody, DialogFooter} from "@/common/contexts/Dialog";
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
-import {faCheck, faServer, faNetworkWired, faLink, faHashtag, faExclamationTriangle} from "@fortawesome/free-solid-svg-icons";
+import {
+    faCheck, faServer, faLink, faHashtag, faExclamationTriangle, faTag
+} from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
 import React, {useContext, useEffect, useState} from "react";
-import OoklaImage from "./assets/img/ookla.webp";
-import LibreImage from "./assets/img/libre.webp";
-import CloudflareImage from "./assets/img/cloudflare.webp";
-import {assertOk, jsonRequest, patchRequest} from "@/common/utils/RequestUtil";
+import {assertOk, jsonRequest, patchRequest, putRequest} from "@/common/utils/RequestUtil";
 import {Trans} from "react-i18next";
 import {ConfigContext} from "@/common/contexts/Config";
+import {TargetsContext} from "@/common/contexts/Targets";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
+import ToggleSwitch from "@/common/components/ToggleSwitch";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import {CUSTOM_BACKEND_PLACEHOLDER} from "@/common/utils/InvariantText";
+import {providers} from "./providers";
+import {targetBody} from "./targetBody";
 
-export const providers = [
-    {id: "ookla", name: "Ookla", image: OoklaImage},
-    {id: "libre", name: "LibreSpeed", image: LibreImage},
-    {id: "cloudflare", name: "Cloudflare", image: CloudflareImage}
-];
-
-export const ProviderDialog = ({open, onClose}) => {
-    const [config, reloadConfig] = useContext(ConfigContext);
+/**
+ * One target's whole shape: its name, its provider, where it measures, whether
+ * it alerts, and what it is graded against. The successor of the provider
+ * dialog, which edited the same fields as four instance-wide config keys -
+ * there is more than one of these now, so the row itself is what is edited.
+ *
+ * @param target the full row being edited, or null to create one
+ */
+export const TargetEditor = ({open, onClose, target}) => {
+    const [config] = useContext(ConfigContext);
+    const {reloadTargets} = useContext(TargetsContext);
     const updateToast = useContext(ToastNotificationContext);
     // Read when the dialog opens, not at mount - see useSyncOnOpen. The server
-    // id and libre URL keep their own effect below: they also follow provider
+    // id and endpoint keep their own effect below: they also follow provider
     // switches while the dialog is in use.
+    const [name, setName] = useState("");
     const [provider, setProvider] = useState("ookla");
-    const [interfaces, setInterfaces] = useState({});
-    const [currentInterface, setCurrentInterface] = useState("none");
+    const [serverId, setServerId] = useState("none");
+    const [endpoint, setEndpoint] = useState("none");
+    const [alerts, setAlerts] = useState(true);
+    const [ownOptimals, setOwnOptimals] = useState(false);
+    const [optimalPing, setOptimalPing] = useState("");
+    const [optimalDownload, setOptimalDownload] = useState("");
+    const [optimalUpload, setOptimalUpload] = useState("");
     const [ooklaServers, setOoklaServers] = useState({});
     const [libreServers, setLibreServers] = useState({});
-    const [serverId, setServerId] = useState("none");
-    const [libreUrl, setLibreUrl] = useState("none");
     const [acceptedOokla, setAcceptedOokla] = useState(false);
-    // One run at a time. The chain of PATCHes below takes long enough on a
-    // slow link for a second click to land, and that second click ran the
-    // whole chain again, interleaved with the first.
+    // One run at a time - a second click on a slow link must not save twice.
     const [saving, setSaving] = useState(false);
 
     useSyncOnOpen(open, () => {
-        const stored = config.provider || "ookla";
+        setName(target?.name ?? "");
+        setProvider(target?.provider ?? "ookla");
+        setServerId(target?.serverId ?? "none");
+        setEndpoint(target?.endpoint ?? "none");
+        // sqlite hands the flag back as 0/1 under the global raw:true.
+        setAlerts(target ? Boolean(target.alerts) : true);
 
-        setProvider(stored);
-        setCurrentInterface(config.interface || "none");
-        setAcceptedOokla(config.provider === "ookla");
-        setServerId(config[stored + "Id"] || "none");
-        setLibreUrl(config.libreUrl || "none");
+        const hasOwn = target != null
+            && (target.optimalPing ?? target.optimalDownload ?? target.optimalUpload) != null;
+        setOwnOptimals(hasOwn);
+        setOptimalPing(target?.optimalPing != null ? String(target.optimalPing) : "");
+        setOptimalDownload(target?.optimalDownload != null ? String(target.optimalDownload) : "");
+        setOptimalUpload(target?.optimalUpload != null ? String(target.optimalUpload) : "");
+        // An existing Ookla target was consented to when it was created.
+        setAcceptedOokla(target?.provider === "ookla");
     });
 
     useEffect(() => {
         if (!open) return;
         jsonRequest("/info/server/ookla").then(setOoklaServers).catch(() => setOoklaServers([]));
         jsonRequest("/info/server/libre").then(setLibreServers).catch(() => setLibreServers([]));
-        jsonRequest("/info/interfaces").then(setInterfaces).catch(() => setInterfaces([]));
     }, [open]);
 
     /**
      * Switching provider inside the dialog re-reads that provider's stored
-     * server. Keyed on the provider alone.
-     *
-     * With `config` in the list too, the only thing that reset these fields was
-     * a config reload - which happens on save. So an edit the operator
-     * abandoned by closing the dialog survived, was shown on reopen as though
-     * it were what is stored, and was then written by the next unrelated save,
-     * because it differed from the config. It went both ways: an abandoned
-     * "choose automatically" overwrote a stored server id just as readily.
+     * server - the row's own when the switch returns to the row's provider,
+     * a clean slate otherwise. Keyed on the provider alone, deliberately:
+     * `open` here would reset the field under whoever is typing in it when a
+     * reopen re-runs the effect, and the row prop would re-run on every list
+     * reload - which is exactly the save that used to overwrite an edit in
+     * progress in the dialog this replaces.
      */
     useEffect(() => {
-        if (!open) return;
-
-        setServerId(config[provider + "Id"] || "none");
-        // The provider alone, deliberately - see above. `config` here would
-        // re-run on every config reload, which is exactly the save that used to
-        // overwrite an edit in progress; `open` would reset the field under
-        // whoever was typing in it when a reopen re-ran the effect.
+        setServerId(provider === target?.provider ? (target?.serverId ?? "none") : "none");
+        setEndpoint(provider === "libre" && target?.provider === "libre"
+            ? (target?.endpoint ?? "none") : "none");
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [provider]);
 
@@ -84,55 +93,50 @@ export const ProviderDialog = ({open, onClose}) => {
     }, [serverId]);
 
     useEffect(() => {
-        if (libreUrl === "") setLibreUrl("none");
-    }, [libreUrl]);
+        if (endpoint === "") setEndpoint("none");
+    }, [endpoint]);
 
-    const handleLibreUrlChange = (value) => {
-        setLibreUrl(value);
+    const handleEndpointChange = (value) => {
+        setEndpoint(value);
         if (value && value !== "none") setServerId("none");
     };
 
     const handleServerIdChange = (value) => {
         setServerId(value);
-        if (provider === "libre" && value && value !== "none") setLibreUrl("none");
+        if (provider === "libre" && value && value !== "none") setEndpoint("none");
     };
 
-    // Every write is checked: patchRequest hands back the raw response, so a
-    // rejected value used to leave the dialog reporting "provider changed" and
-    // closing over settings the server had refused.
-    const update = async (close) => {
-        const patch = async (path, value) => assertOk(await patchRequest(path, {value}), path);
-
+    // Checked, not assumed: put/patchRequest hand back the raw Response, so a
+    // refused save must not report the target as saved and close over it.
+    const save = async (close) => {
         if (saving) return;
         setSaving(true);
 
+        // Built by targetBody, which owns the three sentinels the fields carry.
+        const body = targetBody({name, provider, serverId, endpoint, alerts, ownOptimals,
+            optimalPing, optimalDownload, optimalUpload});
+
         try {
-            await patch("/config/provider", provider);
-
-            if (serverId !== config[provider + "Id"] && provider !== "cloudflare")
-                await patch("/config/" + provider + "Id", serverId);
-
-            if (provider === "libre" && libreUrl !== config.libreUrl)
-                await patch("/config/libreUrl", libreUrl);
-
-            if (currentInterface !== config.interface)
-                await patch("/config/interface", currentInterface);
+            if (target) await assertOk(await patchRequest(`/targets/${target.id}`, body), "target");
+            else await assertOk(await putRequest("/targets", body), "target");
         } catch (e) {
             updateToast(e.message || t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
             return;
         } finally {
-            reloadConfig();
             // However the run ended - a refused value must not leave the
             // dialog locked shut.
             setSaving(false);
         }
 
-        updateToast(t('dropdown.provider_changed'), "green", faCheck);
+        reloadTargets();
+        updateToast(t("targets.saved"), "green", faCheck);
         close();
     };
 
-    const isUsingCustomUrl = provider === "libre" && libreUrl && libreUrl !== "none";
-    const canUpdate = provider !== "ookla" || acceptedOokla;
+    const isUsingCustomUrl = provider === "libre" && endpoint && endpoint !== "none";
+    // What makes the row saveable at all; the in-flight lock is its own term
+    // on the button, so the two reasons for a dead button stay legible apart.
+    const canSave = name.trim() !== "" && (provider !== "ookla" || acceptedOokla);
 
     const formatServerLabel = (entry) => {
         if (!entry) return "";
@@ -147,13 +151,37 @@ export const ProviderDialog = ({open, onClose}) => {
         return main + distance;
     };
 
+    // The three grading fields, drawn identically; the placeholders are the
+    // global values the blank field would inherit.
+    const optimalFields = [
+        {label: t("latest.ping"), unit: t("welcome.ms"), value: optimalPing,
+            set: setOptimalPing, placeholder: config.ping},
+        {label: t("latest.down"), unit: t("welcome.mbps"), value: optimalDownload,
+            set: setOptimalDownload, placeholder: config.download},
+        {label: t("latest.up"), unit: t("welcome.mbps"), value: optimalUpload,
+            set: setOptimalUpload, placeholder: config.upload}
+    ];
+
     return (
         <Dialog open={open} onClose={onClose} className="provider-dialog-wrapper">
             {({close}) => (
                 <>
-                    <DialogHeader onClose={close}>{t("update.provider_title")}</DialogHeader>
+                    <DialogHeader onClose={close}>
+                        {target ? t("targets.edit_title") : t("targets.add")}
+                    </DialogHeader>
                     <DialogBody>
                         <div className="provider-content">
+                            <div className="provider-setting target-name-setting">
+                                <div className="provider-setting-label">
+                                    <FontAwesomeIcon icon={faTag}/>
+                                    <h3>{t("targets.name")}</h3>
+                                </div>
+                                <input type="text" className="dialog-input provider-input"
+                                       placeholder={t("targets.name_placeholder")}
+                                       value={name} maxLength={64}
+                                       onChange={(e) => setName(e.target.value)}/>
+                            </div>
+
                             <SelectableList className="provider-list">
                                 {providers.map((current) => (
                                     <SelectableOption key={current.id}
@@ -166,19 +194,6 @@ export const ProviderDialog = ({open, onClose}) => {
                             </SelectableList>
 
                             <div className="provider-settings">
-                                <div className="provider-setting">
-                                    <div className="provider-setting-label">
-                                        <FontAwesomeIcon icon={faNetworkWired}/>
-                                        <h3>{t("dialog.provider.interface")}</h3>
-                                    </div>
-                                    <select className="dialog-input provider-input" value={currentInterface}
-                                            onChange={(e) => setCurrentInterface(e.target.value)}>
-                                        {interfaces && Object.keys(interfaces).map((current, index) => (
-                                            <option key={index} value={current}>{current} ({interfaces[current]})</option>
-                                        ))}
-                                    </select>
-                                </div>
-
                                 {provider !== "cloudflare" && !isUsingCustomUrl && (
                                     <div className="provider-setting">
                                         <div className="provider-setting-label">
@@ -229,17 +244,48 @@ export const ProviderDialog = ({open, onClose}) => {
                                         </div>
                                         <input type="text" className="dialog-input provider-input"
                                                placeholder={CUSTOM_BACKEND_PLACEHOLDER}
-                                               value={libreUrl === "none" ? "" : libreUrl}
-                                               onChange={(e) => handleLibreUrlChange(e.target.value || "none")}/>
+                                               value={endpoint === "none" ? "" : endpoint}
+                                               onChange={(e) => handleEndpointChange(e.target.value || "none")}/>
+                                    </div>
+                                )}
+
+                                <div className="provider-setting">
+                                    <div className="provider-setting-label">
+                                        <h3>{t("targets.alerts")}</h3>
+                                    </div>
+                                    <ToggleSwitch checked={alerts} onChange={setAlerts}
+                                                  label={t("targets.alerts")}/>
+                                </div>
+
+                                <div className="provider-setting">
+                                    <div className="provider-setting-label">
+                                        <h3>{t("targets.own_optimals")}</h3>
+                                    </div>
+                                    <ToggleSwitch checked={ownOptimals} onChange={setOwnOptimals}
+                                                  label={t("targets.own_optimals")}/>
+                                </div>
+
+                                {ownOptimals && (
+                                    <div className="target-optimals">
+                                        {optimalFields.map(({label, unit, value, set, placeholder}) => (
+                                            <label key={label} className="target-optimal">
+                                                <span className="target-optimal-label">
+                                                    {label} <span className="target-optimal-unit">({unit})</span>
+                                                </span>
+                                                <input type="number" className="dialog-input" min="0"
+                                                       placeholder={placeholder || ""}
+                                                       value={value} onChange={(e) => set(e.target.value)}/>
+                                            </label>
+                                        ))}
                                     </div>
                                 )}
                             </div>
 
                             {provider === "ookla" && (
                                 <label className="provider-license">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={acceptedOokla} 
+                                    <input
+                                        type="checkbox"
+                                        checked={acceptedOokla}
                                         onChange={(e) => setAcceptedOokla(e.target.checked)}
                                     />
                                     <span>
@@ -254,8 +300,10 @@ export const ProviderDialog = ({open, onClose}) => {
                         </div>
                     </DialogBody>
                     <DialogFooter>
-                        <button className="dialog-btn" onClick={() => update(close)}
-                                disabled={!canUpdate || saving}>{t("dialog.update")}</button>
+                        <button className="dialog-btn" onClick={() => save(close)}
+                                disabled={!canSave || saving}>
+                            {target ? t("dialog.update") : t("targets.add")}
+                        </button>
                     </DialogFooter>
                 </>
             )}

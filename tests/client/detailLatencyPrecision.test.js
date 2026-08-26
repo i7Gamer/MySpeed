@@ -79,9 +79,9 @@ const t = (key, values) => values === undefined ? key : {key, ...values};
  * quality and loadedLatency are rendered markup the slices skip; the figures
  * the quality strip carries are built from their own region below.
  */
-const buildMetrics = ({test, targets = {}, earlier = {}}) => evaluate(
+const buildMetrics = ({test, limits = {}, earlier = {}}) => evaluate(
     `${derivations()}\n${metricsLiteral()}\nreturn metrics;`, {
-        test, targets, earlier, t,
+        test, limits, earlier, t,
         formatLatency, formatWithUnit, changeFrom, differenceFromTarget, percentOfTarget,
         getIconBySpeed, convertSpeed,
         preferences: {}, speedUnit: "Mbit/s",
@@ -106,7 +106,7 @@ const qualityEntries = (test) => evaluate(
 
 // The pair from the bug report: 25.44 after 25.36, against a target typed into
 // the settings dialog - which stores what was typed, a string.
-const BUG_REPORT = {test: {ping: 25.44}, targets: {ping: "25"}, earlier: {ping: 25.36}};
+const BUG_REPORT = {test: {ping: 25.44}, limits: {ping: "25"}, earlier: {ping: 25.36}};
 
 /**
  * A latency is shown at one decimal, and everything read off it used to be
@@ -211,13 +211,13 @@ describe("the ping card computes every figure from the one it prints", () => {
     // 2.04 prints as 2 against a target of 2: the bar has to say the target is
     // met, not that the reader is 2% short of a figure they cannot see.
     it("fills the bar from the printed figure", () => {
-        assert.equal(pingCard({test: {ping: 2.04}, targets: {ping: "2"}}).percent, 100);
+        assert.equal(pingCard({test: {ping: 2.04}, limits: {ping: "2"}}).percent, 100);
     });
 
     // 12.96 prints as 13, and 13 against a target of 10 is exactly the 130%
     // where the colour turns - the card is graded on the figure it shows.
     it("colours the card from the printed figure", () => {
-        assert.equal(pingCard({test: {ping: 12.96}, targets: {ping: "10"}}).level, "orange");
+        assert.equal(pingCard({test: {ping: 12.96}, limits: {ping: "10"}}).level, "orange");
     });
 
     // The -1 a failed run stores reaches the guards untouched, so everything
@@ -344,7 +344,7 @@ describe("what the extraction cannot run, read from the source", () => {
     it("lets no raw latency reach anything the reader sees", () => {
         const displayed = pane.replaceAll("latencyIncrease(value, test.ping)", "");
 
-        assert.doesNotMatch(displayed, /(?<!formatLatency\()\b(test|targets|earlier)\.ping\b/,
+        assert.doesNotMatch(displayed, /(?<!formatLatency\()\b(test|limits|earlier)\.ping\b/,
             "a ping is still read at the two decimals the column stores");
     });
 });

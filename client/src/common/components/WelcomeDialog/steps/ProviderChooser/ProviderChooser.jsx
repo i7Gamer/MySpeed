@@ -1,6 +1,6 @@
 import "./styles.sass";
 
-import {providers} from "@/common/components/ProviderDialog/ProviderDialog";
+import {providers} from "@/common/components/TargetsDialog/providers";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
 import {t} from "i18next";
 

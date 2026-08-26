@@ -65,11 +65,10 @@
     "settings": "Indstillinger",
     "changes_applied": "Dine ændringer er blevet gemt.",
     "language_changed": "Sproget er blevet ændret.",
-    "provider_changed": "Udbyderen er blevet ændret.",
     "changes_unsaved": "Dine ændringer blev ikke gemt. Kontroller din indtastning.",
     "invalid": "Ugyldig indtastning",
     "optimal_values": "Optimale værdier",
-    "change_provider": "Skift udbyder",
+    "targets": "Testmål",
     "password": "Skift adgangskode",
     "cron": "Indstil frekvens",
     "storage": "Administrer lager",
@@ -135,7 +134,6 @@
     "statistics": "Statistik"
   },
   "update": {
-    "provider_title": "Vælg speedtest-udbyder",
     "new_password": "Indstil en ny adgangskode",
     "password_placeholder": "Ny adgangskode",
     "show_password": "Vis adgangskoden",
@@ -305,6 +303,7 @@
       "unchanged": "Uændret siden sidste test",
       "measured_at": "Målt den",
       "measured_with": "Målt med",
+      "target": "Mål",
       "seconds": "{{seconds}} s",
       "data_used": "Forbrugte data",
       "data_used_value": "{{down}} ned / {{up}} op",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "Sidste test lige nu",
     "elapsed": "{{seconds}} s forløbet",
-    "next_test_approx": "Næste kl. ~{{time}}"
+    "next_test_approx": "Næste kl. ~{{time}}",
+    "target_of": "Mål {{index}} af {{count}}"
+  },
+  "targets": {
+    "title": "Testmål",
+    "description": "Hver planlagt test måler hvert planlagt mål én gang, ét efter ét. Mål uden for tidsplanen kører kun herfra.",
+    "add": "Tilføj mål",
+    "edit_title": "Rediger mål",
+    "name": "Navn",
+    "name_placeholder": "f.eks. København",
+    "scheduled": "Planlagt",
+    "alerts": "Advarsler & anbefalinger",
+    "own_optimals": "Egne optimale værdier",
+    "all": "Alle mål",
+    "saved": "Målet er blevet gemt.",
+    "removed": "Målet er blevet fjernet.",
+    "run_now": "Kør test nu",
+    "move_up": "Flyt op",
+    "move_down": "Flyt ned",
+    "delete_confirm": {
+      "title": "Slet dette mål?",
+      "description": "<Bold>{{name}}</Bold> bliver slettet. De tests, det allerede har målt, bliver i historikken.",
+      "yes": "Slet"
+    }
   }
 }

@@ -65,11 +65,10 @@
     "settings": "설정",
     "changes_applied": "변경 사항이 저장되었습니다.",
     "language_changed": "언어가 변경되었습니다.",
-    "provider_changed": "제공업체가 변경되었습니다.",
     "changes_unsaved": "변경 사항이 적용되지 않았습니다. 입력을 확인하세요.",
     "invalid": "잘못된 입력",
     "optimal_values": "최적 값",
-    "change_provider": "제공업체 변경",
+    "targets": "측정 대상",
     "password": "비밀번호 변경",
     "cron": "빈도 설정",
     "storage": "저장소 관리",
@@ -135,7 +134,6 @@
     "statistics": "통계"
   },
   "update": {
-    "provider_title": "속도 테스트 제공업체 설정",
     "new_password": "새 비밀번호 설정",
     "password_placeholder": "새 비밀번호",
     "show_password": "비밀번호 표시",
@@ -305,6 +303,7 @@
       "unchanged": "마지막 테스트 이후 변동 없음",
       "measured_at": "측정 시각",
       "measured_with": "측정 도구",
+      "target": "측정 대상",
       "seconds": "{{seconds}}초",
       "data_used": "사용된 데이터",
       "data_used_value": "다운로드 {{down}} / 업로드 {{up}}",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "마지막 테스트: 방금 전",
     "elapsed": "{{seconds}}초 경과",
-    "next_test_approx": "다음 테스트: 약 {{time}}"
+    "next_test_approx": "다음 테스트: 약 {{time}}",
+    "target_of": "측정 대상 {{count}}개 중 {{index}}번째"
+  },
+  "targets": {
+    "title": "측정 대상",
+    "description": "예약된 테스트는 매번 예약된 모든 측정 대상을 차례로 한 번씩 측정합니다. 예약에 포함되지 않은 측정 대상은 여기에서만 실행됩니다.",
+    "add": "측정 대상 추가",
+    "edit_title": "측정 대상 편집",
+    "name": "이름",
+    "name_placeholder": "예: 서울",
+    "scheduled": "예약에 포함",
+    "alerts": "알림 및 권장값",
+    "own_optimals": "자체 최적 값",
+    "all": "전체 측정 대상",
+    "saved": "측정 대상이 저장되었습니다.",
+    "removed": "측정 대상이 삭제되었습니다.",
+    "run_now": "지금 테스트 실행",
+    "move_up": "위로 이동",
+    "move_down": "아래로 이동",
+    "delete_confirm": {
+      "title": "이 측정 대상을 삭제할까요?",
+      "description": "<Bold>{{name}}</Bold>이(가) 삭제됩니다. 이 대상이 이미 측정한 테스트는 기록에 그대로 남습니다.",
+      "yes": "삭제"
+    }
   }
 }

@@ -65,11 +65,10 @@
     "settings": "Ustawienia",
     "changes_applied": "Twoje zmiany zostały zapisane.",
     "language_changed": "Język został zmieniony.",
-    "provider_changed": "Dostawca został zmieniony.",
     "changes_unsaved": "Twoje zmiany nie zostały zapisane. Sprawdź wprowadzone dane.",
     "invalid": "Nieprawidłowe dane",
     "optimal_values": "Optymalne wartości",
-    "change_provider": "Zmień dostawcę",
+    "targets": "Cele testów",
     "password": "Zmień hasło",
     "cron": "Ustaw częstotliwość",
     "storage": "Zarządzaj przechowywaniem",
@@ -135,7 +134,6 @@
     "statistics": "Statystyki"
   },
   "update": {
-    "provider_title": "Wybierz dostawcę testów prędkości",
     "new_password": "Ustaw nowe hasło",
     "password_placeholder": "Nowe hasło",
     "show_password": "Pokaż hasło",
@@ -305,6 +303,7 @@
       "unchanged": "Bez zmian od poprzedniego testu",
       "measured_at": "Zmierzono",
       "measured_with": "Zmierzono za pomocą",
+      "target": "Cel",
       "seconds": "{{seconds}} s",
       "data_used": "Zużyte dane",
       "data_used_value": "{{down}} pobrane / {{up}} wysłane",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "Ostatni test przed chwilą",
     "elapsed": "upłynęło {{seconds}} s",
-    "next_test_approx": "Następny około {{time}}"
+    "next_test_approx": "Następny około {{time}}",
+    "target_of": "Cel {{index}} z {{count}}"
+  },
+  "targets": {
+    "title": "Cele testów",
+    "description": "Każdy zaplanowany test mierzy każdy zaplanowany cel raz, jeden po drugim. Cele spoza harmonogramu można uruchomić tylko stąd.",
+    "add": "Dodaj cel",
+    "edit_title": "Edytuj cel",
+    "name": "Nazwa",
+    "name_placeholder": "np. Warszawa",
+    "scheduled": "Zaplanowany",
+    "alerts": "Powiadomienia i rekomendacje",
+    "own_optimals": "Własne optymalne wartości",
+    "all": "Wszystkie cele",
+    "saved": "Cel został zapisany.",
+    "removed": "Cel został usunięty.",
+    "run_now": "Uruchom test teraz",
+    "move_up": "Przenieś w górę",
+    "move_down": "Przenieś w dół",
+    "delete_confirm": {
+      "title": "Usunąć ten cel?",
+      "description": "Cel <Bold>{{name}}</Bold> zostanie usunięty. Testy, które już zmierzył, pozostaną w historii.",
+      "yes": "Usuń"
+    }
   }
 }

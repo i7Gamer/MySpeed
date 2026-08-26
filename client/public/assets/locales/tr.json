@@ -65,11 +65,10 @@
     "settings": "Ayarlar",
     "changes_applied": "Değişiklikler kaydedildi.",
     "language_changed": "Dil değiştirilmiştir.",
-    "provider_changed": "Sağlayıcı değiştirildi.",
     "changes_unsaved": "Değişiklikleriniz uygulanamadı. Girişinizi kontrol edin.",
     "invalid": "Geçersiz giriş",
     "optimal_values": "Optimum değerler",
-    "change_provider": "Sağlayıcıyı değiştirin",
+    "targets": "Test noktaları",
     "password": "Şifre Değiştir",
     "cron": "Frekans ayarlama",
     "storage": "Depolamayı yönetin",
@@ -135,7 +134,6 @@
     "statistics": "İstatistikler"
   },
   "update": {
-    "provider_title": "Speedtest sağlayıcısını ayarla",
     "new_password": "Yeni bir şifre belirle",
     "password_placeholder": "Yeni şifre",
     "show_password": "Parolayı göster",
@@ -305,6 +303,7 @@
       "unchanged": "Son testten bu yana değişmedi",
       "measured_at": "Ölçüm zamanı",
       "measured_with": "Ölçüm aracı",
+      "target": "Test noktası",
       "seconds": "{{seconds}} sn",
       "data_used": "Kullanılan veri",
       "data_used_value": "{{down}} indirme / {{up}} yükleme",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "Son test az önce",
     "elapsed": "{{seconds}} sn geçti",
-    "next_test_approx": "Sonraki yaklaşık {{time}}"
+    "next_test_approx": "Sonraki yaklaşık {{time}}",
+    "target_of": "Test noktası {{index}}/{{count}}"
+  },
+  "targets": {
+    "title": "Test noktaları",
+    "description": "Planlanmış her test, plandaki her test noktasını sırayla birer kez ölçer. Planın dışındaki test noktaları yalnızca buradan çalıştırılır.",
+    "add": "Test noktası ekle",
+    "edit_title": "Test noktasını düzenle",
+    "name": "Ad",
+    "name_placeholder": "örn. İstanbul",
+    "scheduled": "Planlanmış",
+    "alerts": "Bildirimler ve öneriler",
+    "own_optimals": "Kendi optimum değerleri",
+    "all": "Tüm test noktaları",
+    "saved": "Test noktası kaydedildi.",
+    "removed": "Test noktası silindi.",
+    "run_now": "Testi şimdi çalıştır",
+    "move_up": "Yukarı taşı",
+    "move_down": "Aşağı taşı",
+    "delete_confirm": {
+      "title": "Bu test noktası silinsin mi?",
+      "description": "<Bold>{{name}}</Bold> silinecek. Şimdiye kadar ölçtüğü testler geçmişte kalır.",
+      "yes": "Sil"
+    }
   }
 }

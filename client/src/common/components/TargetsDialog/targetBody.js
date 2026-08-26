@@ -1,0 +1,49 @@
+/**
+ * The row the target editor sends, built from what its fields hold.
+ *
+ * Pure and apart from the dialog, the way frequencyStateFrom is: what the
+ * editor writes is judged by the server against the row it *would become* -
+ * so a field that goes out as the wrong shape is refused with a message about
+ * a value the operator cannot see, and the three sentinels here ("none" for an
+ * unset select, "" for a cleared number, null for inherit) are exactly where
+ * that goes wrong.
+ */
+
+// The select and the free-text id share a stored value, and "none" is what
+// both use for "let the provider choose" - it is not a server id.
+const AUTOMATIC = "none";
+
+/**
+ * One optimal value, or null to inherit the instance-wide setting.
+ *
+ * Blank while the own-optimals toggle is on means "inherit this one metric" -
+ * resolveLimits falls back per metric, so a target can pin its download and
+ * leave its ping global. With the toggle off, all three inherit.
+ */
+export const optimalOrNull = (enabled, value) => {
+    if (!enabled || value === "" || value === null || value === undefined) return null;
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+/**
+ * @param fields the editor's state, exactly as it holds it
+ * @returns the JSON body for PUT /targets or PATCH /targets/:id
+ */
+export const targetBody = ({name, provider, serverId, endpoint, alerts, ownOptimals,
+                               optimalPing, optimalDownload, optimalUpload}) => ({
+    // Trimmed, because the server measures the name against its length limit
+    // and a name of spaces is not a name.
+    name: (name ?? "").trim(),
+    provider,
+    serverId: serverId === AUTOMATIC || !serverId ? null : serverId,
+    // Only LibreSpeed takes one. Sent for any other provider it would be
+    // refused - the server judges the merged row, and an endpoint on a
+    // provider that takes none is exactly what it refuses.
+    endpoint: provider === "libre" && endpoint && endpoint !== AUTOMATIC ? endpoint : null,
+    alerts,
+    optimalPing: optimalOrNull(ownOptimals, optimalPing),
+    optimalDownload: optimalOrNull(ownOptimals, optimalDownload),
+    optimalUpload: optimalOrNull(ownOptimals, optimalUpload)
+});

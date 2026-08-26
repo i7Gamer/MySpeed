@@ -65,11 +65,10 @@
     "settings": "Socruithe",
     "changes_applied": "Tá do chuid athruithe sábháilte.",
     "language_changed": "Tá an teanga athraithe.",
-    "provider_changed": "Tá an soláthraí athraithe.",
     "changes_unsaved": "Níor cuireadh do chuid athruithe i bhfeidhm. Seiceáil do ionchur.",
     "invalid": "Ionchur neamhbhailí",
     "optimal_values": "Luachanna is fearr",
-    "change_provider": "Athraigh soláthraí",
+    "targets": "Spriocanna tástála",
     "password": "Athraigh an focal faire",
     "cron": "Socraigh minicíocht",
     "storage": "Bainistigh stóráil",
@@ -135,7 +134,6 @@
     "statistics": "Staitisticí"
   },
   "update": {
-    "provider_title": "Socraigh soláthraí tástála luais",
     "new_password": "Socraigh pasfhocal nua",
     "password_placeholder": "Pasfhocal nua",
     "show_password": "Taispeáin an pasfhocal",
@@ -305,6 +303,7 @@
       "unchanged": "Gan athrú ón tástáil dheireanach",
       "measured_at": "Tomhaiste ag",
       "measured_with": "Tomhaiste le",
+      "target": "Sprioc",
       "seconds": "{{seconds}} s",
       "data_used": "Sonraí úsáidte",
       "data_used_value": "{{down}} síos / {{up}} suas",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "An tástáil dheireanach díreach anois",
     "elapsed": "{{seconds}}s caite",
-    "next_test_approx": "An chéad cheann eile ag ~{{time}}"
+    "next_test_approx": "An chéad cheann eile ag ~{{time}}",
+    "target_of": "Sprioc {{index}} as {{count}}"
+  },
+  "targets": {
+    "title": "Spriocanna tástála",
+    "description": "Tomhaiseann gach tástáil sceidealta gach sprioc sceidealta uair amháin, ceann i ndiaidh a chéile. Ní ritheann spriocanna lasmuigh den sceideal ach ón áit seo.",
+    "add": "Cuir sprioc leis",
+    "edit_title": "Cuir sprioc in eagar",
+    "name": "Ainm",
+    "name_placeholder": "m.sh. Baile Átha Cliath",
+    "scheduled": "Sceidealta",
+    "alerts": "Foláirimh & moltaí",
+    "own_optimals": "A luachanna is fearr féin",
+    "all": "Gach sprioc",
+    "saved": "Tá an sprioc sábháilte.",
+    "removed": "Tá an sprioc bainte.",
+    "run_now": "Rith tástáil anois",
+    "move_up": "Bog suas",
+    "move_down": "Bog síos",
+    "delete_confirm": {
+      "title": "An sprioc seo a scriosadh?",
+      "description": "Scriosfar <Bold>{{name}}</Bold>. Fanann na tástálacha a thomhais sí cheana féin sa stair.",
+      "yes": "Scrios"
+    }
   }
 }

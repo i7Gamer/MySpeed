@@ -1,0 +1,38 @@
+@use "@/common/styles/layout" as *
+
+.target-chips
+  display: flex
+  // Its own row wherever it lands, which is not something the element could be
+  // left to work out for itself: the statistics page is a wrapping flex
+  // container of cards, and with a content-sized basis the chip row became one
+  // more card - the page summary wrapped up beside it and the tuned 40/30/30
+  // columns lost their row. The toolbar above states the same width for the
+  // same reason.
+  width: 100%
+  box-sizing: border-box
+  // The toolbar's own bottom margin spaces it from this row; this is the gap
+  // between the chips and the data they narrow. Taken back on the statistics
+  // page, where the area's gap already provides it - as the toolbar's is.
+  margin-bottom: $card-gap
+
+  // Scrolls rather than wraps, which is what the shared control does by
+  // default: its chips are a fixed handful of palette names, and these are an
+  // operator's target names - any number of them, any length. Wrapped and
+  // stretched to equal shares, six targets pushed the list down by more than
+  // the toolbar itself is tall.
+  .segmented-control
+    flex-wrap: nowrap
+    overflow-x: auto
+    max-width: 100%
+    // So a chip's focus ring is not clipped by the scrollport it sits in.
+    padding: 2px
+
+  .segmented-option
+    // Its own width, not an equal share of the row: the shared control divides
+    // the row between its options, which turns two targets into two
+    // half-width chips and twelve into a row nothing can be read in.
+    flex: 0 0 auto
+    white-space: nowrap
+
+  .target-dot
+    margin-right: 0.4rem

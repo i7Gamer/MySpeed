@@ -212,6 +212,14 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                     <FontAwesomeIcon icon={props.error ? faInfo : faClockRotateLeft}
                                      className={"container-icon icon-" + (props.error ? "error" : "blue")}/>
                     <h2 className="date-text">{timeString}</h2>
+                    {/* Which target this row belongs to, on a list that mixes
+                        them - TestArea passes it only then. The name rides on
+                        the title so the dot is not colour alone; the pane the
+                        row expands into spells it out. */}
+                    {props.targetDot && (
+                        <span className="target-dot speedtest-target-dot" title={props.targetDot.name}
+                              style={{background: props.targetDot.colour}}/>
+                    )}
                 </div>
                 {/* A failed test says why here rather than showing three empty
                     columns that have to be expanded to mean anything. The

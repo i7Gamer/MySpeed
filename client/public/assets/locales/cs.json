@@ -65,11 +65,10 @@
     "settings": "Nastavení",
     "changes_applied": "Vaše změny byly uloženy.",
     "language_changed": "Jazyk byl změněn.",
-    "provider_changed": "Poskytovatel byl změněn.",
     "changes_unsaved": "Vaše změny nebyly použity. Zkontrolujte zadané údaje.",
     "invalid": "Neplatný vstup",
     "optimal_values": "Optimální hodnoty",
-    "change_provider": "Změnit poskytovatele",
+    "targets": "Testovací cíle",
     "password": "Změnit heslo",
     "cron": "Nastavit frekvenci",
     "storage": "Správa úložiště",
@@ -135,7 +134,6 @@
     "statistics": "Statistiky"
   },
   "update": {
-    "provider_title": "Nastavit poskytovatele testů rychlosti",
     "new_password": "Nastavte nové heslo",
     "password_placeholder": "Nové heslo",
     "show_password": "Zobrazit heslo",
@@ -305,6 +303,7 @@
       "unchanged": "Beze změny od posledního testu",
       "measured_at": "Změřeno",
       "measured_with": "Změřeno pomocí",
+      "target": "Cíl",
       "seconds": "{{seconds}} s",
       "data_used": "Přenesená data",
       "data_used_value": "{{down}} staženo / {{up}} nahráno",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "Poslední test právě teď",
     "elapsed": "Uplynulo {{seconds}} s",
-    "next_test_approx": "Další v ~{{time}}"
+    "next_test_approx": "Další v ~{{time}}",
+    "target_of": "Cíl {{index}} z {{count}}"
+  },
+  "targets": {
+    "title": "Testovací cíle",
+    "description": "Každý plánovaný test změří každý plánovaný cíl jednou, jeden po druhém. Cíle mimo plán lze spustit pouze odsud.",
+    "add": "Přidat cíl",
+    "edit_title": "Upravit cíl",
+    "name": "Název",
+    "name_placeholder": "např. Praha",
+    "scheduled": "Plánovaný",
+    "alerts": "Upozornění a doporučení",
+    "own_optimals": "Vlastní optimální hodnoty",
+    "all": "Všechny cíle",
+    "saved": "Cíl byl uložen.",
+    "removed": "Cíl byl smazán.",
+    "run_now": "Spustit test nyní",
+    "move_up": "Posunout nahoru",
+    "move_down": "Posunout dolů",
+    "delete_confirm": {
+      "title": "Smazat tento cíl?",
+      "description": "Cíl <Bold>{{name}}</Bold> bude smazán. Testy, které už změřil, zůstanou v historii.",
+      "yes": "Smazat"
+    }
   }
 }

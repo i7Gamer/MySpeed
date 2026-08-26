@@ -29,7 +29,7 @@ import {INSTALL_URL} from "@/index";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {IntegrationDialog} from "@/common/components/IntegrationDialog";
 import LanguageDialog from "@/common/components/LanguageDialog";
-import ProviderDialog from "@/common/components/ProviderDialog";
+import TargetsDialog from "@/common/components/TargetsDialog";
 import StorageDialog from "@/common/components/StorageDialog";
 import OptimalValuesDialog from "@/common/components/OptimalValuesDialog";
 import FrequencyDialog from "@/common/components/FrequencyDialog";
@@ -44,7 +44,7 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
     const alert = useAlert();
     const [showIntegrationDialog, setShowIntegrationDialog] = useState(false);
     const [showLanguageDialog, setShowLanguageDialog] = useState(false);
-    const [showProviderDialog, setShowProviderDialog] = useState(false);
+    const [showTargetsDialog, setShowTargetsDialog] = useState(false);
     const [showStorageDialog, setShowStorageDialog] = useState(false);
     const [showOptimalValuesDialog, setShowOptimalValuesDialog] = useState(false);
     const [showFrequencyDialog, setShowFrequencyDialog] = useState(false);
@@ -164,7 +164,7 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
     const options = [
         {run: () => setShowOptimalValuesDialog(true), icon: faGauge, text: t("dropdown.optimal_values"), previewDisabled: true},
         {hr: true, key: 1},
-        {run: () => setShowProviderDialog(true), icon: faSliders, text: t("dropdown.change_provider"), previewDisabled: true},
+        {run: () => setShowTargetsDialog(true), icon: faSliders, text: t("dropdown.targets"), previewDisabled: true},
         // Not disabled: the exports underneath are GETs and still work on a
         // demo. Only its import and clear buttons are refused, and the dialog
         // reports those itself.
@@ -183,7 +183,7 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
         <>
             <IntegrationDialog open={showIntegrationDialog} onClose={() => setShowIntegrationDialog(false)}/>
             <LanguageDialog open={showLanguageDialog} onClose={() => setShowLanguageDialog(false)}/>
-            <ProviderDialog open={showProviderDialog} onClose={() => setShowProviderDialog(false)}/>
+            <TargetsDialog open={showTargetsDialog} onClose={() => setShowTargetsDialog(false)}/>
             <StorageDialog open={showStorageDialog} onClose={() => setShowStorageDialog(false)}/>
             <OptimalValuesDialog open={showOptimalValuesDialog} onClose={() => setShowOptimalValuesDialog(false)}/>
             <FrequencyDialog open={showFrequencyDialog} onClose={() => setShowFrequencyDialog(false)}/>
@@ -205,7 +205,7 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
                                      * A control, not a div that happens to
                                      * answer a click. This menu is the only
                                      * route to nine of the app's dialogs -
-                                     * optimal values, the provider, storage,
+                                     * optimal values, the targets, storage,
                                      * the password, the schedule, pause,
                                      * integrations, the language and the
                                      * preferences - and every entry was a bare

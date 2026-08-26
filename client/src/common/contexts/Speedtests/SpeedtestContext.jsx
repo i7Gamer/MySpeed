@@ -5,6 +5,7 @@ import {runJustFinished} from "@/common/utils/StatusUtil";
 import {StatusContext} from "@/common/contexts/Status";
 import {NodeContext} from "@/common/contexts/Node";
 import {ConfigContext} from "@/common/contexts/Config";
+import {TargetsContext} from "@/common/contexts/Targets";
 import {
     formatDateParam, rangeKey, rangeToParams, selectionFromParams, timeframeFromRange, timezoneParams
 } from "@/common/utils/TimeframeUtil";
@@ -44,6 +45,7 @@ export const SpeedtestProvider = (props) => {
     const [status] = useContext(StatusContext);
     const [, , currentNode] = useContext(NodeContext);
     const [config] = useContext(ConfigContext);
+    const {selectedTarget} = useContext(TargetsContext);
     const wasRunningRef = useRef(status.running);
     // The permission the rows in hand were fetched under. See permission.js.
     const fetchedUnderRef = useRef(undefined);
@@ -73,6 +75,11 @@ export const SpeedtestProvider = (props) => {
         () => selection.from && selection.to ? {from: selection.from, to: selection.to} : null,
         [selection]);
 
+    // Which target the list is narrowed to, or null for all of them. Resolved
+    // by the targets context, which is the one place that decides whether a
+    // stored chip still means anything on the instance being looked at.
+    const targetFilter = selectedTarget;
+
     const listQuery = useCallback((extra = {}) => {
         const params = new URLSearchParams({limit: String(PAGE_SIZE), ...extra});
 
@@ -84,8 +91,10 @@ export const SpeedtestProvider = (props) => {
             for (const [key, value] of Object.entries(timezoneParams())) params.set(key, value);
         }
 
+        if (targetFilter != null) params.set("target", String(targetFilter));
+
         return params.toString();
-    }, [range]);
+    }, [range, targetFilter]);
 
     // Replaced rather than pushed: narrowing a range is refining one view, not
     // arriving at a new one, and stacking every adjustment would make Back walk

@@ -65,11 +65,10 @@
     "settings": "设置",
     "changes_applied": "更改已被保存。",
     "language_changed": "语言已变更。",
-    "provider_changed": "提供商已变更。",
     "changes_unsaved": "你的修改没有被接受。请检查你的输入。",
     "invalid": "输入无效",
     "optimal_values": "最佳值",
-    "change_provider": "更换提供商",
+    "targets": "测速点",
     "password": "更改密码",
     "cron": "设置测试频率",
     "storage": "管理存储",
@@ -135,7 +134,6 @@
     "statistics": "统计"
   },
   "update": {
-    "provider_title": "设置测速提供商",
     "new_password": "设置新密码",
     "password_placeholder": "新密码",
     "show_password": "显示密码",
@@ -305,6 +303,7 @@
       "unchanged": "与上次测速相比没有变化",
       "measured_at": "测量时间",
       "measured_with": "测量方式",
+      "target": "测速点",
       "seconds": "{{seconds}} 秒",
       "data_used": "消耗流量",
       "data_used_value": "下载 {{down}} / 上传 {{up}}",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "刚刚完成上次测速",
     "elapsed": "已用 {{seconds}} 秒",
-    "next_test_approx": "下一次约在 {{time}}"
+    "next_test_approx": "下一次约在 {{time}}",
+    "target_of": "第 {{index}}/{{count}} 个测速点"
+  },
+  "targets": {
+    "title": "测速点",
+    "description": "每次计划测速都会依次对每个列入计划的测速点各测一次。计划之外的测速点只能从这里启动。",
+    "add": "添加测速点",
+    "edit_title": "编辑测速点",
+    "name": "名称",
+    "name_placeholder": "例如：上海",
+    "scheduled": "列入计划",
+    "alerts": "通知与建议",
+    "own_optimals": "单独的最佳值",
+    "all": "全部测速点",
+    "saved": "测速点已保存。",
+    "removed": "测速点已删除。",
+    "run_now": "立即测速",
+    "move_up": "上移",
+    "move_down": "下移",
+    "delete_confirm": {
+      "title": "要删除该测速点吗？",
+      "description": "测速点 <Bold>{{name}}</Bold> 将被删除。它已完成的测速会保留在历史记录中。",
+      "yes": "删除"
+    }
   }
 }

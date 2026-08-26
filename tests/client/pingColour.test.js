@@ -79,7 +79,7 @@ describe("every view grades the ping from the figure it prints", () => {
     it("the overview row", () => {
         assert.match(row, /import \{[^}]*formatLatency[^}]*} from "@\/common\/utils\/FormatUtil"/,
             "the row cannot trim anything - it never imports the formatter");
-        assert.match(row, /pingLevel=\{getIconBySpeed\(formatLatency\(test\.ping\), config\.ping, false\)}/,
+        assert.match(row, /pingLevel=\{getIconBySpeed\(formatLatency\(test\.ping\), limits\.ping, false\)}/,
             "the row's colour is still graded from the raw two-decimal column");
         assert.doesNotMatch(row, /getIconBySpeed\(test\.ping/,
             "a raw ping still reaches the grader somewhere in the row");
@@ -98,7 +98,7 @@ describe("every view grades the ping from the figure it prints", () => {
     it("the latest-test card, which grades the ping it prints", () => {
         assert.match(card, /const ping = formatLatency\(props\.test\.ping\)/,
             "the ping is not trimmed where the card's figures are built");
-        assert.match(card, /level=\{getIconBySpeed\(ping, config\.ping, false\)}/,
+        assert.match(card, /level=\{getIconBySpeed\(ping, limits\.ping, false\)}/,
             "the row's colour is not graded from that trimmed figure");
         assert.doesNotMatch(card, /getIconBySpeed\(props\.test\.ping/,
             "a raw ping still reaches the grader somewhere on the card");

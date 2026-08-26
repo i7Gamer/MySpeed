@@ -25,11 +25,14 @@ describe("every dialog in the settings menu", () => {
 
     /*
      * Excluded, each for a stated reason rather than because it failed:
-     * storage is a tabbed table and genuinely wider, and integration and
-     * welcome size to their content. The exclusions are named so that adding
-     * one is a decision somebody writes down.
+     * storage is a tabbed table and genuinely wider, integration and welcome
+     * size to their content, and the targets manager is a list whose rows
+     * each carry a name, a summary and five controls - at the shared width
+     * the controls fold under the text on every row. The exclusions are named
+     * so that adding one is a decision somebody writes down.
      */
-    const SIZES_TO_ITS_CONTENT = ["StorageDialog", "IntegrationDialog", "WelcomeDialog"];
+    const SIZES_TO_ITS_CONTENT = ["StorageDialog", "IntegrationDialog", "WelcomeDialog",
+        "TargetsDialog"];
 
     const opened = () => [...new Set([...dropdown.matchAll(/setShow(\w+Dialog)\(true\)/g)]
         .map(([, name]) => name))].filter((name) => !SIZES_TO_ITS_CONTENT.includes(name));
@@ -45,7 +48,10 @@ describe("every dialog in the settings menu", () => {
      */
     const declaredWidth = (component) => {
         const jsx = readSource(`client/src/common/components/${component}/${component}.jsx`);
-        const [, selector] = /className="([a-z-]*dialog[a-z-]*)"/.exec(jsx) ?? [];
+        // The class on the Dialog element itself, not the first class in the
+        // file that happens to contain "dialog" - a `dialog-value` span in a
+        // confirm description used to win this race.
+        const [, selector] = /<Dialog[^>]*className="([a-z-]*dialog[a-z-]*)"/.exec(jsx) ?? [];
 
         if (!selector) return null;
 

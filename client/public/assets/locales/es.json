@@ -65,11 +65,10 @@
     "settings": "Ajustes",
     "changes_applied": "Los cambios han sido guardados",
     "language_changed": "Se ha cambiado el idioma",
-    "provider_changed": "Se ha cambiado el proveedor",
     "changes_unsaved": "Tus cambios no han sido aceptados. Comprueba los datos",
     "invalid": "Datos inválidos",
     "optimal_values": "Valores óptimos",
-    "change_provider": "Cambiar de proveedor",
+    "targets": "Destinos de test",
     "password": "Cambiar la contraseña",
     "cron": "Ajustar frecuencia",
     "storage": "Gestionar almacenamiento",
@@ -135,7 +134,6 @@
     "statistics": "Estadísticas"
   },
   "update": {
-    "provider_title": "Establecer proveedor de tests de Velocidad",
     "new_password": "Establecer nueva contraseña",
     "password_placeholder": "Nueva contraseña",
     "show_password": "Mostrar contraseña",
@@ -305,6 +303,7 @@
       "unchanged": "Sin cambios desde el último test",
       "measured_at": "Medido el",
       "measured_with": "Medido con",
+      "target": "Destino",
       "seconds": "{{seconds}} s",
       "data_used": "Datos usados",
       "data_used_value": "{{down}} de bajada / {{up}} de subida",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "Último test ahora mismo",
     "elapsed": "{{seconds}} s transcurridos",
-    "next_test_approx": "El siguiente a las ~{{time}}"
+    "next_test_approx": "El siguiente a las ~{{time}}",
+    "target_of": "Destino {{index}} de {{count}}"
+  },
+  "targets": {
+    "title": "Destinos de test",
+    "description": "Cada test programado mide una vez todos los destinos programados, uno tras otro. Los destinos fuera de la programación solo se ejecutan desde aquí.",
+    "add": "Añadir destino",
+    "edit_title": "Editar destino",
+    "name": "Nombre",
+    "name_placeholder": "p. ej. Madrid",
+    "scheduled": "Programado",
+    "alerts": "Avisos y recomendaciones",
+    "own_optimals": "Valores óptimos propios",
+    "all": "Todos los destinos",
+    "saved": "Se ha guardado el destino.",
+    "removed": "Se ha eliminado el destino.",
+    "run_now": "Ejecutar test ahora",
+    "move_up": "Subir",
+    "move_down": "Bajar",
+    "delete_confirm": {
+      "title": "¿Eliminar este destino?",
+      "description": "Se eliminará <Bold>{{name}}</Bold>. Los tests que ya ha medido se conservan en el historial.",
+      "yes": "Eliminar"
+    }
   }
 }

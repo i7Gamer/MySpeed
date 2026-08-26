@@ -65,11 +65,10 @@
     "settings": "Einstellungen",
     "changes_applied": "Die Änderungen wurden gespeichert.",
     "language_changed": "Die Sprache wurde geändert.",
-    "provider_changed": "Der Anbieter wurde gewechselt.",
     "changes_unsaved": "Deine Änderungen wurden nicht übernommen. Überprüfe deine Eingabe.",
     "invalid": "Eingabe ungültig",
     "optimal_values": "Optimale Werte",
-    "change_provider": "Anbieter wechseln",
+    "targets": "Test-Ziele",
     "password": "Passwort ändern",
     "cron": "Häufigkeit einstellen",
     "storage": "Speicher verwalten",
@@ -135,7 +134,6 @@
     "statistics": "Statistik"
   },
   "update": {
-    "provider_title": "Speedtest-Anbieter einstellen",
     "new_password": "Neues Passwort festlegen",
     "password_placeholder": "Neues Passwort",
     "show_password": "Passwort anzeigen",
@@ -305,6 +303,7 @@
       "unchanged": "Unverändert zum letzten Test",
       "measured_at": "Gemessen am",
       "measured_with": "Gemessen mit",
+      "target": "Ziel",
       "seconds": "{{seconds}} s",
       "data_used": "Verbrauchte Daten",
       "data_used_value": "{{down}} runter / {{up}} hoch",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "Letzter Test gerade eben",
     "elapsed": "{{seconds}}s vergangen",
-    "next_test_approx": "Nächster gegen {{time}}"
+    "next_test_approx": "Nächster gegen {{time}}",
+    "target_of": "Ziel {{index}} von {{count}}"
+  },
+  "targets": {
+    "title": "Test-Ziele",
+    "description": "Jeder geplante Test misst jedes eingeplante Ziel einmal, eines nach dem anderen. Ziele außerhalb des Zeitplans laufen nur von hier aus.",
+    "add": "Ziel hinzufügen",
+    "edit_title": "Ziel bearbeiten",
+    "name": "Name",
+    "name_placeholder": "z. B. Frankfurt",
+    "scheduled": "Eingeplant",
+    "alerts": "Benachrichtigungen & Empfehlungen",
+    "own_optimals": "Eigene optimale Werte",
+    "all": "Alle Ziele",
+    "saved": "Das Ziel wurde gespeichert.",
+    "removed": "Das Ziel wurde entfernt.",
+    "run_now": "Test jetzt starten",
+    "move_up": "Nach oben verschieben",
+    "move_down": "Nach unten verschieben",
+    "delete_confirm": {
+      "title": "Dieses Ziel löschen?",
+      "description": "<Bold>{{name}}</Bold> wird gelöscht. Die Tests, die es bereits gemessen hat, bleiben im Verlauf erhalten.",
+      "yes": "Löschen"
+    }
   }
 }

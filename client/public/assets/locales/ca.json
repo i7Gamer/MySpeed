@@ -65,11 +65,10 @@
     "settings": "Configuració",
     "changes_applied": "Els canvis s'han desat.",
     "language_changed": "S'ha canviat l'idioma.",
-    "provider_changed": "S'ha canviat el proveïdor.",
     "changes_unsaved": "Els canvis no s'han aplicat. Comprova les dades introduïdes.",
     "invalid": "Entrada no vàlida",
     "optimal_values": "Valors òptims",
-    "change_provider": "Canvia el proveïdor",
+    "targets": "Destinacions de prova",
     "password": "Canvia la contrasenya",
     "cron": "Estableix la freqüència",
     "storage": "Gestiona l'emmagatzematge",
@@ -135,7 +134,6 @@
     "statistics": "Estadístiques"
   },
   "update": {
-    "provider_title": "Estableix el proveïdor de proves de velocitat",
     "new_password": "Estableix una contrasenya nova",
     "password_placeholder": "Contrasenya nova",
     "show_password": "Mostra la contrasenya",
@@ -305,6 +303,7 @@
       "unchanged": "Sense canvis des de la darrera prova",
       "measured_at": "Mesurat el",
       "measured_with": "Mesurat amb",
+      "target": "Destinació",
       "seconds": "{{seconds}} s",
       "data_used": "Dades utilitzades",
       "data_used_value": "{{down}} de baixada / {{up}} de pujada",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "Darrera prova ara mateix",
     "elapsed": "Temps transcorregut: {{seconds}} s",
-    "next_test_approx": "La següent a les ~{{time}}"
+    "next_test_approx": "La següent a les ~{{time}}",
+    "target_of": "Destinació {{index}} de {{count}}"
+  },
+  "targets": {
+    "title": "Destinacions de prova",
+    "description": "Cada prova programada mesura un cop totes les destinacions programades, l'una darrere l'altra. Les destinacions fora de la programació només s'executen des d'aquí.",
+    "add": "Afegeix una destinació",
+    "edit_title": "Edita la destinació",
+    "name": "Nom",
+    "name_placeholder": "p. ex. Barcelona",
+    "scheduled": "Programada",
+    "alerts": "Avisos i recomanacions",
+    "own_optimals": "Valors òptims propis",
+    "all": "Totes les destinacions",
+    "saved": "S'ha desat la destinació.",
+    "removed": "S'ha eliminat la destinació.",
+    "run_now": "Executa una prova ara",
+    "move_up": "Mou amunt",
+    "move_down": "Mou avall",
+    "delete_confirm": {
+      "title": "Vols eliminar aquesta destinació?",
+      "description": "S'eliminarà <Bold>{{name}}</Bold>. Les proves que ja ha mesurat es conserven a l'historial.",
+      "yes": "Elimina"
+    }
   }
 }

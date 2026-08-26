@@ -7,6 +7,8 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
+import {TargetsContext} from "@/common/contexts/Targets";
+import {resolveLimits, roundIndexById, targetColour} from "@/common/utils/TargetUtil";
 import {
     convertSpeed, formatBytes, formatDateTime, formatLatency, formatLatencyWithUnit, getSpeedUnit
 } from "@/common/utils/FormatUtil";
@@ -148,6 +150,7 @@ const DetailFact = ({label, children}) => (
 export const TestDetails = ({test, previous, previousConnection, className = "", children}) => {
     const [config] = useContext(ConfigContext);
     const [preferences] = useContext(PreferencesContext);
+    const {targets: targetList, byId} = useContext(TargetsContext);
     // Above the early return: a hook cannot be called conditionally, and a pane
     // rendered with no test is the condition.
     const openInfo = useMetricInfo();
@@ -155,9 +158,15 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
     if (!test) return null;
 
     const speedUnit = getSpeedUnit(preferences);
-    // The targets are what the bars are drawn against; without them percentOfTarget
-    // returns null for every metric and the bars simply do not render.
-    const targets = config ?? {};
+    // The target this row was measured against, when it still exists - a
+    // deleted target's rows, and every row from before targets, resolve to
+    // nothing and are judged by the instance-wide settings below.
+    const targetRow = byId?.[test.targetId];
+    // The limits are what the bars are drawn against; without them
+    // percentOfTarget returns null for every metric and the bars simply do
+    // not render. Resolved per target, the same way the list rows are - a
+    // measurement must not change verdict when its row is opened.
+    const limits = resolveLimits(targetRow, config ?? {});
 
     // The panel keeps the raw output appended when there is no translation for
     // it - it is what an issue report needs.
@@ -186,7 +195,7 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
     // reaches asTarget exactly as it did before, as do the -1 a failed run
     // stores and the null of a provider that measured nothing.
     const ping = formatLatency(test.ping);
-    const pingTarget = formatLatency(targets.ping);
+    const pingTarget = formatLatency(limits.ping);
     const earlierPing = formatLatency(earlier.ping);
 
     // A percentage says everything worth saying about throughput. For latency it
@@ -338,9 +347,9 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
             value: convertSpeed(test.download, preferences),
             unit: speedUnit,
             changeUnit: speedUnit,
-            level: getIconBySpeed(test.download, targets.download, true),
-            percent: percentOfTarget(test.download, targets.download),
-            targetLabel: t("test.details.of_target", {percent: percentOfTarget(test.download, targets.download)}),
+            level: getIconBySpeed(test.download, limits.download, true),
+            percent: percentOfTarget(test.download, limits.download),
+            targetLabel: t("test.details.of_target", {percent: percentOfTarget(test.download, limits.download)}),
             change: changeFrom(convertSpeed(test.download, preferences), convertSpeed(earlier.download, preferences)),
             higherIsBetter: true
         },
@@ -353,9 +362,9 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
             value: convertSpeed(test.upload, preferences),
             unit: speedUnit,
             changeUnit: speedUnit,
-            level: getIconBySpeed(test.upload, targets.upload, true),
-            percent: percentOfTarget(test.upload, targets.upload),
-            targetLabel: t("test.details.of_target", {percent: percentOfTarget(test.upload, targets.upload)}),
+            level: getIconBySpeed(test.upload, limits.upload, true),
+            percent: percentOfTarget(test.upload, limits.upload),
+            targetLabel: t("test.details.of_target", {percent: percentOfTarget(test.upload, limits.upload)}),
             change: changeFrom(convertSpeed(test.upload, preferences), convertSpeed(earlier.upload, preferences)),
             higherIsBetter: true
         }
@@ -429,12 +438,33 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                             )}
                         </DetailFact>
 
-                        {/* Which provider measured this. The three do not
-                            measure the same things, so this is what tells a
-                            reader that a missing packet loss below is a provider
-                            that never looked rather than a line that lost
-                            nothing. */}
-                        {providerName(test.provider) && (
+                        {/* Whose measurement this is. One slot, two states:
+                            a row whose target still exists names the target,
+                            with the provider demoted to its sub-line - the
+                            provider is a property of the target now. A row
+                            whose target is gone, or that predates targets,
+                            falls back to naming the provider alone, exactly
+                            as this fact always has. */}
+                        {targetRow ? (
+                            <DetailFact label={t("test.details.target")}>
+                                <span className="detail-target-name">
+                                    <span className="target-dot"
+                                          style={{background: targetColour(roundIndexById(targetList, test.targetId))}}/>
+                                    {targetRow.name}
+                                </span>
+                                {providerName(test.provider) && (
+                                    <span className="detail-secondary">{providerName(test.provider)}</span>
+                                )}
+                                {/* The provider's own result page keeps its
+                                    sub-line home whichever state the slot is
+                                    in. */}
+                                {test.resultId && (
+                                    <span className="detail-secondary">
+                                        <ResultLink resultId={test.resultId}/>
+                                    </span>
+                                )}
+                            </DetailFact>
+                        ) : providerName(test.provider) && (
                             <DetailFact label={t("test.details.measured_with")}>
                                 {providerName(test.provider)}
                                 {/* The provider's own result page hangs under
@@ -576,12 +606,13 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                             </DetailFact>
                         )}
 
-                        {/* Only for a row that cannot name its provider - every
-                            test recorded before that column existed. The link
-                            belongs under the provider's name, but those rows
-                            have no such fact to hang it under, and losing the
-                            link is worse than keeping the row it used to own. */}
-                        {test.resultId && !providerName(test.provider) && (
+                        {/* Only for a row that can name neither its target nor
+                            its provider - every test recorded before those
+                            columns existed. The link belongs under one of
+                            their names, but such rows have no fact to hang it
+                            under, and losing the link is worse than keeping
+                            the row it used to own. */}
+                        {test.resultId && !providerName(test.provider) && !targetRow && (
                             <DetailFact label={t("test.details.result")}>
                                 <ResultLink resultId={test.resultId}/>
                             </DetailFact>

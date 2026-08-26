@@ -108,13 +108,14 @@ describe("the statistics page does not show the previous range's numbers", () =>
 
 /**
  * The provider dialog resynced only three of its five fields when it opened.
- * serverId and libreUrl lived in an effect keyed on [provider, config], and
- * closing without saving changes neither - so an abandoned edit survived, was
- * shown on reopen as though it were stored, and was written on the next
- * unrelated save because it differed from the config.
+ * serverId and the custom endpoint lived in an effect keyed on [provider,
+ * config], and closing without saving changes neither - so an abandoned edit
+ * survived, was shown on reopen as though it were stored, and was written on
+ * the next unrelated save because it differed from what is stored. The dialog
+ * is the target editor now; the disease and its cure moved with it.
  */
 describe("the provider dialog resyncs every field it edits", () => {
-    const dialog = code("common/components/ProviderDialog/ProviderDialog.jsx");
+    const dialog = code("common/components/TargetsDialog/TargetEditor.jsx");
     // The call, not the import above it.
     const onOpen = dialog.slice(dialog.indexOf("useSyncOnOpen(open"));
     const syncBody = onOpen.slice(0, onOpen.indexOf("});"));
@@ -124,13 +125,14 @@ describe("the provider dialog resyncs every field it edits", () => {
     });
 
     it("seeds the custom URL when it opens", () => {
-        assert.match(syncBody, /setLibreUrl\(/, "an abandoned custom URL survives the dialog closing");
+        assert.match(syncBody, /setEndpoint\(/, "an abandoned custom URL survives the dialog closing");
     });
 
     // Switching provider inside the dialog still has to re-read that provider's
-    // stored server - but on the provider alone, not on the whole config.
+    // stored server - but on the provider alone, not on the row prop or the
+    // whole config.
     it("does not re-run its provider effect on every config change", () => {
-        assert.doesNotMatch(dialog, /\}, \[provider, config\]\)/,
-            "the field effect still keys on config, which is what made it look stored");
+        assert.doesNotMatch(dialog, /\}, \[provider, (config|target)\]\)/,
+            "the field effect still keys on more than the provider, which is what made an edit look stored");
     });
 });

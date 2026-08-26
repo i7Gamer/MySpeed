@@ -65,11 +65,10 @@
     "settings": "設定",
     "changes_applied": "変更を保存しました。",
     "language_changed": "言語を変更しました。",
-    "provider_changed": "プロバイダーを変更しました。",
     "changes_unsaved": "変更は適用されませんでした。入力内容を確認してください。",
     "invalid": "入力が無効です",
     "optimal_values": "最適値",
-    "change_provider": "プロバイダーを変更",
+    "targets": "測定先",
     "password": "パスワードを変更",
     "cron": "頻度を設定",
     "storage": "ストレージを管理",
@@ -135,7 +134,6 @@
     "statistics": "統計"
   },
   "update": {
-    "provider_title": "スピードテストのプロバイダーを設定",
     "new_password": "新しいパスワードを設定",
     "password_placeholder": "新しいパスワード",
     "show_password": "パスワードを表示",
@@ -305,6 +303,7 @@
       "unchanged": "前回のテストから変化なし",
       "measured_at": "測定日時",
       "measured_with": "測定方法",
+      "target": "測定先",
       "seconds": "{{seconds}} 秒",
       "data_used": "使用データ量",
       "data_used_value": "下り {{down}} / 上り {{up}}",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "前回のテストはたった今",
     "elapsed": "{{seconds}} 秒経過",
-    "next_test_approx": "次回はおよそ {{time}}"
+    "next_test_approx": "次回はおよそ {{time}}",
+    "target_of": "測定先 {{index}} / {{count}}"
+  },
+  "targets": {
+    "title": "測定先",
+    "description": "スケジュールされたテストでは、スケジュールに含まれる測定先が順番に 1 回ずつ測定されます。スケジュール外の測定先は、ここからのみ実行できます。",
+    "add": "測定先を追加",
+    "edit_title": "測定先を編集",
+    "name": "名前",
+    "name_placeholder": "例: 東京",
+    "scheduled": "スケジュールに含める",
+    "alerts": "通知と推奨値",
+    "own_optimals": "独自の最適値",
+    "all": "すべての測定先",
+    "saved": "測定先を保存しました。",
+    "removed": "測定先を削除しました。",
+    "run_now": "今すぐテストを実行",
+    "move_up": "上へ移動",
+    "move_down": "下へ移動",
+    "delete_confirm": {
+      "title": "この測定先を削除しますか？",
+      "description": "<Bold>{{name}}</Bold> を削除します。この測定先で測定済みのテストは履歴に残ります。",
+      "yes": "削除"
+    }
   }
 }

@@ -6,8 +6,10 @@ import Greetings from "./steps/Greetings";
 import ProviderChooser from "./steps/ProviderChooser";
 import DataHelper from "./steps/DataHelper";
 import OoklaLicense from "./steps/OoklaLicense";
-import {assertOk, patchRequest, RequestError} from "@/common/utils/RequestUtil";
+import {assertOk, patchRequest, putRequest, RequestError} from "@/common/utils/RequestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
+import {TargetsContext} from "@/common/contexts/Targets";
+import {providerById} from "@/common/components/TargetsDialog/providers";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {faExclamationTriangle} from "@fortawesome/free-solid-svg-icons";
 import {t} from "i18next";
@@ -15,6 +17,7 @@ import {writeStored} from "@/common/utils/Storage";
 
 export const WelcomeDialog = ({open, onClose}) => {
     const [config, reloadConfig] = useContext(ConfigContext);
+    const {reloadTargets} = useContext(TargetsContext);
     const updateToast = useContext(ToastNotificationContext);
     const [step, setStep] = useState(1);
     const [provider, setProvider] = useState("ookla");
@@ -64,7 +67,12 @@ export const WelcomeDialog = ({open, onClose}) => {
             if (config.previewMode) {
                 writeStored("welcomeShown", "true");
             } else {
-                await patch("/config/provider", provider);
+                // The wizard's provider choice becomes the instance's first
+                // target, named after its provider - the manager dialog is
+                // where it earns a better name. PUT rather than a config
+                // PATCH: the provider stopped being a config key.
+                await assertOk(await putRequest("/targets",
+                    {name: providerById(provider)?.name ?? provider, provider}), "targets");
                 await patch("/config/ping", ping);
                 await patch("/config/download", download);
                 await patch("/config/upload", upload);
@@ -76,6 +84,9 @@ export const WelcomeDialog = ({open, onClose}) => {
         }
 
         reloadConfig();
+        // What closes the wizard for good: the list this dialog opened on the
+        // emptiness of now has a row in it.
+        reloadTargets();
         close();
     };
 

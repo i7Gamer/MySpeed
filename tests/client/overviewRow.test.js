@@ -704,7 +704,7 @@ describe("the figures a row prints", () => {
  * the two, and it is the same trade the jitter already makes in the panel.
  */
 describe("the colour a row's ping wears", () => {
-    const level = (ping, target) => new Function("test", "config", "getIconBySpeed", "formatLatency",
+    const level = (ping, target) => new Function("test", "limits", "getIconBySpeed", "formatLatency",
         `return (${propValue(area, "pingLevel")});`)(
         {ping}, {ping: target}, getIconBySpeed, formatLatency);
 

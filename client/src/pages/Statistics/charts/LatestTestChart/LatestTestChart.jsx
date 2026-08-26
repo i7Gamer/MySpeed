@@ -11,6 +11,8 @@ import {useContext} from "react";
 import {ConfigContext} from "@/common/contexts/Config";
 import {StatusContext} from "@/common/contexts/Status";
 import {PreferencesContext} from "@/common/contexts/Preferences";
+import {TargetsContext} from "@/common/contexts/Targets";
+import {resolveLimits} from "@/common/utils/TargetUtil";
 import {
     convertSpeed, formatLatency, formatLatencyWithUnit, formatWhole, getSpeedUnit, NOT_MEASURED
 } from "@/common/utils/FormatUtil";
@@ -22,10 +24,16 @@ export const LatestTestChart = (props) => {
     const [config] = useContext(ConfigContext);
     const [status] = useContext(StatusContext);
     const [preferences] = useContext(PreferencesContext);
+    const {byId} = useContext(TargetsContext);
     const speedUnit = getSpeedUnit(preferences);
 
     if (!props.test) return <></>;
     if (config === null) return <></>;
+
+    // Graded against the test's own target where it set optima, the global
+    // settings otherwise - the same resolution the pane this card opens into
+    // makes, so opening it cannot change a colour.
+    const limits = resolveLimits(byId?.[props.test.targetId], config);
 
     // Opened, the card becomes the whole record: the three summary rows below
     // are all that fits on a card, and the modal used to render exactly the same
@@ -76,7 +84,7 @@ export const LatestTestChart = (props) => {
         <StatisticContainer title={t("latest.latest")} onClick={props.onClick} running={status.running}>
             <div className="info-container">
                 <PanelRow icon={faPingPongPaddleBall} title={t("latest.ping")}
-                          level={getIconBySpeed(ping, config.ping, false)}
+                          level={getIconBySpeed(ping, limits.ping, false)}
                           /* Whole, while the colour beside it is graded on the
                              one decimal above - which is what the pane grades
                              and prints, so the two views cannot disagree about
@@ -97,11 +105,11 @@ export const LatestTestChart = (props) => {
                           )}/>
 
                 <PanelRow icon={faArrowUp} title={t("latest.up")}
-                          level={getIconBySpeed(props.test.upload, config.upload, true)}
+                          level={getIconBySpeed(props.test.upload, limits.upload, true)}
                           value={measured(props.test.upload, speedText(props.test.upload))}/>
 
                 <PanelRow icon={faArrowDown} title={t("latest.down")}
-                          level={getIconBySpeed(props.test.download, config.download, true)}
+                          level={getIconBySpeed(props.test.download, limits.download, true)}
                           value={measured(props.test.download, speedText(props.test.download))}/>
 
                 {/* The share of packets that never arrived, which none of the

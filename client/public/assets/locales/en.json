@@ -65,11 +65,10 @@
     "settings": "Settings",
     "changes_applied": "Your changes have been saved.",
     "language_changed": "The language has been changed.",
-    "provider_changed": "The provider has been changed.",
     "changes_unsaved": "Your changes were not applied. Check your input.",
     "invalid": "Input invalid",
     "optimal_values": "Optimal values",
-    "change_provider": "Change provider",
+    "targets": "Test targets",
     "password": "Change password",
     "cron": "Set frequency",
     "storage": "Manage storage",
@@ -135,7 +134,6 @@
     "statistics": "Statistics"
   },
   "update": {
-    "provider_title": "Set speedtest provider",
     "new_password": "Set a new password",
     "password_placeholder": "New password",
     "show_password": "Show password",
@@ -305,6 +303,7 @@
       "unchanged": "Unchanged since the last test",
       "measured_at": "Measured at",
       "measured_with": "Measured with",
+      "target": "Target",
       "seconds": "{{seconds}} s",
       "data_used": "Data used",
       "data_used_value": "{{down}} down / {{up}} up",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "Last test just now",
     "elapsed": "{{seconds}}s elapsed",
-    "next_test_approx": "Next at ~{{time}}"
+    "next_test_approx": "Next at ~{{time}}",
+    "target_of": "Target {{index}} of {{count}}"
+  },
+  "targets": {
+    "title": "Test targets",
+    "description": "Each scheduled test measures every scheduled target once, one after another. Targets outside the schedule only run from here.",
+    "add": "Add target",
+    "edit_title": "Edit target",
+    "name": "Name",
+    "name_placeholder": "e.g. Frankfurt",
+    "scheduled": "Scheduled",
+    "alerts": "Alerts & recommendations",
+    "own_optimals": "Own optimal values",
+    "all": "All targets",
+    "saved": "The target has been saved.",
+    "removed": "The target has been removed.",
+    "run_now": "Run test now",
+    "move_up": "Move up",
+    "move_down": "Move down",
+    "delete_confirm": {
+      "title": "Delete this target?",
+      "description": "<Bold>{{name}}</Bold> will be deleted. The tests it has already measured stay in the history.",
+      "yes": "Delete"
+    }
   }
 }

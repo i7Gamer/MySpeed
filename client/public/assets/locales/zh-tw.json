@@ -65,11 +65,10 @@
     "settings": "設定",
     "changes_applied": "您的變更已儲存。",
     "language_changed": "語言已變更。",
-    "provider_changed": "供應商已變更。",
     "changes_unsaved": "您的變更未被套用。請檢查您的輸入。",
     "invalid": "輸入無效",
     "optimal_values": "最佳值",
-    "change_provider": "變更供應商",
+    "targets": "測速點",
     "password": "變更密碼",
     "cron": "設定頻率",
     "storage": "管理儲存空間",
@@ -135,7 +134,6 @@
     "statistics": "統計"
   },
   "update": {
-    "provider_title": "設定速度測試供應商",
     "new_password": "設定新密碼",
     "password_placeholder": "新密碼",
     "show_password": "顯示密碼",
@@ -305,6 +303,7 @@
       "unchanged": "與上次測試相同",
       "measured_at": "測量時間",
       "measured_with": "測量方式",
+      "target": "測速點",
       "seconds": "{{seconds}} 秒",
       "data_used": "使用流量",
       "data_used_value": "下載 {{down}} / 上傳 {{up}}",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "上次測試就在剛才",
     "elapsed": "已經過 {{seconds}} 秒",
-    "next_test_approx": "下次約於 {{time}}"
+    "next_test_approx": "下次約於 {{time}}",
+    "target_of": "第 {{index}}/{{count}} 個測速點"
+  },
+  "targets": {
+    "title": "測速點",
+    "description": "每次排程測試都會依序對每個列入排程的測速點各測一次。排程之外的測速點只能從這裡執行。",
+    "add": "新增測速點",
+    "edit_title": "編輯測速點",
+    "name": "名稱",
+    "name_placeholder": "例如：台北",
+    "scheduled": "列入排程",
+    "alerts": "通知與建議",
+    "own_optimals": "單獨的最佳值",
+    "all": "全部測速點",
+    "saved": "測速點已儲存。",
+    "removed": "測速點已刪除。",
+    "run_now": "立即執行測試",
+    "move_up": "上移",
+    "move_down": "下移",
+    "delete_confirm": {
+      "title": "要刪除這個測速點嗎？",
+      "description": "測速點 <Bold>{{name}}</Bold> 將被刪除。它已完成的測試仍會保留在歷史記錄中。",
+      "yes": "刪除"
+    }
   }
 }

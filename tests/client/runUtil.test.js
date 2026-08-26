@@ -14,11 +14,16 @@ const { startSpeedtest } = await import("../../client/src/common/utils/RunUtil.j
 const realFetch = globalThis.fetch;
 
 let requested = [];
+let bodies = [];
 
 beforeEach(() => {
     requested = [];
-    globalThis.fetch = async (url) => {
+    bodies = [];
+    globalThis.fetch = async (url, init) => {
+        // The body as well as the URL: the per-row Run button says which target
+        // to measure in the body, and nothing else on the wire says it.
         requested.push(String(url));
+        bodies.push(init?.body === undefined ? undefined : JSON.parse(init.body));
         return new Response("{}", {status: 200, headers: {"content-type": "application/json"}});
     };
 });
@@ -52,7 +57,7 @@ const run = async (overrides = {}) => {
         ...overrides
     });
 
-    return {shown, calls};
+    return {shown, calls, bodies};
 };
 
 /**
@@ -80,6 +85,32 @@ describe("startSpeedtest", () => {
         const {calls} = await run();
 
         assert.equal(calls.status, 2, "the status is read before the run and again after it");
+    });
+
+    /**
+     * Which target to measure, when the caller names one.
+     *
+     * The manager's per-row Run button is the only way a target outside the
+     * schedule runs at all, and the id travels in the body - so if the field
+     * is dropped or renamed (to `target`, say, matching the query parameter
+     * the list endpoint takes), the button silently starts a whole round of
+     * every *scheduled* target instead, and a manual-only target becomes
+     * unrunnable with nothing on screen to say so.
+     */
+    it("names the target the caller asked for", async () => {
+        const {bodies} = await run({targetId: 7});
+
+        assert.deepEqual(bodies.at(-1), {targetId: 7},
+            "the run does not say which target to measure");
+    });
+
+    // The toolbar's own button names none, and that is what asks for a full
+    // round - an empty body rather than a null the server would have to read
+    // as "every target".
+    it("asks for the whole round when no target is named", async () => {
+        const {bodies} = await run();
+
+        assert.deepEqual(bodies.at(-1), {}, "the toolbar's button narrowed the round to one target");
     });
 
     it("says so when the server refuses the run", async () => {

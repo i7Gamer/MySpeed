@@ -17,6 +17,8 @@ import {jsonRequest} from "@/common/utils/RequestUtil";
 import {FULL_DETAIL_POINTS, PreferencesContext} from "@/common/contexts/Preferences";
 import {ConfigContext} from "@/common/contexts/Config";
 import {NodeContext} from "@/common/contexts/Node";
+import {TargetsContext} from "@/common/contexts/Targets";
+import {previousOfTarget, resolveLimits} from "@/common/utils/TargetUtil";
 import {
     DEFAULT_TIMEFRAME,
     TIMEFRAME_ALL,
@@ -163,6 +165,19 @@ export const Statistics = () => {
     // against. Absent until the config has loaded, and unset on an instance
     // nobody has told what it pays for - both render as no percentage.
     const [config] = useContext(ConfigContext);
+    const {selectedTarget, pageTarget} = useContext(TargetsContext);
+
+    // Which target the page is narrowed to, or null for all of them - the
+    // same resolved chip selection the overview reads, so the two pages cannot
+    // show different slices under one chip row.
+    const targetFilter = selectedTarget;
+
+    // What the cards and charts grade against: the optima of the target the
+    // page is showing where it is showing one - the chip's, or the sole target
+    // of an instance that draws no chips - and the instance-wide settings for a
+    // genuine mixture, whose averages only the global values can judge. See
+    // pageTarget for why this is not simply the chip selection.
+    const gradeLimits = resolveLimits(pageTarget, config ?? {});
 
     /*
      * The active node, read by position the way SpeedtestContext reads it.
@@ -214,6 +229,8 @@ export const Statistics = () => {
         // precedes all time, so it is asked for only when the range is bounded.
         if (dateRange) query.set("compare", "previous");
 
+        if (targetFilter != null) query.set("target", String(targetFilter));
+
         /**
          * Only the newest request may write to the page.
          *
@@ -247,7 +264,10 @@ export const Statistics = () => {
          */
         Promise.allSettled([
             jsonRequest(`/speedtests/statistics/?${query}`),
-            jsonRequest(`/speedtests?limit=${RECENT_TESTS}`)
+            // The latest-test card follows the chip too - "the latest test"
+            // on a filtered page means the filtered target's latest.
+            jsonRequest(`/speedtests?limit=${RECENT_TESTS}`
+                + (targetFilter != null ? `&target=${targetFilter}` : ""))
         ]).then(([stats, tests]) => {
             if (!isCurrent()) return;
 
@@ -284,7 +304,7 @@ export const Statistics = () => {
         });
         // currentNode: see its destructure above - a page whose requests have
         // been re-aimed under it has to re-ask.
-    }, [dateRange, currentNode]);
+    }, [dateRange, currentNode, targetFilter]);
 
     const handleTimeframeChange = useCallback((timeframe) => {
         setSearchParams(serializeRange(timeframe), { replace: true });
@@ -309,9 +329,12 @@ export const Statistics = () => {
     }, [updateStats]);
 
     // The list is newest first, so the entry after the latest test is the
-    // chronologically earlier one.
+    // chronologically earlier one - but only rows of the same target are
+    // comparable, and with no chip selected this list interleaves them all.
+    // See previousOfTarget; previousConnection walks the same way for the
+    // same kind of reason.
     const latestTest = recentTests[0] ?? null;
-    const previousTest = recentTests[1] ?? null;
+    const previousTest = previousOfTarget(recentTests, 0) ?? null;
     const latestConnection = previousConnection(recentTests, 0);
 
     const isDownsampled = deferredStatistics?.downsampled === true;
@@ -338,6 +361,7 @@ export const Statistics = () => {
 
         const query = rangeQuery(dateRange);
         query.set("points", String(FULL_DETAIL_POINTS));
+        if (targetFilter != null) query.set("target", String(targetFilter));
 
         let cancelled = false;
         setDetailLoading(true);
@@ -348,7 +372,7 @@ export const Statistics = () => {
             .finally(() => { if (!cancelled) setDetailLoading(false); });
 
         return () => { cancelled = true; };
-    }, [wantsDetail, isDownsampled, dateRange]);
+    }, [wantsDetail, isDownsampled, dateRange, targetFilter]);
 
     if (mountPhase === 0) return null;
 
@@ -459,10 +483,10 @@ export const Statistics = () => {
             case 'hourly':
                 return <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages}/>;
             case 'avgDownload':
-                return <AverageChart title={t(CHART_MODAL_LABELS.avgDownload)} data={deferredStatistics.download} previous={previous?.download} target={config?.download}
+                return <AverageChart title={t(CHART_MODAL_LABELS.avgDownload)} data={deferredStatistics.download} previous={previous?.download} target={gradeLimits.download}
                                     consistency={deferredStatistics.consistency?.download} tests={deferredStatistics.tests} expanded/>;
             case 'avgUpload':
-                return <AverageChart title={t(CHART_MODAL_LABELS.avgUpload)} data={deferredStatistics.upload} previous={previous?.upload} target={config?.upload}
+                return <AverageChart title={t(CHART_MODAL_LABELS.avgUpload)} data={deferredStatistics.upload} previous={previous?.upload} target={gradeLimits.upload}
                                     consistency={deferredStatistics.consistency?.upload} tests={deferredStatistics.tests} expanded/>;
             default:
                 return null;
@@ -523,8 +547,8 @@ export const Statistics = () => {
 
             <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages} onClick={() => setExpandedChart('hourly')}/>
 
-            <AverageChart title={t(CHART_MODAL_LABELS.avgDownload)} data={deferredStatistics.download} previous={previous?.download} target={config?.download} onClick={() => setExpandedChart('avgDownload')}/>
-            <AverageChart title={t(CHART_MODAL_LABELS.avgUpload)} data={deferredStatistics.upload} previous={previous?.upload} target={config?.upload} onClick={() => setExpandedChart('avgUpload')}/>
+            <AverageChart title={t(CHART_MODAL_LABELS.avgDownload)} data={deferredStatistics.download} previous={previous?.download} target={gradeLimits.download} onClick={() => setExpandedChart('avgDownload')}/>
+            <AverageChart title={t(CHART_MODAL_LABELS.avgUpload)} data={deferredStatistics.upload} previous={previous?.upload} target={gradeLimits.upload} onClick={() => setExpandedChart('avgUpload')}/>
 
             <ChartModal
                 isOpen={!!expandedChart}

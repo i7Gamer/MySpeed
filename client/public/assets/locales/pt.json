@@ -65,11 +65,10 @@
     "settings": "Configurações",
     "changes_applied": "Suas alterações foram salvas.",
     "language_changed": "O idioma foi alterado.",
-    "provider_changed": "O provedor foi alterado.",
     "changes_unsaved": "Suas alterações não foram aplicadas. Verifique sua entrada.",
     "invalid": "Entrada inválida",
     "optimal_values": "Valores ideais",
-    "change_provider": "Mudar de provedor",
+    "targets": "Destinos de teste",
     "password": "Alterar senha",
     "cron": "Definir frequência",
     "storage": "Gerenciar o armazenamento",
@@ -135,7 +134,6 @@
     "statistics": "Estatísticas"
   },
   "update": {
-    "provider_title": "Definir o provedor do speedtest",
     "new_password": "Definir uma nova senha",
     "password_placeholder": "Nova senha",
     "show_password": "Mostrar a senha",
@@ -305,6 +303,7 @@
       "unchanged": "Sem alteração desde o último teste",
       "measured_at": "Medido em",
       "measured_with": "Medido com",
+      "target": "Destino",
       "seconds": "{{seconds}} s",
       "data_used": "Dados usados",
       "data_used_value": "{{down}} de descida / {{up}} de subida",
@@ -701,6 +700,29 @@
     },
     "last_test_now": "Último teste agora mesmo",
     "elapsed": "{{seconds}} s decorridos",
-    "next_test_approx": "Próximo às ~{{time}}"
+    "next_test_approx": "Próximo às ~{{time}}",
+    "target_of": "Destino {{index}} de {{count}}"
+  },
+  "targets": {
+    "title": "Destinos de teste",
+    "description": "Cada teste agendado mede todos os destinos agendados uma vez, um após o outro. Os destinos fora do agendamento só são executados a partir daqui.",
+    "add": "Adicionar destino",
+    "edit_title": "Editar destino",
+    "name": "Nome",
+    "name_placeholder": "ex.: São Paulo",
+    "scheduled": "Agendado",
+    "alerts": "Alertas e recomendações",
+    "own_optimals": "Valores ideais próprios",
+    "all": "Todos os destinos",
+    "saved": "O destino foi salvo.",
+    "removed": "O destino foi removido.",
+    "run_now": "Executar teste agora",
+    "move_up": "Mover para cima",
+    "move_down": "Mover para baixo",
+    "delete_confirm": {
+      "title": "Excluir este destino?",
+      "description": "<Bold>{{name}}</Bold> será excluído. Os testes que ele já mediu permanecem no histórico.",
+      "yes": "Excluir"
+    }
   }
 }
