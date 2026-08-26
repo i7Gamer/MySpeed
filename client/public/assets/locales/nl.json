@@ -54,11 +54,13 @@
       "server_id": "Server-ID",
       "server_id_placeholder": "Een willekeurig server-ID, of laat leeg",
       "custom_url": "Aangepaste URL",
+      "iperf_host": "iperf3-server",
       "choose_automatically": "Automatisch kiezen",
       "ookla_license": "Ik heb de <Eula>EULA</Eula>, <GDPR>het privacybeleid</GDPR> en <TOS>de servicevoorwaarden</TOS> van Ookla gelezen en accepteer deze.",
       "ookla_desc": "Populaire provider met globaal servernetwerk",
       "libre_desc": "Open-source, zelf te hosten snelheidstest",
-      "cloudflare_desc": "Snel CDN-gebaseerd testen"
+      "cloudflare_desc": "Snel CDN-gebaseerd testen",
+      "iperf3_desc": "Je eigen iperf3-server, in je netwerk"
     }
   },
   "dropdown": {

@@ -121,6 +121,11 @@ describe("providerName", () => {
         assert.equal(providerName("ookla"), "Ookla");
         assert.equal(providerName("libre"), "LibreSpeed");
         assert.equal(providerName("cloudflare"), "Cloudflare");
+        // Lowercase, which is how the tool spells itself - and named at all,
+        // because a row whose provider is unknown here loses the Target fact's
+        // sub-line and falls back to being treated as one from before the
+        // column existed.
+        assert.equal(providerName("iperf3"), "iperf3");
     });
 
     // Every test recorded before the column existed carries nothing, and naming

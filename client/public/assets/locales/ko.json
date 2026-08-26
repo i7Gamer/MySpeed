@@ -54,11 +54,13 @@
       "server_id": "서버 ID",
       "server_id_placeholder": "아무 서버 ID나 입력하거나 비워 두세요",
       "custom_url": "사용자 지정 URL",
+      "iperf_host": "iperf3 서버",
       "choose_automatically": "자동 선택",
       "ookla_license": "Ookla의 <Eula>EULA</Eula>, <GDPR>개인정보 처리방침</GDPR> 및 <TOS>서비스 약관</TOS>을 읽었으며 이에 동의합니다.",
       "ookla_desc": "글로벌 서버 네트워크를 갖춘 인기 제공업체",
       "libre_desc": "오픈소스, 자체 호스팅 가능한 속도 테스트",
-      "cloudflare_desc": "빠른 CDN 기반 테스트"
+      "cloudflare_desc": "빠른 CDN 기반 테스트",
+      "iperf3_desc": "네트워크 안에서 직접 운영하는 iperf3 서버"
     }
   },
   "dropdown": {

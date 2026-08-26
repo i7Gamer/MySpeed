@@ -53,8 +53,12 @@ describe("the free-text server id", () => {
     it("is still kept away from the cases that have no server id", () => {
         const block = idBlock();
 
-        assert.match(block, /provider\s*!==\s*"cloudflare"/,
-            "cloudflare has one endpoint and no id to name");
+        // Asked of the providers that have a list to pin from, rather than by
+        // naming the one that has not: cloudflare has a single endpoint and
+        // an iperf3 server is named on the target itself, so both would have
+        // had to be excluded by name here.
+        assert.match(block, /takesServerId\(provider\)/,
+            "the id is offered for providers that have no server to pin");
         assert.match(block, /!isUsingCustomUrl/,
             "a custom LibreSpeed URL and a server id are two answers to one question");
     });

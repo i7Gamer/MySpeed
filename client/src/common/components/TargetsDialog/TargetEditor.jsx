@@ -14,8 +14,8 @@ import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
 import ToggleSwitch from "@/common/components/ToggleSwitch";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
-import {CUSTOM_BACKEND_PLACEHOLDER} from "@/common/utils/InvariantText";
-import {providers} from "./providers";
+import {CUSTOM_BACKEND_PLACEHOLDER, IPERF_HOST_PLACEHOLDER} from "@/common/utils/InvariantText";
+import {providers, requiresEndpoint, takesEndpoint, takesServerId} from "./providers";
 import {targetBody} from "./targetBody";
 
 /**
@@ -83,7 +83,10 @@ export const TargetEditor = ({open, onClose, target}) => {
      */
     useEffect(() => {
         setServerId(provider === target?.provider ? (target?.serverId ?? "none") : "none");
-        setEndpoint(provider === "libre" && target?.provider === "libre"
+        // The same rule for the endpoint, and asked of whichever providers
+        // take one: switching away and back must restore the row's own
+        // address, not silently clear a host the operator never edited.
+        setEndpoint(takesEndpoint(provider) && provider === target?.provider
             ? (target?.endpoint ?? "none") : "none");
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [provider]);
@@ -133,10 +136,16 @@ export const TargetEditor = ({open, onClose, target}) => {
         close();
     };
 
+    const isIperf = provider === "iperf3";
     const isUsingCustomUrl = provider === "libre" && endpoint && endpoint !== "none";
+    // An iperf3 target with no host has nothing to measure against, and the
+    // server refuses one. Said here as a button that will not press, rather
+    // than as a red toast after the fact.
+    const hasEndpoint = !requiresEndpoint(provider) || (endpoint && endpoint !== "none"
+        && endpoint.trim() !== "");
     // What makes the row saveable at all; the in-flight lock is its own term
     // on the button, so the two reasons for a dead button stay legible apart.
-    const canSave = name.trim() !== "" && (provider !== "ookla" || acceptedOokla);
+    const canSave = name.trim() !== "" && hasEndpoint && (provider !== "ookla" || acceptedOokla);
 
     const formatServerLabel = (entry) => {
         if (!entry) return "";
@@ -185,7 +194,9 @@ export const TargetEditor = ({open, onClose, target}) => {
                             <SelectableList className="provider-list">
                                 {providers.map((current) => (
                                     <SelectableOption key={current.id}
-                                                      image={{src: current.image, alt: current.name}}
+                                                      icon={current.icon}
+                                                      image={current.image
+                                                          ? {src: current.image, alt: current.name} : undefined}
                                                       title={current.name}
                                                       description={t(`dialog.provider.${current.id}_desc`)}
                                                       active={current.id === provider}
@@ -194,7 +205,7 @@ export const TargetEditor = ({open, onClose, target}) => {
                             </SelectableList>
 
                             <div className="provider-settings">
-                                {provider !== "cloudflare" && !isUsingCustomUrl && (
+                                {takesServerId(provider) && !isUsingCustomUrl && (
                                     <div className="provider-setting">
                                         <div className="provider-setting-label">
                                             <FontAwesomeIcon icon={faServer}/>
@@ -223,7 +234,7 @@ export const TargetEditor = ({open, onClose, target}) => {
                                     that remain are real: cloudflare has one endpoint
                                     and no id, and a custom LibreSpeed URL is itself
                                     the server. */}
-                                {provider !== "cloudflare" && !isUsingCustomUrl && (
+                                {takesServerId(provider) && !isUsingCustomUrl && (
                                     <div className="provider-setting">
                                         <div className="provider-setting-label">
                                             <FontAwesomeIcon icon={faHashtag}/>
@@ -236,14 +247,20 @@ export const TargetEditor = ({open, onClose, target}) => {
                                     </div>
                                 )}
 
-                                {provider === "libre" && (
+                                {takesEndpoint(provider) && (
                                     <div className="provider-setting">
                                         <div className="provider-setting-label">
-                                            <FontAwesomeIcon icon={faLink}/>
-                                            <h3>{t("dialog.provider.custom_url")}</h3>
+                                            <FontAwesomeIcon icon={isIperf ? faServer : faLink}/>
+                                            {/* Two names for one field: a
+                                                LibreSpeed backend is a URL,
+                                                and an iperf3 server is a host
+                                                and port. */}
+                                            <h3>{t(isIperf ? "dialog.provider.iperf_host"
+                                                : "dialog.provider.custom_url")}</h3>
                                         </div>
                                         <input type="text" className="dialog-input provider-input"
-                                               placeholder={CUSTOM_BACKEND_PLACEHOLDER}
+                                               placeholder={isIperf ? IPERF_HOST_PLACEHOLDER
+                                                   : CUSTOM_BACKEND_PLACEHOLDER}
                                                value={endpoint === "none" ? "" : endpoint}
                                                onChange={(e) => handleEndpointChange(e.target.value || "none")}/>
                                     </div>

@@ -54,11 +54,13 @@
       "server_id": "ID сервера",
       "server_id_placeholder": "Будь-який ID сервера або залиште порожнім",
       "custom_url": "Власний URL",
+      "iperf_host": "Сервер iperf3",
       "choose_automatically": "Вибрати автоматично",
       "ookla_license": "Я прочитав та приймаю <Eula>EULA</Eula>, <GDPR>політику конфіденційності</GDPR> та <TOS>умови надання послуг</TOS> Ookla.",
       "ookla_desc": "Популярний провайдер із глобальною мережею серверів",
       "libre_desc": "Тест швидкості з відкритим кодом, який можна розгорнути самостійно",
-      "cloudflare_desc": "Швидке тестування на базі CDN"
+      "cloudflare_desc": "Швидке тестування на базі CDN",
+      "iperf3_desc": "Ваш власний сервер iperf3, у вашій мережі"
     }
   },
   "dropdown": {

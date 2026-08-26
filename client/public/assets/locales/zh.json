@@ -54,11 +54,13 @@
       "server_id": "服务器ID",
       "server_id_placeholder": "任意服务器 ID，或留空",
       "custom_url": "自定义 URL",
+      "iperf_host": "iperf3 服务器",
       "choose_automatically": "自动选择",
       "ookla_license": "我已阅读并接受 Ookla 的<Eula>EULA</Eula>、<GDPR>隐私政策</GDPR>和<TOS>服务条款</TOS>。",
       "ookla_desc": "拥有全球服务器网络的流行提供商",
       "libre_desc": "开源、可自托管的测速工具",
-      "cloudflare_desc": "基于 CDN 的快速测试"
+      "cloudflare_desc": "基于 CDN 的快速测试",
+      "iperf3_desc": "你自己的 iperf3 服务器，就在你的网络中"
     }
   },
   "dropdown": {

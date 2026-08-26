@@ -54,11 +54,13 @@
       "server_id": "Sunucu Kimliği",
       "server_id_placeholder": "Herhangi bir sunucu kimliği ya da boş bırakın",
       "custom_url": "Özel URL",
+      "iperf_host": "iperf3 sunucusu",
       "choose_automatically": "Otomatik olarak seçin",
       "ookla_license": "Ookla'nın <Eula>EULA</Eula>'sını, <GDPR>gizlilik politikasını</GDPR> ve <TOS>hizmet şartlarını</TOS> okudum ve kabul ediyorum.",
       "ookla_desc": "Küresel sunucu ağına sahip popüler sağlayıcı",
       "libre_desc": "Açık kaynaklı, kendi sunucunuzda barındırılabilir hız testi",
-      "cloudflare_desc": "CDN tabanlı hızlı test"
+      "cloudflare_desc": "CDN tabanlı hızlı test",
+      "iperf3_desc": "Kendi ağınızda çalışan iperf3 sunucunuz"
     }
   },
   "dropdown": {

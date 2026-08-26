@@ -9,6 +9,8 @@
  * that goes wrong.
  */
 
+import {takesEndpoint, takesServerId} from "./providerFields.js";
+
 // The select and the free-text id share a stored value, and "none" is what
 // both use for "let the provider choose" - it is not a server id.
 const AUTOMATIC = "none";
@@ -37,11 +39,13 @@ export const targetBody = ({name, provider, serverId, endpoint, alerts, ownOptim
     // and a name of spaces is not a name.
     name: (name ?? "").trim(),
     provider,
-    serverId: serverId === AUTOMATIC || !serverId ? null : serverId,
-    // Only LibreSpeed takes one. Sent for any other provider it would be
+    // Held to the providers that have a list to pin from, for the same reason
+    // as the endpoint below: the server judges the row this would become.
+    serverId: !takesServerId(provider) || serverId === AUTOMATIC || !serverId ? null : serverId,
+    // Only the providers that take one. Sent for any other it would be
     // refused - the server judges the merged row, and an endpoint on a
     // provider that takes none is exactly what it refuses.
-    endpoint: provider === "libre" && endpoint && endpoint !== AUTOMATIC ? endpoint : null,
+    endpoint: takesEndpoint(provider) && endpoint && endpoint !== AUTOMATIC ? endpoint.trim() : null,
     alerts,
     optimalPing: optimalOrNull(ownOptimals, optimalPing),
     optimalDownload: optimalOrNull(ownOptimals, optimalDownload),

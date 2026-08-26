@@ -54,11 +54,13 @@
       "server_id": "ID del servidor",
       "server_id_placeholder": "Qualsevol ID de servidor, o deixa-ho buit",
       "custom_url": "URL personalitzat",
+      "iperf_host": "Servidor iperf3",
       "choose_automatically": "Tria automàticament",
       "ookla_license": "He llegit i accepto l'<Eula>EULA</Eula>, la <GDPR>política de privadesa</GDPR> i les <TOS>condicions del servei</TOS> d'Ookla.",
       "ookla_desc": "Proveïdor popular amb una xarxa global de servidors",
       "libre_desc": "Prova de velocitat de codi obert i autoallotjable",
-      "cloudflare_desc": "Proves ràpides basades en CDN"
+      "cloudflare_desc": "Proves ràpides basades en CDN",
+      "iperf3_desc": "El teu propi servidor iperf3, a la teva xarxa"
     }
   },
   "dropdown": {

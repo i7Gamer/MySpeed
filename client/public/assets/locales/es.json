@@ -54,11 +54,13 @@
       "server_id": "ID de servidor",
       "server_id_placeholder": "Cualquier ID de servidor, o déjalo vacío",
       "custom_url": "URL personalizada",
+      "iperf_host": "Servidor iperf3",
       "choose_automatically": "Elige automáticamente",
       "ookla_license": "He leído y acepto <Eula>el CLUF</Eula>, la <GDPR>política de privacidad</GDPR> y las <TOS>condiciones de servicio</TOS> de Ookla.",
       "ookla_desc": "Proveedor popular con red global de servidores",
       "libre_desc": "Speedtest de código abierto y autoalojable",
-      "cloudflare_desc": "Pruebas rápidas basadas en CDN"
+      "cloudflare_desc": "Pruebas rápidas basadas en CDN",
+      "iperf3_desc": "Tu propio servidor iperf3, en tu red"
     }
   },
   "dropdown": {

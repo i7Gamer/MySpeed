@@ -54,11 +54,13 @@
       "server_id": "ID serveru",
       "server_id_placeholder": "Libovolné ID serveru, nebo ponechte prázdné",
       "custom_url": "Vlastní URL",
+      "iperf_host": "Server iperf3",
       "choose_automatically": "Vybrat automaticky",
       "ookla_license": "Přečetl(a) jsem si a přijímám <Eula>EULA</Eula>, <GDPR>zásady ochrany osobních údajů</GDPR> a <TOS>podmínky služby</TOS> společnosti Ookla.",
       "ookla_desc": "Oblíbený poskytovatel s globální sítí serverů",
       "libre_desc": "Open-source test rychlosti, který lze provozovat na vlastním serveru",
-      "cloudflare_desc": "Rychlé testování přes CDN"
+      "cloudflare_desc": "Rychlé testování přes CDN",
+      "iperf3_desc": "Váš vlastní server iperf3, ve vaší síti"
     }
   },
   "dropdown": {

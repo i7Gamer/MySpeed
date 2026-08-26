@@ -54,11 +54,13 @@
       "server_id": "サーバー ID",
       "server_id_placeholder": "任意のサーバー ID、または空欄",
       "custom_url": "カスタム URL",
+      "iperf_host": "iperf3 サーバー",
       "choose_automatically": "自動で選択",
       "ookla_license": "Ookla の<Eula>EULA</Eula>、<GDPR>プライバシーポリシー</GDPR>、<TOS>利用規約</TOS>を読み、同意します。",
       "ookla_desc": "世界中にサーバー網を持つ定番のプロバイダー",
       "libre_desc": "オープンソースでセルフホスト可能なスピードテスト",
-      "cloudflare_desc": "CDN ベースの高速なテスト"
+      "cloudflare_desc": "CDN ベースの高速なテスト",
+      "iperf3_desc": "自分のネットワーク上にある自前の iperf3 サーバー"
     }
   },
   "dropdown": {

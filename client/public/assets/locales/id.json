@@ -54,11 +54,13 @@
       "server_id": "ID Server",
       "server_id_placeholder": "ID server mana pun, atau biarkan kosong",
       "custom_url": "URL khusus",
+      "iperf_host": "Server iperf3",
       "choose_automatically": "Pilih secara otomatis",
       "ookla_license": "Saya telah membaca dan menerima <Eula>EULA</Eula>, <GDPR>kebijakan privasi</GDPR> dan <TOS>ketentuan layanan</TOS> dari Ookla.",
       "ookla_desc": "Penyedia populer dengan jaringan server global",
       "libre_desc": "Speedtest sumber terbuka yang bisa di-hosting sendiri",
-      "cloudflare_desc": "Pengujian cepat berbasis CDN"
+      "cloudflare_desc": "Pengujian cepat berbasis CDN",
+      "iperf3_desc": "Server iperf3 milik Anda sendiri, di jaringan Anda"
     }
   },
   "dropdown": {

@@ -72,7 +72,10 @@ export const differenceFromTarget = (current, target) => {
  *
  * Proper nouns, so they are not translated - only the label beside them is.
  */
-const PROVIDER_NAMES = {ookla: "Ookla", libre: "LibreSpeed", cloudflare: "Cloudflare"};
+const PROVIDER_NAMES = {ookla: "Ookla", libre: "LibreSpeed", cloudflare: "Cloudflare",
+    // Lowercase, which is how the tool spells itself and how the command is
+    // typed - the other three are companies and this one is a binary.
+    iperf3: "iperf3"};
 
 /**
  * The name of the provider that measured a test, or null if the row cannot say.

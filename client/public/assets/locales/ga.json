@@ -54,11 +54,13 @@
       "server_id": "ID an fhreastalaí",
       "server_id_placeholder": "ID freastalaí ar bith, nó fág folamh é",
       "custom_url": "URL Saincheaptha",
+      "iperf_host": "Freastalaí iperf3",
       "choose_automatically": "Roghnaigh go huathoibríoch",
       "ookla_license": "Léigh mé agus glacaim le <Eula>EULA</Eula>, <GDPR>polasaí príobháideachta</GDPR> agus <TOS>téarmaí seirbhíse</TOS> Ookla.",
       "ookla_desc": "Soláthraí coitianta le líonra freastalaí domhanda",
       "libre_desc": "Tástáil luais foinse oscailte, féin-óstála",
-      "cloudflare_desc": "Tástáil thapa bunaithe ar CDN"
+      "cloudflare_desc": "Tástáil thapa bunaithe ar CDN",
+      "iperf3_desc": "Do fhreastalaí iperf3 féin, ar do líonra"
     }
   },
   "dropdown": {

@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { readSource } from "../helpers/source.js";
 import { welcomeOpens } from "@/common/contexts/Targets/welcomeOutcome.js";
 import { optimalOrNull, targetBody } from "@/common/components/TargetsDialog/targetBody.js";
+import {
+    requiresEndpoint, takesEndpoint, takesServerId
+} from "@/common/components/TargetsDialog/providerFields.js";
 
 /**
  * The two decisions the target rework put in front of an operator: whether the
@@ -237,5 +240,87 @@ describe("the editor and the wizard read those decisions", () => {
 
         assert.match(context, /if \(welcomeOpens\(\{/,
             "the open rule was inlined back into the effect");
+    });
+});
+
+/**
+ * The fields a provider is offered, which have to be the fields the server
+ * will accept: one drawn for a provider that refuses it is a save that fails
+ * naming a value the operator can see on screen, and one left out is a target
+ * that cannot be finished.
+ */
+describe("what each provider lets a target say", () => {
+    it("offers a server to pin only where there is a list to pin from", () => {
+        assert.equal(takesServerId("ookla"), true);
+        assert.equal(takesServerId("libre"), true);
+        // One endpoint, so nothing to choose between.
+        assert.equal(takesServerId("cloudflare"), false);
+        // Named on the target itself - an iperf3 server is the operator's own.
+        assert.equal(takesServerId("iperf3"), false);
+    });
+
+    it("offers an address of its own to the two that take one", () => {
+        assert.equal(takesEndpoint("libre"), true);
+        assert.equal(takesEndpoint("iperf3"), true);
+        assert.equal(takesEndpoint("ookla"), false);
+        assert.equal(takesEndpoint("cloudflare"), false);
+    });
+
+    // A libre target with no endpoint measures against the public backend
+    // list; an iperf3 target with no host has nothing to measure at all.
+    it("insists on one only where there is no fallback", () => {
+        assert.equal(requiresEndpoint("iperf3"), true);
+        assert.equal(requiresEndpoint("libre"), false);
+    });
+});
+
+describe("what the editor writes for an iperf3 target", () => {
+    const IPERF = {
+        name: "NAS", provider: "iperf3", serverId: "none", endpoint: "10.0.0.5:5201",
+        alerts: true, ownOptimals: false, optimalPing: "", optimalDownload: "", optimalUpload: ""
+    };
+
+    it("sends the host it was given", () => {
+        assert.equal(targetBody(IPERF).endpoint, "10.0.0.5:5201");
+    });
+
+    it("trims it, so a pasted address with a space is not refused", () => {
+        assert.equal(targetBody({...IPERF, endpoint: "  10.0.0.5:5201  "}).endpoint, "10.0.0.5:5201");
+    });
+
+    /**
+     * A server id left behind by a provider switch must not travel: the server
+     * judges the row the write would produce, and an id on a provider that
+     * pins none is refused - naming a field the editor no longer draws.
+     */
+    it("drops a server id the provider cannot take", () => {
+        assert.equal(targetBody({...IPERF, serverId: "1234"}).serverId, null);
+        assert.equal(targetBody({...IPERF, provider: "cloudflare", serverId: "1234"}).serverId, null);
+        assert.equal(targetBody({...IPERF, provider: "ookla", serverId: "1234"}).serverId, "1234");
+    });
+
+    // And the same in the other direction, which is the case that already
+    // existed: an address left behind by a switch to a provider that takes none.
+    it("drops an address the provider cannot take", () => {
+        assert.equal(targetBody({...IPERF, provider: "ookla"}).endpoint, null);
+    });
+});
+
+/**
+ * And the editor will not offer to save a target the server is bound to
+ * refuse - the operator meets the rule in a button that does not press, rather
+ * than in a red toast after the fact.
+ */
+describe("the editor's own guard", () => {
+    const editor = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+
+    it("holds back a save for a provider that needs a host and has none", () => {
+        assert.match(editor, /const hasEndpoint = !requiresEndpoint\(provider\)/);
+        assert.match(editor, /const canSave = name\.trim\(\) !== "" && hasEndpoint/);
+    });
+
+    it("draws the server pickers only where they mean something", () => {
+        assert.equal((editor.match(/takesServerId\(provider\) && !isUsingCustomUrl/g) ?? []).length, 2,
+            "the server select and the free-text id no longer agree about who has a list");
     });
 });

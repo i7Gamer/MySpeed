@@ -54,11 +54,13 @@
       "server_id": "Server-ID",
       "server_id_placeholder": "Valfritt server-ID, eller lämna tomt",
       "custom_url": "Anpassad URL",
+      "iperf_host": "iperf3-server",
       "choose_automatically": "Välj automatiskt",
       "ookla_license": "Jag har läst och godkänner Ooklas <Eula>EULA</Eula>, <GDPR>integritetspolicy</GDPR> och <TOS>användarvillkor</TOS>.",
       "ookla_desc": "Populär leverantör med globalt servernätverk",
       "libre_desc": "Hastighetstest med öppen källkod som du kan hosta själv",
-      "cloudflare_desc": "Snabb CDN-baserad testning"
+      "cloudflare_desc": "Snabb CDN-baserad testning",
+      "iperf3_desc": "Din egen iperf3-server, i ditt nätverk"
     }
   },
   "dropdown": {
