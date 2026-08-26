@@ -74,6 +74,31 @@ describe("parseCliOutput", () => {
             assert.equal(parsed.error, "Too many requests. Please try again later");
         });
 
+        /**
+         * `data.error` is whatever the CLI printed, and nothing promises it is
+         * a string. Left as an object it reached capError's String() and was
+         * stored as "[object Object]" - and an object-shaped refusal walked
+         * past isRateLimitMessage with the one wording the backoff exists to
+         * recognise.
+         */
+        it("reads the message out of an object-shaped error", () => {
+            const parsed = parseCliOutput("ookla", '{"error":{"message":"Latency test failed","level":2}}', "");
+
+            assert.equal(parsed.error, "Latency test failed");
+        });
+
+        it("recognises a rate limit reported as an object", () => {
+            const parsed = parseCliOutput("ookla", '{"error":{"message":"Too many requests received"}}', "");
+
+            assert.equal(parsed.error, "Too many requests. Please try again later");
+        });
+
+        it("stores an object without a message as its JSON rather than [object Object]", () => {
+            const parsed = parseCliOutput("ookla", '{"error":{"code":429}}', "");
+
+            assert.equal(parsed.error, '{"code":429}');
+        });
+
         it("is empty when the CLI printed nothing at all", () => {
             assert.deepEqual(parseCliOutput("ookla", "", ""), {});
         });

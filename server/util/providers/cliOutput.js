@@ -40,8 +40,9 @@ export const isRateLimitMessage = (text) => typeof text === "string" && RATE_LIM
  * later.
  *
  * Anything that is not a string passes through untouched, because it is not this
- * function's business to decide what such a value means - capError below already
- * has that job.
+ * function's business to decide what such a value means. Both callers hold up
+ * their half: the stderr fallback only ever has a string in hand, and the JSON
+ * branch reduces an object-shaped error to text before asking.
  */
 const normaliseError = (text) => isRateLimitMessage(text) ? RATE_LIMIT_MESSAGE : text;
 
@@ -123,7 +124,20 @@ export const parseCliOutput = (mode, stdout, stderr) => {
             // parse at all.
             if (data === null || typeof data !== "object") continue;
 
-            if (data.error) result.error = normaliseError(data.error);
+            /*
+             * Reduced to text here, where the shape is in hand, rather than
+             * left for capError's String(): an error reported as an object -
+             * {"error":{"message":"Too many requests",...}} - would otherwise
+             * be stored as "[object Object]", and walk past isRateLimitMessage
+             * carrying the one wording the backoff exists to recognise.
+             */
+            if (data.error) {
+                const message = typeof data.error === "string" ? data.error
+                    : typeof data.error?.message === "string" ? data.error.message
+                        : JSON.stringify(data.error);
+
+                result.error = normaliseError(message);
+            }
 
             if (isResult(mode, data)) {
                 const normalised = result.error;
