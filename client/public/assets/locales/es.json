@@ -147,8 +147,8 @@
     "remove_password_title": "¿Eliminar la contraseña?",
     "remove_password_desc": "Se cerrará tu sesión y esta instancia quedará sin contraseña. A partir de ahí se abre para cualquiera que esté en el equipo donde se ejecuta, y pide a los demás equipos el token de instalación del registro del servidor hasta que se establezca una contraseña nueva.",
     "password_removed": "Se ha eliminado el bloqueo de contraseña y la contraseña establecida.",
-    "level": "Nivel de cambio",
-    "level_title": "Derechos de los visitantes",
+    "level": "Cambiar nivel",
+    "level_title": "Permisos de los visitantes",
     "cron_title": "Ajustar la frecuencia de los tests",
     "cron_next_test": "Próximo test:",
     "custom_cron": "Expresión cron personalizada",
@@ -473,7 +473,7 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Enviar mensajes de error",
         "send_finished": "Enviar completado",
-        "finished_message": "Mensaje finalizado",
+        "finished_message": "Mensaje al terminar",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -502,13 +502,13 @@
     "gotify": {
       "fields": {
         "url": "URL del servidor",
-        "key": "Ficha de solicitud",
+        "key": "Token de aplicación",
         "priority": "Prioridad",
         "error_message": "Mensaje de error",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Enviar mensajes de error",
         "send_finished": "Enviar completados",
-        "finished_message": "Mensaje finalizado",
+        "finished_message": "Mensaje al terminar",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -520,7 +520,7 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Enviar mensajes de error",
         "send_finished": "Enviar completados",
-        "finished_message": "Mensaje finalizado",
+        "finished_message": "Mensaje al terminar",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -579,7 +579,7 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Enviar mensajes de error",
         "send_finished": "Enviar mensajes terminados",
-        "finished_message": "Mensaje terminado",
+        "finished_message": "Mensaje al terminar",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -592,7 +592,7 @@
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Enviar mensajes de error",
         "send_finished": "Enviar completados",
-        "finished_message": "Mensaje finalizado",
+        "finished_message": "Mensaje al terminar",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -600,7 +600,7 @@
       "fields": {
         "url": "URL del webhook",
         "url_placeholder": "https://su-servidor.es/hook",
-        "send_started": "Inicio envío",
+        "send_started": "Enviar iniciados",
         "send_failed": "Enviar mensajes de error",
         "send_finished": "Enviar completados",
         "send_alive": "Enviar mensaje de estado",

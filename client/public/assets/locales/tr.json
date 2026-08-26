@@ -262,7 +262,7 @@
     }
   },
   "time": {
-    "now": "Hemen şimdi",
+    "now": "Az önce",
     "seconds": "{{seconds}} saniye",
     "minute": "1 dakika",
     "minutes": "{{minutes}} dakika",
