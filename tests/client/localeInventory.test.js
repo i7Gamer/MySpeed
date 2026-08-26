@@ -71,12 +71,12 @@ describe("the locale files that ship", () => {
      */
     it("each have a flag the dialog can draw", () => {
         const source = readSource("client/src/i18n.js");
-        const imported = [...source.matchAll(/languages\/([a-z-]+)\.webp/g)].map((match) => match[1]);
+        const named = [...source.matchAll(/flag\('([a-z-]+)'\)/g)].map((match) => match[1]);
         const present = fs.readdirSync(FLAGS_DIR).map((file) => path.basename(file, ".webp"));
 
-        assert.deepEqual(imported.filter((code) => !present.includes(code)), [],
-            "i18n.js imports a flag that is not in the assets directory");
-        assert.equal(imported.length, offeredCodes().length,
+        assert.deepEqual(named.filter((code) => !present.includes(code)), [],
+            "i18n.js names a flag that is not in the assets directory");
+        assert.equal(named.length, offeredCodes().length,
             "the number of flags and the number of offered languages have drifted apart");
     });
 });

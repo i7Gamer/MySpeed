@@ -2,25 +2,6 @@ import i18n from "i18next";
 import {initReactI18next} from "react-i18next";
 import LanguageDetector from 'i18next-browser-languagedetector';
 import HttpApi from 'i18next-http-backend';
-import EnglishFlag from "@/common/assets/languages/en.webp";
-import GermanFlag from "@/common/assets/languages/de.webp";
-import BulgarianFlag from "@/common/assets/languages/bg.webp";
-import ChineseFlag from "@/common/assets/languages/zh.webp";
-import DutchFlag from "@/common/assets/languages/nl.webp";
-import FranceFlag from "@/common/assets/languages/fr.webp";
-import ItalianFlag from "@/common/assets/languages/it.webp";
-import PortugueseBrazilFlag from "@/common/assets/languages/br.webp";
-import RussianFlag from "@/common/assets/languages/ru.webp";
-import SpanishFlag from "@/common/assets/languages/es.webp";
-import TurkishFlag from "@/common/assets/languages/tr.webp";
-import DanishFlag from "@/common/assets/languages/da.webp";
-import PolishFlag from "@/common/assets/languages/pl.webp";
-import IndonesianFlag from "@/common/assets/languages/id.webp";
-// The locale is keyed by language ("uk") and the flag by country ("ua"), as
-// Portuguese is already keyed "pt" against a "br" flag.
-import UkrainianFlag from "@/common/assets/languages/ua.webp";
-// Irish the same way: the locale is "ga", the flag "ie".
-import IrishFlag from "@/common/assets/languages/ie.webp";
 import {readStored, writeStored} from "@/common/utils/Storage";
 import {supportedLanguage} from "@/common/utils/LanguageChoice";
 import {withBasePath} from "@/common/utils/BasePath";
@@ -47,26 +28,46 @@ import englishTranslations from "../public/assets/locales/en.json";
  */
 export const FALLBACK_LANGUAGE = "en";
 
+/**
+ * Every flag the dialog can draw, in one declaration.
+ *
+ * These were seventeen hand-written imports that differed only in the file
+ * name, and every new language meant writing an eighteenth. The eager glob is
+ * the same thing to the bundler - each file is resolved and hashed at build
+ * time exactly as a static import is - so nothing changes in the output; what
+ * changes is that a language is now one list entry and one file.
+ *
+ * The flag is keyed by country and the locale by language, so the two are not
+ * always the same word: Portuguese is keyed "pt" against the "br" flag,
+ * Ukrainian "uk" against "ua", and Irish "ga" against "ie". A name with no
+ * file behind it resolves to undefined and the entry draws no image, which is
+ * why tests/client/localeRegistry.test.js holds every entry to a file that
+ * exists.
+ */
+const FLAGS = import.meta.glob("./common/assets/languages/*.webp", {eager: true, import: "default"});
+
+const flag = (country) => FLAGS[`./common/assets/languages/${country}.webp`];
+
 export const languages = [
-    {name: 'English', code: 'en', flag: EnglishFlag},
-    {name: 'Deutsch', code: 'de', flag: GermanFlag},
-    {name: 'Български', code: 'bg', flag: BulgarianFlag},
-    {name: '中文', code: 'zh', flag: ChineseFlag},
-    {name: 'Nederlands', code: 'nl', flag: DutchFlag},
-    {name: 'Français', code: 'fr', flag: FranceFlag},
-    // Two thirds translated as of its Crowdin state of 2026-08-19; the rest
-    // falls back to English per key. Listed deliberately at that level - the
-    // locale inventory test is what keeps a *silent* half-language out.
-    {name: 'Gaeilge', code: 'ga', flag: IrishFlag},
-    {name: 'Italiano', code: 'it', flag: ItalianFlag},
-    {name: 'Português do Brasil', code: 'pt', flag: PortugueseBrazilFlag},
-    {name: 'Русский', code: 'ru', flag: RussianFlag},
-    {name: 'Español', code: 'es', flag: SpanishFlag},
-    {name: 'Dansk', code: 'da', flag: DanishFlag},
-    {name: 'Polski', code: 'pl', flag: PolishFlag},
-    {name: 'Türkçe', code: 'tr', flag: TurkishFlag},
-    {name: 'Bahasa Indonesia', code: 'id', flag: IndonesianFlag},
-    {name: 'Українська', code: 'uk', flag: UkrainianFlag}
+    {name: 'English', code: 'en', flag: flag('en')},
+    {name: 'Deutsch', code: 'de', flag: flag('de')},
+    {name: 'Български', code: 'bg', flag: flag('bg')},
+    {name: '中文', code: 'zh', flag: flag('zh')},
+    {name: 'Nederlands', code: 'nl', flag: flag('nl')},
+    {name: 'Français', code: 'fr', flag: flag('fr')},
+    // Rebuilt from Crowdin's 2026-08-19 state and completed in-repo: the
+    // strings Crowdin had not reached are machine-authored, pending a native
+    // speaker's pass.
+    {name: 'Gaeilge', code: 'ga', flag: flag('ie')},
+    {name: 'Italiano', code: 'it', flag: flag('it')},
+    {name: 'Português do Brasil', code: 'pt', flag: flag('br')},
+    {name: 'Русский', code: 'ru', flag: flag('ru')},
+    {name: 'Español', code: 'es', flag: flag('es')},
+    {name: 'Dansk', code: 'da', flag: flag('da')},
+    {name: 'Polski', code: 'pl', flag: flag('pl')},
+    {name: 'Türkçe', code: 'tr', flag: flag('tr')},
+    {name: 'Bahasa Indonesia', code: 'id', flag: flag('id')},
+    {name: 'Українська', code: 'uk', flag: flag('ua')}
 ]
 
 /*

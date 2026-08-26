@@ -15,21 +15,18 @@ const source = fs.readFileSync(path.join(ROOT, "client", "src", "i18n.js"), "utf
  *
  * A language is three things that have to agree: an entry in the list i18n.js
  * exports, a locale file the http backend fetches by code at runtime, and a
- * flag imported at build time. Nothing checked that they did. A registered
- * language with no locale file is not a build error - the backend simply 404s
- * on the fetch, and the interface silently falls back to English with the menu
- * still offering the language.
+ * flag resolved out of the build-time glob. Nothing checked that they did. A
+ * registered language with no locale file is not a build error - the backend
+ * simply 404s on the fetch, and the interface silently falls back to English
+ * with the menu still offering the language. A flag name with no file behind
+ * it is not one either: the glob lookup answers undefined and the entry draws
+ * no image.
  *
- * Read from the source rather than imported: i18n.js imports webp assets, which
- * only vite can resolve.
+ * Read from the source rather than imported: i18n.js resolves webp assets
+ * through import.meta.glob, which only vite can do.
  */
-const registered = [...source.matchAll(/\{name:\s*'([^']+)',\s*code:\s*'([a-z-]+)',\s*flag:\s*(\w+)}/g)]
-    .map(([, name, code, flag]) => ({name, code, flag}));
-
-const flagImports = Object.fromEntries(
-    [...source.matchAll(/import\s+(\w+)\s+from\s+"@\/common\/assets\/languages\/([\w-]+)\.webp"/g)]
-        .map(([, binding, file]) => [binding, file])
-);
+const registered = [...source.matchAll(/\{name:\s*'([^']+)',\s*code:\s*'([a-z-]+)',\s*flag:\s*flag\('([a-z-]+)'\)}/g)]
+    .map(([, name, code, country]) => ({name, code, country}));
 
 describe("the language registry", () => {
     it("finds the registered languages to check", () => {
@@ -46,8 +43,8 @@ describe("the language registry", () => {
 
     it("has a flag for every language it offers", () => {
         const missing = registered
-            .filter(({flag}) => !flagImports[flag] || !fs.existsSync(path.join(FLAGS, `${flagImports[flag]}.webp`)))
-            .map(({name, flag}) => `${name} (${flag})`);
+            .filter(({country}) => !fs.existsSync(path.join(FLAGS, `${country}.webp`)))
+            .map(({name, country}) => `${name} (${country}.webp)`);
 
         assert.deepEqual(missing, [], "the menu entry has no flag to draw");
     });
