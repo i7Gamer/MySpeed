@@ -18,6 +18,17 @@ const CLI_TIMEOUT = 180 * MS_PER_SECOND;
 export const KILL_GRACE = 5 * MS_PER_SECOND;
 
 /**
+ * How long each LibreSpeed measurement phase runs, in seconds.
+ *
+ * librespeed-cli's own default. It ran at 5 for a while, and upstream #694's
+ * doubled upload readings are what a window that short looks like: TCP spends
+ * its first seconds filling buffers at above line rate, and on a five-second
+ * sample that spike is most of the average. Three times the data per run is
+ * the price of a number that means anything.
+ */
+export const LIBRE_DURATION_SECONDS = 15;
+
+/**
  * Whether the child is actually gone.
  *
  * Not `killed`, which only says a signal was delivered - kill() sets it whether
@@ -409,7 +420,7 @@ export default async (mode, serverId, serverUrl, onProgress) => {
 
         if (serverId) args.push(`--server-id=${serverId}`);
     } else if (mode === "libre") {
-        args = ['--json', '--duration=5', '--source=' + interfaceIp];
+        args = ['--json', '--duration=' + LIBRE_DURATION_SECONDS, '--source=' + interfaceIp];
         if (serverUrl) {
             const customServerConfig = [{
                 id: 1,
