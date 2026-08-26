@@ -3,7 +3,30 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { bootServer, seedTests } from "./helpers/boot.js";
+
+/**
+ * The catch's fallback redirect, held to writing only while nothing has been
+ * written. generateOpenGraphImage does all of its work before the first byte
+ * leaves, so the ordinary failure redirects cleanly - the guard is for the one
+ * that starts on the way out: send() failing mid-response, where a second write
+ * dies on ERR_HTTP_HEADERS_SENT and replaces the real reason in the log.
+ *
+ * Read rather than run, the way shutdown.test.js reads index.js: forcing a
+ * send() to fail through a real socket is not something this harness can do.
+ * Resolved from this file's own URL, because bootServer has moved the working
+ * directory into its throwaway data dir by the time these run.
+ */
+describe("the failure fallback", () => {
+    const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+    const source = fs.readFileSync(path.join(root, "server", "routes", "opengraph.js"), "utf8");
+
+    it("redirects only while the response is still unwritten", () => {
+        assert.match(source, /if \(!res\.headersSent\) res\.redirect\(BANNER_URL\)/,
+            "the catch redirects unconditionally, so a failed send dies again on ERR_HTTP_HEADERS_SENT");
+    });
+});
 
 let server;
 
