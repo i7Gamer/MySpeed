@@ -16,6 +16,7 @@ import {useSearchParams} from "react-router-dom";
 import {jsonRequest} from "@/common/utils/RequestUtil";
 import {FULL_DETAIL_POINTS, PreferencesContext} from "@/common/contexts/Preferences";
 import {ConfigContext} from "@/common/contexts/Config";
+import {NodeContext} from "@/common/contexts/Node";
 import {
     DEFAULT_TIMEFRAME,
     TIMEFRAME_ALL,
@@ -163,6 +164,19 @@ export const Statistics = () => {
     // nobody has told what it pays for - both render as no percentage.
     const [config] = useContext(ConfigContext);
 
+    /*
+     * The active node, read by position the way SpeedtestContext reads it.
+     *
+     * Not to aim the requests - RequestUtil builds its root from the stored
+     * selection at request time, so every fetch below already reaches the
+     * right node - but to notice the selection changed under the page.
+     * Reachable without leaving it: NodeContext's reconciliation drops a node
+     * deleted from another browser, and the charts then kept showing the
+     * dropped node's figures under the new node's header until the next range
+     * change happened to re-ask.
+     */
+    const [, , currentNode] = useContext(NodeContext);
+
     // The URL is the source of truth so a view stays bookmarkable and shareable;
     // the stored preference only supplies the default when the URL says nothing.
     const selection = useMemo(() => {
@@ -268,7 +282,9 @@ export const Statistics = () => {
                 setLoading(false);
             });
         });
-    }, [dateRange]);
+        // currentNode: see its destructure above - a page whose requests have
+        // been re-aimed under it has to re-ask.
+    }, [dateRange, currentNode]);
 
     const handleTimeframeChange = useCallback((timeframe) => {
         setSearchParams(serializeRange(timeframe), { replace: true });
