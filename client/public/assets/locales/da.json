@@ -541,7 +541,7 @@
     "create": "Opret",
     "activity": {
       "never_executed": "Aldrig udført",
-      "last_run": "Sidst kørt for "
+      "last_run": "Seneste kørsel: "
     },
     "discord": {
       "fields": {
