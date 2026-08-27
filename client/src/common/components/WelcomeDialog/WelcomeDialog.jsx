@@ -94,6 +94,31 @@ export const WelcomeDialog = ({open, onClose}) => {
             if (config.previewMode) {
                 writeStored("welcomeShown", "true");
             } else {
+                // The thresholds first and the target last, because the two
+                // writes are not equally repeatable and nothing here can undo
+                // the other half. A threshold PATCH says what the value *is*,
+                // so running it twice is running it once; PUT /targets inserts
+                // a row every time it is called - `targets.create(fields)`,
+                // with no existence check and no unique index on the name.
+                //
+                // Written the other way round, the refusal an operator can
+                // actually cause landed second: an empty number field (the
+                // three inputs carry no min and are not gated by canAdvance) is
+                // a 400 from the config controller, so the target was already
+                // created, the wizard stayed open - it is mounted disableClose
+                // and close() was never reached - and the only way on was to
+                // press the same Done again, which created a second identical
+                // target. Every scheduled round then measured that provider
+                // twice, on an instance that had not drawn a dashboard yet.
+                //
+                // The reverse failure is harmless: a refused PUT leaves three
+                // thresholds stored, which are the values the operator just
+                // typed, and the wizard stays open because what it is keyed on
+                // is the target list still being empty.
+                await patch("/config/ping", ping);
+                await patch("/config/download", download);
+                await patch("/config/upload", upload);
+
                 // The wizard's provider choice becomes the instance's first
                 // target, named after its provider - the manager dialog is
                 // where it earns a better name. PUT rather than a config
@@ -109,9 +134,6 @@ export const WelcomeDialog = ({open, onClose}) => {
                     // must not travel with the row.
                     ...(requiresEndpoint(provider) ? {endpoint: endpoint.trim()} : {})
                 }), "targets");
-                await patch("/config/ping", ping);
-                await patch("/config/download", download);
-                await patch("/config/upload", upload);
             }
         } catch (e) {
             updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),

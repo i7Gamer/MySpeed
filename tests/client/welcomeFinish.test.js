@@ -40,6 +40,10 @@ const runFinish = async ({previewMode = false, refuse = [], provider = "ookla",
                              endpoint = ""} = {}) => {
     const patched = [];
     const created = [];
+    // Every request in the order it ran. The two arrays above are compared
+    // independently of each other, so neither can see which half ran first -
+    // which is exactly what the ordering cases below are about.
+    const calls = [];
     const stored = new Map();
     const toasts = [];
     const closed = [];
@@ -58,12 +62,14 @@ const runFinish = async ({previewMode = false, refuse = [], provider = "ookla",
         upload: 40,
         patchRequest: async (path, body) => {
             patched.push({path, value: body.value});
+            calls.push(path);
             return {ok: !refuse.includes(path), status: refuse.includes(path) ? 403 : 200};
         },
         // The provider write became the creation of the instance's first
         // target - a PUT to a list, not a PATCH to a config key.
         putRequest: async (path, body) => {
             created.push({path, body});
+            calls.push(path);
             return {ok: !refuse.includes(path), status: refuse.includes(path) ? 403 : 200};
         },
         providerById: (id) => ({ookla: {id: "ookla", name: "Ookla"},
@@ -88,7 +94,7 @@ const runFinish = async ({previewMode = false, refuse = [], provider = "ookla",
 
     await finish(() => closed.push(true));
 
-    return {patched, created, stored, toasts, closed: closed.length > 0,
+    return {patched, created, calls, stored, toasts, closed: closed.length > 0,
         reloaded: reloaded.length > 0, targetsReloaded: targetsReloaded.length > 0};
 };
 
@@ -201,5 +207,32 @@ describe("finishing the wizard on a provider that needs an address", () => {
         assert.deepEqual(created, [
             {path: "/targets", body: {name: "Ookla", provider: "ookla"}}
         ]);
+    });
+});
+
+/**
+ * The order the two halves run in, which is the whole of the atomicity here.
+ *
+ * A threshold PATCH states what a value is, so running it twice is running it
+ * once; PUT /targets inserts a row per call, and the wizard's own exit
+ * condition is keyed on the target existing. Created first, a refused
+ * threshold left the target behind inside a wizard that cannot be dismissed -
+ * and the only button on it created a second target, so every scheduled round
+ * measured the same provider twice.
+ */
+describe("what finish() risks first", () => {
+    it("writes the repeatable half first", async () => {
+        const {calls} = await runFinish();
+
+        assert.deepEqual(calls, ["/config/ping", "/config/download", "/config/upload", "/targets"],
+            "the target is created before the writes that can still be refused");
+    });
+
+    it("creates nothing when a threshold is refused", async () => {
+        const {created, closed} = await runFinish({refuse: ["/config/download"]});
+
+        assert.deepEqual(created, [],
+            "a refused threshold left a target behind, and the only way on is a Done that creates a second");
+        assert.equal(closed, false);
     });
 });
