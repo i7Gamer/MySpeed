@@ -191,6 +191,36 @@ export const waitForActiveProcessExit = (timeoutMs = SHUTDOWN_EXIT_WAIT) =>
     });
 
 /**
+ * The code Windows gives a process whose image it could not finish loading -
+ * STATUS_DLL_NOT_FOUND, 0xC0000135, as the unsigned 32-bit number Node reports
+ * on the 'close' event.
+ *
+ * Worth a name because it is the one code that means the CLI never ran at all,
+ * and the one missingBinaryMessage below can never explain: the executable is
+ * on disk, so the spawn succeeds and nothing raises ENOENT. Windows creates the
+ * process, the image loader cannot resolve a library the executable imports,
+ * and it dies before main with both pipes empty - a 'close' carrying a number,
+ * which is exactly the case a bare exit code has to speak for. iperf3's Windows
+ * build is the one in hand: a Cygwin build that will not start without
+ * cygwin1.dll beside it, and "exited with code 3221225781" is a number nobody
+ * can act on.
+ */
+export const WINDOWS_DLL_NOT_FOUND = 3221225781;
+
+/**
+ * What a bare exit code means, for the run that produced nothing else.
+ *
+ * Its own function so that the one code worth translating does not turn the
+ * gate below into a nest of ternaries: that answers whether the code is all we
+ * have, this answers what it says.
+ */
+const exitCodeReason = (code) => code === WINDOWS_DLL_NOT_FOUND
+    ? `The speedtest CLI exited with code ${code} before it ran: Windows could not load a library `
+        + 'it needs, so its install in bin/ is incomplete. Delete the CLI from bin/ and MySpeed '
+        + 'downloads the whole of it again on the next test'
+    : `The speedtest CLI exited with code ${code} without producing a result`;
+
+/**
  * The failure an exit code implies, or null when the streams already said
  * everything worth saying.
  *
@@ -202,7 +232,7 @@ export const waitForActiveProcessExit = (timeoutMs = SHUTDOWN_EXIT_WAIT) =>
  */
 export const exitError = (code, result) =>
     code !== 0 && !result.error && Object.keys(result).length === 0
-        ? `The speedtest CLI exited with code ${code} without producing a result`
+        ? exitCodeReason(code)
         : null;
 
 /**

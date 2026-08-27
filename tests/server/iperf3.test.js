@@ -1,6 +1,9 @@
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readSource } from "../helpers/source.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { bodyIn, readSource, withoutJsComments } from "../helpers/source.js";
 import { EventEmitter } from "node:events";
 import { parseIperf3 } from "../../server/util/providers/parseData.js";
 import { parseCliOutput } from "../../server/util/providers/cliOutput.js";
@@ -9,7 +12,8 @@ import { measureLatency, median, sampleHandshake, spread } from "../../server/ut
 import { IPERF_DEFAULT_PORT, REGISTRY, joinEndpoint, splitEndpoint }
     from "../../server/util/providers/registry.js";
 import { iperfEndpointProblem, targetProblem } from "../../server/controller/targets.js";
-import { selectBinary } from "../../server/util/providers/loadIperf3.js";
+import { fileExists, installFiles, missingFiles, partialInstallError, selectBinary }
+    from "../../server/util/providers/loadIperf3.js";
 import { iperfList } from "../../server/config/binaries.js";
 
 /**
@@ -478,5 +482,230 @@ describe("the builds it downloads", () => {
 
         assert.deepEqual(archives.map((entry) => entry.os), ["win32"]);
         assert.ok(archives[0].suffix.endsWith(".zip"));
+    });
+});
+
+/**
+ * What the install consists of, per platform - derived from the selected build
+ * rather than from the platform name, so the answer moves with the manifest.
+ */
+describe("what a complete iperf3 install is", () => {
+    it("counts the Cygwin runtime as part of the Windows install", () => {
+        assert.deepEqual(installFiles({platform: "win32", arch: "x64"}), ["iperf3.exe", "cygwin1.dll"]);
+    });
+
+    it("is one file everywhere the published asset is the executable", () => {
+        for (const [platform, arch] of [["linux", "x64"], ["linux", "arm64"],
+            ["darwin", "arm64"], ["darwin", "x64"]])
+            assert.deepEqual(installFiles({platform, arch}), ["iperf3"], `${platform}-${arch}`);
+    });
+
+    /**
+     * Windows platforms with no published build get the one-file answer, on
+     * purpose: selectBinary's own error tells the operator to install iperf3
+     * themselves and put it in bin/, and a hand-installed single executable
+     * must not start reading as a broken install the moment it works.
+     */
+    it("leaves a hand-installed build alone where Windows has no published one", () => {
+        assert.deepEqual(installFiles({platform: "win32", arch: "arm64"}), ["iperf3.exe"]);
+        assert.deepEqual(installFiles({platform: "win32", arch: "ia32"}), ["iperf3.exe"]);
+    });
+
+    it("asks for nothing extra on a platform it has never heard of", () => {
+        assert.deepEqual(installFiles({platform: "sunos", arch: "sparc"}), ["iperf3"]);
+    });
+});
+
+/**
+ * The finding itself. The Windows install is two files - the Cygwin build of
+ * iperf3.exe will not start without cygwin1.dll beside it - but fileExists()
+ * answered on the .exe alone. A bin/ that had lost the DLL to an antivirus
+ * quarantine therefore never re-downloaded: spawn succeeded, the process died
+ * at once with STATUS_DLL_NOT_FOUND having printed nothing, and every
+ * scheduled run failed for the life of the install with a message naming
+ * neither the missing file nor the download that would fix it.
+ */
+describe("whether the iperf3 on disk is an install at all", () => {
+    const directories = [];
+
+    const holding = (names) => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-iperf3-"));
+        for (const name of names) fs.writeFileSync(path.join(directory, name), "");
+        directories.push(directory);
+        return directory;
+    };
+
+    after(() => {
+        for (const directory of directories) fs.rmSync(directory, {recursive: true, force: true});
+    });
+
+    it("is not an install when Windows has lost cygwin1.dll", async () => {
+        const directory = holding(["iperf3.exe"]);
+
+        assert.deepEqual(missingFiles({platform: "win32", arch: "x64", directory}), ["cygwin1.dll"]);
+        assert.equal(await fileExists({platform: "win32", arch: "x64", directory}), false);
+    });
+
+    it("is an install once both files are there", async () => {
+        const directory = holding(["iperf3.exe", "cygwin1.dll"]);
+
+        assert.deepEqual(missingFiles({platform: "win32", arch: "x64", directory}), []);
+        assert.equal(await fileExists({platform: "win32", arch: "x64", directory}), true);
+    });
+
+    it("wants only the executable where that is the whole install", async () => {
+        assert.equal(await fileExists({platform: "linux", arch: "x64", directory: holding(["iperf3"])}), true);
+        assert.deepEqual(missingFiles({platform: "linux", arch: "x64", directory: holding([])}), ["iperf3"]);
+    });
+});
+
+/**
+ * The extractor's blind spot, closed from the caller's side: extractFiles
+ * throws only when *nothing* matched, so an archive whose layout changed could
+ * unpack one member and be recorded as a finished download.
+ */
+describe("an archive that unpacked only half of itself", () => {
+    it("says which file did not arrive", () => {
+        const problem = partialInstallError(["cygwin1.dll"], "iperf3-win-x64.zip");
+
+        assert.match(problem, /cygwin1\.dll/);
+        assert.match(problem, /iperf3-win-x64\.zip/);
+    });
+
+    it("says nothing when every file arrived", () => {
+        assert.equal(partialInstallError([], "iperf3-win-x64.zip"), null);
+    });
+
+    // The wiring the pure helper cannot pin: the download itself must refuse a
+    // half-arrived archive rather than leave it looking like an install.
+    // Comments are stripped so prose about the check cannot stand in for it.
+    it("is refused by the download rather than left to look like an install", () => {
+        const download = withoutJsComments(bodyIn("server/util/providers/loadIperf3.js",
+            "export const downloadFile"));
+
+        assert.match(download, /partialInstallError\(missingFiles\(\)/);
+        assert.match(download, /throw new Error\(problem\)/);
+    });
+});
+
+/**
+ * And it is not fetched until something wants it.
+ *
+ * The three speedtest CLIs are what a default install measures with, so having
+ * them on disk before the first scheduled run is worth the download. This one
+ * measures against a server the operator runs themselves - which most
+ * instances do not have - and its static build is some sixteen megabytes.
+ */
+describe("when the binary is fetched", () => {
+    it("is left until a target actually uses it", () => {
+        assert.equal(REGISTRY.iperf3.downloadedOnDemand, true);
+    });
+
+    it("is kept out of the boot download", () => {
+        const source = readSource("server/util/loadCli.js");
+
+        assert.match(source, /\.filter\(\(entry\) => !entry\.downloadedOnDemand\)/,
+            "every instance pays for a CLI most of them will never measure with");
+    });
+
+    // The three that a default install does measure with stay eager, or the
+    // first scheduled run on a fresh instance waits for a download.
+    it("leaves the providers a default install uses on the boot list", () => {
+        for (const id of ["ookla", "libre", "cloudflare"])
+            assert.notEqual(REGISTRY[id].downloadedOnDemand, true, `${id} stopped being fetched at boot`);
+    });
+
+    /**
+     * What makes the lazy path work at all: the runner asks the loader before
+     * every run, so a provider left out of the boot download is fetched by the
+     * first test that needs it rather than never.
+     */
+    it("is fetched by the run that needs it", () => {
+        const runner = readSource("server/util/speedtest.js");
+
+        assert.match(runner, /await ensureBinary\(mode, binaryPath\)/);
+    });
+});
+
+/**
+ * A bracketed IPv6 literal carrying no port.
+ *
+ * The brackets are the URL spelling of an address and never part of the host
+ * that is dialled, but they only came off on the branch that also parses a
+ * port. "[fd00::1]" has its last colon inside the literal, so it took the
+ * no-port branch and kept them - and iperfEndpointProblem accepts it, so the
+ * target was created, scheduled, and handed "[fd00::1]" to --client, which
+ * getaddrinfo cannot resolve. It could never produce a measurement.
+ */
+describe("a bracketed IPv6 endpoint without a port", () => {
+    it("keeps the default port and loses the brackets", () => {
+        assert.deepEqual(splitEndpoint("[fd00::1]"), {host: "fd00::1", port: IPERF_DEFAULT_PORT});
+        assert.deepEqual(splitEndpoint("[2001:db8::1]"),
+            {host: "2001:db8::1", port: IPERF_DEFAULT_PORT});
+    });
+
+    // The bracketed form with a port, and the bare form, both already worked
+    // and must keep working.
+    it("leaves the forms that already worked alone", () => {
+        assert.deepEqual(splitEndpoint("[2001:db8::1]:5301"), {host: "2001:db8::1", port: 5301});
+        assert.deepEqual(splitEndpoint("2001:db8::1"),
+            {host: "2001:db8::1", port: IPERF_DEFAULT_PORT});
+        assert.deepEqual(splitEndpoint("10.0.0.5:5202"), {host: "10.0.0.5", port: 5202});
+    });
+});
+
+/**
+ * The inverse of that reading, for the one row column that records the address
+ * as a single string. It lives beside splitEndpoint because it inverts it, and
+ * a join written anywhere else as `${host}:${port}` is exactly how an IPv6
+ * address came to be stored as a different IPv6 address.
+ */
+describe("writing a host and a port back as one string", () => {
+    it("brackets an IPv6 literal so the port cannot join the address", () => {
+        assert.equal(joinEndpoint({host: "2001:db8::1", port: 5301}), "[2001:db8::1]:5301");
+        assert.notEqual(joinEndpoint({host: "2001:db8::1", port: 5301}), "2001:db8::1:5301");
+    });
+
+    it("leaves a name or an IPv4 address alone", () => {
+        assert.equal(joinEndpoint({host: "10.0.0.5", port: 5201}), "10.0.0.5:5201");
+        assert.equal(joinEndpoint({host: "nas.lan", port: 5201}), "nas.lan:5201");
+    });
+
+    // The brackets are part of the literal's spelling, not of the port's: a
+    // host with no port to separate still keeps them, so the string means the
+    // same server whichever way it is read back.
+    it("keeps the brackets when there is no port to separate", () => {
+        assert.equal(joinEndpoint({host: "fd00::1"}), "[fd00::1]");
+        assert.equal(joinEndpoint({host: "10.0.0.5", port: null}), "10.0.0.5");
+    });
+
+    // The same isPort splitEndpoint holds a written port to, so the pair
+    // cannot disagree about what counts as one.
+    it("drops a port that is not one", () => {
+        for (const port of [0, 65536, 5201.5, "5201", NaN])
+            assert.equal(joinEndpoint({host: "10.0.0.5", port}), "10.0.0.5",
+                `${port} was written as a port`);
+    });
+
+    it("has nothing to say without a host", () => {
+        assert.equal(joinEndpoint(), null);
+        assert.equal(joinEndpoint({}), null);
+        assert.equal(joinEndpoint({host: null}), null);
+        assert.equal(joinEndpoint({host: "   "}), null);
+    });
+
+    /**
+     * The round trip that would have caught the original bug: what the join
+     * writes, the split must read back as the same pair - and the validator
+     * must accept, or the address a row displays cannot be pasted back in.
+     */
+    it("round-trips through the reading that produced it", () => {
+        for (const endpoint of ["[2001:db8::1]:5301", "2001:db8::1", "10.0.0.5:5202"]) {
+            const pair = splitEndpoint(endpoint);
+            const written = joinEndpoint(pair);
+
+            assert.deepEqual(splitEndpoint(written), pair, `${endpoint} came back different`);
+            assert.equal(iperfEndpointProblem(written), null, `${written} was refused`);
+        }
     });
 });
