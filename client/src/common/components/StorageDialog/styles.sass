@@ -1,5 +1,20 @@
 @use "@/common/styles/colors" as *
 
+// The band a settings row stands in, whatever it happens to carry.
+//
+// The gap between these rows was already even - 16px the whole way down - but
+// what a reader sees is the distance from one heading to the next, and that is
+// the gap plus the row. The rows are as tall as their controls and the controls
+// are not one height: a button comes to 36px and a select to 38, its
+// line-height being stated where the button's is `normal`. "Stored tests"
+// carries neither - it states a figure and nothing else - so it is a 20px row,
+// and the first step in the list came out 36px against 52 for every other.
+//
+// 38px is the tallest of the three. Measured rather than picked: a floor at the
+// button's 36 would leave the select's own row two pixels over it and simply
+// move the odd step further down the list.
+$storage-row-band: 2.375rem
+
 .storage-dialog-wrapper
   width: 48rem
   max-width: 95vw
@@ -84,6 +99,9 @@
 .storage-row
   display: flex
   justify-content: space-between
+  // See $storage-row-band. A floor, not a height: the export row carries a
+  // hint and a switch under its heading and is three lines tall, which it stays.
+  min-height: $storage-row-band
   // Against the top of the row, not its middle. Most of these are a single
   // line and it makes no difference; the export row is three - a heading, a
   // hint and the credentials switch - and centring left its button floating

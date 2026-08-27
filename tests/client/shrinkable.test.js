@@ -112,6 +112,29 @@ describe("the storage rows' labels", () => {
     });
 
     /**
+     * Every row stands in the same band, whether or not it carries a control
+     * tall enough to make one.
+     *
+     * The gap between rows was already even - 16px the whole way down - but the
+     * eye reads the distance between one heading and the next, and that is the
+     * gap plus the row. "Stored tests" states a figure and nothing else, so it
+     * is a 20px row among 36 and 38px ones, and the first step in the list came
+     * out 36px where every other is 52.
+     *
+     * The floor is the tallest control the list carries rather than the button,
+     * so the select does not push its own row past it and reintroduce a step of
+     * a different size two rows down.
+     */
+    it("gives every row the same band to stand in", () => {
+        const band = /\$storage-row-band:\s*([\d.]+rem)/
+            .exec(read("common/components/StorageDialog/styles.sass"))?.[1];
+
+        assert.ok(band, "the band has no name, so each rule would spell the number out");
+        assert.ok(declares(bodyOf(css, ".storage-row"), "min-height", band),
+            "a row with nothing tall in it collapses to its text and shortens the step above it");
+    });
+
+    /**
      * Marked on the row in the JSX rather than found with :has() - the same
      * call the targets dialog records making, so that somebody adding a row
      * sees which kind it is where they are writing it.
