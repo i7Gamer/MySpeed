@@ -62,8 +62,28 @@ export const stripMarkdown = (variables) => strip(variables, TELEGRAM_MARKDOWN);
  * row written before the field existed, and the empty string on one saved with
  * the input cleared, since that is what a text field submits.
  */
-const topic = (message_thread_id) =>
-    message_thread_id ? {message_thread_id} : {};
+const FORUM_TOPIC_ID = /^[1-9]\d*$/;
+
+const topic = (message_thread_id) => {
+    const id = String(message_thread_id ?? "").trim();
+
+    /*
+     * Judged here rather than only by the field's regex, which admits "0".
+     *
+     * Zero is not a forum topic - telegram numbers General as 1 - so a stored
+     * "0" was a truthy string that got sent, and telegram answered 400 for a
+     * thread that does not exist: the notification was lost and the integration
+     * marked failed. A numeric 0, which an imported row can carry because
+     * importConfig writes integration rows without validateInput, was falsy and
+     * dropped in silence instead.
+     *
+     * Tightening the field's own regex would have been the smaller change and
+     * the wrong one: the same pattern runs in the browser, and the card resends
+     * every declared field on save - so an operator with a stored "0" would be
+     * refused on an unrelated edit, at a field they never touched.
+     */
+    return FORUM_TOPIC_ID.test(id) ? {message_thread_id: id} : {};
+};
 
 const send = (token, chat_id, text, activity, message_thread_id) => {
     const message = truncate(text, TELEGRAM_MESSAGE_LIMIT);
