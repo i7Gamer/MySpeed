@@ -26,6 +26,28 @@
 .consistency-container:not(.chart-modal-body *)
   container-type: inline-size
 
+// The sub-lines may take a second line rather than being cut at the card's
+// edge - see $panel-description-lines. Less was being lost here than on the
+// summary beside it, because these are phrases rather than sentences, but it
+// was the same loss: German's "Schwankung innerhalb eines Tests" by 8px and
+// the Ukrainian equivalent by 4.
+//
+// Everything but the dots. The clamp lays its subject out as a `-webkit-box`,
+// and the trend is a flex row - boxed, its readings stack one per line. Named
+// in the selector rather than undone underneath it, so the rule never reaches
+// the one child of a description that is not a sentence.
+//
+// And not in the dialog, which is the same exemption this card's sizing takes
+// above and for the same reason: the clamp is there to stop one translation
+// setting the height of a row of cards stretched to match, and an enlarged card
+// is not in a row. The dialog says it wraps freely - see ChartModal - and this
+// would have quietly overruled it.
+.consistency-container:not(.chart-modal-body *) .panel-row-description > *:not(.bufferbloat-trend)
+  white-space: normal
+  display: -webkit-box
+  -webkit-box-orient: vertical
+  -webkit-line-clamp: row.$panel-description-lines
+
 // Oldest to newest, the way time reads - one of the sub-lines under the grade.
 //
 // The shared row stacks its description as a column; this line is the one that

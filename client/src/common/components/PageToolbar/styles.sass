@@ -168,9 +168,16 @@
     display: none
 
   // Drops to an icon-only square; the height stays the toolbar's.
+  //
+  // The width is stated as well as implied. Its wrapper shrink-wraps to it, and
+  // a ratio is not part of what a wrapper measures - see $toolbar-control-square
+  // for the 2px that cost. The ratio stays declared underneath: where `lh` is
+  // not understood the width is dropped as invalid, and a square drawn from the
+  // height is a better fallback than an icon in a rectangle.
   .export-button
     padding: $toolbar-control-padding-y 0.7rem
     aspect-ratio: 1 / 1
+    width: $toolbar-control-square
     justify-content: center
 
   // Anchored under the button, like it is at every other width. The button is a

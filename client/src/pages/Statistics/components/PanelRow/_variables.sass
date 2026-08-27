@@ -33,6 +33,26 @@ $panel-value-size-tight: 1.2rem
 $panel-title-size: 1rem
 $panel-description-size: 0.9rem
 
+/// How many lines a description may take on the cards that let it wrap.
+///
+/// The row ellipsises its sub-lines by default, so a card cannot grow taller
+/// than the two beside it in the grid. That holds in English and in almost
+/// nothing else: the overview card lost 66px of Russian - "медленнее всего
+/// около 20:00, быстрее всего около 05:00" keeps the slowest hour and drops the
+/// fastest, which is the whole of what the sentence is for - and 67px of
+/// Portuguese, 57 of German and Ukrainian. The stability card lost 8px of
+/// German and 4 of Ukrainian on "Schwankung innerhalb eines Tests".
+///
+/// Two, and not "as many as it likes". The cards are stretched to one height
+/// and the descriptions are the only sentences on the page, so wrapping freely
+/// is how one card in one language quietly sets the height of the row. One
+/// extra line covers every translation measured; a third would be a card
+/// visibly taller than its neighbours in one language and not the others.
+///
+/// The dialog and the enlarged value card wrap without a clamp, and say so on
+/// their own rules: there is no shared height to protect in either.
+$panel-description-lines: 2
+
 /// The two steps a row's figure takes when its label stops fitting, and the
 /// list widths they are measured at.
 ///

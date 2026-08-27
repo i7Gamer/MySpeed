@@ -28,6 +28,36 @@
   // inline size is the card's (width: 100%), not its contents'.
   container-type: inline-size
 
+// The sentences may take a second line rather than being cut at the card's
+// edge. See $panel-description-lines for what was being lost and why it is two
+// lines and not free wrapping - in short, Russian's peak-hour row named the
+// slowest hour and dropped the fastest, which is the comparison it exists to
+// make, and three other languages were cut on the same row.
+//
+// This card and not the shared rule, because this card is where the sentences
+// are long enough to be cut: it is the one panel whose descriptions are
+// sentences rather than a phrase, which is the same reason it is also the one
+// that gives them up entirely in a tight container just below.
+//
+// Clamped rather than left to wrap, and the clamp is what makes it safe here:
+// the list is `overflow-y: clip` inside a card stretched to the row's height,
+// so a description free to take as many lines as a translation wants is one
+// language quietly setting the height of the row - or being cut off the bottom
+// instead of the side, which is not a better place to lose it.
+//
+// Unguarded in the dialog, where every other trim on this card is exempt by
+// geometry rather than by a `:not(.chart-modal-body *)` - see the header of
+// overviewModalStyles.test.js, which pins that. A clamp measures nothing, so it
+// cannot be exempted the same way and simply applies there too; it is inert
+// when it does, because the enlarged card is wide enough that no description
+// reaches a second line, let alone a third. Measured in the dialog at 1500,
+// 900 and 500px across five languages.
+.overview-items .panel-row .panel-row-description > *
+  white-space: normal
+  display: -webkit-box
+  -webkit-box-orient: vertical
+  -webkit-line-clamp: row.$panel-description-lines
+
 // Card-only trimming, and only this card's. Its labels are the page's longest -
 // "Peak-hour slowdown" over "Between the fastest and slowest hour of the day" -
 // where the other panels name a single measurement in a word. So the row that

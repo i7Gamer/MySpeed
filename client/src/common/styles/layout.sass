@@ -122,3 +122,29 @@ $stats-one-column: 720px
 // Horizontal padding stays each control's own business - room, not height, is
 // what is scarce on a phone.
 $toolbar-control-padding-y: 0.7rem
+
+// The line every control in the row draws around itself. Named because the
+// square below has to add it back: these are border-box, so the border is
+// inside the height and has to be inside the width that mirrors it.
+$toolbar-control-border: 1px
+
+// One side of an icon-only control, for the widths where the row gives up its
+// labels and the export and start buttons become squares.
+//
+// It is the height, written as a width. The height is what the padding and the
+// text come to, so the same three terms restate it - `1lh` being the line box
+// the control's own font-size produces, which is why this is a variable used
+// inside the control rather than a number worked out here.
+//
+// Stated rather than left to `aspect-ratio`, which is what the export button
+// had. A ratio is not part of what a shrink-to-fit wrapper measures: the button
+// took its width from its height at 46px while .export-button-container was
+// sized from the icon and the padding alone at 44, so the button drew 2px past
+// its own wrapper and the toolbar reported 2px it had no room for. Measured at
+// 360, 390 and 430px, at the two stages that draw the square.
+//
+// It does not track the row's height to the pixel, and cannot: the row is 45.4
+// at most narrow widths and 46.4 at the narrowest, where the picker sets it. So
+// the button is square at the stage it is first drawn square, and 1px shy of it
+// at the last - against a 2px overflow at every one of them.
+$toolbar-control-square: calc(#{$toolbar-control-padding-y} * 2 + 1lh + #{$toolbar-control-border} * 2)

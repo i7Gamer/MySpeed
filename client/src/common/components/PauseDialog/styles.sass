@@ -73,6 +73,12 @@
     flex-direction: column
     gap: 0.35rem
     flex: 1
+    // An equal half each, and it stays an equal half. `flex: 1` sets the share
+    // of what is left over, not the size an item may be reduced to - so a
+    // "from"/"until" phrase longer than the two English words would have set
+    // its own width and pushed the pair past the dialog. Nothing is cut here
+    // today; this is the guard, not the repair.
+    min-width: 0
     color: $subtext
     font-size: 0.85rem
 
