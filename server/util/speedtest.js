@@ -440,6 +440,13 @@ export default async (mode, serverId, serverUrl, onProgress) => {
      * the last however that went.
      */
     const runOnce = async (runArgs, phase) => {
+        // Refused here as well as in the round's own loop, because this covers
+        // every caller rather than that one: a child started after the shutdown
+        // has passed terminateActiveProcess is one nothing can reach, and under
+        // the Windows service there is no namespace to tear it down - it
+        // outlives the server and finishes by writing into a closed handle.
+        if (isShuttingDown()) throw new Error("The server is shutting down");
+
         let result;
         const stdout = streamAccumulator();
         const stderr = streamAccumulator();

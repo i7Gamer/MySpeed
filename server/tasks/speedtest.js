@@ -281,7 +281,16 @@ export const create = async (type = "auto", targetId = undefined) => {
     // this call, so checking after an await would let two requests slip past.
     // One latch for the whole round - targets run strictly in sequence, which
     // is also what keeps util/speedtest.js's single activeProcess invariant.
-    if (_isRunning) return 500;
+    if (_isRunning) {
+        // Named rather than swallowed. A round of several members can outlast
+        // the schedule interval - one unreachable iperf3 target costs two CLI
+        // timeouts before the round moves on - and a tick dropped in silence
+        // looks from the outside exactly like the scheduler having stopped:
+        // no failed row, nothing in the log, and /status still reporting a run
+        // in progress. The tick is still dropped; it just says so.
+        console.warn("A speedtest round is still running - skipping this scheduled one.");
+        return 500;
+    }
     _isRunning = true;
 
     try {
@@ -307,6 +316,17 @@ const executeRound = async (type, targetId) => {
 
     try {
         for (const [index, target] of members.entries()) {
+            // The shutdown has just killed the member in flight, and the round
+            // is what carries on past it: the next target spawns a CLI after
+            // the one moment terminateActiveProcess could reach it - the orphan
+            // trackProcess exists to prevent, rebuilt one member further along -
+            // and writes its result into a handle onCleanup has closed.
+            //
+            // Above beginTarget rather than below it: that is what /status
+            // reads to name the target measuring, and stopping underneath it
+            // leaves the bar advertising a member the round never started.
+            if (isShuttingDown()) break;
+
             beginTarget(target, index + 1, members.length);
 
             // Only the scheduled rounds honour a hold - a test started by hand
