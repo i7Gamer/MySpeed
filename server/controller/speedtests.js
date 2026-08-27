@@ -88,11 +88,17 @@ export const getOne = async (id) => {
  * concurrent insert, and ids stop agreeing with time on any imported history.
  *
  * Each page keeps the shape listAll gave every download so far: a null error
- * means a successful test and the column is dropped, resultId the same.
+ * means a successful test and the column is dropped, resultId the same - plus
+ * the target's name, which is the row's own targetId resolved to the one thing
+ * about its target that still means something on another instance.
  */
 export const EXPORT_PAGE_ROWS = 2500;
 
 export const listPages = async function* (pageSize = EXPORT_PAGE_ROWS) {
+    // Read once for the whole walk rather than per page: the targets change far
+    // more slowly than a two-year history takes to stream, and a page is
+    // already a database round trip.
+    const {byId: targetNames} = await targetsController.readTargetIndex();
     let after;
 
     for (;;) {
@@ -102,6 +108,23 @@ export const listPages = async function* (pageSize = EXPORT_PAGE_ROWS) {
         for (const row of rows) {
             if (row.error === null) delete row.error;
             if (row.resultId === null) delete row.resultId;
+
+            // The column CSV_COLUMNS has promised since the dashboard export
+            // gained it, and which every backup CSV wrote as '""' on every
+            // row: these rows come straight off the model, so they carry
+            // `targetId` and no name at all, and the CSV writer, which reads
+            // each row by column name, found nothing there. targetId is not a
+            // CSV column either, so the backup - the one export meant to be
+            // complete - was the only one carrying no target information
+            // whatsoever.
+            //
+            // Null where the row has no target, where its target has since
+            // been deleted, and on every row recorded before targets existed;
+            // exportTests answers the same for those. The import reads this
+            // name back through importedTargetId, which is what keeps a
+            // history landing on the right line rather than on whoever holds
+            // that id where it lands.
+            row.targetName = targetNames.get(row.targetId) ?? null;
         }
 
         yield rows;
@@ -638,13 +661,17 @@ export const latestOfTargets = async (targetIds) => {
 // empty until it is named here - which is how the server name and host stayed
 // out of every export from the moment they were added.
 export const exportTests = async (range, target = undefined) => {
-    // Resolved to names, because an export is read by people and other tools:
-    // a bare targetId is meaningless outside this instance, while the name
-    // says which line the row measured. Orphaned and pre-target rows export
-    // null, and the import deliberately ignores the column - names do not
-    // survive a move between instances.
-    const names = Object.fromEntries((await targetsController.listAll())
-        .map((row) => [row.id, row.name]));
+    // Resolved to names, because an export is read by people and other tools -
+    // and by the import on another instance: a bare targetId is meaningless
+    // outside this one, while the name says which line the row measured, and
+    // importedTargetId resolves it back against the local targets on a restore.
+    // Orphaned and pre-target rows export null.
+    //
+    // Through the shared index rather than an object built here: the lookup is
+    // by a value an older import could have left as a string, and one
+    // `names["toString"]` answering with Object.prototype's function is
+    // exactly the trap this file's neighbours keep being fixed for.
+    const {byId: names} = await targetsController.readTargetIndex();
 
     return (await findInRange(range, {}, target)).map(entry => ({
     id: entry.id,
@@ -676,7 +703,7 @@ export const exportTests = async (range, target = undefined) => {
     // long before it was exported, and left out of every export until the
     // column guard in retentionAndExport asked why.
     resultId: entry.resultId,
-    targetName: names[entry.targetId] ?? null,
+    targetName: names.get(entry.targetId) ?? null,
     error: entry.error
 }));
 };

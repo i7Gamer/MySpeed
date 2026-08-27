@@ -203,6 +203,56 @@ export const listAll = async () => await targets.findAll({order: LIST_ORDER});
 
 export const getOne = async (id) => await targets.findOne({where: {id}});
 
+/**
+ * The local targets indexed both ways, for the history backup round trip.
+ *
+ * A history backup carries each row's `targetId`, and that id belongs to the
+ * instance that wrote the file. Read back somewhere else it does not merely
+ * fail to mean anything - it means something wrong. Restored onto an instance
+ * that already measures its own lines, every row the old instance measured
+ * against "Ookla Frankfurt" carries targetId 1 and is handed to whatever holds
+ * id 1 here: from then on it is returned by GET /speedtests?target=1, graded
+ * against that target's optimal values, counted into its statistics, sampled
+ * by listSuccessful for its recommendations and exported under its name, with
+ * nothing in the interface or in the import's counts saying a re-attribution
+ * happened.
+ *
+ * So the export writes the target's *name* beside every row - the one part of
+ * a target that survives a move between instances - and this index is what the
+ * import resolves that name against.
+ *
+ * Maps rather than plain objects, and not for tidiness: the names are what an
+ * operator typed, so on an object `byName["toString"]` answers with
+ * Object.prototype's own function and `byName["__proto__"] = 3` sets a
+ * prototype instead of a key. That is the trap targetProblem, importConfig and
+ * the integrations controller were each fixed for separately, and a
+ * hand-edited backup is the shortest route to it. `byId` is keyed by numbers
+ * out of our own column, but an import older than the rule below could leave a
+ * string there, and the rows it wrote are in the table still - so it gets the
+ * same treatment.
+ *
+ * Pure over the rows, so the rule below can be asked without a database.
+ */
+export const targetIndex = (rows) => {
+    const byName = new Map();
+    const byId = new Map();
+
+    for (const target of rows) {
+        byId.set(target.id, target.name);
+
+        // Nothing stops two targets sharing a name, so the first in round
+        // order wins - the one the interface lists first. A duplicate name is
+        // already ambiguous to a reader; what this settles is that the answer
+        // does not depend on the order the rows happen to come back in.
+        if (!byName.has(target.name)) byName.set(target.name, target.id);
+    }
+
+    return {byName, byId};
+};
+
+/** The same index over the stored targets. */
+export const readTargetIndex = async () => targetIndex(await listAll());
+
 /** The members of a scheduled round, in the order they run. */
 export const roundTargets = async () =>
     await targets.findAll({where: {enabled: true}, order: LIST_ORDER});

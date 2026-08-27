@@ -1,6 +1,7 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, api, seedTests, setConfig } from "./helpers/boot.js";
+import * as targets from "../../server/controller/targets.js";
 import { CSV_COLUMNS } from "../../server/util/csv.js";
 
 let server;
@@ -20,7 +21,18 @@ after(async () => {
 
 beforeEach(async () => {
     await setConfig(server.config, "retentionDays", "365");
+    await targets.removeAll();
 });
+
+/** The stored targets, replaced by exactly these, in the order given. */
+const seedTargets = async (...names) => {
+    await targets.removeAll();
+
+    const created = [];
+    for (const name of names) created.push(await targets.create({name, provider: "ookla"}));
+
+    return created;
+};
 
 describe("retention sweep", () => {
     /**
@@ -90,6 +102,30 @@ describe("GET /api/storage/tests/history/csv", () => {
         const {text} = await api(server.baseUrl, "/storage/tests/history/csv");
         assert.match(text, /""fast""/);
         assert.doesNotMatch(text, /\\"/);
+    });
+
+    /**
+     * Regression: the backup CSV wrote an empty targetName cell on every row of
+     * every export.
+     *
+     * CSV_COLUMNS has named the column since the dashboard export gained it,
+     * but the backup route streams the rows as the model hands them over -
+     * carrying targetId and no name - so the writer, which reads each row by
+     * column name, found nothing there. targetId is not a CSV column either,
+     * which left the backup as the one export saying nothing whatsoever about
+     * which line a row measured.
+     */
+    it("names the target each row measured against", async () => {
+        const [wan] = await seedTargets("WAN");
+        await seedTests(server.tests, [{created: daysAgo(1), targetId: wan.id}, {created: daysAgo(2)}]);
+
+        const {text} = await api(server.baseUrl, "/storage/tests/history/csv");
+        const column = CSV_COLUMNS.indexOf("targetName");
+        const [, measured, orphan] = text.split("\n");
+
+        assert.equal(measured.split(",")[column], '"WAN"',
+            "the backup CSV still writes an empty targetName cell");
+        assert.equal(orphan.split(",")[column], '""', "a row with no target should name none");
     });
 
     it("serves a csv content type", async () => {
