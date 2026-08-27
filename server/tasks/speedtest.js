@@ -13,6 +13,8 @@ import { FAILED_TEST, UNMEASURED_LATENCY, impossibleMeasurement, isFailedTest, i
 import { isRateLimitMessage } from '../util/providers/cliOutput.js';
 import { backoffRemainingMs, clearBackoff, isBackingOff, recordRateLimit } from '../util/rateLimitBackoff.js';
 import * as targetsController from '../controller/targets.js';
+import errorHandler from '../util/errorHandler.js';
+import { outageFrom } from '../util/databaseOutage.js';
 
 // The placeholder a failed test stores in every numeric column. The client
 // tells a failure apart by it, so it is not a value anyone should read as one.
@@ -366,6 +368,77 @@ export const create = async (type = "auto", targetId = undefined) => {
     }
 }
 
+/**
+ * How many members in a row may fail to record before the round gives up.
+ *
+ * One is not evidence about the database. models/Speedtests.js has the case that
+ * proves it: MySQL in strict mode refused a stderr longer than the column, from
+ * inside the very handler that records a failed test - a refusal about that row's
+ * text, which the next member with a shorter message does not share. Two in a
+ * row is no longer about a row, whatever the errors call themselves, and all
+ * that carrying on buys then is another minute of CLI time measuring a line
+ * whose result has nowhere to go.
+ *
+ * It is also what covers the ways a database can go that databaseOutage.js
+ * cannot name: an unrecognised outage costs one extra member, not the round.
+ */
+const MAX_CONSECUTIVE_ESCAPES = 2;
+
+/**
+ * How a member is named in a report. The demo target has neither a name nor an
+ * id - it is a frozen stand-in rather than a row - and "target null" tells an
+ * operator reading error.log nothing whatsoever.
+ */
+const memberName = (target) => {
+    if (typeof target?.name === "string" && target.name !== "") return `The target "${target.name}"`;
+    if (target?.id === null || target?.id === undefined) return "The demo target";
+
+    return `The target #${target.id}`;
+};
+
+/** A round of two says "1 target" as often as it says "3 targets". */
+const counted = (count) => `${count} ${count === 1 ? "target" : "targets"}`;
+
+/**
+ * What a failure that escaped a member's own handler means for the round.
+ *
+ * Nothing is supposed to reach here: executeTarget handles every failure it can
+ * describe. What it cannot handle is its own recording failing, which is the one
+ * way in - a rejection out of the tests.create that writes the row saying the
+ * test failed.
+ *
+ * Two answers, together because they are one judgement: whether the round can
+ * still do anything useful, and what the operator is told about the member that
+ * could not. Pure and exported because the real path needs a database that
+ * breaks halfway through a round, which nothing here can arrange.
+ *
+ * @param error whatever escaped, exactly as it was thrown.
+ * @param target the member it escaped from.
+ * @param escapes how many members in a row have now failed to record, this one
+ *        included.
+ * @param remaining how many members of the round have not run yet.
+ */
+export const memberFailure = (error, target, {escapes = 1, remaining = 0} = {}) => {
+    const outage = outageFrom(error);
+    const abandoned = outage || escapes >= MAX_CONSECUTIVE_ESCAPES;
+    const opening = `${memberName(target)} could not record its result`;
+
+    if (!abandoned) return {
+        abandoned: false,
+        context: remaining === 0
+            ? `${opening}, and it was the last member of the round`
+            : `${opening} - the round carries on to its remaining ${counted(remaining)}`
+    };
+
+    return {
+        abandoned: true,
+        context: `${opening}, and ${outage
+            ? "the database is not answering"
+            : "neither could the member before it"}`
+            + (remaining === 0 ? "" : ` - abandoning the round, leaving ${counted(remaining)} unmeasured`)
+    };
+};
+
 const executeRound = async (type, targetId) => {
     const members = await roundMembers(targetId);
 
@@ -400,6 +473,10 @@ const executeRound = async (type, targetId) => {
     // them nothing - a demo has no business firing anybody's webhook.
     setRunning(true, members[0].provider !== "preview");
 
+    // Members that could not record, counted down the round rather than across
+    // it - see MAX_CONSECUTIVE_ESCAPES.
+    let escapes = 0;
+
     try {
         for (const [index, target] of members.entries()) {
             // The shutdown has just killed the member in flight, and the round
@@ -433,12 +510,48 @@ const executeRound = async (type, targetId) => {
             // says in the log which target it was and for how long.
             if (memberHeld(target, type, heldByBackoff)) continue;
 
-            await executeTarget(target, type);
+            /*
+             * A member that cannot even record its own failure must not take the
+             * rest of the round with it. executeTarget handles everything it can
+             * describe; what it cannot handle is its own recording failing - the
+             * last unguarded await in that catch is the tests.create that writes
+             * the row saying the test failed - and that rejection used to leave
+             * the loop through the finally below. Targets three, four and five
+             * of a five-member round were then never measured and recorded
+             * nothing at all: no row, no error, no notification, and one line
+             * from timer.js naming neither the round nor the members it dropped.
+             * A round was a single test before targets existed, so this had
+             * nothing to lose.
+             *
+             * Reported through errorHandler rather than console.error, for the
+             * reason timer.js reports through it: data/logs/error.log is the file
+             * the log's own header points bug reports at, and the only place
+             * sequelize's side properties - the column, the rule, the driver's
+             * code - are written down at all. A round that ends because the
+             * database went away must not end quietly.
+             */
+            try {
+                await executeTarget(target, type);
+                // A member that recorded - a result or a failure, either one - is
+                // proof the database is still there, so the count of members that
+                // could not starts again from here.
+                escapes = 0;
+            } catch (error) {
+                escapes++;
+
+                const {abandoned, context} = memberFailure(error, target,
+                    {escapes, remaining: members.length - index - 1});
+
+                errorHandler(error, {fatal: false, context});
+
+                if (abandoned) break;
+            }
         }
     } finally {
-        // The round is over on every path, including a throw from a member's
-        // failure handler - the same guarantee the latch has, for the same
-        // reason: tasks/integrations.js reads this state for its keep-alive.
+        // The round is over on every path, including one the guard above could
+        // not contain - a throw from beginTarget, or from the reporting itself.
+        // The same guarantee the latch has, for the same reason:
+        // tasks/integrations.js reads this state for its keep-alive.
         setRunning(false, false);
     }
 };

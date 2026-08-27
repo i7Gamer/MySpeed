@@ -71,17 +71,29 @@ export const isDamaged = (rows) => problemsIn(rows).length > 0;
  * Looks through a wrapper at the driver error underneath, because sequelize
  * wraps one - so the code that matters can be a level down.
  */
-export const damageFrom = (error) => {
-    if (error === null || typeof error !== "object") return false;
+export const damageFrom = (error) => causesOf(error).some((candidate) =>
+    DAMAGE_CODES.has(candidate.code)
+    || (typeof candidate.message === "string" && DAMAGE_WORDING.test(candidate.message)));
 
-    for (const candidate of [error, error.parent, error.original]) {
-        if (candidate === null || typeof candidate !== "object") continue;
+/**
+ * The error itself, and whatever it wraps.
+ *
+ * Sequelize hands the driver's error on as `parent` and `original` - the same
+ * object under both names on every error that carries one, though which of them
+ * is set has moved between versions - so the code and the wording that name the
+ * fault sit a level below the error that was actually thrown.
+ *
+ * Its own export rather than a loop inside damageFrom, because databaseOutage.js
+ * asks the same chain a different question. Two copies of this walk would be two
+ * things to change the next time sequelize renames the property, and the one
+ * nobody changed would answer false for every wrapped error - silently, since
+ * "nothing found" is what both of these callers read as "the database is fine".
+ */
+export const causesOf = (error) => {
+    if (error === null || typeof error !== "object") return [];
 
-        if (DAMAGE_CODES.has(candidate.code)) return true;
-        if (typeof candidate.message === "string" && DAMAGE_WORDING.test(candidate.message)) return true;
-    }
-
-    return false;
+    return [error, error.parent, error.original]
+        .filter((candidate) => candidate !== null && typeof candidate === "object");
 };
 
 /**
