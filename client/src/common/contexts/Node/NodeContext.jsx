@@ -52,7 +52,21 @@ export const NodeProvider = (props) => {
             appliedGeneration.current = generation;
             setNodes(fetched);
             setNodesLoaded(true);
-        });
+        /*
+         * Caught here rather than at the call sites, because there are eight of
+         * them - this provider's own effect, the Nodes page, the create dialog,
+         * the node container twice and the password dialog twice - and every
+         * one is fire-and-forget. A server that is down, a dropped connection
+         * or a proxied node that goes quiet past the abort left an unhandled
+         * rejection on the console each time.
+         *
+         * Swallowed rather than reported, which takes nothing away: the
+         * `!nodes.ok` path above already returns in silence, so an HTTP failure
+         * has never said anything either. What matters is that nodesLoaded
+         * stays false, so the reconciliation below does not read an empty list
+         * as an answer and move the session to this instance.
+         */
+        }).catch(() => undefined);
     };
 
     /**

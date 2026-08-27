@@ -1,6 +1,6 @@
 import {Dialog, DialogHeader, DialogBody, DialogFooter} from "@/common/contexts/Dialog";
 import {useAlert} from "@/common/contexts/Alert";
-import React, {useContext, useState} from "react";
+import React, {useContext, useEffect, useState} from "react";
 import "./styles.sass";
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
@@ -24,6 +24,30 @@ export const CreateNodeDialog = ({open, onClose}) => {
     const [serverName, setServerName] = useState("");
     const [serverUrl, setServerUrl] = useState("");
     const [checking, setChecking] = useState(false);
+
+    /*
+     * Emptied every time the dialog opens, because it never unmounts.
+     *
+     * Nodes.jsx renders it unconditionally, and DialogContext's
+     * `if (!visible) return null` unmounts only the dialog's *children* - these
+     * four hooks live above that boundary and survive every close. So an
+     * operator who started adding a node, got the URL wrong and cancelled was
+     * shown the same half-typed attempt and the same red error the next time
+     * they opened it, with the confirm button still spinning on a request that
+     * had finished long ago.
+     *
+     * Keyed on `open` rather than run once on mount: mounting happens with the
+     * page, before anything has been typed, so a reset there fires exactly once
+     * and never again. The sibling TargetsDialog reads the same way.
+     */
+    useEffect(() => {
+        if (!open) return;
+
+        setServerName("");
+        setServerUrl("");
+        setUrlError(null);
+        setChecking(false);
+    }, [open]);
 
     const created = () => {
         updateNodes();
