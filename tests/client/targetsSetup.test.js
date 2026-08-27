@@ -58,7 +58,7 @@ describe("when the setup wizard opens itself", () => {
             "the wizard opens on an empty list again, so deleting the last target traps the operator");
         // The decision is handed an answer rather than the list: given the
         // list it could only ask about emptiness, which is the fault above.
-        assert.doesNotMatch(outcome, /targets\.length/,
+        assert.doesNotMatch(outcome, /\btargets\.length\b/,
             "the decision measures the list itself again");
     });
 
