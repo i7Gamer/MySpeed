@@ -9,6 +9,15 @@
 $metric-font-size: 28pt
 $metric-line-height: 1.2
 
+// Between a metric's glyph and the figure it labels.
+//
+// It was a margin on the glyph, which put it inside the button the glyph sits
+// in - so the focus ring drew around the gap as well as the icon, and came out
+// with 14px of nothing on one side and the figure touching it on the other.
+// The spacing belongs to the row: the button is then the glyph, and the ring
+// is the glyph's.
+$row-icon-gap: 10px
+
 // The floor every line inside a card stands on, the failure sentence included.
 // It was the metric line box above until the grade badge arrived: drawn at the
 // size of an icon, that is taller than a value's line box, so the measurement
@@ -121,6 +130,7 @@ $row-min-height: 3rem
 .speedtest-row
   display: flex
   align-items: center
+  gap: $row-icon-gap
   min-height: $row-min-height
 
 // Takes the space the three metric columns would have used, so a failed row is
@@ -128,7 +138,9 @@ $row-min-height: 3rem
 .speedtest-failure
   display: flex
   align-items: center
-  gap: 0.5rem
+  // The same gap the metric rows use. It was 0.5rem plus the glyph's own
+  // margin, which is 18px and was nobody's decision.
+  gap: $row-icon-gap
   grid-column: 2 / 6
   min-width: 0
   // The same floor the measurements stand on.

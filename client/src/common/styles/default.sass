@@ -89,7 +89,6 @@ body::before
 .speedtest-icon
   font-size: 26pt
   +graded-glyph($white)
-  margin-right: 10px
 
 .container-icon
   width: 35px
@@ -108,17 +107,25 @@ body::before
 .help-button
   display: inline-flex
   align-items: center
-  padding: 0
+  // Centred in a box that is the glyph's own shape. The icons are drawn at a
+  // fixed 1.25em width whatever their picture is, so an arrow - three quarters
+  // as wide as it is tall - sat in a box with 9px of nothing either side of it,
+  // and the ring drew around the nothing. Its true aspect makes the box the
+  // glyph, and the padding below then reads as a ring rather than as a margin.
+  justify-content: center
+  padding: $focus-ring-pad
+  // And the layout gets back exactly what the padding took, so no icon moves.
+  margin: -$focus-ring-pad
   border: none
   background: none
   color: inherit
   font: inherit
   cursor: help
 
-  // Tighter than the rest, because these are the ones with a neighbour: the
-  // detail pane's sub-parts put the glyph 4px from the figure it labels, and
-  // the standard offset plus the ring's own width lands on it. See _focus.sass.
-  +focus-ring($focus-ring-offset-tight, 0.25rem)
+  svg
+    width: auto
+
+  +focus-ring($radius: 0.25rem)
 
 // Where focus is, on anything that had to be made into a control rather than
 // born one - the statistics tiles, the charts, the node cards, the overview row.

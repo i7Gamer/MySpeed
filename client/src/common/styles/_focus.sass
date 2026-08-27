@@ -25,14 +25,16 @@ $focus-ring-width: 2px
 /// away plus the ring's own width.
 $focus-ring-offset: 2px
 
-/// Except beside the metric figures. An outline never affects layout, so the
-/// room a ring has is whatever the gap already was - and the detail pane's
-/// sub-parts put a 14px glyph 4px from the figure it labels, which the standard
-/// offset plus the ring's width lands exactly on. One pixel back clears it.
+/// The air a bare glyph keeps inside its own control, so the ring has something
+/// to sit on other than the ink.
 ///
-/// Measured on the overview and the detail pane; the larger help buttons have
-/// more room and lose nothing by matching.
-$focus-ring-offset-tight: 1px
+/// A button drawn around nothing but an icon is the icon's box, and an icon's
+/// box is not its picture: measured on the overview row, the ping paddle had
+/// 0px above it, -2px below - the glyph broke through - 4px to its left and 14
+/// to its right, which is the shape a reader reads as a ring that has slipped.
+/// Padding gives every side the same, and an equal negative margin gives the
+/// layout back what the padding took, so nothing around it moves.
+$focus-ring-pad: 3px
 
 /// The ring itself.
 ///

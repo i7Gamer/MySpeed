@@ -98,16 +98,47 @@ describe("the focus ring", () => {
     }
 
     /**
-     * The inline metric glyphs sit 4px from the figure they label, so the
-     * standard offset plus the ring's own width lands on it. Measured on the
-     * detail pane's sub-parts, which are the tightest of them.
+     * A button drawn around nothing but an icon is that icon's box, and an
+     * icon's box is not its picture: the glyphs are drawn at a fixed 1.25em
+     * width whatever shape they are, so an arrow sat in a box with 9px of
+     * nothing either side and the ring drew around the nothing. The ping paddle
+     * fared worse - 0px above, -2px below, 4 left and 14 right.
+     *
+     * Its own aspect makes the box the glyph; the padding is then the ring's
+     * air, equal on every side; and the negative margin hands the layout back
+     * what the padding took, so nothing around it moves.
      */
-    it("draws tighter where the control has a neighbour 4px away", () => {
-        const help = focusRules().find(({selector}) => selector.includes(".help-button"));
+    it("gives a bare glyph a box its own shape, with equal air round it", () => {
+        const help = rules(compile("common/styles/default.sass"))
+            .find(({selector}) => selector === ".help-button");
 
-        assert.ok(help, "the help buttons draw no ring");
-        assert.equal(declaration(help.body, "outline-offset"), token("focus-ring-offset-tight"),
-            "the metric glyphs draw at the standard offset, which reaches their figure");
+        assert.ok(help, "the help button rule has moved");
+        assert.equal(declaration(help.body, "padding"), token("focus-ring-pad"),
+            "the ring sits straight on the ink again");
+        assert.equal(declaration(help.body, "margin"), `-${token("focus-ring-pad")}`,
+            "the padding is not given back, so every icon has shifted");
+        assert.equal(declaration(help.body, "justify-content"), "center",
+            "the glyph is not centred in the box the ring draws");
+    });
+
+    /**
+     * And the spacing to the figure is the row's, not the glyph's. As a margin
+     * on the glyph it sat inside the button, so the ring enclosed it - which is
+     * where the 14px of dead space on one side came from.
+     */
+    it("keeps the gap to the figure outside the button", () => {
+        const icon = rules(compile("common/styles/default.sass"))
+            .find(({selector}) => selector === ".speedtest-icon");
+
+        assert.ok(icon, "the overview glyph rule has moved");
+        assert.equal(declaration(icon.body, "margin-right"), undefined,
+            "the gap is inside the button again, so the ring draws around it");
+
+        const row = rules(compile("pages/Home/components/Speedtest/styles.sass"))
+            .find(({selector}) => selector === ".speedtest-row");
+
+        assert.ok(declaration(row?.body ?? "", "gap"),
+            "nothing separates the glyph from its figure now the margin has gone");
     });
 
     /**
