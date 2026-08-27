@@ -343,6 +343,14 @@ export const importTests = async (data) => {
     // from the body and a refusal answered less than a failure did.
     if (!Array.isArray(data)) return {ok: false, imported: 0, skipped: 0};
 
+    // The targets this instance holds, read once for the whole file rather than
+    // once per row: a restore is one batch of writes, and a target created
+    // while it runs has no business claiming half of it. Nothing else about
+    // this instance is read - see importedTargetId for why a rule that also
+    // asked whether the history table was empty could not survive a restore
+    // that follows a cron tick, or an import that is retried.
+    const local = await targetsController.readTargetIndex();
+
     let imported = 0;
     let skipped = 0;
 
@@ -386,7 +394,26 @@ export const importTests = async (data) => {
         // MySpeed is reinstalled and runs for a week before anyone gets to the
         // backup, and the restore then silently discards exactly the
         // overlapping week. Left to the database, nothing collides.
-        const {id, ...row} = entry;
+        const {id, targetId, targetName, ...row} = entry;
+
+        // The file's targetId does not go through either, and it is dropped
+        // rather than trusted: it is an id of the instance that wrote the file,
+        // and on an instance that already measures its own lines it did not
+        // fail to mean anything - it pointed at whichever target happens to
+        // hold that number here, an attribution that is wrong rather than
+        // missing and that nothing in the interface or in the counts below
+        // reports. What places the row instead is the target name the export
+        // writes beside it, resolved against the targets this instance holds.
+        //
+        // A name that resolves to nothing leaves the row in the history with no
+        // target at all, which every reader already handles - it is what the
+        // rows of a deleted target have carried all along, since the column is
+        // deliberately not a foreign key.
+        //
+        // Which also puts the column beyond a payload's reach: targetId is not
+        // in NUMERIC_COLUMNS, so until now a hand-edited backup could park a
+        // string in an INTEGER column and sqlite would keep it.
+        row.targetId = targetsController.importedTargetId(entry, local);
 
         batch.push(row);
         if (batch.length >= IMPORT_CHUNK_ROWS) await flush();

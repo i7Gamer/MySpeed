@@ -253,6 +253,82 @@ export const targetIndex = (rows) => {
 /** The same index over the stored targets. */
 export const readTargetIndex = async () => targetIndex(await listAll());
 
+/**
+ * Which local target a restored history row belongs to, or null for an orphan.
+ *
+ * A backup's `targetId` values belong to the instance that wrote the file.
+ * Written through onto a different one they do not merely fail to mean
+ * anything - they mean something wrong: every row the old instance measured
+ * against "Ookla Frankfurt" carries targetId 1 and is handed to whatever holds
+ * id 1 here. From then on it is returned by GET /speedtests?target=1, graded
+ * against that target's optimal values, counted into its statistics, sampled
+ * by listSuccessful for its recommendations and re-exported under its name,
+ * and nothing in the interface or in the import's counts says a re-attribution
+ * happened.
+ *
+ * So the row's own id is not read at all. What is read is the target *name*
+ * the export writes beside every row - the one part of a row's attribution
+ * that means the same thing on both instances - resolved against the targets
+ * this instance holds. Always, and that word is the design: the same file
+ * landing on the same targets is attributed the same way whether the history
+ * table is empty or holds two years, whether this is the first attempt at the
+ * import or the fourth.
+ *
+ * Because the alternative was tried three times and fails in disaster
+ * recovery, which is the one flow a history backup exists for. Every rule that
+ * also consulted the state of the destination - "an empty history means this
+ * instance is being rebuilt, so keep the file's own ids" - gives two different
+ * answers to one file, and something ordinary flips it mid-recovery:
+ *
+ *   - A rebuild that sat through a cron tick. The scheduled round is a cron
+ *     expression, not an interval: DEFAULTS.cron in config.js is "0 * * * *",
+ *     so a reinstall at :55 records a round of its own five minutes later. The
+ *     table is no longer empty, the rule changes, and the restore begun after
+ *     that orphans the rows the same restore begun before it kept.
+ *
+ *   - An import that is retried or split. RequestUtil aborts a request after
+ *     REQUEST_TIMEOUT while importTests commits chunk by chunk on purpose, so
+ *     a large restore can leave part of the file written and still report an
+ *     error - and the operator's next move is to import the same file again,
+ *     onto a table the first attempt made non-empty. IMPORT_BODY_LIMIT forces
+ *     the same shape on any history above 50mb, which cannot arrive in one
+ *     PUT at all.
+ *
+ * A name lookup cannot do that: it reads the row and the targets table, and
+ * neither is changed by how far a previous attempt got.
+ *
+ * On a same-instance restore the answer is the id the row started with - the
+ * export wrote the name that id resolved to, and the configuration backup puts
+ * the targets back under their own ids. What it costs is a target renamed
+ * between the export and the import: its rows resolve to nothing and land
+ * unattributed. That is visible and explicable - they show in the history and
+ * in every "all targets" view with no target rather than under a wrong one,
+ * and the file still holds the truth - which is exactly what a row filed under
+ * a live target that never measured it is not.
+ *
+ * null, then, whenever the name is missing or answers to nothing here. A file
+ * written by an instance older than the export's targetName column carries no
+ * name on any row, so every row of such a file is imported unattributed; there
+ * is deliberately no fallback to the raw `targetId`, because trusting that id
+ * is the silent re-attribution this rule exists to end.
+ *
+ * Pure over an index of the local targets, because which target a name means
+ * is a judgement about targets and this suite can neither mock modules nor
+ * reach a database from tests/server. That index is a Map: the names are what
+ * an operator typed, and on a plain object `byName["toString"]` answers with
+ * Object.prototype's own function - the trap targetProblem, importConfig and
+ * the integrations controller were each fixed for separately.
+ */
+export const importedTargetId = ({targetName}, {byName}) => {
+    // Only a string can be a name. A Map would answer undefined for a number
+    // or an object anyway, but the guard says so rather than leaving it to
+    // luck, and it keeps this readable as the one thing it is - a name lookup,
+    // with no branch anywhere that reads the row's id.
+    if (typeof targetName !== "string") return null;
+
+    return byName.get(targetName) ?? null;
+};
+
 /** The members of a scheduled round, in the order they run. */
 export const roundTargets = async () =>
     await targets.findAll({where: {enabled: true}, order: LIST_ORDER});
