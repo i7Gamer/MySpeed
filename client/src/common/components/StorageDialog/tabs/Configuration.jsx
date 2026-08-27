@@ -78,7 +78,13 @@ export default ({close}) => {
     return (
         <>
             <div className="storage-row">
-                <div className="storage-row-label">
+                {/* Marked as hinted: the sentence below is part of this
+                    label's content, so without a basis holding it back the
+                    label asks for the width of the whole sentence and the row
+                    wraps in every language. The rows that carry only a heading
+                    ask for their own words and stay on one line where they
+                    fit. */}
+                <div className="storage-row-label storage-row-label-hinted">
                     <FontAwesomeIcon icon={faFileExport}/>
                     <h3>{t("storage.export_settings")}</h3>
                     <p className="storage-row-hint">

@@ -128,24 +128,31 @@
     // exactly flush - "Datenaufbewahrung" plus a 9rem button came to the row's
     // width to the pixel - and the next translation would have gone over.
     //
-    // A small basis rather than `auto` or zero, because flex wraps before it
-    // shrinks: the line is composed from each item's hypothetical size, and
-    // only then is what is left shared out.
-    //
-    // At `auto` the export row's hint - a whole sentence - made the label's
-    // hypothetical size the width of that sentence, so the row wrapped in
-    // every language and the button left the line its heading was on. At zero
-    // nothing ever wraps, which crushed the other tab: German's
-    // "Datenaufbewahrung" and Catalan's equivalent are single words with no
-    // break in them, and beside a select and a button there was no room left
-    // to put them in.
-    //
-    // 12rem is the hinge. A row with one button clears it and stays on one
-    // line, hint wrapping inside the label. A row carrying a select as well
-    // does not, and wraps - which is the right answer there, because the label
-    // then has the full width for a word that cannot be broken.
-    flex: 1 1 12rem
+    // The label asks for its own words and no more, so a row wraps when its
+    // label and its controls genuinely do not fit and not before. This was a
+    // 12rem basis on every row, and a basis is room reserved before the line is
+    // composed: the retention row carries a select as well as a button, so
+    // 192px of reserved label plus 321 of controls came to more than the 515
+    // the panel holds and it wrapped in English with 49px still going spare.
+    // It wrapped in every language, and English was the only one that had any
+    // room to lose - German, Dutch, French, Russian, Portuguese and Catalan all
+    // want between 35 and 108px more than the row has and wrap either way,
+    // which is the right answer there: the label then has the full width for a
+    // word with no break in it.
+    flex: 1 1 auto
     min-width: 0
+
+    // Except where the label carries a sentence. At `auto` the export row's
+    // hint is part of the label's content, so the label asks for the width of
+    // that whole sentence, the row wraps in every language and the button
+    // leaves the line its heading is on. The basis is what holds it back to a
+    // heading's width and lets the hint wrap inside it.
+    //
+    // Marked on the row in the JSX rather than found here with :has() - the
+    // same call the targets dialog records making, so that somebody adding a
+    // row sees which kind it is where they are writing it.
+    &.storage-row-label-hinted
+      flex-basis: 12rem
 
     svg
       color: $subtext

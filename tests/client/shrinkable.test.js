@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { compile, read, rules } from "../helpers/sass.mjs";
+import { readSource } from "../helpers/source.js";
 
 /**
  * The flex items that have to be told they may shrink, and the two places a
@@ -72,6 +73,55 @@ describe("the wizard's speed fields", () => {
         // everything inside it had been told it could shrink.
         assert.ok(declares(header, "max-width", "100%"),
             "a centred label takes its content's width, not its column's");
+    });
+});
+
+describe("the storage rows' labels", () => {
+    const css = compile("common/components/StorageDialog/styles.sass");
+
+    /**
+     * A basis is room reserved before the line is composed, and reserving it on
+     * every row cost the one row that had room to spare. The retention row
+     * carries two controls where the others carry one, so 12rem of reserved
+     * label plus a select plus a button came to more than the panel holds and
+     * the row wrapped - in English, where the label wants 129px of the 515 and
+     * the controls 321, with 49px still going spare. It wrapped in every
+     * language, and only English had any room to lose.
+     *
+     * So the label asks for its own words. Where they and the controls fit, the
+     * row is one line; where they do not - German, Dutch, French, Russian,
+     * Portuguese and Catalan on that row, all of them 35px to 108px over - it
+     * wraps as before and the label takes the full width for a word that cannot
+     * be broken.
+     */
+    it("asks for its own words rather than a reserved basis", () => {
+        assert.ok(declares(bodyOf(css, ".storage-row .storage-row-label"), "flex", "1 1 auto"),
+            "every row reserves room again, so the one that fits wraps with room to spare");
+    });
+
+    /**
+     * Except the row whose label carries a sentence. At `auto` that hint is the
+     * label's content, so the label asks for the width of a whole sentence and
+     * the row wraps in every language - which is the fault the basis was
+     * measured against in the first place.
+     */
+    it("keeps the basis where a hint would ask for a sentence", () => {
+        assert.ok(declares(bodyOf(css, ".storage-row .storage-row-label.storage-row-label-hinted"),
+            "flex-basis", "12rem"),
+            "the hinted row has nothing holding its label back to a heading's width");
+    });
+
+    /**
+     * Marked on the row in the JSX rather than found with :has() - the same
+     * call the targets dialog records making, so that somebody adding a row
+     * sees which kind it is where they are writing it.
+     */
+    it("is marked on the row that carries the hint", () => {
+        const jsx = readSource("client/src/common/components/StorageDialog/tabs/Configuration.jsx");
+        const hinted = jsx.slice(0, jsx.indexOf("storage-row-hint"));
+
+        assert.ok(hinted.lastIndexOf("storage-row-label-hinted") > hinted.lastIndexOf("storage-row-label\""),
+            "the row carrying the hint is not the row marked as carrying one");
     });
 });
 
