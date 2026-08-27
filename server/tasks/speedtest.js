@@ -173,20 +173,46 @@ const simulatePreviewRun = async () => {
     }
 };
 
+/**
+ * Which server a run measures against: the target's own backend where it has
+ * one, the server it pins where it pins one, and whatever the provider chooses
+ * otherwise.
+ *
+ * `retryAuto` is the automatic second attempt, and what it drops is the *pin*.
+ * That is what the fallback is for - a pinned server that has degraded or died
+ * fails every run against it, and the retry asks the provider to choose one
+ * instead.
+ *
+ * It does not drop the endpoint, which used to go with it. A pin is a
+ * preference among the provider's own servers; an endpoint is which line is
+ * being measured. A retry without it measured the *public* fleet and stored the
+ * answer under this target's id, so the history said the operator's own backend
+ * had delivered a number it never produced - and a target carrying an endpoint
+ * records no server id, so nothing on the row said otherwise.
+ *
+ * Its own function because that is the only way the decision can be tested: the
+ * two suites that pin the retry read the source for its condition, and neither
+ * could see the arguments it ran with.
+ */
+export const serversFor = (target, retryAuto = false) => {
+    const serverUrl = target.endpoint ?? undefined;
+
+    // An endpoint already names the server, so a pin alongside it would be a
+    // second answer to a question that has one.
+    if (serverUrl) return {serverId: undefined, serverUrl};
+
+    return {serverId: retryAuto ? undefined : (target.serverId ?? undefined), serverUrl: undefined};
+};
+
 export const run = async (target, retryAuto = false) => {
     const mode = target.provider;
 
-    let serverId = target.serverId ?? undefined;
-    let serverUrl = target.endpoint ?? undefined;
+    let {serverId, serverUrl} = serversFor(target, retryAuto);
 
-    if (serverUrl) serverId = undefined;
-
-    // Both branches carry the callback: the retry is the same logical run, and a
-    // bar that stopped moving the moment a test fell back to automatic server
-    // selection would read as the run having hung.
-    let speedtest = await (retryAuto
-        ? speedTest(mode, undefined, undefined, updateProgress)
-        : speedTest(mode, serverId, serverUrl, updateProgress));
+    // The callback is carried whichever server was chosen: the retry is the
+    // same logical run, and a bar that stopped moving the moment a test fell
+    // back to automatic server selection would read as the run having hung.
+    let speedtest = await speedTest(mode, serverId, serverUrl, updateProgress);
 
     // Recorded on the row, not written back into the configuration. Persisting
     // it turned "choose automatically" into a pin the moment the first test
