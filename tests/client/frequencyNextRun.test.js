@@ -138,7 +138,11 @@ describe("the frequency dialog's next-test preview", () => {
      * cannot correct it.
      */
     it("is only offered to an operator, which is why the window is there to read", () => {
-        const entry = dropdown.match(/\{run: \(\) => setShowFrequencyDialog\(true\)[^}]*\}/);
+        // Matched on what the entry opens rather than on `run` coming first:
+        // every entry now declares a stable `key` ahead of its handler, and an
+        // assertion anchored to the property order silently stops finding the
+        // entry at all - which reads as a pass for the wrong reason.
+        const entry = dropdown.match(/\{[^}]*setShowFrequencyDialog\(true\)[^}]*\}/);
         assert.ok(entry, "the frequency dialog is no longer opened from the dropdown");
 
         assert.doesNotMatch(entry[0], /allowView/,

@@ -161,22 +161,36 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
         { buttonText: t("dialog.close") }
     );
 
+    /*
+     * Every entry carries a `key` of its own, separators included.
+     *
+     * React was given `entry.run` - a function, which it stringifies to that
+     * function's source text. Stable across renders by accident, but it makes
+     * every key hundreds of bytes of code and comments, and two entries whose
+     * handlers ever became textually identical would collide in silence.
+     *
+     * `entry.text` is the tempting swap and the wrong one: each is a t() call
+     * evaluated at render, so a language change rewrites all ten keys at once
+     * and remounts the menu, and the pause entry's flips on every toggle. These
+     * are stable by construction instead, and the two branches below now read
+     * the same.
+     */
     const options = [
-        {run: () => setShowOptimalValuesDialog(true), icon: faGauge, text: t("dropdown.optimal_values"), previewDisabled: true},
-        {hr: true, key: 1},
-        {run: () => setShowTargetsDialog(true), icon: faSliders, text: t("dropdown.targets"), previewDisabled: true},
+        {key: "optimal_values", run: () => setShowOptimalValuesDialog(true), icon: faGauge, text: t("dropdown.optimal_values"), previewDisabled: true},
+        {hr: true, key: "hr-1"},
+        {key: "targets", run: () => setShowTargetsDialog(true), icon: faSliders, text: t("dropdown.targets"), previewDisabled: true},
         // Not disabled: the exports underneath are GETs and still work on a
         // demo. Only its import and clear buttons are refused, and the dialog
         // reports those itself.
-        {run: () => setShowStorageDialog(true), icon: faHardDrive, text: t("dropdown.storage")},
-        {run: () => setShowPasswordDialog(true), icon: faKey, text: t("dropdown.password"), previewHidden: true},
-        {run: () => setShowFrequencyDialog(true), icon: faClock, text: t("dropdown.cron"), previewDisabled: true},
-        {run: togglePause, icon: status.paused ? faPlay : faPause, text: t("dropdown." + (status.paused ? "resume_tests" : "pause_tests")), previewDisabled: true},
-        {run: () => setShowIntegrationDialog(true), icon: faCircleNodes, text: t("dropdown.integrations")},
-        {hr: true, key: 2},
-        {run: () => setShowLanguageDialog(true), icon: faGlobeEurope, text: t("dropdown.language"), allowView: true},
-        {run: () => setShowPreferencesDialog(true), icon: faUserGear, text: t("dropdown.preferences"), allowView: true},
-        {run: showProviderDetails, icon: faInfo, text: t("dropdown.provider"), previewShown: true}
+        {key: "storage", run: () => setShowStorageDialog(true), icon: faHardDrive, text: t("dropdown.storage")},
+        {key: "password", run: () => setShowPasswordDialog(true), icon: faKey, text: t("dropdown.password"), previewHidden: true},
+        {key: "cron", run: () => setShowFrequencyDialog(true), icon: faClock, text: t("dropdown.cron"), previewDisabled: true},
+        {key: "pause", run: togglePause, icon: status.paused ? faPlay : faPause, text: t("dropdown." + (status.paused ? "resume_tests" : "pause_tests")), previewDisabled: true},
+        {key: "integrations", run: () => setShowIntegrationDialog(true), icon: faCircleNodes, text: t("dropdown.integrations")},
+        {hr: true, key: "hr-2"},
+        {key: "language", run: () => setShowLanguageDialog(true), icon: faGlobeEurope, text: t("dropdown.language"), allowView: true},
+        {key: "preferences", run: () => setShowPreferencesDialog(true), icon: faUserGear, text: t("dropdown.preferences"), allowView: true},
+        {key: "provider", run: showProviderDetails, icon: faInfo, text: t("dropdown.provider"), previewShown: true}
     ];
 
     return (
@@ -223,7 +237,7 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
                                         // The explanation instead of the dialog:
                                         // the save behind it would be refused.
                                         (blocked ? explainPreview : entry.run)();
-                                    })} key={entry.run}>
+                                    })} key={entry.key}>
                                         <FontAwesomeIcon icon={entry.icon}/>
                                         <h3>{entry.text}</h3>
                                     </div>);
