@@ -169,6 +169,15 @@ describe("the backoff", () => {
     });
 
     it("starts over once a test gets through", () => {
+        // Three refusals for one escalation. The first two are a whole wait
+        // apart, which is what earns the doubling this case exists to see
+        // cleared: back to back they are one refusal reaching two callers -
+        // three Ookla targets in a round all being told the same no - and the
+        // module now answers those with the standing hold rather than a longer
+        // one, so there would be nothing left for clearBackoff to undo and the
+        // assertion below would pass on a module that never doubled at all.
+        // The third call is exactly that repeat, and must change nothing.
+        recordRateLimit(PROVIDER, NOW - FIRST_BACKOFF_MS);
         recordRateLimit(PROVIDER, NOW);
         recordRateLimit(PROVIDER, NOW);
 
@@ -191,6 +200,44 @@ describe("the backoff", () => {
         assert.equal(isBackingOff("ookla", NOW), true);
         assert.equal(isBackingOff("libre", NOW), false);
         assert.equal(isBackingOff("cloudflare", NOW), false);
+    });
+
+    /**
+     * The escalation is about waits, not about callers.
+     *
+     * Several targets can share a provider - two Ookla targets pinned to
+     * different servers is the point of the feature - and a round started by
+     * hand consults no hold at all, deliberately. So one press of "Run test" on
+     * an instance with three Ookla targets recorded three refusals within
+     * seconds and doubled the wait three times: a quarter of an hour became an
+     * hour, and the automatic schedule went quiet for it, from one click.
+     */
+    it("does not escalate for a refusal that arrives inside a standing hold", () => {
+        recordRateLimit(PROVIDER, NOW);
+        const inside = NOW + FIRST_BACKOFF_MS / 3;
+
+        assert.equal(recordRateLimit(PROVIDER, inside), FIRST_BACKOFF_MS * 2 / 3,
+            "the repeat was answered with a fresh wait rather than what is left of the standing one");
+        assert.equal(backoffRemainingMs(PROVIDER, inside), FIRST_BACKOFF_MS * 2 / 3);
+        assert.equal(isBackingOff(PROVIDER, NOW + FIRST_BACKOFF_MS), false,
+            "a repeat pushed out the moment the schedule is next allowed to try");
+    });
+
+    it("is not escalated by a whole round of targets sharing one provider", () => {
+        for (let target = 0; target < 3; target++) recordRateLimit(PROVIDER, NOW);
+
+        assert.equal(backoffRemainingMs(PROVIDER, NOW), FIRST_BACKOFF_MS,
+            "one click on an instance with three Ookla targets silenced the schedule for an hour");
+    });
+
+    /**
+     * The control. Without it the two cases above would pass just as happily on
+     * a module that had stopped escalating altogether.
+     */
+    it("still doubles once the wait it set has run out", () => {
+        recordRateLimit(PROVIDER, NOW);
+
+        assert.equal(recordRateLimit(PROVIDER, NOW + FIRST_BACKOFF_MS), FIRST_BACKOFF_MS * 2);
     });
 
     it("holds nothing when it is asked about no provider at all", () => {
