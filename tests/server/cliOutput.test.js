@@ -303,3 +303,44 @@ describe("parseCliOutput", () => {
         });
     });
 });
+
+/**
+ * Lines that carry more than the JSON.
+ *
+ * The whole output was trimmed and then split, so only the first and last lines
+ * ever lost their surrounding whitespace. A result line arriving with a leading
+ * space - pipe buffering, a terminal in the middle, a CLI that indents - failed
+ * `startsWith("{")` and was skipped, and the run reported no result at all
+ * despite having measured the line.
+ *
+ * Windows is the other half: the Ookla CLI writes CRLF, so splitting on "\n"
+ * alone leaves a trailing carriage return on every line but the last. The
+ * sibling helper in this same file already trims per line, and so does the
+ * progress reader.
+ */
+describe("a result line that is not flush against the margin", () => {
+    const indented = (text) => text.split("\n").map((line) => `  ${line}`).join("\n");
+
+    it("is parsed despite leading whitespace", () => {
+        const parsed = parseCliOutput("ookla", indented(OOKLA_RESULT), "");
+
+        assert.equal(parsed.ping.latency, 24.079);
+    });
+
+    it("is parsed despite CRLF line endings", () => {
+        const parsed = parseCliOutput("ookla", `\r\n${OOKLA_RESULT}\r\n`, "");
+
+        assert.equal(parsed.ping.latency, 24.079);
+    });
+
+    // Progress records come before the result on the same stream, so an
+    // indented run has to survive more than one line.
+    it("is parsed out of an indented stream of records", () => {
+        const stream = indented([
+            JSON.stringify({type: "download", download: {bandwidth: 1}}),
+            OOKLA_RESULT
+        ].join("\r\n"));
+
+        assert.equal(parseCliOutput("ookla", stream, "").ping.latency, 24.079);
+    });
+});

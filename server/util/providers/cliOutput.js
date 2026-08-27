@@ -99,7 +99,7 @@ const errorOf = (mode, data) => {
 
 // Whatever a CLI wrote that was not one of its own JSON records, i.e. the part
 // a human wrote for a human.
-const plainTextLines = (text) => text.trim().split('\n')
+const plainTextLines = (text) => text.split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("{") && !line.startsWith("["))
     .join('\n');
@@ -119,7 +119,17 @@ export const parseCliOutput = (mode, stdout, stderr) => {
     let hasResult = false;
 
     if (stdout.trim()) {
-        for (const line of stdout.trim().split('\n')) {
+        // Trimmed per line rather than once over the whole stream, which only
+        // ever reached the first and last lines: a result record arriving with
+        // a leading space - pipe buffering, a CLI that indents - failed the
+        // startsWith below and was skipped, and the run reported no result
+        // despite having measured the line. Splitting on \r?\n is the same
+        // point from the Windows side, where the CLIs write CRLF and every line
+        // but the last would otherwise keep a trailing carriage return. The
+        // helper above and the progress reader both already read lines this way.
+        for (const rawLine of stdout.split(/\r?\n/)) {
+            const line = rawLine.trim();
+
             if (!(line.startsWith("{") || line.startsWith("["))) continue;
 
             let data;
