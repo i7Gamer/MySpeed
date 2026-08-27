@@ -34,6 +34,43 @@ const waitForTest = async (timeoutMs = 15000) => {
     return null;
 };
 
+/**
+ * The round the scheduler starts when every target sits outside the schedule.
+ *
+ * POST /speedtests/run refuses that ahead of time now, but the cron does not go
+ * through the route: it reaches create() directly, arrives at a round with no
+ * members and answers 400 to a caller that discards it - timer.js. So the tick
+ * left no row, no failure and nothing in the log, once an hour on the default
+ * cron, which from the outside is exactly what a stopped scheduler looks like.
+ */
+describe("a round the schedule starts with nothing to run", () => {
+    let task;
+
+    before(async () => {
+        task = await import("../../server/tasks/speedtest.js");
+    });
+
+    it("says why it measured nothing instead of giving up in silence", async () => {
+        await seedTarget({provider: "cloudflare", enabled: false});
+
+        const realWarn = console.warn;
+        const messages = [];
+        console.warn = (...args) => messages.push(args.join(" "));
+
+        let code;
+        try {
+            code = await task.create("auto");
+        } finally {
+            console.warn = realWarn;
+        }
+
+        assert.equal(code, 400, "a round with no members ran something after all");
+        assert.equal(await server.tests.count(), 0);
+        assert.ok(messages.some((message) => /schedule switched off/i.test(message)),
+            `the dropped tick was not explained - warnings were ${JSON.stringify(messages)}`);
+    });
+});
+
 describe("a speedtest that cannot start", () => {
     beforeEach(async () => {
         await seedTarget({provider: "ookla"});

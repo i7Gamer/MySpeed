@@ -173,6 +173,41 @@ app.post("/run", password(false), async (req, res) => {
     // Without one, the whole round of enabled targets runs.
     const targetId = req.body?.targetId;
 
+    /*
+     * Asked of the set the round will actually run, which is not what the count
+     * above answers for. An unnamed run resolves its members through
+     * roundTargets(), which are the scheduled ones - so an instance whose
+     * targets all have Scheduled switched off (two manual-only diagnostic
+     * boxes, or the one WAN target unchecked for the duration of an outage) has
+     * targets to count and nothing to run. It was answered 200 "Speedtest
+     * successfully created": the toolbar toasted success and drew the gauge,
+     * executeRound then gave up with a 400 that reaches nobody because this
+     * route deliberately does not await it, and there was no row, no failure
+     * and nothing in the log. The per-row run button kept working throughout,
+     * which made the start button look broken at random.
+     *
+     * A second refusal beside the count rather than a replacement for it,
+     * because the two are different situations and this message is all the
+     * operator gets: one instance has nothing set up yet, the other is set up
+     * and has switched itself off. Both are reachable - with no targets at all
+     * only the count can fire, and this one is asked precisely when targets
+     * exist.
+     *
+     * Only for an unnamed run. A named one is judged by getOne below, and
+     * running a target that sits outside the schedule is exactly what that path
+     * exists for.
+     *
+     * The wording is an instruction rather than a code because that is how it
+     * reaches the operator: client/src/common/utils/RunUtil.js puts the body's
+     * message verbatim into the alert dialog. It says what to do about it,
+     * without quoting the label on the switch - the message has no key of its
+     * own, the same as every other message on this route, so it is English in
+     * front of a dialog that is not.
+     */
+    if (!isPreviewInstance() && targetId === undefined && (await targets.roundTargets()).length === 0)
+        return res.status(410).json({message: "No target is scheduled - every target is set to run by "
+            + "hand only. Run one from the targets dialog, or put a target back into the schedule"});
+
     if (targetId !== undefined) {
         if (!/^\d+$/.test(String(targetId)))
             return res.status(400).json({message: "You need to provide a numeric targetId"});

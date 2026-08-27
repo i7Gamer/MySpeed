@@ -439,10 +439,49 @@ export const memberFailure = (error, target, {escapes = 1, remaining = 0} = {}) 
     };
 };
 
+/**
+ * Why a round found nothing to run, in the line the log gets.
+ *
+ * Said out loud for the reason create()'s "still running" branch says its
+ * piece: the 400 below is returned to whoever awaited create(), and neither
+ * caller reads it - timer.js discards the answer, and the manual run route
+ * deliberately does not await it. A round that found nothing therefore left no
+ * row, no failure and nothing in the log, which from the outside is
+ * indistinguishable from the scheduler having stopped. The route refuses the
+ * unnamed case ahead of time now; the scheduled tick still arrives here, and
+ * this is the only place it can say so.
+ *
+ * The two empty rounds are reported apart because they are different
+ * situations. An install with no targets at all is waiting to be set up - and
+ * on the default hourly cron it would otherwise be told once an hour that
+ * every target has its schedule switched off, which is a false statement about
+ * an install that has none. An install with targets that are all outside the
+ * schedule is configured and has switched itself off.
+ *
+ * Pure and exported for the reason memberFailure is: the wording is the whole
+ * of the fix, and the suite has to be able to ask for it without a database.
+ */
+export const emptyRoundReason = (targetId, targetCount) => {
+    if (targetId !== undefined)
+        return `The target ${targetId} was gone by the time its run started - nothing was measured.`;
+
+    return targetCount === 0
+        ? "No target is configured, so this round measured nothing. Add one in the test targets dialog."
+        : "Every target has its schedule switched off, so this round measured nothing.";
+};
+
 const executeRound = async (type, targetId) => {
     const members = await roundMembers(targetId);
 
-    if (members.length === 0) return 400;
+    if (members.length === 0) {
+        // The count is read only on this path, and only once the round has
+        // already given up, so the extra query costs a working instance
+        // nothing. roundMembers has just queried the same table successfully,
+        // so this is not where a database outage is expected to surface.
+        console.warn(emptyRoundReason(targetId, await targetsController.count()));
+
+        return 400;
+    }
 
     /*
      * A round that may run nobody says nothing to anybody, and above all does

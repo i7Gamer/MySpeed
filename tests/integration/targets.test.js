@@ -136,6 +136,53 @@ describe("what a read-only visitor may know", () => {
 });
 
 describe("the manual-only target", () => {
+    /*
+     * The unnamed run and the round it starts have to be asking the same
+     * question. The route guarded on how many targets exist; the round it
+     * starts resolves its members through roundTargets(), which are only the
+     * scheduled ones - so an instance of nothing but manual-only targets was
+     * answered 200 "Speedtest successfully created" and then measured nothing.
+     * The toolbar toasted success and drew the gauge, no row was written, no
+     * failure was reported and nothing was logged, while the per-row run button
+     * beside it kept working - which reads as the start button being broken at
+     * random.
+     */
+    it("is refused as a round of its own, rather than accepted and then not run", async () => {
+        await put({name: "diagnostic", provider: "cloudflare", enabled: false});
+        await put({name: "other box", provider: "cloudflare", enabled: false});
+
+        const {status, body} = await api(server.baseUrl, "/speedtests/run", {method: "POST"});
+
+        assert.equal(status, 410, "an unnamed run was accepted with nothing scheduled to run");
+        assert.match(body.message, /scheduled/i,
+            "the refusal does not say the targets exist but sit outside the schedule");
+
+        // The point of the refusal is that the 200 was followed by nothing, so
+        // the absence has to be asserted for longer than a round needs to write
+        // its first row - the case below gets one within a second.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        assert.equal(await server.tests.count(), 0, "a run was started after all");
+    });
+
+    // The guard must refuse only the instance that has nothing to run, not the
+    // ordinary one that keeps a diagnostic box beside its scheduled targets.
+    it("does not stop the round when something beside it is scheduled", async () => {
+        await put({name: "diagnostic", provider: "cloudflare", enabled: false});
+        await put({name: "scheduled", provider: "cloudflare"});
+
+        const {status} = await api(server.baseUrl, "/speedtests/run", {method: "POST"});
+        assert.equal(status, 200);
+
+        // Drained before the file moves on: no CLI is installed, so the round
+        // fails in milliseconds, but leaving it in flight would meet the next
+        // test with a 409 and the suite's close with an open database.
+        for (let attempt = 0; attempt < 100; attempt++) {
+            const {body} = await api(server.baseUrl, "/speedtests/status/live");
+            if (!body.running) break;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+    });
+
     it("never joins the round but runs by name", async () => {
         const {body: {id}} = await put({name: "diagnostic", provider: "cloudflare", enabled: false});
 
