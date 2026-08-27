@@ -12,6 +12,36 @@ const DEFAULT_STATUS = 500;
 const CLIENT_ERROR_STATUS = 400;
 
 /**
+ * The range a status has to fall in to be one.
+ *
+ * Narrower than Express itself allows, which is anything up to 999. These are
+ * the codes HTTP defines, and a status outside them reaching this handler is a
+ * value something got wrong rather than a code worth forwarding.
+ */
+const LOWEST_HTTP_STATUS = 100;
+const HIGHEST_HTTP_STATUS = 599;
+
+/**
+ * A status the response can actually be given, or 500.
+ *
+ * res.status() throws for a non-integer and for one out of range - and thrown
+ * from inside the error handler, that is the one throw with nowhere left to go:
+ * the response is abandoned half-written and the caller waits for an answer
+ * that never comes.
+ *
+ * Normalised once, here, rather than at the res.status() call below. The same
+ * number decides whether the failure is logged as the server's fault and
+ * whether the error's own message may be echoed back, and those three answers
+ * have to agree - clamping only at the end would log a NaN as a server error
+ * and then answer 500 for something it had already treated as the caller's
+ * mistake.
+ */
+const asStatus = (value) =>
+    Number.isInteger(value) && value >= LOWEST_HTTP_STATUS && value <= HIGHEST_HTTP_STATUS
+        ? value
+        : DEFAULT_STATUS;
+
+/**
  * Terminates the request, whatever went wrong.
  *
  * It was written for body-parser failures and its comment claimed it saw
@@ -30,7 +60,7 @@ export default (err, req, res, next) => {
     // server's fault in the log below.
     const status = err instanceof SyntaxError
         ? CLIENT_ERROR_STATUS
-        : (err.status ?? err.statusCode ?? DEFAULT_STATUS);
+        : asStatus(err.status ?? err.statusCode);
 
     const isClientError = status >= CLIENT_ERROR_STATUS && status < DEFAULT_STATUS;
 

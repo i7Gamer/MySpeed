@@ -193,3 +193,56 @@ describe("what the error middleware tells the operator", () => {
         assert.equal(logged.length, 1);
     });
 });
+
+/**
+ * A status is a number the handler was handed, and it hands it to
+ * res.status() - which in Express 5 throws a TypeError for anything that is
+ * not an integer, and a RangeError outside its accepted range. Thrown from
+ * inside the error handler, that is the one throw with nowhere left to go: the
+ * response is abandoned mid-flight and the caller waits for a socket that
+ * never answers.
+ *
+ * Normalised once, before anything reads it, rather than at the res.status()
+ * call. The value also decides whether the failure is logged as the server's
+ * fault and whether the error's own message is echoed back, and those three
+ * answers have to come from the same number - clamping only at the end would
+ * log a NaN as a server error and then answer 500 for a status it had already
+ * treated as the caller's.
+ */
+describe("the status the handler answers with", () => {
+    const statusOf = (status) => run(Object.assign(new Error("x"), {status})).res.statusCode;
+
+    it("honours a real status", () => {
+        assert.equal(statusOf(404), 404);
+        assert.equal(statusOf(413), 413);
+        assert.equal(statusOf(503), 503);
+    });
+
+    it("falls back to 500 for one outside the range", () => {
+        assert.equal(statusOf(1000), 500);
+        assert.equal(statusOf(99), 500);
+        assert.equal(statusOf(0), 500);
+        assert.equal(statusOf(-1), 500);
+    });
+
+    it("falls back to 500 for one that is not an integer at all", () => {
+        assert.equal(statusOf(NaN), 500);
+        assert.equal(statusOf("413"), 500);
+        assert.equal(statusOf(404.5), 500);
+        assert.equal(statusOf(null), 500);
+        assert.equal(statusOf({}), 500);
+    });
+
+    // The same normalisation decides the message. A status the handler refused
+    // is a server error, so the error's own message must not be echoed back.
+    it("does not echo the message of an error whose status it refused", () => {
+        const {res} = run(Object.assign(new Error("internal detail"), {status: NaN}));
+
+        assert.equal(res.body.message, "The request could not be processed");
+    });
+
+    it("still reads statusCode where the error carries that instead", () => {
+        assert.equal(run(Object.assign(new Error("x"), {statusCode: 404})).res.statusCode, 404);
+        assert.equal(run(Object.assign(new Error("x"), {statusCode: 1000})).res.statusCode, 500);
+    });
+});
