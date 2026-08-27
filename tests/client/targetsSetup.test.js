@@ -319,6 +319,18 @@ describe("the editor's own guard", () => {
         assert.match(editor, /const canSave = name\.trim\(\) !== "" && hasEndpoint/);
     });
 
+    /**
+     * And holds the host to the server's shape rule, not just to being there.
+     * The sentinel has to be tested first, because "none" - the editor's
+     * spelling of "no endpoint chosen" - is a perfectly well-formed hostname
+     * to the shape rule, and asking the rule first would read the sentinel as
+     * a saveable host.
+     */
+    it("judges the host the way the server will", () => {
+        assert.match(editor, /iperfHostAccepted\(endpoint\)/);
+        assert.match(editor, /endpoint !== "none" && iperfHostAccepted\(endpoint\)/);
+    });
+
     it("draws the server pickers only where they mean something", () => {
         assert.equal((editor.match(/takesServerId\(provider\) && !isUsingCustomUrl/g) ?? []).length, 2,
             "the server select and the free-text id no longer agree about who has a list");

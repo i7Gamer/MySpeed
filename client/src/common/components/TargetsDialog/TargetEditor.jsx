@@ -16,7 +16,9 @@ import ToggleSwitch from "@/common/components/ToggleSwitch";
 import Checkbox from "@/common/components/Checkbox";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import {CUSTOM_BACKEND_PLACEHOLDER, IPERF_HOST_PLACEHOLDER} from "@/common/utils/InvariantText";
-import {providers, requiresEndpoint, takesEndpoint, takesServerId} from "./providers";
+import {
+    iperfHostAccepted, providers, requiresEndpoint, takesEndpoint, takesServerId
+} from "./providers";
 import {targetBody} from "./targetBody";
 
 /**
@@ -140,10 +142,15 @@ export const TargetEditor = ({open, onClose, target}) => {
     const isIperf = provider === "iperf3";
     const isUsingCustomUrl = provider === "libre" && endpoint && endpoint !== "none";
     // An iperf3 target with no host has nothing to measure against, and the
-    // server refuses one. Said here as a button that will not press, rather
-    // than as a red toast after the fact.
-    const hasEndpoint = !requiresEndpoint(provider) || (endpoint && endpoint !== "none"
-        && endpoint.trim() !== "");
+    // server refuses one - as it refuses a host it cannot dial, so the same
+    // rule it applies is asked here. Said as a button that will not press,
+    // rather than as a red toast after the fact.
+    //
+    // The sentinel is tested first and separately: "none" is this dialog's
+    // spelling of an empty field, and it is also a perfectly well-formed
+    // hostname, so the shape rule alone would call an untouched field valid.
+    const hasEndpoint = !requiresEndpoint(provider)
+        || (endpoint !== "none" && iperfHostAccepted(endpoint));
     // What makes the row saveable at all; the in-flight lock is its own term
     // on the button, so the two reasons for a dead button stay legible apart.
     const canSave = name.trim() !== "" && hasEndpoint && (provider !== "ookla" || acceptedOokla);

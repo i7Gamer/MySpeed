@@ -57,6 +57,28 @@ describe("the providers the wizard offers", () => {
             true);
     });
 
+    /**
+     * Held to the server's shape rule, not just to non-emptiness. Any host the
+     * server refuses used to walk past this step and trap the operator behind
+     * a Done that always fails, on a step where the offending field is no
+     * longer rendered and there is no Back.
+     */
+    it("refuses a host the server would refuse", () => {
+        for (const host of ["http://iperf.lan:5201", "10.0.0.5:0", "10.0.0.5:65536",
+            "nas lan", "user@nas.lan", "[]"])
+            assert.equal(canAdvance({step: PROVIDER_STEP, provider: "iperf3", endpoint: host}),
+                false, `${host} walked past the chooser and can only fail at Done`);
+    });
+
+    // The worse direction to get wrong: a rule tighter than the server's holds
+    // a legitimate operator behind a dead button.
+    it("accepts every host the server accepts", () => {
+        for (const host of ["fd00::1", "[fd00::1]", "[fd00::1]:5201", "localhost",
+            "nas.lan:5201", "10.0.0.5:65535"])
+            assert.equal(canAdvance({step: PROVIDER_STEP, provider: "iperf3", endpoint: host}),
+                true, `an operator whose iperf3 server is at ${host} is held behind a dead button`);
+    });
+
     // A name of spaces is not an address, and the server trims before judging.
     it("does not accept whitespace as an address", () => {
         assert.equal(canAdvance({step: PROVIDER_STEP, provider: "iperf3", endpoint: "   "}), false);

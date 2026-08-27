@@ -6,7 +6,7 @@
  * sure of that is to hand it a step and a provider and ask.
  */
 
-import {requiresEndpoint} from "../TargetsDialog/providerFields.js";
+import {iperfHostAccepted, requiresEndpoint} from "../TargetsDialog/providerFields.js";
 
 /** The step the wizard opens on: the greeting, before anything is asked. */
 export const FIRST_STEP = 1;
@@ -95,6 +95,11 @@ export const welcomeSeed = (config) => ({
 export const canAdvance = ({step, provider, endpoint}) =>
     step !== PROVIDER_STEP
     || !requiresEndpoint(provider)
-    // Trimmed, because the server trims before judging: a field holding
-    // spaces is a save it refuses, not an address.
-    || (endpoint ?? "").trim() !== "";
+    // Held to the shape the server holds it to, not merely to being filled in.
+    // Emptiness closed half the trap this function was written for: an address
+    // the server refuses for shape - a pasted URL, a port of 0, a host with a
+    // space in it - still walked past the chooser and met its refusal on the
+    // next step, where the field is gone, there is no way back and the dialog
+    // cannot be dismissed. The rule lives beside requiresEndpoint so the target
+    // editor asks the same question of the same field.
+    || iperfHostAccepted(endpoint);
