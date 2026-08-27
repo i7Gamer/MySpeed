@@ -144,28 +144,55 @@ export async function up(queryInterface) {
             defaultValue: null
         });
 
-    // Idempotence rides on the legacy keys: the seed deletes them, so a
-    // second run finds no provider row and folds nothing.
     const [rows] = await queryInterface.sequelize.query(
         'SELECT `key`, `value` FROM `config`', {raw: true});
     const values = Object.fromEntries(rows.map((row) => [row.key, row.value]));
 
-    const seed = legacyTarget(values);
+    // Idempotence used to ride on the legacy keys: the seed deleted them, so a
+    // second run found no provider and folded nothing. But that delete is the
+    // last statement in this function and nothing here is transactional (see
+    // migrationRunner for why it cannot usefully be), so a run that inserted
+    // the seed and then died left the keys in place with 0013 still unrecorded.
+    // The realistic way to die is the UPDATE below - it rewrites every
+    // historical row, which is what a MySQL lock-wait timeout, an OOM, or an
+    // MSI service stop during the upgrade interrupts. The operator restarts,
+    // the migration re-runs, and the instance comes up with two identical
+    // enabled targets: roundTargets() returns both, so every scheduled round
+    // measures the same server twice, hourly, with two notifications for it.
+    //
+    // So the guard is the table the seed lands in, not the keys it deletes
+    // last. Nothing else creates or writes `targets` before 0013 is recorded -
+    // no other migration touches it and the API is not up yet - so a row here
+    // can only be a seed a previous attempt already wrote.
+    const [[{seeded}]] = await queryInterface.sequelize.query(
+        'SELECT COUNT(*) AS seeded FROM `targets`', {raw: true});
 
-    if (seed) {
-        await queryInterface.bulkInsert('targets', [seed]);
+    if (Number(seeded) === 0) {
+        const seed = seedTarget(values);
 
-        // The history so far was measured against exactly this configuration,
-        // so it belongs to the seeded target: filtering by it after the
-        // upgrade must show the years of rows recorded before it had a name.
-        // The seed is the only row in a table this migration just created.
-        const [[row]] = await queryInterface.sequelize.query(
-            'SELECT `id` FROM `targets` ORDER BY `id` LIMIT 1', {raw: true});
+        if (seed) await queryInterface.bulkInsert('targets', [seed]);
+    }
 
+    // The back-fill sits outside that guard on purpose. The history so far was
+    // measured against exactly this configuration, so it belongs to the seeded
+    // target: filtering by it after the upgrade must show the years of rows
+    // recorded before it had a name. Gating it on having just inserted would
+    // strand precisely the instance the guard above exists for - the one whose
+    // first attempt died in this UPDATE - because its retry finds the seed
+    // already there, skips the insert, and would then record 0013 with the
+    // history unattributed for good. Repeating the UPDATE instead costs
+    // nothing: `targetId IS NULL` matches no row the second time round.
+    //
+    // The earliest id is the seed's on both paths, because the guard allows at
+    // most one row; an instance that never chose a provider has none, and its
+    // history has no target to belong to.
+    const [[seedRow]] = await queryInterface.sequelize.query(
+        'SELECT `id` FROM `targets` ORDER BY `id` LIMIT 1', {raw: true});
+
+    if (seedRow)
         await queryInterface.sequelize.query(
             'UPDATE `speedtests` SET `targetId` = ? WHERE `targetId` IS NULL',
-            {replacements: [row.id]});
-    }
+            {replacements: [seedRow.id]});
 
     await queryInterface.bulkDelete('config', {key: LEGACY_KEYS});
 }

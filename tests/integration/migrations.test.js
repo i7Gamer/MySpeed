@@ -1,6 +1,13 @@
-import { describe, it, before, after } from "node:test";
+import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { DataTypes, Sequelize } from "sequelize";
 import { bootServer } from "./helpers/boot.js";
+import sqlite3Shim from "../../server/util/bun-sqlite-shim.js";
+import migrations from "../../server/migrations/index.js";
+import { seedTarget, up as addTargets } from "../../server/migrations/0013-add-targets.js";
 
 let server;
 let queryInterface;
@@ -238,5 +245,204 @@ describe("migrations", () => {
         const indexes = await queryInterface.showIndex("speedtests");
         assert.equal(indexes.filter((index) => index.name === "speedtests_created").length, 1,
             "the index was created twice");
+    });
+});
+
+/**
+ * What 0013 writes, driven through the real up() against a database of its own.
+ *
+ * The case above cannot reach this. Once a name is in SequelizeMeta,
+ * runMigrations() never re-enters its up() - it logs "No pending migrations
+ * found" - so "is idempotent" proves the *runner* skips, not that a migration
+ * survives being run twice. The one time 0013 genuinely runs twice is the boot
+ * after a boot that died inside it, before the name was recorded: nothing here
+ * is transactional, so the seed it had already inserted is still there while
+ * the legacy config keys it deletes last are still there too. That is the run
+ * that used to come up with two identical enabled targets - roundTargets()
+ * returns both, so every scheduled round measures the same server twice.
+ *
+ * So 0013 is called directly, on a throwaway database migrated to 0012, with
+ * the statement that realistically fails made to fail. tests/server/
+ * targetsMigration.test.js covers the two folds as pure functions; only from
+ * here can it be seen which of them up() actually writes, and what a second
+ * run leaves behind.
+ */
+
+// The keys an instance upgrading from 1.3.5 carries, with the librespeed
+// backend URL in the shape older versions stored behind a 200 - `new URL()`
+// parses it as scheme "localhost:", so their bare-parse check let it through.
+const LEGACY_CONFIG = {provider: "libre", libreId: "none", libreUrl: "localhost:8080"};
+
+const HISTORY_ROWS = 3;
+
+let fixture;
+
+/** A database one migration short of the subject, with a legacy config and some history. */
+const migratedToTwelve = async (values) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-0013-"));
+
+    // Opened with the options server/config/database.js uses, because 0013
+    // destructures what `query` hands back and `raw` is what decides that shape.
+    const db = new Sequelize({
+        dialect: "sqlite",
+        dialectModule: sqlite3Shim,
+        storage: path.join(directory, "storage.db"),
+        logging: false,
+        query: {raw: true}
+    });
+
+    const target = db.getQueryInterface();
+
+    for (const {name, up} of migrations) {
+        if (name.startsWith("0013")) break;
+        await up(target, DataTypes);
+    }
+
+    await target.bulkInsert("config", Object.entries(values).map(([key, value]) => ({key, value})));
+
+    await target.bulkInsert("speedtests", Array.from({length: HISTORY_ROWS}, (unused, index) => ({
+        ping: 10, download: 100, upload: 50, time: 1, serverId: 0, type: "auto",
+        created: `2020-01-0${index + 1}T00:00:00.000Z`
+    })));
+
+    return {directory, db, queryInterface: target};
+};
+
+/**
+ * The same query interface with one statement made to fail, which is how a boot
+ * that dies inside up() is reproduced without killing this process.
+ *
+ * Derived from the real one rather than hand-written: up() reaches
+ * showAllTables, describeTable, createTable, addColumn, bulkInsert and
+ * bulkDelete, and a stub of all six would only assert that the fixture agrees
+ * with itself. Everything but the one statement asked about still runs against
+ * sqlite, and what it committed before the failure stays committed - which is
+ * the whole point.
+ */
+const failingOn = (queryInterface, statement) => {
+    const sequelize = Object.create(queryInterface.sequelize, {
+        query: {
+            value: (sql, options) => {
+                if (String(sql).startsWith(statement))
+                    throw new Error("the connection went away mid-migration");
+
+                return queryInterface.sequelize.query(sql, options);
+            }
+        }
+    });
+
+    return Object.create(queryInterface, {sequelize: {value: sequelize}});
+};
+
+const rows = async (sql) => (await fixture.db.query(sql, {raw: true}))[0];
+
+afterEach(async () => {
+    if (!fixture) return;
+
+    await fixture.db.close();
+    fs.rmSync(fixture.directory, {recursive: true, force: true});
+    fixture = null;
+});
+
+describe("0013 seeding the first target", () => {
+    describe("after a boot that died in the back-fill", () => {
+        /**
+         * The realistic way to die: the UPDATE rewrites every historical row,
+         * so a MySQL lock-wait timeout, an OOM, or an MSI service stop during
+         * the upgrade lands there - after the seed has committed, and before
+         * the legacy keys the old guard rode on are deleted.
+         */
+        beforeEach(async () => {
+            fixture = await migratedToTwelve(LEGACY_CONFIG);
+
+            await assert.rejects(() => addTargets(
+                failingOn(fixture.queryInterface, "UPDATE `speedtests`")));
+
+            const keys = await rows("SELECT `key` FROM `config`");
+            assert.equal(keys.length, Object.keys(LEGACY_CONFIG).length,
+                "the legacy keys were already gone, so this is not the state a retry sees");
+
+            // The retry the runner performs on the next boot, 0013 still absent
+            // from SequelizeMeta.
+            await addTargets(fixture.queryInterface);
+        });
+
+        it("leaves one target, not the duplicate the legacy-key guard let through", async () => {
+            const targets = await rows("SELECT * FROM `targets`");
+
+            assert.equal(targets.length, 1, `the retry seeded again: ${JSON.stringify(targets)}`);
+        });
+
+        it("still attributes the history the failed attempt never reached", async () => {
+            const [target] = await rows("SELECT `id` FROM `targets`");
+            const orphans = await rows("SELECT `id` FROM `speedtests` WHERE `targetId` IS NULL");
+
+            assert.equal(orphans.length, 0,
+                "the back-fill was skipped because the retry inserted nothing");
+
+            const attributed = await rows(
+                `SELECT \`id\` FROM \`speedtests\` WHERE \`targetId\` = ${target.id}`);
+            assert.equal(attributed.length, HISTORY_ROWS);
+        });
+
+        it("clears the legacy keys once it gets through", async () => {
+            assert.deepEqual(await rows("SELECT `key` FROM `config`"), []);
+        });
+    });
+
+    describe("on the run that succeeds", () => {
+        beforeEach(async () => {
+            fixture = await migratedToTwelve(LEGACY_CONFIG);
+            await addTargets(fixture.queryInterface);
+        });
+
+        /**
+         * The written row is seedTarget's answer, not legacyTarget's.
+         *
+         * That distinction is the whole of the endpoint fix: the row outlives
+         * the upgrade and is re-judged whole by targetProblem on every later
+         * PATCH - the dialog's scheduled switch sends {enabled} by itself - so
+         * a "localhost:8080" carried in verbatim is a target the operator can
+         * neither run nor edit. Compared against seedTarget rather than against
+         * a literal, so this says which fold up() is required to write.
+         */
+        it("writes the row seedTarget answers, not the raw legacy fold", async () => {
+            const [target] = await rows("SELECT * FROM `targets`");
+            const seed = seedTarget(LEGACY_CONFIG);
+
+            assert.equal(target.endpoint, null,
+                "an endpoint the CLI cannot fetch was seeded verbatim");
+
+            assert.deepEqual(
+                {name: target.name, provider: target.provider,
+                    serverId: target.serverId, endpoint: target.endpoint},
+                {name: seed.name, provider: seed.provider,
+                    serverId: seed.serverId, endpoint: seed.endpoint});
+        });
+
+        it("attributes the whole history to it", async () => {
+            const [target] = await rows("SELECT `id` FROM `targets`");
+            const attributed = await rows(
+                `SELECT \`id\` FROM \`speedtests\` WHERE \`targetId\` = ${target.id}`);
+
+            assert.equal(attributed.length, HISTORY_ROWS);
+        });
+    });
+
+    /**
+     * An instance that never chose a provider has nothing to seed, and its
+     * history has no target to belong to - so the back-fill, now outside the
+     * seed guard, must not invent one. It is the branch that reads the earliest
+     * row back from a table this migration has just created empty.
+     */
+    it("folds nothing, and attributes nothing, when no provider was ever chosen", async () => {
+        fixture = await migratedToTwelve({provider: "none"});
+
+        await addTargets(fixture.queryInterface);
+
+        assert.deepEqual(await rows("SELECT * FROM `targets`"), []);
+
+        const attributed = await rows("SELECT `id` FROM `speedtests` WHERE `targetId` IS NOT NULL");
+        assert.equal(attributed.length, 0);
     });
 });
