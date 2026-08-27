@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { targetProblem, resolveLimits, viewerFacing, TARGET_NAME_LIMIT }
+import { alertingScope, targetProblem, resolveLimits, viewerFacing, TARGET_NAME_LIMIT }
     from "../../server/controller/targets.js";
 
 /**
@@ -125,6 +125,57 @@ describe("targetProblem", () => {
     it("accepts the 0 and 1 the column comes back as", () => {
         assert.equal(targetProblem({...valid, enabled: 1, alerts: 1}), null);
         assert.equal(targetProblem({...valid, enabled: 0, alerts: 0}), null);
+    });
+});
+
+/**
+ * Which targets' rows the alerting speaks for.
+ *
+ * The keep-alive reads the last test to decide whether healthchecks.io's check
+ * should stay down, and it read the last test of the *instance*. A diagnostic
+ * iperf3 box with alerts off - the case the model's own docstring describes -
+ * fails because the machine is asleep, notifies nobody by design, and is then
+ * the newest row: the keep-alive pinged /fail once a minute on its behalf until
+ * the next round, reporting the internet line down on behalf of a target the
+ * operator had explicitly opted out of alerting.
+ *
+ * The two empty answers are the whole of the judgement, and are deliberately
+ * not the same value. What this cannot see - that the keep-alive actually asks
+ * the question - is pinned in tests/integration/keepAlivePath.test.js, which
+ * boots a server and creates real targets.
+ */
+describe("alertingScope", () => {
+    const target = (id, alerts) => ({id, alerts});
+
+    it("answers null when there is no target at all", () => {
+        assert.equal(alertingScope([]), null,
+            "the pre-migration install and the demo lost the only answer they have");
+    });
+
+    it("names every target that alerts", () => {
+        assert.deepEqual(alertingScope([target(1, true), target(2, false), target(3, true)]), [1, 3]);
+    });
+
+    /**
+     * Targets exist and none of them alert: nothing is being watched, so
+     * nothing is reported. Answering null here would fall back to the
+     * instance-wide latest - which is exactly the row that has to be ignored -
+     * and the operator who switched alerts off on all of their targets is
+     * precisely the person this is for.
+     */
+    it("answers an empty scope, not null, when no target alerts", () => {
+        assert.deepEqual(alertingScope([target(1, false), target(2, false)]), []);
+        assert.notEqual(alertingScope([target(1, false)]), null);
+    });
+
+    /**
+     * `enabled` decides membership of the scheduled round; `alerts` decides
+     * whether anything is said about a result. A disabled target is still
+     * runnable by hand, so its failure still sends the testFailed that puts the
+     * check down - a scope that left it out could never take the check back up.
+     */
+    it("keeps a target that alerts but is not in the scheduled round", () => {
+        assert.deepEqual(alertingScope([{id: 7, alerts: true, enabled: false}]), [7]);
     });
 });
 

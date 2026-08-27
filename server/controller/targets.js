@@ -222,6 +222,41 @@ export const primaryTarget = async () => (await roundTargets())[0];
 export const alertsTarget = async () =>
     (await roundTargets()).find((target) => target.alerts);
 
+/**
+ * Which targets' stored rows the alerting speaks for, as ids - or null when the
+ * question does not apply because no target exists at all.
+ *
+ * The keep-alive reads the last test to decide whether healthchecks.io's check
+ * should stay down, and it read the last test *of the instance*. With one
+ * provider that was the same question. With targets it is not: a diagnostic
+ * iperf3 box with alerts off - the case this file's model docstring describes -
+ * fails because the machine is asleep, sends no failure notification because of
+ * the flag, and is then the newest row in the table. The keep-alive pinged
+ * /fail once a minute for the whole hour until the next round, so the uptime
+ * monitor reported the internet line down on behalf of a target the operator
+ * had explicitly opted out of alerting.
+ *
+ * Every target that alerts, enabled or not. `enabled` decides membership of the
+ * scheduled round; `alerts` decides whether anything is said about a result -
+ * and a disabled target is still runnable by hand, so its failure still sends
+ * the testFailed that puts the check down. A scope that left it out could never
+ * take the check back up again.
+ *
+ * The two empty answers are different questions and must not be spelled the
+ * same way. An empty list means targets exist and none of them alert: nothing
+ * is being watched, there is nothing to report, and the instance-wide latest
+ * would be precisely the row that has to be ignored. `null` means there is no
+ * target at all - a pre-migration install, and the demo, whose rows carry no
+ * targetId - and for those the instance-wide latest is the only answer there
+ * is.
+ *
+ * Pure and exported, because that distinction is the whole of the fix and
+ * deserves a test that needs no database.
+ */
+export const alertingScope = (targets) => targets.length === 0
+    ? null
+    : targets.filter((target) => target.alerts).map((target) => target.id);
+
 export const create = async (target) => await targets.create({
     name: target.name.trim(),
     provider: target.provider,

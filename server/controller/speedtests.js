@@ -554,6 +554,34 @@ export const getLatest = async (targetId = undefined) => {
     return latest;
 }
 
+/**
+ * The newest test belonging to any of the given targets.
+ *
+ * One query rather than getLatest() per target: the keep-alive asks this every
+ * minute of every instance, and the answer it wants is a single row.
+ *
+ * Ordered by LIST_ORDER rather than by `created` alone, which is what getLatest
+ * above does. A round writes its members' rows seconds apart at most, and an
+ * imported history can carry two rows with the identical stamp; the id breaks
+ * that tie towards the row written last, which is the one whose notification
+ * the caller is being asked whether to preserve.
+ *
+ * An empty list is answered without asking the database at all. It is a real
+ * case - every configured target has alerts switched off - and `IN ()` is not
+ * something to hand to three dialects when the answer is already known. sqlite
+ * happens to tolerate it, so this short circuit is a precaution for the two
+ * backends the suite cannot boot rather than something a test here can see.
+ *
+ * Undefined rather than null for "nothing", so a caller can hold this and
+ * getLatest to the same contract. The null columns getLatest deletes are left
+ * alone: the only reader is isFailedTest, which asks whether `error` is truthy.
+ */
+export const latestOfTargets = async (targetIds) => {
+    if (targetIds.length === 0) return undefined;
+
+    return await tests.findOne({where: {targetId: {[Op.in]: targetIds}}, order: LIST_ORDER}) ?? undefined;
+}
+
 // Named field by field rather than spread, so an export is a deliberate choice
 // about what leaves the database. The cost is that a new column is exported as
 // empty until it is named here - which is how the server name and host stayed
