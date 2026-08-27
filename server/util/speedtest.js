@@ -279,7 +279,11 @@ const PROVIDER_LOADERS = Object.fromEntries(
  * naming an internal lookup.
  */
 export const ensureBinary = async (mode, binaryPath, loaders = PROVIDER_LOADERS) => {
-    const loader = loaders[mode];
+    // Object.hasOwn for the reason descriptor() uses it: the map is a plain
+    // object, so a prototype name answers with an inherited function and
+    // `loader.load()` then fails as "load is not a function" - a message about
+    // an internal lookup where the caller wanted one about a provider.
+    const loader = Object.hasOwn(loaders, mode) ? loaders[mode] : undefined;
     if (!loader) return;
 
     try {

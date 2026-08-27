@@ -60,6 +60,72 @@ describe("targetProblem", () => {
         assert.match(targetProblem({...valid, optimalDownload: "fast"}), /optimal/i);
         assert.match(targetProblem({...valid, optimalUpload: 0}), /optimal/i);
     });
+
+    /**
+     * Every plain object answers `"toString" in it`, and the registry is a
+     * plain object. So the names on Object.prototype passed the guard that
+     * exists to refuse a provider nobody implements: the target was created
+     * with a 200, joined every scheduled round, and each run failed reporting a
+     * binary called `./bin/undefined` - because `REGISTRY["toString"]` is a
+     * native function, and the `if (!entry)` guard in descriptor() reads it as
+     * a provider that exists.
+     *
+     * Reachable through the import path as well as the route: importConfig runs
+     * every restored row through this same function, and its own comment says a
+     * backup must not be a way past it.
+     */
+    it("refuses a provider that exists only on Object.prototype", () => {
+        for (const name of ["toString", "constructor", "hasOwnProperty", "valueOf", "__proto__"])
+            assert.match(targetProblem({...valid, provider: name}), /provider/i,
+                `${name} was accepted as a provider`);
+    });
+
+    // The same trap one line up: the rule about which providers may pin a
+    // server reads the registry too, and a prototype name answered "yes, and it
+    // takes a server id" - so the id was judged against a provider that is a
+    // function.
+    it("does not let a prototype name inherit a real provider's rules", () => {
+        assert.match(targetProblem({...valid, provider: "toString", serverId: "1234"}), /provider/i);
+    });
+
+    /**
+     * `enabled` and `alerts` were the only two writable fields nothing judged.
+     * A non-boolean was stored verbatim in a BOOLEAN column - Sequelize coerces
+     * only 'true'/'false' - where it read truthy everywhere JavaScript asked,
+     * while roundTargets()'s `where: {enabled: true}` compares against SQL 1
+     * and excluded it. The dialog drew the target as part of the round and the
+     * round never ran it, with nothing in the log.
+     *
+     * Refused rather than coerced, unlike the import path's `Boolean(...)`:
+     * `Boolean("false")` is true, which is a worse surprise than a 400.
+     */
+    it("holds the flags to real booleans", () => {
+        assert.equal(targetProblem({...valid, enabled: true, alerts: false}), null);
+        assert.equal(targetProblem({...valid, enabled: undefined, alerts: null}), null);
+
+        assert.match(targetProblem({...valid, enabled: "yes"}), /enabled/i);
+        assert.match(targetProblem({...valid, enabled: "false"}), /enabled/i);
+        assert.match(targetProblem({...valid, enabled: "1"}), /enabled/i);
+        assert.match(targetProblem({...valid, alerts: "true"}), /alerts/i);
+        assert.match(targetProblem({...valid, alerts: 2}), /alerts/i);
+        assert.match(targetProblem({...valid, alerts: {}}), /alerts/i);
+    });
+
+    /**
+     * This function judges two shapes, and the flags are the only fields whose
+     * representation differs between them: the fragment a request carried,
+     * where a flag is a JSON boolean, and the row a PATCH would become - merged
+     * from a raw database read, where SQLite's BOOLEAN is an integer.
+     *
+     * So 0 and 1 are as valid here as false and true. Refusing them refuses
+     * every PATCH of an existing target, which is what the integration suite
+     * caught: `{...current, ...fragment}` carries `enabled: 1` out of the
+     * database for a target nobody had touched.
+     */
+    it("accepts the 0 and 1 the column comes back as", () => {
+        assert.equal(targetProblem({...valid, enabled: 1, alerts: 1}), null);
+        assert.equal(targetProblem({...valid, enabled: 0, alerts: 0}), null);
+    });
 });
 
 describe("resolveLimits", () => {

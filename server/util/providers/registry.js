@@ -248,9 +248,13 @@ export const REGISTRY = {
 export const providerIds = () => Object.keys(REGISTRY);
 
 export const descriptor = (mode) => {
-    const entry = REGISTRY[mode];
-    if (!entry) throw new Error(`Unknown provider "${mode}"`);
-    return entry;
+    // Object.hasOwn rather than truthiness on the lookup: REGISTRY is a plain
+    // object, so `REGISTRY["toString"]` answers Object.prototype's function -
+    // truthy, so it walked straight past this guard, and the caller then read
+    // `binaryName` off it as undefined and spawned ./bin/undefined. Refused
+    // here as well as at the door, because this is what every caller asks.
+    if (!Object.hasOwn(REGISTRY, mode)) throw new Error(`Unknown provider "${mode}"`);
+    return REGISTRY[mode];
 };
 
 /** The on-disk path of a provider's CLI, platform suffix included. */

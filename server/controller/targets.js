@@ -19,7 +19,14 @@ const DIGITS = /^\d+$/;
 // Providers whose targets may pin a listed server id. Cloudflare has exactly
 // one endpoint, so an id on such a target is a mistake worth naming rather
 // than a value to quietly ignore.
-const takesServerId = (provider) => REGISTRY[provider]?.serverList !== null;
+//
+// Object.hasOwn, not a bare lookup: `REGISTRY["toString"]` answers with
+// Object.prototype's function, whose `serverList` is undefined - so a prototype
+// name was told it may pin a server, and its id was then judged against a
+// provider that is a function. The same trap the config and integration
+// controllers were already fixed for.
+const takesServerId = (provider) =>
+    Object.hasOwn(REGISTRY, provider) && REGISTRY[provider].serverList !== null;
 
 // Providers whose targets carry an endpoint of their own, and what kind.
 // libre's is a URL to a backend; iperf3's is a host and port.
@@ -82,6 +89,39 @@ const optimalProblem = (value, name) => {
     return null;
 };
 
+/**
+ * A flag as either shape it legitimately arrives in.
+ *
+ * targetProblem judges two: the fragment a request carried, where a flag is a
+ * JSON boolean, and the row a PATCH would become - merged from a raw database
+ * read, where SQLite's BOOLEAN is an integer. 0 and 1 are therefore as valid
+ * as false and true, and refusing them refuses every PATCH of an existing
+ * target.
+ */
+const FLAG_VALUES = [true, false, 0, 1];
+
+/**
+ * What is wrong with one of the two flags, or null when nothing is.
+ *
+ * These were the only writable fields nothing judged, and the column does not
+ * catch what gets through. Sequelize's BOOLEAN coerces the values that read as
+ * one - 'true', 'false', '0', '1' - and stores anything else verbatim, so a
+ * target created with `enabled: "yes"` kept the string. It then read truthy
+ * everywhere JavaScript asked - the dialog drew it as part of the round,
+ * `if (target.alerts)` sent its notifications - while roundTargets()'s
+ * `where: {enabled: true}` compares against SQL 1 and left it out. The round
+ * silently never ran a target the interface showed as scheduled.
+ *
+ * Refused rather than coerced, unlike importConfig's `Boolean(...)`: for a
+ * value arriving over the API, `Boolean("false")` being true is a worse
+ * surprise than a 400 naming the field.
+ */
+const flagProblem = (value, name) => {
+    if (value === undefined || value === null) return null;
+    if (!FLAG_VALUES.includes(value)) return `The ${name} flag must be true or false`;
+    return null;
+};
+
 /** What is wrong with a target, or null when nothing is. */
 export const targetProblem = (target) => {
     const name = typeof target.name === "string" ? target.name.trim() : "";
@@ -90,7 +130,12 @@ export const targetProblem = (target) => {
     if (name.length > TARGET_NAME_LIMIT)
         return `The name must be ${TARGET_NAME_LIMIT} characters or fewer`;
 
-    if (!(target.provider in REGISTRY)) return "The provider does not exist";
+    // `in`, which this was, is true for every name on Object.prototype. So a
+    // target could be created with provider "toString" - accepted with a 200,
+    // joined to every scheduled round, and failing each run against a binary
+    // called ./bin/undefined, because descriptor()'s `if (!entry)` reads that
+    // inherited function as a provider that exists.
+    if (!Object.hasOwn(REGISTRY, target.provider)) return "The provider does not exist";
 
     if (target.serverId !== undefined && target.serverId !== null) {
         if (!takesServerId(target.provider)) return "This provider has no servers to pin";
@@ -121,7 +166,9 @@ export const targetProblem = (target) => {
         return "An iperf3 target needs the host of the iperf3 server to measure against";
     }
 
-    return optimalProblem(target.optimalPing, "ping")
+    return flagProblem(target.enabled, "enabled")
+        ?? flagProblem(target.alerts, "alerts")
+        ?? optimalProblem(target.optimalPing, "ping")
         ?? optimalProblem(target.optimalDownload, "download")
         ?? optimalProblem(target.optimalUpload, "upload");
 };
