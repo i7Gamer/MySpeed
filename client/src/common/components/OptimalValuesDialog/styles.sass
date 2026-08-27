@@ -1,5 +1,6 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/layout" as *
+@use "@/common/styles/typography" as *
 
 .optimal-values-dialog
   width: $settings-dialog-width
@@ -93,7 +94,7 @@
         .optimal-values-speed-text p
           margin: 0
           color: $subtext
-          font-size: 0.95rem
+          font-size: $dialog-body
 
 // Kept below the block it is a sibling of in the markup, and not above it: this
 // rule used to be written directly before .optimal-values-speeds, which in the
@@ -102,7 +103,7 @@
 .optimal-values-note
   margin: 1.25rem 0 0
   color: $subtext
-  font-size: 0.85rem
+  font-size: $dialog-hint
   line-height: 1.5
 
 @media screen and (max-width: 600px)

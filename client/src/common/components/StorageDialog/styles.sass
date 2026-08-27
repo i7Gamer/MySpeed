@@ -1,5 +1,6 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/focus" as *
+@use "@/common/styles/typography" as *
 
 // The band a settings row stands in, whatever it happens to carry.
 //
@@ -69,7 +70,7 @@ $storage-row-band: 2.375rem
 
   span
     margin: 0
-    font-size: 1rem
+    font-size: $dialog-body
     font-weight: 500
 
   // Was the browser's own ring, which is white on this theme.
@@ -186,7 +187,7 @@ $storage-row-band: 2.375rem
 
     h3
       margin: 0
-      font-size: 1rem
+      font-size: $dialog-lead
       font-weight: 500
       color: $subtext
       // And once more at this level. The label above may shrink, but the
@@ -199,7 +200,7 @@ $storage-row-band: 2.375rem
       flex-basis: 100%
       margin: 0
       padding-left: 1.6rem
-      font-size: 0.8rem
+      font-size: $dialog-hint
       color: $subtext
       opacity: 0.8
 
@@ -213,7 +214,7 @@ $storage-row-band: 2.375rem
       align-items: center
       gap: 0.5rem
       cursor: pointer
-      font-size: 0.85rem
+      font-size: $dialog-hint
       color: $subtext
       flex-basis: 100%
       padding-left: 1.6rem
@@ -225,7 +226,7 @@ $storage-row-band: 2.375rem
         min-width: 0
 
   .storage-row-value
-    font-size: 1rem
+    font-size: $dialog-body
     font-weight: 600
     color: $white
     margin: 0
@@ -248,7 +249,7 @@ $storage-row-band: 2.375rem
   border-radius: 0.6rem
   color: $white
   font-family: inherit
-  font-size: 1rem
+  font-size: $dialog-body
   font-weight: 500
   line-height: 1.25
   cursor: pointer
@@ -327,7 +328,7 @@ $storage-row-band: 2.375rem
       position: absolute
       right: 0.85rem
       color: $subtext
-      font-size: 0.875rem
+      font-size: $dialog-hint
       font-weight: 500
       pointer-events: none
 

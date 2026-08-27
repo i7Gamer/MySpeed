@@ -1,5 +1,6 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/layout" as *
+@use "@/common/styles/typography" as *
 
 // The editor is reached by a button inside the manager, so it takes the
 // manager's width: drawn at the settings width it made the dialog jump inward
@@ -94,7 +95,7 @@
 
     h3
       margin: 0
-      font-size: 1rem
+      font-size: $dialog-lead
       font-weight: 500
       color: $subtext
 
@@ -130,7 +131,7 @@
   box-sizing: border-box
   margin: 0 !important
   padding: 0.6rem 0.875rem
-  font-size: 0.95rem
+  font-size: $dialog-body
   text-align: left
 
 .target-optimals
@@ -145,14 +146,14 @@
   min-width: 0
 
   &-label
-    font-size: 0.85rem
+    font-size: $dialog-hint
     color: $subtext
     white-space: nowrap
     overflow: hidden
     text-overflow: ellipsis
 
   &-unit
-    font-size: 0.75rem
+    font-size: $dialog-hint
 
   input
     width: 100%
@@ -161,7 +162,7 @@
     margin: 0 !important
     height: 2.5rem
     padding: 0.6rem 0.75rem
-    font-size: 0.95rem
+    font-size: $dialog-body
     text-align: left
 
 .provider-license
@@ -181,7 +182,7 @@
 
   span
     color: $subtext
-    font-size: 0.9rem
+    font-size: $dialog-hint
     line-height: 1.5
 
   a
@@ -202,7 +203,7 @@
 .targets-description
   margin: 0 0 1rem 0
   color: $subtext
-  font-size: 0.9rem
+  font-size: $dialog-lead
   line-height: 1.5
 
 .targets-list
@@ -224,7 +225,7 @@
 
     h3
       margin: 0
-      font-size: 0.95rem
+      font-size: $dialog-lead
       font-weight: 600
       // Said outright, because nothing above it says it: `body, html` sets no
       // colour, so a heading with none of its own paints in the browser's
@@ -238,7 +239,7 @@
     p
       margin: 0
       color: $subtext
-      font-size: 0.8rem
+      font-size: $dialog-hint
       white-space: nowrap
       overflow: hidden
       text-overflow: ellipsis

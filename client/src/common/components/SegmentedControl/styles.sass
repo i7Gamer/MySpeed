@@ -1,5 +1,6 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/focus" as *
+@use "@/common/styles/typography" as *
 
 .segmented-control
   display: flex
@@ -23,7 +24,10 @@
   border-radius: 0.625rem
   cursor: pointer
   color: $subtext
-  font-size: 0.8rem
+  // A control's own label, so the body step rather than the hint one: these sit
+  // directly beside the preferences dialog's switch rows, and two controls in
+  // one dialog disagreeing about their text size is the whole complaint.
+  font-size: $dialog-body
   font-weight: 600
   text-align: center
   transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease
@@ -42,7 +46,7 @@
   color: $white
 
 .segmented-option-icon
-  font-size: 0.9rem
+  font-size: $dialog-hint
   flex-shrink: 0
 
 // A choice whose label is a colour rather than a word - the palette chips stack

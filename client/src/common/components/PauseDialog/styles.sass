@@ -1,5 +1,6 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/layout" as *
+@use "@/common/styles/typography" as *
 
 .pause-dialog
   width: $settings-dialog-width
@@ -23,7 +24,7 @@
   border: 1px solid $light-gray
   border-radius: 0.6rem
   color: $subtext
-  font-size: 0.95rem
+  font-size: $dialog-body
   font-weight: 500
   cursor: pointer
   transition: all 0.15s ease
@@ -61,7 +62,7 @@
 .pause-quiet-hint
   margin: 0 0 0.75rem
   color: $subtext
-  font-size: 0.85rem
+  font-size: $dialog-hint
   line-height: 1.5
 
 .pause-quiet-range
@@ -80,7 +81,7 @@
     // today; this is the guard, not the repair.
     min-width: 0
     color: $subtext
-    font-size: 0.85rem
+    font-size: $dialog-hint
 
 // The zone the range above is read in, so it sits with them and is labelled the
 // same way. Full width rather than beside them: a zone name is long - the list
@@ -92,7 +93,7 @@
   gap: 0.35rem
   margin-top: 0.75rem
   color: $subtext
-  font-size: 0.85rem
+  font-size: $dialog-hint
 
   select
     width: 100%

@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/typography" as *
 
 // Opaque and over everything: the page behind is the shell the server refuses
 // to fill, so showing it through would only offer controls that answer nothing.
@@ -39,14 +40,14 @@
 
 .locked-description
   margin: 0
-  font-size: 1.05rem
+  font-size: $dialog-lead
   font-weight: 600
   line-height: 1.6
   color: $subtext
 
 .locked-hint
   margin: 0
-  font-size: 0.9rem
+  font-size: $dialog-hint
   line-height: 1.5
   color: $subtext
   opacity: 0.8

@@ -1,5 +1,6 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/focus" as *
+@use "@/common/styles/typography" as *
 
 .dialog-area
   position: fixed
@@ -104,13 +105,13 @@
   flex-shrink: 0
 
 .dialog-text
-  font-size: 1.25rem
+  font-size: $dialog-title
   font-weight: 700
   color: $white
   margin: 0
 
 .dialog-description
-  font-size: 1.05rem
+  font-size: $dialog-lead
   font-weight: 600
   margin: 14px 2px 2px
   color: $subtext
@@ -171,7 +172,7 @@
   border: 1px solid $light-gray
   border-radius: 0.6rem
   color: $white
-  font-size: 1rem
+  font-size: $dialog-body
   font-weight: 500
   cursor: pointer
   // The two things hover changes, named - `all` took the focus ring with it and
@@ -208,7 +209,7 @@
     color: $accent-danger
 
 .dialog-input
-  font-size: 1rem
+  font-size: $dialog-body
   padding: 0.7rem 1rem
   font-weight: 500
   margin-top: 15px
@@ -248,12 +249,17 @@
     max-width: 95vw
     padding: 1rem
   
+  // Left off the scale on purpose. These are one shared step-down that every
+  // dialog takes together on a narrow screen, so they cannot make two dialogs
+  // disagree - which is what the scale exists to prevent - and pulling them
+  // onto it would either shrink the title further than it already shrinks or
+  // grow it back to its desktop size on a 320px header.
   .dialog-text
     font-size: 1.15rem
-  
+
   .dialog-description
     font-size: 1rem
-  
+
   .dialog-btn
     font-size: 0.95rem
     padding: 0.6rem 1rem

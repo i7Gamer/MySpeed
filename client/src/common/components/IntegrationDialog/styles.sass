@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/typography" as *
 
 // Wider than the 34rem it used to be pinned at, and no longer a fixed size.
 // Each setting is a space-between row of a label against its input, so the
@@ -33,7 +34,7 @@
   gap: 0.4rem
 
 .template-variables-label
-  font-size: 0.8rem
+  font-size: $dialog-hint
   color: $subtext
 
 .template-variables-list
@@ -50,7 +51,7 @@
   border-radius: 0.4rem
   color: $subtext
   font-family: inherit
-  font-size: 0.78rem
+  font-size: $dialog-hint
   cursor: pointer
   transition: all 0.15s ease
 
@@ -67,7 +68,7 @@
   border: 1px solid $accent-danger
   border-radius: 0.75rem
   color: $accent-danger
-  font-size: 1rem
+  font-size: $dialog-body
   font-weight: 500
 
   svg

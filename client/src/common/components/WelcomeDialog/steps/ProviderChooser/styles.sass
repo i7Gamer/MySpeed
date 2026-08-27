@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/typography" as *
 
 .provider-chooser
 
@@ -15,7 +16,7 @@
 
   p
     margin: 0
-    font-size: 1rem
+    font-size: $dialog-body
     color: $subtext
 
   .provider-list
@@ -43,7 +44,7 @@
 
       h3
         margin: 0
-        font-size: 1rem
+        font-size: $dialog-lead
         font-weight: 500
         color: $subtext
 
