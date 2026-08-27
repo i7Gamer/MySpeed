@@ -28,7 +28,21 @@ const readServerList = (file) => {
     if (!fs.existsSync(file)) return [];
 
     try {
-        return JSON.parse(fs.readFileSync(file, "utf8"));
+        const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+
+        // A file that parses is not yet a list of servers. JSON.parse answers
+        // null, a number, a string or a boolean without throwing, and none of
+        // those survives what happens next: Object.keys(null) throws out of a
+        // getter three request paths call, and Object.keys("abc") is non-empty,
+        // so a stray string would be cached and served as the server list for
+        // the life of the process. The same check loadServers.js makes on these
+        // very files before it writes them.
+        if (parsed === null || typeof parsed !== "object") {
+            console.error(`The server list at ${file} is not a list of servers`);
+            return [];
+        }
+
+        return parsed;
     } catch (error) {
         console.error(`Could not read the server list at ${file}: ${error.message}`);
         return [];
