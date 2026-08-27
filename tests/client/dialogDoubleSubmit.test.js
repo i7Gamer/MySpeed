@@ -37,6 +37,17 @@ const DIALOGS = [
         what: "the target editor",
         file: "common/components/TargetsDialog/TargetEditor.jsx",
         buttons: []
+    },
+    {
+        // The wizard's one button carries t("dialog.continue") or
+        // t("dialog.done") depending on the step, so the shared per-key scan
+        // is skipped and the bespoke case below finds it by its handler. The
+        // second press used to run finish() twice: two PUT /targets, two
+        // identical targets, and every scheduled round measuring the same
+        // provider twice.
+        what: "the welcome wizard",
+        file: "common/components/WelcomeDialog/WelcomeDialog.jsx",
+        buttons: []
     }
 ];
 
@@ -82,5 +93,16 @@ describe("a dialog cannot be submitted twice at once", () => {
         assert.ok(tag, "the save button is no longer recognisable by its handler");
         assert.match(tag, /disabled=\{[^}]*saving/,
             "the save button stays pressable while the request runs");
+    });
+
+    // The wizard's continue button, likewise found by its handler - see its
+    // DIALOGS entry for why the label cannot be the anchor.
+    it(`the welcome wizard's continue button shows the lock`, () => {
+        const source = readSource("client/src/common/components/WelcomeDialog/WelcomeDialog.jsx");
+        const tag = source.match(/<button(?:(?!<button)[^])*?continueStep\(forceClose\)(?:(?!<button)[^])*?>/)?.[0];
+
+        assert.ok(tag, "the continue button is no longer recognisable by its handler");
+        assert.match(tag, /disabled=\{[^}]*saving/,
+            "the continue button stays pressable while the four requests run");
     });
 });

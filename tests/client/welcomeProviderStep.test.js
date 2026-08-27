@@ -128,8 +128,12 @@ describe("the wizard's continue button", () => {
 
         // The name it is disabled by, then where that name comes from: asked
         // in two steps because a `disabled` bound to any old flag would
-        // satisfy the first assertion on its own.
-        const disabledBy = /disabled=\{!(\w+)\}/.exec(button);
+        // satisfy the first assertion on its own. The button is dead for two
+        // reasons now - the step gate and the in-flight lock - so the pattern
+        // tolerates a second term; the teeth are in the follow-up assertion,
+        // which resolves the captured name back to canAdvance and must not be
+        // dropped.
+        const disabledBy = /disabled=\{[^}]*!(\w+)/.exec(button);
         assert.notEqual(disabledBy, null,
             "the button is pressable on a step the server will refuse");
 

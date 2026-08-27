@@ -34,6 +34,13 @@ export const WelcomeDialog = ({open, onClose}) => {
     const [download, setDownload] = useState(0);
     const [upload, setUpload] = useState(0);
     const [animating, setAnimating] = useState(false);
+    // One run at a time - a second click on a slow link must not save twice.
+    // finish() makes four round trips before it closes anything, so Done sits
+    // there looking ignored for as long as the slowest of them takes, and PUT
+    // /targets inserts a row per call: the second press created a second
+    // identical target on an instance that had not drawn a dashboard yet, and
+    // every scheduled round measured that provider twice from then on.
+    const [saving, setSaving] = useState(false);
 
     /**
      * Seeded when the wizard opens, not when it mounts - all of it, not just
@@ -153,11 +160,31 @@ export const WelcomeDialog = ({open, onClose}) => {
     // a step the server would refuse cannot be left however it is pressed.
     const mayAdvance = canAdvance({step, provider, endpoint});
 
-    const continueStep = (close) => {
+    const continueStep = async (close) => {
+        // The lock sits here rather than inside finish(), for the same reason
+        // the canAdvance re-check does: this is what a click actually reaches,
+        // and TargetEditor's save() - the dialog this shape is borrowed from -
+        // is likewise the button's own handler. It also keeps finish() free of
+        // hooks, which matters more here than it looks: welcomeFinish.test.js
+        // lifts that function out of this file by text and runs it, and a
+        // component variable named inside it is a free identifier that takes
+        // every one of those cases down with a ReferenceError. It is the only
+        // thing in this .jsx anything can execute.
+        if (saving) return;
         if (!canAdvance({step, provider, endpoint})) return;
 
         if (step === lastStep(provider)) {
-            finish(close);
+            setSaving(true);
+
+            try {
+                await finish(close);
+            } finally {
+                // However the run ended - a refused write must not leave the
+                // one dialog nobody can dismiss locked shut. Clearing it after
+                // close() is safe rather than a stray setState: TargetsContext
+                // renders this component whether it is open or not.
+                setSaving(false);
+            }
         } else {
             setAnimating(true);
             setStep(step + 1);
@@ -186,7 +213,8 @@ export const WelcomeDialog = ({open, onClose}) => {
                     </div>
                     <div className="welcome-actions">
                         <h3>{t("welcome.step")} {step}/{lastStep(provider)}</h3>
-                        <button type="button" className="dialog-btn" disabled={!mayAdvance}
+                        <button type="button" className="dialog-btn"
+                                disabled={!mayAdvance || saving}
                                 onClick={() => continueStep(forceClose)}>
                             {step === lastStep(provider) ? t("dialog.done") : t("dialog.continue")}
                         </button>
