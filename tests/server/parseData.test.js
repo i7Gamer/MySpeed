@@ -818,3 +818,51 @@ describe("parseData", () => {
         assert.throws(() => parseData("nonsense", {}), (e) => e.message === "Invalid provider");
     });
 });
+
+/**
+ * A provider result that is missing the blocks the parser reads.
+ *
+ * parseOokla read `test.ping.latency`, `test.download.bandwidth` and
+ * `test.upload.bandwidth` directly while everything below them was
+ * optional-chained, so the top and the bottom of the function disagreed about
+ * whether the input could be trusted. A malformed result threw a TypeError
+ * whose message names a JavaScript property, and that string is what reaches
+ * the failed test's error column - where the operator reads it.
+ *
+ * Refused rather than parsed around. Letting the figures come back null would
+ * store a row that isFailedTest does not recognise as a failure, so a test that
+ * measured nothing would be averaged in as though it had.
+ */
+describe("a result missing the blocks the parser needs", () => {
+    const complete = {
+        ping: {latency: 12.6, jitter: 3.4},
+        download: {bandwidth: 12500000, elapsed: 5000},
+        upload: {bandwidth: 6250000, elapsed: 5000}
+    };
+
+    const readable = (error) => error instanceof Error && !(error instanceof TypeError)
+        && /ping|download|upload/i.test(error.message);
+
+    for (const block of ["ping", "download", "upload"])
+        it(`refuses an ookla result with no ${block}, in words`, () => {
+            const {[block]: _removed, ...without} = complete;
+
+            assert.throws(() => parseOokla(without), readable);
+        });
+
+    it("refuses an ookla result that is nothing at all", () => {
+        assert.throws(() => parseOokla(undefined), readable);
+        assert.throws(() => parseOokla(null), readable);
+    });
+
+    it("still parses a complete one", () => {
+        assert.equal(parseOokla(complete).ping, 12.6);
+    });
+
+    // parseLibre spreads its input, which tolerates null - and then reads a
+    // property off it, which does not.
+    it("refuses a libre result that is nothing at all", () => {
+        assert.throws(() => parseLibre(null), (e) => e instanceof Error);
+        assert.throws(() => parseLibre(undefined), (e) => e instanceof Error);
+    });
+});

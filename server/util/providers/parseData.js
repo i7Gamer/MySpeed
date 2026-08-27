@@ -86,6 +86,23 @@ const calculateJitter = (latencyMeasurements) => {
 };
 
 export const parseOokla = (test) => {
+    /*
+     * The three blocks every reading below comes out of, checked once.
+     *
+     * The top of this function read them straight - `test.ping.latency`,
+     * `test.download.bandwidth` - while everything from the server name down
+     * was optional-chained, so the two halves disagreed about whether the CLI's
+     * output could be trusted. A result missing any of them threw a TypeError
+     * naming a JavaScript property, and that string is what gets stored in the
+     * failed test's error column, where an operator reads it.
+     *
+     * Refused rather than parsed around. Letting the figures come back null
+     * instead would store a row isFailedTest does not recognise as a failure,
+     * so a test that measured nothing would be averaged in as though it had.
+     */
+    if (!test?.ping || !test?.download || !test?.upload)
+        throw new Error("the ookla result reported no ping, download or upload block");
+
     // round() to two decimals, not Math.round() to whole milliseconds: the
     // column holds a double now, and on a fibre or local line the whole reading
     // lives below the millisecond. Same treatment as the jitter beside it.
@@ -146,7 +163,7 @@ const ispName = (org) => {
     return name === null ? null : text(name.replace(AS_PREFIX, ""));
 };
 
-export const parseLibre = (test) => ({...test, ...NO_QUALITY_FIGURES, provider: LIBRE,
+const libreFigures = (test) => ({...test, ...NO_QUALITY_FIGURES, provider: LIBRE,
     ping: round(test.ping),
     // round() also normalises the string jitter this CLI reports, and keeps a
     // measured zero rather than nulling it as falsy.
@@ -162,6 +179,16 @@ export const parseLibre = (test) => ({...test, ...NO_QUALITY_FIGURES, provider: 
     externalIp: text(test.client?.ip),
     bytesDownloaded: byteCount(test.bytes_received),
     bytesUploaded: byteCount(test.bytes_sent)});
+
+export const parseLibre = (test) => {
+    // The spread above tolerates null and the very next read does not, so an
+    // empty result failed as a TypeError one line further on. Named here for
+    // the reason parseOokla names its own: this message is what gets stored in
+    // the failed test's error column, where an operator reads it.
+    if (!test) throw new Error("the librespeed result was empty");
+
+    return libreFigures(test);
+};
 
 /**
  * How many bytes a direction's runs moved.
@@ -351,7 +378,10 @@ export const parseCloudflare = (test) => {
         isp: null
     };
 
-    if (test && test.latency_measurement && test.speed_measurements) {
+    // Array.isArray rather than truthiness: the next three lines call .filter on
+    // it, so an object there would throw where a missing block returns the
+    // unmeasured shape below. This asks what the code actually needs.
+    if (test?.latency_measurement && Array.isArray(test.speed_measurements)) {
         const downloadTests = test.speed_measurements.filter(t => t.test_type === "Download");
         const uploadTests = test.speed_measurements.filter(t => t.test_type === "Upload");
 
