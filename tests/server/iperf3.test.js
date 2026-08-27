@@ -502,3 +502,30 @@ describe("when the binary is fetched", () => {
         assert.match(runner, /await ensureBinary\(mode, binaryPath\)/);
     });
 });
+
+/**
+ * A bracketed IPv6 literal carrying no port.
+ *
+ * The brackets are the URL spelling of an address and never part of the host
+ * that is dialled, but they only came off on the branch that also parses a
+ * port. "[fd00::1]" has its last colon inside the literal, so it took the
+ * no-port branch and kept them - and iperfEndpointProblem accepts it, so the
+ * target was created, scheduled, and handed "[fd00::1]" to --client, which
+ * getaddrinfo cannot resolve. It could never produce a measurement.
+ */
+describe("a bracketed IPv6 endpoint without a port", () => {
+    it("keeps the default port and loses the brackets", () => {
+        assert.deepEqual(splitEndpoint("[fd00::1]"), {host: "fd00::1", port: IPERF_DEFAULT_PORT});
+        assert.deepEqual(splitEndpoint("[2001:db8::1]"),
+            {host: "2001:db8::1", port: IPERF_DEFAULT_PORT});
+    });
+
+    // The bracketed form with a port, and the bare form, both already worked
+    // and must keep working.
+    it("leaves the forms that already worked alone", () => {
+        assert.deepEqual(splitEndpoint("[2001:db8::1]:5301"), {host: "2001:db8::1", port: 5301});
+        assert.deepEqual(splitEndpoint("2001:db8::1"),
+            {host: "2001:db8::1", port: IPERF_DEFAULT_PORT});
+        assert.deepEqual(splitEndpoint("10.0.0.5:5202"), {host: "10.0.0.5", port: 5202});
+    });
+});

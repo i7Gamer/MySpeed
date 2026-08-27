@@ -47,6 +47,18 @@ export const IPERF_CONNECT_TIMEOUT_MS = 5000;
 export const IPERF_DEFAULT_PORT = 5201;
 
 /**
+ * The range a TCP port number falls in.
+ *
+ * targetProblem holds an endpoint to the same bounds at the door, so a stored
+ * target has already passed them; this is for the reading, which also runs on
+ * values that never went through the door - a legacy fold, a restored backup.
+ */
+const LOWEST_PORT = 1;
+const HIGHEST_PORT = 65535;
+
+const isPort = (value) => Number.isInteger(value) && value >= LOWEST_PORT && value <= HIGHEST_PORT;
+
+/**
  * A target's `host:port`, split - with iperf3's default port when it names
  * only a host.
  *
@@ -59,22 +71,44 @@ export const IPERF_DEFAULT_PORT = 5201;
  */
 export const splitEndpoint = (endpoint) => {
     const value = String(endpoint ?? "").trim();
+
+    /*
+     * A bracketed literal is answered whole, before the port question is asked.
+     *
+     * The brackets are the URL spelling of an address and never part of the
+     * host that is dialled, but they used to come off only on the branch that
+     * also parses a port. "[fd00::1]" has its last colon inside the literal, so
+     * it took the no-port branch below and kept them - and since
+     * iperfEndpointProblem accepts that spelling, the target was created,
+     * scheduled, and handed "[fd00::1]" to --client, which getaddrinfo cannot
+     * resolve. It could never produce a measurement.
+     */
+    const closing = value.startsWith("[") ? value.indexOf("]") : -1;
+
+    if (closing !== -1) {
+        const host = value.slice(1, closing);
+        const rest = value.slice(closing + 1);
+
+        if (rest === "") return {host, port: IPERF_DEFAULT_PORT};
+
+        const bracketedPort = rest.startsWith(":") ? Number(rest.slice(1)) : NaN;
+
+        return isPort(bracketedPort) ? {host, port: bracketedPort}
+            : {host, port: IPERF_DEFAULT_PORT};
+    }
+
     const separator = value.lastIndexOf(":");
 
     // No colon at all, or the only colons are inside an unbracketed IPv6
     // literal - which is a host, not a host and a port.
-    if (separator === -1 || (value.includes(":", 0) && !value.startsWith("[")
-        && value.indexOf(":") !== separator))
+    if (separator === -1 || value.indexOf(":") !== separator)
         return {host: value, port: IPERF_DEFAULT_PORT};
 
-    const host = value.slice(0, separator);
     const port = Number(value.slice(separator + 1));
 
-    if (!Number.isInteger(port) || port < 1 || port > 65535)
-        return {host: value, port: IPERF_DEFAULT_PORT};
+    if (!isPort(port)) return {host: value, port: IPERF_DEFAULT_PORT};
 
-    // A bracketed literal keeps the brackets off the host it is dialled by.
-    return {host: host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host, port};
+    return {host: value.slice(0, separator), port};
 };
 
 /**
