@@ -14,14 +14,19 @@ import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {faExclamationTriangle} from "@fortawesome/free-solid-svg-icons";
 import {t} from "i18next";
 import {writeStored} from "@/common/utils/Storage";
-import {PROVIDER_STEP, canAdvance, lastStep} from "./welcomeStep";
+import {
+    DEFAULT_PROVIDER, FIRST_STEP, PROVIDER_STEP, canAdvance, lastStep, welcomeSeed
+} from "./welcomeStep";
 
 export const WelcomeDialog = ({open, onClose}) => {
     const [config, reloadConfig] = useContext(ConfigContext);
     const {reloadTargets} = useContext(TargetsContext);
     const updateToast = useContext(ToastNotificationContext);
-    const [step, setStep] = useState(1);
-    const [provider, setProvider] = useState("ookla");
+    // Named rather than written as 1 and "ookla" here as well: welcomeSeed says
+    // where an opening wizard starts, and a second spelling of that beside it is
+    // the copy that gets left behind.
+    const [step, setStep] = useState(FIRST_STEP);
+    const [provider, setProvider] = useState(DEFAULT_PROVIDER);
     // Where a provider that has no server pool of its own measures. Held here
     // rather than in the chooser, because finish() is what has to send it.
     const [endpoint, setEndpoint] = useState("");
@@ -31,25 +36,43 @@ export const WelcomeDialog = ({open, onClose}) => {
     const [animating, setAnimating] = useState(false);
 
     /**
-     * Seeded when the wizard opens, not when it mounts.
+     * Seeded when the wizard opens, not when it mounts - all of it, not just
+     * the thresholds.
      *
-     * ConfigProvider renders this itself, so it mounts on the provider's very
+     * TargetsContext renders this itself, so it mounts on the provider's very
      * first render - before the config has been fetched - and an initialiser
-     * never runs again. All three targets stayed at 0, and finish() PATCHes
+     * never runs again. All three thresholds stayed at 0, and finish() PATCHes
      * them unconditionally: clicking through a fresh install without touching
      * that step replaced the shipped defaults with zeroes, which leaves every
      * metric rendering blue forever and no target bar anywhere.
+     *
+     * The step, the provider and the endpoint were left out of that sync, and
+     * they live above the boundary DialogContext unmounts - `if (!visible)
+     * return null` takes the dialog's children, not the component holding the
+     * hooks. So a second freshly installed node, switched to without a page
+     * load, reopened this wizard on its *last* step carrying the first node's
+     * provider and its iperf3 host: no chooser, no way back, and one button
+     * reading Done that wrote node A's answers onto node B.
+     *
+     * Applied from welcomeSeed rather than written out here, so there is one
+     * statement of what an opening wizard shows instead of a list that can be
+     * half updated - which is exactly how the three above came to be missing.
      */
     useSyncOnOpen(open, () => {
-        // parseFloat, because finish() writes all three back unconditionally:
-        // an integer parse rewrote any fractional threshold the wizard was
-        // merely clicked past - "25.9" went back as 25, and "0.4", the
-        // recommended ping on a fast line, went back as 0, a threshold no
-        // latency is ever under. The wizard opens by itself while the provider
-        // is unset, which is exactly when thresholds are being set first.
-        setPing(parseFloat(config.ping) || 0);
-        setDownload(parseFloat(config.download) || 0);
-        setUpload(parseFloat(config.upload) || 0);
+        const seed = welcomeSeed(config);
+
+        setStep(seed.step);
+        setProvider(seed.provider);
+        setEndpoint(seed.endpoint);
+        setPing(seed.ping);
+        setDownload(seed.download);
+        setUpload(seed.upload);
+        // Not an answer, so not part of the seed - but it is state this
+        // component owns, and the rule is worth keeping exceptionless: the
+        // slide-in class stays on for 500ms after a step change, and a close
+        // inside that window left the reopened wizard replaying the animation
+        // over its first step.
+        setAnimating(false);
     });
 
     const finish = async (close) => {
