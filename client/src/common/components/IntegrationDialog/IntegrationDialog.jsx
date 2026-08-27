@@ -289,7 +289,17 @@ export const IntegrationDialog = ({open, onClose}) => {
                                 {renderable.length === 0 ? (
                                     <div className="empty-state">
                                         <FontAwesomeIcon icon={faCircleNodes}/>
-                                        <p>{t("integrations.none_active").replace("<br/>", " ").replace("<Bold>", "").replace("</Bold>", "")}</p>
+                                        {/* Written plainly and rendered as
+                                            written. It said "This integration
+                                            is not active. Create" - singular,
+                                            on a panel that is drawn only when
+                                            there are none at all, and with a
+                                            bare noun after it that repeated the
+                                            button below. That noun was a bold
+                                            call to action in the string, which
+                                            this line used to strip along with
+                                            the line break in front of it. */}
+                                        <p>{t("integrations.none_added")}</p>
                                         <DropdownSelect items={dropdownItems} onSelect={addIntegration} buttonText={t("integrations.create")} disabled={config.previewMode}/>
                                     </div>
                                 ) : (

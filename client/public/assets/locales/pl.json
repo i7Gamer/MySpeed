@@ -457,7 +457,7 @@
     "description": "Aktualnie jesteś w trybie demo. Niektóre funkcje są wyłączone, a niektóre ustawienia nie mogą być zmienione. Jeśli chcesz korzystać ze wszystkich funkcji, możesz <Link>zainstalować MySpeed</Link> na własnym serwerze."
   },
   "integrations": {
-    "none_active": "Ta integracja nie jest aktywna. <br/><Bold>Utwórz</Bold>",
+    "none_added": "Nie skonfigurowano jeszcze żadnych integracji.",
     "preview_active": "Integracje są wyłączone w trybie demo.",
     "display_name": "Nazwa integracji",
     "create": "Utwórz",

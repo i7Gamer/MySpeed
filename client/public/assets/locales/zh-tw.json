@@ -457,7 +457,7 @@
     "description": "您目前處於示範模式。部分功能已停用，部分設定無法變更。若要使用所有功能，您可以在自己的伺服器上<Link>安裝 MySpeed</Link>。"
   },
   "integrations": {
-    "none_active": "此整合尚未啟用。<br/><Bold>建立</Bold>",
+    "none_added": "尚未設定任何整合。",
     "preview_active": "示範模式下整合功能已停用。",
     "display_name": "整合名稱",
     "create": "建立",

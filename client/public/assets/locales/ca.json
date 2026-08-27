@@ -457,7 +457,7 @@
     "description": "Ara mateix ets en mode de demostració. Algunes funcions estan desactivades i alguns paràmetres no es poden canviar. Si vols utilitzar totes les funcions, pots <Link>instal·lar MySpeed</Link> al teu propi servidor."
   },
   "integrations": {
-    "none_active": "Aquesta integració no està activa. <br/><Bold>Crea</Bold>",
+    "none_added": "Encara no hi ha cap integració configurada.",
     "preview_active": "Les integracions estan desactivades durant el mode de demostració.",
     "display_name": "Nom de la integració",
     "create": "Crea",

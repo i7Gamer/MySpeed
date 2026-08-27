@@ -457,7 +457,7 @@
     "description": "Momentálně jste v demo režimu. Některé funkce jsou zakázány a některá nastavení nelze měnit. Pokud chcete využívat všechny funkce, můžete si <Link>nainstalovat MySpeed</Link> na vlastní server."
   },
   "integrations": {
-    "none_active": "Tato integrace není aktivní. <br/><Bold>Vytvořit</Bold>",
+    "none_added": "Zatím nejsou nastavené žádné integrace.",
     "preview_active": "Integrace jsou v demo režimu zakázány.",
     "display_name": "Název integrace",
     "create": "Vytvořit",

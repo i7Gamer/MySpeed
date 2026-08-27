@@ -457,7 +457,7 @@
     "description": "현재 데모 모드입니다. 일부 기능이 비활성화되어 있으며 일부 설정은 변경할 수 없습니다. 모든 기능을 사용하려면 자신의 서버에 <Link>MySpeed를 설치</Link>하세요."
   },
   "integrations": {
-    "none_active": "이 통합은 활성화되어 있지 않습니다. <br/><Bold>생성</Bold>",
+    "none_added": "아직 설정된 통합이 없습니다.",
     "preview_active": "데모 모드에서는 통합이 비활성화됩니다.",
     "display_name": "통합 이름",
     "create": "생성",

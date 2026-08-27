@@ -457,7 +457,7 @@
     "description": "您目前处于演示模式。部分功能与设置受限。如果您想使用所有功能，可以 <Link>在自己的服务器上安装 MySpeed</Link>。"
   },
   "integrations": {
-    "none_active": "此集成并未启用。<br/><Bold>添加</Bold>",
+    "none_added": "尚未设置任何集成。",
     "preview_active": "在演示模式下，集成将被禁用。",
     "display_name": "集成名称",
     "create": "添加",

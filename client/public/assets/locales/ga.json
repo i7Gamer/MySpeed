@@ -457,7 +457,7 @@
     "description": "Tá tú i mód taispeána faoi láthair. Tá roinnt gnéithe díchumasaithe agus ní féidir roinnt socruithe a athrú. Más mian leat gach gné a úsáid, is féidir leat <Link>MySpeed</Link> a shuiteáil ar do fhreastalaí féin."
   },
   "integrations": {
-    "none_active": "Níl an comhtháthú seo gníomhach. <br/><Bold>Cruthaigh</Bold>",
+    "none_added": "Níl aon chomhtháthú socraithe fós.",
     "preview_active": "Tá comhtháthú díchumasaithe le linn mód taispeána.",
     "display_name": "Ainm an chomhtháthaithe",
     "create": "Cruthaigh",

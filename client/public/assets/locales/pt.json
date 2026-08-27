@@ -457,7 +457,7 @@
     "description": "No momento, você está no modo de demonstração. Alguns recursos estão desativados e algumas configurações não podem ser alteradas. Se quiser usar todos os recursos, você pode <Link>instalar o MySpeed</Link> em seu próprio servidor."
   },
   "integrations": {
-    "none_active": "Essa integração não está ativa. <br/><Bold>Criar</Bold>",
+    "none_added": "Nenhuma integração configurada ainda.",
     "preview_active": "As integrações são desativadas durante o modo de demonstração.",
     "display_name": "Nome da integração",
     "create": "Criar",

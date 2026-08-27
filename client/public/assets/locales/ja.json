@@ -457,7 +457,7 @@
     "description": "現在デモモードです。一部の機能は無効になっており、一部の設定は変更できません。すべての機能を使いたい場合は、自分のサーバーに <Link>MySpeed をインストール</Link>できます。"
   },
   "integrations": {
-    "none_active": "この連携は有効になっていません。<br/><Bold>作成</Bold>",
+    "none_added": "連携はまだ設定されていません。",
     "preview_active": "デモモード中は連携が無効になっています。",
     "display_name": "連携名",
     "create": "作成",

@@ -457,7 +457,7 @@
     "description": "Anda saat ini dalam mode demo. Beberapa fitur dinonaktifkan dan beberapa pengaturan tidak dapat diubah. Jika Anda ingin menggunakan semua fitur, Anda dapat <Link>menginstal MySpeed</Link> di server Anda sendiri."
   },
   "integrations": {
-    "none_active": "Integrasi ini tidak aktif. <br/><Bold>Buat</Bold>",
+    "none_added": "Belum ada integrasi yang disiapkan.",
     "preview_active": "Integrasi dinonaktifkan selama mode demo.",
     "display_name": "Nama integrasi",
     "create": "Buat",

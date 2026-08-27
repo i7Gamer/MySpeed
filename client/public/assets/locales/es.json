@@ -457,7 +457,7 @@
     "description": "Actualmente estás en modo demostración. Algunas funciones están desactivadas y algunos ajustes no se pueden cambiar. Si quieres utilizar todas las funciones, puedes <Link>instalar MySpeed</Link> en tu propio servidor."
   },
   "integrations": {
-    "none_active": "Esta integración no está activa. <br/><Bold>Añadir</Bold>",
+    "none_added": "Aún no hay integraciones configuradas.",
     "preview_active": "Las integraciones están desactivadas durante el modo demostración.",
     "display_name": "Nombre de la integración",
     "create": "Añadir",

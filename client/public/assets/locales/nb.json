@@ -457,7 +457,7 @@
     "description": "Du er for øyeblikket i demomodus. Noen funksjoner er deaktivert, og enkelte innstillinger kan ikke endres. Hvis du vil bruke alle funksjonene, kan du <Link>installere MySpeed</Link> på din egen server."
   },
   "integrations": {
-    "none_active": "Denne integrasjonen er ikke aktiv. <br/><Bold>Opprett</Bold>",
+    "none_added": "Ingen integrasjoner er satt opp ennå.",
     "preview_active": "Integrasjoner er deaktivert i demomodus.",
     "display_name": "Integrasjonsnavn",
     "create": "Opprett",

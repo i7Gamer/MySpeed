@@ -457,7 +457,7 @@
     "description": "Du är just nu i demoläge. Vissa funktioner är inaktiverade och vissa inställningar kan inte ändras. Om du vill använda alla funktioner kan du <Link>installera MySpeed</Link> på din egen server."
   },
   "integrations": {
-    "none_active": "Den här integrationen är inte aktiv. <br/><Bold>Skapa</Bold>",
+    "none_added": "Inga integrationer har konfigurerats än.",
     "preview_active": "Integrationer är inaktiverade i demoläget.",
     "display_name": "Integrationsnamn",
     "create": "Skapa",

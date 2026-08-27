@@ -457,7 +457,7 @@
     "description": "U bent momenteel in demo-modus. Sommige functies zijn uitgeschakeld en sommige instellingen kunnen niet worden gewijzigd. Als u alle functies wilt gebruiken, kunt u <Link>MySpeed</Link> installeren op uw eigen server."
   },
   "integrations": {
-    "none_active": "Deze integratie is niet actief. <br/><Bold>Voeg toe</Bold>",
+    "none_added": "Nog geen integraties ingesteld.",
     "preview_active": "Integraties zijn uitgeschakeld in demomodus.",
     "display_name": "Naam integratie",
     "create": "Voeg toe",

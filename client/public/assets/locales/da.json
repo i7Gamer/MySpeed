@@ -457,7 +457,7 @@
     "description": "Du er i øjeblikket i demo-tilstand. Nogle funktioner er deaktiveret, og visse indstillinger kan ikke ændres. Hvis du vil bruge alle funktioner, kan du <Link>installere MySpeed</Link> på din egen server."
   },
   "integrations": {
-    "none_active": "Denne integration er ikke aktiv. <br/><Bold>Opret</Bold>",
+    "none_added": "Der er endnu ikke opsat nogen integrationer.",
     "preview_active": "Integrationer er deaktiveret i demo-tilstand.",
     "display_name": "Integrationsnavn",
     "create": "Opret",
