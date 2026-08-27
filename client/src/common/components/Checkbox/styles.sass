@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/focus" as *
 
 // The provider card's radio, squared. Its size, border weight, accent fill and
 // transition are the same values .selectable-option-radio uses, and
@@ -63,9 +64,15 @@
 .checkbox:hover input:not(:disabled) ~ .checkbox-box
   border-color: $white
 
-// The browser drew a ring on the box it owned and draws none on this one.
+// The browser drew a ring on the box it owned and draws none on this one. The
+// ring is the app's, not this component's: it was a soft box-shadow here and a
+// solid outline everywhere else, which made one control's focus look like a
+// different kind of state. Written out rather than taken from the mixin because
+// what wears the ring is the drawn box, and what has the focus is the input
+// beside it.
 .checkbox input:focus-visible ~ .checkbox-box
-  box-shadow: 0 0 0 3px rgba($accent-primary, 0.4)
+  outline: $focus-ring-width solid $accent-primary
+  outline-offset: $focus-ring-offset
 
 .checkbox-disabled
   opacity: 0.5

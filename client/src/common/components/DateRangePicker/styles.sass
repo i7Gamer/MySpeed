@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/focus" as *
 @use "@/common/styles/layout" as *
 
 // The popover's text follows the settings dialog's scale - SelectableOption's
@@ -24,7 +25,10 @@ $dialog-secondary-text: 0.85rem
   border: 1px solid $light-gray
   border-radius: 0.6rem
   cursor: pointer
-  transition: all 0.2s ease-in-out
+  // The border is all this control animates, and naming it keeps the focus ring
+  // out of the transition: under `all` the ring eased in over 200ms after a
+  // keypress, which is the one thing a keyboard user should never wait for.
+  transition: border-color 0.2s ease-in-out
   min-width: 0
   max-width: 100%
   // Two of the four the browser brings that this rule does not already state.
@@ -44,6 +48,11 @@ $dialog-secondary-text: 0.85rem
   
   &:hover
     border-color: $accent-primary
+
+  // The toolbar's controls each drew the browser's own ring - a white double
+  // ring on this theme - where everything around them drew the app's. See
+  // _focus.sass.
+  +focus-ring
 
 .calendar-icon
   color: $subtext

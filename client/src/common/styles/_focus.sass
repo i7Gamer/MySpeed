@@ -1,0 +1,47 @@
+// Where the keyboard is, drawn one way.
+//
+// A partial that emits nothing, so a component can reach for the mixin without
+// copying anything into its own stylesheet - the same arrangement _grades.sass
+// uses for the grade colours.
+//
+// It was five treatments and a gap. The header's icons drew at a 2px offset and
+// the help buttons and card rows at 3px; the checkbox drew a soft box-shadow
+// instead of a ring; the one control with no corner radius of its own drew a
+// hard-cornered box around a round glyph; and the date picker, the start
+// button, the export button and the pagination had no rule at all, so they wore
+// the browser's - which on a dark theme is a white double ring. That last one
+// is what a date picker closed with Escape was drawing, and it looked like a
+// bug because next to the green rings it was one.
+
+@use "sass:map"
+@use "@/common/styles/colors" as *
+
+/// Two pixels of accent. Wide enough to read against a card at a glance and
+/// narrow enough not to become the loudest thing on a 14px glyph.
+$focus-ring-width: 2px
+
+/// Clear of the control, so the ring reads as around it rather than as a border
+/// it grew. Anything a control is likely to sit beside is at least this far
+/// away plus the ring's own width.
+$focus-ring-offset: 2px
+
+/// Except beside the metric figures. An outline never affects layout, so the
+/// room a ring has is whatever the gap already was - and the detail pane's
+/// sub-parts put a 14px glyph 4px from the figure it labels, which the standard
+/// offset plus the ring's width lands exactly on. One pixel back clears it.
+///
+/// Measured on the overview and the detail pane; the larger help buttons have
+/// more room and lose nothing by matching.
+$focus-ring-offset-tight: 1px
+
+/// The ring itself.
+///
+/// No corner of its own: an outline follows the element's border-radius, so a
+/// pill stays a pill and a card stays a card. A control with no radius at all
+/// passes one in - see .header-icon, a 30px square around a round glyph.
+@mixin focus-ring($offset: $focus-ring-offset, $radius: null)
+  &:focus-visible
+    outline: $focus-ring-width solid $accent-primary
+    outline-offset: $offset
+    @if $radius
+      border-radius: $radius

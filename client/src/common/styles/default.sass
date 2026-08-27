@@ -1,4 +1,5 @@
 @use "colors" as *
+@use "focus" as *
 @use "grades" as *
 @use "layout" as *
 // The palette blocks, the grade palette and the icon-* utilities that carry
@@ -114,20 +115,19 @@ body::before
   font: inherit
   cursor: help
 
-  &:focus-visible
-    outline: 2px solid var(--accent-primary)
-    outline-offset: 3px
-    border-radius: 0.25rem
+  // Tighter than the rest, because these are the ones with a neighbour: the
+  // detail pane's sub-parts put the glyph 4px from the figure it labels, and
+  // the standard offset plus the ring's own width lands on it. See _focus.sass.
+  +focus-ring($focus-ring-offset-tight, 0.25rem)
 
 // Where focus is, on anything that had to be made into a control rather than
 // born one - the statistics tiles, the charts, the node cards, the overview row.
 // Stated once against the role instead of per card: the role and the ring are
 // one decision, and fourteen copies of it is fourteen chances to leave one out.
 // Only :focus-visible, so a pointer click does not draw a ring - the same rule
-// the header's icons follow.
-[role="button"]:focus-visible
-  outline: 2px solid var(--accent-primary)
-  outline-offset: 3px
+// every other control follows.
+[role="button"]
+  +focus-ring
 
 // One content box for every page. The overview used to be an unstyled
 // shrink-to-fit container and the statistics were full width with a large inset

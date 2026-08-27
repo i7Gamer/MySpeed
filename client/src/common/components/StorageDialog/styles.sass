@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/focus" as *
 
 // The band a settings row stands in, whatever it happens to carry.
 //
@@ -54,7 +55,9 @@ $storage-row-band: 2.375rem
   border: 1px solid transparent
   border-radius: 0.6rem
   cursor: pointer
-  transition: all 0.15s ease
+  // Named rather than `all`, which took the focus ring with it - see the
+  // header's icons, where the same line made the ring fade in after a keypress.
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease
 
   &:hover
     background-color: $darker-gray
@@ -68,6 +71,9 @@ $storage-row-band: 2.375rem
     margin: 0
     font-size: 1rem
     font-weight: 500
+
+  // Was the browser's own ring, which is white on this theme.
+  +focus-ring
 
 .reset-cursor
   cursor: default
@@ -338,7 +344,7 @@ $storage-row-band: 2.375rem
   border-radius: 0.6rem
   color: $subtext
   cursor: pointer
-  transition: all 0.15s ease
+  transition: border-color 0.15s ease, color 0.15s ease
 
   &:hover
     border-color: $accent-primary
@@ -346,6 +352,8 @@ $storage-row-band: 2.375rem
 
   svg
     font-size: 0.9rem
+
+  +focus-ring
 
 @media (max-width: 781px)
   .storage-dialog-wrapper

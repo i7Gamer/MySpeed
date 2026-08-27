@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/focus" as *
 
 .dialog-area
   position: fixed
@@ -146,6 +147,10 @@
   cursor: pointer
   flex-shrink: 0
 
+  // A corner of its own: this one is a bare glyph with no radius, so the
+  // ring would be a hard-cornered box around a cross. See _focus.sass.
+  +focus-ring($radius: 0.5rem)
+
 .dialog-icon
   cursor: pointer
   color: $subtext
@@ -169,7 +174,9 @@
   font-size: 1rem
   font-weight: 500
   cursor: pointer
-  transition: all 0.15s ease
+  // The two things hover changes, named - `all` took the focus ring with it and
+  // eased it in after the keypress that put focus here.
+  transition: border-color 0.15s ease, color 0.15s ease
 
   &:hover
     border-color: $accent-primary
@@ -185,6 +192,10 @@
 
   svg
     font-size: 1rem
+
+  // Every dialog's buttons drew the browser's own ring - white on this
+  // theme - where the toolbar and the cards behind them drew the app's.
+  +focus-ring
 
 .dialog-btn-danger
   &:hover
