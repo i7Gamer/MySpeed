@@ -135,7 +135,14 @@ describe("the toast provider", () => {
         // The four spaces are the provider's indentation, counted rather than
         // typed out - which is what tells the closing brace of updateToast from
         // the closing brace of anything nested inside it.
-        const update = provider.match(/const updateToast[\s\S]*?\n {4}\};/);
+        //
+        // Anchored on useCallback's closer rather than a bare `};`. updateToast
+        // is memoised, so it ends `}, []);` - and a lazy match looking for `};`
+        // ran straight past it to onAnimationEnd's, widening the slice to cover
+        // an unrelated function. It still passed, which is the problem: the two
+        // calls it asserts the order of were both inside the widened window,
+        // and an edit between them could have made it lie.
+        const update = provider.match(/const updateToast[\s\S]*?\n {4}\}, \[\]\);/);
 
         assert.notEqual(update, null, "updateToast is no longer recognisable");
         const cleared = update[0].search(/clear\w*\(/i);

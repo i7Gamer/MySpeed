@@ -1,4 +1,4 @@
-import React, {createContext, useEffect, useRef, useState} from "react";
+import React, {createContext, useCallback, useEffect, useRef, useState} from "react";
 import {faExclamationTriangle} from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
@@ -33,13 +33,26 @@ export const ToastNotificationProvider = (props) => {
 
     const close = () => setVisible(false);
 
-    const updateToast = (text, color = "red", icon = faExclamationTriangle) => {
+    /*
+     * Memoised, because this function *is* the context value.
+     *
+     * A fresh identity on every render of the provider propagates to all
+     * fourteen consumers - props.children is a stable element, so the value is
+     * the only thing that can - and re-renders each of them for a toast they
+     * have nothing to do with.
+     *
+     * The empty dependency list is correct rather than convenient: the only
+     * render-scoped thing this touches is the dismissal timer, and that already
+     * lives in a ref. close and clearDismissal are captured from the first
+     * render and read nothing but refs and stable setters.
+     */
+    const updateToast = useCallback((text, color = "red", icon = faExclamationTriangle) => {
         setToastNotification({text, color, icon});
         setVisible(true);
 
         clearDismissal();
         dismissal.current = setTimeout(close, TOAST_DURATION);
-    };
+    }, []);
 
     // Nothing used to cancel this, so a timer outliving the provider closed
     // over setState functions for a tree that was gone.
