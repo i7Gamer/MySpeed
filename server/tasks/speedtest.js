@@ -11,7 +11,7 @@ import { failedPayload, finishedPayload } from '../util/notificationPayload.js';
 import { FAILED_TEST, UNMEASURED_LATENCY, impossibleMeasurement, isFailedTest, isMeasuredLatency, usableFigure }
     from '../util/testOutcome.js';
 import { isRateLimitMessage } from '../util/providers/cliOutput.js';
-import { backoffRemainingMs, clearBackoff, recordRateLimit } from '../util/rateLimitBackoff.js';
+import { backoffRemainingMs, clearBackoff, isBackingOff, recordRateLimit } from '../util/rateLimitBackoff.js';
 import * as targetsController from '../controller/targets.js';
 
 // The placeholder a failed test stores in every numeric column. The client
@@ -276,6 +276,68 @@ const heldByBackoff = (provider) => {
     return true;
 };
 
+/**
+ * Whether a hold stands over this member, on a round of this type.
+ *
+ * The one owner of that judgement, because it is asked from two places now:
+ * once over the whole round before it announces itself, and once per member as
+ * the round reaches it. Spelling "only the scheduled rounds honour a hold"
+ * twice is how the two come to disagree, and the disagreement that matters here
+ * is a round that tells every notifier a test started and then runs nobody.
+ *
+ * Only the scheduled rounds honour a hold - a test started by hand is somebody
+ * asking for one now, the rule the quiet hours already follow for the reason
+ * their own module gives.
+ *
+ * `isHeld` is a parameter for the same reason recordRateLimit takes its own
+ * `now`: the decision can then be walked without the module-level hold map,
+ * which this suite has no way to reach into. It is also what lets the two
+ * callers differ in the one way they should - the loop asks through
+ * heldByBackoff, which says in the log which target it is skipping and for how
+ * long, and roundFullyHeld asks quietly, so a partly held round does not warn
+ * about the same member twice.
+ */
+export const memberHeld = (target, type, isHeld) => type === "auto" && isHeld(target.provider);
+
+/**
+ * Whether the round has nothing at all that it may run.
+ *
+ * Asked before the round announces itself, because announcing is not free:
+ * setRunning(true) fires testStarted at every notifier - healthchecks.io's
+ * /start, every webhook's TEST_STARTED - and a round whose every member was
+ * held announced a test it then never ran and never finished. On the minutely
+ * cron the installer scripts hand out that is one /start a minute that nothing
+ * ever completes, for the fifteen minutes to two hours the hold stands: the
+ * check sits permanently "running" and alerts on its own grace period, and
+ * every webhook is told a test started once a minute. That is the notification
+ * storm util/rateLimitBackoff.js was written to end, not to relocate.
+ *
+ * It does not replace the per-member skip in the loop and could not. That one
+ * is re-asked as the round reaches each member, which is what skips members two
+ * and three of three Ookla targets when member one has just been refused; this
+ * one is answered before any member has run and can only ever know about a hold
+ * that was already standing.
+ *
+ * An empty round is not a held one. Nothing reaches this with no members -
+ * executeRound has answered 400 long before - but "every" is true of nothing,
+ * and a helper that called an empty round held would be a trap for whoever asks
+ * it next.
+ */
+export const roundFullyHeld = (members, type, isHeld = isBackingOff) =>
+    members.length > 0 && members.every((target) => memberHeld(target, type, isHeld));
+
+/**
+ * When a fully held round could first do something again, in the whole minutes
+ * an operator reading the log can act on.
+ *
+ * The soonest of its members' holds rather than the longest: that is the moment
+ * the round stops being fully held and starts measuring something. Rounded the
+ * way heldByBackoff rounds its own line, so the two never disagree by a minute
+ * about the same wait.
+ */
+const nextAttemptMinutes = (members) =>
+    Math.ceil(Math.min(...members.map((target) => backoffRemainingMs(target.provider))) / MS_PER_MINUTE);
+
 export const create = async (type = "auto", targetId = undefined) => {
     // The guard has to latch synchronously: POST /speedtests/run no longer awaits
     // this call, so checking after an await would let two requests slip past.
@@ -309,6 +371,30 @@ const executeRound = async (type, targetId) => {
 
     if (members.length === 0) return 400;
 
+    /*
+     * A round that may run nobody says nothing to anybody, and above all does
+     * not announce itself - see roundFullyHeld for the storm that is the whole
+     * point of this guard, and for why it does not replace the per-member skip
+     * below.
+     *
+     * One line about it rather than the loop's one per held member: the loop
+     * never runs here, and a warning per member per minute would be the log's
+     * half of the same storm. What is worth saying is why the schedule has gone
+     * quiet and until when.
+     *
+     * The code is answered in the vocabulary its two siblings already use - 400
+     * for a round with no members, 500 for one that overlapped - and like both
+     * of those, nothing reads it today: timer.js discards it, and the manual
+     * route answers before the round is over.
+     */
+    if (roundFullyHeld(members, type)) {
+        console.warn("Every target of this round is held after a provider refused for too many requests. "
+            + "Skipping the round rather than announcing a test nobody will run - "
+            + `trying again in ${nextAttemptMinutes(members)} minutes.`);
+
+        return 429;
+    }
+
     // Once per round, however many members it has: the integrations hear one
     // "running", and the progress clock starts here. A pretended run tells
     // them nothing - a demo has no business firing anybody's webhook.
@@ -332,7 +418,20 @@ const executeRound = async (type, targetId) => {
             // Only the scheduled rounds honour a hold - a test started by hand
             // is somebody asking for one now. The skip is per target, so the
             // rest of the round still runs.
-            if (type === "auto" && heldByBackoff(target.provider)) continue;
+            //
+            // Asked here, as the round reaches each member, rather than
+            // resolved once before the round starts: the hold can arrive during
+            // the round. Ookla refuses member one, executeTarget's catch
+            // records it, and members two and three - the second and third
+            // Ookla target of an instance that pins one per server - are
+            // skipped rather than asking a limiter that has just said no three
+            // times over, for three failed rows and three notifications. The
+            // guard above the announcement answers only what this cannot.
+            //
+            // Through memberHeld so the two cannot drift into disagreeing about
+            // which rounds honour a hold, and through heldByBackoff so a skip
+            // says in the log which target it was and for how long.
+            if (memberHeld(target, type, heldByBackoff)) continue;
 
             await executeTarget(target, type);
         }
