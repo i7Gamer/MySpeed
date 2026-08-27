@@ -11,6 +11,7 @@ import {
 import { matchesSetupToken } from '../util/setupToken.js';
 import { isFailedTest } from '../util/testOutcome.js';
 import { metricValue } from '../util/metricValue.js';
+import { ownsUnlabelledSeries } from '../util/unlabelledSeries.js';
 import { createQueue } from '../util/serialiseQueue.js';
 import { clientGone } from '../util/clientGone.js';
 
@@ -118,7 +119,10 @@ const authorizeMetrics = async (req, res) => {
  * with their name and provider filled in, and those series first appear at
  * the moment the operator adds a second target, which is when they are
  * wanted. myspeed_target_info maps names for group_left joins, and the
- * documented convention is: the unlabeled series is the primary.
+ * documented convention is: the unlabeled series is the primary - or, where
+ * no target leads the round at all, whichever line nothing else in the
+ * instance could be mistaken for. collect() and ownsUnlabelledSeries hold
+ * that second half, and say why it is not simply "the newest row".
  */
 const speedLabels = ['server_id', 'server_name', 'server_host', 'target', 'provider'];
 
@@ -296,9 +300,30 @@ const collect = async (res) => {
     // for every dashboard built before targets existed. An instance from
     // before the migration has no targets at all and exports its overall
     // latest the same unlabeled way, which is exactly what it exported before.
+    //
+    // With no primary at all - every target's "Scheduled" switched off, which
+    // PATCH /targets/:id permits for the last one as readily as for any other -
+    // this used to fall through to that same instance-wide latest, and on an
+    // instance with several targets that is another line's reading wearing the
+    // identity a pre-1.4 alert reads as the internet line: a hand-started LAN
+    // run exported as myspeed_download{target=""} while the WAN was down, and
+    // exported a second time under its own name because the loop below skipped
+    // only a primary that exists. ownsUnlabelledSeries says when the fallback
+    // is a reading nothing else could be mistaken for and when the series has
+    // no owner at all; its docstring holds the reasoning.
+    const overallLatest = primary ? undefined : await testController.getLatest();
+
     const primaryLatest = primary
         ? await testController.getLatest(primary.id)
-        : await testController.getLatest();
+        : ownsUnlabelledSeries(allTargets, overallLatest) ? overallLatest : undefined;
+
+    // Which target the unlabelled series speaks for, so the loop below does not
+    // export that same reading a second time under its own name and leave every
+    // sum() over the family double-counting one measurement. The primary owns it
+    // whether or not it has a row to report; with no primary it is whichever
+    // target the fallback landed on, and null where the fallback landed on rows
+    // that belong to no target - or on nothing.
+    const unlabelledTargetId = primary ? primary.id : (primaryLatest?.targetId ?? null);
 
     if (primaryLatest) {
         setSeries(primaryLatest, UNLABELLED_TARGET);
@@ -308,7 +333,7 @@ const collect = async (res) => {
     // Every other target - the manual-only diagnostic box included - exports
     // under its own name the moment it has a row to report.
     for (const row of allTargets) {
-        if (primary && row.id === primary.id) continue;
+        if (row.id === unlabelledTargetId) continue;
 
         const latest = await testController.getLatest(row.id);
         if (latest) setSeries(latest, {target: row.name, provider: row.provider});
