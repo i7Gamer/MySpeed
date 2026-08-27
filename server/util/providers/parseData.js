@@ -3,6 +3,11 @@
 // this file produces has to be what isFailedTest recognises.
 import { FAILED_TEST } from '../testOutcome.js';
 
+// The inverse of the split the runner already made, taken from the module that
+// owns both halves rather than spelled out here as `${host}:${port}` - which is
+// how an IPv6 target's address came to be stored as a different IPv6 address.
+import { joinEndpoint } from './registry.js';
+
 // Exported so the live progress readout reports a transfer in the same unit,
 // rounded the same way, as the figure eventually stored for it.
 export const roundSpeed = (bandwidth) => {
@@ -509,7 +514,7 @@ export const parseIperf3 = (test) => {
          * exactly the address below.
          */
         serverName: null,
-        serverHost: host === null ? null : (port === null ? host : `${host}:${port}`),
+        serverHost: joinEndpoint({host, port}),
         serverLocation: null,
         resultId: null,
         // An iperf3 server is the operator's own machine, and nothing in the

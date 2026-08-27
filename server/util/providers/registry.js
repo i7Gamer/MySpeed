@@ -59,6 +59,42 @@ const HIGHEST_PORT = 65535;
 const isPort = (value) => Number.isInteger(value) && value >= LOWEST_PORT && value <= HIGHEST_PORT;
 
 /**
+ * A host and a port written back as one string - splitEndpoint's inverse.
+ *
+ * Here, beside the function it inverts and sharing its isPort, for the reason
+ * splitEndpoint is exported at all: two readings of one string are two chances
+ * to disagree, and an inverse living in another file drifts from the thing it
+ * inverts. parseIperf3 spelled the join out as `${host}:${port}`, and that is
+ * exactly what went wrong.
+ *
+ * The brackets are the whole point. An IPv6 target - the bracketed spelling
+ * iperfEndpointProblem accepts and splitEndpoint below deliberately strips -
+ * came back out as "2001:db8::1:5301", which is not a host and a port: it is a
+ * perfectly valid and entirely different IPv6 address, with the port swallowed
+ * into it. That string was stored as the row's serverHost and reached the
+ * detail pane's server line, the CSV export, the notification payload and the
+ * Prometheus server_host label - and pasted back into a new target it was
+ * accepted, because iperfEndpointProblem sees more than one colon, reads the
+ * whole thing as an unbracketed literal with no port, and aims the next test at
+ * a machine nobody owns.
+ *
+ * A host with no port keeps its brackets too, because "[fd00::1]" is what
+ * splitEndpoint answers whole - so the value shown is one that can be pasted
+ * back.
+ */
+export const joinEndpoint = ({host, port} = {}) => {
+    const value = typeof host === "string" ? host.trim() : "";
+
+    if (value === "") return null;
+
+    // A colon in a host means an IPv6 literal, and the brackets are the only
+    // thing keeping the address from running into the port after it.
+    const literal = value.includes(":") ? `[${value}]` : value;
+
+    return isPort(port) ? `${literal}:${port}` : literal;
+};
+
+/**
  * A target's `host:port`, split - with iperf3's default port when it names
  * only a host.
  *

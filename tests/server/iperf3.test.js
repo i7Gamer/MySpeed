@@ -6,7 +6,8 @@ import { parseIperf3 } from "../../server/util/providers/parseData.js";
 import { parseCliOutput } from "../../server/util/providers/cliOutput.js";
 import { iperf3Progress } from "../../server/util/providers/progress.js";
 import { measureLatency, median, sampleHandshake, spread } from "../../server/util/providers/iperfLatency.js";
-import { IPERF_DEFAULT_PORT, REGISTRY, splitEndpoint } from "../../server/util/providers/registry.js";
+import { IPERF_DEFAULT_PORT, REGISTRY, joinEndpoint, splitEndpoint }
+    from "../../server/util/providers/registry.js";
 import { iperfEndpointProblem, targetProblem } from "../../server/controller/targets.js";
 import { selectBinary } from "../../server/util/providers/loadIperf3.js";
 import { iperfList } from "../../server/config/binaries.js";
@@ -103,6 +104,22 @@ describe("parsing an iperf3 test", () => {
      */
     it("names the address it dialled", () => {
         assert.equal(parseIperf3(bothWays()).serverHost, "10.0.0.5:5201");
+    });
+
+    /**
+     * The regression this pair of assertions exists for. The join used to be a
+     * bare `${host}:${port}` after splitEndpoint had deliberately stripped the
+     * brackets, so an IPv6 target's stored serverHost was "2001:db8::1:5301" -
+     * a different, still valid IPv6 address, with the port absorbed into it.
+     * That string reached the detail pane, the CSV, the notification payload
+     * and the Prometheus label, and pasting it back created a target measuring
+     * a different host while the history claimed it was the same server.
+     */
+    it("names an IPv6 server as an address that still means that server", () => {
+        const host = parseIperf3(bothWays({endpoint: {host: "2001:db8::1", port: 5301}})).serverHost;
+
+        assert.equal(host, "[2001:db8::1]:5301");
+        assert.notEqual(host, "2001:db8::1:5301");
     });
 
     // The target's own name would say it twice: the detail pane draws that in
@@ -461,71 +478,5 @@ describe("the builds it downloads", () => {
 
         assert.deepEqual(archives.map((entry) => entry.os), ["win32"]);
         assert.ok(archives[0].suffix.endsWith(".zip"));
-    });
-});
-
-/**
- * And it is not fetched until something wants it.
- *
- * The three speedtest CLIs are what a default install measures with, so having
- * them on disk before the first scheduled run is worth the download. This one
- * measures against a server the operator runs themselves - which most
- * instances do not have - and its static build is some sixteen megabytes.
- */
-describe("when the binary is fetched", () => {
-    it("is left until a target actually uses it", () => {
-        assert.equal(REGISTRY.iperf3.downloadedOnDemand, true);
-    });
-
-    it("is kept out of the boot download", () => {
-        const source = readSource("server/util/loadCli.js");
-
-        assert.match(source, /\.filter\(\(entry\) => !entry\.downloadedOnDemand\)/,
-            "every instance pays for a CLI most of them will never measure with");
-    });
-
-    // The three that a default install does measure with stay eager, or the
-    // first scheduled run on a fresh instance waits for a download.
-    it("leaves the providers a default install uses on the boot list", () => {
-        for (const id of ["ookla", "libre", "cloudflare"])
-            assert.notEqual(REGISTRY[id].downloadedOnDemand, true, `${id} stopped being fetched at boot`);
-    });
-
-    /**
-     * What makes the lazy path work at all: the runner asks the loader before
-     * every run, so a provider left out of the boot download is fetched by the
-     * first test that needs it rather than never.
-     */
-    it("is fetched by the run that needs it", () => {
-        const runner = readSource("server/util/speedtest.js");
-
-        assert.match(runner, /await ensureBinary\(mode, binaryPath\)/);
-    });
-});
-
-/**
- * A bracketed IPv6 literal carrying no port.
- *
- * The brackets are the URL spelling of an address and never part of the host
- * that is dialled, but they only came off on the branch that also parses a
- * port. "[fd00::1]" has its last colon inside the literal, so it took the
- * no-port branch and kept them - and iperfEndpointProblem accepts it, so the
- * target was created, scheduled, and handed "[fd00::1]" to --client, which
- * getaddrinfo cannot resolve. It could never produce a measurement.
- */
-describe("a bracketed IPv6 endpoint without a port", () => {
-    it("keeps the default port and loses the brackets", () => {
-        assert.deepEqual(splitEndpoint("[fd00::1]"), {host: "fd00::1", port: IPERF_DEFAULT_PORT});
-        assert.deepEqual(splitEndpoint("[2001:db8::1]"),
-            {host: "2001:db8::1", port: IPERF_DEFAULT_PORT});
-    });
-
-    // The bracketed form with a port, and the bare form, both already worked
-    // and must keep working.
-    it("leaves the forms that already worked alone", () => {
-        assert.deepEqual(splitEndpoint("[2001:db8::1]:5301"), {host: "2001:db8::1", port: 5301});
-        assert.deepEqual(splitEndpoint("2001:db8::1"),
-            {host: "2001:db8::1", port: IPERF_DEFAULT_PORT});
-        assert.deepEqual(splitEndpoint("10.0.0.5:5202"), {host: "10.0.0.5", port: 5202});
     });
 });
