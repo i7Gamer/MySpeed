@@ -410,6 +410,49 @@ const findInRange = async ({from, to}, query = {}, target = undefined) => findEv
  */
 const STATISTICS_QUERY = {attributes: STATISTICS_COLUMNS, raw: true};
 
+/**
+ * The same read plus the one column the aggregation itself never looks at:
+ * which target each row measured.
+ *
+ * Not added to STATISTICS_COLUMNS, whose contract is exactly the set
+ * statistics.js reads - the test beside that file scans its source and fails a
+ * column that is selected and read nowhere in it. It rides on the read that is
+ * happening anyway rather than asking a question of its own, because the
+ * summary already holds every row it covers in memory: one integer per row is
+ * far cheaper than a second scan of the same window, which is the cost
+ * comparePrevious is opt-in to avoid.
+ *
+ * What it is for: the client grades a page's cards against one target's optimal
+ * values when the page is showing one target, and "one target is configured" is
+ * not that. Deleting a target leaves its rows behind - the history is the
+ * history - and a restored export comes back with no target at all, since the
+ * file carries the target's name and no id that would mean anything on another
+ * instance. Nothing narrows a single-target page's query, so those rows sit
+ * inside every figure on it, and only the rows themselves can say so. See
+ * pageTarget in client/src/common/utils/TargetUtil.js.
+ *
+ * Exported so a test can hold the extra column in place. Nothing here would
+ * break if it were dropped from this list: the rows would simply arrive without
+ * it, targetsPresent would answer [null] for every page, and the client reads a
+ * page of nulls as a mixture - so every single-target instance would quietly go
+ * back to grading against the instance-wide settings with not one assertion
+ * failing.
+ */
+export const SUMMARISED_ROWS_QUERY = {attributes: [...STATISTICS_COLUMNS, "targetId"], raw: true};
+
+/**
+ * The distinct targets the summarised rows belong to, a row that names none
+ * counted as null.
+ *
+ * At most one entry per target however many rows were summarised, so it costs
+ * the payload nothing. Exported for its test, which is what holds it to
+ * answering null rather than undefined for an untargeted row: the client
+ * compares these against target ids, and undefined would compare equal to
+ * nothing while reading - in a log, in a test failure - exactly like the
+ * absence it stands for.
+ */
+export const targetsPresent = (entries) => [...new Set(entries.map((entry) => entry.targetId ?? null))];
+
 // What a period-over-period comparison actually uses: the summary figures the
 // panels show. The series, labels and hourly buckets are deliberately not
 // carried - nothing draws a ghost chart, and they are most of the payload.
@@ -486,13 +529,21 @@ const extentOf = (entries) => {
 export const listStatistics = async (range, options = {}) => {
     const targetWhere = options.target !== undefined ? {where: {targetId: options.target}} : {};
     const entries = range
-        ? await findInRange(range, STATISTICS_QUERY, options.target)
-        : await findEvery({...STATISTICS_QUERY, ...targetWhere});
+        ? await findInRange(range, SUMMARISED_ROWS_QUERY, options.target)
+        : await findEvery({...SUMMARISED_ROWS_QUERY, ...targetWhere});
 
     const covered = range ?? extentOf(entries);
 
     return {
         ...buildStatistics(entries, covered, options),
+        // Which targets these figures were actually built from. The client
+        // cannot work that out from the target list alone - a single-target
+        // instance still holds the rows of every target it has deleted, and
+        // every row an import brought back without one - and it is those rows
+        // that make the sole target's optima the wrong thing to judge the page
+        // by. A filtered request answers the one target it was narrowed to,
+        // which is the same statement about the same rows.
+        targetIds: targetsPresent(entries),
         ...(range && options.comparePrevious ? {previous: await previousSummary(range, options)} : {}),
         // The window actually answered for, which the client names its headings
         // after and measures its per-day figures against. Whole days rather than

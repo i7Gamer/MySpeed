@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, api, seedTests } from "./helpers/boot.js";
+import { bootServer, api, seedTarget, seedTests } from "./helpers/boot.js";
 
 let server;
 const at = (iso, overrides = {}) => ({created: iso, ...overrides});
@@ -125,6 +125,69 @@ describe("GET /api/speedtests/statistics", () => {
             await seedTests(server.tests, [at("2026-08-07T22:30:00.000Z")]);
             const {body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
             assert.equal(body.tests.total, 1);
+        });
+
+        /**
+         * Which targets the figures were actually built from, which is the one
+         * thing the client cannot work out for itself: a single-target instance
+         * still holds every row of every target it has deleted, and every row an
+         * import brought back with no target at all, and nothing narrows its
+         * query. Without this field the page grades those rows against the
+         * surviving target's optima.
+         */
+        describe("the targets a page was built from", () => {
+            let wan;
+            let nas;
+
+            /**
+             * seedTarget clears the table before it writes, so these two do not
+             * accumulate and no teardown is registered for them: nothing else in
+             * this file asks about targets, the statistics read joins nothing to
+             * them, and each test file gets its own process and its own throwaway
+             * database. A hook that tore them down would only be one more thing
+             * that can fail after the suite it belongs to has finished.
+             */
+            beforeEach(async () => {
+                wan = await seedTarget({provider: "ookla", name: "WAN"});
+                const targets = await import("../../server/controller/targets.js");
+                nas = await targets.create({name: "NAS", provider: "cloudflare"});
+            });
+
+            it("names every target inside the window, an untargeted row included", async () => {
+                await seedTests(server.tests, [
+                    at("2026-08-05T10:00:00.000Z", {targetId: wan.id}),
+                    at("2026-08-05T11:00:00.000Z", {targetId: wan.id}),
+                    at("2026-08-05T12:00:00.000Z")
+                ]);
+
+                const {body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
+                assert.equal(body.targetIds.length, 2, "one entry per target, not per row");
+                assert.ok(body.targetIds.includes(wan.id));
+                assert.ok(body.targetIds.includes(null),
+                    "a restored export comes back carrying no target at all");
+            });
+
+            it("names one target where every row is that target's", async () => {
+                await seedTests(server.tests, [
+                    at("2026-08-05T10:00:00.000Z", {targetId: wan.id}),
+                    at("2026-08-05T11:00:00.000Z", {targetId: wan.id})
+                ]);
+
+                const {body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
+                assert.deepEqual(body.targetIds, [wan.id]);
+            });
+
+            it("names only the target a filtered request was narrowed to", async () => {
+                await seedTests(server.tests, [
+                    at("2026-08-05T10:00:00.000Z", {targetId: wan.id}),
+                    at("2026-08-05T11:00:00.000Z", {targetId: nas.id})
+                ]);
+
+                const {body} = await statistics(
+                    `from=2026-08-01&to=2026-08-07&tzOffset=0&target=${wan.id}`);
+                assert.deepEqual(body.targetIds, [wan.id],
+                    "the filter is the evidence - these figures really are one target's");
+            });
         });
 
         it("separates failed tests from successful ones", async () => {

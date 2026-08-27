@@ -165,19 +165,12 @@ export const Statistics = () => {
     // against. Absent until the config has loaded, and unset on an instance
     // nobody has told what it pays for - both render as no percentage.
     const [config] = useContext(ConfigContext);
-    const {selectedTarget, pageTarget} = useContext(TargetsContext);
+    const {selectedTarget, pageTargetFor} = useContext(TargetsContext);
 
     // Which target the page is narrowed to, or null for all of them - the
     // same resolved chip selection the overview reads, so the two pages cannot
     // show different slices under one chip row.
     const targetFilter = selectedTarget;
-
-    // What the cards and charts grade against: the optima of the target the
-    // page is showing where it is showing one - the chip's, or the sole target
-    // of an instance that draws no chips - and the instance-wide settings for a
-    // genuine mixture, whose averages only the global values can judge. See
-    // pageTarget for why this is not simply the chip selection.
-    const gradeLimits = resolveLimits(pageTarget, config ?? {});
 
     /*
      * The active node, read by position the way SpeedtestContext reads it.
@@ -209,6 +202,23 @@ export const Statistics = () => {
 
     const deferredStatistics = useDeferredValue(statistics);
     const isStale = deferredStatistics !== statistics;
+
+    /*
+     * What the cards and charts grade against: the optima of the target the
+     * page is showing where it is showing one - the chip's, or the sole target
+     * of an instance that draws no chips - and the instance-wide settings for a
+     * genuine mixture, whose averages only the global values can judge. See
+     * pageTarget for why this is not simply the chip selection.
+     *
+     * Asked of the payload the cards are drawn from rather than of the newest
+     * one in flight, and below it rather than beside the context read, because
+     * the payload is half the question: a single-target instance still holds
+     * the rows of every target it deleted, and only the answer that carried
+     * these figures knows whether they are in them. Taking the grade from one
+     * payload and the numbers from another is how a stale range would be judged
+     * by the target composition of the range replacing it.
+     */
+    const gradeLimits = resolveLimits(pageTargetFor(deferredStatistics?.targetIds), config ?? {});
 
     useEffect(() => {
         const timer = setTimeout(() => setMountPhase(1), 50);

@@ -2,8 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readSource } from "../helpers/source.js";
 import {
-    ALL_TARGETS, pageTarget, previousOfTarget, resolveLimits, roundIndexById, selectedTargetId,
-    targetColour
+    ALL_TARGETS, chipIsStale, pageTarget, previousOfTarget, queryTargetId, resolveLimits,
+    roundIndexById, selectedTargetId, storedTargetId, targetColour
 } from "@/common/utils/TargetUtil.js";
 
 /**
@@ -248,5 +248,199 @@ describe("pageTarget", () => {
 
     it("is nothing before any target has arrived", () => {
         assert.equal(pageTarget([], {}, null), null);
+    });
+});
+
+/**
+ * The chip this browser last clicked, read without the target list beside it.
+ *
+ * The list is the last thing to land on a page load, and the first requests go
+ * out before it - so this is the value they are narrowed by. It answers with no
+ * list in hand, which means it cannot rely on the accident that saved every
+ * other reader: nothing in a target list equals the all-targets sentinel, so
+ * every reader that holds one filters that string out without meaning to.
+ */
+describe("storedTargetId", () => {
+    const chose = (id, node = null) => ({selectedTarget: id, selectedTargetNode: node});
+
+    it("answers the stored id for a choice made on the instance in hand", () => {
+        assert.equal(storedTargetId(chose(2), null), 2);
+        assert.equal(storedTargetId(chose(2), undefined), 2,
+            "the local instance is the absent node, and a preference written before "
+            + "the node was recorded carries none either");
+        assert.equal(storedTargetId(chose(2, "7"), "7"), 2);
+    });
+
+    it("answers null for a choice made on another instance", () => {
+        assert.strictEqual(storedTargetId(chose(2, "7"), "9"), null);
+        assert.strictEqual(storedTargetId(chose(2, "7"), null), null);
+    });
+
+    it("answers null, never undefined, when nothing is stored", () => {
+        assert.strictEqual(storedTargetId(undefined, null), null);
+        assert.strictEqual(storedTargetId({}, null), null,
+            "the row dots ask whether the selection is null, so undefined would draw "
+            + "a dot on a filtered list");
+    });
+
+    /**
+     * The sentinel is the sharp one. "all" reaching a request as target=all
+     * earns a 400 from the digits-only parseTargetParam, and a 400 on the first
+     * list of a page load paints the dead-end "there are no tests" screen over
+     * an instance with years of them.
+     */
+    it("answers null for every value that is not a target id", () => {
+        assert.strictEqual(storedTargetId(chose(ALL_TARGETS), null), null);
+        assert.strictEqual(storedTargetId(chose("2"), null), null);
+        assert.strictEqual(storedTargetId(chose(0), null), null);
+        assert.strictEqual(storedTargetId(chose(-1), null), null);
+        assert.strictEqual(storedTargetId(chose(1.5), null), null);
+        assert.strictEqual(storedTargetId(chose(null), null), null);
+    });
+});
+
+/**
+ * The same question one round trip earlier: what the next request should ask
+ * for while the list it would be checked against is still on its way.
+ */
+describe("queryTargetId", () => {
+    const targets = [{id: 1}, {id: 2}];
+    const chose = (id, node = null) => ({selectedTarget: id, selectedTargetNode: node});
+
+    it("trusts the stored chip while the list is still due", () => {
+        assert.equal(queryTargetId(chose(2), null, null), 2,
+            "answering null here answered no-filter, which is not not-yet-known - so a "
+            + "filtered reader was served every target's rows and the query then "
+            + "changed under the effect that had issued it");
+        assert.strictEqual(queryTargetId(chose(ALL_TARGETS), null, null), null);
+        assert.strictEqual(queryTargetId(chose(2, "7"), null, "9"), null);
+    });
+
+    it("is the verified answer from the moment the list has landed", () => {
+        assert.equal(queryTargetId(chose(2), targets, null), 2);
+        assert.strictEqual(queryTargetId(chose(99), targets, null), null);
+        assert.strictEqual(queryTargetId(chose(2), [{id: 2}], null), null);
+    });
+
+    it("stops guessing once the fetch has failed", () => {
+        assert.strictEqual(queryTargetId(chose(2), [], null), null,
+            "nothing retries that fetch in this session, and the chip row is not drawn "
+            + "on an empty list - so a guess past it filters every page with no control "
+            + "on screen able to clear it");
+    });
+});
+
+/**
+ * Whether the stored chip has stopped meaning anything on the instance in
+ * hand. The one reader of these values that writes localStorage, so it is the
+ * one that has to be certain the list it is judging against belongs to the
+ * node it is judging for.
+ */
+describe("chipIsStale", () => {
+    const targets = [{id: 1}, {id: 2}];
+    const chose = (id, node = null) => ({selectedTarget: id, selectedTargetNode: node});
+
+    it("is true for a chip whose target is gone", () => {
+        assert.equal(chipIsStale(chose(99), targets, null, null), true);
+    });
+
+    it("is true for a chip on an instance that has dropped below two targets", () => {
+        assert.equal(chipIsStale(chose(1), [{id: 1}], null, null), true,
+            "the chip row is not drawn there, so the filter has no visible way off");
+    });
+
+    it("is false while no list has arrived", () => {
+        assert.equal(chipIsStale(chose(99), null, null, null), false,
+            "a fetch in flight, or one that failed, is not proof that a target is gone");
+    });
+
+    it("is false for a chip that still names a target here", () => {
+        assert.equal(chipIsStale(chose(2), targets, null, null), false);
+    });
+
+    it("is false when there is nothing worth clearing", () => {
+        assert.equal(chipIsStale(chose(ALL_TARGETS), targets, null, null), false);
+        assert.equal(chipIsStale({}, targets, null, null), false);
+        assert.equal(chipIsStale({selectedTarget: null, selectedTargetNode: null}, targets, null, null),
+            false, "its own write must not re-fire it");
+        assert.equal(chipIsStale(chose(99, "7"), targets, null, null), false,
+            "another instance's chip is not collateral");
+    });
+
+    /**
+     * Switching instances neither remounts the provider nor empties the list
+     * during render - the reset is an effect - so there is a commit holding the
+     * destination node beside the targets of the node just left. Every other
+     * reader of that pair answers a render and is corrected by the next; this
+     * one deletes a preference, and what it deletes does not come back.
+     */
+    describe("is false while the list in hand came from another instance", () => {
+        it("does not delete the destination node's own chip on the way in", () => {
+            assert.equal(chipIsStale(chose(9, "5"), targets, "5", "4"), false,
+                "the chip belongs to node 5 and target 9 is alive there; it was being "
+                + "measured against a list node 5 never had");
+        });
+
+        it("does not delete it because the node just left had one target", () => {
+            assert.equal(chipIsStale(chose(9, "5"), [{id: 9}], "5", "4"), false,
+                "selectedTargetId answers null for any chip on a list that short, so a "
+                + "single-target source instance deleted the chip whatever it named");
+            assert.equal(chipIsStale(chose(9, "5"), [], "5", "4"), false);
+        });
+
+        it("does not delete the local instance's chip on the way back to it", () => {
+            assert.equal(chipIsStale(chose(2), [{id: 1}], null, "5"), false,
+                "target 2 exists on the instance now in view; the remote node's list "
+                + "was the only thing that said otherwise");
+        });
+    });
+
+    it("judges again as soon as the list is this instance's", () => {
+        assert.equal(chipIsStale(chose(9, "5"), targets, "5", "5"), true,
+            "the provenance guard must not be a way of never clearing anything");
+        assert.equal(chipIsStale(chose(9), targets, null, null), true);
+        assert.equal(chipIsStale(chose(9), targets, null, undefined), true,
+            "the local instance is the absent node on both sides of the comparison");
+    });
+});
+
+/**
+ * The page's own rows, which are what say whether a single-target instance is
+ * really showing one target: it still holds every row of every target it has
+ * deleted, and every row an import brought back with no target at all.
+ */
+describe("pageTarget against the page's own rows", () => {
+    const one = [{id: 1, optimalDownload: 500}];
+    const two = [{id: 1, optimalDownload: 500}, {id: 2}];
+
+    it("keeps the sole target when every row is that target's", () => {
+        assert.deepEqual(pageTarget(one, {}, null, [1]), one[0]);
+    });
+
+    it("is nothing when the page holds rows the sole target never measured", () => {
+        assert.equal(pageTarget(one, {}, null, [1, 2]), null,
+            "a deleted target's rows are still in the table");
+        assert.equal(pageTarget(one, {}, null, [1, null]), null,
+            "and a restored export comes back carrying no target at all");
+    });
+
+    it("keeps the sole target for an empty range", () => {
+        assert.deepEqual(pageTarget(one, {}, null, []), one[0],
+            "there is nothing on the page for its optima to judge wrongly, and the "
+            + "cards must not change basis as a range empties");
+    });
+
+    it("keeps the sole target where there is no evidence at all", () => {
+        assert.deepEqual(pageTarget(one, {}, null), one[0],
+            "a parent proxies these pages to nodes that may be older than the field");
+        assert.deepEqual(pageTarget(one, {}, null, undefined), one[0]);
+        assert.deepEqual(pageTarget(one, {}, null, null), one[0],
+            "and the first render happens before any payload has landed");
+    });
+
+    it("trusts the chip's own filter over the evidence", () => {
+        assert.deepEqual(pageTarget(two, {selectedTarget: 1, selectedTargetNode: null}, null, [1, 2]),
+            two[0], "a chip narrows the query, so the rows behind the figures are that "
+            + "target's by construction - the filter is the evidence");
     });
 });

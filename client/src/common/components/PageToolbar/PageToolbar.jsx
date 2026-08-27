@@ -23,7 +23,7 @@ import "./styles.sass";
  */
 export const PageToolbar = ({from, to, timeframe, onRangeChange, onTimeframeChange, exportRange}) => {
     const rowRef = useRef(null);
-    const {selectedTarget} = useContext(TargetsContext);
+    const {confirmedTarget} = useContext(TargetsContext);
 
     /*
      * The chip selection, read here rather than passed in - unlike the range,
@@ -34,8 +34,14 @@ export const PageToolbar = ({from, to, timeframe, onRangeChange, onTimeframeChan
      * narrowed to one target exported every target's rows into a file whose
      * name mentions only the dates, which is the kind of wrong answer nobody
      * checks because nothing on screen suggests it could be.
+     *
+     * The confirmed selection, not the one the pages query with. That one
+     * trusts the stored chip before the target list has arrived, which a page
+     * can afford because it re-asks; a download cannot be taken back, and a
+     * guess that turned out to name a target this instance no longer has would
+     * write an empty file with the right name on it. See queryTargetId.
      */
-    const exportTarget = selectedTarget;
+    const exportTarget = confirmedTarget;
 
     // How much of itself the row can afford to draw - fit.js for why this is
     // measured rather than written as a media query, useFitStages for the
