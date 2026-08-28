@@ -439,6 +439,14 @@ describe("which member the base topics speak for", () => {
                 assert.equal(await task.wasPrimaryMember({id: 987654, name: "Unseen"}), true);
             });
         });
+
+        // The demo target has no row to read in the first place, so nothing
+        // here can fail for it - pinned so that stays true of the fallback too.
+        it("still answers for the demo target, which reads no row at all", async () => {
+            await blinded(async () => {
+                assert.equal(await task.wasPrimaryMember({id: null, name: null}), true);
+            });
+        });
     });
 });
 

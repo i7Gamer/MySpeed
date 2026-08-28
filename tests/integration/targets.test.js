@@ -147,7 +147,7 @@ describe("unscheduling the line the base topic speaks for", () => {
 });
 
 describe("the line an instance-wide surface speaks for", () => {
-    const named = async () => (await targets.headlineTarget())?.name;
+    const named = async () => (await targets.headlineOrder())[0]?.name;
 
     it("is the first scheduled target that alerts", async () => {
         await targets.create({name: "diagnostic", provider: "ookla", alerts: false, sortOrder: 0});
@@ -199,7 +199,27 @@ describe("the line an instance-wide surface speaks for", () => {
     });
 
     it("is nothing at all on an instance with no targets", async () => {
-        assert.equal(await targets.headlineTarget(), undefined);
+        assert.deepEqual(await targets.headlineOrder(), []);
+    });
+
+    /**
+     * And the whole ranking, not only its winner: both callers walk the
+     * sequence now - the card for a line with a full sample, the preview image
+     * for one with rows in the window it averages - so every step below the
+     * first decides something. The list order is reversed against the tiers on
+     * purpose, or a ranking that simply returned the table's own order would
+     * answer this identically.
+     */
+    it("ranks every line, not only the one it starts with", async () => {
+        await targets.create({name: "unwatched-manual", provider: "ookla",
+            enabled: false, alerts: false, sortOrder: 0});
+        await targets.create({name: "unwatched", provider: "ookla", alerts: false, sortOrder: 1});
+        await targets.create({name: "watched-manual", provider: "ookla",
+            enabled: false, sortOrder: 2});
+        await targets.create({name: "watched", provider: "ookla", sortOrder: 3});
+
+        assert.deepEqual((await targets.headlineOrder()).map((row) => row.name),
+            ["watched", "watched-manual", "unwatched", "unwatched-manual"]);
     });
 });
 

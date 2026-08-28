@@ -412,9 +412,6 @@ export const headlineOrder = async () => {
     return ordered;
 };
 
-/** The winner of that preference, for a caller with nothing more to ask. */
-export const headlineTarget = async () => (await headlineOrder())[0];
-
 /**
  * Whether this edit is the one that takes the base MQTT topic quiet.
  *

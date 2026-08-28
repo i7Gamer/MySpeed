@@ -653,6 +653,16 @@ export const importConfig = async (obj) => {
      * wearing this row's name is this row, and restoring onto it is what makes
      * a repeated restore land where the last one did.
      *
+     * Two things follow from that, and both are meant. A pre-1.4 backup, whose
+     * fold carries no id and the same "Ookla" or "LibreSpeed" name migration
+     * 0013 gave the live row, lands on that row and keeps its history instead
+     * of orphaning all of it. And a *stranger's* file naming a line "WAN"
+     * lands on the local "WAN" and its rows - which is the same trade this
+     * flow already made whenever the ids happened to line up, and the same
+     * answer a history restored beside it would reach through byName. The
+     * strip's honest-orphan rule stands where it was written to: for an id no
+     * live name claims at all.
+     *
      * The stripped case takes a fresh id, and the rows that pointed at the old
      * number keep pointing at a target that no longer exists - which the
      * interface already shows honestly as an orphan. A hand-edited id that is
@@ -688,6 +698,10 @@ export const importConfig = async (obj) => {
     // one name would otherwise both land on the one live row wearing it, and a
     // pair of identical ids aborts the whole restore as an unnamed refusal.
     const taken = new Set();
+
+    // Only the ids a row lost to standing local history, because that is what
+    // the warning below describes. An id lost to the row ahead of it in the
+    // same file is the shared-name merge, which has its own warning.
     const stripped = new Set();
 
     const restoredId = async (row) => {
@@ -697,12 +711,13 @@ export const importConfig = async (obj) => {
         const settled = liveNames.get(own) === name ? own : liveIdsByName.get(name);
         if (settled !== undefined && !taken.has(settled)) return settled;
 
+        if (own === undefined || taken.has(own)) return undefined;
+
         // No live name claims it, so the id is this file's word against the
         // local history filed under it.
-        if (own !== undefined && !taken.has(own)
-            && await test.count({where: {targetId: own}}) === 0) return own;
+        if (await test.count({where: {targetId: own}}) === 0) return own;
 
-        if (own !== undefined) stripped.add(own);
+        stripped.add(own);
 
         return undefined;
     };

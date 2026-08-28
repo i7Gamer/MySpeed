@@ -824,6 +824,15 @@ const executeRound = async (type, targetId) => {
 };
 
 /**
+ * The last answer each member actually got, so a read that fails now has
+ * something better than a guess to fall back on - see wasPrimaryMember.
+ *
+ * One entry per target id the process has ever placed, which is bounded by the
+ * number of targets ever created; a deleted one leaves a boolean behind.
+ */
+const lastPlacement = new Map();
+
+/**
  * Whether this member is the one the instance-wide surfaces speak for: the
  * instance's first line on record.
  *
@@ -863,16 +872,6 @@ export const isPrimaryMember = async (target) => {
 };
 
 /**
- * The last answer each member actually got, so a read that fails now has
- * something better than a guess to fall back on.
- *
- * One entry per target id the process has ever placed, which is bounded by the
- * number of targets - a deleted one leaves a stale entry behind, and the entry
- * is a boolean.
- */
-const lastPlacement = new Map();
-
-/**
  * The same question, answered from the last read when the table cannot be read
  * now.
  *
@@ -891,7 +890,7 @@ const lastPlacement = new Map();
  * contract already reads an absent flag as.
  */
 export const wasPrimaryMember = async (target) => await isPrimaryMember(target)
-    .catch(() => target.id == null || (lastPlacement.get(target.id) ?? true));
+    .catch(() => lastPlacement.get(target.id) ?? true);
 
 const executeTarget = async (target, type, retried = false) => {
     const mode = target.provider === "preview" ? "preview" : target.provider;

@@ -189,13 +189,23 @@ describe("what the round says when it ends", () => {
         const runs = body.indexOf("await executeTarget(fresh, type)");
 
         assert.notEqual(marked, -1, "nothing records whether the member's run began");
-        assert.ok(marked !== -1 && marked < runs,
-            "the round is marked as having reached the member after the member has already run");
+        assert.match(body, /if \(reached && member\.alerts\)/,
+            "the mark is set and then not consulted");
 
-        const guards = body.slice(body.indexOf("try {", body.indexOf("let reached")), marked);
+        // Named one by one rather than by slicing the text between the try and
+        // the mark: measured that way, a mark moved above the guards leaves an
+        // empty slice, and an empty slice contains nothing to object to.
+        for (const guard of ["pauseController.currentState", "withinQuietHours()",
+            "targetsController.getOne(target.id)", "memberHeld(fresh"]) {
+            const at = body.indexOf(guard);
 
-        assert.doesNotMatch(guards, /reached = true/,
-            "a guard that could not read the table is counted as the line going down");
+            assert.notEqual(at, -1, `the loop no longer consults ${guard}`);
+            assert.ok(at < marked,
+                `${guard} runs after the member is marked as reached, so its failure is charged to the line`);
+        }
+
+        assert.ok(marked < runs,
+            "the member is marked as reached only once it has already run");
     });
 
     it("is told the outcome by the member that ran", () => {

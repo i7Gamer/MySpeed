@@ -604,6 +604,29 @@ describe("PUT /api/storage/config and the targets it carries", () => {
     });
 
     /**
+     * The case the name match is worth most for: a pre-1.4 backup.
+     *
+     * Its fold carries no id at all - there was no targets table to have one -
+     * and the name it derives from the old `provider` key is exactly the name
+     * migration 0013 gave the live row of an instance upgraded from that same
+     * install. Judged by the number alone there was nothing to judge, so the
+     * fold always took a fresh id and left every row the instance had ever
+     * measured behind as an orphan.
+     */
+    it("lands a legacy fold on the live row of the same name", async () => {
+        const mine = await seedTarget({provider: "ookla", name: "Ookla"});
+        await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: mine.id}]);
+
+        const {status} = await importConfig(fullBackup({config: {provider: "ookla"}}));
+
+        assert.equal(status, 200);
+
+        const [restored] = await listTargets();
+        assert.equal(restored.id, mine.id,
+            "restoring a pre-1.4 backup orphaned the history of the very line it names");
+    });
+
+    /**
      * The name match is a preference, not an override: two file rows of one
      * name cannot both land on the one live row that wears it, and a pair of
      * identical ids aborts the whole restore as an unnamed refusal. The first
