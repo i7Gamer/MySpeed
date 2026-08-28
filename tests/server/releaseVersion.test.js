@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { withoutHashComments } from "../helpers/source.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const WORKFLOWS = path.join(ROOT, ".github", "workflows");
@@ -187,5 +188,89 @@ describe("the version a release may be dispatched with", () => {
             "a dispatched 'v1.4.0' keeps its prefix");
         assert.match(release, /version: \$\{\{ needs\.create-release\.outputs\.version }}/,
             "the MSI is handed the raw dispatch input rather than the validated one");
+    });
+});
+
+/**
+ * The other value the first step of a release compares, on the same terms.
+ *
+ * Dispatch carries no branch restriction, so the guard that refuses a release
+ * from a feature branch is what stops a run pushing that branch's HEAD onto the
+ * default one - and it read the ref by splicing `${{ github.ref_name }}` into
+ * its own shell body. A workflow expression is substituted into the source
+ * before bash parses it, and git refnames admit `"`, `;`, backticks and `$()`:
+ * a branch named to carry any of those turns the guard into a command of the
+ * attacker's choosing, in a job holding contents: write.
+ *
+ * The same file already states the rule ten lines below, beside the dispatch
+ * input, and the cleanup jobs at the bottom follow it. This is the step that did
+ * not - and it is the one step that runs before checkout, which is to say the
+ * one that exists to stop everything after it.
+ *
+ * Comments stripped first, or the sentence in the workflow explaining why `${{`
+ * must not appear in a run body is itself found by the assertion looking for it.
+ */
+describe("the branch a release may be dispatched from", () => {
+    const steps = withoutHashComments(release);
+
+    // The guard step, bounded by the step that follows it.
+    const guard = (() => {
+        const at = steps.indexOf("- name: Refuse to release from a non-default branch");
+        assert.notEqual(at, -1, "nothing refuses a release dispatched from a feature branch");
+
+        const next = steps.indexOf("\n      - name:", at);
+        return steps.slice(at, next === -1 ? steps.length : next);
+    })();
+
+    const body = () => {
+        const at = guard.indexOf("run:");
+        assert.notEqual(at, -1, "the guard step runs nothing");
+
+        return guard.slice(at);
+    };
+
+    /**
+     * Position is half of what the guard is worth: actions/checkout writes a
+     * contents:write token into .git/config, so a refusal after it has already
+     * handed the token over is a refusal in name only.
+     */
+    it("refuses before the checkout hands a write token to the workspace", () => {
+        assert.ok(steps.indexOf("- name: Refuse to release from a non-default branch")
+            < steps.indexOf("- name: Checkout project"),
+            "the branch is checked after the token is already in .git/config");
+    });
+
+    it("interpolates no workflow expression into its shell body", () => {
+        assert.doesNotMatch(body(), /\$\{\{/,
+            "the ref reaches bash as source rather than as data, so a branch named `\"; curl … #` runs inside a job that can push to the default branch");
+    });
+
+    it("compares the two names it binds through env", () => {
+        const bound = [...guard.slice(0, guard.indexOf("run:")).matchAll(/^\s+([A-Z][A-Z0-9_]*):\s*\$\{\{/gm)]
+            .map((match) => match[1]);
+
+        assert.deepEqual(bound.length, 2,
+            `the step binds ${bound.length} values through env:, where the ref and the branch it is compared against are two`);
+
+        for (const name of bound)
+            assert.match(body(), new RegExp(`\\$\\{?${name}\\b`),
+                `${name} is bound through env: and never read, so the comparison is made against something else`);
+    });
+
+    /**
+     * The push step obeys the same rule. It splices the version into a commit
+     * message and the default branch into the ref it pushes to - the identical
+     * shape the guard above was fixed for, one step further down, in the one
+     * step that actually performs the push the guard exists to protect.
+     */
+    it("pushes through env-bound names, never spliced ones", () => {
+        const at = steps.indexOf("- name: Commit and push version bump");
+        assert.notEqual(at, -1, "the version bump is no longer pushed by a step this can find");
+
+        const next = steps.indexOf("\n      - name:", at);
+        const step = steps.slice(at, next === -1 ? steps.length : next);
+
+        assert.doesNotMatch(step.slice(step.indexOf("run:")), /\$\{\{/,
+            "a workflow expression reaches the push's shell as source rather than as data");
     });
 });
