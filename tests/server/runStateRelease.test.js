@@ -29,11 +29,26 @@ describe("the failure handler", () => {
     // The release moved up a level when runs became rounds: executeRound's
     // finally owns it now, which covers a throw from any member's failure
     // handler - the same guarantee, one home for however many targets run.
+    //
+    // The verdict is now read inside that finally, before the latch drops, so
+    // the finally is no longer a single line: assert on its body rather than
+    // on the brace that used to sit right in front of setRunning.
     it("clears the running state in the round's finally", () => {
         const round = bodyFrom("const executeRound");
+        const release = round.slice(round.indexOf("} finally"));
 
-        assert.match(round, /finally\s*\{[^}]*setRunning\(false,\s*false\)/s,
+        assert.match(release, /setRunning\(false,\s*false\)/,
             "the running state is released only on the path where nothing threw");
+
+        // Read-before-drop only stays safe while the read cannot skip the
+        // release: an await ahead of setRunning in the finally has to be
+        // .catch-guarded, or a failed roundOutcome leaves the run marked
+        // running for the life of the process - the very bug this file guards.
+        const beforeRelease = release.slice(0, release.indexOf("setRunning(false"));
+        if (/\bawait\b/.test(beforeRelease))
+            assert.match(beforeRelease, /\.catch\(/,
+                "an awaited read ahead of the release can skip it when it rejects");
+
         assert.match(round.slice(round.indexOf("try {"), round.indexOf("} finally")),
             /await executeTarget\(/,
             "the members run outside the guarded block, so the finally covers nothing");
