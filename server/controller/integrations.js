@@ -226,23 +226,37 @@ export const initialize = async () => {
 };
 
 /**
- * Whether this integration asked not to be told about this particular result.
+ * Whether this integration should not be told about this particular result.
  *
  * Exported for its tests: it is the decision that governs whether a person
  * hears from MySpeed at all, and triggerEvent below cannot be exercised without
  * a database behind it.
  *
- * Only the finished-test event is ever withheld. A failure is the notification
- * people most want, the keep-alive ping is how an integration says it is still
- * there, and nothing else carries a measurement to judge. Only modules that
- * call themselves notifiers are gated at all - influxdb is a time series whose
- * gaps read as an outage, and healthChecks follows the round's own completion
- * rather than the member events, which closes the run its started ping opened
- * whatever the thresholds say.
+ * Only the two per-test events are ever withheld, and only from modules that
+ * call themselves notifiers - influxdb is a time series whose gaps read as an
+ * outage, MQTT feeds a Home Assistant history that wants every point, and
+ * healthChecks follows the round's own completion rather than the member
+ * events, which closes the run its started ping opened whatever is decided
+ * here. The keep-alive ping is how an integration says it is still there, and
+ * nothing else carries a measurement to judge.
+ *
+ * Two gates, in order of who asked for the quiet. A member that opted out of
+ * alerting is quiet to every notifier, failures included: `alerts` is the
+ * target's own switch, the diagnostic box that fails because the machine is
+ * asleep, and its events still leave the round so the sinks can mirror the
+ * stored history - which is why the flag travels on the payload and is judged
+ * here rather than gating the send at its source, where it silenced the sinks
+ * too. Absent is not opted out: an older node's payload carries no flag. Then
+ * the integration's own thresholds, which withhold only the finished event - a
+ * failure of a watched line is the notification people most want.
  */
 export const suppressesEvent = (eventName, moduleName, integration, payload) => {
-    if (eventName !== "testFinished") return false;
+    if (eventName !== "testFinished" && eventName !== "testFailed") return false;
     if (!isNotifier(getIntegration(moduleName))) return false;
+
+    if (payload?.alerts === false) return true;
+
+    if (eventName !== "testFinished") return false;
     if (!wantsOnlyBreaches(integration?.data)) return false;
 
     return !breachesThreshold(payload, integration.data);

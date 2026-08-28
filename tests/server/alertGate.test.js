@@ -181,4 +181,51 @@ describe("suppressesEvent", () => {
     it("never suppresses an integration it has no definition for", () => {
         assert.equal(suppressesEvent("testFinished", "myspace", row(armed), good), false);
     });
+
+    /**
+     * The alerts switch on a target quiets the notifiers, not the sinks.
+     *
+     * `target.alerts` used to gate sendFinished and sendError at the source, so
+     * a target with alerting off published nothing to InfluxDB, MQTT or the
+     * webhooks either: the diagnostic iperf3 box the Targets model describes
+     * measured every round and no time series ever heard of it, its Home
+     * Assistant sensors never updated, and the switch in the dialog is
+     * labelled "Alerts & recommendations". The distinction between telling a
+     * person and feeding a store already lives here - isNotifier - so the flag
+     * travels on the payload and is judged where the threshold gate is.
+     */
+    describe("a member that opted out of alerting", () => {
+        const quiet = {...good, alerts: false};
+
+        it("is quiet to the notifiers, failures included", () => {
+            assert.equal(suppressesEvent("testFinished", "telegram", row({}), quiet), true);
+            assert.equal(suppressesEvent("testFailed", "telegram", row({}), quiet), true,
+                "a failure of an unwatched member still pages somebody");
+        });
+
+        it("still reaches every sink", () => {
+            for (const name of NOT_NOTIFIERS) {
+                assert.equal(suppressesEvent("testFinished", name, row({}), quiet), false,
+                    `${name} lost the data of an unwatched member`);
+                assert.equal(suppressesEvent("testFailed", name, row({}), quiet), false);
+            }
+        });
+
+        // Absent is not opted out: an older node's payload carries no flag,
+        // and the contract everywhere else reads absence as the ordinary case.
+        it("is only the member that said so", () => {
+            assert.equal(suppressesEvent("testFinished", "telegram", row({}), good), false);
+            assert.equal(suppressesEvent("testFinished", "telegram", row({}),
+                {...good, alerts: true}), false);
+            assert.equal(suppressesEvent("testFinished", "telegram", row({}),
+                {...good, alerts: null}), false);
+        });
+
+        // The two gates compose: a watched member's healthy result can still
+        // be withheld by the thresholds.
+        it("leaves the threshold gate standing for the watched members", () => {
+            assert.equal(suppressesEvent("testFinished", "telegram", row(armed),
+                {...good, alerts: true}), true);
+        });
+    });
 });

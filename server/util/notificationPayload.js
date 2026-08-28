@@ -42,10 +42,16 @@ const FINISHED_KEYS = [
     // the base topic and routes the rest to subtopics on exactly this, because
     // the payload is the one thing a broker-side module can read without a
     // database. Null from an older node, which every reader treats as primary.
-    "primary"
+    "primary",
+    // Whether that member takes part in alerting. The events leave for every
+    // member - a data sink mirrors the stored history - and suppressesEvent
+    // quiets the notifiers on exactly this flag. Null from an older node,
+    // which the gate reads as alerting: how a single-target instance always
+    // behaved.
+    "alerts"
 ];
 
-const FAILED_KEYS = ["id", "created", "provider", "error", "targetId", "targetName", "primary"];
+const FAILED_KEYS = ["id", "created", "provider", "error", "targetId", "targetName", "primary", "alerts"];
 
 /**
  * A record reduced to exactly the advertised keys.

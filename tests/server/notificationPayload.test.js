@@ -103,6 +103,21 @@ describe("finishedPayload", () => {
         assert.equal(failedPayload({error: "boom", primary: false}).primary, false);
         assert.equal(finishedPayload(RECORD).primary, null);
     });
+
+    /**
+     * And whether the member takes part in alerting, because that is what
+     * routes the fan-out: a member with alerts off still reaches every data
+     * sink - suppressesEvent quiets the notifiers on exactly this flag - so
+     * the payload has to carry the answer. Null from an older node, which the
+     * gate reads as alerting: the way the single-target instance always
+     * behaved.
+     */
+    it("says whether the member takes part in alerting", () => {
+        assert.equal(finishedPayload({...RECORD, alerts: false}).alerts, false);
+        assert.equal(finishedPayload({...RECORD, alerts: true}).alerts, true);
+        assert.equal(failedPayload({error: "boom", alerts: false}).alerts, false);
+        assert.equal(finishedPayload(RECORD).alerts, null);
+    });
 });
 
 describe("failedPayload", () => {
