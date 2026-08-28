@@ -104,6 +104,25 @@ describe("what the round loop consults between members", () => {
             "a pause mid-round keeps spawning CLIs until the members run out");
     });
 
+    /**
+     * A held member is skipped before /status is told about it. beginTarget is
+     * what the status bar reads to name the target measuring, and announcing a
+     * member the very next line then skips left the bar advertising a run that
+     * never started - for the whole of the next member's guards, two of which
+     * await the database. isShuttingDown and the stale re-read already sit
+     * above the announcement for exactly this reason.
+     */
+    it("skips a held member before announcing it", () => {
+        const body = loop();
+        const held = body.indexOf("memberHeld(fresh");
+        const announced = body.indexOf("beginTarget(fresh");
+
+        assert.notEqual(held, -1, "the loop no longer consults the provider hold");
+        assert.notEqual(announced, -1, "the loop no longer announces its members");
+        assert.ok(held < announced,
+            "/status names a member the provider hold then skips");
+    });
+
     it("stops a scheduled round when the quiet hours begin", () => {
         assert.match(loop(), /type === "auto" && await withinQuietHours\(\)/,
             "quiet hours beginning mid-round do not stop the members still queued");
@@ -252,6 +271,21 @@ describe("what the round says when it ends", () => {
         assert.notEqual(reread, -1, "the loop no longer re-reads its members");
         assert.ok(opened < paused && opened < reread,
             "a database failure inside the loop's own guards escapes the per-member handler");
+    });
+
+    /**
+     * The per-test events leave for every member; the payload says whether the
+     * member alerts. Gated at the source, a target with alerting off published
+     * nothing to InfluxDB, MQTT or the webhooks either - the diagnostic box
+     * measured every round and no time series ever heard of it - while the
+     * switch is labelled "Alerts & recommendations". suppressesEvent is where
+     * the flag is judged, because notifier-versus-sink already lives there.
+     */
+    it("sends every member's events and lets the fan-out route them", () => {
+        assert.doesNotMatch(source, /if \(target\.alerts\) send/,
+            "an unwatched member's data never reaches the sinks");
+        assert.equal((source.match(/alerts: Boolean\(target\.alerts\)/g) ?? []).length, 2,
+            "a payload does not say whether its member alerts, so the notifiers cannot stay quiet");
     });
 
     /**

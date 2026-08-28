@@ -69,6 +69,13 @@ app.get("/", password(true), async (req, res) => {
     if (req.query.after !== undefined && !CREATED_PATTERN.test(req.query.after))
         return res.status(400).json({message: "You need to provide an ISO-8601 timestamp in the after parameter"});
 
+    // Half a pair is not a smaller cursor, it is no cursor at all: `after`
+    // alone used to fall through to page one silently, so a caller paginating
+    // with it re-fetched the same rows forever with nothing said - while every
+    // other malformed parameter here earns a 400 that names itself.
+    if (req.query.after !== undefined && !req.query.afterId)
+        return res.status(400).json({message: "The after parameter needs its afterId half - the cursor is the pair"});
+
     const after = req.query.after && req.query.afterId
         ? {created: req.query.after, id: req.query.afterId}
         : null;

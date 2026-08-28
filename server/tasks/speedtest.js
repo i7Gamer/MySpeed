@@ -727,8 +727,6 @@ const executeRound = async (type, targetId) => {
                     continue;
                 }
 
-                beginTarget(fresh, index + 1, members.length);
-
                 // Only the scheduled rounds honour a hold - a test started by
                 // hand is somebody asking for one now. The skip is per target,
                 // so the rest of the round still runs.
@@ -746,8 +744,14 @@ const executeRound = async (type, targetId) => {
                 // Through memberHeld so the two cannot drift into disagreeing
                 // about which rounds honour a hold, and through heldByBackoff
                 // so a skip says in the log which target it was and for how
-                // long.
+                // long. Above beginTarget, like every other skip: that is what
+                // /status reads to name the target measuring, and announcing a
+                // member the next line skips left the bar advertising a run
+                // that never started - for the whole of the next member's
+                // guards, two of which await the database.
                 if (memberHeld(fresh, type, heldByBackoff)) continue;
+
+                beginTarget(fresh, index + 1, members.length);
 
                 // Every guard is past, so whatever happens from here is the
                 // member's own run.
@@ -981,12 +985,20 @@ const executeTarget = async (target, type, retried = false) => {
         // Everything the row records, not the five figures this used to send:
         // a webhook is how MySpeed feeds anything else, and a consumer that
         // cannot tell which provider or server produced a number can do little
-        // with it. A target that opted out of alerting sends nothing - it is
-        // the diagnostic box, not the line being watched.
-        if (target.alerts) sendFinished(finishedPayload({...testResult, provider, ping, jitter, download, upload, time,
+        // with it. For every member, whether or not it alerts: a data sink
+        // mirrors the stored history, and gating the send here silenced
+        // InfluxDB and the Home Assistant sensors along with the notifiers.
+        // The payload carries the flag instead, and suppressesEvent quiets
+        // the notifiers on it - the diagnostic box's data still lands, and
+        // still pages nobody.
+        sendFinished(finishedPayload({...testResult, provider, ping, jitter, download, upload, time,
             packetLoss, downloadLatency, uploadLatency, serverId, serverName, serverHost, serverLocation,
             isp, externalIp, resultId, bytesDownloaded, bytesUploaded,
             targetId: target.id, targetName: target.name,
+            // Boolean, not the raw column: sqlite hands the flag back as 1/0
+            // under the raw mapping, and the gate reads only `false` as opted
+            // out - absent means an older node, whose members all alert.
+            alerts: Boolean(target.alerts),
             // Degraded rather than thrown, and degraded to the last answer
             // this member got rather than to a claim - see wasPrimaryMember.
             primary: await wasPrimaryMember(target)})).catch(err =>
@@ -1041,8 +1053,12 @@ const executeTarget = async (target, type, retried = false) => {
         // it prevents is worse: a rejection between the failure row and this
         // notification leaves executeTarget entirely, so the round reports
         // "could not record its result" about a row it did record.
-        if (target.alerts) sendError(failedPayload({...testResult, provider: mode, error: message,
+        // For every member like the success path, and for its reason: the
+        // payload's alerts flag is what keeps an unwatched failure from
+        // paging anybody, while the sinks still record it.
+        sendError(failedPayload({...testResult, provider: mode, error: message,
             targetId: target.id, targetName: target.name,
+            alerts: Boolean(target.alerts),
             primary: await wasPrimaryMember(target)})).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
         console.log(`Test #${testResult.id} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
