@@ -115,18 +115,14 @@ const lowestRealPing = (ping) => isMeasuredLatency(ping) && ping > UNMEASURED_LA
  * silently stopped updating until the failure aged out of the newest page.
  */
 export const createRecommendations = async () => {
-    // The sample describes one line, so it comes from one target: the first
-    // scheduled one that takes part in alerting. A gigabit LAN box mixed into
-    // the sample would recommend numbers no WAN target can meet.
-    //
-    // Preferred, not required. An instance whose targets all have alerts off -
-    // or all run by hand - still has a first line, and "none alerts" must not
-    // mean the recommendation card freezes at whatever the line looked like
-    // before the flags changed. The fallbacks keep the same reading order the
-    // preference has: the round's first member, then the first target on record.
-    const primary = await targetsController.alertsTarget()
-        ?? await targetsController.primaryTarget()
-        ?? (await targetsController.listAll())[0];
+    // The sample describes one line, so it comes from one target: the line
+    // every instance-wide surface speaks for, which headlineTarget owns - the
+    // first scheduled target that alerts, then any target that alerts, then
+    // the round's leader, then the first on record. A gigabit LAN box mixed
+    // into the sample would recommend numbers no WAN target can meet, and an
+    // instance where nothing scheduled alerts must not freeze the card at
+    // whatever the line looked like before the flags changed.
+    const primary = await targetsController.headlineTarget();
     if (!primary) return;
 
     const list = await tests.listSuccessful(RECOMMENDATION_SAMPLE, primary.id);

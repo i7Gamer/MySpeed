@@ -367,6 +367,37 @@ export const alertsTarget = async () =>
     (await roundTargets()).find((target) => target.alerts);
 
 /**
+ * The one line an instance-wide surface speaks for, whatever the instance is
+ * set up like.
+ *
+ * The recommendation card and the public preview image both have to name a
+ * single line - a gigabit LAN box averaged into a WAN figure describes
+ * neither - and both were spelling this preference out for themselves, in two
+ * files, each with a comment saying it was the same rule as the other's. It
+ * has one home so that a change to which line an instance headlines cannot
+ * land in one of them and not the other.
+ *
+ * In order: the first scheduled target that alerts; then any target that
+ * alerts, scheduled or not, because a manual-only target still describes a
+ * line somebody watches and a scheduled one with alerts off does not; then
+ * the round's leader; then the first target on record. Undefined only when
+ * there are no targets at all.
+ *
+ * Deliberately not isPrimaryMember's question, which asks which member owns
+ * the instance-wide *surfaces* - the base MQTT topic, the unlabelled
+ * Prometheus series - and answers by round order alone, with no preference
+ * about alerting at all.
+ */
+export const headlineTarget = async () => {
+    const all = await listAll();
+
+    return await alertsTarget()
+        ?? all.find((target) => target.alerts)
+        ?? await primaryTarget()
+        ?? all[0];
+};
+
+/**
  * Which targets' stored rows the alerting speaks for, as ids - or null when the
  * question does not apply because no target exists at all.
  *

@@ -80,6 +80,59 @@ describe("PUT /api/targets", () => {
  * restore. Refused at the door instead - and stored trimmed on every path, or
  * the padded copy and the trimmed one stop matching across the round trip.
  */
+/**
+ * The one line an instance-wide surface speaks for.
+ *
+ * The recommendation card and the public preview image both have to name a
+ * single line - a gigabit LAN box averaged into a WAN figure describes
+ * neither - and both were spelling the same four-step preference out for
+ * themselves, in two files, each with a comment saying it was the same rule.
+ * One home, so a change to which line an instance headlines cannot land in
+ * one of them and not the other.
+ */
+describe("the line an instance-wide surface speaks for", () => {
+    const named = async () => (await targets.headlineTarget())?.name;
+
+    it("is the first scheduled target that alerts", async () => {
+        await targets.create({name: "diagnostic", provider: "ookla", alerts: false, sortOrder: 0});
+        await targets.create({name: "wan", provider: "ookla", sortOrder: 1});
+
+        assert.equal(await named(), "wan");
+    });
+
+    /**
+     * A target that runs by hand still alerts - that is the whole of the
+     * manual-only shape - so it describes a line somebody watches, where the
+     * scheduled box beside it with alerts switched off does not. Preferring
+     * the round's leader here recommended the LAN box's gigabit figures to an
+     * instance whose watched line is a WAN.
+     */
+    it("prefers a watched line that runs by hand over an unwatched scheduled one", async () => {
+        await targets.create({name: "lan", provider: "ookla", alerts: false, sortOrder: 0});
+        await targets.create({name: "wan", provider: "ookla", enabled: false, sortOrder: 1});
+
+        assert.equal(await named(), "wan");
+    });
+
+    it("falls back to the round's leader when nothing alerts at all", async () => {
+        await targets.create({name: "first", provider: "ookla", alerts: false, sortOrder: 0});
+        await targets.create({name: "second", provider: "ookla", alerts: false, sortOrder: 1});
+
+        assert.equal(await named(), "first");
+    });
+
+    it("falls back to the first target on record when nothing is scheduled", async () => {
+        await targets.create({name: "manual", provider: "ookla",
+            enabled: false, alerts: false, sortOrder: 0});
+
+        assert.equal(await named(), "manual");
+    });
+
+    it("is nothing at all on an instance with no targets", async () => {
+        assert.equal(await targets.headlineTarget(), undefined);
+    });
+});
+
 describe("a target's name", () => {
     it("is refused when another target already wears it", async () => {
         await put({name: "Ookla", provider: "ookla"});

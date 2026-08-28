@@ -63,22 +63,51 @@ export const openGraphWindow = (now = new Date()) => {
   return {from: day(yesterday), to: day(now)};
 };
 
+/**
+ * The line the card describes, or null for the instance as a whole.
+ *
+ * One line, not a blend: the card is reachable by anyone on a no-password or
+ * read-level instance and headlines "the" speed, so averaging the gigabit LAN
+ * box into the WAN's figure advertises a number that is neither line's.
+ * headlineTarget owns which line that is, and the recommendations sample the
+ * same one.
+ *
+ * But only while it has something to say. Chosen by configuration alone, a
+ * target added yesterday - which leads the round and has measured nothing -
+ * blanked the card of an instance holding years of rows: the scoped read came
+ * back empty and the route fell through to the project banner. So the
+ * preference is walked until a line with rows is found, headline first.
+ *
+ * Null when no target has any, which is not the same as a blend: those rows
+ * belong to no line at all - an import that could not resolve a name leaves
+ * them unattributed, and a deleted target's stay behind - so there is no line
+ * to mis-name, and the instance-wide read is the only one that can fill the
+ * card. Null for a pre-target install too, whose rows carry no targetId.
+ *
+ * Exported for its test, the way openGraphWindow is: which line a public
+ * image speaks for is a decision, and the rendering needs satori and a native
+ * addon to ask it any other way.
+ */
+export const openGraphLine = async () => {
+  const all = await targetsController.listAll();
+  if (all.length === 0) return null;
+
+  const headline = await targetsController.headlineTarget();
+  const ordered = [headline, ...all.filter((target) => target.id !== headline?.id)];
+
+  for (const target of ordered)
+    if (await tests.getLatest(target.id) !== undefined) return target;
+
+  return null;
+};
+
 const readStatistics = async () => {
   const {from, to} = openGraphWindow();
 
   const range = parseDateRange(from, to);
   if (!range.valid) return null;
 
-  // One line, not a blend. The card is reachable by anyone on a no-password or
-  // read-level instance and headlines "the" speed, so it describes the same
-  // line the recommendations sample - the first scheduled target that takes
-  // part in alerting, then the round's leader, then the first on record -
-  // rather than averaging the gigabit LAN box into the WAN's figure.
-  // Instance-wide only where no target exists at all (a pre-target database),
-  // whose rows carry no targetId.
-  const line = await targetsController.alertsTarget()
-      ?? await targetsController.primaryTarget()
-      ?? (await targetsController.listAll())[0];
+  const line = await openGraphLine();
 
   const stats = await tests.listStatistics(range, line ? {target: line.id} : {});
   if (hasValues(stats)) return stats;

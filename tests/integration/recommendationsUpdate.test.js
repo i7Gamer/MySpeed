@@ -154,6 +154,25 @@ describe("the target the sample describes", () => {
             "the sample mixed in a line nobody is alerted about");
     });
 
+    /**
+     * A watched line that runs by hand still describes a line somebody
+     * watches; the scheduled box beside it with alerts switched off does not.
+     * Reaching for the round's leader first recommended the LAN box's gigabit
+     * figures on an instance whose watched line is a WAN - the very mixture
+     * the sampling rule exists to prevent, arrived at by its own fallback.
+     */
+    it("prefers a watched line that runs by hand over an unwatched scheduled one", async () => {
+        const lan = await seedTarget({name: "lan", alerts: false});
+        const wan = await targets.create({name: "wan", provider: "ookla", enabled: false});
+
+        await seedTests(server.tests, [...sampleRows(lan.id, 940), ...sampleRows(wan.id, 100)]);
+
+        await task.createRecommendations();
+
+        assert.equal((await controller.getCurrent()).download, 100,
+            "the sample described the line nobody asked to be told about");
+    });
+
     it("falls back to the round's first member when no target alerts", async () => {
         const quiet = await seedTarget({name: "quiet", alerts: false});
         await seedTests(server.tests, sampleRows(quiet.id));

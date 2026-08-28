@@ -29,29 +29,81 @@ describe("the failure fallback", () => {
 });
 
 /**
- * Whose rows the public card averages. Read rather than rendered, the way the
- * fallback above is: the image needs satori and resvg, and what is being held
- * here is a scoping decision, not a rendering.
+ * Whose rows the public card averages.
  *
  * The card is reachable by anyone on a no-password or read-level instance and
  * headlines "the" speed, so it must describe one line - the same one the
  * recommendations sample - rather than blending the gigabit LAN box into the
- * WAN's average. Instance-wide only where no target exists at all, whose rows
- * carry no targetId.
+ * WAN's average. But a line is only worth headlining while it has something
+ * to say: chosen by configuration alone, a target added yesterday blanked the
+ * card of an instance holding years of rows, because the scoped read came
+ * back empty and the route fell through to the project banner.
  */
 describe("the line the card describes", () => {
-    const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-    const controller = fs.readFileSync(path.join(root, "server", "controller", "opengraph.js"), "utf8");
+    let openGraphLine;
+    let targets;
 
-    it("is one line, resolved the way the recommendations resolve theirs", () => {
-        assert.match(controller, /alertsTarget\(\)/,
-            "the card still averages every target's rows together");
-        assert.match(controller, /\?\? await targetsController\.primaryTarget\(\)/,
-            "an instance where nothing alerts loses its card instead of falling back");
-        assert.match(controller, /listStatistics\(range, line \? \{target: line\.id} : \{}\)/,
-            "the statistics the card renders are not narrowed to the line");
-        assert.match(controller, /getLatest\(line\?\.id\)/,
-            "the latest-test fallback is still instance-wide");
+    before(async () => {
+        ({openGraphLine} = await import("../../server/controller/opengraph.js"));
+        targets = await import("../../server/controller/targets.js");
+    });
+
+    after(async () => {
+        await targets.removeAll();
+        await seedTests(server.tests, []);
+    });
+
+    const hoursAgo = (hours) => new Date(Date.now() - hours * 3600000).toISOString();
+
+    it("is the line every other instance-wide surface names", async () => {
+        await targets.removeAll();
+        const wan = await targets.create({name: "WAN", provider: "ookla", sortOrder: 0});
+        const lan = await targets.create({name: "LAN", provider: "iperf3",
+            endpoint: "10.0.0.5:5201", sortOrder: 1});
+
+        await seedTests(server.tests, [
+            {created: hoursAgo(2), targetId: wan.id, download: 100},
+            {created: hoursAgo(1), targetId: lan.id, download: 940}
+        ]);
+
+        assert.equal((await openGraphLine())?.id, wan.id);
+    });
+
+    // A target added today leads the round and has measured nothing yet; the
+    // instance's rows belong to the line beside it, and that is the line the
+    // card can actually describe.
+    it("passes over a line that has measured nothing yet", async () => {
+        await targets.removeAll();
+        const fresh = await targets.create({name: "Fresh", provider: "ookla", sortOrder: 0});
+        const measured = await targets.create({name: "Measured", provider: "ookla", sortOrder: 1});
+
+        await seedTests(server.tests, [{created: hoursAgo(1), targetId: measured.id, download: 250}]);
+
+        const line = await openGraphLine();
+
+        assert.notEqual(line?.id, fresh.id, "the card describes a line with nothing on it");
+        assert.equal(line?.id, measured.id);
+    });
+
+    /**
+     * And when no target has rows at all, the history that does exist belongs
+     * to no line - rows an import left unattributed, or a deleted target's -
+     * so there is no line to mis-name and the instance-wide read is the only
+     * one that can fill the card.
+     */
+    it("answers no line when none of them has measured anything", async () => {
+        await targets.removeAll();
+        await targets.create({name: "Fresh", provider: "ookla", sortOrder: 0});
+
+        await seedTests(server.tests, [{created: hoursAgo(1), download: 250}]);
+
+        assert.equal(await openGraphLine(), null);
+    });
+
+    it("answers no line on an instance that has none", async () => {
+        await targets.removeAll();
+
+        assert.equal(await openGraphLine(), null);
     });
 });
 
