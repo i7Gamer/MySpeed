@@ -2,8 +2,16 @@ import recommendations from '../models/Recommendations.js';
 import { triggerEvent } from './integrations.js';
 import { toErrorMessage } from '../util/helpers.js';
 
+// The one recommendations row, read deterministically. The table is a
+// singleton, but importConfig restores it wholesale and bounds it only by a
+// row cap - so a backup can leave more than one, and an unordered findOne is
+// then free to answer either. getCurrent and update() both read through this,
+// so the row the card shows and the row the round refreshes are always the
+// same one.
+const currentRow = (extra = {}) => recommendations.findOne({order: [["id", "ASC"]], ...extra});
+
 export const getCurrent = async () => {
-    return await recommendations.findOne();
+    return await currentRow();
 }
 
 export const update = async (ping, download, upload) => {
@@ -14,7 +22,7 @@ export const update = async (ping, download, upload) => {
     const configuration = {ping: parseFloat(ping.toFixed(2)), download: parseFloat(download.toFixed(2)),
         upload: parseFloat(upload.toFixed(2))};
     
-    const existing = await recommendations.findOne();
+    const existing = await currentRow();
 
     // Announced after the write, not before it. Fired first, a database that
     // then refused the write had already told every webhook the recommendations
@@ -38,7 +46,7 @@ export const update = async (ping, download, upload) => {
     if (existing) {
         await recommendations.update(configuration, {where: {id: existing.id}});
         announce();
-        return recommendations.findOne({where: {id: existing.id}});
+        return currentRow({where: {id: existing.id}});
     }
 
     const created = await recommendations.create(configuration);

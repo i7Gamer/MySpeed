@@ -792,38 +792,38 @@ const executeRound = async (type, targetId) => {
             }
         }
     } finally {
+        // The round's own verdict for the one completion event, read while the
+        // latch still holds. healthchecks.io opened a timing window on the
+        // /start above, and a round interrupted by a pause or a shutdown still
+        // has to close it; per member the sinks already heard everything.
+        //
+        // Read before the latch is dropped, not after, and this ordering is
+        // load-bearing: roundOutcome queries the rows this round just wrote,
+        // and on a driver whose awaits yield the event loop (MySQL, not the
+        // sqlite shim) a manual run could tryReserve() the instant _isRunning
+        // cleared, start round B, and then create()'s own finally would drop
+        // the latch a second time out from under it - leaving round B running
+        // unlatched with /status reporting idle and a cron tick free to start
+        // round C. So _isRunning stays true across the read; only the ping the
+        // verdict feeds is detached, because a notifier must not hold a round
+        // open. A database that cannot answer it leaves the /start unanswered,
+        // which is what the keep-alive - equally unable to read it - is saying
+        // at the same moment.
+        const outcome = announce
+            ? await roundOutcome(roundFailures, members.length).catch(err => {
+                console.error(`Could not read the round's outcome: ${toErrorMessage(err)}`);
+                return null;
+            })
+            : null;
+
         // The round is over on every path, including one the guard above could
         // not contain - a throw from beginTarget, or from the reporting itself.
         // The same guarantee the latch has, for the same reason:
         // tasks/integrations.js reads this state for its keep-alive.
         setRunning(false, false);
 
-        // The one completion for the one announcement, on every path out -
-        // healthchecks.io opened a timing window on the /start above, and a
-        // round interrupted by a pause or a shutdown still has to close it.
-        // Per member the sinks already heard everything; this is the round's
-        // own verdict.
-        //
-        // The read is awaited and the ping is not, which is the whole
-        // distinction: a notifier must not hold a round open, but the question
-        // roundOutcome asks is about the rows this round has just written and
-        // belongs to it. Started and left, it resolved after the finally had
-        // returned and the latch had dropped - against a database the shutdown
-        // path closes on its way out, or one the next round is already writing
-        // to, so the verdict described a moment that had passed.
-        //
-        // A database that cannot answer it leaves the /start unanswered, which
-        // is what the keep-alive - equally unable to read it - is saying at the
-        // same moment.
-        if (announce) {
-            const outcome = await roundOutcome(roundFailures, members.length).catch(err => {
-                console.error(`Could not read the round's outcome: ${toErrorMessage(err)}`);
-                return null;
-            });
-
-            if (outcome) sendRoundFinished(outcome).catch(err =>
-                console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
-        }
+        if (outcome) sendRoundFinished(outcome).catch(err =>
+            console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
     }
 };
 

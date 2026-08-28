@@ -105,25 +105,32 @@ export const pendingRunAt = () => {
     return earliest === null ? null : new Date(earliest).toISOString();
 };
 
-const calculateMaxDelay = (cron) => {
+// Exported for its test. The delay it bounds must stay well inside the
+// interval, or a run offset near the cap lands on the next tick and is dropped
+// as an overlap.
+export const calculateMaxDelay = (cron) => {
     try {
         const parser = CronExpressionParser.parse(cron);
         const next1 = parser.next().getTime();
         const next2 = parser.next().getTime();
         const intervalMs = next2 - next1;
-        const intervalMinutes = intervalMs / 60000;
+        const intervalMinutes = intervalMs / MS_PER_MINUTE;
 
-        if (intervalMinutes <= 1) {
-            return 30 * 1000; // 30 seconds
-        } else if (intervalMinutes <= 30) {
-            return 2 * 60 * 1000; // 2 minutes
-        } else if (intervalMinutes <= 60) {
-            return 3 * 60 * 1000; // 3 minutes
-        } else {
-            return 5 * 60 * 1000; // 5 minutes
-        }
+        // The interval-agnostic tier, the same steps as before.
+        let cap;
+        if (intervalMinutes <= 1) cap = 30 * 1000;
+        else if (intervalMinutes <= 30) cap = 2 * MS_PER_MINUTE;
+        else if (intervalMinutes <= 60) cap = 3 * MS_PER_MINUTE;
+        else cap = 5 * MS_PER_MINUTE;
+
+        // Never more than half the interval - the cap the minutely branch
+        // already was, generalised: a flat two minutes overshot every interval
+        // between one and four minutes, so a */2 cron could be delayed by its
+        // whole gap and run at half its rate. Never below the floor either, or
+        // getRandomDelay's range turns inside out.
+        return Math.max(OFFSET_MIN_DELAY_MS, Math.min(cap, intervalMs / 2));
     } catch {
-        return 2 * 60 * 1000; // Default to 2 minutes if parsing fails
+        return 2 * MS_PER_MINUTE; // Default to 2 minutes if parsing fails
     }
 };
 

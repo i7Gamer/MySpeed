@@ -77,6 +77,27 @@ describe("updating the recommendations", () => {
         assert.equal((await controller.getCurrent()).download, 900);
     });
 
+    /**
+     * And if two rows ever exist - importConfig restores this table wholesale
+     * and bounds it only by a row cap, so a backup can carry more than one -
+     * every read names the same one. An unordered findOne is free to return
+     * either, so getCurrent could answer one row while update() wrote the
+     * other, and the recommendation the card shows and the one the round
+     * refreshes would drift apart.
+     */
+    it("reads the same row every time when the table holds more than one", async () => {
+        await model.create({ping: 5, download: 111, upload: 11});
+        await model.create({ping: 6, download: 222, upload: 22});
+
+        const first = await controller.getCurrent();
+        const second = await controller.getCurrent();
+        assert.equal(first.id, second.id, "getCurrent answers with whichever row the driver felt like");
+
+        const written = await controller.update(9, 333, 33);
+        assert.equal(written.id, first.id, "update wrote a different row than getCurrent reads");
+        assert.equal((await controller.getCurrent()).download, 333);
+    });
+
     it("hands back the row it wrote", async () => {
         const created = await controller.update(12, 500, 100);
         assert.equal(created.download, 500);

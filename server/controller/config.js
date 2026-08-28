@@ -966,7 +966,14 @@ export const factoryReset = async () => {
     timer.stopTimer();
     timer.startTimer(configDefaults.cron, configDefaults.timezone);
 
-    interfaces.requestInterfaces();
+    // Caught, like every other fire-and-forget in this file: requestInterfaces
+    // awaits config reads and writes, and the reset has just emptied and
+    // re-seeded the config table in a transaction - a locked sqlite file or a
+    // dropped connection is exactly the moment. Uncaught it reached the
+    // process-level unhandledRejection hook and was logged as a bare server
+    // fault, after DELETE /storage/config had already answered 200.
+    interfaces.requestInterfaces().catch((error) =>
+        console.error(`Could not refresh the interfaces after a reset: ${toErrorMessage(error)}`));
 
     return true;
 }

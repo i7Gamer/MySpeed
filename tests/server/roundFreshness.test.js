@@ -180,10 +180,33 @@ describe("what the round says when it ends", () => {
     it("answers its one start with one completion, however the round ends", () => {
         const ending = round().slice(round().indexOf("} finally {"));
 
-        assert.match(ending, /const outcome = await roundOutcome\(/,
+        assert.match(ending, /const outcome = announce/,
             "a round that announced itself can end without answering the /start it opened");
+        assert.match(ending, /await roundOutcome\(/,
+            "the round no longer reads its own verdict");
         assert.match(ending, /sendRoundFinished\(outcome\)/,
             "the verdict is read and then not sent");
+    });
+
+    /**
+     * And the verdict is read while the latch still holds.
+     *
+     * roundOutcome queries the rows this round just wrote, and on a driver
+     * whose awaits yield the event loop (MySQL, not the sqlite shim) a manual
+     * run can tryReserve() during that read - _isRunning having already been
+     * cleared - start its own round, and then create()'s finally drops the
+     * latch a second time, out from under the new round. So the read comes
+     * before the latch is dropped; only the ping it feeds is detached.
+     */
+    it("reads its verdict before it drops the latch", () => {
+        const ending = round().slice(round().indexOf("} finally {"));
+        const reads = ending.indexOf("await roundOutcome(");
+        const drops = ending.indexOf("setRunning(false, false)");
+
+        assert.notEqual(reads, -1, "the round no longer reads its verdict in the finally");
+        assert.notEqual(drops, -1, "the round no longer drops the latch in its finally");
+        assert.ok(reads < drops,
+            "the latch is dropped before the verdict is read, so a manual run can slip into the read");
     });
 
     it("counts a watched member's failure however it failed", () => {

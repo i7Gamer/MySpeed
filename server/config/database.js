@@ -59,6 +59,10 @@ if (process.env.DB_TYPE === "mysql") {
 
     db = new Sequelize(process.env.DB_NAME, process.env.DB_USER, process.env.DB_PASS, {
         host: process.env.DB_HOST || "localhost",
+        // DB_HOST is handed to the driver as a bare hostname, so it cannot
+        // carry the port - "db:3307" becomes a DNS lookup for a host named
+        // "db:3307". A MySQL not on 3306 was simply unreachable without this.
+        port: process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 3306,
         dialect: 'mysql',
         logging: false,
         query: {raw: true}
