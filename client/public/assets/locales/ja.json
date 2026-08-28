@@ -337,7 +337,8 @@
   "statistics": {
     "average": "平均",
     "compare": {
-      "note": "{{from}} – {{to}} と比較した変化"
+      "note": "{{from}} – {{to}} と比較した変化",
+      "note_partial": "{{from}} – {{to}} と比較した変化（同時刻まで）"
     },
     "downsampled": "平均化 · {{total}} 件中 {{shown}} 件のテストを表示",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "所要時間のばらつき",
       "span_description": "この範囲で最も短いテストと最も長いテスト",
       "density_title": "1 日あたりのテスト数",
-      "density_description": "{{days}} 日間の集計"
+      "density_description": "{{days}} 日間の集計",
+      "density_description_partial": "{{days}} 日中 {{elapsed}} 日間の集計"
     },
     "values": {
       "min": "最小",

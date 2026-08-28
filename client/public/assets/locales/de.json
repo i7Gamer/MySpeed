@@ -337,7 +337,8 @@
   "statistics": {
     "average": "Durchschnitt",
     "compare": {
-      "note": "Veränderung gegenüber {{from}} – {{to}}"
+      "note": "Veränderung gegenüber {{from}} – {{to}}",
+      "note_partial": "Veränderung gegenüber {{from}} – {{to}}, bis zur gleichen Uhrzeit"
     },
     "downsampled": "Gemittelt · {{shown}} von {{total}} Tests",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "Dauer-Spanne",
       "span_description": "Der kürzeste und der längste Test in diesem Zeitraum",
       "density_title": "Tests pro Tag",
-      "density_description": "Über {{days}} Tage"
+      "density_description": "Über {{days}} Tage",
+      "density_description_partial": "Über {{elapsed}} von {{days}} Tagen"
     },
     "values": {
       "min": "Niedrigster",

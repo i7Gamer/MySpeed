@@ -1,4 +1,4 @@
-import { utcFromLocal, zoneFromOffset } from './timezone.js';
+import { localWallClock, utcFromLocal, zoneFromOffset } from './timezone.js';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -83,6 +83,55 @@ export const previousRange = ({from, to}, {offsetMinutes, zone} = {}) => {
     previousFrom.setUTCDate(previousFrom.getUTCDate() - days);
 
     return parseDateRange(day(previousFrom), day(previousTo), {zone: resolved.zone});
+};
+
+// The calendar day a wall-clock carrier reads as, for counting whole local
+// days between two instants without the hours taking part.
+const wallDay = (carrier) => Date.UTC(carrier.getUTCFullYear(), carrier.getUTCMonth(), carrier.getUTCDate());
+
+/**
+ * The previous window, cut to what the range has actually lived through.
+ *
+ * A range that ends today has only run until now, while the window before it is
+ * complete - so every count compared a part-week against a whole one and read
+ * lower on every partial day. The cut is the same position in the previous
+ * window: the day the range has reached, counted in calendar days from its
+ * start, at now's own wall clock. Not "now minus so many milliseconds", which
+ * drifts by an hour across a daylight saving boundary - the same reason
+ * previousRange walks the calendar.
+ *
+ * A cut in the hour spring skips resolves the way utcFromLocal answers a time
+ * that never was. In the hour autumn repeats the first reading is taken, so
+ * the doubled hour counts once - the current window has lived that wall clock
+ * once too, and the two elapsed spans stay equal.
+ *
+ * Returns the window untouched when the range is fully in the past, and null
+ * when none of it has happened yet: there is nothing a comparison could be
+ * about, and the caller answers "no comparison" rather than a window of no
+ * width.
+ */
+export const truncateToElapsed = (range, previous, now = new Date()) => {
+    if (now >= range.to) return previous;
+    if (now < range.from) return null;
+
+    const zone = previous.zone;
+    const nowWall = localWallClock(zone, now);
+
+    const daysElapsed = Math.round((wallDay(nowWall) - wallDay(localWallClock(zone, range.from))) / MS_PER_DAY);
+
+    const startWall = localWallClock(zone, previous.from);
+    const cutDay = new Date(Date.UTC(startWall.getUTCFullYear(), startWall.getUTCMonth(),
+        startWall.getUTCDate() + daysElapsed));
+
+    const cut = utcFromLocal(zone, {
+        year: cutDay.getUTCFullYear(), month: cutDay.getUTCMonth() + 1, day: cutDay.getUTCDate(),
+        hour: nowWall.getUTCHours(), minute: nowWall.getUTCMinutes(),
+        second: nowWall.getUTCSeconds(), ms: nowWall.getUTCMilliseconds()
+    });
+
+    // The clamp is for a cut the skipped hour pushed past the window's own end
+    // on its last day; everywhere else the cut is inside by construction.
+    return {...previous, to: new Date(Math.min(cut.getTime(), previous.to.getTime())), partial: true};
 };
 
 export const parseDateRange = (from, to, {offsetMinutes, zone} = {}) => {

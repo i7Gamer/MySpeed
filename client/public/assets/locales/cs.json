@@ -337,7 +337,8 @@
   "statistics": {
     "average": "Průměr",
     "compare": {
-      "note": "Změny v porovnání s {{from}} – {{to}}"
+      "note": "Změny v porovnání s {{from}} – {{to}}",
+      "note_partial": "Změny v porovnání s {{from}} – {{to}}, do stejné denní doby"
     },
     "downsampled": "Zprůměrováno · zobrazeno {{shown}} z {{total}} testů",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "Rozptyl doby trvání",
       "span_description": "Nejkratší a nejdelší test v tomto rozsahu",
       "density_title": "Testů za den",
-      "density_description": "Za období {{days}} dní"
+      "density_description": "Za období {{days}} dní",
+      "density_description_partial": "Za {{elapsed}} z {{days}} dní"
     },
     "values": {
       "min": "Minimum",

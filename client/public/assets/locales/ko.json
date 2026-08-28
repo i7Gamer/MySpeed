@@ -337,7 +337,8 @@
   "statistics": {
     "average": "평균",
     "compare": {
-      "note": "{{from}} – {{to}} 대비 변화"
+      "note": "{{from}} – {{to}} 대비 변화",
+      "note_partial": "{{from}} – {{to}} 대비 변화 (같은 시각까지)"
     },
     "downsampled": "평균 처리됨 · 전체 {{total}}개 중 {{shown}}개 테스트 표시",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "소요 시간 범위",
       "span_description": "이 범위에서 가장 짧은 테스트와 가장 긴 테스트",
       "density_title": "일일 테스트 수",
-      "density_description": "{{days}}일 동안"
+      "density_description": "{{days}}일 동안",
+      "density_description_partial": "{{days}}일 중 {{elapsed}}일 동안"
     },
     "values": {
       "min": "최소",

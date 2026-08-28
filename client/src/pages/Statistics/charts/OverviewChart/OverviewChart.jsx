@@ -45,12 +45,22 @@ const daysCovered = (dateRange) => {
 
 /**
  * How densely the range was actually sampled.
+ *
+ * Divided by the elapsed fraction when the server sent one - a seven-day range
+ * at Wednesday noon has been sampled for two and a half days, and dividing by
+ * seven understates the rate by the days that have not happened yet. Complete
+ * windows, and answers from an older node, carry no fraction and divide by the
+ * whole days above.
  */
 const testsPerDay = (total, dateRange) => {
     const days = daysCovered(dateRange);
     if (days === null || days <= 0) return null;
 
-    return {perDay: parseFloat((total / days).toFixed(PER_DAY_DECIMALS)), days};
+    const elapsed = typeof dateRange?.elapsedDays === "number"
+        && Number.isFinite(dateRange.elapsedDays) && dateRange.elapsedDays > 0
+        ? dateRange.elapsedDays : null;
+
+    return {perDay: parseFloat((total / (elapsed ?? days)).toFixed(PER_DAY_DECIMALS)), days, elapsed};
 };
 
 /**
@@ -99,7 +109,11 @@ const expandedItems = (props) => {
     if (density) items.push({
         icon: faCalendarDay,
         title: t("statistics.overview.density_title"),
-        description: t("statistics.overview.density_description", {days: density.days}),
+        // A still-running range names both figures, so a rate over two and a
+        // half days is not read as a claim about seven.
+        description: density.elapsed
+            ? t("statistics.overview.density_description_partial", {elapsed: density.elapsed, days: density.days})
+            : t("statistics.overview.density_description", {days: density.days}),
         value: density.perDay,
         delta: null
     });

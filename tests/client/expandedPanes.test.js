@@ -111,11 +111,72 @@ describe("the overview pane", () => {
 
     it("has every string it interpolates", () => {
         for (const key of ["ping_description", "span_title", "span_description",
-            "density_title", "density_description"])
+            "density_title", "density_description", "density_description_partial"])
             assert.equal(typeof english.statistics.overview[key], "string", `statistics.overview.${key}`);
 
         assert.match(english.statistics.overview.ping_description, /\{\{min}}[\s\S]*\{\{max}}/);
         assert.match(english.statistics.overview.density_description, /\{\{days}}/);
+        assert.match(english.statistics.overview.density_description_partial, /\{\{elapsed}}[\s\S]*\{\{days}}/);
+    });
+});
+
+/**
+ * The density divisor for a window that is still running.
+ *
+ * A seven-day range at Wednesday noon has been sampled for two and a half
+ * days, and dividing by seven understated the rate by the days that have not
+ * happened yet. Lifted out and run rather than pattern-matched: what matters
+ * is which figure a partial window divides by, and only handing the function
+ * a range can say.
+ */
+describe("tests per day on a still-running range", () => {
+    const lifted = () => {
+        const start = overview.indexOf("const MS_PER_DAY");
+        const end = overview.indexOf("const expandedItems");
+        assert.notEqual(start, -1, "the density helpers are no longer derived above the pane");
+        assert.notEqual(end, -1, "const expandedItems no longer follows them");
+
+        return new Function(`${overview.slice(start, end)}\nreturn {testsPerDay};`)();
+    };
+
+    it("divides by the elapsed fraction when the server sent one", () => {
+        assert.deepEqual(lifted().testsPerDay(25, {days: 7, elapsedDays: 2.5}),
+            {perDay: 10, days: 7, elapsed: 2.5});
+    });
+
+    it("divides by whole days when none was sent", () => {
+        assert.deepEqual(lifted().testsPerDay(70, {days: 7}),
+            {perDay: 10, days: 7, elapsed: null});
+    });
+
+    // Zero would divide, NaN would poison, and a string would concatenate.
+    it("falls back to whole days for a fraction that is not a positive number", () => {
+        for (const elapsedDays of [0, -1, NaN, "2"])
+            assert.equal(lifted().testsPerDay(70, {days: 7, elapsedDays}).perDay, 10,
+                `elapsedDays ${String(elapsedDays)}`);
+    });
+
+    it("names both figures when the window is partial", () => {
+        assert.match(overview, /density\.elapsed\s*\?\s*t\("statistics\.overview\.density_description_partial"/,
+            "a rate over part of the window reads as a claim about all of it");
+    });
+});
+
+/**
+ * The note every delta on the page is read against. A window cut at now's own
+ * wall clock - the range is still running - has to say so, or its dates would
+ * claim whole days it only partly covers.
+ */
+describe("the comparison note", () => {
+    it("says when the window it names was cut", () => {
+        assert.match(statistics,
+            /previous\.dateRange\.partial\s*\?\s*"statistics\.compare\.note_partial"\s*:\s*"statistics\.compare\.note"/);
+    });
+
+    it("has both wordings, each naming the window", () => {
+        for (const key of ["note", "note_partial"])
+            assert.match(english.statistics.compare[key], /\{\{from}}[\s\S]*\{\{to}}/,
+                `statistics.compare.${key}`);
     });
 });
 

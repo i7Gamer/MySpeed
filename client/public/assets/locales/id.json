@@ -337,7 +337,8 @@
   "statistics": {
     "average": "Rata-rata",
     "compare": {
-      "note": "Perubahan dibandingkan dengan {{from}} – {{to}}"
+      "note": "Perubahan dibandingkan dengan {{from}} – {{to}}",
+      "note_partial": "Perubahan dibandingkan dengan {{from}} – {{to}}, hingga waktu yang sama"
     },
     "downsampled": "Dirata-ratakan · menampilkan {{shown}} dari {{total}} pengujian",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "Rentang durasi",
       "span_description": "Pengujian terpendek dan terpanjang dalam rentang ini",
       "density_title": "Pengujian per hari",
-      "density_description": "Selama {{days}} hari"
+      "density_description": "Selama {{days}} hari",
+      "density_description_partial": "Selama {{elapsed}} dari {{days}} hari"
     },
     "values": {
       "min": "Minimum",

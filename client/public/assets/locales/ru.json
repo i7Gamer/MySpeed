@@ -337,7 +337,8 @@
   "statistics": {
     "average": "Среднее",
     "compare": {
-      "note": "Изменения по сравнению с {{from}} – {{to}}"
+      "note": "Изменения по сравнению с {{from}} – {{to}}",
+      "note_partial": "Изменения по сравнению с {{from}} – {{to}}, до того же времени суток"
     },
     "downsampled": "Усреднено · показано {{shown}} из {{total}}",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "Разброс длительности",
       "span_description": "Самый короткий и самый длинный тест в этом диапазоне",
       "density_title": "Тестов в день",
-      "density_description": "За {{days}} дней"
+      "density_description": "За {{days}} дней",
+      "density_description_partial": "За {{elapsed}} из {{days}} дней"
     },
     "values": {
       "min": "Минимум",

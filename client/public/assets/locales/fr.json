@@ -337,7 +337,8 @@
   "statistics": {
     "average": "Moyenne",
     "compare": {
-      "note": "Évolution par rapport à {{from}} – {{to}}"
+      "note": "Évolution par rapport à {{from}} – {{to}}",
+      "note_partial": "Évolution par rapport à {{from}} – {{to}}, jusqu'à la même heure"
     },
     "downsampled": "Moyenné · {{shown}} tests affichés sur {{total}}",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "Écart de durée",
       "span_description": "Le test le plus court et le plus long de cette plage",
       "density_title": "Tests par jour",
-      "density_description": "Sur {{days}} jours"
+      "density_description": "Sur {{days}} jours",
+      "density_description_partial": "Sur {{elapsed}} des {{days}} jours"
     },
     "values": {
       "min": "Minimum",

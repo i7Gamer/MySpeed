@@ -337,7 +337,8 @@
   "statistics": {
     "average": "平均",
     "compare": {
-      "note": "與 {{from}} – {{to}} 相比的變化"
+      "note": "與 {{from}} – {{to}} 相比的變化",
+      "note_partial": "與 {{from}} – {{to}} 相比的變化（截至同一時刻）"
     },
     "downsampled": "已平均 · 顯示 {{total}} 次測試中的 {{shown}} 次",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "耗時範圍",
       "span_description": "此範圍內最短與最長的測試",
       "density_title": "每日測試次數",
-      "density_description": "共 {{days}} 天"
+      "density_description": "共 {{days}} 天",
+      "density_description_partial": "共 {{days}} 天中的 {{elapsed}} 天"
     },
     "values": {
       "min": "最小值",

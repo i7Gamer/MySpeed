@@ -337,7 +337,8 @@
   "statistics": {
     "average": "Media",
     "compare": {
-      "note": "Variazioni rispetto a {{from}} – {{to}}"
+      "note": "Variazioni rispetto a {{from}} – {{to}}",
+      "note_partial": "Variazioni rispetto a {{from}} – {{to}}, fino alla stessa ora del giorno"
     },
     "downsampled": "Mediato · mostrati {{shown}} test su {{total}}",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "Scarto di durata",
       "span_description": "Il test più breve e quello più lungo di questo intervallo",
       "density_title": "Test al giorno",
-      "density_description": "Su {{days}} giorni"
+      "density_description": "Su {{days}} giorni",
+      "density_description_partial": "Su {{elapsed}} di {{days}} giorni"
     },
     "values": {
       "min": "Minimo",

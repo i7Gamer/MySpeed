@@ -337,7 +337,8 @@
   "statistics": {
     "average": "平均",
     "compare": {
-      "note": "与 {{from}} – {{to}} 相比的变化"
+      "note": "与 {{from}} – {{to}} 相比的变化",
+      "note_partial": "与 {{from}} – {{to}} 相比的变化（截至同一时刻）"
     },
     "downsampled": "已取平均 · 显示 {{total}} 次测速中的 {{shown}} 次",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "用时跨度",
       "span_description": "此区间内最短和最长的测速",
       "density_title": "每天测速次数",
-      "density_description": "共 {{days}} 天"
+      "density_description": "共 {{days}} 天",
+      "density_description_partial": "共 {{days}} 天中的 {{elapsed}} 天"
     },
     "values": {
       "min": "最小值",

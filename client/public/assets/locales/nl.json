@@ -337,7 +337,8 @@
   "statistics": {
     "average": "Gemiddeld",
     "compare": {
-      "note": "Wijzigingen ten opzichte van {{from}} – {{to}}"
+      "note": "Wijzigingen ten opzichte van {{from}} – {{to}}",
+      "note_partial": "Wijzigingen ten opzichte van {{from}} – {{to}}, tot hetzelfde tijdstip"
     },
     "downsampled": "Gemiddeld · {{shown}} van {{total}} tests getoond",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "Spreiding in duur",
       "span_description": "De kortste en de langste test in dit bereik",
       "density_title": "Tests per dag",
-      "density_description": "Over {{days}} dagen"
+      "density_description": "Over {{days}} dagen",
+      "density_description_partial": "Over {{elapsed}} van {{days}} dagen"
     },
     "values": {
       "min": "Laagste",

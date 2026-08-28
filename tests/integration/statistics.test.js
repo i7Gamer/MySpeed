@@ -489,6 +489,105 @@ describe("GET /api/speedtests/statistics", () => {
         });
     });
 
+    /**
+     * The summary of the window immediately before the range, which every
+     * delta on the statistics page is read against. Until now the only
+     * assertion about it was the negative one above - all time never compares
+     * - so the payload's shape was held by nothing.
+     */
+    describe("the previous window", () => {
+        const MS_PER_DAY = 24 * 60 * 60 * 1000;
+        const MS_PER_HOUR = 60 * 60 * 1000;
+
+        // The UTC calendar day, which is the request's day because every test
+        // here pins tz=Etc/UTC - the one zone the wall-clock arithmetic is
+        // exact in whatever the host's own clock says.
+        const day = (date) => date.toISOString().slice(0, 10);
+
+        it("answers the full window before a range that is fully in the past", async () => {
+            await seedTests(server.tests, [
+                at("2025-08-05T10:00:00.000Z"),
+                at("2025-08-03T10:00:00.000Z"),
+                at("2025-07-29T10:00:00.000Z", {download: 50})
+            ]);
+
+            const {status, body} = await statistics(
+                "from=2025-08-01&to=2025-08-07&tz=Etc/UTC&compare=previous");
+
+            assert.equal(status, 200);
+            assert.equal(body.previous.tests.total, 1);
+            assert.equal(body.previous.download.avg, 50);
+            assert.equal(body.previous.dateRange.from, "2025-07-25T00:00:00.000Z");
+            assert.equal(body.previous.dateRange.to, "2025-07-31T23:59:59.999Z");
+            assert.equal(body.previous.dateRange.partial, undefined,
+                "a window compared whole must not claim it was cut");
+            assert.equal(body.dateRange.elapsedDays, undefined,
+                "a complete range divides by its whole days, not by an elapsed figure");
+        });
+
+        /**
+         * A range that ends today has only run until now, so the window before
+         * it is cut at the same position: a test seeded just before "a week
+         * before now" is counted, one seeded just after is not - it sits in
+         * the hours of the previous window's last day that the current window
+         * has not lived through yet. (When now is late enough in the day, that
+         * second seed rolls into the current window's first day instead, and
+         * is outside the previous window either way.)
+         */
+        it("cuts the window before a range that is still running", async () => {
+            const now = new Date();
+            const weekAgo = new Date(now.getTime() - 7 * MS_PER_DAY);
+            const counted = new Date(weekAgo.getTime() - MS_PER_HOUR);
+            const uncounted = new Date(weekAgo.getTime() + 1.5 * MS_PER_HOUR);
+
+            await seedTests(server.tests, [
+                at(counted.toISOString(), {download: 50}),
+                at(uncounted.toISOString()),
+                at(new Date(now.getTime() - 1000).toISOString())
+            ]);
+
+            const from = day(new Date(now.getTime() - 6 * MS_PER_DAY));
+            const {status, body} = await statistics(
+                `from=${from}&to=${day(now)}&tz=Etc/UTC&compare=previous`);
+
+            assert.equal(status, 200);
+            assert.equal(body.previous.tests.total, 1,
+                "the cut let a test through from hours the range has not lived yet");
+            assert.equal(body.previous.download.avg, 50);
+            assert.equal(body.previous.dateRange.partial, true);
+
+            // The cut is a week before the server's own reading of now, which
+            // is moments after ours - two minutes is far beyond any of it.
+            const cut = new Date(body.previous.dateRange.to);
+            assert.ok(Math.abs(cut.getTime() - weekAgo.getTime()) < 2 * 60 * 1000,
+                `the cut landed at ${cut.toISOString()}, not at the same time a week earlier`);
+
+            // And the density divisor says how much of the window has actually
+            // run: between six days (asked at midnight) and seven (at the end
+            // of the day).
+            assert.equal(typeof body.dateRange.elapsedDays, "number");
+            assert.ok(body.dateRange.elapsedDays >= 6 && body.dateRange.elapsedDays <= 7,
+                `elapsedDays says ${body.dateRange.elapsedDays} for a seven-day range on its last day`);
+        });
+
+        // The API accepts a window the picker cannot produce. Nothing of it
+        // has happened, so there is nothing a comparison could be about - and
+        // answering a zero-width window instead would colour every delta
+        // against a previous of nought.
+        it("answers no comparison at all for a range that has not begun", async () => {
+            const now = new Date();
+            const from = day(new Date(now.getTime() + 2 * MS_PER_DAY));
+            const to = day(new Date(now.getTime() + 3 * MS_PER_DAY));
+
+            const {status, body} = await statistics(
+                `from=${from}&to=${to}&tz=Etc/UTC&compare=previous`);
+
+            assert.equal(status, 200);
+            assert.equal(body.previous, null);
+            assert.equal(body.dateRange.elapsedDays, undefined);
+        });
+    });
+
     describe("timezone handling", () => {
         // 2026-08-06T23:30Z is already 2026-08-07 for a client at UTC+2, so it
         // belongs to a range that starts on the 7th only when the offset is honoured.

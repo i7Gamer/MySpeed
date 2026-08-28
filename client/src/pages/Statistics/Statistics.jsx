@@ -528,10 +528,15 @@ export const Statistics = () => {
             {toolbar}
 
             {/* Stated once for the whole page, so every delta below can be a
-                bare arrow and number instead of each repeating the window. */}
+                bare arrow and number instead of each repeating the window. A
+                window cut at now's own wall clock - the range is still running
+                - says so, or its dates would claim whole days it only partly
+                covers. */}
             {previous && (
                 <p className="statistics-compare-note">
-                    {t("statistics.compare.note", {
+                    {t(previous.dateRange.partial
+                        ? "statistics.compare.note_partial"
+                        : "statistics.compare.note", {
                         from: formatDay(previous.dateRange.from),
                         to: formatDay(previous.dateRange.to)
                     })}

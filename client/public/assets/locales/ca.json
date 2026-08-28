@@ -337,7 +337,8 @@
   "statistics": {
     "average": "Mitjana",
     "compare": {
-      "note": "Canvis respecte a {{from}} – {{to}}"
+      "note": "Canvis respecte a {{from}} – {{to}}",
+      "note_partial": "Canvis respecte a {{from}} – {{to}}, fins a la mateixa hora del dia"
     },
     "downsampled": "Amb mitjanes · es mostren {{shown}} de {{total}} proves",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "Dispersió de la durada",
       "span_description": "La prova més curta i la més llarga d'aquest interval",
       "density_title": "Proves per dia",
-      "density_description": "Al llarg de {{days}} dies"
+      "density_description": "Al llarg de {{days}} dies",
+      "density_description_partial": "Al llarg de {{elapsed}} de {{days}} dies"
     },
     "values": {
       "min": "Mínim",

@@ -241,6 +241,30 @@ describe("shownRange", () => {
         });
     });
 
+    /**
+     * How much of a still-running window has actually elapsed, for the per-day
+     * figures. It rides beside the whole-day count rather than replacing it -
+     * the description names both - and a complete window, or an older node,
+     * sends none and divides by whole days as before.
+     */
+    describe("the elapsed count", () => {
+        const selected = {from: new Date(2026, 7, 1), to: new Date(2026, 7, 7)};
+        const echoed = (elapsedDays) =>
+            ({dateRange: {from: "2026-08-01", to: "2026-08-07", days: 7, elapsedDays}});
+
+        it("carries the fraction the server sent", () => {
+            assert.equal(shownRange(selected, echoed(2.5), NOW).elapsedDays, 2.5);
+        });
+
+        // Undefined is what the caller checks for; a zero or a NaN would be
+        // divided by.
+        it("is absent rather than wrong when the server sent none", () => {
+            for (const elapsedDays of [undefined, null, NaN, Infinity, "2", 0, -3])
+                assert.equal(shownRange(selected, echoed(elapsedDays), NOW).elapsedDays, undefined,
+                    `elapsedDays ${String(elapsedDays)}`);
+        });
+    });
+
     // A parent proxies these requests to its nodes, and a node running an older
     // version answers without the echo. Falling through to "Invalid Date" would
     // render as the heading of the page.

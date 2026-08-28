@@ -337,7 +337,8 @@
   "statistics": {
     "average": "Promedio",
     "compare": {
-      "note": "Cambios respecto a {{from}} – {{to}}"
+      "note": "Cambios respecto a {{from}} – {{to}}",
+      "note_partial": "Cambios respecto a {{from}} – {{to}}, hasta la misma hora del día"
     },
     "downsampled": "Promediado · se muestran {{shown}} de {{total}} tests",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "Diferencia de duración",
       "span_description": "El test más corto y el más largo de este rango",
       "density_title": "Tests por día",
-      "density_description": "A lo largo de {{days}} días"
+      "density_description": "A lo largo de {{days}} días",
+      "density_description_partial": "A lo largo de {{elapsed}} de {{days}} días"
     },
     "values": {
       "min": "Mínimo",

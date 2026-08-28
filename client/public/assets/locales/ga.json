@@ -337,7 +337,8 @@
   "statistics": {
     "average": "Meán",
     "compare": {
-      "note": "Athruithe i gcomparáid le {{from}} – {{to}}"
+      "note": "Athruithe i gcomparáid le {{from}} – {{to}}",
+      "note_partial": "Athruithe i gcomparáid le {{from}} – {{to}}, suas go dtí an t-am céanna den lá"
     },
     "downsampled": "Meánaithe · {{shown}} as {{total}} tástáil ar taispeáint",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "Réimse faid",
       "span_description": "An tástáil is giorra agus an ceann is faide sa raon seo",
       "density_title": "Tástálacha in aghaidh an lae",
-      "density_description": "Thar {{days}} lá"
+      "density_description": "Thar {{days}} lá",
+      "density_description_partial": "Thar {{elapsed}} as {{days}} lá"
     },
     "values": {
       "min": "Íosmhéid",

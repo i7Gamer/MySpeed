@@ -337,7 +337,8 @@
   "statistics": {
     "average": "Gjennomsnitt",
     "compare": {
-      "note": "Endringer sammenlignet med {{from}} – {{to}}"
+      "note": "Endringer sammenlignet med {{from}} – {{to}}",
+      "note_partial": "Endringer sammenlignet med {{from}} – {{to}}, frem til samme tid på dagen"
     },
     "downsampled": "Gjennomsnitt · viser {{shown}} av {{total}} tester",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "Spredning i varighet",
       "span_description": "Den korteste og lengste testen i dette intervallet",
       "density_title": "Tester per dag",
-      "density_description": "Over {{days}} dager"
+      "density_description": "Over {{days}} dager",
+      "density_description_partial": "Over {{elapsed}} av {{days}} dager"
     },
     "values": {
       "min": "Minimum",

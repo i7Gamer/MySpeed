@@ -337,7 +337,8 @@
   "statistics": {
     "average": "Средно",
     "compare": {
-      "note": "Промени спрямо {{from}} – {{to}}"
+      "note": "Промени спрямо {{from}} – {{to}}",
+      "note_partial": "Промени спрямо {{from}} – {{to}}, до същия час на деня"
     },
     "downsampled": "Осреднено · показани са {{shown}} от {{total}} теста",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "Разлика в продължителността",
       "span_description": "Най-краткият и най-дългият тест в този период",
       "density_title": "Тестове на ден",
-      "density_description": "За {{days}} дни"
+      "density_description": "За {{days}} дни",
+      "density_description_partial": "За {{elapsed}} от {{days}} дни"
     },
     "values": {
       "min": "Минимум",

@@ -1,7 +1,7 @@
 import tests from '../models/Speedtests.js';
 import { Op } from 'sequelize';
 import { buildStatistics, STATISTICS_COLUMNS } from '../util/statistics.js';
-import { previousRange } from '../util/dateRange.js';
+import { previousRange, truncateToElapsed } from '../util/dateRange.js';
 import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER } from '../util/testOutcome.js';
 import { getValue } from './config.js';
 import * as targetsController from './targets.js';
@@ -519,17 +519,28 @@ const previousSummary = async (range, options) => {
     const previous = previousRange(range, options);
     if (!previous.valid) return null;
 
+    // Cut to what the range has actually lived through: a range ending today
+    // is a part-week, and counted against a whole previous week every total
+    // read lower on every partial day. Null when none of the range has
+    // happened yet - there is nothing a comparison could be about.
+    const window = truncateToElapsed(range, previous, options.now ?? new Date());
+    if (window === null) return null;
+
     // The comparison answers for the same slice the range does - a filtered
     // window compared against everyone's previous window would report a delta
     // between two different questions.
     const statistics = buildStatistics(
-        await findInRange(previous, STATISTICS_QUERY, options.target), previous, options);
+        await findInRange(window, STATISTICS_QUERY, options.target), window, options);
 
     return {
         ...Object.fromEntries(SUMMARY_KEYS.map((key) => [key, statistics[key]])),
         dateRange: {
-            from: previous.from.toISOString(),
-            to: previous.to.toISOString()
+            from: window.from.toISOString(),
+            to: window.to.toISOString(),
+            // Says the last day is covered only up to now's own wall clock, so
+            // the note above the deltas can say so too. Absent, not false, for
+            // a complete window - the way every other optional echo travels.
+            ...(window.partial && {partial: true})
         }
     };
 };
@@ -568,6 +579,30 @@ const extentOf = (entries) => {
     return {from: new Date(first), to: new Date(last === first ? last + 1 : last)};
 };
 
+// One decimal is enough to tell six days from six and a half without implying
+// the cut is that precise; below a tenth of a day the whole-day divisor is the
+// saner figure, so nothing is sent at all.
+const ELAPSED_DAY_DECIMALS = 1;
+const MIN_ELAPSED_DAYS = 0.1;
+
+/**
+ * How much of a still-running range has actually elapsed, in days - or null
+ * for a window that is complete or has not begun, which keep the whole-day
+ * figure beside it as their honest divisor.
+ *
+ * Measured in elapsed time rather than calendar days deliberately: this is the
+ * divisor for a rate, and "how long has the sampling been running" is a
+ * question about elapsed time. The whole-day count stays what the headings and
+ * every complete window are described by.
+ */
+const elapsedDaysOf = (range, now) => {
+    if (!range || now >= range.to || now < range.from) return null;
+
+    const elapsed = parseFloat(((now - range.from) / MS_PER_DAY).toFixed(ELAPSED_DAY_DECIMALS));
+
+    return elapsed >= MIN_ELAPSED_DAYS ? elapsed : null;
+};
+
 /**
  * The statistics for a range, or for every test there is when given none.
  *
@@ -577,12 +612,16 @@ const extentOf = (entries) => {
  * there is no previous window to compare it against.
  */
 export const listStatistics = async (range, options = {}) => {
+    // One reading of the clock for the whole answer: the previous window's cut
+    // and the elapsed-day figure below must not disagree about when now was.
+    const now = options.now ?? new Date();
     const targetWhere = options.target !== undefined ? {where: {targetId: options.target}} : {};
     const entries = range
         ? await findInRange(range, SUMMARISED_ROWS_QUERY, options.target)
         : await findEvery({...SUMMARISED_ROWS_QUERY, ...targetWhere});
 
     const covered = range ?? extentOf(entries);
+    const elapsedDays = elapsedDaysOf(range, now);
 
     return {
         ...buildStatistics(entries, covered, options),
@@ -594,7 +633,7 @@ export const listStatistics = async (range, options = {}) => {
         // by. A filtered request answers the one target it was narrowed to,
         // which is the same statement about the same rows.
         targetIds: targetsPresent(entries),
-        ...(range && options.comparePrevious ? {previous: await previousSummary(range, options)} : {}),
+        ...(range && options.comparePrevious ? {previous: await previousSummary(range, {...options, now})} : {}),
         // The window actually answered for, which the client names its headings
         // after and measures its per-day figures against. Whole days rather than
         // the exact span: an all-time range on a young instance is the extent of
@@ -607,7 +646,14 @@ export const listStatistics = async (range, options = {}) => {
             // saving change inside it can move; the ceiling of the span is only
             // right for the all-time extent, whose bounds are two real test
             // instants rather than two midnights.
-            days: covered.days ?? Math.max(1, Math.ceil((covered.to - covered.from) / MS_PER_DAY))
+            days: covered.days ?? Math.max(1, Math.ceil((covered.to - covered.from) / MS_PER_DAY)),
+            // And, for a range that is still running, how much of it has: a
+            // seven-day range at Wednesday noon has been sampled for two and a
+            // half days, and a per-day figure divided by seven understates the
+            // rate by the days that have not happened yet. Absent for every
+            // complete window - and from an older node, which the client's
+            // whole-day fallback already covers.
+            ...(elapsedDays !== null && {elapsedDays})
         }
     };
 };

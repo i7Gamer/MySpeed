@@ -337,7 +337,8 @@
   "statistics": {
     "average": "Середнє",
     "compare": {
-      "note": "Зміни порівняно з {{from}} – {{to}}"
+      "note": "Зміни порівняно з {{from}} – {{to}}",
+      "note_partial": "Зміни порівняно з {{from}} – {{to}}, до того ж часу доби"
     },
     "downsampled": "Усереднено · показано {{shown}} із {{total}}",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "Розкид тривалості",
       "span_description": "Найкоротший і найдовший тест у цьому діапазоні",
       "density_title": "Тестів на день",
-      "density_description": "За {{days}} днів"
+      "density_description": "За {{days}} днів",
+      "density_description_partial": "За {{elapsed}} із {{days}} днів"
     },
     "values": {
       "min": "Мінімум",

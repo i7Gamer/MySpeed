@@ -337,7 +337,8 @@
   "statistics": {
     "average": "Ortalama",
     "compare": {
-      "note": "{{from}} – {{to}} ile karşılaştırıldığında değişimler"
+      "note": "{{from}} – {{to}} ile karşılaştırıldığında değişimler",
+      "note_partial": "{{from}} – {{to}} ile karşılaştırıldığında değişimler, günün aynı saatine kadar"
     },
     "downsampled": "Ortalaması alındı · {{total}} testin {{shown}} tanesi gösteriliyor",
     "detail": {
@@ -368,7 +369,8 @@
       "span_title": "Süre farkı",
       "span_description": "Bu aralıktaki en kısa ve en uzun test",
       "density_title": "Günlük test sayısı",
-      "density_description": "{{days}} gün boyunca"
+      "density_description": "{{days}} gün boyunca",
+      "density_description_partial": "{{days}} günün {{elapsed}} günü boyunca"
     },
     "values": {
       "min": "En küçük",
