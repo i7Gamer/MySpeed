@@ -376,7 +376,7 @@ describe("install.sh survives a download that fails", () => {
     // The window from the download to the point the service is written, which is
     // where a failure has to stop.
     const downloadBlock = () => {
-        const start = source.indexOf("INSTALLATION_PATH\"");
+        const start = source.indexOf("DOWNLOAD_TMP=");
         const end = source.indexOf("Registering MySpeed as a background service");
         assert.ok(start !== -1 && end > start, "the download step is no longer recognisable");
         return source.slice(start, end);

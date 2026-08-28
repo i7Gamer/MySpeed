@@ -33,6 +33,17 @@ jobs:
       release_id: ${{ steps.create_release.outputs.id }}
 
     steps:
+      # Dispatch carries no branch restriction and the push below targets the
+      # default branch by name, so a run started from a feature branch would
+      # push that branch's HEAD onto the default one. Refused here, before the
+      # checkout writes a write-token into .git/config or anything is pushed.
+      - name: Refuse to release from a non-default branch
+        run: |
+          if [ "${{ github.ref_name }}" != "${{ github.event.repository.default_branch }}" ]; then
+            echo "Release must be dispatched from the default branch, not ${{ github.ref_name }}." >&2
+            exit 1
+          fi
+
       - name: Checkout project
         uses: actions/checkout@v7
         with:
@@ -153,9 +164,13 @@ jobs:
   # 1.3.3, a failed release left `:latest` on a version that no longer had a
   # GitHub release - which happened three times the night 1.3.3 was cut, and
   # left `docker pull myspeed` on an unreleased build for about four hours.
+  #
+  # Also behind build-msi: the MSI is the other artifact the release must ship,
+  # so :latest must not be published before it has built - otherwise a failed
+  # MSI leaves Docker on a version whose GitHub release stays a draft.
   publish-docker:
     name: "Publish Docker"
-    needs: [create-release, build-binaries, build-docker]
+    needs: [create-release, build-binaries, build-docker, build-msi]
     uses: ./.github/workflows/publish-docker.yml
     with:
       tags: |
