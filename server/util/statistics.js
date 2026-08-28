@@ -52,16 +52,18 @@ const round = (value, decimals = SPEED_DECIMALS) => parseFloat(value.toFixed(dec
 /**
  * The readable measurements of a stored population, as numbers.
  *
- * Through metricValue, and once, at the boundary. sqlite is typeless, so a
- * history imported before the import checked its numeric columns holds numeric
- * *strings* where numbers belong - measurements somebody took, which the alert
- * gate, the failure predicates and Prometheus all read as numbers - while a
- * live run once stored the literal string "NaN", which turned `total + value`
- * into concatenation and a 200 Mbit average into 8.6e13. A bare finite check
- * refused both alike, so the same row was measured to every other reader and
- * absent here; and a filter inside each formula instead of one out here gave
- * the mean and the spread two different populations - a string was missing
- * from the mean while Math.pow coerced it, squared, into the deviations.
+ * Through metricValue, and once, at the boundary. The corruption a database
+ * actually delivers is non-numeric text - a live run once stored the literal
+ * string "NaN", which turned `total + value` into concatenation and a 200 Mbit
+ * average into 8.6e13 - and metricValue refuses it. The numeric-string reading
+ * beside that is the defensive half of the same contract: both backends
+ * coerce well-formed digits at write for these DOUBLE columns, so no current
+ * row arrives spelt "42" - but metricValue is the judgement Prometheus and the
+ * recommendation sample lean on, and a second predicate here is how two
+ * surfaces on one page came to disagree about one row. A filter inside each
+ * formula instead of one out here also gave the mean and the spread two
+ * different populations - a coercible string was missing from the mean while
+ * Math.pow folded it, squared, into the deviations.
  *
  * Every gate and formula below runs on this cleaned array, so a length is
  * always the length of what the arithmetic actually saw.
@@ -73,6 +75,20 @@ const readings = (values) => {
         if (reading !== null) numbers.push(reading);
     }
     return numbers;
+};
+
+/**
+ * A ping that was measured, read the way every other column is.
+ *
+ * isMeasuredLatency asks typeof first - rightly, for the fabricated-zero
+ * question it owns - so handed the raw column it was the one gate still
+ * refusing a numeric string after the cleanup taught the other columns to
+ * read one. Coerce first, then ask; null for everything the gate refuses,
+ * which the callers treat as the gap it is.
+ */
+const measuredPing = (value) => {
+    const ping = metricValue(value);
+    return isMeasuredLatency(ping) ? ping : null;
 };
 
 // The plain mean of a readings() population. The filter this used to carry
@@ -193,8 +209,10 @@ const buildHourlyAverages = (entries, zone) => {
         if (upload !== null) bucket.upload.push(upload);
         // Guarded like the jitter below it, and for the same reason: a
         // fabricated zero is not a reading, and one in an hour's bucket halved
-        // that hour's latency.
-        if (isMeasuredLatency(entry.ping)) bucket.ping.push(entry.ping);
+        // that hour's latency. Through measuredPing, so the coercion the other
+        // columns get reaches this one too.
+        const ping = measuredPing(entry.ping);
+        if (ping !== null) bucket.ping.push(ping);
         // usableFigure rather than a null check: an imported -1 placeholder
         // was an hour's whole jitter reading.
         if (usableFigure(entry.jitter) !== null) bucket.jitter.push(entry.jitter);
@@ -324,16 +342,23 @@ const fullSeries = (sorted) => ({
         // since UNMEASURED_LATENCY was written; the line did not, so a range
         // could report a minimum of 20 ms over a chart that visibly touched
         // nought - the same instance answering one question two ways.
-        ping: sorted.map(entry =>
-            isSuccessfulTest(entry) && isMeasuredLatency(entry.ping) ? entry.ping : null),
+        ping: sorted.map(entry => isSuccessfulTest(entry) ? measuredPing(entry.ping) : null),
         // Through usableFigure, the same reading the live write gives these
         // columns: a history imported before the import refused negatives can
         // hold -1 placeholders, and passed through they drew a jitter dipping
         // below zero on a chart whose summary skipped the same row.
         jitter: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.jitter) : null),
-        download: sorted.map(entry => isSuccessfulTest(entry) ? entry.download : null),
-        upload: sorted.map(entry => isSuccessfulTest(entry) ? entry.upload : null),
-        time: sorted.map(entry => isSuccessfulTest(entry) ? entry.time : null),
+        // metricValue like the downsampled branch beside this one, not raw: a
+        // corrupt stored string shipped here reached the client as JSON text,
+        // where the chart's own average reducer concatenated it - the exact
+        // total-plus-value bug average() was fixed for, reproduced in the
+        // browser on every range small enough not to bucket. Unreadable is a
+        // null, which the line already draws as a gap.
+        download: sorted.map(entry => isSuccessfulTest(entry) ? metricValue(entry.download) : null),
+        upload: sorted.map(entry => isSuccessfulTest(entry) ? metricValue(entry.upload) : null),
+        // usableFigure, matching the measuredOnly("time") read the downsampled
+        // branch gives the same column.
+        time: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.time) : null),
         // Null where unmeasured - a gap in the line, like jitter. usableFigure
         // answers null for the absent key of a row from before the columns
         // existed, and for an imported negative alike.
@@ -395,7 +420,7 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
         // a bucket average is a dip of the wrong depth rather than a visible
         // nought, which is the harder of the two to catch. Null when a bucket
         // held nothing else, since a bucket with no reading has no latency.
-        series.data.ping.push(averageOrNull(valid.map(entry => entry.ping).filter(isMeasuredLatency)));
+        series.data.ping.push(averageOrNull(valid.map(entry => measuredPing(entry.ping))));
         series.data.jitter.push(averageOrNull(measuredOnly("jitter")));
         // averageOrNull like every sibling, not the bare mean: these two
         // columns are NOT NULL, which is why a raw average looked safe - but a
@@ -488,7 +513,7 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
     // latency nobody measured - see UNMEASURED_LATENCY - and averaging that
     // fabricated zero as a 0 ms reading dragged every ping figure down while
     // the alert gate, reading the same row, refused it.
-    const withPing = succeeded.filter(entry => isMeasuredLatency(entry.ping));
+    const withPing = succeeded.filter(entry => measuredPing(entry.ping) !== null);
 
     return {
         tests: {
@@ -523,7 +548,7 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
                 // feed a consistency percentage whose formula wants the
                 // standard deviation, while this figure is read directly by a
                 // person - so it is the median kind, and named for what it is.
-                deviation: roundOrNull(medianAbsoluteDeviation(withPing.map(entry => entry.ping))),
+                deviation: roundOrNull(medianAbsoluteDeviation(withPing.map(entry => measuredPing(entry.ping)))),
                 jitter: averageOrNull(withJitter.map(entry => entry.jitter))
             },
             // The aggregate over every success, the trend over the ones that

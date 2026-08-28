@@ -20,6 +20,7 @@ import * as pauseController from '../controller/pause.js';
 import { withinQuietHours } from './timer.js';
 import errorHandler from '../util/errorHandler.js';
 import { outageFrom } from '../util/databaseOutage.js';
+import { metricValue } from '../util/metricValue.js';
 
 // The placeholder a failed test stores in every numeric column. The client
 // tells a failure apart by it, so it is not a value anyone should read as one.
@@ -146,20 +147,27 @@ export const createRecommendations = async () => {
 
     let recommendations = {ping: Infinity, down: 0, up: 0};
     for (const entry of list) {
-        const {ping, download, upload} = entry;
+        // Through metricValue, the judgement every other reader of these rows
+        // leans on - the statistics moved to it, and a second predicate here
+        // is what diverged. The protections the old bare finite check carried
+        // still hold: an empty string - which compares as zero and once took
+        // "lowest ping" from the whole sample - reads as null, as does "NaN"
+        // and every other junk shape. Neither backend can actually hand these
+        // DOUBLE columns back as numeric text (both coerce well-formed digits
+        // at write), so the string-reading half is the same defensive contract
+        // metricValue states for Prometheus, held here for one reason: two
+        // rules over one row is how the card and the chart came to disagree.
+        const ping = metricValue(entry.ping);
+        const download = metricValue(entry.download);
+        const upload = metricValue(entry.upload);
 
-        // Number.isFinite with no typeof beside it: it coerces nothing, so every
-        // non-number is already out. That matters because sqlite keeps whatever
-        // it was handed, and a history imported before importTests() checked its
-        // numeric columns can still hold an empty string in one - which compares
-        // as zero and so took "lowest ping" from the whole sample.
         if (lowestRealPing(ping) && ping < recommendations.ping)
             recommendations.ping = ping;
 
-        if (Number.isFinite(download) && download > recommendations.down)
+        if (download !== null && download > recommendations.down)
             recommendations.down = download;
 
-        if (Number.isFinite(upload) && upload > recommendations.up)
+        if (upload !== null && upload > recommendations.up)
             recommendations.up = upload;
     }
 

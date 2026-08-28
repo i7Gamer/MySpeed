@@ -36,12 +36,44 @@ describe("metricValue", () => {
             assert.equal(metricValue(value), null, `${JSON.stringify(value)} was handed to a gauge`);
     });
 
-    // sqlite hands a numeric column back as whatever it was given, so a legacy
-    // row can carry the digits as text. That is a readable measurement, and
-    // dropping the series for it would lose a metric that is really there.
-    it("reads a numeric string, which is how sqlite returns an imported one", () => {
+    // Defensive, not a live database shape: sqlite's REAL affinity converts
+    // well-formed numeric text at write for these DOUBLE columns, and MySQL
+    // does the same, so what actually survives storage is non-numeric junk
+    // like "NaN" - refused above. The digits-as-text reading stands anyway,
+    // because this is the one shared judgement every reader leans on, and a
+    // reader that would misread a numeric string is one storage-coercion
+    // trivia away from a lost metric.
+    it("reads a numeric string, in case one ever arrives", () => {
         assert.equal(metricValue("42"), 42);
         assert.equal(metricValue("0.4"), 0.4);
+    });
+});
+
+/**
+ * The recommendation sample reads through the same judgement.
+ *
+ * createRecommendations filtered with bare Number.isFinite while the
+ * statistics moved to metricValue - two predicates over the same rows, and the
+ * two surfaces they feed sit on one page. No behavioural case can pin this
+ * through the database (both backends coerce well-formed numeric text at
+ * write, so a seeded string row proves storage rather than the filter), which
+ * is why it is held at the source: the three measurement reads go through
+ * metricValue, and no bare finite check decides the sample.
+ */
+describe("the recommendation sample", () => {
+    const speedtestTask = readSource("server/tasks/speedtest.js");
+    const body = bodyOf(speedtestTask, "export const createRecommendations");
+
+    it("reads its three figures through metricValue", () => {
+        assert.match(body, /metricValue\(entry\.ping\)/,
+            "the sample's ping is judged by a different rule than the page beside it");
+        assert.match(body, /metricValue\(entry\.download\)/);
+        assert.match(body, /metricValue\(entry\.upload\)/);
+    });
+
+    it("no longer keeps a bare finite check of its own", () => {
+        assert.doesNotMatch(body, /Number\.isFinite\(download\)|Number\.isFinite\(entry\.download\)/,
+            "a second predicate over the same rows is what diverged");
     });
 });
 

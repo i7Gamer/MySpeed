@@ -209,17 +209,18 @@ const mapRange = (entries, type, averageOf) => {
         // still counting toward the divisor. A measured 0 is a real reading and
         // is not what this skips.
         //
-        // metricValue rather than a bare finite check. sqlite keeps whatever it
-        // was handed, and a history imported before importTests() checked its
-        // numeric columns can still hold a string in one - two kinds of one. A
-        // junk string like "NaN" quietly turned the average to NaN, and the
-        // sort comparator answers NaN around it, so one that landed mid-sample
-        // was handed to toFixed by the median: a TypeError that took the whole
-        // statistics endpoint down over one bad row. A *numeric* string,
-        // though, is a measurement somebody took - metricValue documents the
-        // population, and the alert gate and Prometheus both read it as the
-        // number it spells - so refusing it here made the same row measured
-        // and absent at once. Read the one, refuse the other.
+        // metricValue rather than a bare finite check. The corruption storage
+        // actually delivers is non-numeric text - a junk string like "NaN"
+        // quietly turned the average to NaN, and the sort comparator answers
+        // NaN around it, so one that landed mid-sample was handed to toFixed
+        // by the median: a TypeError that took the whole statistics endpoint
+        // down over one bad row. metricValue refuses exactly that, and reads a
+        // *numeric* string as the number it spells - a defensive half no
+        // current row exercises (both backends coerce well-formed digits at
+        // write for these DOUBLE columns), kept because metricValue is the one
+        // judgement Prometheus and the recommendation sample share, and a
+        // second predicate here is how one row answered two surfaces
+        // differently. Read the one, refuse the other.
         const value = metricValue(entry[type]);
         if (value === null) continue;
 

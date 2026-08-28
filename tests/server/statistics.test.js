@@ -1174,6 +1174,58 @@ describe("a corrupt stored number", () => {
             "a single readable reading reported itself 100% consistent, ±0");
     });
 
+    /**
+     * The full-resolution series speaks the same language as the downsampled
+     * one. Below targetPoints the rows used to go into the payload raw, so a
+     * stored "50" reached the client as a JSON string - convertSpeed refuses a
+     * non-number and drew the point 8x too high under a MB/s preference, and
+     * the chart's own average line string-concatenated it into an eight-figure
+     * number: the exact total-plus-value bug this file fixed server-side,
+     * reproduced in the browser, on every range small enough not to bucket.
+     */
+    it("ships the full series as numbers, never raw strings", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {download: 100, upload: 50}),
+            at("2026-08-07T02:00:00.000Z", {download: "50", upload: "25"})
+        ], DAY);
+
+        assert.equal(stats.downsampled, false, "two rows were bucketed, so the raw path went untested");
+        assert.deepEqual(stats.data.download, [100, 50],
+            "a numeric-string row reaches the client payload as a string");
+        assert.deepEqual(stats.data.upload, [50, 25]);
+    });
+
+    it("draws a gap for a full-series value nothing can read", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {download: 100}),
+            at("2026-08-07T02:00:00.000Z", {download: "NaN"})
+        ], DAY);
+
+        assert.deepEqual(stats.data.download, [100, null],
+            "an unreadable value is shipped raw instead of drawn as the gap the chart knows");
+    });
+
+    /**
+     * The ping came along too. isMeasuredLatency asks typeof first - rightly,
+     * for the fabricated-zero question it answers - so a numeric-string ping
+     * was the one column still measured-and-absent-at-once: counted by
+     * Prometheus off the same row while every statistics reader dropped it.
+     * Read through metricValue before that gate, the way the other columns are.
+     */
+    it("reads a numeric-string ping everywhere the other columns are read", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {ping: 20}),
+            at("2026-08-07T02:00:00.000Z", {ping: "40"})
+        ], DAY, {offsetMinutes: 0});
+
+        assert.equal(stats.ping.max, 40, "the summary range never saw the string ping");
+        assert.deepEqual(stats.data.ping, [20, 40], "the chart drew a gap over a measured ping");
+        assert.equal(stats.hourlyAverages.find((bucket) => bucket.hour === 2).ping, 40);
+        // Two readings now: median 30, distances [10, 10], their median 10.
+        assert.equal(stats.consistency.ping.deviation, 10,
+            "the spread saw one reading where the range shows two");
+    });
+
     it("does not blow up a downsampled chart point", () => {
         const many = Array.from({length: 60}, (unused, index) =>
             at(`2026-08-07T04:${String(index).padStart(2, "0")}:00.000Z`,

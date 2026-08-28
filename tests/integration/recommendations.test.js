@@ -62,6 +62,14 @@ describe("createRecommendations", () => {
             {ping: 21, download: 190, upload: 95});
     });
 
+    // No behavioural case for the numeric-string sample here, deliberately: a
+    // straight-SQL UPDATE writing '500' into these DOUBLE columns comes back a
+    // number - sqlite's REAL affinity converts well-formed numeric text at
+    // write, and MySQL does the same - so a test through the database passes
+    // whatever the filter does, proving storage coercion rather than the code.
+    // The reads-through-metricValue contract is pinned at the source level in
+    // metricValues.test.js instead, where the layer matches the claim.
+
     /**
      * Regression: the sample was filtered out of listTests(), whose default
      * limit is 10 rows *including* failures. One failed test among the newest
