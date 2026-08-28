@@ -335,25 +335,115 @@ describe("what reaches a shell in the release workflow", () => {
      * next interpreter on the same line is one nobody can check by reading. jq's
      * --arg binds a value as data, which is what env: does for the shell.
      */
+    const JQ = /\bjq\b/;
+
+    // The flags whose value is the token after them, which is exactly what
+    // stands between `jq` and its program on the lines this is about. --arg
+    // takes two: the name it binds and the value bound to it.
+    const NAMED_VALUE_FLAGS = new Map([
+        ["--arg", 2], ["--argjson", 2], ["--slurpfile", 2], ["--rawfile", 2]
+    ]);
+
+    // Split on whitespace outside quotes, so a program carrying spaces - which
+    // `.version = $v` does - comes back as one token rather than three.
+    const tokensOf = (text) => text.match(/'[^']*'|"[^"]*"|\S+/g) ?? [];
+
+    const unquote = (token) => token.replace(/^(['"])([\s\S]*)\1$/, "$2");
+
+    /**
+     * The program jq was given: its first argument that is neither a flag nor a
+     * flag's value.
+     */
+    const programOf = (line) => {
+        const tokens = tokensOf(line.slice(line.search(JQ))).slice(1);
+
+        for (let index = 0; index < tokens.length; index++) {
+            const consumed = NAMED_VALUE_FLAGS.get(tokens[index]);
+
+            if (consumed !== undefined) index += consumed;
+            else if (!tokens[index].startsWith("-")) return unquote(tokens[index]);
+        }
+
+        return "";
+    };
+
+    /**
+     * A program that assigns or interpolates, which is the only kind this rule
+     * has anything to say about.
+     *
+     * The filter was every line carrying the word jq, and the demand on each was
+     * `--arg`. A read - `VERSION=$(jq -r .version package.json)` - would have
+     * failed it and been told to bind a value with --arg, which is advice for an
+     * argument that program does not take. A rule whose failure message is wrong
+     * for a correct line is one somebody eventually silences.
+     *
+     * `=` that is not `==`, `!=`, `<=` or `>=`, or a `$` anywhere in the
+     * program, which is where a value spliced by the shell would land.
+     */
+    const WRITES = /(^|[^=!<>])=([^=]|$)|\$/;
+
+    const rewriting = (source) => runBodies(source)
+        .flatMap(({lines}) => lines)
+        .filter((line) => JQ.test(line) && WRITES.test(programOf(line)));
+
+    const unbound = (source) => rewriting(source)
+        .filter((line) => !/\bjq\s+--arg\b/.test(line))
+        .map((line) => line.trim());
+
     it("hands jq the version as an argument rather than as program text", () => {
-        const invocations = runBodies(release)
-            .flatMap(({lines}) => lines)
-            .filter((line) => /\bjq\b/.test(line));
+        assert.notEqual(rewriting(release).length, 0, "nothing rewrites the version files with jq any more");
 
-        assert.notEqual(invocations.length, 0, "nothing rewrites the version files with jq any more");
-
-        const unbound = invocations
-            .filter((line) => !/\bjq\s+--arg\b/.test(line))
-            .map((line) => line.trim());
-
-        assert.deepEqual(unbound, [],
+        assert.deepEqual(unbound(release), [],
             "jq is handed a program rather than an argument; bind the value with --arg and read it as a jq variable");
 
-        const expanded = invocations
+        const expanded = rewriting(release)
             .filter((line) => /\.version\s*=\s*[\\"']*\$VERSION\b/.test(line))
             .map((line) => line.trim());
 
         assert.deepEqual(expanded, [],
             "the shell expands the version into the jq program before jq parses it, which is the splice this file spends two comments refusing");
+    });
+
+    /**
+     * And says nothing about a jq that only reads.
+     *
+     * There is no such line in the workflow, which is the whole reason this
+     * needs a copy: a narrowing that cannot be demonstrated against the tree is
+     * one nobody can tell from the rule it replaced, and the first person to add
+     * a read would be handed advice for a program that assigns nothing.
+     */
+    const withARead = () => [
+        release,
+        "      - name: Read the version back",
+        "        run: |",
+        "          VERSION=$(jq -r .version package.json)",
+        "          echo \"$VERSION\""
+    ].join("\n");
+
+    it("asks nothing of a jq that only reads", () => {
+        assert.ok(runBodies(withARead()).flatMap(({lines}) => lines).some((line) => JQ.test(line)
+            && line.includes("jq -r .version package.json")),
+            "the added read is not being walked at all, so this asserts nothing");
+
+        assert.deepEqual(unbound(withARead()), [],
+            "a jq that reads a value is told to bind it with --arg, which is advice for a program it does not have");
+    });
+
+    // And still refuses the shape it is for, which is what a narrowing risks: a
+    // filter that exempts one line too many is a rule that cannot fail at all.
+    it("still catches a version expanded into the program", () => {
+        const spliced = [
+            release,
+            "      - name: Bump it the way the comments above refuse",
+            "        run: |",
+            "          jq \".version = \\\"$VERSION\\\"\" package.json > tmp"
+        ].join("\n");
+
+        const reported = unbound(spliced);
+
+        assert.equal(reported.length, 1,
+            "the narrowing exempts the very splice this rule exists to refuse");
+        assert.match(reported[0], /jq\s+"\.version\s*=/,
+            "some other line was reported, so the splice is still going unnoticed");
     });
 });

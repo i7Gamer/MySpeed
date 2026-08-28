@@ -69,13 +69,24 @@ describe("taking ownership of an upgraded volume", () => {
      * And the privileges are dropped after it, not before. Reversed, the chown
      * runs as `bun` and silently changes nothing on the volume it exists to
      * repair - while the whole server goes on running as root.
+     *
+     * Asked of the root-only block rather than of the file, which is the same
+     * distinction the two paths above are read apart for. Searched whole, the
+     * drop satisfies this from anywhere: moved below the `fi` it is still after
+     * the chown and still in the file, so the assertion stayed green while root
+     * left the block as root and ran the server as uid 0 - and a `--user`
+     * container reached a `su-exec` it has no privilege to perform.
      */
     it("drops to the unprivileged account afterwards", () => {
-        const handover = entrypoint.indexOf("chown");
-        const drop = entrypoint.search(/su-exec\s+bun\b/);
+        const {asRoot, asAnyone} = paths();
+        const drop = asRoot.search(/su-exec\s+bun\b/);
 
-        assert.notEqual(drop, -1, "the container no longer drops out of root at all");
-        assert.ok(handover < drop, "privileges are dropped before the handover, which then changes nothing");
+        assert.notEqual(drop, -1,
+            "the container no longer drops out of root inside the block only root runs");
+        assert.doesNotMatch(asAnyone, /su-exec\s+bun\b/,
+            "the drop sits below the gate, so root leaves the block still root and a --user container runs it with nothing to drop");
+        assert.ok(asRoot.indexOf("chown") < drop,
+            "privileges are dropped before the handover, which then changes nothing");
     });
 });
 
@@ -180,17 +191,34 @@ describe("tightening a volume an older image left open", () => {
      * The `|| true` is not decoration either: `set -e` is on, so an unguarded
      * chmod that fails ends the container before the server it exists to start
      * has run at all.
+     *
+     * Asked of that attempt and not of everything below the gate. The silence
+     * being pinned is this line's, and scanning the whole remainder for the word
+     * `echo` fails on any line added down there for any reason - a start-up
+     * banner, a diagnostic - none of which is the warning on every start that
+     * this exists to prevent. A pin that fires on unrelated edits is one that
+     * gets deleted rather than read.
      */
     it("says nothing when it cannot, rather than warning on every start", () => {
-        const below = paths().asAnyone;
-        const attempt = below.split("\n").find((line) => /chmod o-rwx/.test(line));
+        const lines = paths().asAnyone.split("\n");
+        const at = lines.findIndex((line) => /chmod o-rwx/.test(line));
 
-        assert.ok(attempt, "the rootless path no longer attempts it at all");
+        assert.notEqual(at, -1, "the rootless path no longer attempts it at all");
+
+        // The attempt and whatever is joined to it, because the root path writes
+        // its own warning onto a continuation line - `… || \` and the echo
+        // beneath - so a warning written that way is on this construct and not
+        // on this line.
+        let last = at;
+        while (last + 1 < lines.length && /\\\s*$/.test(lines[last])) last++;
+
+        const attempt = lines.slice(at, last + 1).join("\n");
+
         assert.match(attempt, /2>\/dev\/null/,
             "the failure a rootless container over a root-owned volume always hits is printed to stderr on every start");
         assert.match(attempt, /\|\|\s*true/,
             "set -e turns a chmod this path is not allowed to make into a container that never starts the server");
-        assert.doesNotMatch(below, /\becho\b/,
+        assert.doesNotMatch(attempt, /\becho\b/,
             "the rootless path prints a warning for the case it was written to expect, which is a line of alarm on every start of every hardened deployment");
     });
 });

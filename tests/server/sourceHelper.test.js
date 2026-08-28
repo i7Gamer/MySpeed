@@ -736,6 +736,50 @@ describe("runBodies", () => {
         assert.doesNotMatch(bodies[0].text, /\$\{\{/, "the comment warning about a splice is read as one");
     });
 
+    /**
+     * But only the comments YAML itself would drop.
+     *
+     * Inside a block scalar there is no YAML left to comment: the whole block is
+     * one string, and a `${{ }}` on any line of it is substituted into that
+     * string before bash - or the `#` in front of it - is anywhere near the
+     * value. So `# note: ${{ github.event.pull_request.title }}` is a splice
+     * like any other, and stripping it here handed the scan written to find
+     * exactly that a body it had already been removed from. A carrier nobody
+     * would think to look for, reported clean by the check that exists for it.
+     */
+    it("keeps a shell comment inside a body, where the substitution still happens", () => {
+        const bodies = runBodies(workflow(
+            "        run: |",
+            "          # note: ${{ github.event.pull_request.title }}",
+            "          echo \"$VERSION\""
+        ));
+
+        assert.equal(bodies.length, 1);
+        assert.match(bodies[0].text, /\$\{\{/,
+            "a shell comment is stripped as though it were YAML's, so an expression spliced into one is invisible to every scan built on this");
+    });
+
+    /**
+     * And a header that states its own indentation is still a header.
+     *
+     * YAML lets a block scalar carry an indentation indicator beside the
+     * chomping one, in either order - `|2`, `>2-`, `|-2`. The pattern knew only
+     * the chomping half, so a header carrying a digit matched nothing, was taken
+     * for a one-liner, and the indicator itself came back as the body's first
+     * line - with the real body appended after it.
+     */
+    it("reads a block that states its own indentation", () => {
+        for (const header of ["|", "|-", ">+", "|2", ">2-", "|-2"]) {
+            const [body] = runBodies(workflow(
+                `        run: ${header}`,
+                "          echo one"
+            ));
+
+            assert.deepEqual(body.lines.map((line) => line.trim()), ["echo one"],
+                `"${header}" is not read as a block header, so the indicator is handed back as shell`);
+        }
+    });
+
     it("hands back each body as its lines and as one text", () => {
         const [body] = runBodies(workflow(
             "        run: |",

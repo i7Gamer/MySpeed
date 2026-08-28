@@ -293,6 +293,19 @@ export const tagHolding = (source, marker) => {
     return source.slice(source.lastIndexOf("<", at), source.indexOf(">", at) + 1);
 };
 
+/** A whole line that is nothing but a comment. */
+const HASH_COMMENT = /^\s*#/;
+
+/**
+ * The whole of a block scalar's header, which is more than `|` and `>`.
+ *
+ * YAML lets it carry an indentation indicator beside the chomping one, in either
+ * order - `|2`, `>2-`, `|-2`. A header carrying a digit matched nothing, so it
+ * was taken for a one-liner and the indicator came back as the body's own first
+ * line, with the real body appended underneath.
+ */
+const BLOCK_INDICATOR = /^\s*[|>](?:[1-9][-+]?|[-+][1-9]?)?\s*$/;
+
 /**
  * Shell-style sources with their comment lines removed, for the assertions
  * that must not be satisfied by prose. Whole lines only: a `#` mid-line is
@@ -300,7 +313,7 @@ export const tagHolding = (source, marker) => {
  */
 export const withoutHashComments = (source) => source
     .split("\n")
-    .filter((line) => !/^\s*#/.test(line))
+    .filter((line) => !HASH_COMMENT.test(line))
     .join("\n");
 
 /**
@@ -322,6 +335,17 @@ export const withoutHashComments = (source) => source
  * for one then finds the sentence saying it must not be there. Two copies of
  * this walk stripped at different places, and only one of them here.
  *
+ * Outside a block scalar only, which is where YAML's comments are. Inside one
+ * there is no YAML left to comment: the block is a single string, and a `${{ }}`
+ * on any line of it is substituted into that string long before bash - or the
+ * `#` standing in front of it - is anywhere near the value. Stripping those
+ * lines with the rest handed the scan that exists to find such a splice a body
+ * it had already been taken out of: a shell comment carrying
+ * `${{ github.event.pull_request.title }}` came back clean, which is the one
+ * carrier nobody would think to look for reported safe by the check written for
+ * it. Body lines come back verbatim now, and a caller that wants them without
+ * prose has withoutHashComments above.
+ *
  * There were two copies, and they had drifted on every rule that matters: where
  * a block ends, whether a `run:` with no `|` or `>` is followed at all, and what
  * is handed back. Both are answered here the wider way - a plain one-liner is
@@ -329,10 +353,14 @@ export const withoutHashComments = (source) => source
  * - so neither caller loses anything it was reading before.
  */
 export const runBodies = (source) => {
-    const lines = withoutHashComments(source).split("\n");
+    const lines = source.split("\n");
     const bodies = [];
 
     for (let index = 0; index < lines.length; index++) {
+        // Out here a `#` line is YAML's own, and it is the prose these
+        // assertions must not be satisfied by.
+        if (HASH_COMMENT.test(lines[index])) continue;
+
         const opened = /^(\s*)(-\s+)?run:(.*)$/.exec(lines[index]);
         if (!opened) continue;
 
@@ -347,7 +375,8 @@ export const runBodies = (source) => {
 
         // The block indicator is not part of the body; anything else on the line
         // is a one-liner and is.
-        const opener = opened[3].replace(/^\s*[|>][-+]?\s*$/, "");
+        const block = BLOCK_INDICATOR.test(opened[3]);
+        const opener = block ? "" : opened[3];
         const body = opener.trim() === "" ? [] : [opener];
 
         while (index + 1 < lines.length) {
@@ -356,8 +385,14 @@ export const runBodies = (source) => {
             // A blank line inside a block scalar is still part of it.
             if (line.trim() !== "" && line.length - line.trimStart().length <= column) break;
 
-            body.push(line);
             index++;
+
+            // And a `#` line inside one is shell rather than YAML, so it stays.
+            // A plain scalar's continuation lines are still YAML, and a comment
+            // among those is one.
+            if (!block && HASH_COMMENT.test(line)) continue;
+
+            body.push(line);
         }
 
         bodies.push({lines: body, text: body.join("\n")});
