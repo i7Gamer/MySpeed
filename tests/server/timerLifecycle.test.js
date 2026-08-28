@@ -42,6 +42,19 @@ describe("the schedule offset stays inside the interval", () => {
     it("still fixes the minutely offset at the floor", () => {
         assert.equal(timer.calculateMaxDelay("* * * * *"), timer.OFFSET_MIN_DELAY_MS);
     });
+
+    /**
+     * And so does anything tighter, which is the whole domain the sub-minute
+     * branch used to claim. That branch set a cap of its own, but the cap was
+     * never what decided the answer: half of an interval that short is already
+     * below the floor, so the floor is what comes back whatever the cap holds.
+     * Pinned from the outside, by the only thing that can tell the difference,
+     * so removing the branch is the simplification it looks like rather than a
+     * change of behaviour.
+     */
+    it("fixes a sub-minute offset at the floor as well", () => {
+        assert.equal(timer.calculateMaxDelay("*/10 * * * * *"), timer.OFFSET_MIN_DELAY_MS);
+    });
 });
 
 /**

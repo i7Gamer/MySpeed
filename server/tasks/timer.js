@@ -116,10 +116,13 @@ export const calculateMaxDelay = (cron) => {
         const intervalMs = next2 - next1;
         const intervalMinutes = intervalMs / MS_PER_MINUTE;
 
-        // The interval-agnostic tier, the same steps as before.
+        // The interval-agnostic tier, the same steps as before. Nothing is said
+        // here about intervals of a minute or less: half of one is already at or
+        // below the floor the return applies, so the floor decides those
+        // whatever cap they are handed, and a tier of their own only looked as
+        // though it were the thing deciding them.
         let cap;
-        if (intervalMinutes <= 1) cap = 30 * 1000;
-        else if (intervalMinutes <= 30) cap = 2 * MS_PER_MINUTE;
+        if (intervalMinutes <= 30) cap = 2 * MS_PER_MINUTE;
         else if (intervalMinutes <= 60) cap = 3 * MS_PER_MINUTE;
         else cap = 5 * MS_PER_MINUTE;
 
