@@ -115,9 +115,17 @@ export const Dialog = ({open, onClose, className, disableClose, label, children}
         // dialog box's own fade ends the close.
         if (e.target !== dialogRef.current) return;
 
-        // And a reopen within the 300ms fade has already turned `open` back on -
-        // finishing the close now would unmount the dialog the reader reopened.
-        if (e.animationName === "fadeOut" && !open) {
+        // The closing flag, not the `open` prop, is what says a close is
+        // underway. Escape, the X and the backdrop all go through handleClose,
+        // which never touches `open` - the parent only learns of the close from
+        // the onClose below - so `open` is still true for the whole of an
+        // internally started fade, and gating on it left every such dialog
+        // stuck: faded to invisible, still mounted, its transparent backdrop
+        // swallowing every click on the app. A reopen within the fade is the
+        // one ending that must not finish the close, and the effect above has
+        // already answered it - it clears this flag and strips the hidden
+        // classes, which cancels the fade before its end can fire.
+        if (e.animationName === "fadeOut" && isClosingRef.current) {
             setVisible(false);
             isClosingRef.current = false;
             onClose?.();

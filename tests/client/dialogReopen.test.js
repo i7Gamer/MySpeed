@@ -40,9 +40,9 @@ const element = () => {
 describe("the dialog's fade-out end", () => {
     const box = {name: "the dialog box"};
 
-    const ended = ({open, target}) => {
+    const ended = ({open, isClosing = true, target}) => {
         const seen = {setVisible: [], closed: 0};
-        const isClosingRef = {current: true};
+        const isClosingRef = {current: isClosing};
         const handler = lift("const handleAnimationEnd", {
             open,
             dialogRef: {current: box},
@@ -63,11 +63,34 @@ describe("the dialog's fade-out end", () => {
         assert.equal(seen.closed, 0);
     });
 
-    it("does not tear down a dialog reopened mid-fade", () => {
-        const {seen} = ended({open: true, target: box});
+    /**
+     * The state every Escape, X and backdrop click produces: handleClose set
+     * the closing flag and started the fade, and `open` is still true, because
+     * the parent only learns of the close from the onClose this handler fires.
+     * Gating the completion on `!open` therefore blocked every close a dialog
+     * started for itself - it faded to invisible and stayed mounted, with the
+     * transparent backdrop swallowing every click on the app.
+     */
+    it("finishes a close the dialog started for itself", () => {
+        const {seen, isClosingRef} = ended({open: true, isClosing: true, target: box});
+
+        assert.deepEqual(seen.setVisible, [false],
+            "an internally started close never completes, because `open` is still true mid-fade");
+        assert.equal(seen.closed, 1, "the parent is never told the dialog closed");
+        assert.equal(isClosingRef.current, false, "the closing flag stays set after the close");
+    });
+
+    /**
+     * A reopen within the fade is told apart by the closing flag, not by
+     * `open`: the reopen effect has already cleared the flag and stripped the
+     * hidden classes - cancelling the animation - so a fade-out end arriving
+     * with the flag down belongs to a close that was called off.
+     */
+    it("does not tear down a dialog whose close was called off", () => {
+        const {seen} = ended({open: true, isClosing: false, target: box});
 
         assert.deepEqual(seen.setVisible, [],
-            "reopening within the 300ms fade still unmounts the dialog when the fade ends");
+            "a cancelled close still unmounts the dialog when its fade ends");
         assert.equal(seen.closed, 0, "the reopened dialog's onClose fires as if it had closed");
     });
 
