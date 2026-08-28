@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import { parseCliOutput } from './providers/cliOutput.js';
 import { parseProgressLine } from './providers/progress.js';
 import { isMuslLinux, MUSL_CLOUDFLARE_REASON } from './providers/libc.js';
@@ -481,6 +482,17 @@ export default async (mode, serverId, serverUrl, onProgress) => {
         const stdout = streamAccumulator();
         const stderr = streamAccumulator();
 
+        // One decoder per stream, because spawn is given no encoding and each
+        // 'data' chunk is a raw Buffer. buffer.toString() decodes each chunk in
+        // isolation, so a read boundary inside a 2-4 byte UTF-8 sequence became
+        // replacement characters that still parse as JSON - a server named
+        // "Telefónica" stored as "Telef��nica" and carried into the
+        // detail pane, the CSV export and the Prometheus server_host label.
+        // StringDecoder holds an incomplete sequence back until its next byte
+        // arrives.
+        const stdoutDecoder = new StringDecoder("utf8");
+        const stderrDecoder = new StringDecoder("utf8");
+
         // A CLI that accepts the connection and then stalls would hold the run
         // lock for the lifetime of the process, and no scheduled test would
         // ever run again.
@@ -506,7 +518,7 @@ export default async (mode, serverId, serverUrl, onProgress) => {
             // to land last rather than the actual failure. Bounded - see
             // streamAccumulator - so a CLI wedged in a logging loop cannot grow
             // the heap for its whole three-minute timeout.
-            stderr.append(buffer.toString());
+            stderr.append(stderrDecoder.write(buffer));
         });
 
         // Holds the tail of a chunk that ended mid-line: the CLI writes one
@@ -514,7 +526,7 @@ export default async (mode, serverId, serverUrl, onProgress) => {
         let incomplete = '';
 
         testProcess.stdout.on('data', (buffer) => {
-            const text = buffer.toString();
+            const text = stdoutDecoder.write(buffer);
             stdout.append(text);
 
             if (!onProgress || !provider.streamsProgress) return;
