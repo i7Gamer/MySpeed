@@ -16,9 +16,12 @@ import { iperfEndpointProblem } from "../../server/controller/targets.js";
  */
 
 // Hosts judged whole, with no port appended: names, literals, and every
-// spelling of junk the two sides must refuse identically.
+// spelling of junk the two sides must refuse identically - the bracket-misuse
+// spellings included, which both sides used to accept and splitEndpoint then
+// dialled verbatim.
 const WHOLE_HOSTS = ["10.0.0.5", "nas.lan", "localhost", "fd00::1", "fd00::1:5201",
-    "[fd00::1]", "[fd00::1", "[]", "[]:5201", ":5201", "", "   ", "nas lan",
+    "[fd00::1]", "[fd00::1", "[fd00::1:5201", "fd00::1]", "nas[0].lan",
+    "[fd00::1]x:5201", "[[fd00::1]]", "[]", "[]:5201", ":5201", "", "   ", "nas lan",
     "http://iperf.lan:5201", "iperf.lan/path", "user@nas.lan", " 10.0.0.5:5201 "];
 
 /**

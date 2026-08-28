@@ -298,6 +298,13 @@ export const REGISTRY = {
                 // Bounds the one thing that would otherwise hang until the
                 // run's own three-minute timeout: a host that accepts nothing.
                 '--connect-timeout', String(IPERF_CONNECT_TIMEOUT_MS),
+                // The family of the bound address, the way the cloudflare
+                // builder chooses --ipv4/--ipv6: a dual-stack hostname
+                // resolves in both families and getaddrinfo's preference need
+                // not match the bound source, so iperf3 could connect over
+                // the family the --bind address cannot bind - and a reachable
+                // server read as "unable to connect" on every scheduled run.
+                iface.address.includes(':') ? '-6' : '-4',
                 // The interface every other provider is also bound to, so the
                 // measurement describes the line the instance is watching.
                 '--bind', iface.address

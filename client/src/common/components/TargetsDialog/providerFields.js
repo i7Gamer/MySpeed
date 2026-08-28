@@ -59,6 +59,17 @@ export const iperfHostAccepted = (endpoint) => {
 
     if (value === "") return false;
     if (/\s/.test(value)) return false;
+
+    // Brackets wrap the whole address once, with nothing but an optional
+    // :port after the "]" - the rule the server states with its own message.
+    const closing = value.indexOf("]");
+    if (value.includes("[") || closing !== -1) {
+        const wrapped = value.startsWith("[") && closing !== -1
+            && value.lastIndexOf("[") === 0 && closing === value.lastIndexOf("]");
+        const rest = closing === -1 ? "" : value.slice(closing + 1);
+
+        if (!wrapped || (rest !== "" && !rest.startsWith(":"))) return false;
+    }
     // A host and a port, not a URL: an iperf3 server is dialled directly and
     // there is no scheme to speak of, so a pasted address is refused here
     // rather than by the server two steps later.

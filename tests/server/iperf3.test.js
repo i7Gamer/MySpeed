@@ -231,6 +231,26 @@ describe("the arguments an iperf3 run is given", () => {
     });
 
     /**
+     * The family flag beside the bind, the way the cloudflare builder already
+     * chooses --ipv4/--ipv6. A dual-stack hostname resolves in both families
+     * and getaddrinfo's preference need not match the bound source - iperf3
+     * then connects over the family the --bind address cannot bind, and a
+     * reachable server reads as "unable to connect" on every scheduled run.
+     */
+    it("holds the connection to the bound address's family", () => {
+        assert.ok(argsFor("nas.lan").includes("-4"), "an IPv4 bind does not pin the family");
+        assert.ok(!argsFor("nas.lan").includes("-6"));
+    });
+
+    it("asks for IPv6 when the instance measures on it", () => {
+        const args = REGISTRY.iperf3.buildArgs({endpoint: "nas.lan"},
+            {name: "eth0", address: "fd00::9"}).args;
+
+        assert.ok(args.includes("-6"), "an IPv6 bind does not pin the family");
+        assert.ok(!args.includes("-4"));
+    });
+
+    /**
      * Line-delimited rather than plain --json, which pretty-prints one object
      * across many lines - none of which parse on their own, so the shared
      * line-oriented parser would have found nothing at all.
@@ -312,6 +332,29 @@ describe("what an iperf3 target may name", () => {
         assert.match(iperfEndpointProblem("  "), /needs a host/);
         assert.match(iperfEndpointProblem("nas lan"), /spaces/);
         assert.match(iperfEndpointProblem(":5201"), /needs a host/);
+    });
+
+    /**
+     * Brackets mean exactly one thing: the whole address wrapped once, with
+     * nothing but an optional :port after the "]". Anything else used to be
+     * read as a host with a port - "[fd00::1" swallows its own port - and
+     * accepted, and splitEndpoint then dials the brackets verbatim, which
+     * getaddrinfo can never resolve. The target was created happily and failed
+     * every scheduled run, with the reason three clicks away in a row's error
+     * column - the exact fate the door exists to refuse.
+     */
+    it("refuses brackets that do not wrap the whole address", () => {
+        assert.match(iperfEndpointProblem("[fd00::1"), /[Bb]rackets/);
+        assert.match(iperfEndpointProblem("[fd00::1:5201"), /[Bb]rackets/);
+        assert.match(iperfEndpointProblem("fd00::1]"), /[Bb]rackets/);
+        assert.match(iperfEndpointProblem("nas[0].lan"), /[Bb]rackets/);
+        assert.match(iperfEndpointProblem("[fd00::1]x:5201"), /[Bb]rackets/);
+        assert.match(iperfEndpointProblem("[[fd00::1]]"), /[Bb]rackets/);
+    });
+
+    it("still accepts the bracketed spellings that are well formed", () => {
+        assert.equal(iperfEndpointProblem("[fd00::1]"), null);
+        assert.equal(iperfEndpointProblem("[fd00::1]:5201"), null);
     });
 
     /**

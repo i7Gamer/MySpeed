@@ -60,6 +60,24 @@ export const iperfEndpointProblem = (endpoint) => {
     if (value.includes("/") || value.includes("@"))
         return "Give a host and port, like 10.0.0.5:5201 - not a URL";
 
+    /*
+     * Brackets mean exactly one thing: the whole address wrapped once, with
+     * nothing but an optional :port after the "]". Anything else used to slip
+     * through - "[fd00::1" reads below as a host with its own port swallowed -
+     * and splitEndpoint then dials the brackets verbatim, which getaddrinfo
+     * can never resolve. The target was created happily and failed every
+     * scheduled run, which is the exact fate this door exists to refuse.
+     */
+    const closing = value.indexOf("]");
+    if (value.includes("[") || closing !== -1) {
+        const wrapped = value.startsWith("[") && closing !== -1
+            && value.lastIndexOf("[") === 0 && closing === value.lastIndexOf("]");
+        const rest = closing === -1 ? "" : value.slice(closing + 1);
+
+        if (!wrapped || (rest !== "" && !rest.startsWith(":")))
+            return "Brackets belong around the whole address, like [fd00::1]:5201";
+    }
+
     // The last colon separates the port, so a bracketed IPv6 literal keeps its
     // own. splitEndpoint reads it the same way when the run is built.
     const separator = value.lastIndexOf(":");
