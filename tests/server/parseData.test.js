@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { parseData, parseOokla, parseLibre, parseCloudflare } from "../../server/util/providers/parseData.js";
 import { FAILED_TEST, isFailedTest } from "../../server/util/testOutcome.js";
+import { readSource } from "../helpers/source.js";
 
 /**
  * These functions turn raw provider CLI output into the exact numbers persisted
@@ -854,6 +855,41 @@ describe("parseData", () => {
 
         assert.equal(parsed.download, 10);
         assert.equal(parsed.upload, 5);
+    });
+
+    /**
+     * A numeric string is a measurement, not a failure. The librespeed CLI
+     * already reports jitter as a string, and metricValue documents the same
+     * spelling across imported histories - so a parser drift to string speeds
+     * must be stored as the number it spells, not rewritten into the failure
+     * placeholder, recorded as a failed run and retried while the line was
+     * fine. Judged by metricValue, the one reader that owns this call.
+     */
+    it("stores a numeric string as the number it spells", () => {
+        const parsed = parseData("libre", {
+            ping: 12.7, jitter: "3.456", elapsed: 8000, download: "90.5", upload: "40.25",
+            server: {name: "Berlin", url: "http://berlin.example.net"}
+        });
+
+        assert.equal(parsed.download, 90.5,
+            "a numeric-string speed was rewritten into the failure placeholder");
+        assert.equal(parsed.upload, 40.25);
+    });
+
+    /**
+     * One list of required measurements, owned by testOutcome - the module
+     * whose impossibleMeasurement iterates it. A private copy here must be
+     * kept in step by hand, and a fourth required column added to one list
+     * would silently not be normalised (or not be judged) by the other.
+     */
+    it("shares testOutcome's list of required measurements", async () => {
+        const outcome = await import("../../server/util/testOutcome.js");
+
+        assert.deepEqual(outcome.REQUIRED_MEASUREMENTS, ["ping", "download", "upload"],
+            "the list is not exported, so the dispatcher keeps a private copy that can drift");
+        assert.doesNotMatch(readSource("server/util/providers/parseData.js"),
+            /const REQUIRED_MEASUREMENTS/,
+            "the dispatcher still declares its own copy of the list");
     });
 });
 

@@ -1,7 +1,8 @@
 // The placeholder a failed run stores in every measurement column, taken from
 // the module that owns the judgement rather than written out as -1 here: what
 // this file produces has to be what isFailedTest recognises.
-import { FAILED_TEST } from '../testOutcome.js';
+import { FAILED_TEST, REQUIRED_MEASUREMENTS } from '../testOutcome.js';
+import { metricValue } from '../metricValue.js';
 
 // The inverse of the split the runner already made, taken from the module that
 // owns both halves rather than spelled out here as `${host}:${port}` - which is
@@ -558,10 +559,6 @@ export const parseIperf3 = (test) => {
     };
 };
 
-// The three columns a row cannot be without - they are NOT NULL, and a value
-// that is not a readable number has nowhere honest to go.
-const REQUIRED_MEASUREMENTS = ["ping", "download", "upload"];
-
 export const parseData = (provider, data) => {
     const parsed = (() => {
         switch (provider) {
@@ -587,8 +584,16 @@ export const parseData = (provider, data) => {
     // over it. As the placeholder it takes the failed path executeTarget
     // already has: all three unreadable read as a failed run, one unreadable
     // beside good figures as an impossible measurement, retried once.
-    for (const key of REQUIRED_MEASUREMENTS)
-        if (!Number.isFinite(parsed[key])) parsed[key] = FAILED_TEST;
+    //
+    // Judged by metricValue, not a bare finite check: a numeric *string* is a
+    // measurement - this very CLI family reports jitter as one - and rewriting
+    // it into the placeholder would record a failed run and retry a line that
+    // was fine. metricValue reads it as the number it spells, which is also
+    // what gets stored; only what it refuses becomes the placeholder.
+    for (const key of REQUIRED_MEASUREMENTS) {
+        const reading = metricValue(parsed[key]);
+        parsed[key] = reading === null ? FAILED_TEST : reading;
+    }
 
     return parsed;
 };

@@ -59,8 +59,12 @@ export const isSuccessfulTest = (test) => !isFailedTest(test);
 /**
  * The three columns a row cannot be without. They are NOT NULL, so a value that
  * cannot be read has nowhere honest to go and the run has to fail instead.
+ *
+ * Exported for the parseData dispatcher, which normalises exactly these three
+ * at the door - one list, so a fourth required column cannot be judged here
+ * and left unnormalised there, or the other way round.
  */
-const REQUIRED_MEASUREMENTS = ["ping", "download", "upload"];
+export const REQUIRED_MEASUREMENTS = ["ping", "download", "upload"];
 
 /**
  * Which required measurement came back below zero, or null.
