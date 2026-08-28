@@ -94,7 +94,6 @@ describe("what the line does at a gap", () => {
 describe("lonePointRadius", () => {
     const dense = {radius: 0, hoverRadius: 4};
     const normal = {radius: 3, hoverRadius: 6};
-    const compact = {radius: 0, hoverRadius: 0};
 
     const at = (data, index) => ({dataset: {data}, dataIndex: index});
     const point = (y) => ({x: 1, y});
