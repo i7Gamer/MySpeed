@@ -13,7 +13,7 @@ export const setState = (state = "ping") => {
 };
 
 /**
- * How long a result still speaks for the line that produced it.
+ * How long a hand run's result still speaks for the line that produced it.
  *
  * A failure stands until something newer replaces it, and for a scheduled
  * target something newer arrives every round. A target that runs only by hand
@@ -26,20 +26,40 @@ export const setState = (state = "ping") => {
  *
  * A day, which is the span /status already calls recent, and long enough that
  * a failure somebody has just seen is still reported while a verdict about a
- * line nobody is measuring falls silent. Nothing changes for a scheduled
- * target: its newest row is at most an interval old.
+ * line nobody is measuring falls silent.
+ *
+ * Exported for the test that asks where the boundary falls, which has a `now`
+ * to pass and no wish to wait a day for it.
  */
 const RESULT_SPEAKS_FOR_HOURS = 24;
-const RESULT_SPEAKS_FOR_MS = RESULT_SPEAKS_FOR_HOURS * 60 * 60 * 1000;
+export const RESULT_SPEAKS_FOR_MS = RESULT_SPEAKS_FOR_HOURS * 60 * 60 * 1000;
 
 /**
- * Whether a stored row is recent enough to describe the line now.
+ * Whether a stored row still describes its line now.
  *
- * A row whose stamp cannot be read says nothing about when it was measured -
- * an imported history can carry one - and is not allowed to hold the check
- * down on the strength of a date nobody can check.
+ * The horizon applies to a target nothing re-measures, and to no other, which
+ * it did not: applied to every target it says the opposite of what it means.
+ * healthchecks' bare URL is the *success* endpoint and the keep-alive pings
+ * every minute by design - it is also the only signal that MySpeed itself is
+ * alive - so silence is not among the things it can say. "This verdict is too
+ * old to speak" therefore came out as "the line is up", and an instance that
+ * was paused, stopped or simply measuring on a weekly cron reported every
+ * watched line healthy while the newest thing it had measured was a failure.
+ *
+ * So a scheduled line's verdict stands until its next round replaces it,
+ * however long that round takes to come - which is also why no date is read
+ * for one. Only a line nothing is going to measure again is aged out, and
+ * there a row whose stamp cannot be read - an imported history can carry one -
+ * is not allowed to hold the check down on the strength of a date nobody can
+ * check.
+ *
+ * The flag is read loosely on purpose: sqlite hands booleans back as 0/1 under
+ * the global raw mapping, so `enabled === false` matches nothing at all and
+ * would leave every target ageing out exactly as before.
  */
-const stillSpeaks = (row, now) => {
+const stillSpeaks = (target, row, now) => {
+    if (target.enabled) return true;
+
     const measured = Date.parse(row?.created);
 
     return Number.isFinite(measured) && now - measured <= RESULT_SPEAKS_FOR_MS;
@@ -73,9 +93,12 @@ const stillSpeaks = (row, now) => {
  *
  * alertingScope answers null only when there is no target at all - the
  * pre-migration install, and the demo, whose rows carry no targetId - and there
- * the instance-wide latest is the only answer there is. An empty scope is the
- * other question and gets the other answer: targets exist and none of them
- * alert, so nothing is being watched and there is nothing to report.
+ * the instance-wide latest is the only answer there is. That install has one
+ * line and the global cron re-measures it, with no schedule flag to read, so
+ * nothing ages out on that path and the newest row is simply the answer. An
+ * empty scope is the other question and gets the other answer: targets exist
+ * and none of them alert, so nothing is being watched and there is nothing to
+ * report.
  *
  * Exported because the round asks it too: a round that skipped the failing
  * line - held by a provider refusal, cut short by a pause - would otherwise
@@ -84,15 +107,21 @@ const stillSpeaks = (row, now) => {
  * about the same lines.
  */
 export const watchedFailureStands = async (now = Date.now()) => {
-    const scope = targetsController.alertingScope(await targetsController.listAll());
+    const all = await targetsController.listAll();
+    const scope = targetsController.alertingScope(all);
 
-    const speaks = (row) => isFailedTest(row) && stillSpeaks(row, now);
+    if (scope === null) return isFailedTest(await getLatest());
 
-    if (scope === null) return speaks(await getLatest());
+    // The scope as rows rather than as ids: whether a verdict is still current
+    // is a question about the target's schedule, and reading it off the scope
+    // itself is what keeps the two from drifting into disagreeing about which
+    // lines are watched.
+    const watched = all.filter((target) => scope.includes(target.id));
 
-    const latests = await Promise.all(scope.map((id) => getLatest(id)));
+    const verdicts = await Promise.all(watched.map(async (target) =>
+        ({target, row: await getLatest(target.id)})));
 
-    return latests.some(speaks);
+    return verdicts.some(({target, row}) => isFailedTest(row) && stillSpeaks(target, row, now));
 };
 
 /**

@@ -4,8 +4,13 @@ import { bootServer, api, seedTests } from "./helpers/boot.js";
 
 let server;
 let sendCurrent;
+let watchedFailureStands;
+let RESULT_SPEAKS_FOR_MS;
 
 const PING_URL = "https://hc.example.net/ping/2f1c8a90";
+
+const A_DAY_MS = 24 * 60 * 60 * 1000;
+const DAYS_STALE = 3;
 
 const FAILED = {ping: -1, download: -1, upload: -1, error: "no route to host"};
 const SUCCEEDED = {ping: 12, download: 100, upload: 50, error: null};
@@ -37,7 +42,8 @@ const keepAlivePing = async () => {
 
 before(async () => {
     server = await bootServer();
-    ({sendCurrent} = await import("../../server/tasks/integrations.js"));
+    ({sendCurrent, watchedFailureStands, RESULT_SPEAKS_FOR_MS} =
+        await import("../../server/tasks/integrations.js"));
 
     await api(server.baseUrl, "/integrations/healthChecks", {
         method: "PUT",
@@ -119,8 +125,7 @@ describe("the healthChecks keep-alive", () => {
 
         // Well past the window a result speaks for - see the pair of cases
         // about a target nothing re-measures.
-        const A_DAY_MS = 24 * 60 * 60 * 1000;
-        const LONG_AGO = new Date(Date.now() - 3 * A_DAY_MS).toISOString();
+        const LONG_AGO = new Date(Date.now() - DAYS_STALE * A_DAY_MS).toISOString();
 
         const NAS_ENDPOINT = "10.0.0.5:5201";
 
@@ -310,6 +315,65 @@ describe("the healthChecks keep-alive", () => {
         });
 
         /**
+         * And the line the horizon must not touch: a *scheduled* target.
+         *
+         * The horizon was written for a target nothing re-measures, and applied
+         * to every target it says the opposite of what it means. healthchecks'
+         * bare URL is the *success* endpoint, so "this verdict is too old to
+         * speak" came out as "the line is up" - and an instance that is paused,
+         * stopped, or simply measuring on a weekly cron reported every watched
+         * line healthy while the newest thing it had measured was a failure.
+         * Silence is not one of the things the keep-alive can say; it pings
+         * every minute by design, because it is also the signal that MySpeed
+         * itself is alive.
+         *
+         * A scheduled line has a next round. Its verdict stands until that
+         * round replaces it, however long the round takes to come.
+         */
+        it("keeps the check down for a scheduled line nothing has measured in days", async () => {
+            const [fibre] = await withTargets([
+                {name: "Fibre", provider: "ookla", alerts: true, sortOrder: 0}
+            ]);
+
+            await seedTests(server.tests, [{created: LONG_AGO, targetId: fibre.id, ...FAILED}]);
+
+            assert.deepEqual(await keepAlivePing(), [`${PING_URL}/fail`],
+                "a paused instance reported its watched line up while the newest thing it measured was a failure");
+        });
+
+        /**
+         * Where the horizon actually falls, asked of the read rather than of
+         * the ping: `now` is a parameter precisely so this does not have to
+         * wait a day, and nothing was passing it.
+         */
+        describe("how long a hand run's verdict speaks", () => {
+            const boxOnly = async () => {
+                const [box] = await withTargets([
+                    {name: "Box", provider: "iperf3", endpoint: NAS_ENDPOINT, alerts: true,
+                        enabled: false, sortOrder: 0}
+                ]);
+
+                await seedTests(server.tests, [{created: LATER, targetId: box.id, ...FAILED}]);
+
+                return Date.parse(LATER);
+            };
+
+            it("speaks right up to the horizon", async () => {
+                const measured = await boxOnly();
+
+                assert.equal(await watchedFailureStands(measured + RESULT_SPEAKS_FOR_MS), true,
+                    "a failure fell silent before the window it is given was over");
+            });
+
+            it("stops speaking past it", async () => {
+                const measured = await boxOnly();
+
+                assert.equal(await watchedFailureStands(measured + RESULT_SPEAKS_FOR_MS + 1), false,
+                    "a hand run that failed long ago still holds the check down for every line");
+            });
+        });
+
+        /**
          * A target exists, and the rows predate the migration that introduced
          * targets - so they carry no targetId and belong to no scope. Nothing
          * that is being watched has failed, and the ping says so rather than
@@ -357,6 +421,20 @@ describe("the healthChecks keep-alive", () => {
         // after it had been cleared or never set.
         assert.deepEqual(await keepAlivePing(), [`${PING_URL}/fail`]);
         assert.deepEqual(await keepAlivePing(), [`${PING_URL}/fail`]);
+    });
+
+    /**
+     * The pre-target install, whose rows carry no targetId at all. It has one
+     * line, the global cron re-measures it, and there is no schedule flag to
+     * read - so nothing here ages out and the newest row is simply the answer.
+     */
+    it("still reports a failure older than a day when there are no targets", async () => {
+        await seedTests(server.tests, [
+            {created: new Date(Date.now() - DAYS_STALE * A_DAY_MS).toISOString(), ...FAILED}
+        ]);
+
+        assert.deepEqual(await keepAlivePing(), [`${PING_URL}/fail`],
+            "an instance that stopped testing days ago reported its line up");
     });
 
     // An install that has never run a test has no failure to report, and the
