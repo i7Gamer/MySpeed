@@ -238,6 +238,29 @@ export function gradeForIncrease(increase) {
 }
 
 /**
+ * A stored latency column as a non-negative number, or null.
+ *
+ * The same judgement as the server's usableFigure, which this bundle cannot
+ * import: a numeric string is read rather than refused, because a history
+ * imported before the columns were validated can hold "42" where a number
+ * belongs - and the statistics read those rows, so a bare typeof here would
+ * grade a range and the result beside it from different rows. Junk, the empty
+ * string, non-finite values and the negative failure placeholders are no
+ * readings. tests/server/loadedLatencyAgreement.test.js pins the mirror.
+ */
+const readableFigure = (value) => {
+    if (typeof value === "number") return Number.isFinite(value) && value >= 0 ? value : null;
+
+    // Only a string, and only one that is entirely a number: Number("") is 0,
+    // so a bare cast would read an empty column as a zero-millisecond ping.
+    if (typeof value !== "string" || value.trim() === "") return null;
+
+    const figure = Number(value);
+
+    return Number.isFinite(figure) && figure >= 0 ? figure : null;
+};
+
+/**
  * How much latency one transfer added, which is what the grades are read
  * against.
  *
@@ -257,8 +280,9 @@ export function gradeForIncrease(increase) {
  * tests/server/loadedLatencyAgreement.test.js pins the two to each other.
  */
 export function latencyIncrease(loaded, ping) {
-    for (const value of [loaded, ping])
-        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+    const loadedFigure = readableFigure(loaded);
+    const pingFigure = readableFigure(ping);
+    if (loadedFigure === null || pingFigure === null) return null;
 
     // A fabricated idle ping is no baseline. 0 is the sentinel a successful
     // run stores when nobody measured the latency (the server's
@@ -266,9 +290,9 @@ export function latencyIncrease(loaded, ping) {
     // a real 0 ms the whole loaded latency reads as *added* latency - an F
     // grade for a line that was fine. The server's loadedIncrease skips the
     // same zero, and loadedLatencyAgreement.test.js holds the two together.
-    if (ping === 0) return null;
+    if (pingFigure === 0) return null;
 
-    return Math.max(0, parseFloat((loaded - ping).toFixed(INCREASE_DECIMALS)));
+    return Math.max(0, parseFloat((loadedFigure - pingFigure).toFixed(INCREASE_DECIMALS)));
 }
 
 export function bufferbloat(test) {
@@ -281,11 +305,13 @@ export function bufferbloat(test) {
     //
     // Both directions, before the worse of them is taken: Math.max(null, 5) is
     // 5, so a single unmeasured direction would otherwise be graded as though
-    // the other one were the whole story. The ping is guarded below.
-    for (const value of [downloadLatency, uploadLatency])
-        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+    // the other one were the whole story. The ping is guarded in
+    // latencyIncrease, through the same reading.
+    const download = readableFigure(downloadLatency);
+    const upload = readableFigure(uploadLatency);
+    if (download === null || upload === null) return null;
 
-    const increase = latencyIncrease(Math.max(downloadLatency, uploadLatency), ping);
+    const increase = latencyIncrease(Math.max(download, upload), ping);
     if (increase === null) return null;
 
     return {increase, grade: gradeForIncrease(increase)};

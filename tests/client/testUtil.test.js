@@ -406,10 +406,21 @@ describe("latencyIncrease", () => {
     // A failed run stores -1 in both columns; a provider that measures no loaded
     // latency stores nothing at all. Neither is an increase of zero.
     it("has no answer for anything that is not a pair of measurements", () => {
-        for (const value of [null, undefined, NaN, Infinity, -1, "30", {}]) {
+        for (const value of [null, undefined, NaN, Infinity, -1, "auto", "", {}]) {
             assert.equal(latencyIncrease(value, 10), null, `loaded ${String(value)}`);
             assert.equal(latencyIncrease(50, value), null, `ping ${String(value)}`);
         }
+    });
+
+    // The defensive numeric-string spelling an imported history can hold. The
+    // server's statistics read it (usableFigure), so refusing it here would
+    // grade a range and the result beside it from different rows -
+    // tests/server/loadedLatencyAgreement.test.js pins the mirror.
+    it("reads a latency spelt as text, the way the server does", () => {
+        assert.equal(latencyIncrease("50", 10), 40);
+        assert.equal(latencyIncrease(50, "10"), 40);
+        assert.equal(latencyIncrease("-1", 10), null, "the placeholder is no reading in any spelling");
+        assert.equal(latencyIncrease(50, "0"), null, "an unmeasured ping is no baseline in any spelling");
     });
 
     // One expression for the quantity, so a per-direction icon and the grade it
