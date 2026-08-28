@@ -40,23 +40,27 @@ const element = () => {
 describe("the dialog's fade-out end", () => {
     const box = {name: "the dialog box"};
 
-    const ended = ({open, isClosing = true, target}) => {
+    // The handler deliberately never reads the `open` prop - Escape, the X and
+    // the backdrop all run with it still true, so the closing flag is the only
+    // honest discriminator. The harness binds exactly what the handler reads,
+    // or a parameter nothing consumes reads as a distinction the suite tests
+    // when it cannot.
+    const ended = ({isClosing = true, target, animationName = "fadeOut"}) => {
         const seen = {setVisible: [], closed: 0};
         const isClosingRef = {current: isClosing};
         const handler = lift("const handleAnimationEnd", {
-            open,
             dialogRef: {current: box},
             isClosingRef,
             setVisible: (v) => seen.setVisible.push(v),
             onClose: () => seen.closed++
         }, "(e)");
 
-        handler({animationName: "fadeOut", target});
+        handler({animationName, target});
         return {seen, isClosingRef};
     };
 
     it("ignores a child element's own fadeOut bubbling up", () => {
-        const {seen} = ended({open: false, target: {name: "a child"}});
+        const {seen} = ended({target: {name: "a child"}});
 
         assert.deepEqual(seen.setVisible, [],
             "a nested element finishing its fade unmounts the whole dialog");
@@ -64,55 +68,41 @@ describe("the dialog's fade-out end", () => {
     });
 
     /**
-     * The state every Escape, X and backdrop click produces: handleClose set
-     * the closing flag and started the fade, and `open` is still true, because
-     * the parent only learns of the close from the onClose this handler fires.
-     * Gating the completion on `!open` therefore blocked every close a dialog
-     * started for itself - it faded to invisible and stayed mounted, with the
-     * transparent backdrop swallowing every click on the app.
+     * One completion case for both endings, because from in here they are the
+     * same ending: whether handleClose set the flag (Escape, X, backdrop -
+     * `open` still true, the parent learns of the close from the onClose fired
+     * here) or the parent-driven effect set it (`open` already false), the fade
+     * ending with the flag up is a close to finish. Gating this on `!open`
+     * blocked the first family entirely - every dialog faded to invisible and
+     * stayed mounted, its transparent backdrop swallowing every click.
      */
-    it("finishes a close the dialog started for itself", () => {
-        const {seen, isClosingRef} = ended({open: true, isClosing: true, target: box});
+    it("finishes a close whose flag is still up when the fade ends", () => {
+        const {seen, isClosingRef} = ended({isClosing: true, target: box});
 
         assert.deepEqual(seen.setVisible, [false],
-            "an internally started close never completes, because `open` is still true mid-fade");
+            "a close in progress never completes when its fade ends");
         assert.equal(seen.closed, 1, "the parent is never told the dialog closed");
         assert.equal(isClosingRef.current, false, "the closing flag stays set after the close");
     });
 
     /**
-     * A reopen within the fade is told apart by the closing flag, not by
-     * `open`: the reopen effect has already cleared the flag and stripped the
-     * hidden classes - cancelling the animation - so a fade-out end arriving
-     * with the flag down belongs to a close that was called off.
+     * A reopen within the fade is told apart by the closing flag: the reopen
+     * effect clears it and strips the hidden classes - cancelling the
+     * animation - so a fade-out end arriving with the flag down belongs to a
+     * close that was called off.
      */
     it("does not tear down a dialog whose close was called off", () => {
-        const {seen} = ended({open: true, isClosing: false, target: box});
+        const {seen} = ended({isClosing: false, target: box});
 
         assert.deepEqual(seen.setVisible, [],
             "a cancelled close still unmounts the dialog when its fade ends");
         assert.equal(seen.closed, 0, "the reopened dialog's onClose fires as if it had closed");
     });
 
-    it("finishes a genuine close of the dialog box itself", () => {
-        const {seen, isClosingRef} = ended({open: false, target: box});
-
-        assert.deepEqual(seen.setVisible, [false], "a real close no longer unmounts the dialog");
-        assert.equal(seen.closed, 1, "a real close no longer reports itself");
-        assert.equal(isClosingRef.current, false, "the closing flag is left set after a close");
-    });
-
+    // With the flag up, so only the animation's name is what spares it - flag
+    // down, a deleted name check would go unnoticed behind the flag's own veto.
     it("leaves an animation that is not the fade-out alone", () => {
-        const seen = {setVisible: [], closed: 0};
-        const handler = lift("const handleAnimationEnd", {
-            open: false,
-            dialogRef: {current: box},
-            isClosingRef: {current: false},
-            setVisible: (v) => seen.setVisible.push(v),
-            onClose: () => seen.closed++
-        }, "(e)");
-
-        handler({animationName: "fadeIn", target: box});
+        const {seen} = ended({isClosing: true, target: box, animationName: "fadeIn"});
 
         assert.deepEqual(seen.setVisible, [], "the fade-in end is treated as a close");
     });

@@ -122,9 +122,15 @@ export const Dialog = ({open, onClose, className, disableClose, label, children}
         // internally started fade, and gating on it left every such dialog
         // stuck: faded to invisible, still mounted, its transparent backdrop
         // swallowing every click on the app. A reopen within the fade is the
-        // one ending that must not finish the close, and the effect above has
-        // already answered it - it clears this flag and strips the hidden
-        // classes, which cancels the fade before its end can fire.
+        // one ending that must not finish the close, and the effect above
+        // answers it by clearing this flag and stripping the hidden classes,
+        // which cancels the fade. That effect is passive, though, so an
+        // animation ending in the same frame as the reopen can still reach
+        // here first with the flag up: the close then completes and the
+        // reopen is swallowed - one extra click, on a window a frame wide.
+        // Accepted, because the states are indistinguishable from in here
+        // (`open` is true for an ordinary internal close too), and every
+        // alternative traded this for a stuck dialog or a remount.
         if (e.animationName === "fadeOut" && isClosingRef.current) {
             setVisible(false);
             isClosingRef.current = false;
