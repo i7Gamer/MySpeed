@@ -459,7 +459,7 @@ describe("a round of several targets", () => {
         const source = fs.readFileSync(
             fileURLToPath(new URL("../../server/tasks/speedtest.js", import.meta.url)), "utf8");
 
-        assert.equal((source.match(/primary: await isPrimaryMember\(target\)/g) ?? []).length, 2,
+        assert.equal((source.match(/primary: await wasPrimaryMember\(target\)/g) ?? []).length, 2,
             "one of the two notification payloads does not say whether its member is primary");
     });
 });

@@ -123,6 +123,32 @@ describe("what the round does with a member that could not record", () => {
                 "the last member of a round is reported as having stranded nothing");
     });
 
+    /**
+     * A member the round never got to is not a member that could not record.
+     *
+     * The guards the loop consults before a member runs - the pause, the quiet
+     * hours, the re-read of the row - are database reads of their own, and they
+     * are inside the per-member handler so that a failing one cannot drop every
+     * remaining member. But the handler then reported them in the one wording it
+     * had, so a transient config read said the line "could not record its
+     * result" about a run that never started, and error.log named a member the
+     * round had not reached.
+     */
+    it("says the member never ran when it never ran", () => {
+        const {context} = memberFailure(refused, target, {escapes: 1, remaining: 2, reached: false});
+
+        assert.match(context, /Fritzbox/, "the report names no target");
+        assert.doesNotMatch(context, /could not record its result/,
+            "a guard that could not read the table is reported as a run that failed to record");
+    });
+
+    // The default is the case that has always been here: everything that
+    // escapes executeTarget escaped its own recording.
+    it("still reports a member that ran and could not record", () => {
+        assert.match(memberFailure(refused, target, {escapes: 1, remaining: 2}).context,
+            /could not record its result/);
+    });
+
     // The demo target is a frozen stand-in with neither a name nor an id, and
     // "target null" in error.log tells an operator nothing at all.
     it("names the demo target", () => {

@@ -148,18 +148,54 @@ describe("what the round says when it ends", () => {
             "testStarted is no longer gated the way roundFinished is");
     });
 
+    /**
+     * And it reads its verdict while it is still the round.
+     *
+     * roundOutcome asks the stored rows a question, and the read used to be
+     * started and left: the finally returned, the latch dropped, and the answer
+     * arrived afterwards - against a database a shutdown may have closed, or
+     * one the next round has already begun writing to. The read belongs to the
+     * round; only the ping it feeds is allowed to outlive it, because a
+     * notifier must not hold a round open.
+     */
     it("answers its one start with one completion, however the round ends", () => {
         const ending = round().slice(round().indexOf("} finally {"));
 
-        assert.match(ending, /if \(announce\) roundOutcome\(/,
+        assert.match(ending, /const outcome = await roundOutcome\(/,
             "a round that announced itself can end without answering the /start it opened");
+        assert.match(ending, /sendRoundFinished\(outcome\)/,
+            "the verdict is read and then not sent");
     });
 
     it("counts a watched member's failure however it failed", () => {
         assert.match(round(), /if \(fresh\.alerts && outcome\.failed\) roundFailures\+\+/,
             "a recorded failure of a watched member does not reach the round's outcome");
-        assert.match(round(), /if \(member\.alerts\) roundFailures\+\+/,
+        assert.match(round(), /if \(reached && member\.alerts\) roundFailures\+\+/,
             "a member that could not even record is not counted as the failure it is");
+    });
+
+    /**
+     * But only for a member the round actually reached.
+     *
+     * The guards moved inside the per-member handler so that a failing one
+     * could not drop the rest of the round - and every one of them is a
+     * database read, so a transient refusal from the quiet-hours config was
+     * then counted as the line failing. One flaky read pinged healthchecks
+     * /fail on an instance whose every stored row was a success.
+     */
+    it("counts nothing for a member whose run never started", () => {
+        const body = round();
+        const marked = body.indexOf("reached = true");
+        const runs = body.indexOf("await executeTarget(fresh, type)");
+
+        assert.notEqual(marked, -1, "nothing records whether the member's run began");
+        assert.ok(marked !== -1 && marked < runs,
+            "the round is marked as having reached the member after the member has already run");
+
+        const guards = body.slice(body.indexOf("try {", body.indexOf("let reached")), marked);
+
+        assert.doesNotMatch(guards, /reached = true/,
+            "a guard that could not read the table is counted as the line going down");
     });
 
     it("is told the outcome by the member that ran", () => {
@@ -208,11 +244,20 @@ describe("what the round says when it ends", () => {
             "a database failure inside the loop's own guards escapes the per-member handler");
     });
 
-    // Reading the table to decide whether a member leads the round is not
-    // worth failing a measured test over - the payload's own contract says an
-    // absent flag reads as the primary.
-    it("degrades rather than fails when it cannot tell who leads", () => {
-        assert.equal((source.match(/isPrimaryMember\(target\)\.catch\(\(\) => true\)/g) ?? []).length, 2,
+    /**
+     * Reading the table to decide whether a member leads the round is not worth
+     * failing a measured test over - the payload's own contract says an absent
+     * flag reads as the primary. But degrading to `true` is not a shrug: it is
+     * the claim "this member owns the base MQTT topic", and a secondary making
+     * it publishes its numbers where the first line's Home Assistant sensors
+     * read, which is the exact re-attribution isPrimaryMember was written to
+     * stop. The last answer this member actually got is the honest fallback;
+     * `true` is only for one that has never been answered at all.
+     */
+    it("degrades to the last answer it had rather than to a claim", () => {
+        assert.equal((source.match(/primary: await wasPrimaryMember\(target\)/g) ?? []).length, 2,
             "a database blip while naming the primary is treated as a failed test and retried");
+        assert.doesNotMatch(source, /isPrimaryMember\(target\)\.catch\(\(\) => true\)/,
+            "a secondary member claims the base topic whenever the targets table blinks");
     });
 });

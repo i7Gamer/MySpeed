@@ -462,11 +462,19 @@ const counted = (count) => `${count} ${count === 1 ? "target" : "targets"}`;
  * @param escapes how many members in a row have now failed to record, this one
  *        included.
  * @param remaining how many members of the round have not run yet.
+ * @param reached whether the round got as far as measuring this member. The
+ *        guards the loop consults ahead of a run are database reads of their
+ *        own and sit inside the same handler, so a refused config read used to
+ *        be reported as a line that "could not record its result" about a run
+ *        that never started. Defaults to the case that has always been here:
+ *        everything else that escapes executeTarget escaped its own recording.
  */
-export const memberFailure = (error, target, {escapes = 1, remaining = 0} = {}) => {
+export const memberFailure = (error, target, {escapes = 1, remaining = 0, reached = true} = {}) => {
     const outage = outageFrom(error);
     const abandoned = outage || escapes >= MAX_CONSECUTIVE_ESCAPES;
-    const opening = `${memberName(target)} could not record its result`;
+    const opening = reached
+        ? `${memberName(target)} could not record its result`
+        : `${memberName(target)} could not be read before its run`;
 
     if (!abandoned) return {
         abandoned: false,
@@ -636,6 +644,14 @@ const executeRound = async (type, targetId) => {
             // even when the read that was to fetch it is what failed.
             let fresh;
 
+            // Whether the round got as far as measuring this member. The guards
+            // below are database reads of their own and are inside the handler
+            // on purpose, so a refused read cannot drop the rest of the round -
+            // but a refused read is this instance failing to ask, not the line
+            // going down, and counting it as a failure pinged healthchecks
+            // /fail on an instance whose every stored row was a success.
+            let reached = false;
+
             /*
              * A member that cannot even record its own failure must not take the
              * rest of the round with it. executeTarget handles everything it can
@@ -717,6 +733,10 @@ const executeRound = async (type, targetId) => {
                 // long.
                 if (memberHeld(fresh, type, heldByBackoff)) continue;
 
+                // Every guard is past, so whatever happens from here is the
+                // member's own run.
+                reached = true;
+
                 const outcome = await executeTarget(fresh, type);
                 if (fresh.alerts && outcome.failed) roundFailures++;
                 // A member that recorded - a result or a failure, either one - is
@@ -731,12 +751,20 @@ const executeRound = async (type, targetId) => {
 
                 // A member that could not even record its failure has still
                 // failed - the round's completion must not read as clean
-                // because the database refused the row saying otherwise.
-                if (member.alerts) roundFailures++;
+                // because the database refused the row saying otherwise. But
+                // only a member that ran: a guard that could not be read says
+                // nothing about the line, and the stored rows - which
+                // roundOutcome reads either way - are what still speak for it.
+                if (reached && member.alerts) roundFailures++;
+
+                // Counted whichever it was, because this counts consecutive
+                // members that could not touch the database at all, and a
+                // guard that cannot read is as much evidence of that as a row
+                // that cannot be written.
                 escapes++;
 
                 const {abandoned, context} = memberFailure(error, member,
-                    {escapes, remaining: members.length - index - 1});
+                    {escapes, remaining: members.length - index - 1, reached});
 
                 errorHandler(error, {fatal: false, context});
 
@@ -754,14 +782,28 @@ const executeRound = async (type, targetId) => {
         // healthchecks.io opened a timing window on the /start above, and a
         // round interrupted by a pause or a shutdown still has to close it.
         // Per member the sinks already heard everything; this is the round's
-        // own verdict, and neither it nor the read behind it is awaited, for
-        // the reason no notification here is: a notifier must not hold the
-        // round open. A database that cannot answer the verdict leaves the
-        // /start unanswered, which is what the keep-alive - equally unable to
-        // read it - is saying at the same moment.
-        if (announce) roundOutcome(roundFailures, members.length)
-            .then(sendRoundFinished)
-            .catch(err => console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
+        // own verdict.
+        //
+        // The read is awaited and the ping is not, which is the whole
+        // distinction: a notifier must not hold a round open, but the question
+        // roundOutcome asks is about the rows this round has just written and
+        // belongs to it. Started and left, it resolved after the finally had
+        // returned and the latch had dropped - against a database the shutdown
+        // path closes on its way out, or one the next round is already writing
+        // to, so the verdict described a moment that had passed.
+        //
+        // A database that cannot answer it leaves the /start unanswered, which
+        // is what the keep-alive - equally unable to read it - is saying at the
+        // same moment.
+        if (announce) {
+            const outcome = await roundOutcome(roundFailures, members.length).catch(err => {
+                console.error(`Could not read the round's outcome: ${toErrorMessage(err)}`);
+                return null;
+            });
+
+            if (outcome) sendRoundFinished(outcome).catch(err =>
+                console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
+        }
     }
 };
 
@@ -797,9 +839,43 @@ export const isPrimaryMember = async (target) => {
     if (target.id == null) return true;
 
     const first = (await targetsController.listAll())[0];
+    const primary = first === undefined || first.id === target.id;
 
-    return first === undefined || first.id === target.id;
+    lastPlacement.set(target.id, primary);
+
+    return primary;
 };
+
+/**
+ * The last answer each member actually got, so a read that fails now has
+ * something better than a guess to fall back on.
+ *
+ * One entry per target id the process has ever placed, which is bounded by the
+ * number of targets - a deleted one leaves a stale entry behind, and the entry
+ * is a boolean.
+ */
+const lastPlacement = new Map();
+
+/**
+ * The same question, answered from the last read when the table cannot be read
+ * now.
+ *
+ * The notification payload is built after the row is already committed, so a
+ * rejection here would land in executeTarget's catch - whose first act is to
+ * measure the whole member again and write a second row for one scheduled
+ * test. So it degrades rather than throws.
+ *
+ * What it degrades *to* is the point. `true` is not a shrug: it is the claim
+ * "this member owns the base MQTT topic", and a secondary making it publishes
+ * its numbers where the first line's Home Assistant sensors read - the silent
+ * re-attribution isPrimaryMember exists to prevent, arrived at through its own
+ * error path, and one a retained discovery config never announces a correction
+ * for. A member that has been placed before keeps that placement; `true` is
+ * left for one that has never been answered at all, which is what the payload's
+ * contract already reads an absent flag as.
+ */
+export const wasPrimaryMember = async (target) => await isPrimaryMember(target)
+    .catch(() => target.id == null || (lastPlacement.get(target.id) ?? true));
 
 const executeTarget = async (target, type, retried = false) => {
     const mode = target.provider === "preview" ? "preview" : target.provider;
@@ -896,12 +972,9 @@ const executeTarget = async (target, type, retried = false) => {
             packetLoss, downloadLatency, uploadLatency, serverId, serverName, serverHost, serverLocation,
             isp, externalIp, resultId, bytesDownloaded, bytesUploaded,
             targetId: target.id, targetName: target.name,
-            // Degraded rather than thrown: this reads the targets table after
-            // the row above is already committed, and a rejection here would
-            // land in the catch below - whose first act is to measure the whole
-            // member again and write a second row for one scheduled test. The
-            // payload's own contract says an absent flag reads as the primary.
-            primary: await isPrimaryMember(target).catch(() => true)})).catch(err =>
+            // Degraded rather than thrown, and degraded to the last answer
+            // this member got rather than to a claim - see wasPrimaryMember.
+            primary: await wasPrimaryMember(target)})).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
 
         // How the member went, for the round's one completion event. The
@@ -955,7 +1028,7 @@ const executeTarget = async (target, type, retried = false) => {
         // "could not record its result" about a row it did record.
         if (target.alerts) sendError(failedPayload({...testResult, provider: mode, error: message,
             targetId: target.id, targetName: target.name,
-            primary: await isPrimaryMember(target).catch(() => true)})).catch(err =>
+            primary: await wasPrimaryMember(target)})).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
         console.log(`Test #${testResult.id} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
 

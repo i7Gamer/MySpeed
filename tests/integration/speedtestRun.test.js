@@ -378,6 +378,68 @@ describe("which member the base topics speak for", () => {
     it("is the demo target, which stands for the whole of its instance", async () => {
         assert.equal(await task.isPrimaryMember({id: null, name: null}), true);
     });
+
+    /**
+     * And what the payload says when the table cannot be read at all.
+     *
+     * The notification is built after the row is already committed, so a
+     * rejection here would land in executeTarget's catch - whose first act is
+     * to measure the whole member again and write a second row for one
+     * scheduled test. So it degrades. But degrading to `true` is not a shrug:
+     * it is the claim "this member owns the base topic", made by a secondary,
+     * which publishes its numbers where the first line's Home Assistant sensors
+     * read. The last answer this member actually got is the honest fallback.
+     */
+    describe("when the targets table cannot be read", () => {
+        let model;
+
+        before(async () => {
+            ({default: model} = await import("../../server/models/Targets.js"));
+        });
+
+        const blinded = async (body) => {
+            const findAll = model.findAll;
+            model.findAll = async () => {
+                throw new Error("database is locked");
+            };
+
+            try {
+                return await body();
+            } finally {
+                model.findAll = findAll;
+            }
+        };
+
+        it("keeps the answer the member last got", async () => {
+            await targets.removeAll();
+            const first = await targets.create({name: "WAN", provider: "ookla", sortOrder: 0});
+            const second = await targets.create({name: "LAN", provider: "ookla", sortOrder: 1});
+
+            // Both asked once while the table is readable, which is what every
+            // round does before anything goes wrong. Both, rather than only the
+            // secondary: sqlite hands the same ids back out after a delete, so
+            // an answer left over from an earlier case in this file would
+            // otherwise be what the fallback returned.
+            assert.equal(await task.wasPrimaryMember(first), true);
+            assert.equal(await task.wasPrimaryMember(second), false);
+
+            await blinded(async () => {
+                assert.equal(await task.wasPrimaryMember(second), false,
+                    "a database blip handed the base topic - and its Home Assistant entities - to a secondary line");
+                assert.equal(await task.wasPrimaryMember(first), true);
+            });
+        });
+
+        // Never answered, so there is nothing to keep: the payload's own
+        // contract says an absent flag reads as the primary, and a member that
+        // has never been placed is treated as one. An id no row in this file
+        // ever wore, so the answer cannot be one left behind by another case.
+        it("falls back to the primary for a member it has never placed", async () => {
+            await blinded(async () => {
+                assert.equal(await task.wasPrimaryMember({id: 987654, name: "Unseen"}), true);
+            });
+        });
+    });
 });
 
 /**
@@ -496,8 +558,53 @@ describe("the round and its healthchecks check", () => {
             assert.deepEqual(await pingsOf(() => task.create("auto")),
                 [`${PING_URL}/start`, `${PING_URL}/fail`],
                 "a round that skipped the failing line reported itself clean");
+
+            // The premise, which nothing here asserted. Without the hold the
+            // WAN member runs, its CLI is not on disk, and the failure it
+            // records earns the same /fail - so this case passed with the two
+            // lines above it deleted and never exercised the clause it exists
+            // for. One row is the seeded failure; a second would be this
+            // round's.
+            assert.equal(await server.tests.count({where: {targetId: wan.id}}), 1,
+                "the hold did not skip the WAN, so this round measured the failing line itself");
         } finally {
             clearBackoff("ookla");
+        }
+    });
+
+    /**
+     * And a round that could not read its own guards is not a line going down.
+     *
+     * The guards the loop consults before each member - the pause, the quiet
+     * hours, the re-read of the row - moved inside the per-member handler so a
+     * failing one could not drop the rest of the round. Every one of them is a
+     * database read, and the handler then counted the refusal as the member
+     * having failed: one flaky read pinged /fail on an instance whose every
+     * stored row was a success, and error.log said a line "could not record its
+     * result" about a run that never started.
+     */
+    it("keeps the check up when a guard, not the line, is what failed", async () => {
+        const targets = await import("../../server/controller/targets.js");
+        const {default: model} = await import("../../server/models/Targets.js");
+
+        const wan = await seedTarget({provider: "ookla", name: "WAN"});
+        await seedTests(server.tests, [{created: new Date().toISOString(), targetId: wan.id,
+            ping: 12, download: 100, upload: 50, error: null}]);
+
+        // The round's re-read of the member, and nothing else: findAll still
+        // answers, so the round still has members to walk.
+        const findOne = model.findOne;
+        model.findOne = async () => {
+            throw new Error("database is locked");
+        };
+
+        try {
+            assert.deepEqual(await pingsOf(() => task.create("auto")),
+                [`${PING_URL}/start`, PING_URL],
+                "a transient read failure was reported as the watched line going down");
+        } finally {
+            model.findOne = findOne;
+            await targets.removeAll();
         }
     });
 });
