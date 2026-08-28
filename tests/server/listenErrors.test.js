@@ -198,11 +198,13 @@ describe("the https listener's error handling", () => {
  * errorHandler answers each call with a second console line and the flood simply
  * moves to stdout.
  *
- * So the first occurrence is written down in full and the ones behind it are
- * held for an interval. Held, not dropped in silence: each suppressed occurrence
- * still gets a console line with no log write behind it, because an operator
- * watching a server fail every accept should not have to infer that from one
- * minute-old entry and nothing since.
+ * So the first occurrence of a fault is written down in full and the ones
+ * behind it are counted, silently - a console line per suppressed event would
+ * only move the unbounded growth into the journal every deployment here
+ * captures. The count rides on that fault's next full entry, so the log still
+ * says the storm continued without growing with it; a storm that simply stops
+ * leaves its last count unflushed, which is accepted, because its first entry
+ * recorded the fault in full.
  *
  * Per listener, so a busy http listener cannot mute the https one beside it.
  */
@@ -247,6 +249,16 @@ describe("how often a bound listener's errors are written down", () => {
         assert.doesNotMatch(httpsPostBind, /errorHandler\(/,
             "the https post-bind branch reaches errorHandler without passing the interval");
     });
+
+    // "Per listener" is a claim about run(), not about the factory: one
+    // reporter handed to both handlers would share a window, and the executed
+    // isolation case below can only prove what the factory makes possible.
+    it("gives each listener a reporter of its own", () => {
+        assert.match(httpSetup, /const reportHttpError = listenerErrorReporter\(\)/,
+            "the http listener reports through something other than its own reporter");
+        assert.match(httpsSetup, /const reportHttpsError = listenerErrorReporter\(\)/,
+            "the https listener reports through something other than its own reporter");
+    });
 });
 
 /**
@@ -267,7 +279,13 @@ describe("the reporter, executed", () => {
     // inside/outside cases.
     const INTERVAL = 1000;
 
-    const build = () => {
+    // The factory itself, not an instance of it: run() calls
+    // listenerErrorReporter() once per listener, and only instances made by
+    // one evaluation can show whether they share state. A harness that
+    // evaluated the source once per instance got isolation for free from its
+    // own scoping, and would have stayed green with every reporter sharing
+    // one window.
+    const liftFactory = () => {
         const stripped = withoutJsComments(source);
         const factory = bodyOf(stripped, "const listenerErrorReporter");
 
@@ -281,12 +299,17 @@ describe("the reporter, executed", () => {
 
         const make = new Function("Date", "performance", "LISTENER_ERROR_LOG_INTERVAL_MS",
             "errorHandler", "console",
-            `return (() => ${factory})();`)(
+            `return (() => ${factory});`)(
             clock, clock, INTERVAL,
             (err, options) => reports.push({err, options}),
             {error: (line) => consoleLines.push(line)});
 
-        return {clock, reports, consoleLines, report: make};
+        return {clock, reports, consoleLines, make};
+    };
+
+    const build = () => {
+        const rig = liftFactory();
+        return {...rig, report: rig.make()};
     };
 
     const fault = (code) => Object.assign(new Error(`accept ${code}`), {code});
@@ -340,14 +363,93 @@ describe("the reporter, executed", () => {
     });
 
     it("keeps two listeners' reporters apart", () => {
-        const first = build();
-        const second = build();
+        // Two instances from ONE evaluation, the way run() makes them - a
+        // rig per instance would isolate them by construction and prove
+        // nothing about the factory.
+        const {clock, reports, make} = liftFactory();
+        const http = make();
+        const https = make();
 
-        first.report(fault("EMFILE"), "http");
-        second.report(fault("EMFILE"), "https");
+        http(fault("EMFILE"), "http");
+        clock.value += INTERVAL / 2;
+        https(fault("EMFILE"), "https");
 
-        assert.equal(first.reports.length, 1);
-        assert.equal(second.reports.length, 1, "a busy http listener mutes the https one");
+        assert.equal(reports.length, 2, "a busy http listener mutes the https one");
+        assert.doesNotMatch(reports[1].options.context, /suppressed/,
+            "one listener's storm is counted against the other's entry");
+    });
+
+    // errorHandler's own asError normalises whatever shape gets reported, so
+    // the reporter has to survive the shapes that reach it: an Error with no
+    // code, and a value that is not an Error at all. They share one bucket -
+    // keyed by message, a storm whose message carries the peer's address
+    // would make every event distinct, and the log would grow without a
+    // ceiling again, which is the exact growth the reporter exists to end.
+    it("holds every codeless fault in one bucket, whatever its message says", () => {
+        const {clock, reports, report} = build();
+
+        report(new Error("read ETIMEDOUT 10.0.0.7:443"), "the listener");
+        clock.value += INTERVAL / 2;
+        report(new Error("read ETIMEDOUT 10.0.0.9:443"), "the listener");
+        report("boom", "the listener");
+
+        assert.equal(reports.length, 1,
+            "a storm with a varying message writes one entry per event, which is no ceiling at all");
+    });
+
+    it("tells faults apart by code even when the message is one shared string", () => {
+        const {clock, reports, report} = build();
+
+        report(fault("EMFILE"), "the listener");
+        clock.value += INTERVAL / 2;
+        report(Object.assign(new Error("accept EMFILE"), {code: "ECONNABORTED"}), "the listener");
+
+        assert.equal(reports.length, 2,
+            "two different faults wearing one message are treated as the same fault");
+    });
+
+    // The count is the fault's own. A shared counter flushed EMFILE's storm
+    // onto whichever entry came next - an unrelated ECONNABORTED's, which
+    // then read as N occurrences of a fault that happened once - and left
+    // EMFILE's own next entry saying nothing about its storm at all.
+    it("credits a suppressed storm to its own fault, not to whoever reports next", () => {
+        const {clock, reports, report} = build();
+
+        report(fault("EMFILE"), "the listener");
+        clock.value += INTERVAL / 4;
+        report(fault("EMFILE"), "the listener");
+        report(fault("EMFILE"), "the listener");
+        clock.value += INTERVAL / 4;
+        report(fault("ECONNABORTED"), "the listener");
+        clock.value += INTERVAL;
+        report(fault("EMFILE"), "the listener");
+
+        assert.equal(reports.length, 3);
+        assert.doesNotMatch(reports[1].options.context, /suppressed/,
+            "EMFILE's storm is written against the one ECONNABORTED that happened");
+        assert.match(reports[2].options.context, /\b2\b/,
+            "EMFILE's own next entry no longer says its storm continued");
+    });
+
+    // Two storms of different lengths, so a count that is never reset - or a
+    // note built from anything but the count - cannot stay green by echoing
+    // the first storm's number.
+    it("counts each storm afresh rather than accumulating across entries", () => {
+        const {clock, reports, report} = build();
+
+        report(fault("EMFILE"), "the listener");
+        for (let i = 0; i < 4; i++) report(fault("EMFILE"), "the listener");
+        clock.value += INTERVAL;
+        report(fault("EMFILE"), "the listener");
+        for (let i = 0; i < 2; i++) report(fault("EMFILE"), "the listener");
+        clock.value += INTERVAL;
+        report(fault("EMFILE"), "the listener");
+
+        assert.equal(reports.length, 3);
+        assert.match(reports[1].options.context, /\b4\b/);
+        assert.match(reports[2].options.context, /\b2\b/,
+            "the second storm's count still carries the first storm in it");
+        assert.doesNotMatch(reports[2].options.context, /\b[46]\b/);
     });
 
     // The clock itself: monotonic, never the wall clock a stepped NTP or a

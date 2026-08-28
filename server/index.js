@@ -231,18 +231,25 @@ const reportDatabaseDamage = async () => {
  * data/logs/error.log on every call - so the report meant to explain a quiet
  * failure was itself a log file growing without a ceiling.
  *
- * Three judgements the first cut got wrong, kept here so they stay decided:
+ * Four judgements the first cuts got wrong, kept here so they stay decided:
  *
  * - Faults are told apart, by code. The window exists for a storm of one
  *   failure, and a *different* failure arriving mid-window was suppressed
  *   behind a console line claiming it was "already recorded" - untrue, and if
  *   it never recurred, its detail never reached the log at all.
- * - Suppression is silent, and counted. A console line per suppressed event
- *   only moved the unbounded growth into the journal every deployment here
- *   captures; the count rides on the next full entry instead, so the log
- *   still says the storm continued without growing with it. A storm that
- *   simply stops leaves its last count unflushed, which is accepted: its
- *   first entry recorded the fault in full.
+ * - By code alone. Codeless faults share one bucket rather than being told
+ *   apart by message, because a message is not stable across a storm - one
+ *   that carries the peer's address makes every event "distinct", and every
+ *   event writing a full entry is the exact growth this exists to end. The
+ *   cost is real but small: a genuinely different codeless fault mid-window
+ *   waits for the next window, having ridden the count meanwhile.
+ * - Suppression is silent, and counted per fault. A console line per
+ *   suppressed event only moved the unbounded growth into the journal every
+ *   deployment here captures; and one shared count flushed EMFILE's storm
+ *   onto whichever entry came next - an unrelated fault's, which then read
+ *   as hundreds of a thing that happened once. Each count rides on its own
+ *   fault's next full entry. A storm that simply stops leaves its last count
+ *   unflushed, which is accepted: its first entry recorded the fault in full.
  * - The clock is monotonic. Date.now() moves with NTP steps and VM resumes,
  *   and a step backward read as "inside the window" for as long as the step
  *   was long - an hour of silence for an hour's correction. performance.now()
@@ -252,11 +259,11 @@ const reportDatabaseDamage = async () => {
  */
 const listenerErrorReporter = () => {
     // -Infinity: the first fault to arrive opens a window, whenever it
-    // arrives. The set holds one entry per distinct code per window, which is
-    // bounded by how many kinds of fault a listener can raise.
+    // arrives. The set and the counts hold one entry per distinct code, which
+    // is bounded by how many kinds of fault a listener can raise.
     let windowStart = -Infinity;
     const reportedFaults = new Set();
-    let suppressed = 0;
+    const suppressed = new Map();
 
     return (err, context) => {
         const now = performance.now();
@@ -266,20 +273,22 @@ const listenerErrorReporter = () => {
             reportedFaults.clear();
         }
 
-        // The code where there is one - stable across a storm - and the
-        // message where there is not; errorHandler's own asError normalises
-        // whatever shape actually gets reported.
-        const fault = err?.code ?? err?.message ?? "unknown";
+        // The code where there is one - stable across a storm - and one
+        // shared bucket where there is not; errorHandler's own asError
+        // normalises whatever shape actually gets reported.
+        const fault = err?.code ?? "uncoded";
 
         if (reportedFaults.has(fault)) {
-            suppressed++;
+            suppressed.set(fault, (suppressed.get(fault) ?? 0) + 1);
             return;
         }
 
         reportedFaults.add(fault);
 
-        const note = suppressed > 0 ? ` (and ${suppressed} suppressed since the last entry)` : "";
-        suppressed = 0;
+        const held = suppressed.get(fault) ?? 0;
+        suppressed.delete(fault);
+
+        const note = held > 0 ? ` (and ${held} more of this fault suppressed since its last entry)` : "";
         errorHandler(err, {fatal: false, context: context + note});
     };
 };
