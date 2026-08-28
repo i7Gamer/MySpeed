@@ -124,6 +124,10 @@ export const TargetsDialog = ({open, onClose}) => {
         updateToast(t("dropdown.changes_applied"), "green", faCheck);
     };
 
+    // What the select is controlled on - the stored setting, with the sentinel
+    // the server stores for "let the instance choose".
+    const selectedInterface = config.interface || "none";
+
     // What the name alone does not say: who measures it, and where. A pinned
     // server by its id, a custom backend by its address, otherwise the
     // automatic choice the provider makes per run.
@@ -200,8 +204,21 @@ export const TargetsDialog = ({open, onClose}) => {
                                             <h3>{t("dialog.provider.interface")}</h3>
                                         </div>
                                         <select className="dialog-input provider-input"
-                                                value={config.interface || "none"}
+                                                value={selectedInterface}
                                                 onChange={(e) => changeInterface(e.target.value)}>
+                                            {/* The stored choice, kept visible when the list does
+                                                not carry it: a controlled select with no matching
+                                                option paints blank, which reads as "nothing
+                                                configured" while something very much is. "none"
+                                                survives a boot that found no usable adapter, an
+                                                adapter can be renamed, and the fetch can fail.
+                                                Disabled, because it is a fact rather than a choice
+                                                - any real pick PATCHes instantly. */}
+                                            {!Object.hasOwn(interfaces ?? {}, selectedInterface) && (
+                                                <option value={selectedInterface} disabled>
+                                                    {selectedInterface}
+                                                </option>
+                                            )}
                                             {interfaces && Object.keys(interfaces).map((current, index) => (
                                                 <option key={index} value={current}>
                                                     {current} ({interfaces[current]})

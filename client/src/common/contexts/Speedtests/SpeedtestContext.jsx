@@ -280,12 +280,31 @@ export const SpeedtestProvider = (props) => {
         refreshTests();
     }, [refreshTests]);
 
+    // The node the rows in hand belong to, so the effect below can tell a node
+    // switch apart from a range change riding in through loadInitialTests.
+    const lastNodeRef = useRef(currentNode);
+
     // Keyed on the node, and on the selected range through loadInitialTests:
     // both change what the endpoint answers with, and the list has to be
     // replaced rather than merged - the previous node's tests used to linger
     // under the new node's until the next full reload, and a narrowed range
     // would otherwise leave the tests outside it on screen.
+    //
+    // On a node switch the rows are dropped before the new ones are asked for,
+    // not merely replaced when they arrive. Test and target ids are both
+    // per-instance, and TargetsContext refills its byId map for the new node
+    // while the old rows are still up - so for the length of the fetch every
+    // visible row was labelled and graded against another instance's targets
+    // that happen to share its targetId numbers. A range change keeps its rows:
+    // they are the right instance's, merely wider than the new window.
     useEffect(() => {
+        if (lastNodeRef.current !== currentNode) {
+            lastNodeRef.current = currentNode;
+            setSpeedtests([]);
+            setCursor(null);
+            setHasMore(true);
+        }
+
         loadInitialTests();
     }, [currentNode, loadInitialTests]);
 

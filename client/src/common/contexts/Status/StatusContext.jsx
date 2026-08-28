@@ -1,4 +1,4 @@
-import React, {useState, createContext, useEffect, useContext, useRef, useCallback} from "react";
+import React, {useState, createContext, useEffect, useContext, useRef, useCallback, useMemo} from "react";
 import {jsonRequest} from "@/common/utils/RequestUtil";
 import {LIVE_POLL_MS, pollIntervalFor, runJustFinished, sameStatus, withLive} from "@/common/utils/StatusUtil";
 import {NodeContext} from "@/common/contexts/Node";
@@ -59,7 +59,9 @@ export const StatusProvider = (props) => {
         // effects already re-run when that changes.
     }, [liveSupported]);
 
-    const setRunning = (running) => setStatus(prev => ({...prev, running}));
+    // Memoised alongside updateStatus so the value below can be: a setState
+    // updater is stable, and a fresh wrapper per render was the one loose end.
+    const setRunning = useCallback((running) => setStatus(prev => ({...prev, running})), []);
 
     // Reset fallback and status whenever switching between nodes, so a 404 on
     // an older node is not sticky for a modern node, and old status is refreshed.
@@ -148,8 +150,15 @@ export const StatusProvider = (props) => {
         return () => clearInterval(timer);
     }, [status.running, liveSupported, updateStatus]);
 
+    // One identity per change, the way AlertContext hands its value out. This
+    // provider re-renders on every poll that changed anything, and an inline
+    // array turned each of those into a re-render of every consumer below -
+    // SpeedtestProvider among them, which rebuilds its own value in turn.
+    const contextValue = useMemo(() => [status, updateStatus, setRunning],
+        [status, updateStatus, setRunning]);
+
     return (
-        <StatusContext.Provider value={[status, updateStatus, setRunning]}>
+        <StatusContext.Provider value={contextValue}>
             {props.children}
         </StatusContext.Provider>
     )

@@ -64,6 +64,23 @@ describe("the speedtest list supersedes rather than drops a query", () => {
             /generation !== requestGeneration\.current/,
             "a refresh still settles against whatever node or range is current");
     });
+
+    /**
+     * A node switch drops the rows before it asks for the new ones, not merely
+     * when they arrive. Test and target ids are both per-instance, and
+     * TargetsContext refills its byId map for the new node while the old rows
+     * are still on screen - so for the length of the fetch, every visible row
+     * was labelled and graded against another instance's targets that happen
+     * to share its targetId numbers.
+     */
+    it("drops the previous node's rows before fetching the new one's", () => {
+        assert.match(context, /lastNodeRef\.current !== currentNode/,
+            "a node switch leaves the previous node's rows on screen until the answer lands");
+
+        const effect = context.slice(context.indexOf("lastNodeRef.current !== currentNode"));
+        assert.match(effect.slice(0, effect.indexOf("loadInitialTests();")), /setSpeedtests\(\[]\)/,
+            "the switch is noticed but the rows are kept anyway");
+    });
 });
 
 /**

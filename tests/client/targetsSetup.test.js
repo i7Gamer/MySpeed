@@ -336,3 +336,25 @@ describe("the editor's own guard", () => {
             "the server select and the free-text id no longer agree about who has a list");
     });
 });
+
+/**
+ * The interface select shows the stored choice even when the list cannot.
+ *
+ * The select is controlled on config.interface, and its options are only what
+ * GET /info/interfaces answered - so a stored "none" (a boot that found no
+ * usable adapter), a renamed adapter, or a failed fetch left a controlled
+ * value with no matching option, which paints blank: "no interface
+ * configured" on screen while one is very much configured, and any
+ * exploratory pick PATCHes instantly. The fallback option wears the raw
+ * stored value, disabled because it is a fact rather than a choice.
+ */
+describe("the interface select", () => {
+    const dialog = readSource("client/src/common/components/TargetsDialog/TargetsDialog.jsx");
+
+    it("keeps the stored choice visible when the list does not carry it", () => {
+        assert.match(dialog, /!Object\.hasOwn\(interfaces \?\? \{}, selectedInterface\)/,
+            "a stored interface the list lacks paints the select blank");
+        assert.match(dialog, /<option value=\{selectedInterface} disabled>/,
+            "the fallback option is missing, or silently re-pickable");
+    });
+});

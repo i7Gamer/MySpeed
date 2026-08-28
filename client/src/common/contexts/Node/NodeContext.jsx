@@ -1,4 +1,4 @@
-import React, {useState, createContext, useEffect, useContext, useRef} from "react";
+import React, {useState, createContext, useEffect, useContext, useRef, useCallback, useMemo} from "react";
 import {baseRequest} from "@/common/utils/RequestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
 import {LOCAL_NODE, selectedNode} from "@/common/contexts/Node/nodeSelection";
@@ -40,7 +40,7 @@ export const NodeProvider = (props) => {
      */
     const appliedGeneration = useRef(0);
 
-    const updateNodes = async () => {
+    const updateNodes = useCallback(async () => {
         const generation = ++requestGeneration.current;
 
         return baseRequest("/nodes").then(async nodes => {
@@ -67,7 +67,7 @@ export const NodeProvider = (props) => {
          * as an answer and move the session to this instance.
          */
         }).catch(() => undefined);
-    };
+    }, []);
 
     /**
      * Whether the config is an answer at all, rather than the value it starts
@@ -102,10 +102,10 @@ export const NodeProvider = (props) => {
         if (!config.viewMode) updateNodes();
     }, [configLoaded, config.viewMode]);
 
-    const updateCurrentNode = (node) => {
+    const updateCurrentNode = useCallback((node) => {
         writeStored("currentNode", node);
         setCurrentNode(parseInt(node));
-    }
+    }, []);
 
     /**
      * The selection, against the nodes that actually exist.
@@ -129,15 +129,22 @@ export const NodeProvider = (props) => {
 
         updateCurrentNode(selected);
         reloadConfig();
-        // updateCurrentNode and reloadConfig are rebuilt on every render;
-        // listing them would run this on each one.
+        // reloadConfig belongs to another provider, and its identity is not
+        // this file's to rely on; updateCurrentNode is memoised here but is
+        // left unlisted with it so the pair reads as one deliberate omission.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [nodes, nodesLoaded, currentNode]);
 
-    const findNode = (nodeId) => nodes?.find(node => node.id === nodeId);
+    const findNode = useCallback((nodeId) => nodes?.find(node => node.id === nodeId), [nodes]);
+
+    // One identity per change, the way AlertContext hands its value out: the
+    // providers nest, and an inline array re-rendered everything below on
+    // every render of this one.
+    const contextValue = useMemo(() => [nodes, updateNodes, currentNode, updateCurrentNode, findNode],
+        [nodes, updateNodes, currentNode, updateCurrentNode, findNode]);
 
     return (
-        <NodeContext.Provider value={[nodes, updateNodes, currentNode, updateCurrentNode, findNode]}>
+        <NodeContext.Provider value={contextValue}>
             {props.children}
         </NodeContext.Provider>
     )

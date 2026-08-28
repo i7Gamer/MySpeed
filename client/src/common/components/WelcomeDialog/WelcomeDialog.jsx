@@ -15,7 +15,7 @@ import {faExclamationTriangle} from "@fortawesome/free-solid-svg-icons";
 import {t} from "i18next";
 import {writeStored} from "@/common/utils/Storage";
 import {
-    DEFAULT_PROVIDER, FIRST_STEP, PROVIDER_STEP, canAdvance, lastStep, welcomeSeed
+    DEFAULT_PROVIDER, FIRST_STEP, LICENCE_STEP, PROVIDER_STEP, THRESHOLDS_STEP, canAdvance, lastStep, welcomeSeed
 } from "./welcomeStep";
 
 export const WelcomeDialog = ({open, onClose}) => {
@@ -109,14 +109,16 @@ export const WelcomeDialog = ({open, onClose}) => {
                 // with no existence check and no unique index on the name.
                 //
                 // Written the other way round, the refusal an operator can
-                // actually cause landed second: an empty number field (the
-                // three inputs carry no min and are not gated by canAdvance) is
-                // a 400 from the config controller, so the target was already
+                // actually cause landed second: an empty number field is a 400
+                // from the config controller, so the target was already
                 // created, the wizard stayed open - it is mounted disableClose
                 // and close() was never reached - and the only way on was to
                 // press the same Done again, which created a second identical
                 // target. Every scheduled round then measured that provider
                 // twice, on an instance that had not drawn a dashboard yet.
+                // canAdvance now refuses to leave the thresholds step with a
+                // value this would bounce on; the order stays as the second
+                // line of the same defence.
                 //
                 // The reverse failure is harmless: a refused PUT leaves three
                 // thresholds stored, which are the values the operator just
@@ -158,7 +160,7 @@ export const WelcomeDialog = ({open, onClose}) => {
     // Whether the step showing may be left at all - see welcomeStep.js. The
     // button below is dead while this is false, and the handler asks again, so
     // a step the server would refuse cannot be left however it is pressed.
-    const mayAdvance = canAdvance({step, provider, endpoint});
+    const mayAdvance = canAdvance({step, provider, endpoint, ping, download, upload});
 
     const continueStep = async (close) => {
         // The lock sits here rather than inside finish(), for the same reason
@@ -171,7 +173,7 @@ export const WelcomeDialog = ({open, onClose}) => {
         // every one of those cases down with a ReferenceError. It is the only
         // thing in this .jsx anything can execute.
         if (saving) return;
-        if (!canAdvance({step, provider, endpoint})) return;
+        if (!canAdvance({step, provider, endpoint, ping, download, upload})) return;
 
         if (step === lastStep(provider)) {
             setSaving(true);
@@ -204,12 +206,12 @@ export const WelcomeDialog = ({open, onClose}) => {
             {({forceClose}) => (
                 <div className="welcome-banner">
                     <div className={`welcome-inner ${animating ? 'slide-in' : ''}`}>
-                        {step === 1 && <Greetings/>}
+                        {step === FIRST_STEP && <Greetings/>}
                         {step === PROVIDER_STEP && <ProviderChooser provider={provider} setProvider={setProvider}
                                                                     endpoint={endpoint} setEndpoint={setEndpoint}/>}
-                        {step === 3 && <DataHelper ping={ping} setPing={setPing} download={download}
-                                                   setDownload={setDownload} upload={upload} setUpload={setUpload}/>}
-                        {step === 4 && provider === "ookla" && <OoklaLicense/>}
+                        {step === THRESHOLDS_STEP && <DataHelper ping={ping} setPing={setPing} download={download}
+                                                                 setDownload={setDownload} upload={upload} setUpload={setUpload}/>}
+                        {step === LICENCE_STEP && provider === "ookla" && <OoklaLicense/>}
                     </div>
                     <div className="welcome-actions">
                         <h3>{t("welcome.step")} {step}/{lastStep(provider)}</h3>

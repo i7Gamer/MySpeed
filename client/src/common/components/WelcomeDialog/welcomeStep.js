@@ -7,6 +7,7 @@
  */
 
 import {iperfHostAccepted, requiresEndpoint} from "../TargetsDialog/providerFields.js";
+import {isThresholdNumber} from "../../utils/TestUtil.js";
 
 /** The step the wizard opens on: the greeting, before anything is asked. */
 export const FIRST_STEP = 1;
@@ -26,8 +27,11 @@ export const PROVIDER_STEP = 2;
 export const DEFAULT_PROVIDER = "ookla";
 
 
-const THRESHOLDS_STEP = 3;
-const LICENCE_STEP = 4;
+/** The step the three alert thresholds are typed on. */
+export const THRESHOLDS_STEP = 3;
+
+/** Ookla's licence, the one provider with a fourth step - see lastStep. */
+export const LICENCE_STEP = 4;
 
 /**
  * The wizard's last step for a provider.
@@ -92,14 +96,24 @@ export const welcomeSeed = (config) => ({
  * the next provider that needs a value of its own is refused here by the same
  * rule instead of being discovered by whoever installs it.
  */
-export const canAdvance = ({step, provider, endpoint}) =>
-    step !== PROVIDER_STEP
-    || !requiresEndpoint(provider)
-    // Held to the shape the server holds it to, not merely to being filled in.
-    // Emptiness closed half the trap this function was written for: an address
-    // the server refuses for shape - a pasted URL, a port of 0, a host with a
-    // space in it - still walked past the chooser and met its refusal on the
-    // next step, where the field is gone, there is no way back and the dialog
-    // cannot be dismissed. The rule lives beside requiresEndpoint so the target
-    // editor asks the same question of the same field.
-    || iperfHostAccepted(endpoint);
+export const canAdvance = ({step, provider, endpoint, ping, download, upload}) => {
+    if (step === PROVIDER_STEP)
+        // Held to the shape the server holds it to, not merely to being filled
+        // in. Emptiness closed half the trap this function was written for: an
+        // address the server refuses for shape - a pasted URL, a port of 0, a
+        // host with a space in it - still walked past the chooser and met its
+        // refusal on the next step, where the field is gone, there is no way
+        // back and the dialog cannot be dismissed. The rule lives beside
+        // requiresEndpoint so the target editor asks the same question of the
+        // same field.
+        return !requiresEndpoint(provider) || iperfHostAccepted(endpoint);
+
+    // The thresholds, by the same reasoning and the server's own shape rule:
+    // the three inputs carry no min, and the refusal lands where finish()
+    // PATCHes them - for ookla that is one step later, on the licence, behind
+    // the single Done button of a dialog nobody can dismiss.
+    if (step === THRESHOLDS_STEP)
+        return [ping, download, upload].every(isThresholdNumber);
+
+    return true;
+};

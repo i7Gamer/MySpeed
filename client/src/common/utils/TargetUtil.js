@@ -261,17 +261,29 @@ export const chipIsStale = (preferences, targets, node, targetsNode) =>
  * the shortcut away.
  */
 export const pageTarget = (targets, preferences, node, presentTargetIds = undefined) => {
+    /*
+     * The payload's own answer first, because the payload is what is on
+     * screen. The chip narrows the *next* query, and the figures it will
+     * judge stay deferred for the whole round trip - so for that window the
+     * rows behind them are the previous query's, and the chip's target owned
+     * none of them. When the page's data names exactly one target, grade by
+     * it whatever the chip is doing; a mixture - other targets, or rows that
+     * belong to none - is an aggregate only the global settings can judge.
+     */
+    if (Array.isArray(presentTargetIds) && presentTargetIds.length > 0) {
+        const [only, ...rest] = [...new Set(presentTargetIds)];
+        if (rest.length > 0 || only === null || only === undefined) return null;
+
+        return targets.find((target) => target.id === only) ?? null;
+    }
+
+    // While no payload has landed the chip is the best answer there is - the
+    // first render of a filtered page must not flash the global basis - and
+    // on the empty range, which leaves nothing for any optima to judge
+    // wrongly, it keeps the basis from changing as a range empties.
     const selected = selectedTargetId(preferences, targets, node);
-    // A chip narrows the page's query to its target, so the rows behind the
-    // figures are that target's by construction and need nothing to vouch for
-    // them - the filter is the evidence.
     if (selected !== null) return targets.find((target) => target.id === selected) ?? null;
 
     if (targets.length !== 1) return null;
-    if (!Array.isArray(presentTargetIds)) return targets[0];
-
-    // An empty range answers an empty set, which passes: there is nothing on
-    // the page for the sole target's optima to judge wrongly, and the cards
-    // would otherwise change what they grade against as a range empties.
-    return presentTargetIds.every((id) => id === targets[0].id) ? targets[0] : null;
+    return targets[0];
 };

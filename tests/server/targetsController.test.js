@@ -26,7 +26,12 @@ describe("targetProblem", () => {
     });
 
     it("refuses a provider the registry does not know", () => {
-        assert.match(targetProblem({...valid, provider: "iperf3"}), /provider/i);
+        // "none" is the legacy single-provider sentinel, exactly the value an
+        // old config could try to smuggle in. The other name is nobody's
+        // provider: this case said "iperf3" until iperf3 became real, and the
+        // assertion then held a different rule - the server-id one - whose
+        // message happens to contain the word "provider".
+        assert.match(targetProblem({...valid, provider: "carrier-pigeon"}), /provider/i);
         assert.match(targetProblem({...valid, provider: "none"}), /provider/i);
     });
 

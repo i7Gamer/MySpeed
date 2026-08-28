@@ -438,9 +438,30 @@ describe("pageTarget against the page's own rows", () => {
             "and the first render happens before any payload has landed");
     });
 
-    it("trusts the chip's own filter over the evidence", () => {
-        assert.deepEqual(pageTarget(two, {selectedTarget: 1, selectedTargetNode: null}, null, [1, 2]),
-            two[0], "a chip narrows the query, so the rows behind the figures are that "
-            + "target's by construction - the filter is the evidence");
+    /**
+     * The payload outranks the chip. The chip narrows the *next* query; the
+     * figures on screen are whatever payload is still showing - deferred for
+     * the whole round trip after a chip click - and for that window the rows
+     * behind them are the previous query's. Trusting the chip put one
+     * target's verdicts on a mixture it never measured, for as long as the
+     * fetch took.
+     */
+    it("grades a mixed payload globally however the chip points", () => {
+        assert.equal(pageTarget(two, {selectedTarget: 1, selectedTargetNode: null}, null, [1, 2]),
+            null, "the chip's optima judged rows the old, unfiltered query fetched");
+    });
+
+    it("grades by the target the payload says it is showing", () => {
+        assert.deepEqual(pageTarget(two, {selectedTarget: 1, selectedTargetNode: null}, null, [2]),
+            two[1], "mid-flight, the figures still belong to the chip chosen before");
+        assert.deepEqual(pageTarget(two, {}, null, [1]), two[0],
+            "a page whose every row is one target's needs no chip to say so");
+    });
+
+    // Before any payload has landed the chip is the best answer there is -
+    // the first render of a filtered page must not flash the global basis.
+    it("still trusts the chip while no payload has landed", () => {
+        assert.deepEqual(pageTarget(two, {selectedTarget: 1, selectedTargetNode: null}, null, undefined),
+            two[0]);
     });
 });

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readSource } from "../helpers/source.js";
 import { requiresEndpoint } from "../../client/src/common/components/TargetsDialog/providerFields.js";
 import {
-    PROVIDER_STEP, canAdvance, lastStep
+    FIRST_STEP, LICENCE_STEP, PROVIDER_STEP, THRESHOLDS_STEP, canAdvance, lastStep
 } from "../../client/src/common/components/WelcomeDialog/welcomeStep.js";
 
 /**
@@ -84,17 +84,53 @@ describe("the providers the wizard offers", () => {
         assert.equal(canAdvance({step: PROVIDER_STEP, provider: "iperf3", endpoint: "   "}), false);
     });
 
-    // Nothing has been chosen yet on step one, and steps three and four are
-    // about thresholds and a licence - the gate belongs to the card step alone.
-    it("gates only the step the cards are on", () => {
-        for (const step of [1, 3, 4])
-            assert.equal(canAdvance({step, provider: "iperf3", endpoint: ""}), true,
-                `step ${step}`);
+    // Nothing has been chosen yet on step one, and the licence step asks for
+    // nothing - the endpoint gate belongs to the card step alone, and the
+    // thresholds step has a gate of its own below.
+    it("does not hold the endpoint against any other step", () => {
+        for (const step of [FIRST_STEP, THRESHOLDS_STEP, LICENCE_STEP])
+            assert.equal(canAdvance({step, provider: "iperf3", endpoint: "",
+                ping: 12, download: 100, upload: 50}), true, `step ${step}`);
     });
 
     it("survives an endpoint that was never set", () => {
         assert.equal(canAdvance({step: PROVIDER_STEP, provider: "iperf3"}), false);
         assert.equal(canAdvance({step: PROVIDER_STEP, provider: "ookla"}), true);
+    });
+});
+
+/**
+ * The thresholds step, held to the shape the server holds a threshold to.
+ *
+ * The three inputs carry no min and were not gated at all, and the refusal
+ * lands where finish() PATCHes them - which for ookla is one step later, on
+ * the licence: a single Done button, disableClose, the offending fields no
+ * longer rendered and no way back. The wedge the endpoint gate above was
+ * written for, reachable through an emptied number field instead.
+ */
+describe("the thresholds the wizard may leave with", () => {
+    const at = (overrides) => canAdvance({step: THRESHOLDS_STEP, provider: "ookla",
+        endpoint: "", ping: 12, download: 100, upload: 50, ...overrides});
+
+    it("refuses an emptied field", () => {
+        assert.equal(at({ping: ""}), false);
+        assert.equal(at({download: ""}), false);
+        assert.equal(at({upload: ""}), false);
+    });
+
+    it("refuses what the server's shape rule refuses", () => {
+        assert.equal(at({ping: "abc"}), false);
+        assert.equal(at({download: "-5"}), false);
+        assert.equal(at({upload: "1.2.3"}), false);
+    });
+
+    // The worse direction to get wrong, as with the hosts above: a rule
+    // tighter than the server's holds the operator behind a dead button.
+    it("accepts everything the server accepts", () => {
+        assert.equal(at({}), true);
+        assert.equal(at({ping: "0.4"}), true, "the recommended ping on a fast line");
+        assert.equal(at({ping: 0}), true, "zero is the server's own lower bound");
+        assert.equal(at({download: "25.9"}), true);
     });
 });
 
