@@ -365,7 +365,7 @@
       "packet_loss_description": "在测出该值的测速中取平均",
       "peak_title": "高峰时段降速",
       "peak_description": "{{slowest}} 前后最慢，{{fastest}} 前后最快",
-      "ping_description": "平均延迟，介于 {{min}} 和 {{max}} 之间",
+      "ping_description": "平均延迟，介于 {{min}} 和 {{max}} 之间，中位数 {{median}}",
       "span_title": "用时跨度",
       "span_description": "此区间内最短和最长的测速",
       "density_title": "每天测速次数",
@@ -380,7 +380,8 @@
       "up": "上传数值",
       "target": "目标：{{target}}",
       "consistency": "稳定度",
-      "samples": "已测速次数"
+      "samples": "已测速次数",
+      "median": "中位数"
     },
     "failed_test": "失败的测试",
     "hourly": {

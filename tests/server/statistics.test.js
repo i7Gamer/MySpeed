@@ -69,6 +69,20 @@ describe("buildStatistics", () => {
             assert.equal(stats.ping.max, 13.1);
         });
 
+        // The average moves with one bad afternoon; the middle of the range
+        // does not, and the panes now state both.
+        it("reports the median beside the average", () => {
+            const stats = buildStatistics([
+                at("2026-08-07T01:00:00.000Z", {download: 100}),
+                at("2026-08-07T02:00:00.000Z", {download: 110}),
+                at("2026-08-07T03:00:00.000Z", {download: 400})
+            ], DAY);
+
+            assert.equal(stats.download.median, 110);
+            assert.equal(stats.download.avg, 203.33,
+                "the fixture no longer demonstrates the skew the median resists");
+        });
+
         // Regression: a range in which every test failed used to serialise as
         // Infinity/NaN, which JSON.stringify turns into null with no warning.
         it("returns null aggregates when every test failed", () => {
@@ -76,8 +90,8 @@ describe("buildStatistics", () => {
                 at("2026-08-07T01:00:00.000Z", {error: "timeout"}),
                 at("2026-08-07T02:00:00.000Z", {error: "timeout"})
             ], DAY);
-            assert.deepEqual(stats.download, {min: null, max: null, avg: null});
-            assert.deepEqual(stats.ping, {min: null, max: null, avg: null});
+            assert.deepEqual(stats.download, {min: null, max: null, avg: null, median: null});
+            assert.deepEqual(stats.ping, {min: null, max: null, avg: null, median: null});
         });
 
         it("returns null jitter aggregates when no entry reports jitter", () => {
@@ -85,7 +99,7 @@ describe("buildStatistics", () => {
                 at("2026-08-07T01:00:00.000Z", {jitter: null}),
                 at("2026-08-07T02:00:00.000Z", {jitter: null})
             ], DAY);
-            assert.deepEqual(stats.jitter, {min: null, max: null, avg: null});
+            assert.deepEqual(stats.jitter, {min: null, max: null, avg: null, median: null});
         });
 
         it("aggregates only the entries that do report jitter", () => {
@@ -94,7 +108,7 @@ describe("buildStatistics", () => {
                 at("2026-08-07T02:00:00.000Z", {jitter: 4}),
                 at("2026-08-07T03:00:00.000Z", {jitter: 6})
             ], DAY);
-            assert.deepEqual(stats.jitter, {min: 4, max: 6, avg: 5});
+            assert.deepEqual(stats.jitter, {min: 4, max: 6, avg: 5, median: 5});
         });
     });
 
@@ -926,6 +940,58 @@ describe("loaded latency over the range", () => {
             assert.deepEqual(buildStatistics([at("2026-08-07T01:00:00.000Z")], DAY)
                 .consistency.loadedLatency.trend, []);
         });
+    });
+});
+
+/**
+ * What the testing itself cost in traffic. Every provider stores the bytes a
+ * run moved; the summary was the one reader that never looked at them.
+ */
+describe("data used", () => {
+    it("sums both directions over the rows that measured them", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {bytesDownloaded: 1000, bytesUploaded: 400}),
+            at("2026-08-07T02:00:00.000Z", {bytesDownloaded: 2500, bytesUploaded: 600})
+        ], DAY);
+
+        assert.deepEqual(stats.dataUsed, {download: 3500, upload: 1000, total: 4500});
+    });
+
+    // Rows from before the transfer columns existed say nothing, not nought.
+    it("answers null rather than zero when nothing measured it", () => {
+        const stats = buildStatistics([at("2026-08-07T01:00:00.000Z")], DAY);
+
+        assert.deepEqual(stats.dataUsed, {download: null, upload: null, total: null});
+    });
+
+    // A history straddling the columns' arrival sums what was measured: a
+    // lower bound, not a claim about the rows that said nothing.
+    it("keeps a lower bound when only some rows measured it", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {bytesDownloaded: 1000, bytesUploaded: 400}),
+            at("2026-08-07T02:00:00.000Z")
+        ], DAY);
+
+        assert.deepEqual(stats.dataUsed, {download: 1000, upload: 400, total: 1400});
+    });
+
+    // A failure that moved data still moved it - the figure is about traffic,
+    // not about success, which is why it sums entries rather than successes.
+    it("counts a failed run that still moved data", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {error: "timeout", download: -1, bytesDownloaded: 800, bytesUploaded: 100}),
+            at("2026-08-07T02:00:00.000Z", {bytesDownloaded: 200, bytesUploaded: 50})
+        ], DAY);
+
+        assert.deepEqual(stats.dataUsed, {download: 1000, upload: 150, total: 1150});
+    });
+
+    it("totals a direction the provider never reported as the other alone", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {bytesDownloaded: 1200})
+        ], DAY);
+
+        assert.deepEqual(stats.dataUsed, {download: 1200, upload: null, total: 1200});
     });
 });
 

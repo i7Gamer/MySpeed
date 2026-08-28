@@ -365,7 +365,7 @@
       "packet_loss_description": "Средно за тестовете, които са я измерили",
       "peak_title": "Забавяне в пиковите часове",
       "peak_description": "Най-бавно около {{slowest}}, най-бързо около {{fastest}}",
-      "ping_description": "Средно закъснение, между {{min}} и {{max}}",
+      "ping_description": "Средно закъснение, между {{min}} и {{max}}, медиана {{median}}",
       "span_title": "Разлика в продължителността",
       "span_description": "Най-краткият и най-дългият тест в този период",
       "density_title": "Тестове на ден",
@@ -380,7 +380,8 @@
       "up": "Стойности за качване",
       "target": "Цел: {{target}}",
       "consistency": "Постоянство",
-      "samples": "Измерени тестове"
+      "samples": "Измерени тестове",
+      "median": "Медиана"
     },
     "failed_test": "Неуспешен тест",
     "hourly": {

@@ -365,7 +365,7 @@
       "packet_loss_description": "Gjennomsnitt av testene som målte det",
       "peak_title": "Nedbremsing i rushtiden",
       "peak_description": "Tregest rundt {{slowest}}, raskest rundt {{fastest}}",
-      "ping_description": "Gjennomsnittlig forsinkelse, mellom {{min}} og {{max}}",
+      "ping_description": "Gjennomsnittlig forsinkelse, mellom {{min}} og {{max}}, median {{median}}",
       "span_title": "Spredning i varighet",
       "span_description": "Den korteste og lengste testen i dette intervallet",
       "density_title": "Tester per dag",
@@ -380,7 +380,8 @@
       "up": "Opplastingsverdier",
       "target": "Mål: {{target}}",
       "consistency": "Jevnhet",
-      "samples": "Målte tester"
+      "samples": "Målte tester",
+      "median": "Median"
     },
     "failed_test": "Mislykket test",
     "hourly": {

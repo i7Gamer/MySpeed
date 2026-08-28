@@ -365,7 +365,7 @@
       "packet_loss_description": "Durchschnitt über die Tests, die ihn gemessen haben",
       "peak_title": "Verlangsamung zur Stoßzeit",
       "peak_description": "Am langsamsten gegen {{slowest}}, am schnellsten gegen {{fastest}}",
-      "ping_description": "Durchschnittliche Latenz, zwischen {{min}} und {{max}}",
+      "ping_description": "Durchschnittliche Latenz, zwischen {{min}} und {{max}}, Median {{median}}",
       "span_title": "Dauer-Spanne",
       "span_description": "Der kürzeste und der längste Test in diesem Zeitraum",
       "density_title": "Tests pro Tag",
@@ -380,7 +380,8 @@
       "up": "Upload-Werte",
       "target": "Ziel: {{target}}",
       "consistency": "Konstanz",
-      "samples": "Gemessene Tests"
+      "samples": "Gemessene Tests",
+      "median": "Median"
     },
     "failed_test": "Fehlgeschlagener Test",
     "hourly": {

@@ -365,7 +365,7 @@
       "packet_loss_description": "Mitjana de les proves que l'han mesurada",
       "peak_title": "Alentiment en hores punta",
       "peak_description": "Més lent cap a les {{slowest}}, més ràpid cap a les {{fastest}}",
-      "ping_description": "Latència mitjana, entre {{min}} i {{max}}",
+      "ping_description": "Latència mitjana, entre {{min}} i {{max}}, mediana {{median}}",
       "span_title": "Dispersió de la durada",
       "span_description": "La prova més curta i la més llarga d'aquest interval",
       "density_title": "Proves per dia",
@@ -380,7 +380,8 @@
       "up": "Valors de pujada",
       "target": "Objectiu: {{target}}",
       "consistency": "Regularitat",
-      "samples": "Proves mesurades"
+      "samples": "Proves mesurades",
+      "median": "Mediana"
     },
     "failed_test": "Prova fallida",
     "hourly": {

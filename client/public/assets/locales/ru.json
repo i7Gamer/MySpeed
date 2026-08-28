@@ -365,7 +365,7 @@
       "packet_loss_description": "Среднее по тестам, где она измерялась",
       "peak_title": "Замедление в часы пик",
       "peak_description": "Медленнее всего около {{slowest}}, быстрее всего около {{fastest}}",
-      "ping_description": "Средняя задержка, от {{min}} до {{max}}",
+      "ping_description": "Средняя задержка, от {{min}} до {{max}}, медиана {{median}}",
       "span_title": "Разброс длительности",
       "span_description": "Самый короткий и самый длинный тест в этом диапазоне",
       "density_title": "Тестов в день",
@@ -380,7 +380,8 @@
       "up": "Значения отдачи",
       "target": "Цель: {{target}}",
       "consistency": "Стабильность",
-      "samples": "Измеренные тесты"
+      "samples": "Измеренные тесты",
+      "median": "Медиана"
     },
     "failed_test": "Сбой теста",
     "hourly": {

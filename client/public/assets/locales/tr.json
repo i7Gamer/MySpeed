@@ -365,7 +365,7 @@
       "packet_loss_description": "Bunu ölçen testlerin ortalaması",
       "peak_title": "Yoğun saat yavaşlaması",
       "peak_description": "En yavaş {{slowest}} civarında, en hızlı {{fastest}} civarında",
-      "ping_description": "Ortalama gecikme, {{min}} ile {{max}} arasında",
+      "ping_description": "Ortalama gecikme, {{min}} ile {{max}} arasında, medyan {{median}}",
       "span_title": "Süre farkı",
       "span_description": "Bu aralıktaki en kısa ve en uzun test",
       "density_title": "Günlük test sayısı",
@@ -380,7 +380,8 @@
       "up": "Yükleme değerleri",
       "target": "Hedef: {{target}}",
       "consistency": "Düzenlilik",
-      "samples": "Ölçülen testler"
+      "samples": "Ölçülen testler",
+      "median": "Medyan"
     },
     "failed_test": "Başarısız test",
     "hourly": {

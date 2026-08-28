@@ -1,7 +1,7 @@
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import PanelRow from "@/pages/Statistics/components/PanelRow";
 import {
-    faCompress, faGauge, faGaugeHigh, faMinusCircle, faPlusCircle
+    faCompress, faGauge, faGaugeHigh, faMinusCircle, faPlusCircle, faScaleBalanced
 } from "@fortawesome/free-solid-svg-icons";
 import {useContext} from "react";
 import {t} from "i18next";
@@ -145,6 +145,22 @@ export const AverageChart = (props) => {
                                   </>
                               )}
                           </>}/>
+
+                {/* The middle of the range, beside the mean the card leads
+                    with: one bad afternoon drags an average and leaves a
+                    median standing, so the two disagreeing is itself the
+                    finding. Enlarged view only - the card keeps its three
+                    figures - and compared like the average but not graded
+                    like it: the optimum is a promise about typical
+                    throughput, which the average's own row already judges. */}
+                {props.expanded && (
+                    <PanelRow icon={faScaleBalanced} title={t("statistics.values.median")}
+                              value={<>
+                                  {speed(props.data.median)}
+                                  <Delta current={props.data.median} previous={props.previous?.median}
+                                         higherIsBetter={true}/>
+                              </>}/>
+                )}
 
                 {/* An average says nothing on its own about whether the line
                     held there or swung either side of it, and the stability

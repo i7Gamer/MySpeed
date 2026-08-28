@@ -365,7 +365,7 @@
       "packet_loss_description": "Genomsnitt över de tester som mätte den",
       "peak_title": "Nedgång i högtrafik",
       "peak_description": "Långsammast runt {{slowest}}, snabbast runt {{fastest}}",
-      "ping_description": "Genomsnittlig latens, mellan {{min}} och {{max}}",
+      "ping_description": "Genomsnittlig latens, mellan {{min}} och {{max}}, median {{median}}",
       "span_title": "Längdspridning",
       "span_description": "Det kortaste och det längsta testet i den här perioden",
       "density_title": "Tester per dag",
@@ -380,7 +380,8 @@
       "up": "Uppladdningsvärden",
       "target": "Mål: {{target}}",
       "consistency": "Jämnhet",
-      "samples": "Uppmätta tester"
+      "samples": "Uppmätta tester",
+      "median": "Median"
     },
     "failed_test": "Misslyckat test",
     "hourly": {

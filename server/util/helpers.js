@@ -163,7 +163,25 @@ export const toErrorMessage = (error) => {
 
 const AVG_DECIMALS = 2;
 
-const EMPTY_RANGE = {min: null, max: null, avg: null};
+const EMPTY_RANGE = {min: null, max: null, avg: null, median: null};
+
+/**
+ * The middle of the measured values, which the average is not: one spike moves
+ * a mean and leaves a median standing.
+ *
+ * Sorts the array it is handed - mapRange builds it privately for exactly this.
+ * Passed through the same rounding as the average, whatever the count's
+ * parity: the two middles of an even count make it a derived figure, and a
+ * precision that changed with the parity would read as noise.
+ */
+const medianOf = (values, averageOf) => {
+    values.sort((a, b) => a - b);
+    const middle = Math.floor(values.length / 2);
+
+    return averageOf(values.length % 2 === 1
+        ? values[middle]
+        : (values[middle - 1] + values[middle]) / 2);
+};
 
 // Math.min(...[]) is Infinity and 0/0 is NaN, both of which JSON.stringify
 // silently turns into null. Returning explicit nulls keeps the value honest for
@@ -178,6 +196,7 @@ const mapRange = (entries, type, averageOf) => {
     let max = -Infinity;
     let total = 0;
     let counted = 0;
+    const values = [];
 
     for (const entry of entries) {
         const value = entry[type];
@@ -196,12 +215,13 @@ const mapRange = (entries, type, averageOf) => {
         if (value > max) max = value;
         total += value;
         counted++;
+        values.push(value);
     }
 
     // Nothing measured at all, whether the set was empty or held only absences.
     if (counted === 0) return {...EMPTY_RANGE};
 
-    return {min, max, avg: averageOf(total / counted)};
+    return {min, max, avg: averageOf(total / counted), median: medianOf(values, averageOf)};
 };
 
 export const mapFixed = (entries, type) =>

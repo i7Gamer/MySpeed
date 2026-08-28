@@ -365,7 +365,7 @@
       "packet_loss_description": "Průměr z testů, které ji měřily",
       "peak_title": "Zpomalení ve špičce",
       "peak_description": "Nejpomalejší kolem {{slowest}}, nejrychlejší kolem {{fastest}}",
-      "ping_description": "Průměrná odezva, mezi {{min}} a {{max}}",
+      "ping_description": "Průměrná odezva, mezi {{min}} a {{max}}, medián {{median}}",
       "span_title": "Rozptyl doby trvání",
       "span_description": "Nejkratší a nejdelší test v tomto rozsahu",
       "density_title": "Testů za den",
@@ -380,7 +380,8 @@
       "up": "Hodnoty nahrávání",
       "target": "Cíl: {{target}}",
       "consistency": "Konzistence",
-      "samples": "Změřené testy"
+      "samples": "Změřené testy",
+      "median": "Medián"
     },
     "failed_test": "Neúspěšný test",
     "hourly": {

@@ -365,7 +365,7 @@
       "packet_loss_description": "Meán thar na tástálacha a thomhais é",
       "peak_title": "Moilliú buaicuaire",
       "peak_description": "Is moille é thart ar {{slowest}}, is tapúla é thart ar {{fastest}}",
-      "ping_description": "Meán-aga folaigh, idir {{min}} agus {{max}}",
+      "ping_description": "Meán-aga folaigh, idir {{min}} agus {{max}}, airmheán {{median}}",
       "span_title": "Réimse faid",
       "span_description": "An tástáil is giorra agus an ceann is faide sa raon seo",
       "density_title": "Tástálacha in aghaidh an lae",
@@ -380,7 +380,8 @@
       "up": "Luachanna uaslódála",
       "target": "Sprioc: {{target}}",
       "consistency": "Comhsheasmhacht",
-      "samples": "Tástálacha tomhaiste"
+      "samples": "Tástálacha tomhaiste",
+      "median": "Airmheán"
     },
     "failed_test": "Theip ar an tástáil",
     "hourly": {

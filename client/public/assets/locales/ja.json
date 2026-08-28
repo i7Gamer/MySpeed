@@ -365,7 +365,7 @@
       "packet_loss_description": "測定できたテストの平均",
       "peak_title": "ピーク時間帯の速度低下",
       "peak_description": "最も遅いのは {{slowest}} 頃、最も速いのは {{fastest}} 頃",
-      "ping_description": "平均レイテンシー（{{min}} 〜 {{max}}）",
+      "ping_description": "平均レイテンシー（{{min}} 〜 {{max}}、中央値 {{median}}）",
       "span_title": "所要時間のばらつき",
       "span_description": "この範囲で最も短いテストと最も長いテスト",
       "density_title": "1 日あたりのテスト数",
@@ -380,7 +380,8 @@
       "up": "アップロード値",
       "target": "目標: {{target}}",
       "consistency": "一貫性",
-      "samples": "測定されたテスト"
+      "samples": "測定されたテスト",
+      "median": "中央値"
     },
     "failed_test": "失敗したテスト",
     "hourly": {

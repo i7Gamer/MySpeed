@@ -127,6 +127,18 @@ describe("GET /api/speedtests/statistics", () => {
             assert.equal(body.tests.total, 1);
         });
 
+        // What the testing itself cost in traffic - stored per row since the
+        // transfer columns arrived, and summed for the range here.
+        it("reports the data the range's tests used", async () => {
+            await seedTests(server.tests, [
+                at("2026-08-05T10:00:00.000Z", {bytesDownloaded: 1000, bytesUploaded: 400}),
+                at("2026-08-06T10:00:00.000Z", {bytesDownloaded: 2500, bytesUploaded: 600})
+            ]);
+
+            const {body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
+            assert.deepEqual(body.dataUsed, {download: 3500, upload: 1000, total: 4500});
+        });
+
         /**
          * Which targets the figures were actually built from, which is the one
          * thing the client cannot work out for itself: a single-target instance
@@ -211,7 +223,7 @@ describe("GET /api/speedtests/statistics", () => {
 
             const {text, body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
             assert.equal(body.tests.failed, 2);
-            assert.deepEqual(body.download, {min: null, max: null, avg: null});
+            assert.deepEqual(body.download, {min: null, max: null, avg: null, median: null});
             assert.ok(!text.includes("Infinity"), "raw payload must not contain Infinity");
             assert.ok(!text.includes("NaN"), "raw payload must not contain NaN");
         });
@@ -223,7 +235,7 @@ describe("GET /api/speedtests/statistics", () => {
             ]);
 
             const {body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
-            assert.deepEqual(body.jitter, {min: null, max: null, avg: null});
+            assert.deepEqual(body.jitter, {min: null, max: null, avg: null, median: null});
         });
 
         /**
@@ -508,7 +520,7 @@ describe("GET /api/speedtests/statistics", () => {
             await seedTests(server.tests, [
                 at("2025-08-05T10:00:00.000Z"),
                 at("2025-08-03T10:00:00.000Z"),
-                at("2025-07-29T10:00:00.000Z", {download: 50})
+                at("2025-07-29T10:00:00.000Z", {download: 50, bytesDownloaded: 700, bytesUploaded: 300})
             ]);
 
             const {status, body} = await statistics(
@@ -517,6 +529,8 @@ describe("GET /api/speedtests/statistics", () => {
             assert.equal(status, 200);
             assert.equal(body.previous.tests.total, 1);
             assert.equal(body.previous.download.avg, 50);
+            assert.deepEqual(body.previous.dataUsed, {download: 700, upload: 300, total: 1000},
+                "the summary of the previous window no longer carries what its tests cost in traffic");
             assert.equal(body.previous.dateRange.from, "2025-07-25T00:00:00.000Z");
             assert.equal(body.previous.dateRange.to, "2025-07-31T23:59:59.999Z");
             assert.equal(body.previous.dateRange.partial, undefined,

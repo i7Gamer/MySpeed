@@ -14,12 +14,14 @@ const entries = [
 ];
 
 describe("mapFixed", () => {
-    it("returns min, max and a 2-decimal average", () => {
-        assert.deepEqual(mapFixed(entries, "download"), {min: 100.123, max: 300.789, avg: 200.46});
+    it("returns min, max, median and a 2-decimal average", () => {
+        assert.deepEqual(mapFixed(entries, "download"),
+            {min: 100.123, max: 300.789, avg: 200.46, median: 200.46});
     });
 
     it("handles a single entry", () => {
-        assert.deepEqual(mapFixed([{download: 50}], "download"), {min: 50, max: 50, avg: 50});
+        assert.deepEqual(mapFixed([{download: 50}], "download"),
+            {min: 50, max: 50, avg: 50, median: 50});
     });
 
     // Regression: Math.min(...[]) is Infinity and 0/0 is NaN, so an empty set
@@ -27,7 +29,7 @@ describe("mapFixed", () => {
     // API whenever every test in a range failed, or when the provider reports
     // no jitter at all.
     it("returns nulls for an empty set instead of Infinity/NaN", () => {
-        assert.deepEqual(mapFixed([], "download"), {min: null, max: null, avg: null});
+        assert.deepEqual(mapFixed([], "download"), {min: null, max: null, avg: null, median: null});
     });
 
     it("never returns a non-finite number for an empty set", () => {
@@ -44,17 +46,50 @@ describe("mapFixed", () => {
     it("stays within the call stack on six-figure ranges", () => {
         const entries = Array.from({length: 200000}, (_, i) => ({download: i % 100}));
 
-        assert.deepEqual(mapFixed(entries, "download"), {min: 0, max: 99, avg: 49.5});
+        assert.deepEqual(mapFixed(entries, "download"), {min: 0, max: 99, avg: 49.5, median: 49.5});
     });
 });
 
 describe("mapRounded", () => {
-    it("returns min, max and a rounded average", () => {
-        assert.deepEqual(mapRounded(entries, "ping"), {min: 10, max: 32, avg: 21});
+    it("returns min, max, median and a rounded average", () => {
+        assert.deepEqual(mapRounded(entries, "ping"), {min: 10, max: 32, avg: 21, median: 21});
     });
 
     it("returns nulls for an empty set instead of Infinity/NaN", () => {
-        assert.deepEqual(mapRounded([], "ping"), {min: null, max: null, avg: null});
+        assert.deepEqual(mapRounded([], "ping"), {min: null, max: null, avg: null, median: null});
+    });
+});
+
+/**
+ * The middle of the range, which the average is not: one 3000 ms spike among a
+ * hundred 20 ms pings moves the mean by 30 ms and the median not at all.
+ * Summarised at the mapper's own precision like the average - the two middles
+ * of an even count make it a derived figure, and a precision that changed with
+ * the count's parity would read as noise.
+ */
+describe("the median of a range", () => {
+    it("takes the middle value however the entries arrive", () => {
+        assert.equal(mapFixed([{download: 300}, {download: 100}, {download: 200}], "download").median, 200);
+    });
+
+    it("averages the two middles of an even count", () => {
+        assert.equal(mapRounded([{ping: 10}, {ping: 20}, {ping: 30}, {ping: 40}], "ping").median, 25);
+    });
+
+    it("is trimmed to the mapper's own precision", () => {
+        assert.equal(mapFixed([{ping: 10.111}, {ping: 10.113}], "ping").median, 10.11);
+    });
+
+    it("skips the rows that never measured", () => {
+        assert.equal(mapRounded([{time: null}, {time: 5}, {time: 7}], "time").median, 6);
+    });
+
+    it("stands where the average is dragged by one outlier", () => {
+        const spiked = [{ping: 20}, {ping: 21}, {ping: 22}, {ping: 3000}];
+
+        assert.equal(mapRounded(spiked, "ping").median, 22);
+        assert.equal(mapRounded(spiked, "ping").avg, 766,
+            "the fixture no longer demonstrates the outlier the median resists");
     });
 });
 
@@ -91,19 +126,19 @@ describe("a value that was never measured", () => {
     });
 
     it("is skipped the same way when it is undefined", () => {
-        assert.deepEqual(mapRounded([{}, {time: 20}], "time"), {min: 20, max: 20, avg: 20});
+        assert.deepEqual(mapRounded([{}, {time: 20}], "time"), {min: 20, max: 20, avg: 20, median: 20});
     });
 
     // Nothing measured at all is the empty case, not a range of nulls.
     it("gives the empty answer when nothing was measured", () => {
         assert.deepEqual(mapRounded([{time: null}, {time: null}], "time"),
-            {min: null, max: null, avg: null});
+            {min: null, max: null, avg: null, median: null});
     });
 
     // A real zero is a real reading: a test that completed instantly is not a
     // test that did not happen.
     it("still counts a measured zero", () => {
-        assert.deepEqual(mapRounded([{time: 0}, {time: 10}], "time"), {min: 0, max: 10, avg: 5});
+        assert.deepEqual(mapRounded([{time: 0}, {time: 10}], "time"), {min: 0, max: 10, avg: 5, median: 5});
     });
 });
 

@@ -365,7 +365,7 @@
       "packet_loss_description": "Gennemsnit på tværs af de tests, der målte det",
       "peak_title": "Opbremsning i myldretiden",
       "peak_description": "Langsomst omkring {{slowest}}, hurtigst omkring {{fastest}}",
-      "ping_description": "Gennemsnitlig forsinkelse, mellem {{min}} og {{max}}",
+      "ping_description": "Gennemsnitlig forsinkelse, mellem {{min}} og {{max}}, median {{median}}",
       "span_title": "Spredning i varighed",
       "span_description": "Den korteste og den længste test i dette interval",
       "density_title": "Tests pr. dag",
@@ -380,7 +380,8 @@
       "up": "Upload-værdier",
       "target": "Mål: {{target}}",
       "consistency": "Ensartethed",
-      "samples": "Målte tests"
+      "samples": "Målte tests",
+      "median": "Median"
     },
     "failed_test": "Mislykket test",
     "hourly": {

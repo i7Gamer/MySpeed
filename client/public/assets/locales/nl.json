@@ -365,7 +365,7 @@
       "packet_loss_description": "Gemiddeld over de tests die het gemeten hebben",
       "peak_title": "Vertraging in de piekuren",
       "peak_description": "Traagst rond {{slowest}}, snelst rond {{fastest}}",
-      "ping_description": "Gemiddelde latentie, tussen {{min}} en {{max}}",
+      "ping_description": "Gemiddelde latentie, tussen {{min}} en {{max}}, mediaan {{median}}",
       "span_title": "Spreiding in duur",
       "span_description": "De kortste en de langste test in dit bereik",
       "density_title": "Tests per dag",
@@ -380,7 +380,8 @@
       "up": "Uploadwaarden",
       "target": "Doel: {{target}}",
       "consistency": "Regelmaat",
-      "samples": "Gemeten tests"
+      "samples": "Gemeten tests",
+      "median": "Mediaan"
     },
     "failed_test": "Mislukte test",
     "hourly": {

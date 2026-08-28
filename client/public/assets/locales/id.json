@@ -365,7 +365,7 @@
       "packet_loss_description": "Rata-rata dari pengujian yang mengukurnya",
       "peak_title": "Perlambatan saat jam sibuk",
       "peak_description": "Paling lambat sekitar {{slowest}}, paling cepat sekitar {{fastest}}",
-      "ping_description": "Latensi rata-rata, antara {{min}} dan {{max}}",
+      "ping_description": "Latensi rata-rata, antara {{min}} dan {{max}}, median {{median}}",
       "span_title": "Rentang durasi",
       "span_description": "Pengujian terpendek dan terpanjang dalam rentang ini",
       "density_title": "Pengujian per hari",
@@ -380,7 +380,8 @@
       "up": "Nilai unggah",
       "target": "Target: {{target}}",
       "consistency": "Konsistensi",
-      "samples": "Pengujian terukur"
+      "samples": "Pengujian terukur",
+      "median": "Median"
     },
     "failed_test": "Pengujian gagal",
     "hourly": {

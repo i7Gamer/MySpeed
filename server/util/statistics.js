@@ -9,16 +9,16 @@ export const TARGET_CHART_POINTS = 300;
  *
  * A wide range holds every row it summarises in memory at once, and most of a
  * row's weight is text nothing here looks at: a server name, a hostname, an ISP
- * and a result URL. Selecting the ten that matter cut a year of five-minute
- * testing - 105 000 rows - from 190 MB to 128 MB, and its fetch from 693 ms to
- * 257 ms.
+ * and a result URL. Selecting only the columns that matter cut a year of
+ * five-minute testing - 105 000 rows - from 190 MB to 128 MB, and its fetch
+ * from 693 ms to 257 ms, measured when the list held ten.
  *
  * A column added to the aggregation but not to this list arrives as undefined,
  * which is silent; the test beside this file scans the source to keep the two
  * in step.
  */
 export const STATISTICS_COLUMNS = ["created", "error", "ping", "jitter", "download", "upload",
-    "time", "packetLoss", "downloadLatency", "uploadLatency"];
+    "time", "packetLoss", "downloadLatency", "uploadLatency", "bytesDownloaded", "bytesUploaded"];
 
 /**
  * How far the client may push the resolution of a chart.
@@ -345,6 +345,36 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
 };
 
 /**
+ * What the testing itself cost in traffic, summed over the rows that measured
+ * it.
+ *
+ * Over the entries rather than the successes: the figure is about traffic, not
+ * about outcomes, and a failure that moved data still moved it. Rows from
+ * before the transfer columns existed - and runs whose provider reported
+ * nothing - hold nulls, which stay out of the sums the way an unmeasured
+ * packet loss stays out of its average: a total over part of the range is a
+ * lower bound, not a claim about rows that said nothing. Null when no row
+ * measured either direction, because absence is not a total of nought.
+ */
+const transferTotals = (entries) => {
+    let download = null;
+    let upload = null;
+
+    for (const entry of entries) {
+        if (typeof entry.bytesDownloaded === "number" && Number.isFinite(entry.bytesDownloaded))
+            download = (download ?? 0) + entry.bytesDownloaded;
+        if (typeof entry.bytesUploaded === "number" && Number.isFinite(entry.bytesUploaded))
+            upload = (upload ?? 0) + entry.bytesUploaded;
+    }
+
+    return {
+        download,
+        upload,
+        total: download === null && upload === null ? null : (download ?? 0) + (upload ?? 0)
+    };
+};
+
+/**
  * Aggregates speedtest rows into the statistics payload the client renders.
  *
  * Pure: it never touches the database, so every branch is directly testable.
@@ -394,6 +424,7 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
         download: mapFixed(succeeded, "download"),
         upload: mapFixed(succeeded, "upload"),
         time: mapRounded(succeeded, "time"),
+        dataUsed: transferTotals(entries),
         data: series.data,
         labels: series.labels,
         failed: series.failed,

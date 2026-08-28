@@ -365,7 +365,7 @@
       "packet_loss_description": "Średnia z testów, które ją zmierzyły",
       "peak_title": "Spowolnienie w godzinach szczytu",
       "peak_description": "Najwolniej około {{slowest}}, najszybciej około {{fastest}}",
-      "ping_description": "Średnie opóźnienie, od {{min}} do {{max}}",
+      "ping_description": "Średnie opóźnienie, od {{min}} do {{max}}, mediana {{median}}",
       "span_title": "Rozrzut czasu trwania",
       "span_description": "Najkrótszy i najdłuższy test w tym zakresie",
       "density_title": "Testy dziennie",
@@ -380,7 +380,8 @@
       "up": "Wartości wysyłania",
       "target": "Cel: {{target}}",
       "consistency": "Regularność",
-      "samples": "Zmierzone testy"
+      "samples": "Zmierzone testy",
+      "median": "Mediana"
     },
     "failed_test": "Test nieudany",
     "hourly": {

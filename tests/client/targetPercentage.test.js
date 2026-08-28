@@ -87,7 +87,10 @@ describe("the target percentage on the value cards", () => {
     it("keeps the delta out of the label column", () => {
         assert.match(average, /value=\{<>\s*\{speed\(props\.data\.avg\)}\s*<Delta current=\{props\.data\.avg}/,
             "the delta is not stacked with the figure it annotates");
-        assert.doesNotMatch(average, /description=\{<>[\s\S]*<Delta /,
+        // Tempered to the description's own fragment: rows after this one
+        // carry deltas of their own in their value columns, which a bare
+        // [\s\S]* reached across and misread as the label's.
+        assert.doesNotMatch(average, /description=\{<>(?:(?!<\/>)[\s\S])*<Delta /,
             "the delta is back in the label column, where the sentence needs the room");
     });
 });

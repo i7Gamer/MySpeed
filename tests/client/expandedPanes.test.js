@@ -69,7 +69,7 @@ describe("the overview pane", () => {
      * what it is rather than left as an incidental match.
      */
     it("trims that latency the way every other panel does", () => {
-        for (const figure of ["ping.avg", "ping.min", "ping.max"])
+        for (const figure of ["ping.avg", "ping.min", "ping.max", "ping.median"])
             assert.match(overview, new RegExp(`formatLatencyWithUnit\\(${figure.replace(".", "\\.")}, ms\\)`),
                 `${figure} is printed at the two decimals the server stores`);
 
@@ -115,8 +115,59 @@ describe("the overview pane", () => {
             assert.equal(typeof english.statistics.overview[key], "string", `statistics.overview.${key}`);
 
         assert.match(english.statistics.overview.ping_description, /\{\{min}}[\s\S]*\{\{max}}/);
+        assert.match(english.statistics.overview.ping_description, /\{\{median}}/,
+            "the latency row interpolates a median its string does not name");
         assert.match(english.statistics.overview.density_description, /\{\{days}}/);
         assert.match(english.statistics.overview.density_description_partial, /\{\{elapsed}}[\s\S]*\{\{days}}/);
+    });
+});
+
+/**
+ * What the testing itself cost in traffic. Stored per row since the transfer
+ * columns arrived, stated per test in the detail panel - and the range's total
+ * was nowhere.
+ */
+describe("the data the range's tests used", () => {
+    it("states the total in the detail panel's own words", () => {
+        assert.match(overview, /title: t\("test\.details\.data_used"\)/,
+            "the row invents a wording of its own for a fact the panel already names");
+        assert.match(overview, /value: formatBytes\(dataUsed\.total\)/);
+    });
+
+    it("is fed by the page, collapsed and expanded alike", () => {
+        const handed = statistics.match(/dataUsed=\{deferredStatistics\.dataUsed}/g) ?? [];
+
+        assert.equal(handed.length, 2,
+            "one of the two OverviewChart renders lost the prop - the trap props.ping already sits in");
+    });
+
+    it("renders no row rather than a total of nought when nothing measured it", () => {
+        assert.match(overview, /typeof dataUsed\?\.total === "number"/);
+    });
+
+    it("compares the total without colouring it", () => {
+        assert.match(overview, /previous: props\.previous\?\.dataUsed\?\.total, higherIsBetter: null/);
+    });
+});
+
+/**
+ * The median on the averages pane: the mean the card leads with moves with one
+ * bad afternoon, and the middle of the range does not.
+ */
+describe("the averages pane's median", () => {
+    const averages = read("pages/Statistics/charts/AverageChart/AverageChart.jsx");
+
+    it("shows the median only in the enlarged view", () => {
+        assert.match(averages,
+            /props\.expanded && \(\s*<PanelRow icon=\{faScaleBalanced} title=\{t\("statistics\.values\.median"\)/);
+    });
+
+    it("compares it against the previous window the way the average is", () => {
+        assert.match(averages, /current=\{props\.data\.median} previous=\{props\.previous\?\.median}/);
+    });
+
+    it("has its string", () => {
+        assert.equal(typeof english.statistics.values.median, "string");
     });
 });
 

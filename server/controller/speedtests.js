@@ -506,7 +506,7 @@ export const targetsPresent = (entries) => [...new Set(entries.map((entry) => en
 // What a period-over-period comparison actually uses: the summary figures the
 // panels show. The series, labels and hourly buckets are deliberately not
 // carried - nothing draws a ghost chart, and they are most of the payload.
-const SUMMARY_KEYS = ["tests", "packetLoss", "ping", "jitter", "download", "upload", "time", "consistency"];
+const SUMMARY_KEYS = ["tests", "packetLoss", "ping", "jitter", "download", "upload", "time", "consistency", "dataUsed"];
 
 /**
  * The same summary, for the window immediately before the range.

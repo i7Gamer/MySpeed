@@ -3,11 +3,11 @@ import PanelRow from "@/pages/Statistics/components/PanelRow";
 import {t} from "i18next";
 import {useContext} from "react";
 import {
-    faCalendarDay, faCircleExclamation, faClockRotateLeft, faGaugeHigh, faHourglassHalf,
-    faLinkSlash, faPingPongPaddleBall, faStopwatch
+    faCalendarDay, faCircleExclamation, faClockRotateLeft, faDatabase, faGaugeHigh,
+    faHourglassHalf, faLinkSlash, faPingPongPaddleBall, faStopwatch
 } from "@fortawesome/free-solid-svg-icons";
 import {
-    formatDay, formatDuration, formatHour, formatLatencyWithUnit, NOT_MEASURED
+    formatBytes, formatDay, formatDuration, formatHour, formatLatencyWithUnit, NOT_MEASURED
 } from "@/common/utils/FormatUtil";
 import {failureRate} from "@/common/utils/TestUtil";
 import {PreferencesContext} from "@/common/contexts/Preferences";
@@ -87,8 +87,12 @@ const expandedItems = (props) => {
     if (ping) items.push({
         icon: faPingPongPaddleBall,
         title: t("latest.ping"),
+        // The median rides in the description beside the spread: one spike
+        // drags the average the row leads with, and the middle value is what
+        // says whether the line or the afternoon was slow.
         description: t("statistics.overview.ping_description",
-            {min: formatLatencyWithUnit(ping.min, ms), max: formatLatencyWithUnit(ping.max, ms)}),
+            {min: formatLatencyWithUnit(ping.min, ms), max: formatLatencyWithUnit(ping.max, ms),
+                median: formatLatencyWithUnit(ping.median, ms)}),
         value: formatLatencyWithUnit(ping.avg, ms),
         delta: {current: ping.avg, previous: props.previous?.ping?.avg, higherIsBetter: false}
     });
@@ -116,6 +120,24 @@ const expandedItems = (props) => {
             : t("statistics.overview.density_description", {days: density.days}),
         value: density.perDay,
         delta: null
+    });
+
+    // What the testing itself cost in traffic, told in the detail panel's own
+    // words - this row states for the whole range what that panel states for
+    // one test. Absent when no row measured it: rows from before the transfer
+    // columns existed say nothing, not nought. A direction the provider never
+    // reported renders as the panel's own N/A rather than as a zero.
+    const dataUsed = props.dataUsed;
+
+    if (typeof dataUsed?.total === "number") items.push({
+        icon: faDatabase,
+        title: t("test.details.data_used"),
+        description: t("test.details.data_used_value",
+            {down: formatBytes(dataUsed.download), up: formatBytes(dataUsed.upload)}),
+        value: formatBytes(dataUsed.total),
+        // More traffic is neither good nor bad - it mostly tracks how many
+        // tests ran - so the change is worth a word but not a colour.
+        delta: {current: dataUsed.total, previous: props.previous?.dataUsed?.total, higherIsBetter: null}
     });
 
     return items;

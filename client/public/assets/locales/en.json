@@ -365,7 +365,7 @@
       "packet_loss_description": "Average across the tests that measured it",
       "peak_title": "Peak-hour slowdown",
       "peak_description": "Slowest around {{slowest}}, fastest around {{fastest}}",
-      "ping_description": "Average latency, between {{min}} and {{max}}",
+      "ping_description": "Average latency, between {{min}} and {{max}}, median {{median}}",
       "span_title": "Duration spread",
       "span_description": "The shortest and longest test in this range",
       "density_title": "Tests per day",
@@ -380,7 +380,8 @@
       "up": "Upload values",
       "target": "Target: {{target}}",
       "consistency": "Consistency",
-      "samples": "Measured tests"
+      "samples": "Measured tests",
+      "median": "Median"
     },
     "failed_test": "Failed test",
     "hourly": {

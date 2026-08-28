@@ -365,7 +365,7 @@
       "packet_loss_description": "Promedio de los tests que la midieron",
       "peak_title": "Ralentización en hora punta",
       "peak_description": "Más lento sobre las {{slowest}}, más rápido sobre las {{fastest}}",
-      "ping_description": "Latencia media, entre {{min}} y {{max}}",
+      "ping_description": "Latencia media, entre {{min}} y {{max}}, mediana {{median}}",
       "span_title": "Diferencia de duración",
       "span_description": "El test más corto y el más largo de este rango",
       "density_title": "Tests por día",
@@ -380,7 +380,8 @@
       "up": "Valores de subida",
       "target": "Objetivo: {{target}}",
       "consistency": "Regularidad",
-      "samples": "Tests medidos"
+      "samples": "Tests medidos",
+      "median": "Mediana"
     },
     "failed_test": "Prueba fallida",
     "hourly": {
