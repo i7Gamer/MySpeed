@@ -22,11 +22,44 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const source = fs.readFileSync(path.join(root, "server/index.js"), "utf8");
 
-describe("the http listener's error handling", () => {
-    // From where the http server is created to where the https one begins, so
-    // the https handler cannot stand in for the http one these assert is present.
-    const httpSetup = source.slice(source.indexOf("app.listen("), source.indexOf("hasSSLCerts()"));
+// From where the http server is created to where the https one begins, and from
+// there to the end, so neither listener's handler can stand in for the other's
+// in what the two describes below assert is present.
+const httpSetup = source.slice(source.indexOf("app.listen("), source.indexOf("hasSSLCerts()"));
+const httpsSetup = source.slice(source.indexOf("hasSSLCerts()"));
 
+// One listener's 'error' handler: from where it is attached to the push that
+// follows it, so neither the listen callback beside it nor anything later in the
+// block can satisfy assertions written about the handler.
+const errorHandlerOf = (setup) =>
+    setup.slice(setup.search(/\.on\(\s*["']error["']/), setup.indexOf("listeners.push("));
+
+/**
+ * What a listener's 'error' handler does once the listener is already up.
+ *
+ * The two branches are told apart by the return that ends the first: a bind
+ * failure is reported and returned from, so what follows the last return in a
+ * handler is what an instance that is still serving gets. Sliced rather than
+ * matched whole because most of what matters about this half is what is *not*
+ * in it - a start-up exit code, a flag that says TLS is down - and matching the
+ * handler entire would find both of those in the branch above.
+ *
+ * A handler with no return in it has no branch held back from a bound listener,
+ * so the whole of it is what one gets. Said explicitly because the arithmetic
+ * below would otherwise slice from the first statement's semicolon and hand back
+ * almost nothing - which is every "this is not in the post-bind branch"
+ * assertion passing against a handler that has no branches at all, the exact
+ * shape they exist to reject.
+ */
+const postBindBranchOf = (handler) => {
+    const lastReturn = handler.lastIndexOf("return");
+
+    if (lastReturn === -1) return handler;
+
+    return handler.slice(handler.indexOf(";", lastReturn) + 1);
+};
+
+describe("the http listener's error handling", () => {
     it("attaches an error handler to the listener it keeps", () => {
         assert.match(httpSetup, /\.on\(\s*["']error["']/,
             "app.listen's server is kept with no error handler, so a failed bind is an uncaught exception");
@@ -54,22 +87,155 @@ describe("the http listener's error handling", () => {
      * on, and after the bind this one has to as well - the only difference being
      * that before the bind there is no server to carry on as.
      */
-    // From the handler to the end of the http setup, so the assertions below
-    // cannot be satisfied by app.listen's own callback.
-    const errorPath = httpSetup.slice(httpSetup.search(/\.on\(\s*["']error["']/));
+    const errorPath = errorHandlerOf(httpSetup);
 
     it("records the failure through errorHandler, so it reaches the log file", () => {
         assert.match(errorPath, /errorHandler\(/,
             "a bind failure is reported to the console only and never written to data/logs/error.log");
     });
 
+    /**
+     * The guard itself, rather than a word that happens to appear near it.
+     *
+     * This asked only that "listening" occurred somewhere in the handler, and
+     * the non-fatal branch's own wording - "The server listening on port X
+     * reported an error" - contains it. So the assertion was answered by a
+     * string literal instead of by the branch it was written to protect:
+     * collapsing the whole handler to one unconditional fatal call, with a
+     * context phrased that way, left this green. What has to be present is the
+     * question being asked of the listener, so that is what is matched.
+     */
     it("asks whether the listener ever bound before calling it a start-up failure", () => {
-        assert.match(errorPath, /listening/,
+        assert.match(errorPath, /if\s*\(\s*!\s*httpServer\.listening\s*\)/,
             "an 'error' on a running listener is reported as a failure to bind, which it is not");
+    });
+
+    it("keeps the start-up exit code out of the branch that runs on a bound server", () => {
+        assert.doesNotMatch(postBindBranchOf(errorPath), /STARTUP_FAILED_EXIT/,
+            "an accept failure hours after start-up is reported as a start-up that never finished");
     });
 
     it("leaves the exit to the reporter rather than taking a bound server down itself", () => {
         assert.doesNotMatch(errorPath, /process\.exit\(/,
             "an accept failure hours after start-up exits a healthy instance with the start-up code");
+    });
+});
+
+/**
+ * The https listener says the same things, and stops saying one of them.
+ *
+ * It has carried an 'error' handler all along - the http one above was written
+ * to catch up to it - but not this shape of one. A console.error and nothing
+ * else meant a failure that took TLS down was never written to
+ * data/logs/error.log, the file the log's own header points bug reports at, and
+ * the operator got a line in whatever captured stdout instead.
+ *
+ * The unconditional setHttpsListening(false) beside it is the worse half.
+ * That flag is what httpsRedirect consults before sending a caller from the
+ * plain port to this one, and the handler stays attached for the life of the
+ * listener - so an 'error' that has nothing to do with binding, an accept out of
+ * descriptors or a client that went away mid-handshake, marks TLS down on a
+ * listener that is still up and still serving. Nothing sets it back: the only
+ * setHttpsListening(true) is in the listen callback, which has already run. The
+ * redirect stops for good and callers stay on http for a port that never went
+ * anywhere.
+ *
+ * So: the same split as the handler above, minus the exit. https is optional
+ * here - an instance with no certificates serves plain http quite happily - and
+ * a certificate or port problem must not be the thing that stops a server that
+ * would otherwise come up.
+ */
+describe("the https listener's error handling", () => {
+    const httpsErrorPath = errorHandlerOf(httpsSetup);
+
+    it("asks whether the listener ever bound, as the http handler beside it does", () => {
+        assert.match(httpsErrorPath, /if\s*\(\s*!\s*httpsServer\.listening\s*\)/,
+            "every 'error' is answered as a failed bind, whatever the listener was doing at the time");
+    });
+
+    it("records the failure through errorHandler, so it reaches the log file", () => {
+        assert.match(httpsErrorPath, /errorHandler\(/,
+            "a TLS failure is reported to the console only and never written to data/logs/error.log");
+    });
+
+    it("stops the redirect when the listener never came up", () => {
+        assert.match(httpsErrorPath, /setHttpsListening\(\s*false\s*\)/,
+            "a failed bind leaves httpsRedirect sending callers to a port with nothing behind it");
+    });
+
+    it("leaves the redirect alone when the listener is still up", () => {
+        assert.doesNotMatch(postBindBranchOf(httpsErrorPath), /setHttpsListening/,
+            "a passing error on a healthy listener marks TLS down for good, and nothing sets it back");
+    });
+
+    it("never exits, because an instance without TLS still serves", () => {
+        assert.doesNotMatch(httpsErrorPath, /process\.exit\(/,
+            "a certificate problem takes down a server that was serving plain http quite happily");
+        assert.doesNotMatch(httpsErrorPath, /fatal:\s*true/,
+            "the failure is reported as fatal, which is errorHandler being asked to exit");
+    });
+});
+
+/**
+ * A failing accept is not one event.
+ *
+ * Both handlers report a post-bind 'error' through errorHandler, and that
+ * appends an entry to data/logs/error.log every single time it is called. The
+ * failures that reach it there do not arrive once: a process that has run out of
+ * file descriptors emits EMFILE for every connection the kernel hands it, for as
+ * long as callers keep arriving - so the report meant to explain a quiet failure
+ * is a log file with no ceiling on it. And when the write is itself what is
+ * failing, which a full disk makes likely in exactly this situation,
+ * errorHandler answers each call with a second console line and the flood simply
+ * moves to stdout.
+ *
+ * So the first occurrence is written down in full and the ones behind it are
+ * held for an interval. Held, not dropped in silence: each suppressed occurrence
+ * still gets a console line with no log write behind it, because an operator
+ * watching a server fail every accept should not have to infer that from one
+ * minute-old entry and nothing since.
+ *
+ * Per listener, so a busy http listener cannot mute the https one beside it.
+ */
+describe("how often a bound listener's errors are written down", () => {
+    // From the reporter to run(), so the interval has to be consulted by the
+    // thing deciding whether to write, not merely declared somewhere above it.
+    const reporter = source.slice(source.indexOf("const listenerErrorReporter"), source.indexOf("const run ="));
+
+    const httpPostBind = postBindBranchOf(errorHandlerOf(httpSetup));
+    const httpsPostBind = postBindBranchOf(errorHandlerOf(httpsSetup));
+
+    it("names the interval instead of burying the number in the reporter", () => {
+        assert.match(source, /const\s+LISTENER_ERROR_LOG_INTERVAL_MS\s*=\s*\d+/,
+            "how long a repeat is held for is a bare literal with nothing saying what it is");
+    });
+
+    it("consults it before reporting the same trouble again", () => {
+        assert.match(reporter, /LISTENER_ERROR_LOG_INTERVAL_MS/,
+            "every 'error' a bound listener raises is appended to the log, one per connection attempt");
+    });
+
+    it("keeps the time of the last report, so the first is never held back", () => {
+        assert.match(reporter, /lastReported/,
+            "there is nothing to measure the interval from, so either all are written or none are");
+    });
+
+    it("is what the http listener's post-bind branch reports through", () => {
+        assert.match(httpPostBind, /reportHttpError\(/,
+            "the http listener writes an entry for every failing accept");
+    });
+
+    it("is what the https listener's post-bind branch reports through", () => {
+        assert.match(httpsPostBind, /reportHttpsError\(/,
+            "the https listener writes an entry for every failing accept");
+    });
+
+    // The pin that puts the throttle on the path rather than merely near it: a
+    // direct call beside the reporter is a second, unthrottled way to the log.
+    it("is not bypassed by a direct report beside it", () => {
+        assert.doesNotMatch(httpPostBind, /errorHandler\(/,
+            "the http post-bind branch reaches errorHandler without passing the interval");
+        assert.doesNotMatch(httpsPostBind, /errorHandler\(/,
+            "the https post-bind branch reaches errorHandler without passing the interval");
     });
 });

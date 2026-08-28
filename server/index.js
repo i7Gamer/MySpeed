@@ -26,6 +26,12 @@ import {
 const INTERFACE_REFRESH_INTERVAL = 3600000;
 const RETENTION_SWEEP_INTERVAL = 60000;
 
+// The shortest gap between two full reports of trouble on a listener that is
+// already up. Long enough that a burst of identical accept failures produces one
+// entry rather than thousands, short enough that an operator reading the log
+// still sees the failure as ongoing rather than as something that happened once.
+const LISTENER_ERROR_LOG_INTERVAL_MS = 60000;
+
 // How the reset command stops when it has not cleared a password. Two codes
 // rather than one, because they ask the operator for opposite things:
 //
@@ -212,6 +218,45 @@ const reportDatabaseDamage = async () => {
     for (const line of recoveryAdvice(SQLITE_STORAGE_PATH, outcome.problems)) console.error(line);
 };
 
+/**
+ * Reports what a listener raises after it has bound, at most once an interval.
+ *
+ * A post-bind 'error' is never fatal - the server is up and serving, and the
+ * branches that decide otherwise are the ones ahead of this - so all that is
+ * left to do is write the failure down. What this adds is a ceiling on how
+ * often, because these failures do not arrive one at a time. A process out of
+ * file descriptors emits EMFILE for every connection the kernel hands it, for as
+ * long as callers keep arriving, and errorHandler appends an entry to
+ * data/logs/error.log on every call - so the report meant to explain a quiet
+ * failure was itself a log file growing without a ceiling. Worse when the write
+ * is what is failing, a full disk being a fine way to run out of descriptors:
+ * errorHandler answers each failed write with a second console line, and the
+ * flood moves to stdout with nothing recorded at the end of it.
+ *
+ * The suppressed occurrences are still said out loud, as a console line with no
+ * log write behind it. Silence would leave an operator watching a server fail
+ * every accept with one minute-old entry and no sign that anything was ongoing,
+ * which is the wrong half of the problem to solve.
+ *
+ * One of these per listener, so a busy http listener cannot mute the https one.
+ */
+const listenerErrorReporter = () => {
+    // Not Date.now(): the first error to arrive must be reported in full,
+    // whenever it arrives, and a real timestamp here would hold it back for the
+    // first minute of the process's life.
+    let lastReported = 0;
+
+    return (err, context) => {
+        const now = Date.now();
+
+        if (lastReported !== 0 && now - lastReported < LISTENER_ERROR_LOG_INTERVAL_MS)
+            return console.error(`${context}: ${err.message} (already recorded; not logging it again yet)`);
+
+        lastReported = now;
+        errorHandler(err, {fatal: false, context});
+    };
+};
+
 const run = async () => {
     await reportDatabaseDamage();
 
@@ -239,6 +284,7 @@ const run = async () => {
     await announceAccess();
 
     const httpServer = app.listen(port, () => console.log(`Server listening on port ${port}`));
+    const reportHttpError = listenerErrorReporter();
 
     // The HTTP listener is the instance's only way in on a plain-HTTP install,
     // so a bind that fails - the port already held by another copy of the server
@@ -262,7 +308,9 @@ const run = async () => {
     // data/logs/error.log, the file the log's own header points bug reports at.
     // The console line stays alongside it for the bind, because an operator
     // watching a start-up that will not finish should not have to go and find a
-    // file to learn which port was taken.
+    // file to learn which port was taken. The post-bind half goes through the
+    // reporter above rather than calling errorHandler itself, because that half
+    // hears one 'error' per connection attempt and not one per fault.
     httpServer.on("error", (err) => {
         if (!httpServer.listening) {
             console.error(`The server could not listen on port ${port}: ${err.message}`);
@@ -270,7 +318,7 @@ const run = async () => {
                 context: `The server could not listen on port ${port}`});
         }
 
-        errorHandler(err, {fatal: false, context: `The server listening on port ${port} reported an error`});
+        reportHttpError(err, `The server listening on port ${port} reported an error`);
     });
 
     listeners.push(httpServer);
@@ -283,13 +331,36 @@ const run = async () => {
             };
 
             const httpsServer = https.createServer(sslOptions, app);
+            const reportHttpsError = listenerErrorReporter();
 
             // The redirect follows the listener, not the certificate files: a
             // port clash or an unreadable key would otherwise send every caller
             // to a port with nothing behind it.
+            //
+            // Which is why the flag belongs to the bind alone, and this handler
+            // hears far more than the bind - it stays attached for the life of
+            // the listener. Lowered on every 'error', an accept that ran out of
+            // descriptors or a client that went away mid-handshake marked TLS
+            // down on a listener that was still up and still serving, and
+            // nothing raises it again: the only setHttpsListening(true) is in
+            // the listen callback below, which has already run by then. The
+            // redirect stopped for good and callers stayed on plain http for a
+            // port that had never gone anywhere.
+            //
+            // The same split as the http handler above, then, and for the same
+            // reasons - with the exit left out. https is optional here: an
+            // instance with no certificates serves plain http quite happily, so
+            // a taken TLS port must not be what stops a server that would
+            // otherwise come up. That is the one asymmetry between the two.
             httpsServer.on("error", (err) => {
-                setHttpsListening(false);
-                console.error(`HTTPS server error: ${err.message}`);
+                if (!httpsServer.listening) {
+                    setHttpsListening(false);
+                    console.error(`The HTTPS server could not listen on port ${httpsPort}: ${err.message}`);
+                    return errorHandler(err, {fatal: false,
+                        context: `The HTTPS server could not listen on port ${httpsPort}`});
+                }
+
+                reportHttpsError(err, `The HTTPS server listening on port ${httpsPort} reported an error`);
             });
 
             listeners.push(httpsServer);
