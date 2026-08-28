@@ -1,6 +1,7 @@
 import { mapFixed, mapRounded } from './helpers.js';
 import { localHourAt, serverZone, zoneFromOffset } from './timezone.js';
 import { isFailedTest, isMeasuredLatency, isSuccessfulTest, usableFigure } from './testOutcome.js';
+import { metricValue } from './metricValue.js';
 
 export const TARGET_CHART_POINTS = 300;
 
@@ -48,32 +49,53 @@ const SPEED_DECIMALS = 2;
 
 const round = (value, decimals = SPEED_DECIMALS) => parseFloat(value.toFixed(decimals));
 
-// Only the readable ones. sqlite is typeless, so a history imported before the
-// import checked its numeric columns - or a live run that stored a NaN as the
-// literal string "NaN" - can hand a non-number here, and `total + "NaN"` is
-// string concatenation, not a sum: one bad row turned a 200 Mbit average into
-// 8.6e13 and the consistency score to zero. mapRange guards the same
-// population the same way; this is the raw reducer the summary's cousins use.
-const average = (values) => {
-    const numbers = values.filter((value) => Number.isFinite(value));
-    return numbers.reduce((total, value) => total + value, 0) / numbers.length;
+/**
+ * The readable measurements of a stored population, as numbers.
+ *
+ * Through metricValue, and once, at the boundary. sqlite is typeless, so a
+ * history imported before the import checked its numeric columns holds numeric
+ * *strings* where numbers belong - measurements somebody took, which the alert
+ * gate, the failure predicates and Prometheus all read as numbers - while a
+ * live run once stored the literal string "NaN", which turned `total + value`
+ * into concatenation and a 200 Mbit average into 8.6e13. A bare finite check
+ * refused both alike, so the same row was measured to every other reader and
+ * absent here; and a filter inside each formula instead of one out here gave
+ * the mean and the spread two different populations - a string was missing
+ * from the mean while Math.pow coerced it, squared, into the deviations.
+ *
+ * Every gate and formula below runs on this cleaned array, so a length is
+ * always the length of what the arithmetic actually saw.
+ */
+const readings = (values) => {
+    const numbers = [];
+    for (const value of values) {
+        const reading = metricValue(value);
+        if (reading !== null) numbers.push(reading);
+    }
+    return numbers;
 };
 
-// Null unless the mean is a real number: an empty set has none, and a set that
-// held only unreadable values - a bucket of one corrupt "NaN" row - averages to
-// NaN, which round() would carry through rather than reject.
+// The plain mean of a readings() population. The filter this used to carry
+// moved up into readings, where it runs once - inside the reducer it ran again
+// for every derived figure, and standardDeviation's two passes filtered
+// different populations.
+const average = (values) => values.reduce((total, value) => total + value, 0) / values.length;
+
+// Null when nothing was readable: an empty set has no mean, and a bucket
+// holding only corrupt rows is the same absence wearing data's shape.
 const averageOrNull = (values, transform = round) => {
-    const mean = average(values);
-    return Number.isFinite(mean) ? transform(mean) : null;
+    const numbers = readings(values);
+    return numbers.length > 0 ? transform(average(numbers)) : null;
 };
 
 // round() reads .toFixed off its argument, so an absent value has to be carried
 // through rather than handed to it.
 const roundOrNull = (value, decimals) => value === null ? null : round(value, decimals);
 
-// Two values or more, which consistencyScore below is what guarantees - it is
-// the only caller, and it answers anything shorter with nulls before reaching
-// here. This used to carry its own guards for an empty list and a single value,
+// Two *readable* values or more, which consistencyScore below is what
+// guarantees - it is the only caller, it cleans through readings() first, and
+// it answers anything shorter than two of those with nulls before reaching
+// here. So the mean and the deviations run on one and the same population. This used to carry its own guards for an empty list and a single value,
 // and they were right up until that gate moved: a lone reading was answered
 // with 0, which the score then read as a flawlessly steady line. Left in place
 // afterwards they were unreachable, and worse, they described a policy the
@@ -137,13 +159,22 @@ const consistencyScore = (values) => {
     // zero across two is a real reading and still scores a hundred. A day on
     // which the line dropped and every test but one failed is exactly when this
     // card is read, and exactly when it was most confident.
-    if (values.length < 2) return {stdDev: null, consistency: null};
+    // The cleaned population, and the gate asks it rather than the raw rows.
+    // Counting rows the arithmetic then dropped let two corrupt rows through
+    // to a mean of nothing - NaN > 0 is false, so the fallback scored the
+    // emptiness a flawless 100 - and one readable row beside one corrupt was
+    // precisely the lone-reading overclaim described above, back through a
+    // side door.
+    const numbers = readings(values);
+    if (numbers.length < 2) return {stdDev: null, consistency: null};
 
-    const mean = average(values);
-    const score = mean > 0 ? PERCENT - (standardDeviation(values) / mean * PERCENT) : PERCENT;
+    const mean = average(numbers);
+    // Once, for both readers below - it walks the whole population each time.
+    const deviation = standardDeviation(numbers);
+    const score = mean > 0 ? PERCENT - (deviation / mean * PERCENT) : PERCENT;
 
     return {
-        stdDev: round(standardDeviation(values)),
+        stdDev: round(deviation),
         consistency: round(Math.min(Math.max(score, 0), PERCENT), 1)
     };
 };
@@ -153,8 +184,13 @@ const buildHourlyAverages = (entries, zone) => {
 
     entries.forEach(entry => {
         const bucket = buckets[localHourAt(zone, new Date(entry.created))];
-        bucket.download.push(entry.download);
-        bucket.upload.push(entry.upload);
+        // Readable at the door, like the two guarded pushes below - and so the
+        // count reported beside the hour's figure counts what the figure used,
+        // rather than presenting one readable row as an average backed by ten.
+        const download = metricValue(entry.download);
+        if (download !== null) bucket.download.push(download);
+        const upload = metricValue(entry.upload);
+        if (upload !== null) bucket.upload.push(upload);
         // Guarded like the jitter below it, and for the same reason: a
         // fabricated zero is not a reading, and one in an hour's bucket halved
         // that hour's latency.
@@ -173,6 +209,8 @@ const buildHourlyAverages = (entries, zone) => {
         // discard the precision at the last step.
         ping: averageOrNull(bucket.ping),
         jitter: averageOrNull(bucket.jitter),
+        // The readings the download figure above was taken over - the guarded
+        // push is what keeps this honest.
         count: bucket.download.length
     }));
 };
@@ -359,8 +397,14 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
         // held nothing else, since a bucket with no reading has no latency.
         series.data.ping.push(averageOrNull(valid.map(entry => entry.ping).filter(isMeasuredLatency)));
         series.data.jitter.push(averageOrNull(measuredOnly("jitter")));
-        series.data.download.push(round(average(valid.map(entry => entry.download))));
-        series.data.upload.push(round(average(valid.map(entry => entry.upload))));
+        // averageOrNull like every sibling, not the bare mean: these two
+        // columns are NOT NULL, which is why a raw average looked safe - but a
+        // corrupt stored string is not null, and a bucket holding one either
+        // concatenated its way to an eight-figure point or, cleaned, can come
+        // up with no reading at all. No reading is a gap, which is what null
+        // already draws on this chart.
+        series.data.download.push(averageOrNull(valid.map(entry => entry.download)));
+        series.data.upload.push(averageOrNull(valid.map(entry => entry.upload)));
         // Measured-only like jitter and the two latencies above, not raw: `time`
         // is the one measurement column in this block that is nullable, and
         // average() folds a null in as nought while still counting it in the

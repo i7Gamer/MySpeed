@@ -1080,20 +1080,98 @@ describe("an imported negative quality figure on the chart", () => {
  * consistency of 0% with an eight-figure spread, and a chart point at 8.6e13.
  */
 describe("a corrupt stored number", () => {
+    // The string upload sits deliberately off the mean of its neighbours: a
+    // value that happens to equal the filtered mean contributes a squared
+    // deviation of zero, and the asymmetry this suite pins cancels invisibly -
+    // which is exactly how the first cut of these fixtures stayed green over
+    // the bug.
     const rows = [
         at("2026-08-07T01:00:00.000Z", {download: 100, upload: 100}),
-        at("2026-08-07T02:00:00.000Z", {download: "NaN", upload: "200"}),
+        at("2026-08-07T02:00:00.000Z", {download: "NaN", upload: "600"}),
         at("2026-08-07T03:00:00.000Z", {download: 300, upload: 300})
     ];
 
-    it("does not drag the consistency score or the hourly buckets", () => {
+    /**
+     * The one row that is genuinely unreadable drops out; the readings either
+     * side of it keep their exact figures. The first cut of this guard asserted
+     * only "finite and under a thousand", which passed whether the answer was
+     * honest or fabricated - and it was fabricated: the raw row count let the
+     * two-value gate pass while the arithmetic ran on fewer.
+     */
+    it("keeps the readable readings and drops only the corrupt one", () => {
         const stats = buildStatistics(rows, DAY, {offsetMinutes: 0});
 
-        assert.ok(Number.isFinite(stats.consistency.download.stdDev) && stats.consistency.download.stdDev < 1000,
-            "one bad row concatenated its way into an eight-figure spread");
-        for (const bucket of stats.hourlyAverages)
-            assert.ok(bucket.download === null || (Number.isFinite(bucket.download) && bucket.download < 1000),
-                "an hour's average was string-concatenated");
+        assert.deepEqual(stats.consistency.download, {stdDev: 100, consistency: 50},
+            "the corrupt row dragged the spread or thinned the mean");
+        assert.deepEqual(stats.download, {min: 100, max: 300, avg: 200, median: 200});
+    });
+
+    /**
+     * "200" is an imported history's spelling of 200 - sqlite is typeless, and
+     * metricValue documents that population as measurements somebody took. The
+     * alert gate, Prometheus and the failure predicates all read it as a
+     * number; the summary refusing it made the same row measured and absent at
+     * once.
+     */
+    it("reads a numeric string as the measurement it records", () => {
+        const stats = buildStatistics(rows, DAY, {offsetMinutes: 0});
+
+        assert.deepEqual(stats.upload, {min: 100, max: 600, avg: 333.33, median: 300},
+            "a numeric string is excluded from the range it belongs to");
+        assert.equal(stats.consistency.upload.stdDev, 205.48);
+        assert.equal(stats.consistency.upload.consistency, 38.4);
+    });
+
+    // The mean filtered its population while the squared deviations coerced
+    // theirs, so a numeric string was absent from one and huge in the other.
+    it("gives a coerced string the same weight in the mean and the spread", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {download: 100}),
+            at("2026-08-07T02:00:00.000Z", {download: "200"})
+        ], DAY);
+
+        assert.deepEqual(stats.consistency.download, {stdDev: 50, consistency: 66.7},
+            "the string sat in the spread but not the mean, or the other way round");
+    });
+
+    it("counts an hour by the readings its average used", () => {
+        const stats = buildStatistics(rows, DAY, {offsetMinutes: 0});
+        const byHour = (hour) => stats.hourlyAverages.find((bucket) => bucket.hour === hour);
+
+        assert.deepEqual({download: byHour(1).download, count: byHour(1).count}, {download: 100, count: 1});
+        // The corrupt hour: no readable download, and the count says so rather
+        // than presenting the absence as backed by a test.
+        assert.deepEqual({download: byHour(2).download, count: byHour(2).count}, {download: null, count: 0});
+        // Its numeric-string upload is still that hour's real reading.
+        assert.equal(byHour(2).upload, 600);
+    });
+
+    /**
+     * Nothing measured is not a perfect line. The raw-count gate let an
+     * all-corrupt pair through to a mean of nothing, and `NaN > 0` is false -
+     * so the fallback scored the emptiness a flawless 100 with a stdDev JSON
+     * hides as null. One readable row beside one corrupt is the same overclaim
+     * with a mean: a lone reading deviates from itself by nothing, and the
+     * two-value gate exists to refuse exactly that claim.
+     */
+    it("answers nothing measured over rows holding no readable value", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {download: "NaN"}),
+            at("2026-08-07T02:00:00.000Z", {download: "NaN"})
+        ], DAY);
+
+        assert.deepEqual(stats.consistency.download, {stdDev: null, consistency: null},
+            "two unreadable rows scored as a flawlessly stable line");
+    });
+
+    it("refuses the lone-reading overclaim when the other row is corrupt", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {download: 100}),
+            at("2026-08-07T02:00:00.000Z", {download: "NaN"})
+        ], DAY);
+
+        assert.deepEqual(stats.consistency.download, {stdDev: null, consistency: null},
+            "a single readable reading reported itself 100% consistent, ±0");
     });
 
     it("does not blow up a downsampled chart point", () => {

@@ -146,13 +146,18 @@ describe("a value that was never measured", () => {
  * A value that is present but is not a number.
  *
  * sqlite keeps whatever it was handed, and a history imported before
- * importTests() checked its numeric columns can still hold a string in one -
- * the situation createRecommendations already defends against with the same
- * Number.isFinite. Here a string turned the total to NaN quietly, and worse:
- * the sort comparator answers NaN around a string, so where it lands is
- * unspecified, and one that sorted into the middle of an odd sample handed
- * itself to toFixed - a TypeError that took the whole statistics endpoint
- * down with a 500 over one bad imported row.
+ * importTests() checked its numeric columns can still hold a string in one.
+ * Here a junk string turned the total to NaN quietly, and worse: the sort
+ * comparator answers NaN around a string, so where it lands is unspecified,
+ * and one that sorted into the middle of an odd sample handed itself to
+ * toFixed - a TypeError that took the whole statistics endpoint down with a
+ * 500 over one bad imported row.
+ *
+ * Two kinds of string, and the range reads through metricValue to tell them
+ * apart: junk like "poisoned" is refused, while a *numeric* string is the same
+ * imported history spelling a measurement somebody took - the alert gate and
+ * Prometheus both read it as the number it spells, and a range that refused it
+ * made one row measured and absent at once.
  */
 describe("a value that is not a number at all", () => {
     it("does not crash the median when a string sorts into the middle", () => {
@@ -160,9 +165,10 @@ describe("a value that is not a number at all", () => {
             {min: 10, max: 30, avg: 20, median: 20});
     });
 
-    it("does not turn the average into nothing", () => {
+    it("reads a numeric string as the measurement it spells", () => {
         assert.deepEqual(mapFixed([{download: "50"}, {download: 10}, {download: 30}], "download"),
-            {min: 10, max: 30, avg: 20, median: 20});
+            {min: 10, max: 50, avg: 30, median: 30},
+            "an imported '50' was refused from the range every other reader counts it in");
     });
 
     it("keeps an infinity out of the range", () => {

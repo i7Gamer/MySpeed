@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { metricValue } from './metricValue.js';
 
 const pad = (n) => String(n).padStart(2, "0");
 
@@ -199,8 +200,6 @@ const mapRange = (entries, type, averageOf) => {
     const values = [];
 
     for (const entry of entries) {
-        const value = entry[type];
-
         // A measurement that is absent is not a measurement of nought. `time`
         // is nullable in the model and is the one column handed here
         // unfiltered, and a null took the range apart in both directions: it
@@ -210,14 +209,19 @@ const mapRange = (entries, type, averageOf) => {
         // still counting toward the divisor. A measured 0 is a real reading and
         // is not what this skips.
         //
-        // Number.isFinite rather than a null check, for the reason
-        // createRecommendations gives: sqlite keeps whatever it was handed, and
-        // a history imported before importTests() checked its numeric columns
-        // can still hold a string in one. A string quietly turned the average
-        // to NaN - and the sort comparator answers NaN around it, so one that
-        // landed mid-sample was handed to toFixed by the median: a TypeError
-        // that took the whole statistics endpoint down over one bad row.
-        if (!Number.isFinite(value)) continue;
+        // metricValue rather than a bare finite check. sqlite keeps whatever it
+        // was handed, and a history imported before importTests() checked its
+        // numeric columns can still hold a string in one - two kinds of one. A
+        // junk string like "NaN" quietly turned the average to NaN, and the
+        // sort comparator answers NaN around it, so one that landed mid-sample
+        // was handed to toFixed by the median: a TypeError that took the whole
+        // statistics endpoint down over one bad row. A *numeric* string,
+        // though, is a measurement somebody took - metricValue documents the
+        // population, and the alert gate and Prometheus both read it as the
+        // number it spells - so refusing it here made the same row measured
+        // and absent at once. Read the one, refuse the other.
+        const value = metricValue(entry[type]);
+        if (value === null) continue;
 
         if (value < min) min = value;
         if (value > max) max = value;
