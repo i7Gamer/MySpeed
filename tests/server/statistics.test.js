@@ -1070,6 +1070,47 @@ describe("an imported negative quality figure on the chart", () => {
 });
 
 /**
+ * A non-number stored in a numeric column does not turn an average into
+ * string concatenation.
+ *
+ * sqlite is typeless: a history imported before the columns were checked, or a
+ * live run that stored a NaN as the literal string "NaN", can leave a string
+ * where a double belongs. `total + "NaN"` concatenates, so one such row on an
+ * otherwise-100 line reported a download average in the tens of trillions, a
+ * consistency of 0% with an eight-figure spread, and a chart point at 8.6e13.
+ */
+describe("a corrupt stored number", () => {
+    const rows = [
+        at("2026-08-07T01:00:00.000Z", {download: 100, upload: 100}),
+        at("2026-08-07T02:00:00.000Z", {download: "NaN", upload: "200"}),
+        at("2026-08-07T03:00:00.000Z", {download: 300, upload: 300})
+    ];
+
+    it("does not drag the consistency score or the hourly buckets", () => {
+        const stats = buildStatistics(rows, DAY, {offsetMinutes: 0});
+
+        assert.ok(Number.isFinite(stats.consistency.download.stdDev) && stats.consistency.download.stdDev < 1000,
+            "one bad row concatenated its way into an eight-figure spread");
+        for (const bucket of stats.hourlyAverages)
+            assert.ok(bucket.download === null || (Number.isFinite(bucket.download) && bucket.download < 1000),
+                "an hour's average was string-concatenated");
+    });
+
+    it("does not blow up a downsampled chart point", () => {
+        const many = Array.from({length: 60}, (unused, index) =>
+            at(`2026-08-07T04:${String(index).padStart(2, "0")}:00.000Z`,
+                index === 0 ? {download: "NaN"} : {download: 100}));
+
+        const stats = buildStatistics(many, DAY, {maxPoints: 50});
+
+        assert.equal(stats.downsampled, true);
+        for (const point of stats.data.download)
+            assert.ok(point === null || (Number.isFinite(point) && point < 1e6),
+                "a bucket average concatenated a stored 'NaN'");
+    });
+});
+
+/**
  * The summary beside the chart, asked the same question. The gap fix cited a
  * summary that "skipped the same row", and it did not: the jitter and packet
  * loss filters asked only for null, so the -1 placeholders set every minimum

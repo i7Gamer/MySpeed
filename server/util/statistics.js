@@ -48,10 +48,24 @@ const SPEED_DECIMALS = 2;
 
 const round = (value, decimals = SPEED_DECIMALS) => parseFloat(value.toFixed(decimals));
 
-const average = (values) => values.reduce((total, value) => total + value, 0) / values.length;
+// Only the readable ones. sqlite is typeless, so a history imported before the
+// import checked its numeric columns - or a live run that stored a NaN as the
+// literal string "NaN" - can hand a non-number here, and `total + "NaN"` is
+// string concatenation, not a sum: one bad row turned a 200 Mbit average into
+// 8.6e13 and the consistency score to zero. mapRange guards the same
+// population the same way; this is the raw reducer the summary's cousins use.
+const average = (values) => {
+    const numbers = values.filter((value) => Number.isFinite(value));
+    return numbers.reduce((total, value) => total + value, 0) / numbers.length;
+};
 
-const averageOrNull = (values, transform = round) =>
-    values.length > 0 ? transform(average(values)) : null;
+// Null unless the mean is a real number: an empty set has none, and a set that
+// held only unreadable values - a bucket of one corrupt "NaN" row - averages to
+// NaN, which round() would carry through rather than reject.
+const averageOrNull = (values, transform = round) => {
+    const mean = average(values);
+    return Number.isFinite(mean) ? transform(mean) : null;
+};
 
 // round() reads .toFixed off its argument, so an absent value has to be carried
 // through rather than handed to it.
