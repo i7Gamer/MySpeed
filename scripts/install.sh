@@ -394,8 +394,7 @@ fi
 # directory; 700 is what says no other account may walk into it. Stated rather
 # than left to the umask, the way the installation root's 755 is above - the root
 # needs the traversal the service's account depends on, and the data directory
-# needs the opposite. Applied on an upgrade too, tightening a directory an older
-# installer left world-readable.
+# needs the opposite.
 #
 # Above the branch rather than inside it, which is where it started out. Beside
 # the chown it covered only the installs that got a service account: the root
@@ -405,8 +404,47 @@ fi
 # script prints a warning about, and it was the one whose database any local
 # account could read. The helper now states the same 700 for the installs that
 # never run this script at all.
-mkdir -p "$INSTALLATION_PATH/data"
-chmod 700 "$INSTALLATION_PATH/data"
+#
+# Three cases and not one, because the mode of a directory this script makes and
+# the mode of a directory it merely found are different questions - the same
+# distinction the installation root's own chmod draws above. Hoisted here as a
+# bare mkdir and an unconditional chmod, it answered both with 700.
+#
+# A symlink is left entirely alone. chmod follows one, so a mode stated here
+# lands on the far end of it: an operator who moved data onto another volume
+# decided that directory's mode somewhere this script cannot see, and the server
+# writes this path as an unprivileged account, so a link planted under a
+# compromise is the other thing that can be waiting at the end of it.
+# docker-entrypoint.sh reaches the same conclusion about the volume it owns,
+# which is what the -h on its chown is for.
+#
+# A directory this script creates gets 700, checked the way the installation
+# root's mkdir is: `[ ! -d ]` is also true of a path already taken by a regular
+# file, there is no `set -e`, and an unchecked mkdir then falls through to a
+# chmod that rewrites whatever is at that path, as root, on its way to aborting.
+#
+# A directory that was already there keeps the mode its operator gave it, less
+# the world bits. Retightening it to 700 would silently overrule someone who had
+# opened it to a backup group - 0750 root:backup stays 0750 root:backup - and
+# what this script says above is that a directory already on disk is theirs. But
+# an installer older than that 700 created this one at the umask's 0755, so an
+# upgrade of such an install is carrying a world-readable storage.db and this is
+# the only moment anything is placed to notice. `o-rwx` is the part of the mode
+# nobody chooses on purpose.
+if [ -L "$INSTALLATION_PATH/data" ]; then
+    echo -e "$YELLOW⚠ Warning: $NORMAL $INSTALLATION_PATH/data is a link, so its permissions are left as they were found."
+    sleep 2
+elif [ ! -d "$INSTALLATION_PATH/data" ]; then
+    if ! mkdir -p "$INSTALLATION_PATH/data"; then
+        echo -e "$RED✗ Could not create $INSTALLATION_PATH/data.$NORMAL Check that the installation"
+        echo -e "$NORMAL directory is writable and that the path is not already taken by a file."
+        exit 1
+    fi
+
+    chmod 700 "$INSTALLATION_PATH/data"
+else
+    chmod o-rwx "$INSTALLATION_PATH/data"
+fi
 
 if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]; then
     # These two and nothing else. The server writes its database, its logs and

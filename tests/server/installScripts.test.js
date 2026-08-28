@@ -482,29 +482,141 @@ describe("install.sh registers a service that is not root", () => {
      * reachability the service needs above it; the data directory needs the
      * opposite, so it is stated rather than inherited, the way the root's is.
      *
-     * And on both branches, which is the part the position assertion is for. The
-     * mode first sat inside `if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]`, beside
-     * the chown that genuinely belongs there - so the root fallback, taken when
-     * the host has no useradd or the path cannot be reached by an unprivileged
-     * account, created no data directory at all and left the server's own helper
-     * to make one at the umask's 0755. The installs the script prints a warning
-     * about were the installs that got no mode.
+     * And on both branches, which is the part the position assertions are for.
+     * The mode first sat inside `if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]`,
+     * beside the chown that genuinely belongs there - so the root fallback, taken
+     * when the host has no useradd or the path cannot be reached by an
+     * unprivileged account, created no data directory at all and left the
+     * server's own helper to make one at the umask's 0755. The installs the
+     * script prints a warning about were the installs that got no mode.
+     *
+     * Hoisting it above that branch left a bare `mkdir -p` and an unconditional
+     * `chmod 700`, which is a different thing from stating the mode of a
+     * directory this script makes. It also retightened one it did not - silently
+     * overruling an operator who had opened the directory to a backup group, the
+     * very thing this script says it will not do ten lines above - and it did
+     * that as root, through whatever the path turned out to be. So the arms
+     * below, which are the three the server's own folder helper describes too.
      */
-    it("keeps the data directory to the account that owns it", () => {
-        assert.match(source, /chmod 700 "\$INSTALLATION_PATH\/data"/,
-            "the data directory keeps the umask's mode, so a world-readable storage.db is reachable by any local user");
-        assert.ok(source.indexOf('chmod 700 "$INSTALLATION_PATH/data"') < unitStart,
-            "the mode is tightened after the service has already been registered");
-    });
+    describe("the mode of the data directory", () => {
+        /**
+         * The block that decides it, bounded by the `fi` that closes it.
+         *
+         * Every arm is read out of this rather than out of the script at large:
+         * "install.sh contains a chmod 700 somewhere" is satisfied by the
+         * installation root's own mode two hundred lines above, which is a
+         * different decision about a different directory.
+         */
+        const block = () => {
+            const at = source.indexOf('if [ -L "$INSTALLATION_PATH/data" ]');
 
-    it("does so whichever account it ends up running as", () => {
-        const branch = source.indexOf('if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]');
-        assert.notEqual(branch, -1, "nothing chooses between the service account and the root fallback any more");
+            assert.notEqual(at, -1,
+                "nothing asks whether data is a symlink, so a chmod runs as root through a link and lands on the far end of it");
 
-        assert.ok(source.indexOf('mkdir -p "$INSTALLATION_PATH/data"') < branch,
-            "the root fallback creates no data directory, so the server makes one at the umask's mode instead");
-        assert.ok(source.indexOf('chmod 700 "$INSTALLATION_PATH/data"') < branch,
-            "the mode is set inside the service-account branch only, so the fallback install leaves storage.db world-readable");
+            const end = source.indexOf("\nfi\n", at);
+            assert.notEqual(end, -1, "the block deciding the data directory's mode is never closed");
+
+            return source.slice(at, end);
+        };
+
+        // Its three cases: a symlink, a directory that is not there yet, and one
+        // that is.
+        const arms = () => {
+            const decision = block();
+            const created = decision.search(/^elif /m);
+            const existing = decision.search(/^else$/m);
+
+            assert.ok(created !== -1 && existing > created,
+                "the block no longer separates a data directory this script makes from one it finds already there");
+
+            return {
+                symlinked: decision.slice(0, created),
+                created: decision.slice(created, existing),
+                existing: decision.slice(existing)
+            };
+        };
+
+        it("states 700 for the one it creates itself", () => {
+            assert.match(arms().created, /chmod 700 "\$INSTALLATION_PATH\/data"/,
+                "a data directory this script creates keeps the umask's mode, so a world-readable storage.db is reachable by any local account");
+
+            const stated = source.indexOf('chmod 700 "$INSTALLATION_PATH/data"');
+
+            assert.notEqual(stated, -1, "nothing states the mode of the data directory");
+            assert.ok(stated < unitStart,
+                "the mode is stated after the service has already been registered");
+        });
+
+        /**
+         * And does not reach that chmod when the mkdir failed, which is the check
+         * the installation root's own creation already carries: `[ ! -d ]` is
+         * true for a path taken by a regular file, there is no `set -e`, and an
+         * unchecked chmod then runs as root against whatever is at that path.
+         */
+        it("refuses rather than stating a mode for something it did not create", () => {
+            const created = arms().created;
+
+            assert.match(created, /if\s+!\s+mkdir -p "\$INSTALLATION_PATH\/data"/,
+                "the mkdir is unchecked, so the chmod below it runs against whatever is already at that path");
+            assert.match(created, /exit\s+[1-9]/,
+                "a failed mkdir falls through to the rest of the install, which has nowhere to write");
+            assert.match(created, /Could not create \$INSTALLATION_PATH\/data/,
+                "the failure is silent, and the run aborts later for a reason that names something else");
+        });
+
+        /**
+         * A directory that was already there is the operator's and its mode is
+         * theirs, which is the policy this script states beside the installation
+         * root's own chmod and the one server/util/createFolders.js cites.
+         *
+         * Which leaves the exposure that policy was covering. An older installer
+         * created data at the umask's 0755, so every installation made before the
+         * mode was stated carries a world-readable storage.db, and an upgrade is
+         * the only moment anything is in a position to notice. The world bits are
+         * the part no operator chooses on purpose, so those come off and nothing
+         * else does: a data directory deliberately shared with a backup group at
+         * 0750 root:backup is still 0750 root:backup afterwards.
+         */
+        it("takes only the world bits off one it did not create", () => {
+            const existing = arms().existing;
+
+            assert.match(existing, /chmod o-rwx "\$INSTALLATION_PATH\/data"/,
+                "a data directory an older installer left at 0755 keeps it, so storage.db stays readable by every local account after an upgrade");
+            assert.doesNotMatch(existing, /chmod\s+[0-7]{3,4}\b/,
+                "an existing installation is retightened to an absolute mode, overruling an operator who shared it with a group on purpose");
+        });
+
+        /**
+         * And a data directory the operator moved elsewhere is not touched at
+         * all. chmod follows a symlink, so a mode stated here lands on the far
+         * end of it - a relocated data directory on another volume, whose mode
+         * was decided somewhere this script cannot see. docker-entrypoint.sh
+         * reaches the same conclusion about the volume it owns, which is what
+         * the -h on its chown is for.
+         */
+        it("leaves a relocated one entirely alone", () => {
+            const symlinked = arms().symlinked;
+
+            assert.doesNotMatch(symlinked, /\bchmod\b/,
+                "a chmod runs as root through the symlink and lands on whatever the operator pointed data at");
+            assert.doesNotMatch(symlinked, /\bmkdir\b/,
+                "the link's own target is created underneath it, or the mkdir fails and takes the install down with it");
+        });
+
+        it("decides all of it whichever account the service ends up running as", () => {
+            const branch = source.indexOf('if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]');
+            assert.notEqual(branch, -1, "nothing chooses between the service account and the root fallback any more");
+
+            const decided = source.indexOf('if [ -L "$INSTALLATION_PATH/data" ]');
+            assert.notEqual(decided, -1, "nothing decides the data directory's mode at all");
+            assert.ok(decided < branch,
+                "the root fallback creates no data directory, so the server's own helper makes one on first boot instead");
+
+            const stated = source.indexOf('chmod 700 "$INSTALLATION_PATH/data"');
+            assert.notEqual(stated, -1, "nothing states the mode of the data directory");
+            assert.ok(stated < branch,
+                "the mode is stated inside the service-account branch only, so the fallback install leaves storage.db world-readable");
+        });
     });
 
     /**

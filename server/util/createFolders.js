@@ -8,16 +8,29 @@ const baseDir = process.cwd();
 // integration secret, and data/certs holds the TLS private key; both are written
 // inside these directories under the process umask - 0644 inside a 0755
 // directory - so at the default mode any local account on the host can read
-// them. install.sh states the same 700, but only on the branch where it has a
-// service account to hand the installation to: the root fallback, the container
-// image and a plain `npm start` all get their data directory from here instead,
-// which is to say the installs the script itself flags as the less safe ones
-// were the ones that got no mode at all.
+// them.
 //
-// Creation only, deliberately. A directory that is already there keeps the mode
-// its operator gave it, which is the policy install.sh states beside its own
-// chmod: this decides how a directory is made, not what an existing installation
-// is allowed to look like.
+// What this file is the only thing covering, now that both installers state the
+// mode themselves: a bare checkout or a plain `bun start`, which runs neither of
+// them; `bin` on install.sh's root fallback, the one branch of it that does not
+// create that directory; and data/logs, data/servers and data/certs everywhere,
+// which nothing outside this file has ever made. install.sh creates data on
+// every branch it takes, and the Dockerfile creates /myspeed/data at 700 before
+// VOLUME takes that mode - so the container, which this comment used to name as
+// its own, belongs to the image and docker-entrypoint.sh.
+//
+// Creation only, deliberately, and that is this file's whole share of a policy
+// the three of them state together. A data directory made here is made at 700.
+// One that is already there keeps the mode its operator gave it: install.sh and
+// the entrypoint take the world bits off it and nothing else, so an older
+// installer's 0755 is closed while a directory deliberately shared with a backup
+// group at 0750 stays shared. A data directory that is a symlink is left alone
+// entirely, because the operator moved it there on purpose. This decides how a
+// directory is made, not what an existing installation is allowed to look like:
+// the two of them run as root, at the moment the operator is installing or
+// starting the thing, which is where a correction to a directory already on disk
+// belongs. This runs as the server, which may not own what it would be
+// rewriting - and would be rewriting it on every boot.
 //
 // Ignored by node on win32, which is right rather than a gap - Windows has no
 // POSIX mode bits and the ACL inherited from the parent is what governs there.
