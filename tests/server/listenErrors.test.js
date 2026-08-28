@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { bodyOf, withoutJsComments } from "../helpers/source.js";
 
 /**
  * The HTTP listener says when it cannot bind.
@@ -50,13 +51,21 @@ const errorHandlerOf = (setup) =>
  * almost nothing - which is every "this is not in the post-bind branch"
  * assertion passing against a handler that has no branches at all, the exact
  * shape they exist to reject.
+ *
+ * And the slice proves it still holds the branch, the same anchoring the
+ * release walker does with its push line: a return added *after* the reporter
+ * call would move "last return" past the branch and collapse the slice to a
+ * closing brace, at which point every doesNotMatch built on it holds against
+ * nothing. The reporter call is the one thing the branch cannot be without.
  */
 const postBindBranchOf = (handler) => {
     const lastReturn = handler.lastIndexOf("return");
+    const branch = lastReturn === -1 ? handler : handler.slice(handler.indexOf(";", lastReturn) + 1);
 
-    if (lastReturn === -1) return handler;
+    assert.match(branch, /report(Http|Https)Error\(/,
+        "the post-bind slice no longer contains the reporter call, so nothing below it is being asserted");
 
-    return handler.slice(handler.indexOf(";", lastReturn) + 1);
+    return branch;
 };
 
 describe("the http listener's error handling", () => {
@@ -215,8 +224,8 @@ describe("how often a bound listener's errors are written down", () => {
             "every 'error' a bound listener raises is appended to the log, one per connection attempt");
     });
 
-    it("keeps the time of the last report, so the first is never held back", () => {
-        assert.match(reporter, /lastReported/,
+    it("keeps the window it is reporting inside, so the first is never held back", () => {
+        assert.match(reporter, /windowStart/,
             "there is nothing to measure the interval from, so either all are written or none are");
     });
 
@@ -237,5 +246,119 @@ describe("how often a bound listener's errors are written down", () => {
             "the http post-bind branch reaches errorHandler without passing the interval");
         assert.doesNotMatch(httpsPostBind, /errorHandler\(/,
             "the https post-bind branch reaches errorHandler without passing the interval");
+    });
+});
+
+/**
+ * The reporter itself, executed - the scans above proved less than they
+ * claimed. Deleting the line that records the report's own time left the
+ * throttle completely inert, restoring the unbounded log growth this exists to
+ * end, and every scan stayed green; a *different* failure inside the window
+ * was suppressed behind a console line claiming it was "already recorded" -
+ * untrue, and if it never recurred it never reached the log at all; the
+ * suppressed branch printed one stderr line per event, which under a storm is
+ * the same unbounded growth moved into the journal; and the wall clock the
+ * delta read goes backward under NTP steps and VM resumes, silencing the log
+ * until real time catches up. Lifted and run with an injected clock and a
+ * recording errorHandler, the way the verdict deadline is.
+ */
+describe("the reporter, executed", () => {
+    // Far enough apart that an off-by-one in the comparison cannot blur the
+    // inside/outside cases.
+    const INTERVAL = 1000;
+
+    const build = () => {
+        const stripped = withoutJsComments(source);
+        const factory = bodyOf(stripped, "const listenerErrorReporter");
+
+        // Off zero, deliberately: the first cut's dead `lastReported !== 0`
+        // guard made a report at clock 0 read as never having happened, and a
+        // harness starting there exercised that artifact instead of the
+        // window.
+        const clock = {value: 5 * INTERVAL, now() { return this.value; }};
+        const reports = [];
+        const consoleLines = [];
+
+        const make = new Function("Date", "performance", "LISTENER_ERROR_LOG_INTERVAL_MS",
+            "errorHandler", "console",
+            `return (() => ${factory})();`)(
+            clock, clock, INTERVAL,
+            (err, options) => reports.push({err, options}),
+            {error: (line) => consoleLines.push(line)});
+
+        return {clock, reports, consoleLines, report: make};
+    };
+
+    const fault = (code) => Object.assign(new Error(`accept ${code}`), {code});
+
+    it("reports the first fault in full, whenever it arrives", () => {
+        const {reports, report} = build();
+
+        report(fault("EMFILE"), "the listener");
+
+        assert.equal(reports.length, 1);
+        assert.equal(reports[0].options.fatal, false);
+        assert.match(reports[0].options.context, /the listener/);
+    });
+
+    it("suppresses a repeat of the same fault silently", () => {
+        const {clock, reports, consoleLines, report} = build();
+
+        report(fault("EMFILE"), "the listener");
+        clock.value += INTERVAL / 2;
+        report(fault("EMFILE"), "the listener");
+
+        assert.equal(reports.length, 1, "every repeat is appended to the log");
+        assert.deepEqual(consoleLines, [],
+            "one stderr line per suppressed event is the same unbounded growth, moved into the journal");
+    });
+
+    it("reports a different fault inside the window at once", () => {
+        const {clock, reports, report} = build();
+
+        report(fault("EMFILE"), "the listener");
+        clock.value += INTERVAL / 2;
+        report(fault("ECONNABORTED"), "the listener");
+
+        assert.equal(reports.length, 2,
+            "a failure that never happened before is told it was already recorded");
+    });
+
+    it("reports again past the window, carrying the suppressed count", () => {
+        const {clock, reports, report} = build();
+
+        report(fault("EMFILE"), "the listener");
+        clock.value += INTERVAL / 2;
+        report(fault("EMFILE"), "the listener");
+        report(fault("EMFILE"), "the listener");
+        clock.value += INTERVAL;
+        report(fault("EMFILE"), "the listener");
+
+        assert.equal(reports.length, 2);
+        assert.match(reports[1].options.context, /\b2\b/,
+            "the storm's continuation is invisible: the log reads as one quiet failure");
+    });
+
+    it("keeps two listeners' reporters apart", () => {
+        const first = build();
+        const second = build();
+
+        first.report(fault("EMFILE"), "http");
+        second.report(fault("EMFILE"), "https");
+
+        assert.equal(first.reports.length, 1);
+        assert.equal(second.reports.length, 1, "a busy http listener mutes the https one");
+    });
+
+    // The clock itself: monotonic, never the wall clock a stepped NTP or a
+    // resumed VM moves backward - a backward step read as "inside the window"
+    // for as long as the step was long.
+    it("does not measure its window with the wall clock", () => {
+        const reporter = bodyOf(withoutJsComments(source), "const listenerErrorReporter");
+
+        assert.doesNotMatch(reporter, /Date\.now/,
+            "an NTP step back silences the log until real time catches up");
+        assert.match(reporter, /performance\.now/,
+            "nothing monotonic measures the window");
     });
 });

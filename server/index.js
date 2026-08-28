@@ -219,41 +219,68 @@ const reportDatabaseDamage = async () => {
 };
 
 /**
- * Reports what a listener raises after it has bound, at most once an interval.
+ * Reports what a listener raises after it has bound: each distinct fault once
+ * per interval, storms counted rather than written.
  *
  * A post-bind 'error' is never fatal - the server is up and serving, and the
  * branches that decide otherwise are the ones ahead of this - so all that is
  * left to do is write the failure down. What this adds is a ceiling on how
  * often, because these failures do not arrive one at a time. A process out of
- * file descriptors emits EMFILE for every connection the kernel hands it, for as
- * long as callers keep arriving, and errorHandler appends an entry to
+ * file descriptors emits EMFILE for every connection the kernel hands it, for
+ * as long as callers keep arriving, and errorHandler appends an entry to
  * data/logs/error.log on every call - so the report meant to explain a quiet
- * failure was itself a log file growing without a ceiling. Worse when the write
- * is what is failing, a full disk being a fine way to run out of descriptors:
- * errorHandler answers each failed write with a second console line, and the
- * flood moves to stdout with nothing recorded at the end of it.
+ * failure was itself a log file growing without a ceiling.
  *
- * The suppressed occurrences are still said out loud, as a console line with no
- * log write behind it. Silence would leave an operator watching a server fail
- * every accept with one minute-old entry and no sign that anything was ongoing,
- * which is the wrong half of the problem to solve.
+ * Three judgements the first cut got wrong, kept here so they stay decided:
+ *
+ * - Faults are told apart, by code. The window exists for a storm of one
+ *   failure, and a *different* failure arriving mid-window was suppressed
+ *   behind a console line claiming it was "already recorded" - untrue, and if
+ *   it never recurred, its detail never reached the log at all.
+ * - Suppression is silent, and counted. A console line per suppressed event
+ *   only moved the unbounded growth into the journal every deployment here
+ *   captures; the count rides on the next full entry instead, so the log
+ *   still says the storm continued without growing with it. A storm that
+ *   simply stops leaves its last count unflushed, which is accepted: its
+ *   first entry recorded the fault in full.
+ * - The clock is monotonic. Date.now() moves with NTP steps and VM resumes,
+ *   and a step backward read as "inside the window" for as long as the step
+ *   was long - an hour of silence for an hour's correction. performance.now()
+ *   cannot go backward.
  *
  * One of these per listener, so a busy http listener cannot mute the https one.
  */
 const listenerErrorReporter = () => {
-    // Not Date.now(): the first error to arrive must be reported in full,
-    // whenever it arrives, and a real timestamp here would hold it back for the
-    // first minute of the process's life.
-    let lastReported = 0;
+    // -Infinity: the first fault to arrive opens a window, whenever it
+    // arrives. The set holds one entry per distinct code per window, which is
+    // bounded by how many kinds of fault a listener can raise.
+    let windowStart = -Infinity;
+    const reportedFaults = new Set();
+    let suppressed = 0;
 
     return (err, context) => {
-        const now = Date.now();
+        const now = performance.now();
 
-        if (lastReported !== 0 && now - lastReported < LISTENER_ERROR_LOG_INTERVAL_MS)
-            return console.error(`${context}: ${err.message} (already recorded; not logging it again yet)`);
+        if (now - windowStart >= LISTENER_ERROR_LOG_INTERVAL_MS) {
+            windowStart = now;
+            reportedFaults.clear();
+        }
 
-        lastReported = now;
-        errorHandler(err, {fatal: false, context});
+        // The code where there is one - stable across a storm - and the
+        // message where there is not; errorHandler's own asError normalises
+        // whatever shape actually gets reported.
+        const fault = err?.code ?? err?.message ?? "unknown";
+
+        if (reportedFaults.has(fault)) {
+            suppressed++;
+            return;
+        }
+
+        reportedFaults.add(fault);
+
+        const note = suppressed > 0 ? ` (and ${suppressed} suppressed since the last entry)` : "";
+        suppressed = 0;
+        errorHandler(err, {fatal: false, context: context + note});
     };
 };
 

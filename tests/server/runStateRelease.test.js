@@ -210,8 +210,17 @@ describe("the verdict deadline, executed", () => {
     it("stays pending until the delay, then resolves exactly null", async () => {
         const {deadline, timer} = armed();
 
-        const early = await Promise.race([deadline.then(() => "settled"), Promise.resolve("pending")]);
-        assert.equal(early, "pending", "the deadline settles before its timer fires");
+        // Not a race against Promise.resolve: an already-settled competitor
+        // cannot lose one, because the .then-derived side needs an extra
+        // microtask - so that shape answered "pending" even for a deadline
+        // that had already resolved, and the half of this test that exists to
+        // pin "nothing settles before the timer fires" pinned nothing. A flag
+        // set on settlement and read after a full macrotask yield is what
+        // actually asks the question.
+        let settled = false;
+        deadline.then(() => { settled = true; });
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.equal(settled, false, "the deadline settles before its timer fires");
 
         timer.fire();
         assert.strictEqual(await deadline, null,
