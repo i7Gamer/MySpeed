@@ -27,6 +27,7 @@ const loadResvg = () => (resvg ??= import('@resvg/resvg-js').catch((error) => {
 }));
 import moment from 'moment-timezone';
 import * as tests from './speedtests.js';
+import * as targetsController from './targets.js';
 import { parseDateRange } from '../util/dateRange.js';
 import { isFailedTest } from '../util/testOutcome.js';
 import htm from 'htm';
@@ -68,10 +69,21 @@ const readStatistics = async () => {
   const range = parseDateRange(from, to);
   if (!range.valid) return null;
 
-  const stats = await tests.listStatistics(range);
+  // One line, not a blend. The card is reachable by anyone on a no-password or
+  // read-level instance and headlines "the" speed, so it describes the same
+  // line the recommendations sample - the first scheduled target that takes
+  // part in alerting, then the round's leader, then the first on record -
+  // rather than averaging the gigabit LAN box into the WAN's figure.
+  // Instance-wide only where no target exists at all (a pre-target database),
+  // whose rows carry no targetId.
+  const line = await targetsController.alertsTarget()
+      ?? await targetsController.primaryTarget()
+      ?? (await targetsController.listAll())[0];
+
+  const stats = await tests.listStatistics(range, line ? {target: line.id} : {});
   if (hasValues(stats)) return stats;
 
-  const latest = await tests.getLatest();
+  const latest = await tests.getLatest(line?.id);
   if (isFailedTest(latest)) return null;
   if (!latest) return null;
 

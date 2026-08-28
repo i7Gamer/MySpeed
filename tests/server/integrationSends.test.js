@@ -7,6 +7,7 @@ import setupPushover, { PUSHOVER_MESSAGE_LIMIT } from "../../server/integrations
 import setupWebhook from "../../server/integrations/webhook.js";
 import setupHealthChecks from "../../server/integrations/healthChecks.js";
 import setupInflux from "../../server/integrations/influxdb.js";
+import { bodyOf, readSource } from "../helpers/source.js";
 
 /**
  * These modules are what actually reaches the user when a speedtest finishes or
@@ -88,6 +89,35 @@ describe("influxdb", () => {
         assert.match(written.body, /download=100/);
         assert.doesNotMatch(written.body, /packetLoss/);
         assert.doesNotMatch(written.body, /Latency/);
+    });
+
+    /**
+     * Which member measured the point. Tags are what a series is grouped by,
+     * so without them every target's points shared one series - a Grafana
+     * panel averaging the WAN with the LAN box - and with precision=s, two
+     * members finishing in the same second were one point, last writer wins.
+     * Through buildLine's own escaping, so a name with a space survives.
+     */
+    it("tags the point with the member that measured it", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config,
+            {...RESULT, targetId: 3, targetName: "WAN Box", provider: "iperf3"});
+
+        const [written] = sent;
+        assert.match(written.body, /,target=WAN\\ Box/);
+        assert.match(written.body, /,targetId=3/);
+        assert.match(written.body, /,provider=iperf3/);
+    });
+
+    // A row from before targets existed carries nulls, and buildLine already
+    // drops empty tag values - no tags invented, nothing renamed.
+    it("writes a pre-target row without inventing empty tags", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config,
+            {...RESULT, targetId: null, targetName: null, provider: null});
+
+        assert.doesNotMatch(sent[0].body, /target/);
+        assert.doesNotMatch(sent[0].body, /provider/);
     });
 });
 
@@ -277,7 +307,8 @@ describe("pushover", () => {
             const {events} = load(setupPushover);
             await fire(events, "testFailed", config, failure(LONG));
 
-            assert.match(sent[0].body.message, /^A speedtest has failed\. Reason: Error: \[0\] Cannot open socket/);
+            assert.match(sent[0].body.message, /^A speedtest has failed\./);
+            assert.match(sent[0].body.message, /Reason: Error: \[0\] Cannot open socket/);
         });
 
         // A trimmed message that does not say it was trimmed reads as the whole
@@ -291,9 +322,12 @@ describe("pushover", () => {
 
         it("leaves a message that already fits exactly as it was written", async () => {
             const {events} = load(setupPushover);
-            await fire(events, "testFailed", config, failure("no route to host"));
+            // targetName travels as an explicit null, the way failedPayload
+            // always sends it, so the template renders N/A rather than keeping
+            // the placeholder.
+            await fire(events, "testFailed", config, {...failure("no route to host"), targetName: null});
 
-            assert.equal(sent[0].body.message, "A speedtest has failed. Reason: no route to host");
+            assert.equal(sent[0].body.message, "A speedtest has failed.\nTarget: N/A\nReason: no route to host");
         });
 
         // The limit is on the message, not on the reason, so a long custom
@@ -685,5 +719,46 @@ describe("the health checks keep-alive", () => {
         await fire(events, "minutePassed", {url: "https://hc.example.net/ping/uuid/"}, {testFailing: true});
 
         assert.equal(sent[0].url, `${config.url}/fail`);
+    });
+});
+
+/**
+ * Every default template names the member it is talking about.
+ *
+ * The payload has carried %targetName% since targets arrived, and all six
+ * default templates predate it - so on a multi-target instance every
+ * notification read identically whether it described the WAN or the gigabit
+ * LAN box, and the alert that mattered was indistinguishable from the one
+ * that did not. On a pre-target instance the variable renders as N/A, the
+ * shape every unmeasured figure already takes.
+ */
+describe("the default templates", () => {
+    const TEMPLATE_MODULES = ["discord", "telegram", "gotify", "pushover", "email", "ntfy"];
+    const NAMED_IN_BOTH = 2;
+
+    for (const name of TEMPLATE_MODULES)
+        it(`${name}'s templates name the member they describe`, () => {
+            const defaults = bodyOf(readSource(`server/integrations/${name}.js`), "const defaults =");
+
+            assert.ok((defaults.match(/%targetName%/g) ?? []).length >= NAMED_IN_BOTH,
+                `${name}'s finished and failed templates do not both name the target`);
+        });
+
+    it("renders the member's name into the message that goes out", async () => {
+        const {events} = load(setupDiscord);
+        await fire(events, "testFinished",
+            {url: "https://discord.com/api/webhooks/1/token", send_finished: true},
+            {...RESULT, targetName: "WAN Box"});
+
+        assert.match(sent[0].body.embeds[0].description, /WAN Box/);
+    });
+
+    it("names the member in a failure too", async () => {
+        const {events} = load(setupDiscord);
+        await fire(events, "testFailed",
+            {url: "https://discord.com/api/webhooks/1/token", send_failed: true},
+            {...failure("boom"), targetName: "LAN Box"});
+
+        assert.match(sent[0].body.embeds[0].description, /LAN Box/);
     });
 });

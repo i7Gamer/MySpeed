@@ -48,6 +48,17 @@ const DIALOGS = [
         what: "the welcome wizard",
         file: "common/components/WelcomeDialog/WelcomeDialog.jsx",
         buttons: []
+    },
+    {
+        // The integration card's save button is a bare icon, so the shared
+        // per-key scan cannot name it; its own assertion follows the loop.
+        // The double-click that matters is on an integration not yet saved:
+        // both runs take the PUT branch, because the id that would send the
+        // second down the PATCH path only arrives with the first response -
+        // and the server files two integrations for one card.
+        what: "the integration card",
+        file: "common/components/IntegrationDialog/IntegrationDialog.jsx",
+        buttons: []
     }
 ];
 
@@ -89,6 +100,17 @@ describe("a dialog cannot be submitted twice at once", () => {
     it(`the target editor's save button shows the lock`, () => {
         const source = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
         const tag = source.match(/<button(?:(?!<button)[^])*?save\(close\)(?:(?!<button)[^])*?>/)?.[0];
+
+        assert.ok(tag, "the save button is no longer recognisable by its handler");
+        assert.match(tag, /disabled=\{[^}]*saving/,
+            "the save button stays pressable while the request runs");
+    });
+
+    // The integration card's save button, likewise found by its handler - see
+    // its DIALOGS entry for why the label cannot be the anchor.
+    it(`the integration card's save button shows the lock`, () => {
+        const source = readSource("client/src/common/components/IntegrationDialog/IntegrationDialog.jsx");
+        const tag = source.match(/<button(?:(?!<button)[^])*?handleSave\(\)(?:(?!<button)[^])*?>/)?.[0];
 
         assert.ok(tag, "the save button is no longer recognisable by its handler");
         assert.match(tag, /disabled=\{[^}]*saving/,

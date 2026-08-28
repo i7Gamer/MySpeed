@@ -36,6 +36,7 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
         return initial;
     });
     const [unsavedChanges, setUnsavedChanges] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [saveConfirmed, setSaveConfirmed] = useState(false);
     const [deleteConfirmed, setDeleteConfirmed] = useState(false);
     const [error, setError] = useState(false);
@@ -90,6 +91,15 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
     };
 
     const handleSave = async () => {
+        // A second click before the first save answers used to take the create
+        // branch again - the id that sends a save down the PATCH path only
+        // arrives with the first response - and the server filed two
+        // integrations for one card. Same lock as every other dialog: a no-op
+        // while a run is live, cleared in the finally so a refused save does
+        // not wedge the card shut.
+        if (saving) return;
+        setSaving(true);
+
         const data = integrationPayload(integrationDef, fields, displayName);
         try {
             if (!integration.id) {
@@ -107,6 +117,8 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
             setTimeout(() => setSaveConfirmed(false), 1500);
         } catch {
             setError(true);
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -146,7 +158,8 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
         <ExpandableCard icon={integrationDef.icon} title={displayName} subtitle={getStatusText()} statusDot={getStatusClass()}
             actions={<>
                 {!config.previewMode && unsavedChanges && !saveConfirmed && (
-                    <button type="button" className="card-action-btn save-btn" onClick={(e) => {e.stopPropagation(); handleSave();}}>
+                    <button type="button" className="card-action-btn save-btn" disabled={saving}
+                            onClick={(e) => {e.stopPropagation(); handleSave();}}>
                         <FontAwesomeIcon icon={faFloppyDisk}/>
                     </button>
                 )}

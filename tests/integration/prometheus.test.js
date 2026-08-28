@@ -451,6 +451,24 @@ describe("what a second target exports", () => {
         assert.match(text, /myspeed_target_info\{[^}]*target="NAS"[^}]*provider="cloudflare"[^}]*\} 1/);
     });
 
+    /**
+     * The alias row the join actually needs. The help text says "join here
+     * for its name", and a group_left join matches by the series' own labels -
+     * which for the primary are target="" provider="". Every named row above
+     * misses those, so the one set of series the convention exists for was the
+     * one set the join could never match.
+     */
+    it("carries an alias row the unlabelled series can join on", async () => {
+        const {text} = await metrics();
+
+        const alias = text.split("\n").find((row) =>
+            row.startsWith("myspeed_target_info{") && row.includes('target=""'));
+
+        assert.ok(alias, "the empty-labelled series has no target_info row to join");
+        assert.match(alias, new RegExp(`target_id="${primary.id}"`));
+        assert.match(alias, /provider=""/);
+    });
+
     // The instance-wide server gauge keeps meaning what it meant: the primary
     // target's latest, not whichever member happened to run last.
     it("keeps myspeed_server on the primary target", async () => {

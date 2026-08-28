@@ -1,6 +1,8 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import setupMqtt, { forgetAnnouncements } from "../../server/integrations/mqtt.js";
 import { CONNACK, CONNECT, PUBLISH, readPacket } from "../../server/util/mqtt.js";
 
@@ -401,6 +403,64 @@ describe("home assistant discovery", () => {
         await settled();
 
         assert.deepEqual(configTopics(), []);
+    });
+});
+
+/**
+ * A round of several targets, told apart by the topics.
+ *
+ * Every member used to publish to the one configured topic, so a Home
+ * Assistant sensor read the WAN's 250 and the LAN box's 940 in turn and
+ * flapped between lines - a graph describing no line at all. The primary
+ * member keeps the topic the single-target instance always had, so nothing
+ * breaks for anyone; a secondary member gets a subtopic of its own, keyed by
+ * its stable id rather than a name a rename would move.
+ */
+describe("a round of several targets", () => {
+    const SECONDARY = {...RESULT, targetId: 7, targetName: "LAN Box", primary: false};
+
+    it("publishes a secondary member under its own subtopic", async () => {
+        await fire("testFinished", config(), SECONDARY);
+
+        assert.equal((await published()).topic, "myspeed/result/7");
+    });
+
+    it("keeps the primary member on the topic it always had", async () => {
+        await fire("testFinished", config(), {...RESULT, targetId: 3, targetName: "WAN", primary: true});
+
+        assert.equal((await published()).topic, "myspeed/result");
+    });
+
+    // A payload from a node too old to say which member is primary keeps
+    // behaving the way the single-target instance always did.
+    it("treats a payload that does not say as the primary", async () => {
+        await fire("testFinished", config(), RESULT);
+
+        assert.equal((await published()).topic, "myspeed/result");
+    });
+
+    it("keeps a secondary failure off the primary's error topic", async () => {
+        await fire("testFailed", config(), {...FAILURE, targetId: 7, targetName: "LAN Box", primary: false});
+
+        assert.equal((await published()).topic, "myspeed/result/error/7");
+    });
+
+    it("announces a secondary member's sensors beside its first result", async () => {
+        await fire("testFinished", config({discovery: true, topic: "myspeed/multi"}), SECONDARY);
+        await settled();
+
+        assert.ok(configTopics().length > 0, "a secondary member's sensors were never announced");
+        for (const topic of configTopics()) assert.match(topic, /_t7\/config$/);
+    });
+
+    // The round is what says which member is primary - the payload is the one
+    // thing a broker-side module can read without a database of its own.
+    it("is told by the round which member the base topics speak for", () => {
+        const source = fs.readFileSync(
+            fileURLToPath(new URL("../../server/tasks/speedtest.js", import.meta.url)), "utf8");
+
+        assert.equal((source.match(/primary: await isPrimaryMember\(target\)/g) ?? []).length, 2,
+            "one of the two notification payloads does not say whether its member is primary");
     });
 });
 

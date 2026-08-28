@@ -28,9 +28,12 @@ export const DISCORD_DESCRIPTION_LIMIT = 4096;
  */
 export const DISCORD_USERNAME_LIMIT = 80;
 
+// Both templates name the target: on a multi-target instance every message
+// otherwise reads identically whether it describes the WAN or the LAN box. A
+// pre-target row renders it as N/A, the shape every unmeasured figure takes.
 const defaults = {
-    finished: ":sparkles: **A speedtest is finished**\n > :ping_pong: `Ping`: %ping% ms (±%jitter% ms)\n > :arrow_up: `Upload`: %upload% Mbps\n > :arrow_down: `Download`: %download% Mbps",
-    failed: ":x: **A speedtest has failed**\n > `Reason`: %error%"
+    finished: ":sparkles: **A speedtest is finished**\n > :dart: `Target`: %targetName%\n > :ping_pong: `Ping`: %ping% ms (±%jitter% ms)\n > :arrow_up: `Upload`: %upload% Mbps\n > :arrow_down: `Download`: %download% Mbps",
+    failed: ":x: **A speedtest has failed**\n > `Target`: %targetName%\n > `Reason`: %error%"
 };
 
 /**

@@ -28,6 +28,33 @@ describe("the failure fallback", () => {
     });
 });
 
+/**
+ * Whose rows the public card averages. Read rather than rendered, the way the
+ * fallback above is: the image needs satori and resvg, and what is being held
+ * here is a scoping decision, not a rendering.
+ *
+ * The card is reachable by anyone on a no-password or read-level instance and
+ * headlines "the" speed, so it must describe one line - the same one the
+ * recommendations sample - rather than blending the gigabit LAN box into the
+ * WAN's average. Instance-wide only where no target exists at all, whose rows
+ * carry no targetId.
+ */
+describe("the line the card describes", () => {
+    const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+    const controller = fs.readFileSync(path.join(root, "server", "controller", "opengraph.js"), "utf8");
+
+    it("is one line, resolved the way the recommendations resolve theirs", () => {
+        assert.match(controller, /alertsTarget\(\)/,
+            "the card still averages every target's rows together");
+        assert.match(controller, /\?\? await targetsController\.primaryTarget\(\)/,
+            "an instance where nothing alerts loses its card instead of falling back");
+        assert.match(controller, /listStatistics\(range, line \? \{target: line\.id} : \{}\)/,
+            "the statistics the card renders are not narrowed to the line");
+        assert.match(controller, /getLatest\(line\?\.id\)/,
+            "the latest-test fallback is still instance-wide");
+    });
+});
+
 let server;
 
 /** Every outbound request the server makes while a test runs. */

@@ -700,6 +700,25 @@ const executeRound = async (type, targetId) => {
     }
 };
 
+/**
+ * Whether this member is the one the instance-wide surfaces speak for: the
+ * first of the scheduled round, with the same fallback order the
+ * recommendations use for an instance where nothing is scheduled.
+ *
+ * Carried on the notification payload rather than resolved by the sinks,
+ * because the payload is the one thing a broker-side module can read without
+ * a database of its own - and the MQTT module routes secondary members to
+ * subtopics on exactly this answer. The demo target is no row and is the only
+ * member its round has, so it is the primary by construction.
+ */
+const isPrimaryMember = async (target) => {
+    if (target.id == null) return true;
+
+    const primary = await targetsController.primaryTarget() ?? (await targetsController.listAll())[0];
+
+    return primary === undefined || primary.id === target.id;
+};
+
 const executeTarget = async (target, type, retried = false) => {
     const mode = target.provider === "preview" ? "preview" : target.provider;
 
@@ -794,7 +813,8 @@ const executeTarget = async (target, type, retried = false) => {
         if (target.alerts) sendFinished(finishedPayload({...testResult, provider, ping, jitter, download, upload, time,
             packetLoss, downloadLatency, uploadLatency, serverId, serverName, serverHost, serverLocation,
             isp, externalIp, resultId, bytesDownloaded, bytesUploaded,
-            targetId: target.id, targetName: target.name})).catch(err =>
+            targetId: target.id, targetName: target.name,
+            primary: await isPrimaryMember(target)})).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
     } catch (e) {
         console.log(e)
@@ -838,7 +858,8 @@ const executeTarget = async (target, type, retried = false) => {
         // unreachable - the very situation this notification describes -
         // held the run open for the sum of their timeouts.
         if (target.alerts) sendError(failedPayload({...testResult, provider: mode, error: message,
-            targetId: target.id, targetName: target.name})).catch(err =>
+            targetId: target.id, targetName: target.name,
+            primary: await isPrimaryMember(target)})).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
         console.log(`Test #${testResult.id} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
     }

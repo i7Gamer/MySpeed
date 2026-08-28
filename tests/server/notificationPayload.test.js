@@ -88,6 +88,21 @@ describe("finishedPayload", () => {
         assert.deepEqual(Object.keys(payload).sort(), expected.sort());
         for (const key of expected) assert.equal(payload[key], null, `${key} is not null`);
     });
+
+    /**
+     * Which member the base topics and unlabelled series speak for. The MQTT
+     * module routes secondary members to subtopics on exactly this flag - the
+     * payload is the one thing a broker-side module can read without a
+     * database - and a payload from an older node carries null, which every
+     * reader treats as the primary: the way the single-target instance always
+     * behaved.
+     */
+    it("says whether the member is the one the base topics speak for", () => {
+        assert.equal(finishedPayload({...RECORD, primary: true}).primary, true);
+        assert.equal(finishedPayload({...RECORD, primary: false}).primary, false);
+        assert.equal(failedPayload({error: "boom", primary: false}).primary, false);
+        assert.equal(finishedPayload(RECORD).primary, null);
+    });
 });
 
 describe("failedPayload", () => {

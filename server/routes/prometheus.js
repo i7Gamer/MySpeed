@@ -172,7 +172,7 @@ const serverInfoGauge = new promClient.Gauge({
 });
 const targetInfoGauge = new promClient.Gauge({
     name: 'myspeed_target_info',
-    help: 'One row per configured target (always 1). The measurement series of the primary target carry an empty target label; join here for its name.',
+    help: 'One row per configured target (always 1). The measurement series of the primary target carry an empty target label; an alias row with the same empty labels carries its target_id, so a join on (target, provider) resolves every series.',
     labelNames: ['target_id', 'target', 'provider']
 });
 
@@ -324,6 +324,15 @@ const collect = async (res) => {
     // target the fallback landed on, and null where the fallback landed on rows
     // that belong to no target - or on nothing.
     const unlabelledTargetId = primary ? primary.id : (primaryLatest?.targetId ?? null);
+
+    // The alias row the join actually needs. A group_left join matches by the
+    // series' own labels, and the unlabelled series wears target="" provider=""
+    // - labels no named row above carries - so the one set of series the
+    // convention exists for was the one set the join could never match. Written
+    // for whichever target owns the unlabelled series this scrape, which is
+    // not always the primary; the reasoning above says when it is not.
+    if (unlabelledTargetId !== null)
+        targetInfoGauge.set({target_id: String(unlabelledTargetId), target: '', provider: ''}, 1);
 
     if (primaryLatest) {
         setSeries(primaryLatest, UNLABELLED_TARGET);
