@@ -72,7 +72,12 @@ describe("the recommendation sample", () => {
     });
 
     it("no longer keeps a bare finite check of its own", () => {
-        assert.doesNotMatch(body, /Number\.isFinite\(download\)|Number\.isFinite\(entry\.download\)/,
+        // All three columns, not one: a reintroduced Number.isFinite(upload)
+        // is the same divergence the message names. The accumulator's own
+        // Number.isFinite(recommendations.ping) stays legitimate - it judges
+        // the untouched Infinity sentinel, not a row - so the pattern names
+        // the row reads rather than banning the call outright.
+        assert.doesNotMatch(body, /Number\.isFinite\((entry\.)?(ping|download|upload)\)/,
             "a second predicate over the same rows is what diverged");
     });
 });

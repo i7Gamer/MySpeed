@@ -192,7 +192,11 @@ const medianOf = (values, averageOf) => {
 // every value onto the call stack, which throws RangeError somewhere above
 // ~125k values - a range holding a year of five-minute tests - and took the
 // whole statistics endpoint down with it.
-const mapRange = (entries, type, averageOf) => {
+// `read` is the column's own judgement of what counts as a reading. metricValue
+// is the default the measurement columns share; a column with a stricter rule -
+// time, whose -1 is an imported placeholder and not a duration - passes its own
+// reader, so the summary refuses exactly what the charts beside it refuse.
+const mapRange = (entries, type, averageOf, read = metricValue) => {
     let min = Infinity;
     let max = -Infinity;
     let total = 0;
@@ -221,7 +225,7 @@ const mapRange = (entries, type, averageOf) => {
         // judgement Prometheus and the recommendation sample share, and a
         // second predicate here is how one row answered two surfaces
         // differently. Read the one, refuse the other.
-        const value = metricValue(entry[type]);
+        const value = read(entry[type]);
         if (value === null) continue;
 
         if (value < min) min = value;
@@ -237,7 +241,7 @@ const mapRange = (entries, type, averageOf) => {
     return {min, max, avg: averageOf(total / counted), median: medianOf(values, averageOf)};
 };
 
-export const mapFixed = (entries, type) =>
-    mapRange(entries, type, (avg) => parseFloat(avg.toFixed(AVG_DECIMALS)));
+export const mapFixed = (entries, type, read) =>
+    mapRange(entries, type, (avg) => parseFloat(avg.toFixed(AVG_DECIMALS)), read);
 
-export const mapRounded = (entries, type) => mapRange(entries, type, Math.round);
+export const mapRounded = (entries, type, read) => mapRange(entries, type, Math.round, read);

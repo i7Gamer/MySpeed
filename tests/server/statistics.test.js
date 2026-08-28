@@ -1206,6 +1206,59 @@ describe("a corrupt stored number", () => {
     });
 
     /**
+     * A -1 in ping or time is the failure placeholder, not a reading - the
+     * same population every usableFigure call in the file cites. measuredPing
+     * gated only on isMeasuredLatency, which never refuses negatives, so an
+     * imported -1 ping was a full reading in every ping figure - min -1 on the
+     * card, a chart point below zero, an hourly bucket averaging it - while
+     * the identical -1 in jitter was refused everywhere; and the coercion even
+     * widened it, admitting the string "-1" the old typeof gate refused. The
+     * time summary had the mirror-image gap: the chart moved to usableFigure
+     * while mapRounded kept reading raw, so the span card printed "-1s".
+     */
+    it("keeps the ping placeholder out of every ping figure", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {ping: 20}),
+            at("2026-08-07T02:00:00.000Z", {ping: -1}),
+            at("2026-08-07T03:00:00.000Z", {ping: "-1"})
+        ], DAY, {offsetMinutes: 0});
+
+        assert.deepEqual(stats.ping, {min: 20, max: 20, avg: 20, median: 20},
+            "the placeholder is the range's lowest ping");
+        assert.deepEqual(stats.data.ping, [20, null, null],
+            "the chart draws a point at minus one millisecond");
+        assert.equal(stats.hourlyAverages.find((bucket) => bucket.hour === 2).ping, null,
+            "an hour's average is the placeholder");
+        assert.equal(stats.consistency.ping.deviation, null,
+            "the deviation counted the placeholder as a reading");
+    });
+
+    it("keeps a negative time out of the span the card prints", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {time: 1000}),
+            at("2026-08-07T02:00:00.000Z", {time: -1}),
+            at("2026-08-07T03:00:00.000Z", {time: 2000})
+        ], DAY);
+
+        assert.deepEqual(stats.time, {min: 1000, max: 2000, avg: 1500, median: 1500},
+            "the span card prints a negative duration");
+    });
+
+    // The last bare typeof in the file: a loaded-latency row whose ping is
+    // spelt as a string was counted by the range and both series and skipped
+    // by the card beside them.
+    it("counts a loaded-latency row however its ping is spelt", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {ping: 20, downloadLatency: 50, uploadLatency: 60}),
+            at("2026-08-07T02:00:00.000Z", {ping: "20", downloadLatency: 50, uploadLatency: 60})
+        ], DAY);
+
+        assert.equal(stats.consistency.loadedLatency.tests, 2,
+            "the string-spelt row is measured in the range and absent from the card");
+        assert.equal(stats.consistency.loadedLatency.increase, 40);
+    });
+
+    /**
      * The ping came along too. isMeasuredLatency asks typeof first - rightly,
      * for the fabricated-zero question it answers - so a numeric-string ping
      * was the one column still measured-and-absent-at-once: counted by

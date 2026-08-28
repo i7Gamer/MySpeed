@@ -85,10 +85,19 @@ const readings = (values) => {
  * refusing a numeric string after the cleanup taught the other columns to
  * read one. Coerce first, then ask; null for everything the gate refuses,
  * which the callers treat as the gap it is.
+ *
+ * usableFigure, not bare metricValue, for the coercion: metricValue keeps -1
+ * for its Prometheus caller to judge, and this reader's callers never judge
+ * it - a first cut fed the placeholder straight into min, the chart and the
+ * hourly buckets as a reading of minus one millisecond, and the coercion even
+ * admitted the string "-1" the old typeof gate refused. usableFigure is the
+ * same refusal every sibling column already reads through, which also makes
+ * this the same judgement as the recommendation sample's lowestRealPing:
+ * a number, not negative, and not the fabricated zero.
  */
 const measuredPing = (value) => {
-    const ping = metricValue(value);
-    return isMeasuredLatency(ping) ? ping : null;
+    const ping = usableFigure(value);
+    return ping !== null && isMeasuredLatency(ping) ? ping : null;
 };
 
 // The plain mean of a readings() population. The filter this used to carry
@@ -214,8 +223,11 @@ const buildHourlyAverages = (entries, zone) => {
         const ping = measuredPing(entry.ping);
         if (ping !== null) bucket.ping.push(ping);
         // usableFigure rather than a null check: an imported -1 placeholder
-        // was an hour's whole jitter reading.
-        if (usableFigure(entry.jitter) !== null) bucket.jitter.push(entry.jitter);
+        // was an hour's whole jitter reading. Bound and pushed, like its three
+        // siblings - computing the cleaned value and pushing the raw one left
+        // this the one array still holding whatever the column held.
+        const jitter = usableFigure(entry.jitter);
+        if (jitter !== null) bucket.jitter.push(jitter);
     });
 
     return buckets.map((bucket, hour) => ({
@@ -253,10 +265,16 @@ const INCREASE_DECIMALS = 2;
  * and a failed test stores -1 placeholders that are not readings.
  */
 const loadedIncrease = (entry) => {
-    const {ping, downloadLatency, uploadLatency} = entry;
+    // usableFigure, like every other reader of these columns - the bare typeof
+    // that stood here was the file's last second predicate, and one row could
+    // be measured in the ping range and absent from this card. It coerces the
+    // defensive numeric-string spelling and refuses null, junk and the
+    // negative placeholders alike, which is everything the old loop refused.
+    const ping = usableFigure(entry.ping);
+    const downloadLatency = usableFigure(entry.downloadLatency);
+    const uploadLatency = usableFigure(entry.uploadLatency);
 
-    for (const value of [ping, downloadLatency, uploadLatency])
-        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+    if (ping === null || downloadLatency === null || uploadLatency === null) return null;
 
     // A fabricated idle ping is no baseline: 0 is UNMEASURED_LATENCY, and
     // subtracted as a real 0 ms the whole loaded latency reads as *added*
@@ -533,7 +551,10 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
         jitter: mapFixed(withJitter, "jitter"),
         download: mapFixed(succeeded, "download"),
         upload: mapFixed(succeeded, "upload"),
-        time: mapRounded(succeeded, "time"),
+        // usableFigure, like both chart branches: a -1 here is an imported
+        // placeholder, and read raw the span card printed "-1s" beside a chart
+        // drawing the same row as a gap.
+        time: mapRounded(succeeded, "time", usableFigure),
         dataUsed: transferTotals(entries),
         data: series.data,
         labels: series.labels,
@@ -549,7 +570,7 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
                 // standard deviation, while this figure is read directly by a
                 // person - so it is the median kind, and named for what it is.
                 deviation: roundOrNull(medianAbsoluteDeviation(withPing.map(entry => measuredPing(entry.ping)))),
-                jitter: averageOrNull(withJitter.map(entry => entry.jitter))
+                jitter: averageOrNull(withJitter.map(entry => usableFigure(entry.jitter)))
             },
             // The aggregate over every success, the trend over the ones that
             // can be placed on a timeline - already sorted, above.
