@@ -481,12 +481,30 @@ describe("install.sh registers a service that is not root", () => {
      * and mkdir leaves that to the umask. The installation root stays 755 for the
      * reachability the service needs above it; the data directory needs the
      * opposite, so it is stated rather than inherited, the way the root's is.
+     *
+     * And on both branches, which is the part the position assertion is for. The
+     * mode first sat inside `if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]`, beside
+     * the chown that genuinely belongs there - so the root fallback, taken when
+     * the host has no useradd or the path cannot be reached by an unprivileged
+     * account, created no data directory at all and left the server's own helper
+     * to make one at the umask's 0755. The installs the script prints a warning
+     * about were the installs that got no mode.
      */
     it("keeps the data directory to the account that owns it", () => {
         assert.match(source, /chmod 700 "\$INSTALLATION_PATH\/data"/,
             "the data directory keeps the umask's mode, so a world-readable storage.db is reachable by any local user");
         assert.ok(source.indexOf('chmod 700 "$INSTALLATION_PATH/data"') < unitStart,
             "the mode is tightened after the service has already been registered");
+    });
+
+    it("does so whichever account it ends up running as", () => {
+        const branch = source.indexOf('if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]');
+        assert.notEqual(branch, -1, "nothing chooses between the service account and the root fallback any more");
+
+        assert.ok(source.indexOf('mkdir -p "$INSTALLATION_PATH/data"') < branch,
+            "the root fallback creates no data directory, so the server makes one at the umask's mode instead");
+        assert.ok(source.indexOf('chmod 700 "$INSTALLATION_PATH/data"') < branch,
+            "the mode is set inside the service-account branch only, so the fallback install leaves storage.db world-readable");
     });
 
     /**
@@ -639,11 +657,15 @@ describe("install.sh registers a service that is not root", () => {
             "nothing states the mode of a binary root owns and another account has to run");
     });
 
+    // Each by name rather than the single line that used to carry both: `data`
+    // is now made above the service-account branch, because the root fallback
+    // needs its 700 too, and only `bin` is left beside the chown.
     it("creates those directories itself, so the service never writes the root", () => {
         const made = source.slice(0, source.lastIndexOf("chown"));
 
-        assert.match(made, /mkdir -p "\$INSTALLATION_PATH\/data" "\$INSTALLATION_PATH\/bin"/,
-            "the service is expected to create its own folders in a directory it does not own");
+        for (const folder of ["data", "bin"])
+            assert.match(made, new RegExp(`mkdir -p "\\$INSTALLATION_PATH/${folder}"`),
+                `the service is expected to create its own ${folder} folder in a directory it does not own`);
     });
 
     /**
