@@ -413,6 +413,17 @@ if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]; then
     # does not exist changes nothing at all.
     mkdir -p "$INSTALLATION_PATH/data" "$INSTALLATION_PATH/bin"
     chown -R "$SERVICE_USER" "$INSTALLATION_PATH/data" "$INSTALLATION_PATH/bin"
+
+    # The mode of the data directory, not only its owner. storage.db is created
+    # inside it by the server under systemd's default 022 umask - 0644 in a 0755
+    # directory - and it holds the admin password hash and the integration
+    # secrets, so at that mode any local account can read it. chown says who owns
+    # the directory; 700 is what says no other account may walk into it. Stated
+    # rather than left to the umask, the way the installation root's 755 is above
+    # - the root needs the traversal the service's account depends on, and the
+    # data directory needs the opposite. Applied on an upgrade too, tightening a
+    # directory an older installer left world-readable.
+    chmod 700 "$INSTALLATION_PATH/data"
 else
     echo -e "$YELLOW⚠ Warning: $NORMAL $SERVICE_FALLBACK, so MySpeed will run as root."
     sleep 2

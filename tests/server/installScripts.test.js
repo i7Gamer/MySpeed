@@ -472,6 +472,24 @@ describe("install.sh registers a service that is not root", () => {
     });
 
     /**
+     * And keeps the database out of every other account's reach.
+     *
+     * storage.db carries the admin password hash and the integration secrets,
+     * and the server creates it inside data/ under systemd's default 022 umask -
+     * 0644 in a 0755 directory, which any local account can read. chown decides
+     * who owns the directory; the mode is what decides who else may walk into it,
+     * and mkdir leaves that to the umask. The installation root stays 755 for the
+     * reachability the service needs above it; the data directory needs the
+     * opposite, so it is stated rather than inherited, the way the root's is.
+     */
+    it("keeps the data directory to the account that owns it", () => {
+        assert.match(source, /chmod 700 "\$INSTALLATION_PATH\/data"/,
+            "the data directory keeps the umask's mode, so a world-readable storage.db is reachable by any local user");
+        assert.ok(source.indexOf('chmod 700 "$INSTALLATION_PATH/data"') < unitStart,
+            "the mode is tightened after the service has already been registered");
+    });
+
+    /**
      * The reachability check, run rather than read.
      *
      * systemd chdirs to WorkingDirectory and execs ExecStart after dropping to
