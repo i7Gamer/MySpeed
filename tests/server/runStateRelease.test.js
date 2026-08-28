@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bodyOf, readSource } from "../helpers/source.js";
+import { bodyOf, readSource, withoutJsComments } from "../helpers/source.js";
 
 /**
  * A run that ends says so, however it ended.
@@ -72,9 +72,20 @@ describe("the failure handler", () => {
 
         assert.match(beforeRelease, /Promise\.race\(/,
             "the verdict read has no deadline, so a black-holed database holds the run latch for ever");
-        assert.match(source, /OUTCOME_READ_TIMEOUT_MS/,
+
+        // Comments stripped, or the prose "see OUTCOME_READ_TIMEOUT_MS" beside
+        // the race keeps this green over a bare 15000 - the very magic number
+        // the assertion exists to refuse. And the unref is asked of the
+        // deadline's own body, not the whole file, where any later unrelated
+        // timer would stand in for it.
+        const stripped = withoutJsComments(source);
+        assert.match(stripped, /OUTCOME_READ_TIMEOUT_MS = /,
             "the deadline is a bare number, or gone");
-        assert.match(source, /\.unref\(\)/,
+
+        const deadline = bodyOf(stripped, "const outcomeDeadline");
+        assert.match(deadline, /OUTCOME_READ_TIMEOUT_MS/,
+            "the deadline function no longer reads the named delay");
+        assert.match(deadline, /\.unref\(\)/,
             "an idle deadline timer holds the process open past its shutdown");
     });
 
@@ -150,6 +161,61 @@ describe("the start of a run", () => {
             "the start notice has no handler, so its failure is a context-less server fault");
         assert.doesNotMatch(start, /\.then\(undefined\)/,
             "then(undefined) handles nothing and reads as though it did");
+    });
+});
+
+/**
+ * The deadline itself, run rather than read.
+ *
+ * The scans above pin that a race exists; what they cannot see is what the
+ * loser hands the round. `if (outcome)` downstream treats null and undefined
+ * alike, but sendRoundFinished would not, and a deadline that resolved the
+ * wrong sentinel - or forgot its unref, holding a finished process open for
+ * fifteen quiet seconds - passes every text match. Lifted and executed with a
+ * recording timer instead, the way the dialog suite runs its handler: the
+ * executor block is taken from the source and rebuilt around a fake setTimeout,
+ * so the assertions hold the shipped code, not a copy.
+ */
+describe("the verdict deadline, executed", () => {
+    // A sentinel delay, so the assertion proves the named constant is what the
+    // timer is armed with - 15000 passed through by coincidence would too.
+    const SENTINEL_DELAY = 1234;
+
+    const armed = () => {
+        const stripped = withoutJsComments(source);
+        const executor = bodyOf(stripped, "const outcomeDeadline");
+
+        const timer = {unreffed: false, fire: null, delay: null};
+        const fakeSetTimeout = (fn, ms) => {
+            timer.fire = fn;
+            timer.delay = ms;
+            return {unref: () => { timer.unreffed = true; }};
+        };
+
+        const deadline = new Function("setTimeout", "OUTCOME_READ_TIMEOUT_MS",
+            `return new Promise((resolve) => ${executor});`)(fakeSetTimeout, SENTINEL_DELAY);
+
+        return {deadline, timer};
+    };
+
+    it("arms one unref'd timer at the named delay", () => {
+        const {timer} = armed();
+
+        assert.equal(timer.delay, SENTINEL_DELAY,
+            "the timer is armed with something other than OUTCOME_READ_TIMEOUT_MS");
+        assert.equal(timer.unreffed, true,
+            "an idle deadline holds the process open for its whole delay");
+    });
+
+    it("stays pending until the delay, then resolves exactly null", async () => {
+        const {deadline, timer} = armed();
+
+        const early = await Promise.race([deadline.then(() => "settled"), Promise.resolve("pending")]);
+        assert.equal(early, "pending", "the deadline settles before its timer fires");
+
+        timer.fire();
+        assert.strictEqual(await deadline, null,
+            "the loser hands the round something other than the null its catch already speaks");
     });
 });
 

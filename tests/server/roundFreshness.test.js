@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bodyOf, readSource } from "../helpers/source.js";
+import { bodyOf, readSource, withoutJsComments } from "../helpers/source.js";
 import { cancelReservation, isRunning, staleMemberReason, tryReserve }
     from "../../server/tasks/speedtest.js";
 
@@ -178,7 +178,10 @@ describe("what the round says when it ends", () => {
      * notifier must not hold a round open.
      */
     it("answers its one start with one completion, however the round ends", () => {
-        const ending = round().slice(round().indexOf("} finally {"));
+        // Comments stripped before anything is anchored: the finally explains
+        // roundOutcome in prose right beside the call, and an anchor that a
+        // sentence can satisfy stops meaning the code.
+        const ending = withoutJsComments(round().slice(round().indexOf("} finally {")));
 
         assert.match(ending, /const outcome = announce/,
             "a round that announced itself can end without answering the /start it opened");
@@ -202,7 +205,11 @@ describe("what the round says when it ends", () => {
      * before the latch is dropped; only the ping it feeds is detached.
      */
     it("reads its verdict before it drops the latch", () => {
-        const ending = round().slice(round().indexOf("} finally {"));
+        // Stripped for the reason above: a parenthesised prose mention of
+        // roundOutcome ahead of the real call would satisfy this anchor while
+        // the call itself moved below the release - the exact drift the
+        // ordering assertion exists to catch.
+        const ending = withoutJsComments(round().slice(round().indexOf("} finally {")));
         const reads = ending.indexOf("roundOutcome(");
         const drops = ending.indexOf("setRunning(false, false)");
 

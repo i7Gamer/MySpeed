@@ -599,15 +599,20 @@ const roundOutcome = async (failures, members) => ({
 /**
  * How long the verdict read may keep the run latch.
  *
- * roundOutcome is a database read, and a database that has gone away can
- * black-hole it rather than refuse it - no error, no answer, mysql2 waiting on
- * a socket the OS gives minutes to - and nothing configures a query timeout.
- * The read sits inside the finally that releases the run state, ahead of both
- * latches (create()'s own finally is behind the same await), so with no
- * deadline of its own a wedged read wedged the schedule: every tick logged
- * "still running - skipping", manual runs answered 409, indefinitely. Fifteen
- * seconds is far above any healthy read and comfortably inside one tick of
- * the default schedule.
+ * This answers the asynchronous drivers - MySQL, where a database that has
+ * gone away can black-hole the read rather than refuse it: no error, no
+ * answer, mysql2 waiting on a socket the OS gives minutes to, and nothing
+ * configures a query timeout. The read sits inside the finally that releases
+ * the run state, ahead of both latches (create()'s own finally is behind the
+ * same await), so with no deadline of its own a wedged read wedged the
+ * schedule: every tick logged "still running - skipping", manual runs
+ * answered 409, indefinitely. Fifteen seconds is far above any healthy read
+ * and comfortably inside one tick of the default schedule.
+ *
+ * It deliberately claims nothing about the default sqlite shim, whose reads
+ * are synchronous: a storage.db wedged on a hung network mount blocks the
+ * event loop itself, timers included, and at that point the whole process is
+ * frozen - the latch is the least of it, and nothing a timer races can help.
  */
 const OUTCOME_READ_TIMEOUT_MS = 15000;
 
