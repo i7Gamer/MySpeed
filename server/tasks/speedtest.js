@@ -13,6 +13,10 @@ import { FAILED_TEST, UNMEASURED_LATENCY, impossibleMeasurement, isFailedTest, i
 import { isRateLimitMessage } from '../util/providers/cliOutput.js';
 import { backoffRemainingMs, clearBackoff, isBackingOff, recordRateLimit } from '../util/rateLimitBackoff.js';
 import * as targetsController from '../controller/targets.js';
+import * as pauseController from '../controller/pause.js';
+// A module cycle closed on purpose - timer.js imports create() from here. Safe
+// because each side only calls across it at runtime; see the export's docstring.
+import { withinQuietHours } from './timer.js';
 import errorHandler from '../util/errorHandler.js';
 import { outageFrom } from '../util/databaseOutage.js';
 
@@ -89,8 +93,9 @@ const setRunning = (running, sendRequest = true) => {
 }
 
 // How many successful tests the recommended targets are read from. Fewer says
-// too little about the line to recommend anything.
-const RECOMMENDATION_SAMPLE = 10;
+// too little about the line to recommend anything. Exported for the suite that
+// seeds exactly one sample's worth of rows.
+export const RECOMMENDATION_SAMPLE = 10;
 
 // What a ping has to be before it counts as something that was measured: a
 // reading, and a positive one. FAILED sits below every real latency, so a failed
@@ -112,7 +117,15 @@ export const createRecommendations = async () => {
     // The sample describes one line, so it comes from one target: the first
     // scheduled one that takes part in alerting. A gigabit LAN box mixed into
     // the sample would recommend numbers no WAN target can meet.
-    const primary = await targetsController.alertsTarget();
+    //
+    // Preferred, not required. An instance whose targets all have alerts off -
+    // or all run by hand - still has a first line, and "none alerts" must not
+    // mean the recommendation card freezes at whatever the line looked like
+    // before the flags changed. The fallbacks keep the same reading order the
+    // preference has: the round's first member, then the first target on record.
+    const primary = await targetsController.alertsTarget()
+        ?? await targetsController.primaryTarget()
+        ?? (await targetsController.listAll())[0];
     if (!primary) return;
 
     const list = await tests.listSuccessful(RECOMMENDATION_SAMPLE, primary.id);
@@ -340,12 +353,47 @@ export const roundFullyHeld = (members, type, isHeld = isBackingOff) =>
 const nextAttemptMinutes = (members) =>
     Math.ceil(Math.min(...members.map((target) => backoffRemainingMs(target.provider))) / MS_PER_MINUTE);
 
-export const create = async (type = "auto", targetId = undefined) => {
+/**
+ * Takes the round latch without starting a round, so a caller that cannot
+ * await create() can still find out whether its round will run.
+ *
+ * POST /speedtests/run answers before the round ends - a proxy would time out
+ * otherwise - and create() *returns* its refusals rather than throwing, so a
+ * request that lost the race to another one was told 200 "successfully
+ * created" while its round was refused into the void: a success toast for a
+ * test that never existed. The route takes the latch with this before it
+ * answers, and hands it to create() via {reserved: true}; a caller that
+ * cannot take it is told 409, the same answer a visible run gets.
+ *
+ * Synchronous on purpose, like the check in create(): an await between asking
+ * and taking is exactly the gap two requests slip through.
+ */
+export const tryReserve = () => {
+    if (_isRunning) return false;
+
+    _isRunning = true;
+    return true;
+};
+
+/** Gives a reservation back without running anything - the caller's error paths. */
+export const cancelReservation = () => {
+    _isRunning = false;
+};
+
+// `options` is unpacked inside the body rather than destructured in the
+// signature: the suite reads this function through bodyOf(), which balances
+// the first brace after the declaration - and a `{reserved = false}` parameter
+// (or a `= {}` default) is a brace before the body.
+export const create = async (type = "auto", targetId = undefined, options = undefined) => {
+    const reserved = options?.reserved ?? false;
+
     // The guard has to latch synchronously: POST /speedtests/run no longer awaits
     // this call, so checking after an await would let two requests slip past.
     // One latch for the whole round - targets run strictly in sequence, which
     // is also what keeps util/speedtest.js's single activeProcess invariant.
-    if (_isRunning) {
+    // A reserved caller took the very same latch through tryReserve already;
+    // checking it again here would refuse the round the reservation was for.
+    if (!reserved && _isRunning) {
         // Named rather than swallowed. A round of several members can outlast
         // the schedule interval - one unreachable iperf3 target costs two CLI
         // timeouts before the round moves on - and a tick dropped in silence
@@ -470,6 +518,33 @@ export const emptyRoundReason = (targetId, targetCount) => {
         : "Every target has its schedule switched off, so this round measured nothing.";
 };
 
+/**
+ * Why a member the round has just reached must not run, or null when it may.
+ *
+ * The member list is read once when the round starts, and a round of several
+ * members takes minutes - one unreachable iperf3 box costs two CLI timeouts
+ * before the loop moves on. A target edited in that window was still measured
+ * with its old configuration and the row filed under its id: the old box's
+ * numbers, attributed to whatever the id names now. So the loop re-reads each
+ * member from the table as it reaches it, and this is the judgement it applies
+ * to what it finds.
+ *
+ * `named` is whether the round was started for this target by id - the one way
+ * a disabled (manual-only) target ever runs, so for those the flag is not
+ * staleness but the design. The flag is read loosely on purpose: sqlite hands
+ * booleans back as 0/1 under the raw mapping, and a 0 read as "still
+ * scheduled" would defeat the check exactly where it runs.
+ *
+ * Pure and exported for its tests; the deleted case needs a mid-round delete
+ * nothing in a suite can time.
+ */
+export const staleMemberReason = (fresh, named) => {
+    if (!fresh) return "was deleted mid-round - skipping it.";
+    if (!named && !fresh.enabled) return "left the schedule mid-round - skipping it.";
+
+    return null;
+};
+
 const executeRound = async (type, targetId) => {
     const members = await roundMembers(targetId);
 
@@ -529,7 +604,37 @@ const executeRound = async (type, targetId) => {
             // leaves the bar advertising a member the round never started.
             if (isShuttingDown()) break;
 
-            beginTarget(target, index + 1, members.length);
+            // A pause is "stop testing", whoever started the round: the route
+            // and runTask both refuse one ahead of time, but both stop looking
+            // the moment the round starts, and a pause is pressed mid-round
+            // precisely because tests are running.
+            if (pauseController.currentState) {
+                console.warn("Speedtests were paused during the round - stopping before the next target.");
+                break;
+            }
+
+            // The quiet hours bind only the scheduled rounds - a test started
+            // by hand is somebody asking for one now, the rule runTask and
+            // memberHeld already follow. Asked again per member for the reason
+            // runTask asks again after the offset's sleep: the window can begin
+            // while the round is busy with an earlier member.
+            if (type === "auto" && await withinQuietHours()) {
+                console.warn("The quiet hours began during the round - stopping before the next target.");
+                break;
+            }
+
+            // The member as the table has it now, not as the round-start
+            // snapshot had it - see staleMemberReason for what a stale one did.
+            // The demo target is no row and is left alone.
+            const fresh = target.id == null ? target : await targetsController.getOne(target.id);
+            const stale = target.id == null ? null : staleMemberReason(fresh, targetId !== undefined);
+
+            if (stale) {
+                console.warn(`${memberName(target)} ${stale}`);
+                continue;
+            }
+
+            beginTarget(fresh, index + 1, members.length);
 
             // Only the scheduled rounds honour a hold - a test started by hand
             // is somebody asking for one now. The skip is per target, so the
@@ -547,7 +652,7 @@ const executeRound = async (type, targetId) => {
             // Through memberHeld so the two cannot drift into disagreeing about
             // which rounds honour a hold, and through heldByBackoff so a skip
             // says in the log which target it was and for how long.
-            if (memberHeld(target, type, heldByBackoff)) continue;
+            if (memberHeld(fresh, type, heldByBackoff)) continue;
 
             /*
              * A member that cannot even record its own failure must not take the
@@ -570,7 +675,7 @@ const executeRound = async (type, targetId) => {
              * database went away must not end quietly.
              */
             try {
-                await executeTarget(target, type);
+                await executeTarget(fresh, type);
                 // A member that recorded - a result or a failure, either one - is
                 // proof the database is still there, so the count of members that
                 // could not starts again from here.
@@ -578,7 +683,7 @@ const executeRound = async (type, targetId) => {
             } catch (error) {
                 escapes++;
 
-                const {abandoned, context} = memberFailure(error, target,
+                const {abandoned, context} = memberFailure(error, fresh,
                     {escapes, remaining: members.length - index - 1});
 
                 errorHandler(error, {fatal: false, context});

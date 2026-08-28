@@ -75,14 +75,17 @@ describe("a scheduled round that arrives while one is running", () => {
     const create = bodyIn("server/tasks/speedtest.js", "export const create = async");
 
     it("says that it was skipped", () => {
-        const latch = bodyOf(create, "if (_isRunning)");
+        const latch = bodyOf(create, "if (!reserved && _isRunning)");
 
         assert.match(latch, /console\.warn\(/,
             "a dropped tick looks exactly like the scheduler having died");
     });
 
-    // The latch itself is unchanged: it still refuses, and still with a 500.
+    // The latch still refuses, and still with a 500. `!reserved` is the one
+    // caller allowed past it: the manual-run route already took this same
+    // latch through tryReserve before answering, and checking it again here
+    // would refuse the round the reservation was for.
     it("still refuses the overlapping round", () => {
-        assert.match(create, /if\s*\(_isRunning\)[\s\S]*?return 500;/);
+        assert.match(create, /if\s*\(!reserved && _isRunning\)[\s\S]*?return 500;/);
     });
 });

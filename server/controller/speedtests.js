@@ -227,18 +227,32 @@ export const listSuccessful = async (limit, targetId = undefined) => tests.findA
 });
 
 /**
- * How many tests failed since the given moment.
+ * How many tests failed since the given moment - of the given targets, when a
+ * scope is handed in.
  *
  * A count rather than the rows: this is polled while a test runs, and the only
  * thing asked of it is a number.
+ *
+ * The scope follows latestOfTargets' contract: undefined means the whole
+ * instance, an empty list means nobody's failures count and the answer is
+ * zero without asking the database a question whose IN () clause it may
+ * refuse.
  *
  * Both halves are joined explicitly, for the reason listFilter is: the shared
  * filter is keyed by Op.or, and a second Op-keyed clause written into the same
  * object would replace it.
  */
-export const countFailuresSince = async (since) => tests.count({
-    where: {[Op.and]: [{created: {[Op.gte]: since.toISOString()}}, FAILED_TEST_FILTER]}
-});
+export const countFailuresSince = async (since, targetIds = undefined) => {
+    if (targetIds !== undefined && targetIds.length === 0) return 0;
+
+    return tests.count({
+        where: {[Op.and]: [
+            {created: {[Op.gte]: since.toISOString()}},
+            FAILED_TEST_FILTER,
+            ...(targetIds !== undefined ? [{targetId: {[Op.in]: targetIds}}] : [])
+        ]}
+    });
+};
 
 export const deleteTests = async () => {
     await tests.destroy({where: {}});

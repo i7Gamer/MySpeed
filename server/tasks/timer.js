@@ -260,8 +260,14 @@ export const nextRun = (cron = currentCron, quietHours = null, timezone = curren
  *
  * Read fresh on every run rather than held: the window can be changed between
  * two tests, and a cached copy would go on silencing the old hours.
+ *
+ * Exported for the round loop in tasks/speedtest.js, which asks it again
+ * between members - the window can begin during a round the same way it can
+ * begin during the schedule offset's sleep. That import closes a module cycle
+ * (this file imports the round's create), which is safe because both sides
+ * only call across it at runtime, never while the modules are still loading.
  */
-const withinQuietHours = async () => isQuietHour(new Date(),
+export const withinQuietHours = async () => isQuietHour(new Date(),
     await config.getValue("quietHoursStart"), await config.getValue("quietHoursEnd"),
     // Read fresh alongside the window, not taken from currentTimezone: the two
     // are always changed together (a timezone change restarts the schedule), and

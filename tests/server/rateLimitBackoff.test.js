@@ -329,7 +329,10 @@ describe("a round with nothing it may run", () => {
 
         it("asks again as it reaches each member", () => {
             const loop = round.indexOf("for (const");
-            const perMember = round.indexOf("memberHeld(target");
+            // Asked of the fresh re-read, not the round-start snapshot: the
+            // hold is per provider, and the provider is one of the fields a
+            // mid-round edit can change.
+            const perMember = round.indexOf("memberHeld(fresh");
 
             assert.notEqual(loop, -1, "the round no longer walks its members");
             assert.notEqual(perMember, -1,

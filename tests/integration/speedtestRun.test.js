@@ -1,4 +1,4 @@
-import { describe, it, before, after, beforeEach } from "node:test";
+import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, api, seedTarget, seedTests, setConfig } from "./helpers/boot.js";
 
@@ -182,5 +182,142 @@ describe("a speedtest that cannot start", () => {
         assert.equal(status, 200);
 
         assert.notEqual(await waitForTest(), null, "the second failure was never recorded");
+    });
+});
+
+/**
+ * The guards the round consults between members, exercised at member one -
+ * where they are reachable without racing a real CLI. A pause or a quiet
+ * window that stands when create() is reached directly - the cron's path, and
+ * the route's un-awaited one - must stop the round before it spawns anything.
+ * The route and runTask refuse ahead of time, but both stop looking the moment
+ * the round starts, and a round of several members can outlast either answer.
+ */
+describe("a round overtaken before its first member", () => {
+    let task;
+    let pause;
+    let target;
+
+    before(async () => {
+        task = await import("../../server/tasks/speedtest.js");
+        pause = await import("../../server/controller/pause.js");
+    });
+
+    beforeEach(async () => {
+        target = await seedTarget({provider: "ookla"});
+    });
+
+    afterEach(async () => {
+        pause.updateState(false);
+        await setConfig(server.config, "quietHoursStart", "none");
+        await setConfig(server.config, "quietHoursEnd", "none");
+    });
+
+    const warningsOf = async (round) => {
+        const realWarn = console.warn;
+        const messages = [];
+        console.warn = (...args) => messages.push(args.join(" "));
+
+        try {
+            await round();
+        } finally {
+            console.warn = realWarn;
+        }
+
+        return messages;
+    };
+
+    // On the wall clock the instance itself runs on, so the window is honest
+    // about containing "now" whatever zone the host is set to.
+    const hhmm = (date) =>
+        `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+
+    const MS_PER_HOUR = 3600000;
+
+    const quietWindowAroundNow = async () => {
+        await setConfig(server.config, "quietHoursStart", hhmm(new Date(Date.now() - 2 * MS_PER_HOUR)));
+        await setConfig(server.config, "quietHoursEnd", hhmm(new Date(Date.now() + 2 * MS_PER_HOUR)));
+    };
+
+    it("stops for a pause, whoever started the round", async () => {
+        pause.updateState(true);
+
+        const warnings = await warningsOf(() => task.create("custom", target.id));
+
+        assert.equal(await server.tests.count(), 0,
+            "a paused round still spawned its CLI and recorded the failure");
+        assert.ok(warnings.some((message) => /paused/i.test(message)),
+            `the stopped round was not explained - warnings were ${JSON.stringify(warnings)}`);
+    });
+
+    it("stops a scheduled round when the quiet hours have begun", async () => {
+        await quietWindowAroundNow();
+
+        const warnings = await warningsOf(() => task.create("auto"));
+
+        assert.equal(await server.tests.count(), 0,
+            "the quiet hours held and the round still spawned its CLI");
+        assert.ok(warnings.some((message) => /quiet hours/i.test(message)),
+            `the stopped round was not explained - warnings were ${JSON.stringify(warnings)}`);
+    });
+
+    // The rule the quiet hours have always followed: a test started by hand is
+    // somebody asking for one now.
+    it("lets a run started by hand ignore the quiet hours", async () => {
+        await quietWindowAroundNow();
+
+        await warningsOf(() => task.create("custom", target.id));
+
+        assert.ok(await server.tests.count() > 0,
+            "the quiet hours silenced a run somebody asked for by name");
+    });
+});
+
+/**
+ * Two clicks of the start button in the same instant.
+ *
+ * The route answers before the round ends and create() *returns* its refusals
+ * rather than throwing, so the second request used to be told 200 "successfully
+ * created" while its round was refused into the void - a success toast for a
+ * test that never existed. The route takes the round latch synchronously before
+ * it answers; whichever request loses the race is told 409, the same answer a
+ * click during a visible run has always got.
+ */
+describe("two manual runs racing for the same round", () => {
+    beforeEach(async () => {
+        // The demo provider, deliberately: its round simulates a run for
+        // PREVIEW_RUN_MS instead of failing in the first tick, so both
+        // requests are in flight together whatever this machine's timing. A
+        // CLI provider's ENOENT round can be over before the second request
+        // reaches the latch, and then there is no race to observe.
+        await seedTarget({provider: "preview"});
+    });
+
+    // The loser of the race is refused, but the winner's round is real and
+    // holds the latch until it ends - later tests must not inherit it.
+    const untilIdle = async (timeoutMs = 15000) => {
+        const deadline = Date.now() + timeoutMs;
+
+        while (Date.now() < deadline) {
+            const {body} = await api(server.baseUrl, "/speedtests/status");
+            if (!body.running) return;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
+        throw new Error("the promised round never finished");
+    };
+
+    it("promises the round to exactly one of them", async () => {
+        try {
+            const [first, second] = await Promise.all([
+                api(server.baseUrl, "/speedtests/run", {method: "POST"}),
+                api(server.baseUrl, "/speedtests/run", {method: "POST"})
+            ]);
+
+            assert.deepEqual([first.status, second.status].sort((a, b) => a - b), [200, 409],
+                "both clicks were promised a round, but only one round can run");
+        } finally {
+            await untilIdle();
+        }
     });
 });

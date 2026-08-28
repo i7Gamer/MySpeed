@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer } from "./helpers/boot.js";
+import { bootServer, seedTarget, seedTests } from "./helpers/boot.js";
 
 let server;
 let controller;
@@ -106,5 +106,72 @@ describe("updating the recommendations", () => {
         }
 
         assert.equal(await model.count(), 0, "a set that could not be stored is on record anyway");
+    });
+});
+
+/**
+ * Which target createRecommendations samples.
+ *
+ * It prefers the first scheduled target that takes part in alerting - a
+ * diagnostic box may lead the round with alerts off, and recommendations must
+ * describe a line someone watches. But "prefers" must not mean "or nothing":
+ * an instance whose targets all have alerts off - or all run by hand - used to
+ * return before sampling anything, so the recommendation card sat frozen at
+ * whatever the line looked like before the flags changed, for the life of the
+ * database.
+ */
+describe("the target the sample describes", () => {
+    let task;
+    let targets;
+
+    before(async () => {
+        task = await import("../../server/tasks/speedtest.js");
+        targets = await import("../../server/controller/targets.js");
+    });
+
+    after(async () => {
+        await targets.removeAll();
+        await seedTests(server.tests, []);
+    });
+
+    const MS_PER_HOUR = 3600000;
+
+    const sampleRows = (targetId, download = 100) =>
+        Array.from({length: task.RECOMMENDATION_SAMPLE}, (unused, index) => ({
+            created: new Date(Date.now() - (index + 1) * MS_PER_HOUR).toISOString(),
+            targetId, download
+        }));
+
+    it("prefers the alerting target over a faster one leading the round", async () => {
+        const lan = await seedTarget({name: "lan", alerts: false});
+        const wan = await targets.create({name: "wan", provider: "ookla"});
+
+        await seedTests(server.tests, [...sampleRows(lan.id, 940), ...sampleRows(wan.id, 100)]);
+
+        await task.createRecommendations();
+
+        assert.equal((await controller.getCurrent()).download, 100,
+            "the sample mixed in a line nobody is alerted about");
+    });
+
+    it("falls back to the round's first member when no target alerts", async () => {
+        const quiet = await seedTarget({name: "quiet", alerts: false});
+        await seedTests(server.tests, sampleRows(quiet.id));
+
+        await task.createRecommendations();
+
+        const stored = await controller.getCurrent();
+        assert.ok(stored, "no target alerts, so the recommendations never learn anything again");
+        assert.equal(stored.download, 100);
+    });
+
+    it("falls back to the first target on record when none is scheduled", async () => {
+        const manual = await seedTarget({name: "manual", alerts: false, enabled: false});
+        await seedTests(server.tests, sampleRows(manual.id));
+
+        await task.createRecommendations();
+
+        assert.ok(await controller.getCurrent(),
+            "an instance run entirely by hand never updates its recommendations");
     });
 });

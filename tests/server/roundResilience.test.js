@@ -149,7 +149,7 @@ describe("the round's guard", () => {
     const loop = round.slice(round.indexOf("for (const"), round.indexOf("} finally"));
 
     it("guards the member rather than the round", () => {
-        assert.match(loop, /try\s*\{[\s\S]*?await executeTarget\(target, type\);[\s\S]*?\}\s*catch/,
+        assert.match(loop, /try\s*\{[\s\S]*?await executeTarget\(fresh, type\);[\s\S]*?\}\s*catch/,
             "a member's own failure handler can still end the round");
         assert.match(loop, /if \(abandoned\) break;/, "the round runs on whatever the failure was");
     });
@@ -162,7 +162,7 @@ describe("the round's guard", () => {
     });
 
     it("starts the count again from a member that did record", () => {
-        assert.match(loop, /await executeTarget\(target, type\);[\s\S]{0,400}?escapes = 0;/,
+        assert.match(loop, /await executeTarget\(fresh, type\);[\s\S]{0,400}?escapes = 0;/,
             "two unrelated bad rows a round apart end the round");
     });
 });

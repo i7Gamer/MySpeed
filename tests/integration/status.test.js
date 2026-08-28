@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, api, seedTests, setConfig } from "./helpers/boot.js";
+import { bootServer, api, seedTarget, seedTests, setConfig } from "./helpers/boot.js";
 // The same module instance the booted app schedules with, so a delay started
 // here is the pending run the route reports on.
 import * as timer from "../../server/tasks/timer.js";
@@ -231,6 +231,75 @@ describe("GET /api/speedtests/status", () => {
 
             await setConfig(server.config, "cron", "0,30 * * * *");
         });
+    });
+});
+
+/**
+ * Whose rows the status speaks for, which is the alerting targets' - the same
+ * scope the keep-alive already reads through latestOfTargets, and for the same
+ * reason: a diagnostic iperf3 box with alerts off fails because the machine is
+ * asleep, and its row must not be presented as the line's last test or counted
+ * among the line's failures. The status bar and the health summary read this
+ * body, so they were blaming the internet line for a box the operator had
+ * explicitly opted out of watching.
+ */
+describe("scoped to the targets the alerting speaks for", () => {
+    let targetsController;
+    let watched;
+
+    before(async () => {
+        targetsController = await import("../../server/controller/targets.js");
+    });
+
+    beforeEach(async () => {
+        watched = await seedTarget({name: "watched"});
+    });
+
+    after(async () => {
+        await targetsController.removeAll();
+    });
+
+    it("passes over the newer row of a target that opted out of alerting", async () => {
+        const diagnostic = await targetsController.create({name: "diagnostic", provider: "ookla", alerts: false});
+
+        await seedTests(server.tests, [
+            {created: hoursAgo(2), download: 111, targetId: watched.id},
+            {created: hoursAgo(1), download: 999, targetId: diagnostic.id}
+        ]);
+
+        assert.equal((await status()).lastTest.download, 111,
+            "the opted-out box's newer row was presented as the line's last test");
+    });
+
+    it("does not count the opted-out target's failures", async () => {
+        const diagnostic = await targetsController.create({name: "diagnostic", provider: "ookla", alerts: false});
+
+        await seedTests(server.tests, [
+            {created: hoursAgo(1), ping: -1, download: -1, upload: -1, error: "asleep", targetId: diagnostic.id},
+            {created: hoursAgo(2), ping: -1, download: -1, upload: -1, error: "Cannot open socket", targetId: watched.id}
+        ]);
+
+        assert.equal((await status()).recentFailures, 1,
+            "the failure count blames the line for the diagnostic box");
+    });
+
+    it("reports no last test when every target has opted out", async () => {
+        const lonely = await seedTarget({name: "quiet", alerts: false});
+        await seedTests(server.tests, [{created: hoursAgo(1), targetId: lonely.id}]);
+
+        const body = await status();
+
+        assert.equal(body.lastTest, null, "a row nobody watches was presented as the last test");
+        assert.equal(body.recentFailures, 0);
+    });
+
+    // The pre-target install and the demo: rows carry no targetId, and the
+    // instance-wide latest is the only answer there is.
+    it("stays instance-wide while no target exists at all", async () => {
+        await targetsController.removeAll();
+        await seedTests(server.tests, [{created: hoursAgo(1), download: 555}]);
+
+        assert.equal((await status()).lastTest.download, 555);
     });
 });
 
