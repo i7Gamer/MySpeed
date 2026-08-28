@@ -364,6 +364,31 @@ describe("PATCH /api/targets/:id", () => {
             ["first", "second", "third"], "the list was renumbered by a partial order");
     });
 
+    /**
+     * And a foreign id, which is the same wrong list wearing the right length.
+     *
+     * Neither of the other two checks can see this one: two distinct ids for two
+     * targets satisfies the Set size and the length exactly. What is missing is
+     * that one of the ids belongs to no target at all - so reorder renumbers
+     * nothing for it while a real target, never named, keeps the sortOrder it
+     * had and collides with the one that was renumbered from zero. A stale tab
+     * whose target has since been deleted sends precisely this. Only the
+     * membership check stands between it and an order nobody chose.
+     */
+    it("refuses an order naming a target that does not exist", async () => {
+        // High enough that the autoincrement of a freshly emptied table cannot
+        // reach it; the 404 case above uses the same id for the same reason.
+        const ABSENT_ID = 999999;
+
+        await put({name: "first", provider: "ookla"});
+        const {body: {id: second}} = await put({name: "second", provider: "cloudflare"});
+
+        assert.equal((await patch("/order", {ids: [second, ABSENT_ID]})).status, 400,
+            "a right-length order carrying a foreign id was accepted, leaving a real target unranked");
+        assert.deepEqual((await targets.listAll()).map((row) => row.name), ["first", "second"],
+            "the round was renumbered by an order that never named one of its targets");
+    });
+
     it("refuses an order that repeats a target", async () => {
         const {body: {id: first}} = await put({name: "first", provider: "ookla"});
         await put({name: "second", provider: "cloudflare"});
