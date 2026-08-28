@@ -382,7 +382,12 @@ export const Statistics = () => {
             .finally(() => { if (!cancelled) setDetailLoading(false); });
 
         return () => { cancelled = true; };
-    }, [wantsDetail, isDownsampled, dateRange, targetFilter]);
+        // currentNode for the reason updateStats lists it: a page whose
+        // requests have been re-aimed under it has to re-ask, or the previous
+        // node's thousand-point series renders under the new node's heading.
+        // Today the layout happens to make that unreachable - switching nodes
+        // unmounts this page - but the dependency is what guards it on purpose.
+    }, [wantsDetail, isDownsampled, dateRange, targetFilter, currentNode]);
 
     if (mountPhase === 0) return null;
 

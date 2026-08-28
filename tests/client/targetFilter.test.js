@@ -87,7 +87,7 @@ describe("the chip selection reaches every request it narrows", () => {
 
         assert.match(statistics, /\}, \[dateRange, currentNode, targetFilter\]\);/,
             "the statistics keep the previous target's figures under the new chip");
-        assert.match(statistics, /\}, \[wantsDetail, isDownsampled, dateRange, targetFilter\]\);/,
+        assert.match(statistics, /\}, \[wantsDetail, isDownsampled, dateRange, targetFilter, currentNode\]\);/,
             "the high-resolution series is still the previous target's");
     });
 

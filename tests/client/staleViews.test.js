@@ -121,6 +121,22 @@ describe("the statistics page does not show the previous range's numbers", () =>
     it("still clears the error when a load succeeds", () => {
         assert.match(statistics, /setLoadError\(null\)/);
     });
+
+    /**
+     * The high-resolution series follows the node the way the page fetch
+     * does. updateStats lists currentNode with a comment saying why; the
+     * detail effect did not, and detailStatistics is never cleared on a node
+     * change - so the previous node's thousand-point series would render
+     * under the new node's heading. Unreachable today only by accident of
+     * layout: switching nodes unmounts this page, and the expanded chart's
+     * backdrop covers the header. The dependency is what guards it on
+     * purpose.
+     */
+    it("re-keys the detail fetch on the node like the page fetch", () => {
+        assert.match(statistics,
+            /}, \[wantsDetail, isDownsampled, dateRange, targetFilter, currentNode]\);/,
+            "a node switch would leave the previous node's series under the new node's heading");
+    });
 });
 
 /**
