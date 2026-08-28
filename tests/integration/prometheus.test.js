@@ -432,6 +432,49 @@ describe("what a second target exports", () => {
 
         assert.ok(line, "the primary target's series carries a non-empty target label");
         assert.equal(parseFloat(line.slice(line.lastIndexOf(" ") + 1)), 9);
+
+        // Empty here too, which is what keeps the identity: to Prometheus an
+        // empty label value is the same as an absent one, so the id that
+        // disambiguates the named series below costs the pre-1.4 dashboards
+        // nothing. The alias row is where the primary's id is written down.
+        assert.match(line, /target_id=""/,
+            "the unlabelled series took an id, so every dashboard built before targets lost its history");
+    });
+
+    /**
+     * Two targets of one name, which this instance can hold and the restore
+     * deliberately accepts: duplicates were legal until the door on the routes,
+     * the welcome wizard's second Done made exact pairs, and a backup carrying
+     * one is restored rather than refused, because refusing it refuses that
+     * operator their own nodes, integrations and settings.
+     *
+     * A series is its label set, so two lines exporting the same one are not
+     * two series: the second overwrote the first and one of the two vanished
+     * from the scrape entirely - no gap, no stale marker, nothing to see. The
+     * id is what tells them apart, and it is the same id myspeed_target_info
+     * has always carried.
+     */
+    it("keeps two targets of one name apart", async () => {
+        const targets = await import("../../server/controller/targets.js");
+
+        // Both behind the primary, whose series are the unlabelled ones: it is
+        // the pair *below* it that would share a label set.
+        const twin = await targets.create({name: "NAS", provider: "cloudflare"});
+
+        await seedTests(server.tests, [
+            {created: "2026-08-26T10:00:00.000Z", ping: 9, targetId: primary.id},
+            {created: "2026-08-26T10:01:00.000Z", ping: 0.4, targetId: second.id},
+            {created: "2026-08-26T10:02:00.000Z", ping: 44, targetId: twin.id}
+        ]);
+
+        const {text} = await metrics();
+        const named = text.split("\n").filter((row) =>
+            row.startsWith("myspeed_ping{") && row.includes('target="NAS"'));
+
+        assert.equal(named.length, 2, "one of the two lines vanished from the scrape entirely");
+        assert.deepEqual(named
+            .map((row) => parseFloat(row.slice(row.lastIndexOf(" ") + 1)))
+            .sort((a, b) => a - b), [0.4, 44]);
     });
 
     it("exports the second target on the same family, under its own name", async () => {

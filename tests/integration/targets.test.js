@@ -177,6 +177,41 @@ describe("a target's name", () => {
         assert.equal((await patch(`/${first.id}`, {optimalDownload: 500})).status, 200);
     });
 
+    /**
+     * And a request that changes the name only by trimming it is a rename.
+     *
+     * "What this request is doing" was asked of the trimmed name on both sides,
+     * so an incoming "Ookla" was judged identical to a stored "Ookla " - and
+     * the door stood aside while update() trimmed the padding and made the
+     * exact duplicate pair the door exists to prevent. A padded name is not
+     * hypothetical: every install from before names were trimmed on the way in
+     * holds them, and the operator makes the pair by opening the row and
+     * pressing Save.
+     */
+    it("refuses a save that trims a name onto one already worn", async () => {
+        const {default: model} = await import("../../server/models/Targets.js");
+
+        await targets.removeAll();
+        // Straight to the model: create() and update() both trim, so a padded
+        // name is one only an older version could have written.
+        const padded = await model.create({name: "Ookla ", provider: "ookla", sortOrder: 0});
+        await targets.create({name: "Ookla", provider: "cloudflare"});
+
+        assert.equal((await patch(`/${padded.id}`, {name: "Ookla"})).status, 400,
+            "pressing Save on a padded name made the duplicate pair the door refuses to create");
+    });
+
+    // The padding still comes off where nothing else wears the trimmed name -
+    // this is a door on names being taken, not on names being tidied.
+    it("still lets a padded name be tidied when nothing else wears it", async () => {
+        const {default: model} = await import("../../server/models/Targets.js");
+
+        await targets.removeAll();
+        const padded = await model.create({name: "Ookla ", provider: "ookla", sortOrder: 0});
+
+        assert.equal((await patch(`/${padded.id}`, {name: "Ookla"})).status, 200);
+    });
+
     // And renaming one of them onto the other is still refused: the door
     // stands for what a request is actually doing.
     it("still refuses a rename that takes the other one's name", async () => {

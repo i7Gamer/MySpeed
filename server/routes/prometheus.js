@@ -123,10 +123,20 @@ const authorizeMetrics = async (req, res) => {
  * no target leads the round at all, whichever line nothing else in the
  * instance could be mistaken for. collect() and ownsUnlabelledSeries hold
  * that second half, and say why it is not simply "the newest row".
+ *
+ * `target_id` joined them for the one thing a name cannot do: tell two targets
+ * of one name apart. Duplicates were legal before the door on the routes, the
+ * welcome wizard's second Done made exact pairs, and a backup carrying one is
+ * restored rather than refused - and a series is its label set, so two lines
+ * exporting the same one are not two series. The second overwrote the first
+ * and one of the two vanished from the scrape entirely: no gap, no stale
+ * marker, and a group_left join against the two matching info rows failed the
+ * query outright. The primary's stays empty like the rest of its labels, so
+ * the identity that upgrade preserved is preserved again.
  */
-const speedLabels = ['server_id', 'server_name', 'server_host', 'target', 'provider'];
+const speedLabels = ['server_id', 'server_name', 'server_host', 'target_id', 'target', 'provider'];
 
-const UNLABELLED_TARGET = {target: '', provider: ''};
+const UNLABELLED_TARGET = {target_id: '', target: '', provider: ''};
 
 const pingGauge = new promClient.Gauge({name: 'myspeed_ping', help: 'Current ping in ms', labelNames: speedLabels});
 const jitterGauge = new promClient.Gauge({name: 'myspeed_jitter', help: 'Current jitter in ms', labelNames: speedLabels});
@@ -172,7 +182,7 @@ const serverInfoGauge = new promClient.Gauge({
 });
 const targetInfoGauge = new promClient.Gauge({
     name: 'myspeed_target_info',
-    help: 'One row per configured target (always 1). The measurement series of the primary target carry an empty target label; an alias row with the same empty labels carries its target_id, so a join on (target, provider) resolves every series.',
+    help: 'One row per configured target (always 1). The measurement series of the primary target carry empty target and target_id labels; an alias row with the same empty labels carries its target_id, so a join on (target_id, target, provider) resolves every series.',
     labelNames: ['target_id', 'target', 'provider']
 });
 
@@ -345,7 +355,8 @@ const collect = async (res) => {
         if (row.id === unlabelledTargetId) continue;
 
         const latest = await testController.getLatest(row.id);
-        if (latest) setSeries(latest, {target: row.name, provider: row.provider});
+        if (latest) setSeries(latest,
+            {target_id: String(row.id), target: row.name, provider: row.provider});
     }
 
     return serve();

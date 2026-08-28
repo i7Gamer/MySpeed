@@ -638,12 +638,20 @@ export const importConfig = async (obj) => {
      * not the same as an id nothing was ever filed under: a delete keeps the
      * rows it measured, so the number goes free while the attribution stays
      * behind. Judged by the live targets alone, a foreign row carrying that
-     * number inherited every one of those rows - and the same file imported
-     * twice gave two different answers, because the first pass moved the
-     * restored row past the number it had just freed. No rule can tell a
-     * same-instance recovery from a stranger's file here, because an orphaned
+     * number inherited every one of those rows. No rule can tell a
+     * same-instance recovery from a stranger's file there, because an orphaned
      * row stores a number and no name, so the strip is the safe half: an
      * honest orphan rather than a silent re-attribution.
+     *
+     * But the name is asked first, at whatever id it is worn. Judged by the
+     * file's number alone, the row a strip had just moved to a fresh id was
+     * contested all over again on the next restore: the same backup applied
+     * three times marched one target through three ids, orphaning a fresh
+     * history at every step - and an operator retrying a restore that looked
+     * wrong made it worse each time. The name is the identity a history backup
+     * files its rows under anyway (importedTargetId), so a live target already
+     * wearing this row's name is this row, and restoring onto it is what makes
+     * a repeated restore land where the last one did.
      *
      * The stripped case takes a fresh id, and the rows that pointed at the old
      * number keep pointing at a target that no longer exists - which the
@@ -651,15 +659,60 @@ export const importConfig = async (obj) => {
      * not a number takes a fresh one too, rather than aborting the transaction
      * as an unnamed refusal.
      */
-    const liveNames = new Map((await listAllTargets())
-        .map((row) => [row.id, String(row.name).trim()]));
 
-    const contested = targetRows.filter((row) => Number.isInteger(row.id)
-        && liveNames.get(row.id) !== String(row.name).trim());
+    /*
+     * No two rows may name the same id, which would abort the transaction as
+     * an unnamed refusal.
+     *
+     * Judged on the file as it was written, ahead of everything below: a file
+     * whose own rows collide is hand-edited, and the settling below would
+     * quietly renumber one of them and hide that. A shared *name* is a
+     * different matter and is restored - see the merge warning further down.
+     */
+    const fileIds = targetRows.map((row) => row.id).filter((id) => Number.isInteger(id));
+    if (new Set(fileIds).size !== fileIds.length) return {ok: false, key: "targets"};
 
+    const live = await listAllTargets();
+    const liveNames = new Map(live.map((row) => [row.id, String(row.name).trim()]));
+
+    // Where this instance already files each name. The first writer wins a
+    // shared one, which is the answer importedTargetId gives it too.
+    const liveIdsByName = new Map();
+    for (const row of live) {
+        const name = String(row.name).trim();
+        if (!liveIdsByName.has(name)) liveIdsByName.set(name, row.id);
+    }
+
+    // Which id a row is restored onto, or undefined for a fresh one. Ids
+    // already handed out in this pass are not offered twice: two file rows of
+    // one name would otherwise both land on the one live row wearing it, and a
+    // pair of identical ids aborts the whole restore as an unnamed refusal.
+    const taken = new Set();
     const stripped = new Set();
-    for (const row of contested)
-        if (await test.count({where: {targetId: row.id}}) > 0) stripped.add(row.id);
+
+    const restoredId = async (row) => {
+        const name = String(row.name).trim();
+        const own = Number.isInteger(row.id) ? row.id : undefined;
+
+        const settled = liveNames.get(own) === name ? own : liveIdsByName.get(name);
+        if (settled !== undefined && !taken.has(settled)) return settled;
+
+        // No live name claims it, so the id is this file's word against the
+        // local history filed under it.
+        if (own !== undefined && !taken.has(own)
+            && await test.count({where: {targetId: own}}) === 0) return own;
+
+        if (own !== undefined) stripped.add(own);
+
+        return undefined;
+    };
+
+    const restoredIds = [];
+    for (const row of targetRows) {
+        const id = await restoredId(row);
+        if (id !== undefined) taken.add(id);
+        restoredIds.push(id);
+    }
 
     // Said out loud, because it is the one thing a restore changes that the
     // file does not describe: the operator asked for these numbers and is
@@ -669,13 +722,11 @@ export const importConfig = async (obj) => {
             + "under the ids the file names belongs to targets this instance measured with. "
             + "Those rows keep their old attribution and are shown as having no target.");
 
-    const keepsId = (row) => Number.isInteger(row.id) && !stripped.has(row.id);
-
     targetRows = targetRows.map((row, index) => ({
         // The id survives a same-instance restore so the history's targetId
         // column keeps pointing at the right rows; a legacy fold has none and
         // takes the next free one.
-        id: keepsId(row) ? row.id : undefined,
+        id: restoredIds[index],
         name: row.name.trim(),
         provider: row.provider,
         serverId: row.serverId ?? null,
@@ -690,14 +741,11 @@ export const importConfig = async (obj) => {
     }));
 
     /*
-     * No two rows may share an id, which would abort the transaction as an
-     * unnamed refusal.
-     *
-     * A shared *name* is restored rather than refused, unlike an id. The door
-     * on the routes is what stops a pair being made; a file carrying one can
-     * only have come from an instance that already holds it - every install
-     * from before that door, and every instance the welcome wizard's second
-     * Done built a twin on - and refusing the file there refuses that
+     * A shared *name* is restored rather than refused, unlike a shared id. The
+     * door on the routes is what stops a pair being made; a file carrying one
+     * can only have come from an instance that already holds it - every
+     * install from before that door, and every instance the welcome wizard's
+     * second Done built a twin on - and refusing the file there refuses that
      * operator their own backup, nodes, integrations and settings included,
      * at the moment they most need it. The restore already has an answer for
      * the shape: importedTargetId keeps the first writer for a shared name,
@@ -705,9 +753,6 @@ export const importConfig = async (obj) => {
      * loud, because the merge is lossy and silence about it is what made it
      * worth refusing in the first place.
      */
-    const keptIds = targetRows.map((row) => row.id).filter((id) => id !== undefined);
-    if (new Set(keptIds).size !== keptIds.length) return {ok: false, key: "targets"};
-
     const trimmedNames = targetRows.map((row) => row.name);
     if (new Set(trimmedNames).size !== trimmedNames.length)
         console.warn("Restored targets share a name. A history restored onto them files every row "

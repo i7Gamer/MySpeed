@@ -81,9 +81,16 @@ app.patch("/:id", password(false), previewReadOnly, async (req, res) => {
      * either of them - unscheduling one, changing its optima - naming a field
      * the request never carried, and left renaming as the only way to touch
      * them. A request that does not change the name cannot take one.
+     *
+     * Compared against the stored name exactly as stored, not against a
+     * trimmed copy of it. update() trims what it writes, so trimming both
+     * sides read "Ookla" onto a stored "Ookla " as no change at all and stood
+     * aside while the write made the exact pair this door exists to prevent -
+     * on every install from before names were trimmed on the way in, by
+     * opening the row and pressing Save.
      */
     const renames = fields.name !== undefined
-        && String(fields.name).trim() !== String(current.name).trim();
+        && String(fields.name).trim() !== String(current.name);
 
     // Excluding the row itself, so keeping one's own name stays legal.
     if (renames && await targets.nameTaken(merged.name, current.id))

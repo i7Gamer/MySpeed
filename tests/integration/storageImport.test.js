@@ -573,6 +573,57 @@ describe("PUT /api/storage/config and the targets it carries", () => {
         assert.equal(row.targetId, mine.id, "the history row itself was rewritten");
     });
 
+    /**
+     * And the same file, restored twice, lands on the same row.
+     *
+     * The strip was judged by the file's id alone, so the row it had just moved
+     * to a fresh id was contested all over again on the next restore: the same
+     * backup applied three times marched one target through three ids, orphaning
+     * a fresh history at every step, and the operator retrying a restore that
+     * looked wrong made it worse each time. A restore now looks for the name
+     * first - which is the identity a history backup files its rows under
+     * anyway, importedTargetId's whole rule - and only contests an id no live
+     * target's name claims.
+     */
+    it("settles on the id it gave the row last time", async () => {
+        const controller = await import("../../server/controller/targets.js");
+        const gone = await seedTarget({provider: "ookla", name: "WAN"});
+        await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: gone.id}]);
+
+        await controller.deleteTarget(gone.id);
+
+        const file = fullBackup({targets: [{id: gone.id, name: "Fibre", provider: "ookla"}]});
+
+        assert.equal((await importConfig(file)).status, 200);
+        const first = (await listTargets())[0].id;
+        assert.notEqual(first, gone.id, "the orphaned history was handed to the restored row");
+
+        assert.equal((await importConfig(file)).status, 200);
+        assert.equal((await listTargets())[0].id, first,
+            "the same file restored twice moved the target onto a new id again");
+    });
+
+    /**
+     * The name match is a preference, not an override: two file rows of one
+     * name cannot both land on the one live row that wears it, and a pair of
+     * identical ids aborts the whole restore as an unnamed refusal. The first
+     * takes it and the second takes a fresh id, which is the same answer
+     * importedTargetId gives a shared name.
+     */
+    it("gives two rows of one name two ids when the instance holds one", async () => {
+        await seedTarget({provider: "ookla", name: "WAN"});
+
+        const {status} = await importConfig(fullBackup({
+            targets: [{id: 41, name: "WAN", provider: "ookla"}, {id: 42, name: "WAN", provider: "libre"}]
+        }));
+
+        assert.equal(status, 200, "a file holding a duplicate pair was refused in full");
+
+        const ids = (await listTargets()).map((row) => row.id);
+        assert.equal(ids.length, 2);
+        assert.equal(new Set(ids).size, 2, "both rows were restored onto one id");
+    });
+
     it("refuses two rows sharing an id", async () => {
         const {status, body} = await importConfig(fullBackup({
             targets: [{id: 1, name: "A", provider: "ookla"}, {id: 1, name: "B", provider: "ookla"}]
