@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readSource, withoutHashComments } from "../helpers/source.js";
+import { readSource, runBodies, withoutHashComments } from "../helpers/source.js";
 
 // Comments stripped before anything is asserted, for the reason the shared
 // helper states: a comment naming verify-binary.ps1 is found by an indexOf
@@ -188,33 +188,10 @@ describe("no workflow interpolates untrusted input into a shell body", () => {
     // event payload a stranger can write.
     const UNTRUSTED = /\$\{\{\s*(inputs\.|github\.event\.(pull_request|issue|comment|head_commit)\b)/;
 
-    // Every `run:` block, whether folded or inline.
-    const runBodies = (source) => {
-        const bodies = [];
-        const lines = source.split("\n");
-
-        for (let index = 0; index < lines.length; index++) {
-            const match = /^(\s*)(?:- )?run:\s*(\|-?|>-?)?\s*(.*)$/.exec(lines[index]);
-            if (!match) continue;
-
-            const [, indent, block, inline] = match;
-            if (!block) {
-                bodies.push(inline);
-                continue;
-            }
-
-            for (let next = index + 1; next < lines.length; next++) {
-                if (lines[next].trim() !== "" && !lines[next].startsWith(indent + "  ")) break;
-                bodies.push(lines[next]);
-            }
-        }
-
-        return bodies;
-    };
-
     for (const file of FILES) {
         it(`${file} keeps it out of every run: body`, () => {
-            const offending = runBodies(withoutHashComments(readSource(`.github/workflows/${file}`)))
+            const offending = runBodies(readSource(`.github/workflows/${file}`))
+                .flatMap(({lines}) => lines)
                 .filter((line) => UNTRUSTED.test(line))
                 .map((line) => line.trim());
 

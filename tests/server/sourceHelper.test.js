@@ -2,7 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import {
-    blockEnd, bodyIn, bodyOf, escapeRegExp, findMounts, listSources, mountText, readSource, unreadableMountCount
+    blockEnd, bodyIn, bodyOf, escapeRegExp, findMounts, listSources, mountText, readSource, runBodies,
+    unreadableMountCount
 } from "../helpers/source.js";
 
 describe("blockEnd", () => {
@@ -610,5 +611,143 @@ describe("escapeRegExp", () => {
             "the dot still matches any character");
         assert.equal(new RegExp(escapeRegExp("a|b")).test("a"), false,
             "the pipe still reads as an alternative");
+    });
+});
+
+/**
+ * The walk that reads a workflow's shell bodies, which two suites had a copy of.
+ *
+ * What it is used for is asserting that a `${{ }}` expression does *not* reach a
+ * run: body, and the correct way to pass such a value is to bind it through an
+ * `env:` block instead - so a walk whose bound is one step too wide reports every
+ * fix as the bug it fixes, and one that is too narrow reports nothing at all.
+ * Both directions are silent, which is why the walk gets cases of its own rather
+ * than only being exercised through the workflows that happen to be in the tree.
+ */
+describe("runBodies", () => {
+    const workflow = (...lines) => lines.join("\n");
+
+    it("reads a block scalar to the end of its block", () => {
+        const bodies = runBodies(workflow(
+            "        run: |",
+            "          git tag \"$TAG\"",
+            "          git push origin \"$TAG\"",
+            "      - name: Next step"
+        ));
+
+        assert.equal(bodies.length, 1);
+        assert.match(bodies[0].text, /git push origin/);
+        assert.doesNotMatch(bodies[0].text, /Next step/, "the walk ran on into the step that follows");
+    });
+
+    /**
+     * The defect the two copies shared. Both measured the block's indentation
+     * from the dash rather than from the key it opens, so a step written as
+     * `- run:` had a bound two columns too shallow - and every key of that step
+     * sitting after it, `env:` included, came back as part of the shell body.
+     *
+     * An expression bound through env: is precisely what a body is supposed to
+     * read instead of splicing, so the one shape these assertions exist to bless
+     * was the one shape they would have failed.
+     */
+    it("stops at the step's own keys when the run is the first one", () => {
+        const bodies = runBodies(workflow(
+            "      - run: echo \"$FOO\"",
+            "        env:",
+            "          FOO: ${{ inputs.version }}"
+        ));
+
+        assert.equal(bodies.length, 1);
+        assert.match(bodies[0].text, /echo "\$FOO"/, "the one-liner itself is the body");
+        assert.doesNotMatch(bodies[0].text, /\$\{\{/,
+            "the env: block binding the value is read as part of the shell body, so binding it correctly reads as splicing it");
+    });
+
+    // The same step written the usual way round, which is what kept the defect
+    // latent: with no dash on the run: line the bound was already the key's.
+    it("stops at them when the run is not the first one", () => {
+        const bodies = runBodies(workflow(
+            "      - name: A step",
+            "        run: echo \"$FOO\"",
+            "        env:",
+            "          FOO: ${{ inputs.version }}"
+        ));
+
+        assert.equal(bodies.length, 1);
+        assert.doesNotMatch(bodies[0].text, /\$\{\{/);
+    });
+
+    // A folded scalar is a body like any other, and a one-liner is its own.
+    it("reads a folded block and a one-liner alike", () => {
+        const bodies = runBodies(workflow(
+            "        run: >",
+            "          folded body",
+            "      - run: inline body"
+        ));
+
+        assert.deepEqual(bodies.map(({text}) => text.trim()), ["folded body", "inline body"]);
+    });
+
+    /**
+     * A `run:` carrying no block indicator was followed by neither copy in the
+     * same way: one walked its continuation lines, the other took the rest of
+     * the line and stopped. Walked, here - a bound that is never reached costs
+     * nothing, and a body that is silently not read is an assertion made against
+     * an empty string.
+     */
+    it("follows a plain scalar that continues onto the next line", () => {
+        const bodies = runBodies(workflow(
+            "        run: echo one",
+            "          ${{ inputs.version }}",
+            "      - name: Next step"
+        ));
+
+        assert.equal(bodies.length, 1);
+        assert.match(bodies[0].text, /\$\{\{/,
+            "a continuation line reaches the same shell and is not read at all");
+    });
+
+    // A blank line inside a block scalar is part of it, not the end of it.
+    it("keeps a blank line inside a block", () => {
+        const bodies = runBodies(workflow(
+            "        run: |",
+            "          first",
+            "",
+            "          second",
+            "      - name: Next step"
+        ));
+
+        assert.match(bodies[0].text, /second/, "the block ended at the blank line");
+    });
+
+    /**
+     * And the prose is gone before anything is read. These workflows explain,
+     * directly above the line, why a `${{` must not appear in a run body - so an
+     * assertion looking for one finds the sentence saying it must not be there.
+     */
+    it("strips the comments that explain what must not be in a body", () => {
+        const bodies = runBodies(workflow(
+            "        # never splice ${{ inputs.version }} into a shell",
+            "        run: |",
+            "          echo \"$VERSION\""
+        ));
+
+        assert.equal(bodies.length, 1);
+        assert.doesNotMatch(bodies[0].text, /\$\{\{/, "the comment warning about a splice is read as one");
+    });
+
+    it("hands back each body as its lines and as one text", () => {
+        const [body] = runBodies(workflow(
+            "        run: |",
+            "          first",
+            "          second"
+        ));
+
+        assert.deepEqual(body.lines.map((line) => line.trim()), ["first", "second"]);
+        assert.equal(body.text, body.lines.join("\n"));
+    });
+
+    it("finds nothing in a workflow that runs nothing", () => {
+        assert.deepEqual(runBodies(workflow("      - uses: actions/checkout@v7")), []);
     });
 });

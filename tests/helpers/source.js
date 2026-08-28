@@ -304,6 +304,69 @@ export const withoutHashComments = (source) => source
     .join("\n");
 
 /**
+ * Every `run:` body in a workflow, each as its own lines and as one text.
+ *
+ * For the assertions that hold a workflow to keeping values out of a shell: a
+ * `${{ }}` expression is substituted into the source before bash parses it, so
+ * one that reaches a run: body is code rather than data, and the way to pass it
+ * is to bind it through `env:` and read the shell variable.
+ *
+ * Which is exactly why the bound has to be the block scalar's own end, and not
+ * the next `- name:`. An `env:` block is what a body is supposed to read instead
+ * of splicing, so a walk that runs on into one reports every fix as the bug it
+ * fixes.
+ *
+ * Comments are stripped here rather than by the caller, because a caller that
+ * forgets is not visibly wrong: these workflows explain, in prose directly above
+ * the line, why a `${{` must not appear in a run body - and an assertion looking
+ * for one then finds the sentence saying it must not be there. Two copies of
+ * this walk stripped at different places, and only one of them here.
+ *
+ * There were two copies, and they had drifted on every rule that matters: where
+ * a block ends, whether a `run:` with no `|` or `>` is followed at all, and what
+ * is handed back. Both are answered here the wider way - a plain one-liner is
+ * walked like any other body, and a body comes back as its lines and as one text
+ * - so neither caller loses anything it was reading before.
+ */
+export const runBodies = (source) => {
+    const lines = withoutHashComments(source).split("\n");
+    const bodies = [];
+
+    for (let index = 0; index < lines.length; index++) {
+        const opened = /^(\s*)(-\s+)?run:(.*)$/.exec(lines[index]);
+        if (!opened) continue;
+
+        // The column of the key, not of the dash in front of it. A block scalar
+        // ends where the indentation drops back to the key that opened it, and
+        // in `- run:` the dash sits two columns to the left of that key - so a
+        // bound taken from the dash keeps reading, and every sibling key of the
+        // step comes back as part of the shell body. `env:` is one of those, and
+        // binding a value through env: is the correct shape these bodies are
+        // read to insist on.
+        const column = opened[1].length + (opened[2] ?? "").length;
+
+        // The block indicator is not part of the body; anything else on the line
+        // is a one-liner and is.
+        const opener = opened[3].replace(/^\s*[|>][-+]?\s*$/, "");
+        const body = opener.trim() === "" ? [] : [opener];
+
+        while (index + 1 < lines.length) {
+            const line = lines[index + 1];
+
+            // A blank line inside a block scalar is still part of it.
+            if (line.trim() !== "" && line.length - line.trimStart().length <= column) break;
+
+            body.push(line);
+            index++;
+        }
+
+        bodies.push({lines: body, text: body.join("\n")});
+    }
+
+    return bodies;
+};
+
+/**
  * JS/JSX sources with their comments removed, for the same reason. Block
  * comments go whole; line comments only from `//` that does not follow a
  * colon, so a URL inside a string survives.

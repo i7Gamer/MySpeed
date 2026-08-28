@@ -109,12 +109,19 @@ jobs:
       # it gets here, so this is the rule being kept rather than a hole being
       # closed - and a rule with exceptions in the file that states it is one
       # nobody can check by reading.
+      #
+      # And through --arg for the same reason, one interpreter further in. Written
+      # as `jq ".version = \"$VERSION\""`, the shell expands the variable before
+      # jq is executed at all, so what jq parses is a program built out of the
+      # value - the care taken on the line above buys nothing the moment the
+      # language changes. --arg binds it as data, which is what env: does for the
+      # shell.
       - name: Bump version files
         env:
           VERSION: ${{ steps.get_version.outputs.version }}
         run: |
-          jq ".version = \"$VERSION\"" package.json > tmp && mv tmp package.json
-          jq ".version = \"$VERSION\"" client/package.json > tmp && mv tmp client/package.json
+          jq --arg v "$VERSION" '.version = $v' package.json > tmp && mv tmp package.json
+          jq --arg v "$VERSION" '.version = $v' client/package.json > tmp && mv tmp client/package.json
 
       # Read through env, never spliced into the script body - the same rule
       # the branch guard above follows, in the one step that performs the push

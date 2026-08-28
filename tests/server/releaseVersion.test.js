@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { withoutHashComments } from "../helpers/source.js";
+import { runBodies, withoutHashComments } from "../helpers/source.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const WORKFLOWS = path.join(ROOT, ".github", "workflows");
@@ -302,57 +302,58 @@ describe("the branch a release may be dispatched from", () => {
  * looking for it.
  */
 describe("what reaches a shell in the release workflow", () => {
-    /**
-     * Every run: body, from the key to the end of its block.
-     *
-     * A YAML block scalar ends where the indentation drops back to the key that
-     * opened it, which is the only thing separating a body from the step that
-     * follows it. Sliced to the next `- name:` instead, this would swallow the
-     * `env:` block of the following step - and an expression bound through env:
-     * is precisely what a body is supposed to read instead of splicing, so every
-     * fix would have read as the bug it fixes.
-     */
-    const runBodies = (workflow) => {
-        const lines = withoutHashComments(workflow).split("\n");
-        const bodies = [];
-
-        for (let index = 0; index < lines.length; index++) {
-            const opened = /^(\s*)(?:- )?run:(.*)$/.exec(lines[index]);
-            if (!opened) continue;
-
-            const indent = opened[1].length;
-            const body = [opened[2]];
-
-            while (index + 1 < lines.length) {
-                const line = lines[index + 1];
-
-                // A blank line inside a block scalar is still part of it.
-                if (line.trim() !== "" && line.length - line.trimStart().length <= indent) break;
-
-                body.push(line);
-                index++;
-            }
-
-            bodies.push(body.join("\n"));
-        }
-
-        return bodies;
-    };
-
     it("interpolates no workflow expression into any shell body", () => {
         const bodies = runBodies(release);
 
         // Or the assertion below is made against nothing at all. The deepest
         // body in the file is the one that pushes the tag; reading it is what
         // says the walk got past the first step.
-        assert.ok(bodies.some((body) => body.includes("git push origin")),
+        assert.ok(bodies.some(({text}) => text.includes("git push origin")),
             "no run: body could be read out of the workflow, so this asserts nothing");
 
         const spliced = bodies
-            .filter((body) => body.includes("${{"))
-            .map((body) => body.split("\n").find((line) => line.includes("${{")).trim());
+            .filter(({text}) => text.includes("${{"))
+            .map(({lines}) => lines.find((line) => line.includes("${{")).trim());
 
         assert.deepEqual(spliced, [],
             "these are substituted into the shell source before bash parses them; bind them through env: and read the shell variable instead");
+    });
+
+    /**
+     * And the same rule for the other interpreter these bodies start.
+     *
+     * The bump step binds the version through env: exactly as the rule says, and
+     * then writes `jq ".version = \"$VERSION\"" package.json` - so the shell
+     * expands the variable before jq is executed at all, and what jq parses is a
+     * program built out of the value. The care taken one line earlier buys
+     * nothing: the language changed, and the rule was kept for bash only.
+     *
+     * Not live, and that is the point. get_version refuses anything that is not
+     * three numeric parts before this step exists, so there is nothing a version
+     * can carry by the time it arrives. But the rule is *stated* in this file -
+     * twice, in prose, above the steps that follow it - and a rule dropped at the
+     * next interpreter on the same line is one nobody can check by reading. jq's
+     * --arg binds a value as data, which is what env: does for the shell.
+     */
+    it("hands jq the version as an argument rather than as program text", () => {
+        const invocations = runBodies(release)
+            .flatMap(({lines}) => lines)
+            .filter((line) => /\bjq\b/.test(line));
+
+        assert.notEqual(invocations.length, 0, "nothing rewrites the version files with jq any more");
+
+        const unbound = invocations
+            .filter((line) => !/\bjq\s+--arg\b/.test(line))
+            .map((line) => line.trim());
+
+        assert.deepEqual(unbound, [],
+            "jq is handed a program rather than an argument; bind the value with --arg and read it as a jq variable");
+
+        const expanded = invocations
+            .filter((line) => /\.version\s*=\s*[\\"']*\$VERSION\b/.test(line))
+            .map((line) => line.trim());
+
+        assert.deepEqual(expanded, [],
+            "the shell expands the version into the jq program before jq parses it, which is the splice this file spends two comments refusing");
     });
 });
