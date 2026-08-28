@@ -359,16 +359,8 @@ export const roundTargets = async () =>
 export const primaryTarget = async () => (await roundTargets())[0];
 
 /**
- * The target the recommendations sample: the first scheduled one that takes
- * part in alerting. The two can differ - a diagnostic box may lead the round
- * with alerts off - and recommendations must describe a line someone watches.
- */
-export const alertsTarget = async () =>
-    (await roundTargets()).find((target) => target.alerts);
-
-/**
- * The one line an instance-wide surface speaks for, whatever the instance is
- * set up like.
+ * Which line an instance-wide surface speaks for, as the whole preference
+ * rather than as its winner.
  *
  * The recommendation card and the public preview image both have to name a
  * single line - a gigabit LAN box averaged into a WAN figure describes
@@ -380,21 +372,70 @@ export const alertsTarget = async () =>
  * In order: the first scheduled target that alerts; then any target that
  * alerts, scheduled or not, because a manual-only target still describes a
  * line somebody watches and a scheduled one with alerts off does not; then
- * the round's leader; then the first target on record. Undefined only when
- * there are no targets at all.
+ * the round's leader; then the first target on record. Empty only when there
+ * are no targets at all.
+ *
+ * The whole sequence, because "prefers" must not mean "or nothing" and each
+ * surface asks a different question of the line it lands on. The card wants
+ * one with a full sample of successful tests; the preview image wants one with
+ * rows in the two days it averages. Resolved to a single answer here, a
+ * preferred line that could not answer the caller's question was the end of it:
+ * the recommendations sat frozen at whatever they held before, for the life of
+ * the database, while a scheduled line beside them measured every hour. So
+ * each caller walks this with its own predicate, and the ranking stays in one
+ * place.
+ *
+ * Read loosely, because sqlite hands booleans back as 0/1 under the global raw
+ * mapping and a strict comparison would match nothing.
  *
  * Deliberately not isPrimaryMember's question, which asks which member owns
  * the instance-wide *surfaces* - the base MQTT topic, the unlabelled
  * Prometheus series - and answers by round order alone, with no preference
  * about alerting at all.
  */
-export const headlineTarget = async () => {
+export const headlineOrder = async () => {
     const all = await listAll();
 
-    return await alertsTarget()
-        ?? all.find((target) => target.alerts)
-        ?? await primaryTarget()
-        ?? all[0];
+    const tiers = [
+        (target) => target.alerts && target.enabled,
+        (target) => target.alerts,
+        (target) => target.enabled,
+        () => true
+    ];
+
+    const ordered = [];
+
+    for (const tier of tiers)
+        for (const target of all)
+            if (tier(target) && !ordered.includes(target)) ordered.push(target);
+
+    return ordered;
+};
+
+/** The winner of that preference, for a caller with nothing more to ask. */
+export const headlineTarget = async () => (await headlineOrder())[0];
+
+/**
+ * Whether this edit is the one that takes the base MQTT topic quiet.
+ *
+ * The base topic speaks for the instance's first line on record and for no
+ * other, deliberately: moving it as targets are scheduled and unscheduled
+ * hands one line's Home Assistant entities to another line's numbers, and the
+ * retained discovery configs are keyed to the topic, so no correction is ever
+ * announced. isPrimaryMember's docstring holds the full reasoning.
+ *
+ * The cost of that rule is that unscheduling the first line - an ordinary
+ * thing to do to a line during an outage - takes the topic quiet, and every
+ * entity announced from it keeps its last value with nothing anywhere saying
+ * why. The interface has no way to show that, so the operator doing it is told.
+ *
+ * Only on the edit that changes it, so a later edit to a row already
+ * unscheduled does not repeat something the operator has been told.
+ */
+export const quietsBaseTopic = async (current, fields) => {
+    if (fields.enabled === undefined || fields.enabled || !current.enabled) return false;
+
+    return (await listAll())[0]?.id === current.id;
 };
 
 /**

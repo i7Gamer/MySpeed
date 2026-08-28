@@ -90,6 +90,62 @@ describe("PUT /api/targets", () => {
  * One home, so a change to which line an instance headlines cannot land in
  * one of them and not the other.
  */
+/**
+ * Unscheduling the instance's first line is an ordinary thing to do to a line
+ * during an outage, and it is the one edit with a consequence the interface
+ * cannot show: the base MQTT topic speaks for the first line on record and for
+ * no other - deliberately, because moving it hands one line's Home Assistant
+ * entities to another's numbers, and the retained discovery configs never
+ * announce a correction. While that line is unscheduled the topic simply goes
+ * quiet, and the entities keep their last value with nothing anywhere saying
+ * why. So it is said out loud, once, to the operator doing it.
+ */
+describe("unscheduling the line the base topic speaks for", () => {
+    const warningsWhile = async (body) => {
+        const warn = console.warn;
+        const said = [];
+        console.warn = (...parts) => said.push(parts.join(" "));
+
+        try {
+            await body();
+        } finally {
+            console.warn = warn;
+        }
+
+        return said;
+    };
+
+    it("says the base topic is about to go quiet", async () => {
+        const first = await targets.create({name: "WAN", provider: "ookla", sortOrder: 0});
+        await targets.create({name: "LAN", provider: "ookla", sortOrder: 1});
+
+        const said = await warningsWhile(() => patch(`/${first.id}`, {enabled: false}));
+
+        assert.ok(said.some((line) => /base .*topic/i.test(line)),
+            "the operator was told nothing about the entities that just stopped updating");
+    });
+
+    it("says nothing when another line is unscheduled", async () => {
+        await targets.create({name: "WAN", provider: "ookla", sortOrder: 0});
+        const second = await targets.create({name: "LAN", provider: "ookla", sortOrder: 1});
+
+        const said = await warningsWhile(() => patch(`/${second.id}`, {enabled: false}));
+
+        assert.deepEqual(said.filter((line) => /base .*topic/i.test(line)), []);
+    });
+
+    // Said when the edit is what takes it quiet, not every time the row is
+    // touched afterwards: the operator has already been told.
+    it("says nothing on a later edit to a line already unscheduled", async () => {
+        const first = await targets.create({name: "WAN", provider: "ookla",
+            enabled: false, sortOrder: 0});
+
+        const said = await warningsWhile(() => patch(`/${first.id}`, {optimalDownload: 500}));
+
+        assert.deepEqual(said.filter((line) => /base .*topic/i.test(line)), []);
+    });
+});
+
 describe("the line an instance-wide surface speaks for", () => {
     const named = async () => (await targets.headlineTarget())?.name;
 
@@ -112,6 +168,20 @@ describe("the line an instance-wide surface speaks for", () => {
         await targets.create({name: "wan", provider: "ookla", enabled: false, sortOrder: 1});
 
         assert.equal(await named(), "wan");
+    });
+
+    /**
+     * The discriminating pair, which none of the cases around it is: both lines
+     * are watched, one runs by hand and leads the list, the other is scheduled
+     * behind it. Every other case here answers identically whether the first two
+     * steps of the preference are in this order or the other, so the rule they
+     * were written to hold was not being held by any of them.
+     */
+    it("prefers a scheduled watched line over a watched one that runs by hand", async () => {
+        await targets.create({name: "manual", provider: "ookla", enabled: false, sortOrder: 0});
+        await targets.create({name: "scheduled", provider: "ookla", sortOrder: 1});
+
+        assert.equal(await named(), "scheduled");
     });
 
     it("falls back to the round's leader when nothing alerts at all", async () => {

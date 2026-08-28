@@ -109,24 +109,40 @@ export const RECOMMENDATION_SAMPLE = 10;
 const lowestRealPing = (ping) => isMeasuredLatency(ping) && ping > UNMEASURED_LATENCY;
 
 /**
+ * The newest full sample of successful tests, from the line the instance
+ * headlines - or from the next line down the preference that has one.
+ *
+ * The sample describes one line, so it comes from one target: a gigabit LAN box
+ * mixed into it would recommend numbers no WAN target can meet. But the
+ * preferred line may not be able to supply one. A watched line that runs by
+ * hand leads that preference and may never reach a full sample, nobody being
+ * there to run it hourly - and asking it alone, the card sat frozen at whatever
+ * it held before for the life of the database while a scheduled line beside it
+ * measured every hour. So the preference is walked rather than resolved.
+ *
+ * Null when no line can describe itself yet, which on a new install is every
+ * line: fewer than a full sample says too little about a line to recommend
+ * anything from it.
+ */
+const recommendationSample = async () => {
+    for (const target of await targetsController.headlineOrder()) {
+        const list = await tests.listSuccessful(RECOMMENDATION_SAMPLE, target.id);
+
+        if (list.length >= RECOMMENDATION_SAMPLE) return list;
+    }
+
+    return null;
+};
+
+/**
  * Exported for its tests. Filtering failures out of listTests() - whose default
  * limit is 10 rows *including* failures - meant one failed test among the
  * newest ten shrank the sample below the required size, and the recommendations
  * silently stopped updating until the failure aged out of the newest page.
  */
 export const createRecommendations = async () => {
-    // The sample describes one line, so it comes from one target: the line
-    // every instance-wide surface speaks for, which headlineTarget owns - the
-    // first scheduled target that alerts, then any target that alerts, then
-    // the round's leader, then the first on record. A gigabit LAN box mixed
-    // into the sample would recommend numbers no WAN target can meet, and an
-    // instance where nothing scheduled alerts must not freeze the card at
-    // whatever the line looked like before the flags changed.
-    const primary = await targetsController.headlineTarget();
-    if (!primary) return;
-
-    const list = await tests.listSuccessful(RECOMMENDATION_SAMPLE, primary.id);
-    if (list.length < RECOMMENDATION_SAMPLE) return;
+    const list = await recommendationSample();
+    if (list === null) return;
 
     let recommendations = {ping: Infinity, down: 0, up: 0};
     for (const entry of list) {

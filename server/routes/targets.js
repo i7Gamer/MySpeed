@@ -96,7 +96,15 @@ app.patch("/:id", password(false), previewReadOnly, async (req, res) => {
     if (renames && await targets.nameTaken(merged.name, current.id))
         return res.status(400).json({message: "Another target already wears this name"});
 
+    // Read before the write, while `current` still describes the stored row.
+    const quietens = await targets.quietsBaseTopic(current, fields);
+
     await targets.update(current.id, fields);
+
+    if (quietens) console.warn("This is the instance's first line, and the base MQTT topic speaks "
+        + "for it alone. While it is unscheduled that topic goes quiet: any Home Assistant entity "
+        + "announced from it keeps its last value, with no update and no correction. Reorder the "
+        + "list to hand the topic to another line.");
 
     res.json({message: "The target has been updated"});
 });

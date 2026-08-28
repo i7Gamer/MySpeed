@@ -63,56 +63,73 @@ export const openGraphWindow = (now = new Date()) => {
   return {from: day(yesterday), to: day(now)};
 };
 
+/** The two days the card averages, as a parsed range. */
+const openGraphRange = () => {
+  const {from, to} = openGraphWindow();
+
+  return parseDateRange(from, to);
+};
+
 /**
- * The line the card describes, or null for the instance as a whole.
+ * The line the card describes and the figures it has for it.
  *
  * One line, not a blend: the card is reachable by anyone on a no-password or
  * read-level instance and headlines "the" speed, so averaging the gigabit LAN
  * box into the WAN's figure advertises a number that is neither line's.
- * headlineTarget owns which line that is, and the recommendations sample the
- * same one.
+ * headlineOrder owns the ranking, and the recommendations walk the same one.
  *
- * But only while it has something to say. Chosen by configuration alone, a
- * target added yesterday - which leads the round and has measured nothing -
- * blanked the card of an instance holding years of rows: the scoped read came
- * back empty and the route fell through to the project banner. So the
- * preference is walked until a line with rows is found, headline first.
+ * But only while it has something to say, and "something" means in the window
+ * the card actually averages. Chosen by configuration alone, a target added
+ * yesterday - which leads the round and has measured nothing - blanked the card
+ * of an instance holding years of rows. Chosen by "has ever measured
+ * anything", a line whose newest row is three weeks old took the card and then
+ * had nothing in the window, so the fallback below published that three-week-old
+ * reading stamped with today's date while the line beside it had measured an
+ * hour ago. So the preference is walked for a line with rows in the window
+ * first, and only then for one with rows at all.
  *
- * Null when no target has any, which is not the same as a blend: those rows
- * belong to no line at all - an import that could not resolve a name leaves
- * them unattributed, and a deleted target's stay behind - so there is no line
- * to mis-name, and the instance-wide read is the only one that can fill the
- * card. Null for a pre-target install too, whose rows carry no targetId.
- *
- * Exported for its test, the way openGraphWindow is: which line a public
- * image speaks for is a decision, and the rendering needs satori and a native
- * addon to ask it any other way.
+ * No line at all is not the same as a blend: where no target has rows, the rows
+ * that exist belong to none of them - an import that could not resolve a name
+ * leaves them unattributed, and a deleted target's stay behind - so there is no
+ * line to mis-name and the instance-wide read is the only one that can fill the
+ * card. Same for a pre-target install, whose rows carry no targetId.
  */
-export const openGraphLine = async () => {
-  const all = await targetsController.listAll();
-  if (all.length === 0) return null;
+const openGraphSubject = async (range) => {
+  const ordered = await targetsController.headlineOrder();
 
-  const headline = await targetsController.headlineTarget();
-  const ordered = [headline, ...all.filter((target) => target.id !== headline?.id)];
+  for (const target of ordered) {
+    const stats = await tests.listStatistics(range, {target: target.id});
 
+    if (hasValues(stats)) return {target, stats};
+  }
+
+  // Nothing measured in the window. A line with older rows still names the one
+  // the single-reading fallback speaks for.
   for (const target of ordered)
-    if (await tests.getLatest(target.id) !== undefined) return target;
+    if (await tests.getLatest(target.id) !== undefined) return {target, stats: null};
 
-  return null;
+  const instanceWide = await tests.listStatistics(range, {});
+
+  return {target: null, stats: hasValues(instanceWide) ? instanceWide : null};
 };
 
-const readStatistics = async () => {
-  const {from, to} = openGraphWindow();
+/**
+ * Exported for its test, the way openGraphWindow is: which line a public image
+ * speaks for is a decision, and the rendering needs satori and a native addon
+ * to ask it any other way.
+ */
+export const openGraphLine = async (range = openGraphRange()) =>
+  (await openGraphSubject(range)).target;
 
-  const range = parseDateRange(from, to);
+/** Exported for the test that holds the card to one line's figures. */
+export const readStatistics = async () => {
+  const range = openGraphRange();
   if (!range.valid) return null;
 
-  const line = await openGraphLine();
+  const {target, stats} = await openGraphSubject(range);
+  if (stats) return stats;
 
-  const stats = await tests.listStatistics(range, line ? {target: line.id} : {});
-  if (hasValues(stats)) return stats;
-
-  const latest = await tests.getLatest(line?.id);
+  const latest = await tests.getLatest(target?.id);
   if (isFailedTest(latest)) return null;
   if (!latest) return null;
 

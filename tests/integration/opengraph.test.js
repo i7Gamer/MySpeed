@@ -41,10 +41,11 @@ describe("the failure fallback", () => {
  */
 describe("the line the card describes", () => {
     let openGraphLine;
+    let readStatistics;
     let targets;
 
     before(async () => {
-        ({openGraphLine} = await import("../../server/controller/opengraph.js"));
+        ({openGraphLine, readStatistics} = await import("../../server/controller/opengraph.js"));
         targets = await import("../../server/controller/targets.js");
     });
 
@@ -104,6 +105,55 @@ describe("the line the card describes", () => {
         await targets.removeAll();
 
         assert.equal(await openGraphLine(), null);
+    });
+
+    /**
+     * And "has something to say" is asked of the window the card averages, not
+     * of the whole history.
+     *
+     * A line with rows only from last month passed the "has measured
+     * something" test, took the card, and then had nothing in the two-day
+     * window - so the route fell through to its single-reading fallback and
+     * published a three-week-old figure stamped with today's date, while the
+     * line beside it had measured an hour ago.
+     */
+    it("passes over a line whose rows are all older than the window", async () => {
+        await targets.removeAll();
+        const stale = await targets.create({name: "Stale", provider: "ookla", sortOrder: 0});
+        const current = await targets.create({name: "Current", provider: "ookla", sortOrder: 1});
+
+        const THREE_WEEKS_IN_HOURS = 21 * 24;
+
+        await seedTests(server.tests, [
+            {created: hoursAgo(THREE_WEEKS_IN_HOURS), targetId: stale.id, download: 100},
+            {created: hoursAgo(1), targetId: current.id, download: 250}
+        ]);
+
+        assert.equal((await openGraphLine())?.id, current.id,
+            "the card headlined a line that has measured nothing since before the window");
+    });
+
+    /**
+     * And the figures it publishes are that line's alone.
+     *
+     * The scoping used to be held by a source scan, and replacing that with the
+     * cases above left nothing asserting that the chosen line is used for
+     * anything - the card could average the whole instance and every one of
+     * them would still pass.
+     */
+    it("averages only the line it named", async () => {
+        await targets.removeAll();
+        const wan = await targets.create({name: "WAN", provider: "ookla", sortOrder: 0});
+        const lan = await targets.create({name: "LAN", provider: "iperf3",
+            endpoint: "10.0.0.5:5201", sortOrder: 1});
+
+        await seedTests(server.tests, [
+            {created: hoursAgo(2), targetId: wan.id, ping: 10, download: 100, upload: 50},
+            {created: hoursAgo(1), targetId: lan.id, ping: 1, download: 940, upload: 900}
+        ]);
+
+        assert.equal((await readStatistics()).download.avg, 100,
+            "the card blended the gigabit LAN box into the WAN's headline figure");
     });
 });
 
