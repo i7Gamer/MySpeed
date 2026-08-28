@@ -558,17 +558,37 @@ export const parseIperf3 = (test) => {
     };
 };
 
+// The three columns a row cannot be without - they are NOT NULL, and a value
+// that is not a readable number has nowhere honest to go.
+const REQUIRED_MEASUREMENTS = ["ping", "download", "upload"];
+
 export const parseData = (provider, data) => {
-    switch (provider) {
-        case OOKLA:
-            return parseOokla(data);
-        case LIBRE:
-            return parseLibre(data);
-        case CLOUDFLARE:
-            return parseCloudflare(data);
-        case IPERF3:
-            return parseIperf3(data);
-        default:
-            throw {message: "Invalid provider"};
-    }
+    const parsed = (() => {
+        switch (provider) {
+            case OOKLA:
+                return parseOokla(data);
+            case LIBRE:
+                return parseLibre(data);
+            case CLOUDFLARE:
+                return parseCloudflare(data);
+            case IPERF3:
+                return parseIperf3(data);
+            default:
+                throw {message: "Invalid provider"};
+        }
+    })();
+
+    // A required measurement the parser could not read is the failure
+    // placeholder, not NaN. roundSpeed answers NaN for an Ookla result whose
+    // bandwidth block was empty, and cfspeedtest can do the same - and NaN
+    // passed both write-path guards (isFailedTest wants all three placeholders;
+    // impossibleMeasurement asks `< 0`), so the row was stored as a success
+    // with the literal "NaN" in a NOT NULL DOUBLE, poisoning every average
+    // over it. As the placeholder it takes the failed path executeTarget
+    // already has: all three unreadable read as a failed run, one unreadable
+    // beside good figures as an impossible measurement, retried once.
+    for (const key of REQUIRED_MEASUREMENTS)
+        if (!Number.isFinite(parsed[key])) parsed[key] = FAILED_TEST;
+
+    return parsed;
 };

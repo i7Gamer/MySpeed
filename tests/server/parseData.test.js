@@ -817,6 +817,44 @@ describe("parseData", () => {
     it("rejects an unknown provider", () => {
         assert.throws(() => parseData("nonsense", {}), (e) => e.message === "Invalid provider");
     });
+
+    /**
+     * A required measurement the parser could not read is the failure
+     * placeholder, not NaN. An Ookla result whose download block is present but
+     * empty makes roundSpeed answer NaN, and NaN walked past both write-path
+     * guards - isFailedTest wants all three placeholders at once,
+     * impossibleMeasurement asks `< 0` - so the row stored the literal "NaN" in
+     * a NOT NULL column on a test isFailedTest called a success, and every
+     * average that summed it turned into string concatenation.
+     */
+    it("stores an unreadable measurement as the placeholder, never NaN", () => {
+        const parsed = parseData("ookla", {
+            ping: {latency: 12}, download: {}, upload: {bandwidth: 1250000, elapsed: 1000}
+        });
+
+        assert.equal(parsed.download, FAILED_TEST, "an empty bandwidth block stored NaN");
+        assert.equal(Number.isNaN(parsed.download), false);
+        assert.ok(Number.isFinite(parsed.upload), "the measurement beside it was thrown away too");
+    });
+
+    it("reads all three unreadable as a failed run", () => {
+        const parsed = parseData("ookla", {ping: {}, download: {}, upload: {}});
+
+        assert.equal(isFailedTest(parsed), true,
+            "a result with no readable measurement was stored as a success");
+    });
+
+    // A genuine measurement is left exactly as the parser produced it - the
+    // normalisation only touches values that are not finite numbers.
+    it("leaves a real measurement alone", () => {
+        const parsed = parseData("ookla", {
+            ping: {latency: 5, jitter: 1}, download: {bandwidth: 1250000, elapsed: 1000},
+            upload: {bandwidth: 625000, elapsed: 1000}
+        });
+
+        assert.equal(parsed.download, 10);
+        assert.equal(parsed.upload, 5);
+    });
 });
 
 /**
