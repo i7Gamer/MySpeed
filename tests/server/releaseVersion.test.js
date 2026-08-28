@@ -45,9 +45,11 @@ const validator = () => {
 
 // What build-msi.yml makes of that version when it writes Product/@Version.
 //
-// Read through the environment rather than spliced from `${{ inputs.version }}`:
-// no workflow expression reaches a script body anywhere in the release chain
-// now, which binaryVerification.test.js holds the whole chain to.
+// Read through the environment rather than spliced from `${{ inputs.version }}`.
+// That is the rule create_release.yml keeps completely - no workflow expression
+// reaches a run: body in it at all, which the last block in this file holds it to
+// - and the rule binaryVerification.test.js holds the rest of the chain to for
+// the expressions a stranger is in a position to write.
 const wixVersion = (version) => {
     const template = msi.match(/Version="\$\(\$env:VERSION\)([^"]*)"/);
     assert.notEqual(template, null, "the MSI no longer builds its product version from the release version");
@@ -272,5 +274,85 @@ describe("the branch a release may be dispatched from", () => {
 
         assert.doesNotMatch(step.slice(step.indexOf("run:")), /\$\{\{/,
             "a workflow expression reaches the push's shell as source rather than as data");
+    });
+});
+
+/**
+ * And the same rule over the whole file, rather than one step at a time.
+ *
+ * Two steps were pinned individually - the branch guard and the push - and three
+ * splices sat between and below them the whole time: the version into
+ * `V="${{ steps.get_version.outputs.version }}"`, and the tag and the resolved
+ * commit into the `git tag` and `git push` that cut the release. Nothing was
+ * looking at them. binaryVerification.test.js holds every workflow in the chain
+ * to keeping *untrusted* expressions out of a run: body, and its pattern names
+ * `inputs.` and the writable parts of an event payload - a step output is
+ * neither.
+ *
+ * Which is why binding them is uniformity and not urgency: get_version refuses
+ * anything that is not three numeric parts before any of the three exists, and
+ * the sha comes from `git rev-parse`. But a rule with three exceptions in the
+ * very file that states it is a rule no one can check by reading, and the
+ * exceptions were in the job holding contents: write - one of them the step that
+ * pushes the tag the branch guard exists to protect. So none of them, and the
+ * file is held to that rather than to a list of steps somebody remembered.
+ *
+ * Comments stripped first, or the two sentences in the workflow explaining why
+ * `${{` must not appear in a run body are themselves found by the assertion
+ * looking for it.
+ */
+describe("what reaches a shell in the release workflow", () => {
+    /**
+     * Every run: body, from the key to the end of its block.
+     *
+     * A YAML block scalar ends where the indentation drops back to the key that
+     * opened it, which is the only thing separating a body from the step that
+     * follows it. Sliced to the next `- name:` instead, this would swallow the
+     * `env:` block of the following step - and an expression bound through env:
+     * is precisely what a body is supposed to read instead of splicing, so every
+     * fix would have read as the bug it fixes.
+     */
+    const runBodies = (workflow) => {
+        const lines = withoutHashComments(workflow).split("\n");
+        const bodies = [];
+
+        for (let index = 0; index < lines.length; index++) {
+            const opened = /^(\s*)(?:- )?run:(.*)$/.exec(lines[index]);
+            if (!opened) continue;
+
+            const indent = opened[1].length;
+            const body = [opened[2]];
+
+            while (index + 1 < lines.length) {
+                const line = lines[index + 1];
+
+                // A blank line inside a block scalar is still part of it.
+                if (line.trim() !== "" && line.length - line.trimStart().length <= indent) break;
+
+                body.push(line);
+                index++;
+            }
+
+            bodies.push(body.join("\n"));
+        }
+
+        return bodies;
+    };
+
+    it("interpolates no workflow expression into any shell body", () => {
+        const bodies = runBodies(release);
+
+        // Or the assertion below is made against nothing at all. The deepest
+        // body in the file is the one that pushes the tag; reading it is what
+        // says the walk got past the first step.
+        assert.ok(bodies.some((body) => body.includes("git push origin")),
+            "no run: body could be read out of the workflow, so this asserts nothing");
+
+        const spliced = bodies
+            .filter((body) => body.includes("${{"))
+            .map((body) => body.split("\n").find((line) => line.includes("${{")).trim());
+
+        assert.deepEqual(spliced, [],
+            "these are substituted into the shell source before bash parses them; bind them through env: and read the shell variable instead");
     });
 });

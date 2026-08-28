@@ -104,11 +104,17 @@ jobs:
       # and shown by /version against the latest release tag. Bumping afterwards
       # shipped binaries stamped with the previous version, which then reported
       # themselves as out of date the moment they started.
+      #
+      # Through env like the steps around it. The value is validated by the time
+      # it gets here, so this is the rule being kept rather than a hole being
+      # closed - and a rule with exceptions in the file that states it is one
+      # nobody can check by reading.
       - name: Bump version files
+        env:
+          VERSION: ${{ steps.get_version.outputs.version }}
         run: |
-          V="${{ steps.get_version.outputs.version }}"
-          jq ".version = \"$V\"" package.json > tmp && mv tmp package.json
-          jq ".version = \"$V\"" client/package.json > tmp && mv tmp client/package.json
+          jq ".version = \"$VERSION\"" package.json > tmp && mv tmp package.json
+          jq ".version = \"$VERSION\"" client/package.json > tmp && mv tmp client/package.json
 
       # Read through env, never spliced into the script body - the same rule
       # the branch guard above follows, in the one step that performs the push
@@ -136,10 +142,17 @@ jobs:
       # published, which is finalize-release - long after every build job has tried
       # to check the tag out and failed. Releases only ever succeeded when a tag
       # left over from an earlier attempt happened to still be there.
+      #
+      # Both through env, for the reason stated at the branch guard - and this is
+      # the step that guard exists to protect, so it is the last one that should
+      # have been splicing anything into a shell.
       - name: Push release tag
+        env:
+          TAG: ${{ steps.get_version.outputs.tag }}
+          SHA: ${{ steps.sha.outputs.sha }}
         run: |
-          git tag "${{ steps.get_version.outputs.tag }}" "${{ steps.sha.outputs.sha }}"
-          git push origin "${{ steps.get_version.outputs.tag }}"
+          git tag "$TAG" "$SHA"
+          git push origin "$TAG"
 
       # Everything downstream builds from this tag rather than from the dispatched
       # ref, so the artifacts and the version they report come from the same commit.
