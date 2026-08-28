@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { readSource, withoutHashComments, withoutJsComments } from "../helpers/source.js";
+import { readSource, withoutJsComments } from "../helpers/source.js";
 
 const HELPER = "server/util/createFolders.js";
 
@@ -178,66 +178,16 @@ describe("the mode the folder helper names", () => {
     });
 });
 
-/**
- * And the container, which this helper does not cover and used to say it did.
+/*
+ * The container's own copy of this decision is pinned in
+ * containerEntrypoint.test.js, not here.
  *
- * The image pre-creates /myspeed/data so that the VOLUME declared over it takes
- * that directory's mode and ownership rather than the daemon's defaults - and it
- * created it under the build's 022 umask, at 0755. `fs.existsSync` is therefore
- * true on the first boot and every boot after it, so the 0700 above is
- * unreachable on any Docker install that has ever existed: storage.db sits 0644
- * in a 0755 directory, in a container whose server downloads and spawns
- * third-party binaries.
- *
- * The image is where the mode has to be stated, and the entrypoint is where a
- * volume an older image initialised gets the world bits taken back off it - the
- * two halves of the policy install.sh states for the same directory. Nothing on
- * the container path can be pinned by running this helper, because the reason it
- * is broken there is that the helper never runs at all.
+ * It was written in this file, which reads as though the helper covered the
+ * container - and the reason those pins exist is that it does not: the image
+ * pre-creates /myspeed/data, so `fs.existsSync` is true on the first boot and
+ * every boot after it and the 0700 above never runs on a Docker install at all.
+ * The Dockerfile states the mode instead, and the entrypoint takes the world
+ * bits back off a volume an older image left open. That file already reads and
+ * parses the same entrypoint, so both halves live there and this suite is left
+ * to the helper it names.
  */
-describe("the mode the container's data directory is created at", () => {
-    // Comments stripped for the same reason as above, and it matters more here:
-    // the Dockerfile and the entrypoint both explain their permissions in prose
-    // sitting directly above the line that sets them.
-    const dockerfile = withoutHashComments(readSource("Dockerfile"));
-    const entrypoint = withoutHashComments(readSource("docker-entrypoint.sh"));
-
-    it("makes the volume's directory itself, so the daemon does not", () => {
-        for (const folder of ["data", "bin"])
-            assert.match(dockerfile, new RegExp(`mkdir -p [^\\n]*/myspeed/${folder}\\b`),
-                `/myspeed/${folder} is left to the daemon, which creates it root-owned at 0755 on first run`);
-    });
-
-    it("states 700 for it rather than taking the build's umask", () => {
-        assert.match(dockerfile, /chmod 700 \/myspeed\/data\b/,
-            "the image creates /myspeed/data under the build umask, so the VOLUME inherits 0755 and the server's own 0700 never runs");
-    });
-
-    /**
-     * And only for it. bin holds the speedtest CLI - the one shipped in the
-     * image and the ones downloaded on first boot - which is the same reason the
-     * helper's own list leaves it modeless.
-     */
-    it("does not state it for the CLI directory as well", () => {
-        assert.doesNotMatch(dockerfile, /chmod\s+[0-7]{3,4}\s+[^\n]*\/myspeed\/bin\b/,
-            "bin is given the data directory's mode, which is a decision about secrets rather than about a downloaded executable");
-    });
-
-    /**
-     * The other half, on every start rather than at build time: `docker pull`
-     * replaces the image and leaves the volume, so a data directory initialised
-     * by an image older than the line above keeps its 0755 for ever and nothing
-     * is ever placed to notice.
-     *
-     * o-rwx rather than 700, for the reason install.sh gives at the same
-     * decision: what is mounted there may be a host directory whose group bits
-     * are the operator's, and a container that rewrote them on every restart
-     * would overrule that silently and repeatedly.
-     */
-    it("takes the world bits off a volume an older image left open", () => {
-        assert.match(entrypoint, /chmod o-rwx \/myspeed\/data\b/,
-            "a volume initialised by an older image carries 0755 through every upgrade, and the server's own helper never looks at a directory that exists");
-        assert.doesNotMatch(entrypoint, /chmod\s+[0-7]{3,4}\b/,
-            "a bind-mounted host directory is retightened to an absolute mode on every start, overruling whoever chose it");
-    });
-});

@@ -1,7 +1,8 @@
-import { describe, it } from "node:test";
+import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { execFileSync } from "node:child_process";
+import os from "node:os";
+import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -32,6 +33,45 @@ const noPosixShell = (() => {
         return false;
     } catch {
         return "no POSIX shell on PATH - install.sh is a Linux installer and this block runs a function from it";
+    }
+})();
+
+/**
+ * The directories the blocks below are run against, removed afterwards.
+ *
+ * Collected in one list rather than cleaned up per case, because a case that
+ * fails half way through still has to give its temporary tree back.
+ */
+const temporary = [];
+
+after(() => {
+    for (const dir of temporary) fs.rmSync(dir, {recursive: true, force: true});
+});
+
+/**
+ * Whether this machine lets an unprivileged process create a symlink.
+ *
+ * One block below builds a data directory of each shape install.sh distinguishes
+ * between, and two of those shapes are links. Windows refuses symlink creation
+ * unless the account holds SeCreateSymbolicLinkPrivilege or the machine is in
+ * developer mode, so on a contributor's box node answers EPERM and the block
+ * fails for a reason that has nothing to do with the script.
+ *
+ * Skipped there rather than failed, on the same terms as the shell check above:
+ * install.sh is a Linux installer and CI is Linux, so the block runs where it
+ * decides anything. The runner prints the reason, so a skip cannot be mistaken
+ * for a pass.
+ */
+const noSymlinks = (() => {
+    const probe = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-symlink-probe-"));
+
+    try {
+        fs.symlinkSync(path.join(probe, "target"), path.join(probe, "link"), "dir");
+        return false;
+    } catch {
+        return "this machine does not allow creating symlinks - install.sh is a Linux installer and this block builds two";
+    } finally {
+        fs.rmSync(probe, {recursive: true, force: true});
     }
 })();
 
@@ -521,12 +561,22 @@ describe("install.sh registers a service that is not root", () => {
 
         // Its three cases: a symlink, a directory that is not there yet, and one
         // that is.
+        //
+        // The elif is located by its whole condition rather than by the keyword,
+        // which is what the `[ -L ]` line above already does for the arm it
+        // opens. Anchored on `elif ` alone, the three arms are still sliced
+        // apart when the condition itself is wrong: inverting it to `[ -d ]`
+        // leaves every case below green while the script creates nothing at all
+        // on a fresh install and retightens a directory it merely found to 700 -
+        // which is the one thing the arm beneath it exists to refuse.
         const arms = () => {
             const decision = block();
-            const created = decision.search(/^elif /m);
+            const created = decision.search(/^elif \[ ! -d "\$INSTALLATION_PATH\/data" \]/m);
             const existing = decision.search(/^else$/m);
 
-            assert.ok(created !== -1 && existing > created,
+            assert.notEqual(created, -1,
+                "the arm that creates the data directory no longer asks whether it is missing, so it runs against one that is already there");
+            assert.ok(existing > created,
                 "the block no longer separates a data directory this script makes from one it finds already there");
 
             return {
@@ -590,9 +640,14 @@ describe("install.sh registers a service that is not root", () => {
          * And a data directory the operator moved elsewhere is not touched at
          * all. chmod follows a symlink, so a mode stated here lands on the far
          * end of it - a relocated data directory on another volume, whose mode
-         * was decided somewhere this script cannot see. docker-entrypoint.sh
-         * reaches the same conclusion about the volume it owns, which is what
-         * the -h on its chown is for.
+         * was decided somewhere this script cannot see, or a link planted under
+         * a compromise of the unprivileged account that writes this path.
+         *
+         * docker-entrypoint.sh's `chown -h` is not the precedent this used to
+         * cite. That -h is about the links the server can plant *inside* a
+         * volume the container does own; whether the root of the volume may
+         * itself be a link is a different question, and the container never
+         * asks it.
          */
         it("leaves a relocated one entirely alone", () => {
             const symlinked = arms().symlinked;
@@ -601,6 +656,57 @@ describe("install.sh registers a service that is not root", () => {
                 "a chmod runs as root through the symlink and lands on whatever the operator pointed data at");
             assert.doesNotMatch(symlinked, /\bmkdir\b/,
                 "the link's own target is created underneath it, or the mkdir fails and takes the install down with it");
+        });
+
+        /**
+         * But a link with nothing at the end of it is not a relocated data
+         * directory, and leaving it alone is not a decision that can be carried
+         * out. `[ -L ]` is true of a dangling link, so it took the arm above,
+         * collected the mild warning that its permissions were left as they were
+         * found, and the install ran on to its completion banner - after which
+         * the server's own folder helper throws on the first boot, under a unit
+         * this script writes with Restart=always. The arm had replaced a loud
+         * failure with a sentence presenting a boot-fatal shape as deliberate.
+         *
+         * Refusing is the safest honest answer, because nothing this script does
+         * can make that installation start: creating the target would be
+         * inventing a directory somewhere the operator's link points and this
+         * script cannot see, and removing the link would be deleting the only
+         * record of where their data was meant to live.
+         *
+         * The exit status is pinned the way the root guard's is: a bare `exit`
+         * carries the status of the echo that just printed the refusal, which is
+         * success, and a pipeline driving the install reads that as one.
+         */
+        it("refuses a link that points at nothing", () => {
+            const symlinked = arms().symlinked;
+
+            assert.match(symlinked, /\[ ! -e "\$INSTALLATION_PATH\/data" \]/,
+                "a dangling link is taken for a relocated data directory, and the install completes over a server that cannot boot");
+            assert.match(symlinked, /\bexit\s+[1-9]/,
+                "the refusal exits with the status of its own echo, i.e. success");
+            assert.match(symlinked, /readlink/,
+                "the refusal never names the target that is missing, which is the one thing the operator has to go on");
+        });
+
+        /**
+         * And for a link that does point somewhere, the warning has to say the
+         * whole of what is left as it was found.
+         *
+         * It said "permissions", which reads as the mode alone - and the mode is
+         * the half that matters least here. `chown -R` does not follow a symlink
+         * operand either (GNU's -R defaults to -P), so the handover a few lines
+         * below changes the link itself and never the directory at the far end:
+         * the service account is left unable to open storage.db, and the only
+         * thing that said so was a sentence about permissions.
+         */
+        it("names the ownership it leaves alone, and the account that needs it", () => {
+            const symlinked = arms().symlinked;
+
+            assert.match(symlinked, /ownership/,
+                "the warning names only the mode, while the chown below it silently misses the target as well");
+            assert.match(symlinked, /\$SERVICE_ACCOUNT\b/,
+                "the operator is not told which account has to be able to read and write the directory they pointed data at");
         });
 
         it("decides all of it whichever account the service ends up running as", () => {
@@ -616,6 +722,100 @@ describe("install.sh registers a service that is not root", () => {
             assert.notEqual(stated, -1, "nothing states the mode of the data directory");
             assert.ok(stated < branch,
                 "the mode is stated inside the service-account branch only, so the fallback install leaves storage.db world-readable");
+        });
+    });
+
+    /**
+     * And which arm it actually takes, run rather than read.
+     *
+     * Reading says a refusal is written down somewhere in the symlink arm. It
+     * does not say a dangling link reaches it: the conditions dispatching
+     * between "a link to somewhere", "a link to nothing" and "no directory yet"
+     * are three `[` tests, and every assertion above is satisfied whichever way
+     * round they are - which is precisely how the missing `[ ! -d ]` pin went
+     * unnoticed until a mutation found it.
+     */
+    describe("which arm a data directory of each shape reaches",
+        {skip: noPosixShell || noSymlinks}, () => {
+
+        // The whole three-armed block including the `fi` that closes it, so what
+        // runs here is what the installer runs.
+        const decision = () => {
+            const at = source.indexOf('if [ -L "$INSTALLATION_PATH/data" ]');
+            assert.notEqual(at, -1, "nothing asks whether data is a symlink");
+
+            const end = source.indexOf("\nfi\n", at);
+            assert.notEqual(end, -1, "the block deciding the data directory's mode is never closed");
+
+            return source.slice(at, end + "\nfi".length);
+        };
+
+        /**
+         * Against a real installation directory this builds, with the colours
+         * emptied and the delay stubbed out - the arms pause two seconds so an
+         * operator reads the warning, which is two seconds a case here and
+         * nothing to do with what is being asserted.
+         *
+         * SERVICE_ACCOUNT is bound because the block reads it, and the script
+         * settles it well above this point.
+         */
+        const decide = (build) => {
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-datalink-"));
+            temporary.push(dir);
+            build(dir);
+
+            const script = [
+                "sleep() { :; }",
+                'RED=""; NORMAL=""; YELLOW=""',
+                'SERVICE_ACCOUNT="myspeed"',
+                'INSTALLATION_PATH="$TARGET"',
+                decision()
+            ].join("\n");
+
+            const run = spawnSync("sh", ["-c", script], {
+                encoding: "utf8",
+                timeout: WALK_TIMEOUT,
+                env: {...process.env, TARGET: dir}
+            });
+
+            return {status: run.status, output: `${run.stdout ?? ""}${run.stderr ?? ""}`, dir};
+        };
+
+        const link = (dir, target) => {
+            fs.symlinkSync(path.join(dir, target), path.join(dir, "data"), "dir");
+        };
+
+        it("stops the install when the link points at nothing", () => {
+            const {status, output} = decide((dir) => link(dir, "elsewhere"));
+
+            assert.notEqual(status, 0,
+                "a dangling data link runs on to the completion banner, and the server then throws on its first boot under Restart=always");
+            assert.match(output, /elsewhere/,
+                "the refusal does not name the target that is missing");
+        });
+
+        it("leaves a link that points somewhere exactly as it found it", () => {
+            const {status, output, dir} = decide((target) => {
+                fs.mkdirSync(path.join(target, "elsewhere"));
+                link(target, "elsewhere");
+            });
+
+            assert.equal(status, 0, "a relocated data directory stops an install that has nothing wrong with it");
+            assert.match(output, /Warning/, "nothing tells the operator what was left as it was found");
+            assert.ok(fs.lstatSync(path.join(dir, "data")).isSymbolicLink(),
+                "the link itself was replaced by something else");
+            assert.deepEqual(fs.readdirSync(path.join(dir, "elsewhere")), [],
+                "something was created inside the directory the operator pointed data at");
+        });
+
+        // And the ordinary path is still the ordinary path: neither refusal
+        // reaches an installation that simply has no data directory yet.
+        it("creates one that is not there at all", () => {
+            const {status, dir} = decide(() => {});
+
+            assert.equal(status, 0, "a fresh install is refused");
+            assert.ok(fs.statSync(path.join(dir, "data")).isDirectory(),
+                "the data directory is never created, so the server has nowhere to write its database");
         });
     });
 

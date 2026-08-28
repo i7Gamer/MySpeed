@@ -410,13 +410,33 @@ fi
 # distinction the installation root's own chmod draws above. Hoisted here as a
 # bare mkdir and an unconditional chmod, it answered both with 700.
 #
-# A symlink is left entirely alone. chmod follows one, so a mode stated here
-# lands on the far end of it: an operator who moved data onto another volume
-# decided that directory's mode somewhere this script cannot see, and the server
-# writes this path as an unprivileged account, so a link planted under a
-# compromise is the other thing that can be waiting at the end of it.
-# docker-entrypoint.sh reaches the same conclusion about the volume it owns,
-# which is what the -h on its chown is for.
+# A symlink that points somewhere is left entirely alone. chmod follows one, so
+# a mode stated here lands on the far end of it: an operator who moved data onto
+# another volume decided that directory's mode somewhere this script cannot see,
+# and the server writes this path as an unprivileged account, so a link planted
+# under a compromise is the other thing that can be waiting at the end of it.
+#
+# docker-entrypoint.sh's `chown -h` is not the precedent this used to cite. That
+# -h is about the links the server can plant *inside* a volume the container does
+# own; whether the root of the volume may itself be a link is a different
+# question, and the container never asks it.
+#
+# What is left alone is said in full, because it is more than the mode. `chown -R`
+# does not follow a symlink operand either - GNU's -R defaults to -P - so the
+# handover below changes the link itself and never the directory at the far end.
+# An operator told only that "permissions are left as they were found" is not
+# told the thing that stops the server booting, which is that the account named
+# in the unit cannot open a database in a directory it does not own.
+#
+# And a link with nothing at the end of it is refused rather than warned about.
+# `[ -L ]` is true of a dangling link, so it collected the mild warning and the
+# install ran on to its completion banner - after which the server's own folder
+# helper throws on the first boot, under the unit written below with
+# Restart=always. That is a boot-fatal shape presented as a deliberate one.
+# Nothing this script can do repairs it: creating the target would invent a
+# directory somewhere the operator's link points and this script cannot see, and
+# removing the link would delete the only record of where their data was meant to
+# live. So it stops, and names the target that is missing.
 #
 # A directory this script creates gets 700, checked the way the installation
 # root's mkdir is: `[ ! -d ]` is also true of a path already taken by a regular
@@ -432,7 +452,16 @@ fi
 # the only moment anything is placed to notice. `o-rwx` is the part of the mode
 # nobody chooses on purpose.
 if [ -L "$INSTALLATION_PATH/data" ]; then
-    echo -e "$YELLOW⚠ Warning: $NORMAL $INSTALLATION_PATH/data is a link, so its permissions are left as they were found."
+    if [ ! -e "$INSTALLATION_PATH/data" ]; then
+        echo -e "$RED✗ ABORTED"
+        echo -e "$NORMAL $INSTALLATION_PATH/data is a link to $(readlink "$INSTALLATION_PATH/data"), which does not exist."
+        echo -e "$NORMAL MySpeed cannot create its database there, so it would fail on every start."
+        echo -e "$NORMAL Mount that directory, point the link at one that exists, or remove the link, and run this installer again."
+        exit 1
+    fi
+
+    echo -e "$YELLOW⚠ Warning: $NORMAL $INSTALLATION_PATH/data is a link, so neither its mode nor its ownership is changed."
+    echo -e "$NORMAL The directory it points at must be readable and writable by \"$SERVICE_ACCOUNT\", or MySpeed cannot open its database."
     sleep 2
 elif [ ! -d "$INSTALLATION_PATH/data" ]; then
     if ! mkdir -p "$INSTALLATION_PATH/data"; then
