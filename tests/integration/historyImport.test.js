@@ -84,6 +84,48 @@ describe("importing a history", () => {
     });
 
     /**
+     * A negative quality figure is not a reading, wherever the file got it.
+     *
+     * The live write path already says so: every nullable figure goes through
+     * usableFigure and every byte count through byteCount, so a run cannot
+     * store a negative jitter. The import checked only "is a finite number",
+     * which admits the -1 placeholders a hand-edited or third-party file
+     * carries - and a negative byte count *subtracts* from the data-used
+     * total, while a negative jitter draws a dip below zero on the chart.
+     *
+     * The required three stay untouched: -1 across ping, download and upload
+     * is how a failed run is stored, and the import must keep restoring those.
+     */
+    it("stores a negative quality figure as unmeasured, the way a run would", async () => {
+        await testModel.destroy({where: {}});
+
+        const {status} = await importHistory([{...row(0),
+            jitter: -1, packetLoss: -2, downloadLatency: -3, uploadLatency: -4,
+            bytesDownloaded: -1_000_000, bytesUploaded: -5}]);
+
+        assert.equal(status, 200);
+
+        const [stored] = await testModel.findAll();
+        for (const column of ["jitter", "packetLoss", "downloadLatency", "uploadLatency",
+            "bytesDownloaded", "bytesUploaded"])
+            assert.equal(stored[column], null,
+                `${column} kept a negative figure the live path would have refused`);
+    });
+
+    it("still restores a failed run's -1 placeholders", async () => {
+        await testModel.destroy({where: {}});
+
+        const {status} = await importHistory([{...row(0),
+            ping: -1, download: -1, upload: -1, error: "no route to host"}]);
+
+        assert.equal(status, 200);
+
+        const [stored] = await testModel.findAll();
+        assert.equal(stored.ping, -1, "the failure placeholder was rewritten");
+        assert.equal(stored.error, "no route to host");
+    });
+
+    /**
      * A row the database itself refuses must not take the rest down with it.
      *
      * Everything the payload can get wrong is caught by the checks above the

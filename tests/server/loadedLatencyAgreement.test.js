@@ -76,4 +76,27 @@ describe("the two ways the added latency is worked out", () => {
         assert.deepEqual(trend.map((point) => point.increase),
             entries.map((entry) => bufferbloat(entry).increase));
     });
+
+    /**
+     * And they agree that a fabricated idle ping is no baseline. 0 is
+     * UNMEASURED_LATENCY - the sentinel a successful run stores when nobody
+     * took the latency, and the value the INTEGER column of migration 0012's
+     * day rounded a sub-half-millisecond ping down to. Judged as a real 0 ms,
+     * the whole loaded latency reads as *added* latency, and a line that was
+     * fine grades F. The statistics skip the same zero everywhere else -
+     * withPing, the series, the hourly buckets - so this was the one reader
+     * left believing it.
+     */
+    it("agrees that a run whose idle ping was never measured has no figure", () => {
+        const entry = at("2026-08-07T01:00:00.000Z",
+            {ping: 0, downloadLatency: 90, uploadLatency: 20});
+
+        assert.equal(bufferbloat(entry), null,
+            "the client graded a bufferbloat figure off a ping nobody measured");
+
+        const {loadedLatency} = buildStatistics([entry], DAY).consistency;
+        assert.equal(loadedLatency.increase, null,
+            "the server averaged a figure computed off a ping nobody measured");
+        assert.deepEqual(loadedLatency.trend, []);
+    });
 });

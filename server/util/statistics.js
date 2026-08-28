@@ -1,6 +1,6 @@
 import { mapFixed, mapRounded } from './helpers.js';
 import { localHourAt, serverZone, zoneFromOffset } from './timezone.js';
-import { isFailedTest, isMeasuredLatency, isSuccessfulTest } from './testOutcome.js';
+import { isFailedTest, isMeasuredLatency, isSuccessfulTest, usableFigure } from './testOutcome.js';
 
 export const TARGET_CHART_POINTS = 300;
 
@@ -186,6 +186,12 @@ const loadedIncrease = (entry) => {
     for (const value of [ping, downloadLatency, uploadLatency])
         if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
 
+    // A fabricated idle ping is no baseline: 0 is UNMEASURED_LATENCY, and
+    // subtracted as a real 0 ms the whole loaded latency reads as *added*
+    // latency - an F grade for a line that was fine. The same zero every
+    // other reader in this file already skips.
+    if (!isMeasuredLatency(ping)) return null;
+
     return Math.max(0, round(Math.max(downloadLatency, uploadLatency) - ping, INCREASE_DECIMALS));
 };
 
@@ -266,14 +272,19 @@ const fullSeries = (sorted) => ({
         // nought - the same instance answering one question two ways.
         ping: sorted.map(entry =>
             isSuccessfulTest(entry) && isMeasuredLatency(entry.ping) ? entry.ping : null),
-        jitter: sorted.map(entry => isSuccessfulTest(entry) ? entry.jitter : null),
+        // Through usableFigure, the same reading the live write gives these
+        // columns: a history imported before the import refused negatives can
+        // hold -1 placeholders, and passed through they drew a jitter dipping
+        // below zero on a chart whose summary skipped the same row.
+        jitter: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.jitter) : null),
         download: sorted.map(entry => isSuccessfulTest(entry) ? entry.download : null),
         upload: sorted.map(entry => isSuccessfulTest(entry) ? entry.upload : null),
         time: sorted.map(entry => isSuccessfulTest(entry) ? entry.time : null),
-        // Null where unmeasured - a gap in the line, like jitter. The ?? guards
-        // rows from before the columns existed, which have no key at all.
-        downloadLatency: sorted.map(entry => isSuccessfulTest(entry) ? entry.downloadLatency ?? null : null),
-        uploadLatency: sorted.map(entry => isSuccessfulTest(entry) ? entry.uploadLatency ?? null : null)
+        // Null where unmeasured - a gap in the line, like jitter. usableFigure
+        // answers null for the absent key of a row from before the columns
+        // existed, and for an imported negative alike.
+        downloadLatency: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.downloadLatency) : null),
+        uploadLatency: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.uploadLatency) : null)
     }
 });
 
@@ -360,11 +371,15 @@ const transferTotals = (entries) => {
     let download = null;
     let upload = null;
 
+    // Non-negative as well as numeric: a negative byte count is not traffic,
+    // and summed as bytes each one *subtracts* from the total. The live path
+    // cannot store one - byteCount refuses it - but a history imported before
+    // the import learned the same rule can hold -1 placeholders.
+    const moved = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+
     for (const entry of entries) {
-        if (typeof entry.bytesDownloaded === "number" && Number.isFinite(entry.bytesDownloaded))
-            download = (download ?? 0) + entry.bytesDownloaded;
-        if (typeof entry.bytesUploaded === "number" && Number.isFinite(entry.bytesUploaded))
-            upload = (upload ?? 0) + entry.bytesUploaded;
+        if (moved(entry.bytesDownloaded)) download = (download ?? 0) + entry.bytesDownloaded;
+        if (moved(entry.bytesUploaded)) upload = (upload ?? 0) + entry.bytesUploaded;
     }
 
     return {

@@ -43,6 +43,18 @@ const isImportableNumber = (value) =>
     value === null || value === undefined || (typeof value === "number" && Number.isFinite(value));
 
 /**
+ * The nullable figures a run stores through usableFigure and byteCount - the
+ * ones a negative can never legitimately reach. The import mirrors the same
+ * rule: a hand-edited or third-party file carrying -1 placeholders in these
+ * columns stores them as unmeasured, the way the run that could not measure
+ * them would have. The required three are deliberately absent - -1 across
+ * ping, download and upload is how a failed run is stored, and the import has
+ * to keep restoring those.
+ */
+const NON_NEGATIVE_COLUMNS = ["jitter", "packetLoss", "downloadLatency", "uploadLatency",
+    "bytesDownloaded", "bytesUploaded"];
+
+/**
  * Records a completed - or failed - speedtest and returns its id.
  *
  * Named rather than positional: this took eleven parameters, and its caller
@@ -409,6 +421,12 @@ export const importTests = async (data) => {
         // backup, and the restore then silently discards exactly the
         // overlapping week. Left to the database, nothing collides.
         const {id, targetId, targetName, ...row} = entry;
+
+        // As unmeasured, not as an error: the row is the history somebody is
+        // restoring, and one poisoned figure must not cost the measurements
+        // beside it.
+        for (const column of NON_NEGATIVE_COLUMNS)
+            if (typeof row[column] === "number" && row[column] < 0) row[column] = null;
 
         // The file's targetId does not go through either, and it is dropped
         // rather than trusted: it is an id of the instance that wrote the file,

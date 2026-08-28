@@ -993,6 +993,51 @@ describe("data used", () => {
 
         assert.deepEqual(stats.dataUsed, {download: 1200, upload: null, total: 1200});
     });
+
+    /**
+     * A negative byte count is not traffic. The live path cannot store one -
+     * byteCount refuses it - but a history imported before the import learned
+     * the same rule can hold -1 placeholders, and summed as bytes each one
+     * *subtracts* from the total the panel prints as what the testing cost.
+     */
+    it("keeps a negative placeholder out of the total", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {bytesDownloaded: -1, bytesUploaded: -1}),
+            at("2026-08-07T02:00:00.000Z", {bytesDownloaded: 200, bytesUploaded: 50})
+        ], DAY);
+
+        assert.deepEqual(stats.dataUsed, {download: 200, upload: 50, total: 250});
+    });
+});
+
+/**
+ * What the full-resolution series draws for a quality figure nothing measured.
+ *
+ * The live path stores null for those - usableFigure - but a history imported
+ * before the import learned the same rule can hold the -1 placeholders, and
+ * the series passed them through: a jitter dipping to minus one millisecond,
+ * drawn as a reading on a chart whose summary above skipped the same row.
+ */
+describe("an imported negative quality figure on the chart", () => {
+    it("is a gap, the way an unmeasured one is", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {jitter: -1, downloadLatency: -3, uploadLatency: -2})
+        ], DAY);
+
+        assert.deepEqual(stats.data.jitter, [null]);
+        assert.deepEqual(stats.data.downloadLatency, [null]);
+        assert.deepEqual(stats.data.uploadLatency, [null]);
+    });
+
+    it("leaves the measured figures beside it alone", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {jitter: 2.5, downloadLatency: 41, uploadLatency: 60})
+        ], DAY);
+
+        assert.deepEqual(stats.data.jitter, [2.5]);
+        assert.deepEqual(stats.data.downloadLatency, [41]);
+        assert.deepEqual(stats.data.uploadLatency, [60]);
+    });
 });
 
 /**

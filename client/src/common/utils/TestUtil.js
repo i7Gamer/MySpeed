@@ -260,6 +260,14 @@ export function latencyIncrease(loaded, ping) {
     for (const value of [loaded, ping])
         if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
 
+    // A fabricated idle ping is no baseline. 0 is the sentinel a successful
+    // run stores when nobody measured the latency (the server's
+    // UNMEASURED_LATENCY, which this bundle cannot import), so subtracted as
+    // a real 0 ms the whole loaded latency reads as *added* latency - an F
+    // grade for a line that was fine. The server's loadedIncrease skips the
+    // same zero, and loadedLatencyAgreement.test.js holds the two together.
+    if (ping === 0) return null;
+
     return Math.max(0, parseFloat((loaded - ping).toFixed(INCREASE_DECIMALS)));
 }
 
