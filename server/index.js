@@ -48,6 +48,11 @@ const RETENTION_SWEEP_INTERVAL = 60000;
 const RESET_NOTHING_TO_DO_EXIT = 113;
 const RESET_FAILED_EXIT = 114;
 
+// The two start-up codes the comment above names: a database that would not open
+// and a start-up that did not finish. A failed HTTP bind is the second of these.
+const DATABASE_OPEN_FAILED_EXIT = 111;
+const STARTUP_FAILED_EXIT = 112;
+
 const port = process.env.SERVER_PORT || 5216;
 
 /**
@@ -233,7 +238,21 @@ const run = async () => {
 
     await announceAccess();
 
-    listeners.push(app.listen(port, () => console.log(`Server listening on port ${port}`)));
+    const httpServer = app.listen(port, () => console.log(`Server listening on port ${port}`));
+
+    // The HTTP listener is the instance's only way in on a plain-HTTP install,
+    // so a bind that fails - the port already held by another copy of the server
+    // is the realistic cause - is a start-up failure, reported and exited the
+    // way run()'s own catch does. Left to the uncaughtException handler instead,
+    // which is for states that genuinely cannot be reasoned about, this benign
+    // and expected clash was logged as a fatal fault under a generic exit 1. The
+    // https listener below has carried the same handler all along.
+    httpServer.on("error", (err) => {
+        console.error(`The server could not listen on port ${port}: ${err.message}`);
+        process.exit(STARTUP_FAILED_EXIT);
+    });
+
+    listeners.push(httpServer);
 
     if (hasSSLCerts()) {
         try {
@@ -293,7 +312,7 @@ db.authenticate().then(() => {
         // operator gets before the process leaves - upstream #1549 is 138
         // restarts on exactly that, ended by deleting the database.
         console.error("The server could not finish starting up: " + describeError(err));
-        process.exit(112);
+        process.exit(STARTUP_FAILED_EXIT);
     });
 }).catch(err => {
     console.error("Could not open the database: " + err.message);
@@ -304,5 +323,5 @@ db.authenticate().then(() => {
     if (process.env.DB_TYPE !== "mysql")
         console.error("Check that the data directory is writable by the user the server runs as.");
 
-    process.exit(111);
+    process.exit(DATABASE_OPEN_FAILED_EXIT);
 });
