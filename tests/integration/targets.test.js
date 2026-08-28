@@ -346,6 +346,33 @@ describe("PATCH /api/targets/:id", () => {
     });
 
     /**
+     * Every target exactly once, or nothing is renumbered. A partial list
+     * renumbers the ids it names from zero and leaves the rest on their old
+     * sortOrder, so an omitted target's order collides with a renumbered one and
+     * the list renders in an order nobody chose - and sortOrder is identity, not
+     * only presentation (see the rewrite test below). The UI always sends the
+     * whole sequence, so a request that is not it is refused rather than acted on.
+     */
+    it("refuses an order that omits a target", async () => {
+        const {body: {id: first}} = await put({name: "first", provider: "ookla"});
+        const {body: {id: second}} = await put({name: "second", provider: "cloudflare"});
+        await put({name: "third", provider: "libre"});
+
+        assert.equal((await patch("/order", {ids: [second, first]})).status, 400,
+            "a two-of-three order was accepted, colliding the omitted target's sortOrder");
+        assert.deepEqual((await targets.listAll()).map((row) => row.name),
+            ["first", "second", "third"], "the list was renumbered by a partial order");
+    });
+
+    it("refuses an order that repeats a target", async () => {
+        const {body: {id: first}} = await put({name: "first", provider: "ookla"});
+        await put({name: "second", provider: "cloudflare"});
+
+        assert.equal((await patch("/order", {ids: [first, first]})).status, 400,
+            "a duplicated id was accepted, leaving the other target unranked");
+    });
+
+    /**
      * All of the order or none of it. The rewrite was one UPDATE per id with
      * nothing around them, so a failure partway left half the list renumbered
      * - an order the operator never asked for, decided by where the loop

@@ -50,7 +50,14 @@ app.patch("/order", password(false), previewReadOnly, async (req, res) => {
     if (!Array.isArray(ids) || ids.some((id) => !ID.test(String(id))))
         return res.status(400).json({message: "You need to provide the target ids in order"});
 
-    await targets.reorder(ids.map(Number));
+    const numeric = ids.map(Number);
+
+    // Every target exactly once, or the renumbering collides the ones it does
+    // not name - see coversAll. The reorder UI always sends the whole sequence.
+    if (!await targets.coversAll(numeric))
+        return res.status(400).json({message: "The order must list every target exactly once"});
+
+    await targets.reorder(numeric);
 
     res.json({message: "The order has been updated"});
 });

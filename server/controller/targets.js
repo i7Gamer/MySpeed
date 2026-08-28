@@ -518,6 +518,27 @@ export const nameTaken = async (name, excludeId = undefined) =>
 export const deleteTarget = async (id) => await targets.destroy({where: {id}});
 
 /**
+ * Whether an id sequence is every target exactly once - the only thing reorder
+ * may safely act on.
+ *
+ * A short list leaves the targets it omits on their old sortOrder, colliding
+ * them with the ones it renumbers from zero; a duplicate leaves a target
+ * unranked; a foreign id renumbers nothing but stands in for a real one that is
+ * then missing. All three end in an order nobody chose, and since sortOrder is
+ * the identity reorder's own docblock guards, the door is where they are
+ * refused. The length guards a short or padded list, the Set size a duplicate,
+ * and the membership a foreign id.
+ */
+export const coversAll = async (ids) => {
+    const existing = await targets.findAll({attributes: ["id"]});
+    const provided = new Set(ids);
+
+    return provided.size === ids.length
+        && ids.length === existing.length
+        && existing.every((row) => provided.has(row.id));
+};
+
+/**
  * Rewrites the round order to the given id sequence; unknown ids are ignored.
  *
  * All of it or none of it: one UPDATE per id with nothing around them left
