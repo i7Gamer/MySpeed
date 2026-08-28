@@ -101,6 +101,25 @@ describe("the speedtest list supersedes rather than drops a query", () => {
             "an in-flight page still settles into a list a replacing refresh has already swapped");
     });
 
+    /**
+     * And the retry a failed page arms has to ask about the same swap. The
+     * timer body re-checked only requestGeneration - which a replacing refresh
+     * deliberately does not bump - so a refresh landing inside the backoff
+     * window had its finished list told it had more pages: a spinner in place
+     * of "no more tests", and one page request against a query that answers
+     * nothing. The comment beside the timer records closing exactly this
+     * fault; it had come back in through the other counter.
+     */
+    it("keeps a stale retry from reviving paging on a swapped list", () => {
+        const loadMore = context.slice(context.indexOf("const loadMoreTests"),
+            context.indexOf("const refreshTests"));
+        const timer = loadMore.slice(loadMore.indexOf("retryTimerRef.current = setTimeout"));
+
+        assert.notEqual(timer.indexOf("setTimeout"), -1, "the failed page no longer arms a retry");
+        assert.match(timer, /replaceGeneration === replaceGenerationRef\.current/,
+            "the retry timer re-enables paging on a list a refresh has already finished");
+    });
+
     it("moves the replace counter only on the refresh's swap branch", () => {
         const refresh = context.slice(context.indexOf("const refreshTests"),
             context.indexOf("const deleteTest"));

@@ -227,8 +227,14 @@ export const SpeedtestProvider = (props) => {
             // a refresh re-enabled paging without bumping it, firing early and
             // shortening the very backoff this is here to provide.
             clearTimeout(retryTimerRef.current);
+            // Both counters, not one: a replacing refresh deliberately leaves
+            // requestGeneration alone, so a timer armed before the swap still
+            // passed this check and told the finished new list it had more
+            // pages - the very re-enabling the paragraph above records closing,
+            // back through the other counter.
             retryTimerRef.current = setTimeout(() => {
-                if (generation === requestGeneration.current) setHasMore(true);
+                if (generation === requestGeneration.current
+                    && replaceGeneration === replaceGenerationRef.current) setHasMore(true);
             }, RETRY_AFTER_ERROR_MS);
         } finally {
             // A fresh query took the flags over while this page was in flight,
