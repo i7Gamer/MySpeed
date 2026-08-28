@@ -453,6 +453,50 @@ describe("a round of several targets", () => {
         for (const topic of configTopics()) assert.match(topic, /_t7\/config$/);
     });
 
+    /**
+     * And announces them again when the member is renamed. The discovery
+     * payload embeds the member's name - "LAN Box Download" is what the entity
+     * is called - and the announcement is keyed by id alone, so a rename left
+     * the retained config carrying the old name until the process restarted:
+     * the in-memory set is deliberate, and a restart was the only thing that
+     * cleared it.
+     */
+    it("announces a renamed member again, under its new name", async () => {
+        await fire("testFinished", config({discovery: true, topic: "myspeed/renamed"}), SECONDARY);
+        await settled();
+        seen = [];
+
+        await fire("testFinished", config({discovery: true, topic: "myspeed/renamed"}),
+            {...SECONDARY, targetName: "Fibre"});
+        await settled();
+
+        assert.ok(configTopics().length > 0,
+            "Home Assistant keeps the old name until MySpeed restarts");
+
+        // The payload sits behind the topic in the PUBLISH body; reading the
+        // whole body is enough to see whose name the config now carries.
+        const bodies = seen.filter((packet) => packet.type === PUBLISH)
+            .map((packet) => packet.body.toString())
+            .filter((body) => body.includes("/config"));
+
+        for (const body of bodies)
+            assert.match(body, /Fibre/, "the re-announcement still carries the old name");
+    });
+
+    // The other way round it stays quiet: the same name arriving again is the
+    // retained config the broker already holds.
+    it("does not re-announce a member whose name has not changed", async () => {
+        await fire("testFinished", config({discovery: true, topic: "myspeed/samename"}), SECONDARY);
+        await settled();
+        seen = [];
+
+        await fire("testFinished", config({discovery: true, topic: "myspeed/samename"}), SECONDARY);
+        await settled();
+
+        assert.deepEqual(configTopics(), [],
+            "the announcement was repeated for a broker that already has it");
+    });
+
     // The round is what says which member is primary - the payload is the one
     // thing a broker-side module can read without a database of its own.
     it("is told by the round which member the base topics speak for", () => {

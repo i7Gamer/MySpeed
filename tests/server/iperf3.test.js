@@ -415,6 +415,43 @@ describe("the latency the runner measures for it", () => {
     });
 
     /**
+     * A pinned interface pins the address family too. `localAddress` alone
+     * lets the resolver pick either family for a dual-stack hostname, and a
+     * bind of an IPv4 address onto an IPv6 connection is refused outright -
+     * `net.connect({host: "::1", localAddress: "127.0.0.1"})` answers `bind
+     * EINVAL` - so a dual-stack endpoint measured over a pinned IPv4 interface
+     * dropped every sample and stored 0 ms latency for the life of the target.
+     */
+    it("resolves the endpoint in the pinned interface's family", async () => {
+        const options = [];
+        const capture = (received) => {
+            options.push(received);
+            return socketThat((socket) => socket.emit("connect"))();
+        };
+
+        await sampleHandshake({host: "h", port: 1, localAddress: "127.0.0.1", connect: capture});
+        await sampleHandshake({host: "h", port: 1, localAddress: "2001:db8::7", connect: capture});
+
+        assert.equal(options[0].family, 4,
+            "a dual-stack hostname can resolve to IPv6 and fail the IPv4 bind");
+        assert.equal(options[1].family, 6);
+    });
+
+    // Unpinned, the resolver stays free to pick - Happy Eyeballs and all.
+    it("leaves the family open when no interface is pinned", async () => {
+        const options = [];
+        const capture = (received) => {
+            options.push(received);
+            return socketThat((socket) => socket.emit("connect"))();
+        };
+
+        await sampleHandshake({host: "h", port: 1, connect: capture});
+
+        assert.equal("family" in options[0], false);
+        assert.equal("localAddress" in options[0], false);
+    });
+
+    /**
      * A sample that failed is dropped rather than recorded. Recording the
      * timeout as the reading would put a made-up two thousand milliseconds
      * into the figure, which is worse than measuring one sample fewer.

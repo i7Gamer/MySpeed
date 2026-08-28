@@ -82,8 +82,12 @@ const announcementsFor = (c, target = null) => {
 
     const prefix = c.discovery_prefix || DEFAULT_DISCOVERY_PREFIX;
     // A secondary member's sensors are announced beside its own first result,
-    // keyed apart from the base set so each is made exactly once.
-    const key = `${prefix}|${c.topic}|${target ? target.id : "base"}`;
+    // keyed apart from the base set so each is made exactly once. The name is
+    // part of the key because it is part of the payload - "LAN Box Download"
+    // is what the entity is called - and keyed by id alone a rename left the
+    // retained config carrying the old name until the process restarted,
+    // which is the only thing that clears the in-memory set.
+    const key = `${prefix}|${c.topic}|${target ? `${target.id}|${target.name}` : "base"}`;
 
     if (announced.has(key)) return null;
 

@@ -106,7 +106,16 @@ export const sampleHandshake = ({host, port, localAddress, timeoutMs = LATENCY_T
     // localAddress binds the measurement to the interface the transfer will
     // use, the way every provider's arguments do - without it a machine with
     // more than one route can time a path the test never touches.
-    const socket = connect({host, port, ...(localAddress ? {localAddress} : {})});
+    //
+    // The family travels with it, because the bind pins it anyway: left open,
+    // the resolver may pick the other family for a dual-stack hostname, and a
+    // bind of an IPv4 address onto an IPv6 connection is refused outright
+    // (`bind EINVAL`) - so a dual-stack endpoint measured over a pinned IPv4
+    // interface dropped every sample and stored 0 ms for the life of the
+    // target. Unpinned, the resolver stays free.
+    const socket = connect({host, port, ...(localAddress
+        ? {localAddress, family: net.isIP(localAddress) === 6 ? 6 : 4}
+        : {})});
 
     socket.setTimeout?.(timeoutMs, () => {
         socket.destroy();
