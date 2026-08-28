@@ -82,6 +82,13 @@ export const Dialog = ({open, onClose, className, disableClose, label, children}
         if (open && !visible) {
             setVisible(true);
             isClosingRef.current = false;
+        } else if (open && visible && isClosingRef.current) {
+            // Reopened while still fading out: the box is up but mid-close, so
+            // drop the closing state and strip the hidden classes it was given,
+            // leaving it recoverable rather than stuck behind its own fade.
+            isClosingRef.current = false;
+            areaRef.current?.classList.remove("dialog-area-hidden");
+            dialogRef.current?.classList.remove("dialog-hidden");
         } else if (!open && visible && !isClosingRef.current) {
             isClosingRef.current = true;
             areaRef.current?.classList.add("dialog-area-hidden");
@@ -104,7 +111,13 @@ export const Dialog = ({open, onClose, className, disableClose, label, children}
     }, []);
 
     const handleAnimationEnd = (e) => {
-        if (e.animationName === "fadeOut") {
+        // A child element's own fadeOut bubbles up to this handler; only the
+        // dialog box's own fade ends the close.
+        if (e.target !== dialogRef.current) return;
+
+        // And a reopen within the 300ms fade has already turned `open` back on -
+        // finishing the close now would unmount the dialog the reader reopened.
+        if (e.animationName === "fadeOut" && !open) {
             setVisible(false);
             isClosingRef.current = false;
             onClose?.();

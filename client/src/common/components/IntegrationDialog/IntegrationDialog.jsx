@@ -235,15 +235,21 @@ export const IntegrationDialog = ({open, onClose}) => {
     const wrapperRef = useRef(null);
     const owedFocus = useRef(false);
 
+    // Functional updaters throughout: each of these runs after an await - the
+    // add alongside a save already in flight, the remove after deleteRequest,
+    // the update after putRequest resolves - so the `active` captured at render
+    // is a snapshot a second overlapping edit has already moved past. Reading it
+    // instead of the live list wrote one edit's stale copy back over another:
+    // deleting A then B before A returned brought A back, and adding a card
+    // while a save was in flight vanished when that save's updater landed. The
+    // `renderable.length` read stays render-time on purpose - see the effect.
     const addIntegration = (item) => {
-        // Only the first, which is the add that replaces the menu it was made
-        // in - see the effect below.
         owedFocus.current = renderable.length === 0;
-        setActive([...active, {uuid: uuid(), name: item.key, data: {}, isNew: true}]);
+        setActive(prev => [...prev, {uuid: uuid(), name: item.key, data: {}, isNew: true}]);
     };
 
-    const removeIntegration = (id) => setActive(active.filter(item => item.uuid !== id));
-    const updateIntegration = (id, updates) => setActive(active.map(item => item.uuid === id ? {...item, ...updates} : item));
+    const removeIntegration = (id) => setActive(prev => prev.filter(item => item.uuid !== id));
+    const updateIntegration = (id, updates) => setActive(prev => prev.map(item => item.uuid === id ? {...item, ...updates} : item));
 
     /*
      * Focus back on the create menu, when the choice replaced the one it was

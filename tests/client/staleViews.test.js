@@ -81,6 +81,41 @@ describe("the speedtest list supersedes rather than drops a query", () => {
         assert.match(effect.slice(0, effect.indexOf("loadInitialTests();")), /setSpeedtests\(\[]\)/,
             "the switch is noticed but the rows are kept anyway");
     });
+
+    /**
+     * A page fetch and a refresh share the request generation - the refresh
+     * reads it without bumping, because a poll is not a new query, only more of
+     * the one on screen. But when the refresh *replaces* the list wholesale (see
+     * applyRefresh's `replaced`), a loadMoreTests page already in flight passes
+     * its generation guard and folds a now-swapped-away history back in, then
+     * rewinds the cursor into that dead set. So the replacement carries a second
+     * counter, moved only on that branch and rechecked by the page load - the
+     * generation itself is left alone, so the loads keep owning their loading
+     * flags.
+     */
+    it("makes a page load recheck a replace counter before it folds a page in", () => {
+        const loadMore = context.slice(context.indexOf("const loadMoreTests"),
+            context.indexOf("const refreshTests"));
+
+        assert.match(loadMore, /replaceGeneration !== replaceGenerationRef\.current/,
+            "an in-flight page still settles into a list a replacing refresh has already swapped");
+    });
+
+    it("moves the replace counter only on the refresh's swap branch", () => {
+        const refresh = context.slice(context.indexOf("const refreshTests"),
+            context.indexOf("const deleteTest"));
+
+        // The merge path returns before the wholesale-swap branch, so the bump
+        // belongs after that return and nowhere before it.
+        const mergeReturn = refresh.indexOf("return;", refresh.indexOf("if (!replaced)"));
+        assert.notEqual(mergeReturn, -1, "the merge path no longer returns before the swap");
+
+        assert.match(refresh.slice(mergeReturn),
+            /replaceGenerationRef\.current\s*\+\+|\+\+\s*replaceGenerationRef\.current/,
+            "a refresh that swaps the list leaves an in-flight page's guard passing");
+        assert.doesNotMatch(refresh.slice(0, mergeReturn), /replaceGenerationRef/,
+            "the merge path moves the replace counter too, so it is no longer the untouched merge path");
+    });
 });
 
 /**

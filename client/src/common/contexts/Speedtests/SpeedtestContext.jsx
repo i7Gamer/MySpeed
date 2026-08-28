@@ -38,6 +38,12 @@ export const SpeedtestProvider = (props) => {
     // Bumped by every fresh query, so a response for one the user has moved on
     // from can tell that it is no longer wanted. See loadInitialTests.
     const requestGeneration = useRef(0);
+    // Moved when a refresh replaces the whole list rather than growing it (see
+    // refreshTests). A page load shares requestGeneration with the list it was
+    // fetched for - the refresh reads that counter without bumping it - so this
+    // second counter is what tells an in-flight page that the list beneath it is
+    // gone, without disturbing the loads' ownership of the loading flags.
+    const replaceGenerationRef = useRef(0);
     const lastLoadTimeRef = useRef(0);
     // The pending "try that page again" timer, so it can be cancelled when the
     // provider goes away rather than firing into an unmounted tree.
@@ -174,6 +180,10 @@ export const SpeedtestProvider = (props) => {
         // not a new one. If the range changes while it is in flight the page
         // belongs to a list that no longer exists and must not be merged in.
         const generation = requestGeneration.current;
+        // And the list it was fetched against: a refresh can replace the whole
+        // list while this page is in flight, sharing the generation above, so
+        // the guard below checks this too before folding the page in.
+        const replaceGeneration = replaceGenerationRef.current;
 
         lastLoadTimeRef.current = now;
         loadingRef.current = true;
@@ -181,7 +191,8 @@ export const SpeedtestProvider = (props) => {
         try {
             const fetched = await jsonRequest(
                 `/speedtests?${listQuery({after: cursor.created, afterId: cursor.id})}`);
-            if (generation !== requestGeneration.current) return;
+            if (generation !== requestGeneration.current
+                || replaceGeneration !== replaceGenerationRef.current) return;
 
             if (fetched.length > 0) {
                 setSpeedtests(prev => applyPage(prev, fetched, PAGE_SIZE).tests);
@@ -254,7 +265,13 @@ export const SpeedtestProvider = (props) => {
 
             // The list was swapped, not grown, so the cursor pointed into a
             // result set that no longer exists - paging from it would walk a
-            // history the list is not showing.
+            // history the list is not showing. And a loadMoreTests page already
+            // in flight shares this generation, so bump the replace counter it
+            // also checks, or it would fold the swapped-away history back in and
+            // rewind the cursor into it. The generation itself is left alone -
+            // the loads own their loading flags through it, and a refresh sets
+            // none of them.
+            replaceGenerationRef.current++;
             setSpeedtests(tests);
             setCursor(tests.length > 0 ? cursorOf(tests) : null);
             setHasMore(tests.length === PAGE_SIZE);

@@ -9,7 +9,7 @@ export const Pagination = memo(() => {
     // Not the global `t`: memo with no props blocks the re-render every other
     // component gets from the layout root on languageChanged, so this one has
     // to hold its own subscription or its labels outlive the language.
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const navigate = useNavigate();
     const location = useLocation();
     const [activeIndex, setActiveIndex] = useState(location.pathname === "/" ? 0 : 1);
@@ -35,10 +35,20 @@ export const Pagination = memo(() => {
         if (document.fonts?.ready) {
             document.fonts.ready.then(updateActiveBackground);
         }
-        
+
+        // The labels change width with the language, but this component is
+        // memo'd and updateActiveBackground is keyed on the active index alone -
+        // so nothing re-measures on a language switch unless it hears it here.
+        // Deferred to the next frame because the new labels are not in the DOM
+        // until React has committed the re-render i18next just triggered.
+        const remeasure = () => requestAnimationFrame(updateActiveBackground);
         window.addEventListener('resize', updateActiveBackground);
-        return () => window.removeEventListener('resize', updateActiveBackground);
-    }, [updateActiveBackground]);
+        i18n.on('languageChanged', remeasure);
+        return () => {
+            window.removeEventListener('resize', updateActiveBackground);
+            i18n.off('languageChanged', remeasure);
+        };
+    }, [updateActiveBackground, i18n]);
 
     const handleNavigation = useCallback((path, index) => {
         setActiveIndex(index);

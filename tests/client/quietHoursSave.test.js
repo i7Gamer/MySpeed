@@ -140,6 +140,28 @@ describe("the quiet hours save", () => {
     });
 
     /**
+     * The timezone write is checked the way the two window writes are. assertOk
+     * is async and rejects on a refused zone - an ICU id the browser offered but
+     * the server will not compile, a 401, a rate limit - so an unawaited one
+     * leaves the refusal as an unhandled rejection and falls straight through to
+     * write the window against a clock the server never accepted, toasting
+     * success over a window stored against the old zone.
+     */
+    it("stops at a refused timezone instead of writing the window against it", async () => {
+        const {save, seen} = dialogSaving({
+            quietStart: "22:00", quietEnd: "07:00", timezone: "Etc/GMT+8",
+            refuse: (patch) => patch === FIRST_PATCH
+        });
+
+        await save();
+
+        assert.deepEqual(seen.patches, [{url: "/config/timezone", value: "Etc/GMT+8"}],
+            "the window was written against a zone the server had already refused");
+        assert.deepEqual(seen.toasts, ["red"],
+            "the refused timezone fell through to a green success toast");
+    });
+
+    /**
      * Writing this key restarts the schedule - node-schedule compiles the zone
      * into the job - and with the offset enabled that also re-randomises when
      * the next test lands. Saving a window the operator edited without touching

@@ -85,7 +85,7 @@ export const PauseDialog = ({open, onClose, onPause}) => {
              * schedule with the offset enabled also re-randomises the next run.
              */
             if (timezone !== storedTimezoneToInput(config.timezone))
-                assertOk(await patchRequest("/config/timezone", {value: timezone}), "update timezone");
+                await assertOk(await patchRequest("/config/timezone", {value: timezone}), "update timezone");
 
             await writeQuietHours(
                 async (key, value) => assertOk(await patchRequest(`/config/${key}`, {value}), "update quiet hours"),
