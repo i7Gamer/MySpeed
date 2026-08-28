@@ -762,14 +762,31 @@ describe("the health checks keep-alive", () => {
  */
 describe("the default templates", () => {
     const TEMPLATE_MODULES = ["discord", "telegram", "gotify", "pushover", "email", "ntfy"];
-    const NAMED_IN_BOTH = 2;
+
+    /**
+     * One template at a time, rather than counting the name across the whole
+     * block: two mentions in the finished message and none in the failed one
+     * satisfied a count, and the failure alert - the notification that matters
+     * most - went back to reading identically for the WAN and the LAN box.
+     *
+     * None of the six bodies carries a double quote of its own, so the value
+     * ends where the string does.
+     */
+    const templateFor = (module, key) => {
+        const defaults = bodyOf(readSource(`server/integrations/${module}.js`), "const defaults =");
+        const written = defaults.match(new RegExp(`\\b${key}: "([^"]*)"`));
+
+        assert.notEqual(written, null, `${module} declares no default ${key} message`);
+
+        return written[1];
+    };
 
     for (const name of TEMPLATE_MODULES)
         it(`${name}'s templates name the member they describe`, () => {
-            const defaults = bodyOf(readSource(`server/integrations/${name}.js`), "const defaults =");
-
-            assert.ok((defaults.match(/%targetName%/g) ?? []).length >= NAMED_IN_BOTH,
-                `${name}'s finished and failed templates do not both name the target`);
+            assert.match(templateFor(name, "finished"), /%targetName%/,
+                `${name}'s finished message does not say which target it describes`);
+            assert.match(templateFor(name, "failed"), /%targetName%/,
+                `${name}'s failure alert does not say which target went down`);
         });
 
     it("renders the member's name into the message that goes out", async () => {
