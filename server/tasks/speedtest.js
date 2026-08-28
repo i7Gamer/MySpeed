@@ -767,21 +767,38 @@ const executeRound = async (type, targetId) => {
 
 /**
  * Whether this member is the one the instance-wide surfaces speak for: the
- * first of the scheduled round, with the same fallback order the
- * recommendations use for an instance where nothing is scheduled.
+ * instance's first line on record.
  *
  * Carried on the notification payload rather than resolved by the sinks,
  * because the payload is the one thing a broker-side module can read without
  * a database of its own - and the MQTT module routes secondary members to
  * subtopics on exactly this answer. The demo target is no row and is the only
  * member its round has, so it is the primary by construction.
+ *
+ * The first target on record rather than the round's leader, which is what
+ * this asked and what Prometheus still asks of its unlabelled series. That
+ * answer moves the moment a target is unscheduled - an ordinary thing to do
+ * to a line during an outage - and moving it here rebinds the base MQTT
+ * topic: the next line's results land where the first one's Home Assistant
+ * sensors read, so an entity carrying months of one line's history silently
+ * continues with another's, and the retained discovery configs are keyed to
+ * the topic, so no correction is ever announced. A Prometheus series is a
+ * view that re-derives on every scrape and now carries an alias row to
+ * resolve it; a recorder history is written once and cannot be re-attributed.
+ *
+ * Only a delete or a deliberate reorder moves it now. While the first line is
+ * unscheduled the base topic simply goes quiet, which Home Assistant shows
+ * for what it is - the honest half of the trade.
+ *
+ * Exported for its test: the alternative is a real round of two members, and
+ * what is being asked here is one row's identity.
  */
-const isPrimaryMember = async (target) => {
+export const isPrimaryMember = async (target) => {
     if (target.id == null) return true;
 
-    const primary = await targetsController.primaryTarget() ?? (await targetsController.listAll())[0];
+    const first = (await targetsController.listAll())[0];
 
-    return primary === undefined || primary.id === target.id;
+    return first === undefined || first.id === target.id;
 };
 
 const executeTarget = async (target, type, retried = false) => {

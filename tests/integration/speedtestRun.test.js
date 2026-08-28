@@ -323,6 +323,64 @@ describe("two manual runs racing for the same round", () => {
 });
 
 /**
+ * Which member the instance-wide surfaces speak for - the base MQTT topic,
+ * and with it every Home Assistant entity discovered from it.
+ *
+ * Resolved from the round's own order, this moved the moment a target was
+ * unscheduled: the next line's results landed on the topic the first one's
+ * sensors read, so an entity carrying months of one line's history silently
+ * continued with another's, and the discovery configs are retained per topic
+ * - nothing ever announced a correction. A Prometheus series is a view that
+ * re-derives on every scrape; a recorder history is written once and cannot
+ * be re-attributed afterwards.
+ *
+ * So it is the instance's first line on record, which only deleting it or
+ * deliberately reordering the list can move. The cost is the honest one:
+ * while that line is unscheduled the base topic goes quiet, which Home
+ * Assistant shows for what it is, rather than filling with numbers from a
+ * line nobody said it was watching.
+ */
+describe("which member the base topics speak for", () => {
+    let task;
+    let targets;
+
+    before(async () => {
+        task = await import("../../server/tasks/speedtest.js");
+        targets = await import("../../server/controller/targets.js");
+    });
+
+    after(async () => {
+        await targets.removeAll();
+    });
+
+    it("is the first line on record", async () => {
+        await targets.removeAll();
+        const first = await targets.create({name: "WAN", provider: "ookla", sortOrder: 0});
+        const second = await targets.create({name: "LAN", provider: "ookla", sortOrder: 1});
+
+        assert.equal(await task.isPrimaryMember(first), true);
+        assert.equal(await task.isPrimaryMember(second), false);
+    });
+
+    it("does not move to another line when the first is unscheduled", async () => {
+        await targets.removeAll();
+        const first = await targets.create({name: "WAN", provider: "ookla", sortOrder: 0});
+        const second = await targets.create({name: "LAN", provider: "ookla", sortOrder: 1});
+
+        await targets.update(first.id, {enabled: false});
+
+        assert.equal(await task.isPrimaryMember(second), false,
+            "unscheduling one line handed its Home Assistant entities to another");
+        assert.equal(await task.isPrimaryMember(first), true);
+    });
+
+    // The demo target is no row at all, and the only member of its round.
+    it("is the demo target, which stands for the whole of its instance", async () => {
+        assert.equal(await task.isPrimaryMember({id: null, name: null}), true);
+    });
+});
+
+/**
  * The healthchecks lifecycle across a real round of two members.
  *
  * healthchecks.io models one check as one monitored thing: /start opens a run
