@@ -36,7 +36,13 @@ const headerSafe = (value) => String(value)
 
 const buildHeaders = ({token, title, tags}, priority) => {
     const headers = {};
-    if (priority) headers["Priority"] = String(parseInt(priority));
+    // A priority that does not parse to a number is dropped, not sent as the
+    // literal header "NaN". The form's 1-5 regex never allows that, but a config
+    // import writes the field unvalidated, and ntfy rejects the whole request
+    // over a malformed Priority - losing a notification an absent priority would
+    // have delivered at the server's default.
+    const level = parseInt(priority);
+    if (Number.isInteger(level)) headers["Priority"] = String(level);
     if (title) headers["Title"] = headerSafe(title);
     if (tags) headers["Tags"] = headerSafe(tags);
     if (token) headers["Authorization"] = "Bearer " + token;

@@ -111,4 +111,31 @@ describe("ntfy integration", () => {
 
         assert.equal(token.secret, true);
     });
+
+    /**
+     * Regression: the priority went into the header as String(parseInt(value)),
+     * so a value the form's 1-5 regex never allows but a config import writes
+     * unvalidated - "high", say - reached ntfy as the literal header
+     * "Priority: NaN", which it rejects, losing the notification. A priority
+     * that is not a number is dropped now, the way an absent one already is.
+     */
+    it("omits a non-numeric priority rather than sending the header NaN", async () => {
+        const {events} = load();
+
+        await events.testFinished(
+            {data: {url: baseUrl, topic: "alerts", send_finished: true, priority: "high"}}, RESULT, () => {});
+
+        assert.equal(received.length, 1);
+        assert.notEqual(received[0].headers.priority, "NaN",
+            "a non-numeric priority is sent as the literal header NaN");
+    });
+
+    it("still sends a valid priority through", async () => {
+        const {events} = load();
+
+        await events.testFinished(
+            {data: {url: baseUrl, topic: "alerts", send_finished: true, priority: "4"}}, RESULT, () => {});
+
+        assert.equal(received[0].headers.priority, "4");
+    });
 });
