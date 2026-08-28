@@ -120,6 +120,29 @@ describe("the speedtest list supersedes rather than drops a query", () => {
             "the retry timer re-enables paging on a list a refresh has already finished");
     });
 
+    /**
+     * And the failure path asks the same two questions the success path does,
+     * before it touches anything. The catch's early return checked only
+     * requestGeneration - which a replacing refresh deliberately leaves alone -
+     * so a stale page's rejection fell through to setHasMore(false) on the
+     * freshly swapped list. The retry used to undo that by accident three
+     * seconds later; with the timer now correctly refusing stale fires, the
+     * new list stayed at "no more tests" under a full page until the next
+     * node or range switch. A page that belongs to a replaced list has nothing
+     * to say about the one that replaced it - not hasMore, not the retry.
+     */
+    it("lets a stale page's failure touch nothing", () => {
+        const loadMore = context.slice(context.indexOf("const loadMoreTests"),
+            context.indexOf("const refreshTests"));
+        const rejection = loadMore.slice(loadMore.indexOf("} catch"));
+        const bail = rejection.slice(0, rejection.indexOf("setHasMore(false)"));
+
+        assert.notEqual(rejection.indexOf("setHasMore(false)"), -1,
+            "a failed page no longer stops the paging it belongs to");
+        assert.match(bail, /replaceGeneration !== replaceGenerationRef\.current/,
+            "a stale page's rejection still disables paging on the list that replaced it");
+    });
+
     it("moves the replace counter only on the refresh's swap branch", () => {
         const refresh = context.slice(context.indexOf("const refreshTests"),
             context.indexOf("const deleteTest"));

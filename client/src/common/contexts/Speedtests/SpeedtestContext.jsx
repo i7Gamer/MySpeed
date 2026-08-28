@@ -202,7 +202,14 @@ export const SpeedtestProvider = (props) => {
                 setHasMore(false);
             }
         } catch (error) {
-            if (generation !== requestGeneration.current) return;
+            // Both counters, like the success path above: a replacing refresh
+            // leaves requestGeneration alone on purpose, so checking it alone
+            // let a stale page's rejection fall through to the setHasMore
+            // below - disabling paging on the freshly swapped list, which the
+            // retry then rightly refused to undo. A page that belongs to a
+            // replaced list has nothing to say about the one that replaced it.
+            if (generation !== requestGeneration.current
+                || replaceGeneration !== replaceGenerationRef.current) return;
 
             console.error("Failed to load more tests:", error);
             setHasMore(false);
