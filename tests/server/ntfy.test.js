@@ -138,4 +138,43 @@ describe("ntfy integration", () => {
 
         assert.equal(received[0].headers.priority, "4");
     });
+
+    /**
+     * Parsing to a number was never the question ntfy asks.
+     *
+     * The guard above only proved the value was an integer, and an out-of-range
+     * one is every bit as fatal on the wire as "NaN" was: ntfy accepts 1 to 5 -
+     * which is what the field's own regex says - and answers 400 to anything
+     * else, so the notification is lost outright. The values that get here are
+     * the ones the form never sees: a config import writes the field
+     * unvalidated, and "0", "7" and "-3" are all truthy, so they survive the
+     * callers' `c.priority || 3` fallback intact and go out as a header the
+     * server refuses. Dropped like a non-numeric one instead, which delivers at
+     * ntfy's own default rather than not at all.
+     */
+    for (const priority of ["0", "7", "-3"]) {
+        it(`omits the priority ${priority}, which is outside ntfy's 1-5 range`, async () => {
+            const {events} = load();
+
+            await events.testFinished(
+                {data: {url: baseUrl, topic: "alerts", send_finished: true, priority}}, RESULT, () => {});
+
+            assert.equal(received.length, 1);
+            assert.equal(received[0].headers.priority, undefined,
+                `ntfy answers 400 to the priority ${priority}, losing the notification`);
+        });
+    }
+
+    // The ends of the range itself, so the fix cannot be an off-by-one that
+    // quietly drops the two priorities an operator is most likely to choose.
+    for (const priority of ["1", "5"]) {
+        it(`still sends the boundary priority ${priority}`, async () => {
+            const {events} = load();
+
+            await events.testFinished(
+                {data: {url: baseUrl, topic: "alerts", send_finished: true, priority}}, RESULT, () => {});
+
+            assert.equal(received[0].headers.priority, priority);
+        });
+    }
 });
