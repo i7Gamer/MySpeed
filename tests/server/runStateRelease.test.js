@@ -54,6 +54,30 @@ describe("the failure handler", () => {
             "the members run outside the guarded block, so the finally covers nothing");
     });
 
+    /**
+     * And the read ahead of the release must not be able to wait for ever.
+     *
+     * The catch above answers a read that *fails*; a database that has gone
+     * away can instead black-hole it - no error, no answer, mysql2 waiting on
+     * a socket the OS gives minutes to - and nothing here sets a query
+     * timeout. The read sits ahead of the release on both latches (create()'s
+     * finally is behind this same await), so with no deadline of its own a
+     * wedged read wedged the schedule: every tick logged "still running -
+     * skipping" and manual runs answered 409, indefinitely.
+     */
+    it("cannot be held open by a verdict read that never answers", () => {
+        const round = bodyFrom("const executeRound");
+        const release = round.slice(round.indexOf("} finally"));
+        const beforeRelease = release.slice(0, release.indexOf("setRunning(false"));
+
+        assert.match(beforeRelease, /Promise\.race\(/,
+            "the verdict read has no deadline, so a black-holed database holds the run latch for ever");
+        assert.match(source, /OUTCOME_READ_TIMEOUT_MS/,
+            "the deadline is a bare number, or gone");
+        assert.match(source, /\.unref\(\)/,
+            "an idle deadline timer holds the process open past its shutdown");
+    });
+
     it("still records the failed test and notifies", () => {
         assert.match(handler, /tests\.create\(/, "the failed row is no longer written");
         assert.match(handler, /sendError\(/, "the integrations are no longer told");

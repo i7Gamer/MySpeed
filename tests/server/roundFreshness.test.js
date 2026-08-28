@@ -182,7 +182,10 @@ describe("what the round says when it ends", () => {
 
         assert.match(ending, /const outcome = announce/,
             "a round that announced itself can end without answering the /start it opened");
-        assert.match(ending, /await roundOutcome\(/,
+        // Awaited behind its deadline race now - runStateRelease.test.js owns
+        // the deadline's own pins; what matters here is that the verdict is
+        // still read, and awaited, inside the finally.
+        assert.match(ending, /await Promise\.race\(\[\s*roundOutcome\(/,
             "the round no longer reads its own verdict");
         assert.match(ending, /sendRoundFinished\(outcome\)/,
             "the verdict is read and then not sent");
@@ -200,7 +203,7 @@ describe("what the round says when it ends", () => {
      */
     it("reads its verdict before it drops the latch", () => {
         const ending = round().slice(round().indexOf("} finally {"));
-        const reads = ending.indexOf("await roundOutcome(");
+        const reads = ending.indexOf("roundOutcome(");
         const drops = ending.indexOf("setRunning(false, false)");
 
         assert.notEqual(reads, -1, "the round no longer reads its verdict in the finally");

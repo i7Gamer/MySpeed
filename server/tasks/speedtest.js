@@ -588,6 +588,29 @@ const roundOutcome = async (failures, members) => ({
     members
 });
 
+/**
+ * How long the verdict read may keep the run latch.
+ *
+ * roundOutcome is a database read, and a database that has gone away can
+ * black-hole it rather than refuse it - no error, no answer, mysql2 waiting on
+ * a socket the OS gives minutes to - and nothing configures a query timeout.
+ * The read sits inside the finally that releases the run state, ahead of both
+ * latches (create()'s own finally is behind the same await), so with no
+ * deadline of its own a wedged read wedged the schedule: every tick logged
+ * "still running - skipping", manual runs answered 409, indefinitely. Fifteen
+ * seconds is far above any healthy read and comfortably inside one tick of
+ * the default schedule.
+ */
+const OUTCOME_READ_TIMEOUT_MS = 15000;
+
+// A verdict that did not arrive in time is no verdict: null, exactly what the
+// read's own catch answers. Unref'd so an idle deadline never holds the
+// process open. The read it outpaces keeps running in the void with its catch
+// already attached, so a late failure logs instead of escaping.
+const outcomeDeadline = () => new Promise((resolve) => {
+    setTimeout(() => resolve(null), OUTCOME_READ_TIMEOUT_MS).unref();
+});
+
 const executeRound = async (type, targetId) => {
     const members = await roundMembers(targetId);
 
@@ -809,11 +832,16 @@ const executeRound = async (type, targetId) => {
         // open. A database that cannot answer it leaves the /start unanswered,
         // which is what the keep-alive - equally unable to read it - is saying
         // at the same moment.
+        // Raced against its deadline, because it can delay the release below
+        // but must never wedge it - see OUTCOME_READ_TIMEOUT_MS.
         const outcome = announce
-            ? await roundOutcome(roundFailures, members.length).catch(err => {
-                console.error(`Could not read the round's outcome: ${toErrorMessage(err)}`);
-                return null;
-            })
+            ? await Promise.race([
+                roundOutcome(roundFailures, members.length).catch(err => {
+                    console.error(`Could not read the round's outcome: ${toErrorMessage(err)}`);
+                    return null;
+                }),
+                outcomeDeadline()
+            ])
             : null;
 
         // The round is over on every path, including one the guard above could
