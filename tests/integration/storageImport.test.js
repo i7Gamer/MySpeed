@@ -604,6 +604,91 @@ describe("PUT /api/storage/config and the targets it carries", () => {
     });
 
     /**
+     * What the restore says about the ids it changed - the one thing it does
+     * that the file does not describe. Two situations, two sentences, because
+     * they are different situations: an id withheld over local history leaves
+     * orphans behind, while an id re-fitted around the names this instance
+     * holds moves nothing - but the operator asked for one number and got
+     * another either way, and silence about that is how a restore comes to
+     * look wrong. Nothing in the suite asserted either warning, so the last
+     * change to this path shipped entirely unpinned.
+     */
+    describe("what the restore says about the ids it changed", () => {
+        const warningsWhile = async (body) => {
+            const warn = console.warn;
+            const said = [];
+            console.warn = (...parts) => said.push(parts.join(" "));
+
+            try {
+                await body();
+            } finally {
+                console.warn = warn;
+            }
+
+            return said;
+        };
+
+        it("says when local history kept an id from the file", async () => {
+            const controller = await import("../../server/controller/targets.js");
+            const gone = await seedTarget({provider: "ookla", name: "WAN"});
+            await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: gone.id}]);
+            await controller.deleteTarget(gone.id);
+
+            const said = await warningsWhile(async () => assert.equal((await importConfig(
+                fullBackup({targets: [{id: gone.id, name: "Fibre", provider: "ookla"}]}))).status, 200));
+
+            assert.ok(said.some((line) => /under new ids/.test(line)),
+                "an id withheld over standing history was withheld in silence");
+        });
+
+        /**
+         * The other renumber, which no history is involved in: a live target's
+         * name claims one file id, and the row that named that id is re-fitted
+         * around it. The probe that found this held a live "WAN" at id 1 while
+         * the file said WAN=71 and NAS=1 - WAN settled onto 1 by name, NAS took
+         * a fresh id, and nothing anywhere said a number moved.
+         */
+        it("says when the names re-fitted the file's numbers", async () => {
+            const mine = await seedTarget({provider: "ookla", name: "WAN"});
+            await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: mine.id}]);
+
+            const OTHER_ID = mine.id + 70;
+
+            let status;
+            const said = await warningsWhile(async () => ({status} = await importConfig(
+                fullBackup({targets: [
+                    {id: OTHER_ID, name: "WAN", provider: "ookla"},
+                    {id: mine.id, name: "NAS", provider: "cloudflare"}
+                ]}))));
+
+            assert.equal(status, 200);
+
+            const rows = await listTargets();
+            assert.equal(rows.find((row) => row.name === "WAN").id, mine.id,
+                "the name match no longer settles the row onto the id its name holds");
+            assert.notEqual(rows.find((row) => row.name === "NAS").id, mine.id,
+                "two restored rows share the one id the name match claimed");
+
+            assert.ok(said.some((line) => /different ids than the file names/.test(line)),
+                "the file's numbers were re-fitted in silence");
+            assert.ok(!said.some((line) => /under new ids/.test(line)),
+                "a re-fit with no history involved was reported as orphaning some");
+        });
+
+        // And a restore that changes nothing says nothing - the warnings are
+        // for surprises, not for every restore.
+        it("says nothing when the file's ids all land where they name", async () => {
+            const mine = await seedTarget({provider: "ookla", name: "WAN"});
+
+            const said = await warningsWhile(async () => assert.equal((await importConfig(
+                fullBackup({targets: [{id: mine.id, name: "WAN", provider: "ookla"}]}))).status, 200));
+
+            assert.deepEqual(said.filter((line) => /ids/.test(line)), [],
+                "an uneventful same-instance restore warns about nothing");
+        });
+    });
+
+    /**
      * The case the name match is worth most for: a pre-1.4 backup.
      *
      * Its fold carries no id at all - there was no targets table to have one -

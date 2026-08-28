@@ -700,8 +700,10 @@ export const importConfig = async (obj) => {
     const taken = new Set();
 
     // Only the ids a row lost to standing local history, because that is what
-    // the warning below describes. An id lost to the row ahead of it in the
-    // same file is the shared-name merge, which has its own warning.
+    // the first warning below describes. A row renumbered for any other
+    // reason - its name settled it onto a different id, or an earlier row's
+    // name claimed the id it names - moved no history and gets the second
+    // warning, which says so.
     const stripped = new Set();
 
     const restoredId = async (row) => {
@@ -736,6 +738,17 @@ export const importConfig = async (obj) => {
         console.warn(`Restored ${stripped.size} target(s) under new ids: the history already filed `
             + "under the ids the file names belongs to targets this instance measured with. "
             + "Those rows keep their old attribution and are shown as having no target.");
+
+    // The other renumber, said apart because it is a different situation: no
+    // history is involved, the name simply decides the id here and the file's
+    // numbers were re-fitted around the names this instance already holds.
+    const renumbered = targetRows.filter((row, index) => Number.isInteger(row.id)
+        && restoredIds[index] !== row.id && !stripped.has(row.id)).length;
+
+    if (renumbered > 0)
+        console.warn(`Restored ${renumbered} target(s) under different ids than the file names: `
+            + "a target's name decides its id here, and the file's numbers were re-fitted "
+            + "around the names this instance already holds. The history keeps its attribution.");
 
     targetRows = targetRows.map((row, index) => ({
         // The id survives a same-instance restore so the history's targetId
