@@ -117,6 +117,11 @@ describe("the healthChecks keep-alive", () => {
         const EARLIER = new Date(Date.now() - A_MINUTE_MS).toISOString();
         const LATER = new Date().toISOString();
 
+        // Well past the window a result speaks for - see the pair of cases
+        // about a target nothing re-measures.
+        const A_DAY_MS = 24 * 60 * 60 * 1000;
+        const LONG_AGO = new Date(Date.now() - 3 * A_DAY_MS).toISOString();
+
         const NAS_ENDPOINT = "10.0.0.5:5201";
 
         const withTargets = async (specs) => {
@@ -250,6 +255,58 @@ describe("the healthChecks keep-alive", () => {
 
             assert.deepEqual(await keepAlivePing(), [PING_URL],
                 "a recovered line never clears the check");
+        });
+
+        /**
+         * How long a result speaks for the line that produced it.
+         *
+         * A failure stands until something newer replaces it, and for a
+         * scheduled target something newer arrives every round. A target that
+         * only ever runs by hand is the case that has no next round:
+         * `alertingScope` deliberately includes it - a disabled target still
+         * alerts, so that its own failure can put the check down and its own
+         * success can take it back up - and asking each watched target
+         * separately means its last answer was standing forever. One failed
+         * hand run months ago pinned the check to /fail for the life of the
+         * install while every scheduled line measured perfectly.
+         *
+         * So a result speaks for a day and then falls silent. Nothing changes
+         * for a scheduled target, whose newest row is at most an interval old;
+         * what ends is a stale verdict about a line nobody is measuring.
+         */
+        it("lets a stale failure stop speaking for a line nothing re-measures", async () => {
+            const [fibre, box] = await withTargets([
+                {name: "Fibre", provider: "ookla", alerts: true, sortOrder: 0},
+                {name: "Box", provider: "iperf3", endpoint: NAS_ENDPOINT, alerts: true,
+                    enabled: false, sortOrder: 1}
+            ]);
+
+            await seedTests(server.tests, [
+                {created: LONG_AGO, targetId: box.id, ...FAILED},
+                {created: LATER, targetId: fibre.id, ...SUCCEEDED}
+            ]);
+
+            assert.deepEqual(await keepAlivePing(), [PING_URL],
+                "a hand run that failed days ago still holds the check down for every line");
+        });
+
+        // The other half, and the reason the window is a day rather than a
+        // round: a failure somebody has just seen is exactly what the check is
+        // for, whether the target that reported it runs by hand or not.
+        it("still reports a fresh failure from a line that only runs by hand", async () => {
+            const [fibre, box] = await withTargets([
+                {name: "Fibre", provider: "ookla", alerts: true, sortOrder: 0},
+                {name: "Box", provider: "iperf3", endpoint: NAS_ENDPOINT, alerts: true,
+                    enabled: false, sortOrder: 1}
+            ]);
+
+            await seedTests(server.tests, [
+                {created: EARLIER, targetId: box.id, ...FAILED},
+                {created: LATER, targetId: fibre.id, ...SUCCEEDED}
+            ]);
+
+            assert.deepEqual(await keepAlivePing(), [`${PING_URL}/fail`],
+                "the failure of a manual-only target was taken back by another line's success");
         });
 
         /**

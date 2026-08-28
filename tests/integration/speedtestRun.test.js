@@ -359,11 +359,20 @@ describe("the round and its healthchecks check", () => {
         await api(server.baseUrl, `/integrations/${integrationId}`, {method: "DELETE"});
     });
 
-    it("answers its start with the round's one outcome", async () => {
-        const targets = await import("../../server/controller/targets.js");
-        await seedTarget({provider: "ookla", name: "WAN"});
-        await targets.create({name: "Demo", provider: "preview"});
+    /**
+     * Runs a round with fetch stubbed and answers the pings it made.
+     *
+     * The pings are fired without being awaited - the round must not wait on a
+     * notifier - so the stub stays in place until they have stopped arriving:
+     * restoring it while one is still in flight would let that ping loose on
+     * the real network, and this file's history says exactly where that ends.
+     */
+    const EXPECTED_PINGS = 2;
+    const PING_TIMEOUT_MS = 8000;
+    const QUIET_POLLS = 3;
+    const POLL_MS = 150;
 
+    const pingsOf = async (round) => {
         const realFetch = globalThis.fetch;
         const sent = [];
         globalThis.fetch = async (url) => {
@@ -374,27 +383,63 @@ describe("the round and its healthchecks check", () => {
         const pings = () => sent.filter((url) => url.startsWith(PING_URL));
 
         try {
-            await task.create("auto");
+            await round();
 
-            /*
-             * The pings are fired without being awaited - the round must not
-             * wait on a notifier - so the stub stays in place until they have
-             * stopped arriving: restoring it while one is still in flight
-             * would let that ping loose on the real network, and this file's
-             * history says exactly where that ends.
-             */
-            const deadline = Date.now() + 8000;
+            const deadline = Date.now() + PING_TIMEOUT_MS;
             let quiet = 0;
-            while (Date.now() < deadline && (pings().length < 2 || quiet < 3)) {
+            while (Date.now() < deadline && (pings().length < EXPECTED_PINGS || quiet < QUIET_POLLS)) {
                 const before = sent.length;
-                await new Promise((resolve) => setTimeout(resolve, 150));
+                await new Promise((resolve) => setTimeout(resolve, POLL_MS));
                 quiet = sent.length === before ? quiet + 1 : 0;
             }
         } finally {
             globalThis.fetch = realFetch;
         }
 
-        assert.deepEqual(pings(), [`${PING_URL}/start`, `${PING_URL}/fail`],
+        return pings();
+    };
+
+    it("answers its start with the round's one outcome", async () => {
+        const targets = await import("../../server/controller/targets.js");
+        await seedTarget({provider: "ookla", name: "WAN"});
+        await targets.create({name: "Demo", provider: "preview"});
+
+        assert.deepEqual(await pingsOf(() => task.create("auto")),
+            [`${PING_URL}/start`, `${PING_URL}/fail`],
             "the demo member's success took the check back up over the WAN's standing failure");
+    });
+
+    /**
+     * And the round's verdict is about the watched lines, not about the
+     * members this particular round got round to.
+     *
+     * A provider that refused for too many requests holds its targets out of
+     * the round entirely, so a round can end without measuring the very line
+     * that is down: it counted no failures, pinged the success URL and took
+     * the check up - and a minute later the keep-alive read the standing
+     * failure from the stored rows and pinged /fail again. On the minutely
+     * cron the installer scripts hand out that is a check flapping once a
+     * minute for the whole hold. The two now ask one question.
+     */
+    it("keeps the check down for a watched failure this round skipped", async () => {
+        const targets = await import("../../server/controller/targets.js");
+        const {clearBackoff, recordRateLimit} = await import("../../server/util/rateLimitBackoff.js");
+
+        const wan = await seedTarget({provider: "ookla", name: "WAN"});
+        await targets.create({name: "Demo", provider: "preview"});
+
+        // The WAN is down and its provider has just refused, so this round
+        // skips it and measures only the demo member, which cannot fail.
+        await seedTests(server.tests, [{created: new Date().toISOString(), targetId: wan.id,
+            ping: -1, download: -1, upload: -1, error: "no route to host"}]);
+        recordRateLimit("ookla");
+
+        try {
+            assert.deepEqual(await pingsOf(() => task.create("auto")),
+                [`${PING_URL}/start`, `${PING_URL}/fail`],
+                "a round that skipped the failing line reported itself clean");
+        } finally {
+            clearBackoff("ookla");
+        }
     });
 });

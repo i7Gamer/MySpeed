@@ -1,14 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { bodyOf, readSource } from "../helpers/source.js";
 import { cancelReservation, isRunning, staleMemberReason, tryReserve }
     from "../../server/tasks/speedtest.js";
-
-const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-
-const read = (file) => fs.readFileSync(path.join(ROOT, file), "utf8");
 
 /**
  * The member as the round reaches it, not as the round snapshot had it.
@@ -79,7 +73,7 @@ describe("the round reservation", () => {
  * spawns real CLIs on timing the test cannot hold still.
  */
 describe("what the round loop consults between members", () => {
-    const source = read("server/tasks/speedtest.js");
+    const source = readSource("server/tasks/speedtest.js");
 
     const loop = () => {
         const start = source.indexOf("for (const [index, target] of members.entries())");
@@ -117,7 +111,7 @@ describe("what the round loop consults between members", () => {
 });
 
 describe("what the manual-run route does before it answers", () => {
-    const route = read("server/routes/speedtests.js");
+    const route = readSource("server/routes/speedtests.js");
 
     it("takes the round latch before promising a round", () => {
         assert.match(route, /if \(!testTask\.tryReserve\(\)\)/,
@@ -138,14 +132,14 @@ describe("what the manual-run route does before it answers", () => {
  * fired once, in the finally, carrying whether anything watched failed.
  */
 describe("what the round says when it ends", () => {
-    const source = read("server/tasks/speedtest.js");
+    const source = readSource("server/tasks/speedtest.js");
 
-    const round = () => {
-        const start = source.indexOf("const executeRound");
-        assert.notEqual(start, -1);
-
-        return source.slice(start, source.indexOf("const isPrimaryMember"));
-    };
+    // Through bodyOf, which balances the braces and throws when the
+    // declaration is gone. Sliced to the next declaration by name, this
+    // silently widened to the end of the file the moment that name moved -
+    // and every assertion below then passed against whatever text happened
+    // to be down there, which helpers/source.js warns about at length.
+    const round = () => bodyOf(source, "const executeRound");
 
     it("announces and completes under the same judgement", () => {
         assert.match(round(), /const announce = members\[0]\.provider !== "preview"/,
@@ -157,14 +151,14 @@ describe("what the round says when it ends", () => {
     it("answers its one start with one completion, however the round ends", () => {
         const ending = round().slice(round().indexOf("} finally {"));
 
-        assert.match(ending, /if \(announce\) sendRoundFinished\(/,
+        assert.match(ending, /if \(announce\) roundOutcome\(/,
             "a round that announced itself can end without answering the /start it opened");
     });
 
     it("counts a watched member's failure however it failed", () => {
         assert.match(round(), /if \(fresh\.alerts && outcome\.failed\) roundFailures\+\+/,
             "a recorded failure of a watched member does not reach the round's outcome");
-        assert.match(round(), /if \(fresh\.alerts\) roundFailures\+\+/,
+        assert.match(round(), /if \(member\.alerts\) roundFailures\+\+/,
             "a member that could not even record is not counted as the failure it is");
     });
 
@@ -173,5 +167,52 @@ describe("what the round says when it ends", () => {
             "executeTarget no longer answers how the member went");
         assert.match(source, /return \{failed: true};/,
             "executeTarget's failure path no longer answers how the member went");
+    });
+
+    /**
+     * The verdict is about the watched lines, not about the members this
+     * round happened to reach. A hold, a pause or a stale member can leave a
+     * failing line unmeasured, and a round that counted no failures of its
+     * own then pinged the success URL while the keep-alive - reading the
+     * stored rows a minute later - pinged /fail: one check, flapping.
+     */
+    it("asks the same question of the stored rows the keep-alive asks", () => {
+        const outcome = bodyOf(source, "const roundOutcome");
+
+        assert.match(outcome, /failures > 0 \|\| await watchedFailureStands\(\)/,
+            "the round's verdict and the keep-alive's can disagree about the same lines");
+    });
+
+    /**
+     * The guards the loop consults are database reads of their own, and a
+     * read that fails is this member's failure - not a reason to leave the
+     * loop through the finally with every remaining member unmeasured and
+     * nothing written to error.log.
+     */
+    it("classifies its own guards' failures as the member's", () => {
+        // From inside the loop, not from the round: the round opens a try of
+        // its own around the whole loop, and measuring against that one
+        // passes however the per-member guards are arranged.
+        const body = round();
+        const walks = body.indexOf("for (const [index, target] of members.entries())");
+        assert.notEqual(walks, -1, "the round no longer walks its members in the loop this reads");
+
+        const loop = body.slice(walks);
+        const opened = loop.indexOf("try {");
+        const paused = loop.indexOf("pauseController.currentState");
+        const reread = loop.indexOf("targetsController.getOne(target.id)");
+
+        assert.notEqual(opened, -1, "the loop no longer guards its members at all");
+        assert.notEqual(reread, -1, "the loop no longer re-reads its members");
+        assert.ok(opened < paused && opened < reread,
+            "a database failure inside the loop's own guards escapes the per-member handler");
+    });
+
+    // Reading the table to decide whether a member leads the round is not
+    // worth failing a measured test over - the payload's own contract says an
+    // absent flag reads as the primary.
+    it("degrades rather than fails when it cannot tell who leads", () => {
+        assert.equal((source.match(/isPrimaryMember\(target\)\.catch\(\(\) => true\)/g) ?? []).length, 2,
+            "a database blip while naming the primary is treated as a failed test and retried");
     });
 });

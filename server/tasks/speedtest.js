@@ -3,7 +3,8 @@ import * as tests from '../controller/speedtests.js';
 import * as config from '../controller/config.js';
 import * as controller from "../controller/recommendations.js";
 import * as parseData from '../util/providers/parseData.js';
-import { setState, sendRunning, sendError, sendFinished, sendRoundFinished } from "./integrations.js";
+import { setState, sendRunning, sendError, sendFinished, sendRoundFinished, watchedFailureStands }
+    from "./integrations.js";
 import * as serverController from "../controller/servers.js";
 import { toErrorMessage } from '../util/helpers.js';
 import { PHASE_ORDER, PHASE_START, overallProgress } from '../util/providers/progress.js';
@@ -545,6 +546,28 @@ export const staleMemberReason = (fresh, named) => {
     return null;
 };
 
+/**
+ * The round's verdict for its one completion event.
+ *
+ * `failures` counts what this round measured, and `failed` answers the wider
+ * question the check is actually asked: is any watched line down now. A round
+ * can end without reaching the line that is - a provider hold skips its
+ * targets, a pause or the quiet hours cut the round short, a member is
+ * deleted mid-round - and a round that counted none of its own then pinged
+ * the success URL, taking the check up a minute before the keep-alive read
+ * the same stored rows and put it back down. One check flapping once a cycle,
+ * for the length of the hold.
+ *
+ * Its own count still stands beside the answer, and still counts: a member
+ * that could not even record its failure is a failure this round knows about
+ * and the stored rows do not.
+ */
+const roundOutcome = async (failures, members) => ({
+    failed: failures > 0 || await watchedFailureStands(),
+    failures,
+    members
+});
+
 const executeRound = async (type, targetId) => {
     const members = await roundMembers(targetId);
 
@@ -612,55 +635,10 @@ const executeRound = async (type, targetId) => {
             // leaves the bar advertising a member the round never started.
             if (isShuttingDown()) break;
 
-            // A pause is "stop testing", whoever started the round: the route
-            // and runTask both refuse one ahead of time, but both stop looking
-            // the moment the round starts, and a pause is pressed mid-round
-            // precisely because tests are running.
-            if (pauseController.currentState) {
-                console.warn("Speedtests were paused during the round - stopping before the next target.");
-                break;
-            }
-
-            // The quiet hours bind only the scheduled rounds - a test started
-            // by hand is somebody asking for one now, the rule runTask and
-            // memberHeld already follow. Asked again per member for the reason
-            // runTask asks again after the offset's sleep: the window can begin
-            // while the round is busy with an earlier member.
-            if (type === "auto" && await withinQuietHours()) {
-                console.warn("The quiet hours began during the round - stopping before the next target.");
-                break;
-            }
-
-            // The member as the table has it now, not as the round-start
-            // snapshot had it - see staleMemberReason for what a stale one did.
-            // The demo target is no row and is left alone.
-            const fresh = target.id == null ? target : await targetsController.getOne(target.id);
-            const stale = target.id == null ? null : staleMemberReason(fresh, targetId !== undefined);
-
-            if (stale) {
-                console.warn(`${memberName(target)} ${stale}`);
-                continue;
-            }
-
-            beginTarget(fresh, index + 1, members.length);
-
-            // Only the scheduled rounds honour a hold - a test started by hand
-            // is somebody asking for one now. The skip is per target, so the
-            // rest of the round still runs.
-            //
-            // Asked here, as the round reaches each member, rather than
-            // resolved once before the round starts: the hold can arrive during
-            // the round. Ookla refuses member one, executeTarget's catch
-            // records it, and members two and three - the second and third
-            // Ookla target of an instance that pins one per server - are
-            // skipped rather than asking a limiter that has just said no three
-            // times over, for three failed rows and three notifications. The
-            // guard above the announcement answers only what this cannot.
-            //
-            // Through memberHeld so the two cannot drift into disagreeing about
-            // which rounds honour a hold, and through heldByBackoff so a skip
-            // says in the log which target it was and for how long.
-            if (memberHeld(fresh, type, heldByBackoff)) continue;
+            // The member as the table has it when the round reaches it, named
+            // out here so the handler below can report what it was working on
+            // even when the read that was to fetch it is what failed.
+            let fresh;
 
             /*
              * A member that cannot even record its own failure must not take the
@@ -675,6 +653,13 @@ const executeRound = async (type, targetId) => {
              * A round was a single test before targets existed, so this had
              * nothing to lose.
              *
+             * The guards below are inside it for the same reason, which they
+             * were not: they are database reads of their own - three config
+             * reads for the quiet hours, one row for the member - and a
+             * rejection from either walked out past the counting, the report
+             * and the outage check alike, dropping every remaining member as
+             * silently as the throw this block was written to contain.
+             *
              * Reported through errorHandler rather than console.error, for the
              * reason timer.js reports through it: data/logs/error.log is the file
              * the log's own header points bug reports at, and the only place
@@ -683,6 +668,59 @@ const executeRound = async (type, targetId) => {
              * database went away must not end quietly.
              */
             try {
+                // A pause is "stop testing", whoever started the round: the
+                // route and runTask both refuse one ahead of time, but both
+                // stop looking the moment the round starts, and a pause is
+                // pressed mid-round precisely because tests are running.
+                if (pauseController.currentState) {
+                    console.warn("Speedtests were paused during the round - stopping before the next target.");
+                    break;
+                }
+
+                // The quiet hours bind only the scheduled rounds - a test
+                // started by hand is somebody asking for one now, the rule
+                // runTask and memberHeld already follow. Asked again per member
+                // for the reason runTask asks again after the offset's sleep:
+                // the window can begin while the round is busy with an earlier
+                // member.
+                if (type === "auto" && await withinQuietHours()) {
+                    console.warn("The quiet hours began during the round - stopping before the next target.");
+                    break;
+                }
+
+                // Not as the round-start snapshot had it - see
+                // staleMemberReason for what a stale one did. The demo target
+                // is no row and is left alone.
+                fresh = target.id == null ? target : await targetsController.getOne(target.id);
+                const stale = target.id == null ? null : staleMemberReason(fresh, targetId !== undefined);
+
+                if (stale) {
+                    console.warn(`${memberName(target)} ${stale}`);
+                    continue;
+                }
+
+                beginTarget(fresh, index + 1, members.length);
+
+                // Only the scheduled rounds honour a hold - a test started by
+                // hand is somebody asking for one now. The skip is per target,
+                // so the rest of the round still runs.
+                //
+                // Asked here, as the round reaches each member, rather than
+                // resolved once before the round starts: the hold can arrive
+                // during the round. Ookla refuses member one, executeTarget's
+                // catch records it, and members two and three - the second and
+                // third Ookla target of an instance that pins one per server -
+                // are skipped rather than asking a limiter that has just said
+                // no three times over, for three failed rows and three
+                // notifications. The guard above the announcement answers only
+                // what this cannot.
+                //
+                // Through memberHeld so the two cannot drift into disagreeing
+                // about which rounds honour a hold, and through heldByBackoff
+                // so a skip says in the log which target it was and for how
+                // long.
+                if (memberHeld(fresh, type, heldByBackoff)) continue;
+
                 const outcome = await executeTarget(fresh, type);
                 if (fresh.alerts && outcome.failed) roundFailures++;
                 // A member that recorded - a result or a failure, either one - is
@@ -690,13 +728,18 @@ const executeRound = async (type, targetId) => {
                 // could not starts again from here.
                 escapes = 0;
             } catch (error) {
+                // As far as this member got: a guard that could not read the
+                // table has no fresh row to name, and the snapshot is what it
+                // was working from.
+                const member = fresh ?? target;
+
                 // A member that could not even record its failure has still
                 // failed - the round's completion must not read as clean
                 // because the database refused the row saying otherwise.
-                if (fresh.alerts) roundFailures++;
+                if (member.alerts) roundFailures++;
                 escapes++;
 
-                const {abandoned, context} = memberFailure(error, fresh,
+                const {abandoned, context} = memberFailure(error, member,
                     {escapes, remaining: members.length - index - 1});
 
                 errorHandler(error, {fatal: false, context});
@@ -715,11 +758,14 @@ const executeRound = async (type, targetId) => {
         // healthchecks.io opened a timing window on the /start above, and a
         // round interrupted by a pause or a shutdown still has to close it.
         // Per member the sinks already heard everything; this is the round's
-        // own verdict, and it is not awaited for the reason no notification
-        // here is: a notifier must not hold the round open.
-        if (announce) sendRoundFinished({failed: roundFailures > 0, failures: roundFailures,
-            members: members.length}).catch(err =>
-            console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
+        // own verdict, and neither it nor the read behind it is awaited, for
+        // the reason no notification here is: a notifier must not hold the
+        // round open. A database that cannot answer the verdict leaves the
+        // /start unanswered, which is what the keep-alive - equally unable to
+        // read it - is saying at the same moment.
+        if (announce) roundOutcome(roundFailures, members.length)
+            .then(sendRoundFinished)
+            .catch(err => console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
     }
 };
 
@@ -837,7 +883,12 @@ const executeTarget = async (target, type, retried = false) => {
             packetLoss, downloadLatency, uploadLatency, serverId, serverName, serverHost, serverLocation,
             isp, externalIp, resultId, bytesDownloaded, bytesUploaded,
             targetId: target.id, targetName: target.name,
-            primary: await isPrimaryMember(target)})).catch(err =>
+            // Degraded rather than thrown: this reads the targets table after
+            // the row above is already committed, and a rejection here would
+            // land in the catch below - whose first act is to measure the whole
+            // member again and write a second row for one scheduled test. The
+            // payload's own contract says an absent flag reads as the primary.
+            primary: await isPrimaryMember(target).catch(() => true)})).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
 
         // How the member went, for the round's one completion event. The
@@ -885,9 +936,13 @@ const executeTarget = async (target, type, retried = false) => {
         // call has a ten second timeout, so a few endpoints that have gone
         // unreachable - the very situation this notification describes -
         // held the run open for the sum of their timeouts.
+        // Degraded the way the success path degrades it, and here the escape
+        // it prevents is worse: a rejection between the failure row and this
+        // notification leaves executeTarget entirely, so the round reports
+        // "could not record its result" about a row it did record.
         if (target.alerts) sendError(failedPayload({...testResult, provider: mode, error: message,
             targetId: target.id, targetName: target.name,
-            primary: await isPrimaryMember(target)})).catch(err =>
+            primary: await isPrimaryMember(target).catch(() => true)})).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
         console.log(`Test #${testResult.id} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
 

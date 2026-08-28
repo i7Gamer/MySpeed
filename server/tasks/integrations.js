@@ -13,6 +13,39 @@ export const setState = (state = "ping") => {
 };
 
 /**
+ * How long a result still speaks for the line that produced it.
+ *
+ * A failure stands until something newer replaces it, and for a scheduled
+ * target something newer arrives every round. A target that runs only by hand
+ * has no next round: alertingScope deliberately includes it - a disabled
+ * target still alerts, so that its own failure can put the check down and its
+ * own success can take it back up - so asking each watched target separately
+ * left its last answer standing for ever. One hand run that failed months ago
+ * pinned the check to /fail for the life of the install while every scheduled
+ * line measured perfectly.
+ *
+ * A day, which is the span /status already calls recent, and long enough that
+ * a failure somebody has just seen is still reported while a verdict about a
+ * line nobody is measuring falls silent. Nothing changes for a scheduled
+ * target: its newest row is at most an interval old.
+ */
+const RESULT_SPEAKS_FOR_HOURS = 24;
+const RESULT_SPEAKS_FOR_MS = RESULT_SPEAKS_FOR_HOURS * 60 * 60 * 1000;
+
+/**
+ * Whether a stored row is recent enough to describe the line now.
+ *
+ * A row whose stamp cannot be read says nothing about when it was measured -
+ * an imported history can carry one - and is not allowed to hold the check
+ * down on the strength of a date nobody can check.
+ */
+const stillSpeaks = (row, now) => {
+    const measured = Date.parse(row?.created);
+
+    return Number.isFinite(measured) && now - measured <= RESULT_SPEAKS_FOR_MS;
+};
+
+/**
  * Whether a failure that was actually reported is still standing.
  *
  * This used to be a bare getLatest(): the newest row of the instance, which
@@ -43,15 +76,23 @@ export const setState = (state = "ping") => {
  * the instance-wide latest is the only answer there is. An empty scope is the
  * other question and gets the other answer: targets exist and none of them
  * alert, so nothing is being watched and there is nothing to report.
+ *
+ * Exported because the round asks it too: a round that skipped the failing
+ * line - held by a provider refusal, cut short by a pause - would otherwise
+ * report itself clean and take the check up a minute before this read put it
+ * back down. One question, asked in both places, so the two cannot disagree
+ * about the same lines.
  */
-const reportedFailureStands = async () => {
+export const watchedFailureStands = async (now = Date.now()) => {
     const scope = targetsController.alertingScope(await targetsController.listAll());
 
-    if (scope === null) return isFailedTest(await getLatest());
+    const speaks = (row) => isFailedTest(row) && stillSpeaks(row, now);
+
+    if (scope === null) return speaks(await getLatest());
 
     const latests = await Promise.all(scope.map((id) => getLatest(id)));
 
-    return latests.some((latest) => isFailedTest(latest));
+    return latests.some(speaks);
 };
 
 /**
@@ -69,7 +110,7 @@ const reportedFailureStands = async () => {
  * that has never tested, which is the right answer: nothing has failed there.
  */
 export const sendPing = async (type, message) => {
-    await triggerEvent("minutePassed", {type, message, testFailing: await reportedFailureStands()});
+    await triggerEvent("minutePassed", {type, message, testFailing: await watchedFailureStands()});
 };
 
 export const sendCurrent = async () => {
