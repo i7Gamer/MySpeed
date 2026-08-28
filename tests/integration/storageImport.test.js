@@ -699,18 +699,21 @@ describe("PUT /api/storage/config and the targets it carries", () => {
 
             // The renumber shape from above, wrapped around a config value the
             // validation refuses - so the target settling happens and the
-            // transaction is never reached.
+            // transaction is never reached. The duplicate pair makes the
+            // shared-name advice due as well, and due to the same rule: advice
+            // about targets a rollback never restored is advice about nothing.
             const said = await warningsWhile(async () => assert.equal((await importConfig(
                 fullBackup({
                     config: {cron: "not a cron"},
                     targets: [
                         {id: mine.id + 70, name: "WAN", provider: "ookla"},
+                        {id: mine.id + 71, name: "WAN", provider: "libre"},
                         {id: mine.id, name: "NAS", provider: "cloudflare"}
                     ]
                 }))).status, 500));
 
-            assert.deepEqual(said.filter((line) => /ids/.test(line)), [],
-                "the log says ids changed in a restore that stored nothing");
+            assert.deepEqual(said.filter((line) => /ids|share a name/.test(line)), [],
+                "the log describes a restore that stored nothing");
         });
     });
 

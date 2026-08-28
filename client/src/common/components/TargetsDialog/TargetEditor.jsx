@@ -274,7 +274,12 @@ export const TargetEditor = ({open, onClose, target}) => {
                                             <h3>{t(isIperf ? "dialog.provider.iperf_host"
                                                 : "dialog.provider.custom_url")}</h3>
                                         </div>
-                                        <input type="text" className="dialog-input provider-input"
+                                        {/* input-error beside the dead button, the way a refused
+                                            optimal marks itself: "none" is the one host a save
+                                            would silently drop, and a greyed Update with every
+                                            field looking fine names nothing. */}
+                                        <input type="text"
+                                               className={`dialog-input provider-input${sentinelTyped ? " input-error" : ""}`}
                                                placeholder={isIperf ? IPERF_HOST_PLACEHOLDER
                                                    : CUSTOM_BACKEND_PLACEHOLDER}
                                                value={endpoint}

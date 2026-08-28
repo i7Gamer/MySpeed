@@ -754,6 +754,14 @@ export const importConfig = async (obj) => {
             console.warn(`Restored ${renumbered} target(s) under different ids than the file names: `
                 + "a target's name decides its id here, and the file's numbers were re-fitted "
                 + "around the names this instance already holds. The history keeps its attribution.");
+
+        // Initialised between here and the call, which is after the commit -
+        // the shared-name paragraph below the settling says why it is said at
+        // all.
+        if (sharesName)
+            console.warn("Restored targets share a name. A history restored onto them files every row "
+                + "of a shared name under the first of them - rename one before restoring the history "
+                + "to keep the two apart.");
     };
 
     targetRows = targetRows.map((row, index) => ({
@@ -787,11 +795,10 @@ export const importConfig = async (obj) => {
      * loud, because the merge is lossy and silence about it is what made it
      * worth refusing in the first place.
      */
+    // Noted here, said with the id warnings once the restore commits: advice
+    // about targets a rollback never restored is advice about nothing.
     const trimmedNames = targetRows.map((row) => row.name);
-    if (new Set(trimmedNames).size !== trimmedNames.length)
-        console.warn("Restored targets share a name. A history restored onto them files every row "
-            + "of a shared name under the first of them - rename one before restoring the history "
-            + "to keep the two apart.");
+    const sharesName = new Set(trimmedNames).size !== trimmedNames.length;
 
     // Rows keeping an id go first: an auto-assigned id is always past the
     // highest one already written, so it cannot collide with an explicit id

@@ -255,6 +255,17 @@ describe("typing an endpoint that begins with the sentinel", () => {
         assert.match(editor, /isUsingCustomUrl = provider === "libre" && Boolean\(typedEndpoint\) && !sentinelTyped/,
             "typing the sentinel hides the server select while the body sends no URL at all");
     });
+
+    // And the refused field says so, the way a refused optimal does: a dead
+    // button with the name, provider and endpoint all looking fine is a
+    // puzzle.
+    it("marks the field the sentinel deadened", () => {
+        const field = editor.match(/<input type="text"(?:(?!\/>)[^])*?handleEndpointChange(?:(?!\/>)[^])*?\/>/)?.[0];
+
+        assert.ok(field, "the endpoint input is no longer recognisable by its handler");
+        assert.match(field, /sentinelTyped \? " input-error" : ""/,
+            "a typed sentinel greys the button with nothing on screen naming the field");
+    });
 });
 
 /**
