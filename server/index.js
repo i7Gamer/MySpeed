@@ -247,9 +247,30 @@ const run = async () => {
     // which is for states that genuinely cannot be reasoned about, this benign
     // and expected clash was logged as a fatal fault under a generic exit 1. The
     // https listener below has carried the same handler all along.
+    //
+    // Which of the two it is depends on whether the listener ever bound. The
+    // handler stays attached for the life of the server, so it also hears an
+    // 'error' from a healthy instance hours later - an accept that runs out of
+    // descriptors, say. Reported as a failure to listen and exited with the
+    // start-up code, that would be a wrong diagnosis followed by a shutdown
+    // nobody asked for; after the bind this logs and carries on, exactly as the
+    // https handler below does, and the only reason the pre-bind case does not
+    // is that there is no server there to carry on as.
+    //
+    // Both go through errorHandler, which is what the uncaughtException path
+    // this replaced was quietly providing: it is the only thing that writes
+    // data/logs/error.log, the file the log's own header points bug reports at.
+    // The console line stays alongside it for the bind, because an operator
+    // watching a start-up that will not finish should not have to go and find a
+    // file to learn which port was taken.
     httpServer.on("error", (err) => {
-        console.error(`The server could not listen on port ${port}: ${err.message}`);
-        process.exit(STARTUP_FAILED_EXIT);
+        if (!httpServer.listening) {
+            console.error(`The server could not listen on port ${port}: ${err.message}`);
+            return errorHandler(err, {fatal: true, code: STARTUP_FAILED_EXIT,
+                context: `The server could not listen on port ${port}`});
+        }
+
+        errorHandler(err, {fatal: false, context: `The server listening on port ${port} reported an error`});
     });
 
     listeners.push(httpServer);

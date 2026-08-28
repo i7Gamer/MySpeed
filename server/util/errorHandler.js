@@ -36,6 +36,13 @@ const asError = (value) => {
  * was installed so "a single failing integration doesn't take the whole server
  * down" - a throw inside any integration callback ended the process.
  *
+ * `code` says which failure it was, for the callers that already had an answer
+ * to that. server/index.js keeps distinct start-up codes - a database that
+ * would not open, a start-up that did not finish - and the http listener's bind
+ * failure exited on its own rather than lose that distinction to a flat 1,
+ * which also lost the entry in this file. It defaults to 1, so every caller
+ * that has no such answer keeps the code it always exited with.
+ *
  * `context` says what was being attempted, which the message on its own does
  * not. The scheduled jobs catch their own rejections rather than leaving them
  * to the unhandledRejection handler, and reporting those with a bare
@@ -43,7 +50,7 @@ const asError = (value) => {
  * log's own header points bug reports at. "Could not open the database" says
  * nothing about which of the two schedules was the one that could not.
  */
-export default (error, {fatal = true, context = null} = {}) => {
+export default (error, {fatal = true, code = 1, context = null} = {}) => {
     const reported = asError(error);
     const date = new Date().toLocaleString();
     const lineStarter = fs.existsSync(filePath) ? "\n\n" : "# Found a bug? Report it here: https://github.com/i7Gamer/MySpeed/issues\n\n";
@@ -88,6 +95,6 @@ export default (error, {fatal = true, context = null} = {}) => {
         {flag: 'a+'}, err => {
             if (err) console.error("Could not save error log file.", reported);
 
-            if (fatal) process.exit(1);
+            if (fatal) process.exit(code);
         });
 };
