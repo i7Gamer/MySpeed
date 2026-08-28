@@ -344,6 +344,40 @@ describe("PATCH /api/targets/:id", () => {
         assert.equal((await patch("/order", {ids: [second, first]})).status, 200);
         assert.deepEqual((await targets.listAll()).map((row) => row.name), ["second", "first"]);
     });
+
+    /**
+     * All of the order or none of it. The rewrite was one UPDATE per id with
+     * nothing around them, so a failure partway left half the list renumbered
+     * - an order the operator never asked for, decided by where the loop
+     * happened to die. And sortOrder is not only presentation: it decides
+     * listAll()[0], which is the base MQTT topic's owner and the unlabelled
+     * Prometheus series - the identity the round goes to lengths to hold
+     * still.
+     */
+    it("leaves the order alone when one update in the rewrite fails", async () => {
+        const {default: model} = await import("../../server/models/Targets.js");
+
+        const {body: {id: first}} = await put({name: "first", provider: "ookla"});
+        const {body: {id: second}} = await put({name: "second", provider: "cloudflare"});
+        const {body: {id: third}} = await put({name: "third", provider: "libre"});
+
+        const update = model.update;
+        let calls = 0;
+        model.update = async (...args) => {
+            if (++calls === 2) throw new Error("database is locked");
+            return update.apply(model, args);
+        };
+
+        try {
+            await assert.rejects(targets.reorder([third, second, first]));
+        } finally {
+            model.update = update;
+        }
+
+        assert.deepEqual((await targets.listAll()).map((row) => row.name),
+            ["first", "second", "third"],
+            "a rewrite that died partway left the list half-renumbered");
+    });
 });
 
 describe("DELETE /api/targets/:id", () => {

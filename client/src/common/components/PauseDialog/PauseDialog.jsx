@@ -37,6 +37,10 @@ export const PauseDialog = ({open, onClose, onPause}) => {
     const [quietStart, setQuietStart] = useState("");
     const [quietEnd, setQuietEnd] = useState("");
     const [savingQuiet, setSavingQuiet] = useState(false);
+    // The same lock the quiet-hours button above carries: a double-click sent
+    // two POST /speedtests/pause, and the second could trip the route's rate
+    // limit into a red toast for an action that succeeded.
+    const [savingPause, setSavingPause] = useState(false);
 
     // The clock both the window above and the cron are judged on. It lives here
     // rather than in a settings page of its own because these are the hours it
@@ -109,12 +113,15 @@ export const PauseDialog = ({open, onClose, onPause}) => {
     };
 
     const handleSave = async (close) => {
+        if (savingPause) return;
+
         const preset = PRESETS.find(p => p.id === selected);
 
         // Checked, not assumed: postRequest hands back the raw Response, so a
         // refused pause used to close the dialog as if the schedule had stopped.
         const pause = async (resumeIn) => assertOk(await postRequest("/speedtests/pause", {resumeIn}), "pause");
 
+        setSavingPause(true);
         try {
             if (selected === "custom") {
                 if (customHours && parseFloat(customHours) > 0) {
@@ -131,6 +138,8 @@ export const PauseDialog = ({open, onClose, onPause}) => {
             updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
                 "red", faExclamationTriangle);
             return;
+        } finally {
+            setSavingPause(false);
         }
 
         onPause?.();
@@ -232,7 +241,8 @@ export const PauseDialog = ({open, onClose, onPause}) => {
                         </div>
                     </DialogBody>
                     <DialogFooter>
-                        <button type="button" className="dialog-btn" onClick={() => handleSave(close)} disabled={!isCustomValid}>
+                        <button type="button" className="dialog-btn" onClick={() => handleSave(close)}
+                                disabled={!isCustomValid || savingPause}>
                             {t("update.pause")}
                         </button>
                     </DialogFooter>

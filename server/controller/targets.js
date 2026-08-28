@@ -1,4 +1,5 @@
 import targets from '../models/Targets.js';
+import db from '../config/database.js';
 import { REGISTRY } from '../util/providers/registry.js';
 import { ALLOWED_PROTOCOLS } from '../util/safeUrl.js';
 
@@ -516,10 +517,21 @@ export const nameTaken = async (name, excludeId = undefined) =>
 
 export const deleteTarget = async (id) => await targets.destroy({where: {id}});
 
-/** Rewrites the round order to the given id sequence; unknown ids are ignored. */
+/**
+ * Rewrites the round order to the given id sequence; unknown ids are ignored.
+ *
+ * All of it or none of it: one UPDATE per id with nothing around them left
+ * half the list renumbered when a write failed partway - an order the
+ * operator never asked for, decided by where the loop died. And sortOrder is
+ * not only presentation: it decides listAll()[0], which is the base MQTT
+ * topic's owner and the unlabelled Prometheus series - the identity
+ * isPrimaryMember exists to hold still.
+ */
 export const reorder = async (ids) => {
-    for (const [index, id] of ids.entries())
-        await targets.update({sortOrder: index}, {where: {id}});
+    await db.transaction(async (transaction) => {
+        for (const [index, id] of ids.entries())
+            await targets.update({sortOrder: index}, {where: {id}, transaction});
+    });
 };
 
 export const removeAll = async (transaction = undefined) =>

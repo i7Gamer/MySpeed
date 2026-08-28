@@ -43,6 +43,11 @@ export const TargetsDialog = ({open, onClose}) => {
     // The row being edited, held apart from the open flag so the closing
     // animation does not blank the form under itself.
     const [editing, setEditing] = useState(null);
+    // A reorder in flight. move() computes the id sequence from `targets`,
+    // and that state only changes once reloadTargets settles - so two quick
+    // clicks computed two swaps from the same pre-move list, and the later
+    // PATCH won with an order the operator never asked for.
+    const [moving, setMoving] = useState(false);
 
     useEffect(() => {
         if (!open) return;
@@ -70,19 +75,26 @@ export const TargetsDialog = ({open, onClose}) => {
     };
 
     const move = async (index, direction) => {
+        if (moving) return;
+
         const ids = targets.map((target) => target.id);
         const swap = index + direction;
         if (swap < 0 || swap >= ids.length) return;
 
         [ids[index], ids[swap]] = [ids[swap], ids[index]];
 
+        setMoving(true);
         try {
             await assertOk(await patchRequest("/targets/order", {ids}), "target order");
+            // Inside the lock, because the stale window is the reload, not
+            // the PATCH: until the list state holds the new order, a second
+            // click computes its swap from the old one.
+            await reloadTargets();
         } catch (e) {
             return failed(e);
+        } finally {
+            setMoving(false);
         }
-
-        reloadTargets();
     };
 
     const remove = async (target) => {
@@ -159,13 +171,13 @@ export const TargetsDialog = ({open, onClose}) => {
                                             </div>
                                             <div className="target-row-actions">
                                                 <div className="target-reorder">
-                                                    <button className="target-action" disabled={index === 0}
+                                                    <button className="target-action" disabled={index === 0 || moving}
                                                             aria-label={t("targets.move_up")}
                                                             onClick={() => move(index, -1)}>
                                                         <FontAwesomeIcon icon={faChevronUp}/>
                                                     </button>
                                                     <button className="target-action"
-                                                            disabled={index === targets.length - 1}
+                                                            disabled={index === targets.length - 1 || moving}
                                                             aria-label={t("targets.move_down")}
                                                             onClick={() => move(index, 1)}>
                                                         <FontAwesomeIcon icon={faChevronDown}/>

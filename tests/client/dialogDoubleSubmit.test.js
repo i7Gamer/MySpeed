@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { escapeRegExp, readSource } from "../helpers/source.js";
+import { bodyOf, escapeRegExp, readSource } from "../helpers/source.js";
 
 /**
  * A dialog's submit button stays pressable while its request is in flight.
@@ -126,5 +126,73 @@ describe("a dialog cannot be submitted twice at once", () => {
         assert.ok(tag, "the continue button is no longer recognisable by its handler");
         assert.match(tag, /disabled=\{[^}]*saving/,
             "the continue button stays pressable while the four requests run");
+    });
+});
+
+/**
+ * The reorder chevrons, which are the same double-click with a worse ending.
+ *
+ * move() builds the id sequence from the `targets` context state and PATCHes
+ * it, and the state only changes once reloadTargets settles - so two quick
+ * clicks computed two swaps from the same pre-move list, and the later PATCH
+ * won with an order the operator never asked for. The lock holds until the
+ * reload lands, because the stale window is the reload, not the PATCH.
+ */
+describe("the reorder chevrons cannot race their own reload", () => {
+    const source = readSource("client/src/common/components/TargetsDialog/TargetsDialog.jsx");
+
+    it("holds a moving flag for the whole round trip", () => {
+        assert.match(source, /const \[moving, setMoving] = useState\(false\)/,
+            "nothing tracks a reorder already in flight");
+        assert.match(source, /if \(moving\) return/,
+            "a second click starts a second PATCH computed from the stale list");
+        assert.match(source, /finally\s*\{[^}]*setMoving\(false\)/,
+            "a refused reorder leaves the chevrons dead");
+    });
+
+    it("keeps the lock until the reordered list is back", () => {
+        const body = bodyOf(source, "const move");
+
+        assert.match(body, /await reloadTargets\(\)/,
+            "the lock lifts before the list state moves, so the stale window is still open");
+    });
+
+    it("shows the lock on both chevrons", () => {
+        // The `=>` of the onClick arrow means a bare [^>]* stops short, so the
+        // span runs from each opening tag to its handler the way the button
+        // matchers above run to theirs.
+        const chevrons = source.match(/<button(?:(?!<button)[^])*?move\(index, -?1\)/g) ?? [];
+
+        assert.equal(chevrons.length, 2, "the chevrons are no longer recognisable by their handler");
+        for (const tag of chevrons)
+            assert.match(tag, /disabled=\{[^}]*moving/,
+                "a chevron stays pressable while the reorder runs");
+    });
+});
+
+/**
+ * The pause dialog's main button, beside a quiet-hours button that already
+ * carries this exact lock - a double-click sent two POST /speedtests/pause,
+ * and the second could trip the route's rate limit into a red toast for an
+ * action that succeeded.
+ */
+describe("the pause dialog cannot pause twice at once", () => {
+    const source = readSource("client/src/common/components/PauseDialog/PauseDialog.jsx");
+
+    it("holds a saving flag over handleSave", () => {
+        assert.match(source, /const \[savingPause, setSavingPause] = useState\(false\)/,
+            "nothing tracks a pause already in flight");
+        assert.match(source, /if \(savingPause\) return/,
+            "a second click posts the pause again");
+        assert.match(source, /finally\s*\{[^}]*setSavingPause\(false\)/,
+            "a refused pause leaves the dialog locked shut");
+    });
+
+    it("shows the lock on the button", () => {
+        const tag = source.match(/<button(?:(?!<button)[^])*?handleSave\(close\)(?:(?!<button)[^])*?>/)?.[0];
+
+        assert.ok(tag, "the pause button is no longer recognisable by its handler");
+        assert.match(tag, /disabled=\{[^}]*savingPause/,
+            "the pause button stays pressable while the request runs");
     });
 });
