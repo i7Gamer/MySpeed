@@ -16,7 +16,6 @@
 - [ ] I have performed a self-review of my own code
 - [ ] I have tested my changes locally
 - [ ] I have looked for similar pull requests in the repository and found none
-- [ ] This pull request does not contain translations (they are managed on [Crowdin](https://crowdin.com/project/myspeed), only `en.json` is edited here)
 
 ## 🔗 Related Issues
 
