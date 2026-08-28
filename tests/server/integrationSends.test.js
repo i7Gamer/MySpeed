@@ -382,18 +382,20 @@ describe("webhook", () => {
 describe("health checks", () => {
     const config = {url: "https://hc.example.net/ping/uuid"};
 
-    it("pings the bare url when a test finishes", async () => {
+    // The round's completion, not the members' - see "the health checks
+    // keep-alive" below for the lifecycle cases.
+    it("pings the bare url when a round finishes clean", async () => {
         const {events} = load(setupHealthChecks);
-        await fire(events, "testFinished", config, RESULT);
+        await fire(events, "roundFinished", config, {failed: false, failures: 0, members: 1});
 
         assert.equal(sent[0].url, config.url);
     });
 
-    it("uses the /start and /fail sub-paths for the other events", async () => {
+    it("uses the /start and /fail sub-paths for the other outcomes", async () => {
         const {events} = load(setupHealthChecks);
 
         await fire(events, "testStarted", config, undefined);
-        await fire(events, "testFailed", config, failure("boom"));
+        await fire(events, "roundFinished", config, {failed: true, failures: 1, members: 1});
 
         assert.deepEqual(sent.map((request) => request.url),
             [`${config.url}/start`, `${config.url}/fail`]);
@@ -403,7 +405,7 @@ describe("health checks", () => {
     // undefined - a request to the server's own origin.
     it("sends nothing when no url is configured", async () => {
         const {events} = load(setupHealthChecks);
-        await fire(events, "testFinished", {}, RESULT);
+        await fire(events, "roundFinished", {}, {failed: false, failures: 0, members: 1});
 
         assert.deepEqual(sent, []);
     });
@@ -674,19 +676,42 @@ describe("the health checks keep-alive", () => {
         assert.equal(await pinged(undefined), config.url);
     });
 
-    // Only the keep-alive is routed. The other three carry the outcome in the
-    // event itself, and a finished test that landed on /fail would leave the
-    // check down after the line recovered.
-    it("leaves the other three events on their own paths", async () => {
+    /**
+     * The check follows the round, not its members. healthchecks.io models
+     * one check as one monitored thing: /start opens a run and the next ping
+     * closes it. The per-member events fire once per target, so a
+     * multi-target round answered one /start with N pings - and the last
+     * member won: a watched line's /fail was taken back seconds later by the
+     * next member's success, and the check ended the round "up" while the
+     * line was still down.
+     */
+    it("answers the round's start with the round's one outcome", async () => {
         const {events} = load(setupHealthChecks);
-        const failing = {testFailing: true};
 
-        await fire(events, "testFinished", config, failing);
-        await fire(events, "testStarted", config, failing);
-        await fire(events, "testFailed", config, failing);
+        await fire(events, "testStarted", config, undefined);
+        await fire(events, "roundFinished", config, {failed: true, failures: 1, members: 2});
 
         assert.deepEqual(sent.map((request) => request.url),
-            [config.url, `${config.url}/start`, `${config.url}/fail`]);
+            [`${config.url}/start`, `${config.url}/fail`]);
+    });
+
+    it("pings success for a round nothing watched failed in", async () => {
+        const {events} = load(setupHealthChecks);
+
+        await fire(events, "roundFinished", config, {failed: false, failures: 0, members: 2});
+
+        assert.deepEqual(sent.map((request) => request.url), [config.url]);
+    });
+
+    // The per-member events are deliberately not handled any more: each one
+    // was a ping, and the last member's outcome overwrote every earlier one.
+    it("no longer pings once per member", () => {
+        const {events} = load(setupHealthChecks);
+
+        assert.equal(events.testFinished, undefined,
+            "a finished member still pings, so the last member overwrites the round");
+        assert.equal(events.testFailed, undefined,
+            "a failed member still pings ahead of the round's own answer");
     });
 
     /**
@@ -707,9 +732,12 @@ describe("the health checks keep-alive", () => {
 
     it("still forwards everything else a payload carries", async () => {
         const {events} = load(setupHealthChecks);
-        await fire(events, "testFinished", config, {...RESULT, testFailing: false});
+        const outcome = {failed: true, failures: 1, members: 3};
+        await fire(events, "roundFinished", config, {...outcome, testFailing: false});
 
-        assert.deepEqual(sent[0].body, RESULT, "the measurements stopped reaching the ping log");
+        // `failed` stays in, unlike testFailing: it is the round's actual
+        // outcome, which is exactly what a ping log is for.
+        assert.deepEqual(sent[0].body, outcome, "the round's outcome stopped reaching the ping log");
     });
 
     // The trailing slash a url pasted from an address bar carries, which the

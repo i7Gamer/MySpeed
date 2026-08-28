@@ -191,13 +191,12 @@ describe("the healthChecks keep-alive", () => {
         });
 
         /**
-         * The newest row across every alerting target, not the newest row of
-         * the first one. healthChecks routes testFailed to /fail and
-         * testFinished to the root URL, so the check already carries whichever
-         * of the two fired last - and reading only the leading target would
-         * have the keep-alive take back a /fail that a second alerting target
-         * had just earned, which is the exact overwrite the routing exists to
-         * prevent.
+         * Any alerting target whose newest result is a failure keeps the check
+         * down - not merely the target that happens to hold the newest row.
+         * One check stands for every watched line, so it is down while any of
+         * them is: reading only the single newest row had the backup line's
+         * success take the check up while the fibre's failure still stood,
+         * which on healthchecks' side reads as "everything recovered".
          */
         it("reports the newest alerting target's outcome, not the first one's", async () => {
             const [fibre, backup] = await withTargets([
@@ -212,6 +211,45 @@ describe("the healthChecks keep-alive", () => {
 
             assert.deepEqual(await keepAlivePing(), [`${PING_URL}/fail`],
                 "the leading target's success took back the /fail a second alerting target had earned");
+        });
+
+        // The discriminating half of the rule above: the failing line is the
+        // one that tested first, and the other line's later success must not
+        // speak for it.
+        it("keeps the check down while an earlier alerting failure still stands", async () => {
+            const [fibre, backup] = await withTargets([
+                {name: "Fibre", provider: "ookla", alerts: true, sortOrder: 0},
+                {name: "Backup", provider: "ookla", alerts: true, sortOrder: 1}
+            ]);
+
+            await seedTests(server.tests, [
+                {created: EARLIER, targetId: fibre.id, ...FAILED},
+                {created: LATER, targetId: backup.id, ...SUCCEEDED}
+            ]);
+
+            assert.deepEqual(await keepAlivePing(), [`${PING_URL}/fail`],
+                "the backup line's success took the check up while the fibre's failure stands");
+        });
+
+        // And the failing line recovering is what takes the check up again -
+        // the control that keeps "any failure stands" from meaning "down
+        // forever once anything ever failed".
+        it("takes the check up once the failing line recovers", async () => {
+            const [fibre, backup] = await withTargets([
+                {name: "Fibre", provider: "ookla", alerts: true, sortOrder: 0},
+                {name: "Backup", provider: "ookla", alerts: true, sortOrder: 1}
+            ]);
+
+            const EARLIEST = new Date(Date.now() - 2 * A_MINUTE_MS).toISOString();
+
+            await seedTests(server.tests, [
+                {created: EARLIEST, targetId: fibre.id, ...FAILED},
+                {created: EARLIER, targetId: backup.id, ...SUCCEEDED},
+                {created: LATER, targetId: fibre.id, ...SUCCEEDED}
+            ]);
+
+            assert.deepEqual(await keepAlivePing(), [PING_URL],
+                "a recovered line never clears the check");
         });
 
         /**

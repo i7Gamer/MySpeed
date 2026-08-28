@@ -1,6 +1,6 @@
 import schedule from 'node-schedule';
 import { triggerEvent } from "../controller/integrations.js";
-import { getLatest, latestOfTargets } from "../controller/speedtests.js";
+import { getLatest } from "../controller/speedtests.js";
 import * as targetsController from "../controller/targets.js";
 import { isFailedTest } from "../util/testOutcome.js";
 import errorHandler from "../util/errorHandler.js";
@@ -24,12 +24,19 @@ export const setState = (state = "ping") => {
  * taking down the check that watches the line somebody actually cares about,
  * for the whole hour until the next round.
  *
- * So the scope is the targets whose results the alerting speaks for, and the
- * row is the newest among them - not the newest of one chosen member of them.
- * healthChecks sends testFailed to /fail and testFinished to the root URL, so
- * the check already carries whichever of those fired last; reading one target
- * would have the keep-alive take back a /fail that a *second* alerting target
- * had just earned, which is the overwrite that routing exists to prevent.
+ * So the scope is the targets whose results the alerting speaks for - and
+ * within it, a failure stands while *any* watched target's newest result is
+ * one. One check stands for every watched line, so it is down while any of
+ * them is: reading only the single newest row of the whole scope had the
+ * backup line's later success speak for the fibre's standing failure, which
+ * on healthchecks' side reads as "everything recovered". This is the same
+ * judgement the round's own completion ping makes (healthChecks routes
+ * roundFinished by whether anything watched failed), asked of the stored rows
+ * so a restart between rounds answers identically.
+ *
+ * One newest-row read per watched target rather than one clever query: the
+ * scope is a handful of ids and each read is an index walk over
+ * (targetId, created).
  *
  * alertingScope answers null only when there is no target at all - the
  * pre-migration install, and the demo, whose rows carry no targetId - and there
@@ -40,7 +47,11 @@ export const setState = (state = "ping") => {
 const reportedFailureStands = async () => {
     const scope = targetsController.alertingScope(await targetsController.listAll());
 
-    return isFailedTest(scope === null ? await getLatest() : await latestOfTargets(scope));
+    if (scope === null) return isFailedTest(await getLatest());
+
+    const latests = await Promise.all(scope.map((id) => getLatest(id)));
+
+    return latests.some((latest) => isFailedTest(latest));
 };
 
 /**
@@ -83,6 +94,24 @@ export const sendRunning = async () => {
 
 export const sendFinished = async (data) => {
     await triggerEvent("testFinished", data);
+};
+
+/**
+ * The round's one completion, pairing the one testStarted.
+ *
+ * The member events above fire once per target, which is right for the sinks
+ * that describe tests - a webhook per result, a template per failure - and
+ * wrong for a sink that models a run: healthchecks.io opens a timing window
+ * on /start and closes it on the next ping, so N member pings answered one
+ * start and the last member won, a watched failure taken back seconds later
+ * by the next member's success. This carries the round's own verdict, fired
+ * once from the round's finally.
+ *
+ * @param payload {failed, failures, members}: whether anything watched failed,
+ *        how many watched members did, and how many members the round had.
+ */
+export const sendRoundFinished = async (payload) => {
+    await triggerEvent("roundFinished", payload);
 };
 
 /** The scheduled job, for the tests that assert it was cancelled. */

@@ -236,8 +236,9 @@ export const initialize = async () => {
  * people most want, the keep-alive ping is how an integration says it is still
  * there, and nothing else carries a measurement to judge. Only modules that
  * call themselves notifiers are gated at all - influxdb is a time series whose
- * gaps read as an outage, and healthChecks' finished ping is what closes the
- * run its started ping opened.
+ * gaps read as an outage, and healthChecks follows the round's own completion
+ * rather than the member events, which closes the run its started ping opened
+ * whatever the thresholds say.
  */
 export const suppressesEvent = (eventName, moduleName, integration, payload) => {
     if (eventName !== "testFinished") return false;

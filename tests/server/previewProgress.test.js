@@ -67,11 +67,14 @@ describe("the preview branch", () => {
 
     // The latch moved up to the round when runs became rounds; what the demo
     // member must still never do is fire anybody's webhook over a pretended
-    // result, and the round's setRunning carries that decision.
+    // result. The judgement is a named const now, because the round's
+    // completion event mirrors it - see roundFreshness.test.js.
     it("latches the round before it pretends, without notifying the integrations", () => {
         const round = bodyOf(source, "const executeRound");
 
-        assert.match(round, /setRunning\(true,\s*members\[0\]\.provider !== "preview"\)/,
+        assert.match(round, /const announce = members\[0\]\.provider !== "preview"/,
+            "the demo's round no longer judges whether it may announce itself");
+        assert.match(round, /setRunning\(true,\s*announce\)/,
             "the demo's round either never sets the running state, or announces a pretended run");
     });
 

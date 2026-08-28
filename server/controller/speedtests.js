@@ -727,8 +727,11 @@ export const getLatest = async (targetId = undefined) => {
 /**
  * The newest test belonging to any of the given targets.
  *
- * One query rather than getLatest() per target: the keep-alive asks this every
- * minute of every instance, and the answer it wants is a single row.
+ * One query rather than getLatest() per target: /status asks this on every
+ * poll, and the answer it wants is a single row. (The keep-alive used to be
+ * the caller here; it asks getLatest() per watched target now, because its
+ * question became "does any watched line's newest result stand as a failure"
+ * rather than "what is the newest watched row".)
  *
  * Ordered by LIST_ORDER, the same way getLatest is. A round writes its
  * members' rows seconds apart at most, and an imported history can carry two

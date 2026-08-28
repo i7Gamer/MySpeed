@@ -3,7 +3,7 @@ import * as tests from '../controller/speedtests.js';
 import * as config from '../controller/config.js';
 import * as controller from "../controller/recommendations.js";
 import * as parseData from '../util/providers/parseData.js';
-import { setState, sendRunning, sendError, sendFinished } from "./integrations.js";
+import { setState, sendRunning, sendError, sendFinished, sendRoundFinished } from "./integrations.js";
 import * as serverController from "../controller/servers.js";
 import { toErrorMessage } from '../util/helpers.js';
 import { PHASE_ORDER, PHASE_START, overallProgress } from '../util/providers/progress.js';
@@ -584,12 +584,20 @@ const executeRound = async (type, targetId) => {
 
     // Once per round, however many members it has: the integrations hear one
     // "running", and the progress clock starts here. A pretended run tells
-    // them nothing - a demo has no business firing anybody's webhook.
-    setRunning(true, members[0].provider !== "preview");
+    // them nothing - a demo has no business firing anybody's webhook. The
+    // completion in the finally below mirrors this exact judgement, because
+    // an announcement and its answer have to be the same decision.
+    const announce = members[0].provider !== "preview";
+    setRunning(true, announce);
 
     // Members that could not record, counted down the round rather than across
     // it - see MAX_CONSECUTIVE_ESCAPES.
     let escapes = 0;
+
+    // Watched members whose run ended in failure - what the round's one
+    // completion event reports. Only the watched ones: a diagnostic box with
+    // alerts off fails without telling anybody, per member and per round alike.
+    let roundFailures = 0;
 
     try {
         for (const [index, target] of members.entries()) {
@@ -675,12 +683,17 @@ const executeRound = async (type, targetId) => {
              * database went away must not end quietly.
              */
             try {
-                await executeTarget(fresh, type);
+                const outcome = await executeTarget(fresh, type);
+                if (fresh.alerts && outcome.failed) roundFailures++;
                 // A member that recorded - a result or a failure, either one - is
                 // proof the database is still there, so the count of members that
                 // could not starts again from here.
                 escapes = 0;
             } catch (error) {
+                // A member that could not even record its failure has still
+                // failed - the round's completion must not read as clean
+                // because the database refused the row saying otherwise.
+                if (fresh.alerts) roundFailures++;
                 escapes++;
 
                 const {abandoned, context} = memberFailure(error, fresh,
@@ -697,6 +710,16 @@ const executeRound = async (type, targetId) => {
         // The same guarantee the latch has, for the same reason:
         // tasks/integrations.js reads this state for its keep-alive.
         setRunning(false, false);
+
+        // The one completion for the one announcement, on every path out -
+        // healthchecks.io opened a timing window on the /start above, and a
+        // round interrupted by a pause or a shutdown still has to close it.
+        // Per member the sinks already heard everything; this is the round's
+        // own verdict, and it is not awaited for the reason no notification
+        // here is: a notifier must not hold the round open.
+        if (announce) sendRoundFinished({failed: roundFailures > 0, failures: roundFailures,
+            members: members.length}).catch(err =>
+            console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
     }
 };
 
@@ -816,6 +839,11 @@ const executeTarget = async (target, type, retried = false) => {
             targetId: target.id, targetName: target.name,
             primary: await isPrimaryMember(target)})).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
+
+        // How the member went, for the round's one completion event. The
+        // retry above answers with its own attempt's outcome, so a member
+        // that failed once and then measured reports the measurement.
+        return {failed: false};
     } catch (e) {
         console.log(e)
 
@@ -862,6 +890,8 @@ const executeTarget = async (target, type, retried = false) => {
             primary: await isPrimaryMember(target)})).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
         console.log(`Test #${testResult.id} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
+
+        return {failed: true};
     }
 }
 

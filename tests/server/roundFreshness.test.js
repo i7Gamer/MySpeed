@@ -126,3 +126,52 @@ describe("what the manual-run route does before it answers", () => {
             "the route reserves and create() then latches a second time");
     });
 });
+
+/**
+ * The round's one completion event, read the way the loop guards above are.
+ *
+ * healthchecks.io models one check as one monitored thing: /start opens a run
+ * and the next ping closes it. testStarted fires once per round while the
+ * member events fire once per target, so a multi-target round answered one
+ * /start with N pings and the last member won - a watched failure taken back
+ * seconds later by the next member's success. roundFinished is the pairing:
+ * fired once, in the finally, carrying whether anything watched failed.
+ */
+describe("what the round says when it ends", () => {
+    const source = read("server/tasks/speedtest.js");
+
+    const round = () => {
+        const start = source.indexOf("const executeRound");
+        assert.notEqual(start, -1);
+
+        return source.slice(start, source.indexOf("const isPrimaryMember"));
+    };
+
+    it("announces and completes under the same judgement", () => {
+        assert.match(round(), /const announce = members\[0]\.provider !== "preview"/,
+            "the completion cannot mirror an announcement judged inline");
+        assert.match(round(), /setRunning\(true, announce\)/,
+            "testStarted is no longer gated the way roundFinished is");
+    });
+
+    it("answers its one start with one completion, however the round ends", () => {
+        const ending = round().slice(round().indexOf("} finally {"));
+
+        assert.match(ending, /if \(announce\) sendRoundFinished\(/,
+            "a round that announced itself can end without answering the /start it opened");
+    });
+
+    it("counts a watched member's failure however it failed", () => {
+        assert.match(round(), /if \(fresh\.alerts && outcome\.failed\) roundFailures\+\+/,
+            "a recorded failure of a watched member does not reach the round's outcome");
+        assert.match(round(), /if \(fresh\.alerts\) roundFailures\+\+/,
+            "a member that could not even record is not counted as the failure it is");
+    });
+
+    it("is told the outcome by the member that ran", () => {
+        assert.match(source, /return \{failed: false};/,
+            "executeTarget no longer answers how the member went");
+        assert.match(source, /return \{failed: true};/,
+            "executeTarget's failure path no longer answers how the member went");
+    });
+});

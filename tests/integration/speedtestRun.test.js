@@ -321,3 +321,80 @@ describe("two manual runs racing for the same round", () => {
         }
     });
 });
+
+/**
+ * The healthchecks lifecycle across a real round of two members.
+ *
+ * healthchecks.io models one check as one monitored thing: /start opens a run
+ * and the next ping closes it. The per-member events fire once per target, so
+ * a two-member round used to answer its one /start with two pings and the
+ * last member won - here, the demo member's success ping took the check back
+ * up seconds after the WAN's failure put it down, and the check ended the
+ * round "up" while the watched line was still failing.
+ *
+ * A real round on purpose: the WAN member fails the way every round in this
+ * file fails (its CLI is never downloaded here), and the demo provider is the
+ * one member that can succeed without a network.
+ */
+describe("the round and its healthchecks check", () => {
+    const PING_URL = "https://hc.example.net/ping/round";
+    let task;
+    let integrationId;
+
+    before(async () => {
+        task = await import("../../server/tasks/speedtest.js");
+
+        const {body} = await api(server.baseUrl, "/integrations/healthChecks", {
+            method: "PUT",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify({url: PING_URL})
+        });
+        integrationId = body.id;
+    });
+
+    // Removed again, whatever happened: every other describe in this file
+    // runs rounds too, and a leftover integration would aim their
+    // notifications at hc.example.net over the real network.
+    after(async () => {
+        await api(server.baseUrl, `/integrations/${integrationId}`, {method: "DELETE"});
+    });
+
+    it("answers its start with the round's one outcome", async () => {
+        const targets = await import("../../server/controller/targets.js");
+        await seedTarget({provider: "ookla", name: "WAN"});
+        await targets.create({name: "Demo", provider: "preview"});
+
+        const realFetch = globalThis.fetch;
+        const sent = [];
+        globalThis.fetch = async (url) => {
+            sent.push(String(url));
+            return new Response("{}", {status: 200, headers: {"content-type": "application/json"}});
+        };
+
+        const pings = () => sent.filter((url) => url.startsWith(PING_URL));
+
+        try {
+            await task.create("auto");
+
+            /*
+             * The pings are fired without being awaited - the round must not
+             * wait on a notifier - so the stub stays in place until they have
+             * stopped arriving: restoring it while one is still in flight
+             * would let that ping loose on the real network, and this file's
+             * history says exactly where that ends.
+             */
+            const deadline = Date.now() + 8000;
+            let quiet = 0;
+            while (Date.now() < deadline && (pings().length < 2 || quiet < 3)) {
+                const before = sent.length;
+                await new Promise((resolve) => setTimeout(resolve, 150));
+                quiet = sent.length === before ? quiet + 1 : 0;
+            }
+        } finally {
+            globalThis.fetch = realFetch;
+        }
+
+        assert.deepEqual(pings(), [`${PING_URL}/start`, `${PING_URL}/fail`],
+            "the demo member's success took the check back up over the WAN's standing failure");
+    });
+});
