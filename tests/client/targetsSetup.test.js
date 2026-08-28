@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readSource } from "../helpers/source.js";
 import { welcomeOpens } from "@/common/contexts/Targets/welcomeOutcome.js";
-import { optimalOrNull, targetBody } from "@/common/components/TargetsDialog/targetBody.js";
+import { optimalOrNull, optimalsAccepted, targetBody } from "@/common/components/TargetsDialog/targetBody.js";
 import {
     requiresEndpoint, takesEndpoint, takesServerId
 } from "@/common/components/TargetsDialog/providerFields.js";
@@ -180,6 +180,42 @@ describe("what the target editor writes", () => {
         assert.equal(targetBody(FIELDS).alerts, true);
         assert.equal(targetBody({...FIELDS, alerts: false}).alerts, false);
     });
+
+    // The editor holds an untyped endpoint as "", not as the sentinel - see
+    // the typing describe below - and an empty field is no endpoint.
+    it("sends an empty endpoint as no endpoint", () => {
+        assert.equal(targetBody({...FIELDS, provider: "libre", endpoint: ""}).endpoint, null);
+    });
+});
+
+/**
+ * Typing a host that begins with "none" must survive its own fourth keystroke.
+ *
+ * "none" was both the unset sentinel *and* whatever the operator had typed,
+ * held in one state: the input rendered the sentinel as "", an onChange
+ * mapped "" back to the sentinel, and an effect re-asserted it - so the
+ * moment a typed host equalled the sentinel ("none.local", four characters
+ * in) the field blanked itself, and every keystroke after that started over.
+ * Such a host could not be entered at all. The field is plain text now; ""
+ * is the empty state, and targetBody maps it to null.
+ */
+describe("typing an endpoint that begins with the sentinel", () => {
+    const editor = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+
+    it("keeps the field as the text that was typed", () => {
+        assert.doesNotMatch(editor, /if \(endpoint === ""\) setEndpoint\("none"\)/,
+            "an emptied field snaps back to the sentinel, mid-typing included");
+        assert.doesNotMatch(editor, /value=\{endpoint === "none" \? "" : endpoint}/,
+            "the input renders the sentinel as empty, so typing it erases the field");
+        assert.match(editor, /value=\{endpoint}/,
+            "the endpoint input no longer binds the endpoint state directly");
+    });
+
+    it("seeds the empty state, not the sentinel", () => {
+        assert.doesNotMatch(editor, /setEndpoint\(target\?\.endpoint \?\? "none"\)/,
+            "an untyped endpoint starts life as the sentinel again");
+        assert.match(editor, /setEndpoint\(target\?\.endpoint \?\? ""\)/);
+    });
 });
 
 /**
@@ -221,6 +257,43 @@ describe("a target's own optimal values", () => {
 
         assert.deepEqual([body.optimalPing, body.optimalDownload, body.optimalUpload],
             [null, 500, null]);
+    });
+
+    /**
+     * Whether the row can be saved at all, said as a dead button rather than
+     * as the server's red toast after the fact. The server refuses anything
+     * that is not a number above zero - and the fields beside these already
+     * hold their own rules inline, so a typed 0 earning a 400 was the one
+     * field answering a different way.
+     */
+    describe("whether the typed optimals can be saved", () => {
+        const blank = {ownOptimals: true, optimalPing: "", optimalDownload: "", optimalUpload: ""};
+
+        it("refuses a value the server would refuse", () => {
+            assert.equal(optimalsAccepted({...blank, optimalPing: "0"}), false,
+                "a zero optimal reaches the server and comes back as a toast");
+            assert.equal(optimalsAccepted({...blank, optimalDownload: "-100"}), false);
+            assert.equal(optimalsAccepted({...blank, optimalUpload: "abc"}), false,
+                "a value that silently inherits reads as saved");
+        });
+
+        it("accepts blanks and positives", () => {
+            assert.equal(optimalsAccepted(blank), true);
+            assert.equal(optimalsAccepted({...blank, optimalPing: "0.4",
+                optimalDownload: "500"}), true);
+        });
+
+        it("ignores leftovers while the toggle is off", () => {
+            assert.equal(optimalsAccepted({...blank, ownOptimals: false, optimalPing: "0"}), true,
+                "a leftover behind a switched-off toggle dead-locks the button");
+        });
+
+        it("gates the editor's save button", () => {
+            const editor = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+
+            assert.match(editor, /const canSave = [^;]*optimalsAccepted\(/,
+                "the rule exists and the button does not ask it");
+        });
     });
 });
 

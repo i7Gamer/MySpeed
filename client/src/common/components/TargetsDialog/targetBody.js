@@ -30,6 +30,27 @@ export const optimalOrNull = (enabled, value) => {
 };
 
 /**
+ * Whether the typed optimals can be saved at all, said before the server has
+ * to say it. The server refuses anything that is not a number above zero -
+ * `optimalProblem` in controller/targets.js - and the fields beside these
+ * already hold their own rules inline, so a typed 0 earning a red toast after
+ * the fact was the one field answering a different way. A blank inherits and
+ * stays fine; a value optimalOrNull would silently turn into "inherit"
+ * ("abc") is refused too, because a save that quietly drops what was typed
+ * reads as a save.
+ */
+export const optimalsAccepted = ({ownOptimals, optimalPing, optimalDownload, optimalUpload}) => {
+    if (!ownOptimals) return true;
+
+    return [optimalPing, optimalDownload, optimalUpload].every((value) => {
+        if (value === "" || value === null || value === undefined) return true;
+
+        const parsed = Number(value);
+        return Number.isFinite(parsed) && parsed > 0;
+    });
+};
+
+/**
  * @param fields the editor's state, exactly as it holds it
  * @returns the JSON body for PUT /targets or PATCH /targets/:id
  */

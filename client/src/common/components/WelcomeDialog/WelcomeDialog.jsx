@@ -1,6 +1,6 @@
 import {Dialog} from "@/common/contexts/Dialog";
 import "./styles.sass";
-import {useContext, useState} from "react";
+import {useContext, useEffect, useRef, useState} from "react";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import Greetings from "./steps/Greetings";
 import ProviderChooser from "./steps/ProviderChooser";
@@ -18,6 +18,10 @@ import {
     DEFAULT_PROVIDER, FIRST_STEP, LICENCE_STEP, PROVIDER_STEP, THRESHOLDS_STEP, canAdvance, lastStep, welcomeSeed
 } from "./welcomeStep";
 
+// How long the slide between steps runs - the `slide-in 0.5s` in styles.sass,
+// which is the half this timer has to keep in step with.
+const STEP_ANIMATION_MS = 500;
+
 export const WelcomeDialog = ({open, onClose}) => {
     const [config, reloadConfig] = useContext(ConfigContext);
     const {reloadTargets} = useContext(TargetsContext);
@@ -34,6 +38,14 @@ export const WelcomeDialog = ({open, onClose}) => {
     const [download, setDownload] = useState(0);
     const [upload, setUpload] = useState(0);
     const [animating, setAnimating] = useState(false);
+    // The step transition's end, kept so the next transition can clear its
+    // predecessor: fired and forgotten, the first press's timer cleared
+    // `animating` 500 ms after the *first* step change and cut the second
+    // transition short - and one outstanding at unmount ran its setState
+    // against a component that was gone.
+    const animationTimer = useRef(null);
+
+    useEffect(() => () => clearTimeout(animationTimer.current), []);
     // One run at a time - a second click on a slow link must not save twice.
     // finish() makes four round trips before it closes anything, so Done sits
     // there looking ignored for as long as the slowest of them takes, and PUT
@@ -190,7 +202,8 @@ export const WelcomeDialog = ({open, onClose}) => {
         } else {
             setAnimating(true);
             setStep(step + 1);
-            setTimeout(() => setAnimating(false), 500);
+            clearTimeout(animationTimer.current);
+            animationTimer.current = setTimeout(() => setAnimating(false), STEP_ANIMATION_MS);
         }
     };
 

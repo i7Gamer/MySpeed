@@ -19,7 +19,7 @@ import {CUSTOM_BACKEND_PLACEHOLDER, IPERF_HOST_PLACEHOLDER} from "@/common/utils
 import {
     iperfHostAccepted, providers, requiresEndpoint, takesEndpoint, takesServerId
 } from "./providers";
-import {targetBody} from "./targetBody";
+import {optimalsAccepted, targetBody} from "./targetBody";
 
 /**
  * One target's whole shape: its name, its provider, where it measures, whether
@@ -39,7 +39,12 @@ export const TargetEditor = ({open, onClose, target}) => {
     const [name, setName] = useState("");
     const [provider, setProvider] = useState("ookla");
     const [serverId, setServerId] = useState("none");
-    const [endpoint, setEndpoint] = useState("none");
+    // Plain text with "" for untyped, unlike the server select above: the
+    // sentinel is also a well-formed hostname, so holding it in the same
+    // state as what the operator types blanked the field the moment a typed
+    // host equalled it - "none.local" erased itself four characters in.
+    // targetBody maps "" to null on the way out.
+    const [endpoint, setEndpoint] = useState("");
     const [alerts, setAlerts] = useState(true);
     const [ownOptimals, setOwnOptimals] = useState(false);
     const [optimalPing, setOptimalPing] = useState("");
@@ -55,7 +60,7 @@ export const TargetEditor = ({open, onClose, target}) => {
         setName(target?.name ?? "");
         setProvider(target?.provider ?? "ookla");
         setServerId(target?.serverId ?? "none");
-        setEndpoint(target?.endpoint ?? "none");
+        setEndpoint(target?.endpoint ?? "");
         // sqlite hands the flag back as 0/1 under the global raw:true.
         setAlerts(target ? Boolean(target.alerts) : true);
 
@@ -90,7 +95,7 @@ export const TargetEditor = ({open, onClose, target}) => {
         // take one: switching away and back must restore the row's own
         // address, not silently clear a host the operator never edited.
         setEndpoint(takesEndpoint(provider) && provider === target?.provider
-            ? (target?.endpoint ?? "none") : "none");
+            ? (target?.endpoint ?? "") : "");
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [provider]);
 
@@ -98,18 +103,14 @@ export const TargetEditor = ({open, onClose, target}) => {
         if (serverId === "") setServerId("none");
     }, [serverId]);
 
-    useEffect(() => {
-        if (endpoint === "") setEndpoint("none");
-    }, [endpoint]);
-
     const handleEndpointChange = (value) => {
         setEndpoint(value);
-        if (value && value !== "none") setServerId("none");
+        if (value) setServerId("none");
     };
 
     const handleServerIdChange = (value) => {
         setServerId(value);
-        if (provider === "libre" && value && value !== "none") setEndpoint("none");
+        if (provider === "libre" && value && value !== "none") setEndpoint("");
     };
 
     // Checked, not assumed: put/patchRequest hand back the raw Response, so a
@@ -140,20 +141,21 @@ export const TargetEditor = ({open, onClose, target}) => {
     };
 
     const isIperf = provider === "iperf3";
-    const isUsingCustomUrl = provider === "libre" && endpoint && endpoint !== "none";
+    const isUsingCustomUrl = provider === "libre" && Boolean(endpoint);
     // An iperf3 target with no host has nothing to measure against, and the
     // server refuses one - as it refuses a host it cannot dial, so the same
     // rule it applies is asked here. Said as a button that will not press,
     // rather than as a red toast after the fact.
     //
-    // The sentinel is tested first and separately: "none" is this dialog's
-    // spelling of an empty field, and it is also a perfectly well-formed
-    // hostname, so the shape rule alone would call an untouched field valid.
+    // "none" is still refused by name: it is a well-formed hostname, but it is
+    // also the unset sentinel targetBody sends as no endpoint at all - so a
+    // save carrying it would silently drop what was typed.
     const hasEndpoint = !requiresEndpoint(provider)
         || (endpoint !== "none" && iperfHostAccepted(endpoint));
     // What makes the row saveable at all; the in-flight lock is its own term
     // on the button, so the two reasons for a dead button stay legible apart.
-    const canSave = name.trim() !== "" && hasEndpoint && (provider !== "ookla" || acceptedOokla);
+    const canSave = name.trim() !== "" && hasEndpoint && (provider !== "ookla" || acceptedOokla)
+        && optimalsAccepted({ownOptimals, optimalPing, optimalDownload, optimalUpload});
 
     const formatServerLabel = (entry) => {
         if (!entry) return "";
@@ -269,8 +271,8 @@ export const TargetEditor = ({open, onClose, target}) => {
                                         <input type="text" className="dialog-input provider-input"
                                                placeholder={isIperf ? IPERF_HOST_PLACEHOLDER
                                                    : CUSTOM_BACKEND_PLACEHOLDER}
-                                               value={endpoint === "none" ? "" : endpoint}
-                                               onChange={(e) => handleEndpointChange(e.target.value || "none")}/>
+                                               value={endpoint}
+                                               onChange={(e) => handleEndpointChange(e.target.value)}/>
                                     </div>
                                 )}
 
