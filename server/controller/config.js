@@ -576,21 +576,31 @@ export const importConfig = async (obj) => {
     /*
      * The targets: from the file's own section, or folded out of the four
      * legacy keys an export from before targets existed carries in its
-     * config block. Both restore; a file with neither restores none. Every
-     * row is judged before anything is touched, the way the config values
-     * are, and by the same judgement the API applies - a backup must not be
-     * a way past targetProblem.
+     * config block. Every row is judged before anything is touched, the way
+     * the config values are, and by the same judgement the API applies - a
+     * backup must not be a way past targetProblem.
+     *
+     * What must not restore is silence. A file that carries neither the
+     * section nor the legacy `provider` key says nothing about targets at
+     * all - a truncated or hand-edited backup, not an older one, because
+     * every pre-target export carries the key even as the "none" of an
+     * instance that never chose - and emptying the table on its behalf is
+     * the exact failure the docstring above recounts for the nodes key. The
+     * "none" file restores none, faithfully; the silent file is refused by
+     * name.
      */
-    let targetRows = asRows(obj.targets);
+    let targetRows;
 
-    if (targetRows === null) {
+    if (obj.targets === undefined) {
+        if (!Object.hasOwn(obj.config ?? {}, "provider")) return {ok: false, key: "targets"};
+
         // A backend URL an older version accepted but the current validator
         // cannot read takes the thresholds' trade: the endpoint is dropped -
         // "choose a server automatically" - rather than the whole restore
         // refused over an address the CLI could never have fetched. A fold
         // that still cannot be read restores no target at all; the file's own
-        // targets section below gets no such grace, because its rows were
-        // validated when they were written.
+        // targets section gets no such grace, because its rows were validated
+        // when they were written.
         const folded = legacyTarget(obj.config ?? {});
 
         targetRows = [];
@@ -598,16 +608,53 @@ export const importConfig = async (obj) => {
             if (targetProblem(folded) !== null) folded.endpoint = null;
             if (targetProblem(folded) === null) targetRows.push(folded);
         }
+    } else {
+        // Present but unreadable is a malformed file, not an older one - the
+        // same refusal the nodes key earns for the same shape.
+        targetRows = asRows(obj.targets);
+        if (targetRows === null) return {ok: false, key: "targets"};
     }
 
     if (targetRows.length > MAX_IMPORTED_ROWS) return {ok: false, key: "targets"};
     if (targetRows.some((row) => targetProblem(row) !== null)) return {ok: false, key: "targets"};
 
+    /*
+     * Which file ids may survive. An id names the right rows only on the
+     * instance that assigned it: kept blindly, a cross-instance restore hands
+     * the local history to whichever restored target inherits each number -
+     * every row the old target measured is then returned, graded and exported
+     * as the new one's, with nothing anywhere saying an attribution changed.
+     *
+     * An id is contested when a live target wears it under a different name,
+     * and stripped only when local history actually stands under it. Both
+     * halves matter: the placeholder the welcome dialog forces onto a fresh
+     * reinstall wears the file's first id with not one row to its name, and
+     * replacing it - id and all - is the recovery this flow exists for; while
+     * an id with years of local rows filed under it is an attribution, and
+     * handing it to a different name re-files them silently. The stripped
+     * case takes a fresh id, and the rows that pointed at the old number keep
+     * pointing at a target that no longer exists - which the interface
+     * already shows honestly as an orphan. A hand-edited id that is not a
+     * number takes a fresh one too, rather than aborting the transaction as
+     * an unnamed refusal.
+     */
+    const liveNames = new Map((await listAllTargets())
+        .map((row) => [row.id, String(row.name).trim()]));
+
+    const contested = targetRows.filter((row) => Number.isInteger(row.id)
+        && liveNames.has(row.id) && liveNames.get(row.id) !== String(row.name).trim());
+
+    const stripped = new Set();
+    for (const row of contested)
+        if (await test.count({where: {targetId: row.id}}) > 0) stripped.add(row.id);
+
+    const keepsId = (row) => Number.isInteger(row.id) && !stripped.has(row.id);
+
     targetRows = targetRows.map((row, index) => ({
-        // The id survives so the history's targetId column keeps pointing at
-        // the right rows on a same-instance restore; a legacy fold has none
-        // and takes the next free one.
-        id: row.id,
+        // The id survives a same-instance restore so the history's targetId
+        // column keeps pointing at the right rows; a legacy fold has none and
+        // takes the next free one.
+        id: keepsId(row) ? row.id : undefined,
         name: row.name.trim(),
         provider: row.provider,
         serverId: row.serverId ?? null,
@@ -620,6 +667,24 @@ export const importConfig = async (obj) => {
         sortOrder: Number.isInteger(row.sortOrder) ? row.sortOrder : index,
         created: typeof row.created === "string" ? row.created : new Date().toISOString()
     }));
+
+    /*
+     * No two rows may share an id or a name. The id collision would abort the
+     * transaction as its unnamed refusal; the name is the key the history
+     * restore files rows under, and importedTargetId keeps the first writer
+     * for a shared one - restored as-is, the file would seed that silent
+     * merge. Checked after the trim, so a padded duplicate does not slip by.
+     */
+    const keptIds = targetRows.map((row) => row.id).filter((id) => id !== undefined);
+    if (new Set(keptIds).size !== keptIds.length) return {ok: false, key: "targets"};
+
+    const trimmedNames = targetRows.map((row) => row.name);
+    if (new Set(trimmedNames).size !== trimmedNames.length) return {ok: false, key: "targets"};
+
+    // Rows keeping an id go first: an auto-assigned id is always past the
+    // highest one already written, so it cannot collide with an explicit id
+    // still to come - the other order can.
+    targetRows = [...targetRows].sort((a, b) => (a.id === undefined) - (b.id === undefined));
 
     const updates = [];
     for (const key in obj.config ?? {}) {

@@ -692,7 +692,11 @@ export const retentionCutoffFilter = (cutoff) => ({[Op.lte]: cutoff.toISOString(
 
 export const getLatest = async (targetId = undefined) => {
     let latest = await tests.findOne({
-        order: [["created", "DESC"]],
+        // LIST_ORDER, not `created` alone: an imported history can carry two
+        // rows with the identical stamp - the retried restore does exactly
+        // that - and "the latest" must not depend on which of them the engine
+        // happens to visit last.
+        order: LIST_ORDER,
         ...(targetId !== undefined && {where: {targetId}})
     });
     if (latest === null) return undefined;
@@ -707,11 +711,11 @@ export const getLatest = async (targetId = undefined) => {
  * One query rather than getLatest() per target: the keep-alive asks this every
  * minute of every instance, and the answer it wants is a single row.
  *
- * Ordered by LIST_ORDER rather than by `created` alone, which is what getLatest
- * above does. A round writes its members' rows seconds apart at most, and an
- * imported history can carry two rows with the identical stamp; the id breaks
- * that tie towards the row written last, which is the one whose notification
- * the caller is being asked whether to preserve.
+ * Ordered by LIST_ORDER, the same way getLatest is. A round writes its
+ * members' rows seconds apart at most, and an imported history can carry two
+ * rows with the identical stamp; the id breaks that tie towards the row
+ * written last, which is the one whose notification the caller is being asked
+ * whether to preserve.
  *
  * An empty list is answered without asking the database at all. It is a real
  * case - every configured target has alerts switched off - and `IN ()` is not

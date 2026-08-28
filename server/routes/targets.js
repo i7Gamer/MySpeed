@@ -33,6 +33,11 @@ app.put("/", password(false), previewReadOnly, async (req, res) => {
     const problem = targets.targetProblem(fields);
     if (problem !== null) return res.status(400).json({message: problem});
 
+    // The name is the key the history backup files rows under, so two targets
+    // wearing one would silently merge their histories on the next restore.
+    if (await targets.nameTaken(fields.name))
+        return res.status(400).json({message: "Another target already wears this name"});
+
     const row = await targets.create(fields);
 
     res.json({message: "The target has been created", id: row.id});
@@ -64,6 +69,10 @@ app.patch("/:id", password(false), previewReadOnly, async (req, res) => {
 
     const problem = targets.targetProblem(merged);
     if (problem !== null) return res.status(400).json({message: problem});
+
+    // Excluding the row itself, so keeping one's own name stays legal.
+    if (await targets.nameTaken(merged.name, current.id))
+        return res.status(400).json({message: "Another target already wears this name"});
 
     await targets.update(current.id, writableFields(req.body));
 

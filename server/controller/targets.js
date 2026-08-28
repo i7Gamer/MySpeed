@@ -402,7 +402,30 @@ const nextSortOrder = async () => {
     return last ? last.sortOrder + 1 : 0;
 };
 
-export const update = async (id, changes) => await targets.update(changes, {where: {id}});
+// The name is trimmed on this path the way create() and importConfig trim
+// theirs: a padded PATCH otherwise survives into the table, and the history
+// backup then exports " Ookla " beside rows a restore looks up as "Ookla" -
+// an exact match byName can never make, so every one of those rows restores
+// unattributed.
+export const update = async (id, changes) => {
+    const sanitized = typeof changes.name === "string"
+        ? {...changes, name: changes.name.trim()}
+        : changes;
+
+    return await targets.update(sanitized, {where: {id}});
+};
+
+/**
+ * Whether another target already wears this name.
+ *
+ * The name is the key the history backup files rows under - importedTargetId
+ * keeps the first id in round order for a shared one, so two targets wearing
+ * the same name silently merge their histories on the next restore. Refused
+ * at the door instead. Compared trimmed and exactly, the way byName matches.
+ */
+export const nameTaken = async (name, excludeId = undefined) =>
+    (await listAll()).some((row) =>
+        row.id !== excludeId && String(row.name).trim() === String(name).trim());
 
 export const deleteTarget = async (id) => await targets.destroy({where: {id}});
 

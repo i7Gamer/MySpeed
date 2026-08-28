@@ -73,6 +73,49 @@ describe("PUT /api/targets", () => {
     });
 });
 
+/**
+ * A target's name is the key the history backup files rows under:
+ * importedTargetId keeps the first id in round order for a shared name, so two
+ * targets wearing one would silently merge their histories on the next
+ * restore. Refused at the door instead - and stored trimmed on every path, or
+ * the padded copy and the trimmed one stop matching across the round trip.
+ */
+describe("a target's name", () => {
+    it("is refused when another target already wears it", async () => {
+        await put({name: "Ookla", provider: "ookla"});
+
+        const {status, body} = await put({name: " Ookla ", provider: "cloudflare"});
+
+        assert.equal(status, 400);
+        assert.match(body.message, /name/i);
+    });
+
+    it("is refused on a rename onto an existing name", async () => {
+        await put({name: "WAN", provider: "ookla"});
+        const {body: {id}} = await put({name: "NAS", provider: "cloudflare"});
+
+        const {status} = await patch(`/${id}`, {name: "WAN"});
+
+        assert.equal(status, 400);
+    });
+
+    it("still accepts a PATCH that keeps the target's own name", async () => {
+        const {body: {id}} = await put({name: "WAN", provider: "ookla"});
+
+        assert.equal((await patch(`/${id}`, {name: "WAN", enabled: false})).status, 200);
+    });
+
+    it("is stored trimmed however it arrives", async () => {
+        const {body: {id}} = await put({name: "WAN", provider: "ookla"});
+
+        assert.equal((await patch(`/${id}`, {name: "  Fibre  "})).status, 200);
+
+        const [row] = await targets.listAll();
+        assert.equal(row.name, "Fibre",
+            "a padded PATCH survives, and the name-keyed restore stops matching it");
+    });
+});
+
 describe("PATCH /api/targets/:id", () => {
     it("judges the row it would become, not the fragment that arrived", async () => {
         const {body: {id}} = await put({name: "own", provider: "libre"});

@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, api, seedTarget, setConfig } from "./helpers/boot.js";
+import { bootServer, api, seedTarget, seedTests, setConfig } from "./helpers/boot.js";
 
 let server;
 let nodeModel;
@@ -78,7 +78,8 @@ describe("PUT /api/storage/config", () => {
 
     it("keeps existing rows when a config value is invalid", async () => {
         const {status} = await importConfig({
-            config: {cron: "every second tuesday"}, nodes: [], integrations: [], recommendations: []
+            config: {cron: "every second tuesday"}, nodes: [], integrations: [], recommendations: [],
+            targets: []
         });
 
         assert.equal(status, 500);
@@ -92,7 +93,8 @@ describe("PUT /api/storage/config", () => {
             config: {},
             nodes: [{name: "new", url: "http://10.0.0.2:5216"}],
             integrations: [],
-            recommendations: [{ping: null, download: null, upload: null}]
+            recommendations: [{ping: null, download: null, upload: null}],
+            targets: []
         });
 
         assert.equal(status, 500);
@@ -142,7 +144,8 @@ describe("PUT /api/storage/config", () => {
             nodes: [],
             integrations: [],
             recommendations: Array.from({length: 10_000},
-                () => ({ping: 1, download: 1, upload: 1}))
+                () => ({ping: 1, download: 1, upload: 1})),
+            targets: []
         });
 
         assert.equal(status, 200, "the ceiling is off by one and refuses a payload at the limit");
@@ -154,7 +157,8 @@ describe("PUT /api/storage/config", () => {
             config: {retentionDays: "30"},
             nodes: [{name: "office", url: "http://10.0.0.3:5216", password: null}],
             integrations: [],
-            recommendations: [{ping: 12, download: 500, upload: 250}]
+            recommendations: [{ping: 12, download: 500, upload: 250}],
+            targets: []
         });
 
         assert.equal(status, 200);
@@ -243,7 +247,8 @@ describe("PUT /api/storage/config", () => {
      * read-only left it locked.
      */
     describe("a backup value that sits at the shipped default", () => {
-        const restore = (config) => importConfig({config, nodes: [], integrations: [], recommendations: []});
+        const restore = (config) => importConfig({config, nodes: [], integrations: [], recommendations: [],
+            targets: []});
 
         it("restores the default retention over a changed one", async () => {
             await setConfig(server.config, "retentionDays", "7");
@@ -297,7 +302,8 @@ describe("PUT /api/storage/config", () => {
  */
 describe("PUT /api/storage/config with a threshold an older version accepted", () => {
     const restore = (config) => importConfig({
-        config, nodes: [{name: "new", url: "http://10.0.0.9:5216"}], integrations: [], recommendations: []
+        config, nodes: [{name: "new", url: "http://10.0.0.9:5216"}], integrations: [], recommendations: [],
+        targets: []
     });
 
     ["1.2.3", "..", ".", "1..2"].forEach((stored) => {
@@ -400,7 +406,11 @@ describe("PUT /api/storage/config with the provider keys of an older export", ()
  * plainly.
  */
 describe("PUT /api/storage/config names what it refused", () => {
-    const restore = (config) => importConfig({config, nodes: [], integrations: [], recommendations: []});
+    // `targets: []` so the shape checks stay satisfied and the value under
+    // test is what gets named; the silent-about-targets shape has a describe
+    // of its own below.
+    const restore = (config) => importConfig({config, nodes: [], integrations: [], recommendations: [],
+        targets: []});
 
     it("names the key whose value was rejected", async () => {
         const {status, body} = await restore({cron: "every second tuesday"});
@@ -422,5 +432,109 @@ describe("PUT /api/storage/config names what it refused", () => {
 
         assert.equal(status, 500);
         assert.match(body.message, /Error importing config/);
+    });
+});
+
+/**
+ * The targets a restore carries - or fails to.
+ *
+ * A file that says nothing about targets at all is a truncated or hand-edited
+ * backup, not merely an older one: every current export writes the section,
+ * and every pre-target export carries `provider` in its config block, even as
+ * the "none" of an instance that never chose. Emptying the table for silence
+ * is the exact failure the import's own docstring recounts for the nodes key.
+ * And the ids a file does carry name the right rows only on the instance that
+ * assigned them - kept blindly, a cross-instance restore re-files the local
+ * history under whichever restored target inherits each number.
+ */
+describe("PUT /api/storage/config and the targets it carries", () => {
+    const listTargets = async () => await (await import("../../server/controller/targets.js")).listAll();
+
+    const fullBackup = (extra = {}) =>
+        ({config: {}, nodes: [], integrations: [], recommendations: [], ...extra});
+
+    it("refuses a backup that says nothing about targets, naming them", async () => {
+        await seedTarget({provider: "ookla", name: "keep-me"});
+
+        const {status, body} = await importConfig(fullBackup());
+
+        assert.equal(status, 500);
+        assert.match(String(body.message ?? ""), /target/i,
+            "the refusal does not say what the file is missing");
+        assert.equal((await listTargets()).length, 1, "the silent file emptied the table anyway");
+    });
+
+    it("refuses a targets section that is not a list", async () => {
+        await seedTarget({provider: "ookla"});
+
+        assert.equal((await importConfig(fullBackup({targets: "all of them"}))).status, 500);
+        assert.equal((await listTargets()).length, 1);
+    });
+
+    it("restores none for an old backup that affirmatively chose no provider", async () => {
+        await seedTarget({provider: "ookla"});
+
+        assert.equal((await importConfig(fullBackup({config: {provider: "none"}}))).status, 200);
+        assert.equal((await listTargets()).length, 0);
+    });
+
+    it("empties the table for an explicit empty section", async () => {
+        await seedTarget({provider: "ookla"});
+
+        assert.equal((await importConfig(fullBackup({targets: []}))).status, 200);
+        assert.equal((await listTargets()).length, 0);
+    });
+
+    it("keeps a same-instance id, and with it the history filed under it", async () => {
+        const mine = await seedTarget({provider: "ookla", name: "WAN"});
+        await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: mine.id}]);
+
+        const {status} = await importConfig(fullBackup({
+            targets: [{id: mine.id, name: "WAN", provider: "ookla"}]
+        }));
+
+        assert.equal(status, 200);
+        const [restored] = await listTargets();
+        assert.equal(restored.id, mine.id, "a same-instance restore detached the history");
+    });
+
+    it("hands out a fresh id when a different target wears the file's one", async () => {
+        const mine = await seedTarget({provider: "ookla", name: "WAN"});
+        await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: mine.id}]);
+
+        const {status} = await importConfig(fullBackup({
+            targets: [{id: mine.id, name: "NAS iperf3", provider: "cloudflare"}]
+        }));
+
+        assert.equal(status, 200);
+
+        const [restored] = await listTargets();
+        assert.equal(restored.name, "NAS iperf3");
+        assert.notEqual(restored.id, mine.id,
+            "the file's id was kept, so WAN's history now answers as another target's");
+
+        const [row] = await server.tests.findAll();
+        assert.equal(row.targetId, mine.id, "the history row itself was rewritten");
+    });
+
+    it("refuses two rows sharing an id", async () => {
+        const {status, body} = await importConfig(fullBackup({
+            targets: [{id: 1, name: "A", provider: "ookla"}, {id: 1, name: "B", provider: "ookla"}]
+        }));
+
+        assert.equal(status, 500);
+        assert.match(String(body.message ?? ""), /target/i);
+    });
+
+    // The name is the key the history restore files rows under, and
+    // importedTargetId keeps the first writer for a shared one - so a file
+    // carrying a duplicate would seed the silent merge at restore time.
+    it("refuses two rows sharing a name, however it is padded", async () => {
+        const {status, body} = await importConfig(fullBackup({
+            targets: [{name: "Ookla", provider: "ookla"}, {name: " Ookla ", provider: "cloudflare"}]
+        }));
+
+        assert.equal(status, 500);
+        assert.match(String(body.message ?? ""), /target/i);
     });
 });

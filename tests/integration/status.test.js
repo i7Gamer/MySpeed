@@ -52,6 +52,21 @@ describe("GET /api/speedtests/status", () => {
     });
 
     describe("the last test", () => {
+        // An imported history can carry two rows with the identical stamp -
+        // the retried-restore case importedTargetId's docstring describes -
+        // and "the latest" must not depend on which the engine happens to
+        // visit last. The id breaks the tie towards the row written last,
+        // the way latestOfTargets already does.
+        it("breaks a created tie towards the row written last", async () => {
+            const created = hoursAgo(1);
+            await seedTests(server.tests, [{created, download: 100}, {created, download: 200}]);
+
+            const {lastTest} = await status();
+
+            assert.equal(lastTest.download, 200,
+                "two rows share a stamp and the earlier one was reported as the latest");
+        });
+
         it("says when it was and whether it succeeded", async () => {
             await seedTests(server.tests, [{created: hoursAgo(1)}]);
 

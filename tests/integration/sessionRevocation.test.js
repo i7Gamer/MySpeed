@@ -20,7 +20,7 @@ beforeEach(async () => {
     await setConfig(server.config, "password", "none");
 });
 
-const EMPTY_TABLES = {nodes: [], integrations: [], recommendations: []};
+const EMPTY_TABLES = {nodes: [], integrations: [], recommendations: [], targets: []};
 
 /** Signs in the way the browser does and returns the session cookie to send back. */
 const signIn = async (password = OWNER_PASSWORD) => {
