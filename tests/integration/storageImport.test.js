@@ -498,6 +498,62 @@ describe("PUT /api/storage/config and the targets it carries", () => {
         assert.equal(restored.id, mine.id, "a same-instance restore detached the history");
     });
 
+    /**
+     * And when nothing wears it at all, because the target that did was
+     * deleted here.
+     *
+     * A delete keeps the rows it measured - history is the history - so the
+     * number is free while the attribution filed under it is not. Judged by
+     * live targets alone, the file's row inherited every one of those rows:
+     * a foreign backup's "NAS iperf3" answering, grading and exporting the
+     * deleted WAN's years of measurements as its own, with nothing anywhere
+     * saying an attribution changed. It also gave one file two answers -
+     * importing it a second time found the number free again, because the
+     * first import's strip had moved the restored row above it - which is
+     * exactly what importedTargetId's docstring forbids.
+     *
+     * The orphans stay orphans, which is the honest half: the interface
+     * already shows a row whose target is gone for what it is, and no rule
+     * can tell a same-instance recovery from a stranger's file, because an
+     * orphaned row stores a number and no name.
+     */
+    it("hands out a fresh id when the file's one has orphaned history behind it", async () => {
+        const controller = await import("../../server/controller/targets.js");
+        const gone = await seedTarget({provider: "ookla", name: "WAN"});
+        await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: gone.id}]);
+
+        await controller.deleteTarget(gone.id);
+
+        const {status} = await importConfig(fullBackup({
+            targets: [{id: gone.id, name: "NAS iperf3", provider: "cloudflare"}]
+        }));
+
+        assert.equal(status, 200);
+
+        const [restored] = await listTargets();
+        assert.notEqual(restored.id, gone.id,
+            "a deleted target's history was handed to whatever the file calls that number");
+
+        const [row] = await server.tests.findAll();
+        assert.equal(row.targetId, gone.id, "the orphaned row itself was rewritten");
+    });
+
+    // The other side of that rule, and the ordinary case: a restore onto an
+    // instance with nothing filed under the file's numbers keeps them, so a
+    // history restored beside it lands on the targets it names.
+    it("keeps the file's ids where no history stands under them", async () => {
+        await (await import("../../server/controller/targets.js")).removeAll();
+        await seedTests(server.tests, []);
+
+        const {status} = await importConfig(fullBackup({
+            targets: [{id: 5, name: "A", provider: "ookla"}, {id: 6, name: "B", provider: "cloudflare"}]
+        }));
+
+        assert.equal(status, 200);
+        assert.deepEqual((await listTargets()).map((row) => row.id).sort(), [5, 6],
+            "a plain restore renumbered the targets its own history names");
+    });
+
     it("hands out a fresh id when a different target wears the file's one", async () => {
         const mine = await seedTarget({provider: "ookla", name: "WAN"});
         await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: mine.id}]);
@@ -526,15 +582,27 @@ describe("PUT /api/storage/config and the targets it carries", () => {
         assert.match(String(body.message ?? ""), /target/i);
     });
 
-    // The name is the key the history restore files rows under, and
-    // importedTargetId keeps the first writer for a shared one - so a file
-    // carrying a duplicate would seed the silent merge at restore time.
-    it("refuses two rows sharing a name, however it is padded", async () => {
-        const {status, body} = await importConfig(fullBackup({
+    /**
+     * A shared name is restored rather than refused, unlike a shared id.
+     *
+     * The door on the routes is what stops a pair being made; a file carrying
+     * one can only have come from an instance that already holds it - every
+     * install from before that door, and every instance the welcome wizard's
+     * double-Done built a twin on. Refusing the whole file there is refusing
+     * that operator their own backup, nodes, integrations and settings
+     * included, at the moment they most need it, over a shape the restore
+     * itself handles: importedTargetId keeps the first writer for a shared
+     * name, which importedTarget.test.js pins as the deliberate fallback.
+     *
+     * A shared id is still refused, because that one aborts the write itself.
+     */
+    it("restores two rows sharing a name, however it is padded", async () => {
+        const {status} = await importConfig(fullBackup({
             targets: [{name: "Ookla", provider: "ookla"}, {name: " Ookla ", provider: "cloudflare"}]
         }));
 
-        assert.equal(status, 500);
-        assert.match(String(body.message ?? ""), /target/i);
+        assert.equal(status, 200,
+            "an instance holding a duplicate pair cannot restore its own backup at all");
+        assert.equal((await listTargets()).length, 2);
     });
 });

@@ -65,16 +65,31 @@ app.patch("/:id", password(false), previewReadOnly, async (req, res) => {
     // Judged as the row it would become, not as the fragment that arrived:
     // a PATCH carrying only {endpoint} has to be held against the provider
     // it will run under.
-    const merged = {...current, ...writableFields(req.body)};
+    const fields = writableFields(req.body);
+    const merged = {...current, ...fields};
 
     const problem = targets.targetProblem(merged);
     if (problem !== null) return res.status(400).json({message: problem});
 
+    /*
+     * The name door stands over what this request is doing, not over the row
+     * it would leave behind.
+     *
+     * Duplicates were legal until that door, and the welcome wizard's second
+     * Done made exact pairs, so an upgraded instance can hold two targets of
+     * one name. Asked of the merged row, the check refused every edit to
+     * either of them - unscheduling one, changing its optima - naming a field
+     * the request never carried, and left renaming as the only way to touch
+     * them. A request that does not change the name cannot take one.
+     */
+    const renames = fields.name !== undefined
+        && String(fields.name).trim() !== String(current.name).trim();
+
     // Excluding the row itself, so keeping one's own name stays legal.
-    if (await targets.nameTaken(merged.name, current.id))
+    if (renames && await targets.nameTaken(merged.name, current.id))
         return res.status(400).json({message: "Another target already wears this name"});
 
-    await targets.update(current.id, writableFields(req.body));
+    await targets.update(current.id, fields);
 
     res.json({message: "The target has been updated"});
 });

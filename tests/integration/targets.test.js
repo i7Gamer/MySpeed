@@ -105,6 +105,34 @@ describe("a target's name", () => {
         assert.equal((await patch(`/${id}`, {name: "WAN", enabled: false})).status, 200);
     });
 
+    /**
+     * The door is for names being taken, not for names already shared.
+     *
+     * Duplicates were legal until this door, and the welcome wizard's
+     * double-Done made exact pairs - so an upgraded instance can hold two
+     * targets called "Ookla". Judging every PATCH by the row it would become
+     * refused every edit to either of them, unscheduling one included, naming
+     * a field the request never carried and leaving a rename as the only way
+     * out.
+     */
+    it("lets an unrelated edit through on a pair it did not create", async () => {
+        const first = await targets.create({name: "Ookla", provider: "ookla"});
+        await targets.create({name: "Ookla", provider: "cloudflare"});
+
+        assert.equal((await patch(`/${first.id}`, {enabled: false})).status, 200,
+            "an edit that never mentioned the name was refused over it");
+        assert.equal((await patch(`/${first.id}`, {optimalDownload: 500})).status, 200);
+    });
+
+    // And renaming one of them onto the other is still refused: the door
+    // stands for what a request is actually doing.
+    it("still refuses a rename that takes the other one's name", async () => {
+        const first = await targets.create({name: "Ookla", provider: "ookla"});
+        await targets.create({name: "NAS", provider: "cloudflare"});
+
+        assert.equal((await patch(`/${first.id}`, {name: "NAS"})).status, 400);
+    });
+
     it("is stored trimmed however it arrives", async () => {
         const {body: {id}} = await put({name: "WAN", provider: "ookla"});
 
