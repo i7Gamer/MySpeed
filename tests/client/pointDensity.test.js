@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
-    DENSE_SERIES_THRESHOLD, lineTensionFor, lonePointRadius, pointStyleFor
+    DENSE_SERIES_THRESHOLD, lineTensionFor, lonePointHoverRadius, lonePointRadius, pointStyleFor
 } from "../../client/src/pages/Statistics/charts/pointDensity.js";
 
 describe("pointStyleFor", () => {
@@ -82,15 +82,19 @@ describe("what the line does at a gap", () => {
      * successful test in a bad hour, gone from the chart. It gets a dot.
      */
     it("gives a reading with no drawn neighbour a visible dot", () => {
-        for (const file of ["SpeedChart/SpeedChart.jsx", "PingChart.jsx"])
+        for (const file of ["SpeedChart/SpeedChart.jsx", "PingChart.jsx"]) {
             assert.match(read(file), /pointRadius: lonePointRadius\(pointStyle\)/,
                 `${file} hides a lone reading at the densities that draw no points`);
+            assert.match(read(file), /pointHoverRadius: lonePointHoverRadius\(pointStyle\)/,
+                `${file}'s lone dots vanish under the crosshair on the compact cards`);
+        }
     });
 });
 
 describe("lonePointRadius", () => {
     const dense = {radius: 0, hoverRadius: 4};
     const normal = {radius: 3, hoverRadius: 6};
+    const compact = {radius: 0, hoverRadius: 0};
 
     const at = (data, index) => ({dataset: {data}, dataIndex: index});
     const point = (y) => ({x: 1, y});
@@ -107,6 +111,20 @@ describe("lonePointRadius", () => {
 
         assert.ok(lonePointRadius(dense)(at(data, 1)) > 0,
             "the one successful test in a bad hour is invisible");
+    });
+
+    /**
+     * Smaller than the ordinary dot, deliberately. The radius-0 densities
+     * exist because markers merge into a band that hides the line - and a
+     * sparse series makes *every* drawn point lone (the loaded-latency line
+     * is null wherever a provider measured neither direction), so a lone dot
+     * at full size would repaint the very band those densities removed.
+     */
+    it("keeps the lone dot below the ordinary one at the dense densities", () => {
+        const data = [point(null), point(2), point(null)];
+
+        assert.ok(lonePointRadius(dense)(at(data, 1)) < normal.radius,
+            "a fragmented dense series is a band of full-size dots again");
     });
 
     // The edges have one neighbour each; a missing one counts as a gap.
@@ -129,5 +147,39 @@ describe("lonePointRadius", () => {
         const data = [point(null), point(2), point(null)];
 
         assert.equal(lonePointRadius(normal)(at(data, 1)), 3);
+    });
+});
+
+/**
+ * The hover radius has to keep up. pointRadius became scriptable and
+ * pointHoverRadius stayed the scalar style, so on the compact cards -
+ * hoverRadius 0, and an interaction mode that activates every index the
+ * crosshair passes - a lone dot painted at rest and vanished the moment the
+ * pointer reached it: dots blinking on and off along the sweep.
+ */
+describe("lonePointHoverRadius", () => {
+    const compact = {radius: 0, hoverRadius: 0};
+    const dense = {radius: 0, hoverRadius: 4};
+
+    const at = (data, index) => ({dataset: {data}, dataIndex: index});
+    const point = (y) => ({x: 1, y});
+    const lonely = [point(null), point(2), point(null)];
+
+    it("never lets a hovered lone dot shrink below its resting size", () => {
+        const resting = lonePointRadius(compact)(at(lonely, 1));
+
+        assert.ok(lonePointHoverRadius(compact)(at(lonely, 1)) >= resting,
+            "the lone dot vanishes the moment the crosshair reaches it");
+    });
+
+    it("keeps the configured hover radius everywhere else", () => {
+        const data = [point(1), point(2), point(3)];
+
+        assert.equal(lonePointHoverRadius(dense)(at(data, 1)), 4);
+        assert.equal(lonePointHoverRadius(compact)(at(data, 1)), 0);
+    });
+
+    it("keeps a hover radius that was already larger", () => {
+        assert.equal(lonePointHoverRadius(dense)(at(lonely, 1)), 4);
     });
 });

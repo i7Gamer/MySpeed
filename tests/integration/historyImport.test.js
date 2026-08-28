@@ -101,13 +101,13 @@ describe("importing a history", () => {
 
         const {status} = await importHistory([{...row(0),
             jitter: -1, packetLoss: -2, downloadLatency: -3, uploadLatency: -4,
-            bytesDownloaded: -1_000_000, bytesUploaded: -5}]);
+            bytesDownloaded: -1_000_000, bytesUploaded: -5, time: -30}]);
 
         assert.equal(status, 200);
 
         const [stored] = await testModel.findAll();
         for (const column of ["jitter", "packetLoss", "downloadLatency", "uploadLatency",
-            "bytesDownloaded", "bytesUploaded"])
+            "bytesDownloaded", "bytesUploaded", "time"])
             assert.equal(stored[column], null,
                 `${column} kept a negative figure the live path would have refused`);
     });

@@ -39,36 +39,44 @@ export const optimalOrNull = (enabled, value) => {
  * ("abc") is refused too, because a save that quietly drops what was typed
  * reads as a save.
  */
-export const optimalsAccepted = ({ownOptimals, optimalPing, optimalDownload, optimalUpload}) => {
-    if (!ownOptimals) return true;
+export const optimalAccepted = (value) => {
+    if (value === "" || value === null || value === undefined) return true;
 
-    return [optimalPing, optimalDownload, optimalUpload].every((value) => {
-        if (value === "" || value === null || value === undefined) return true;
-
-        const parsed = Number(value);
-        return Number.isFinite(parsed) && parsed > 0;
-    });
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0;
 };
+
+export const optimalsAccepted = ({ownOptimals, optimalPing, optimalDownload, optimalUpload}) =>
+    !ownOptimals || [optimalPing, optimalDownload, optimalUpload].every(optimalAccepted);
 
 /**
  * @param fields the editor's state, exactly as it holds it
  * @returns the JSON body for PUT /targets or PATCH /targets/:id
  */
 export const targetBody = ({name, provider, serverId, endpoint, alerts, ownOptimals,
-                               optimalPing, optimalDownload, optimalUpload}) => ({
-    // Trimmed, because the server measures the name against its length limit
-    // and a name of spaces is not a name.
-    name: (name ?? "").trim(),
-    provider,
-    // Held to the providers that have a list to pin from, for the same reason
-    // as the endpoint below: the server judges the row this would become.
-    serverId: !takesServerId(provider) || serverId === AUTOMATIC || !serverId ? null : serverId,
-    // Only the providers that take one. Sent for any other it would be
-    // refused - the server judges the merged row, and an endpoint on a
-    // provider that takes none is exactly what it refuses.
-    endpoint: takesEndpoint(provider) && endpoint && endpoint !== AUTOMATIC ? endpoint.trim() : null,
-    alerts,
-    optimalPing: optimalOrNull(ownOptimals, optimalPing),
-    optimalDownload: optimalOrNull(ownOptimals, optimalDownload),
-    optimalUpload: optimalOrNull(ownOptimals, optimalUpload)
-});
+                               optimalPing, optimalDownload, optimalUpload}) => {
+    // Judged exactly as it is sent. Compared raw and sent trimmed, " none"
+    // walked past the sentinel check here and went to the server as the
+    // literal host "none" - a row whose editor reopens with a dead button,
+    // because the seeded value now *is* the sentinel.
+    const typedEndpoint = typeof endpoint === "string" ? endpoint.trim() : "";
+
+    return {
+        // Trimmed, because the server measures the name against its length limit
+        // and a name of spaces is not a name.
+        name: (name ?? "").trim(),
+        provider,
+        // Held to the providers that have a list to pin from, for the same reason
+        // as the endpoint below: the server judges the row this would become.
+        serverId: !takesServerId(provider) || serverId === AUTOMATIC || !serverId ? null : serverId,
+        // Only the providers that take one. Sent for any other it would be
+        // refused - the server judges the merged row, and an endpoint on a
+        // provider that takes none is exactly what it refuses.
+        endpoint: takesEndpoint(provider) && typedEndpoint && typedEndpoint !== AUTOMATIC
+            ? typedEndpoint : null,
+        alerts,
+        optimalPing: optimalOrNull(ownOptimals, optimalPing),
+        optimalDownload: optimalOrNull(ownOptimals, optimalDownload),
+        optimalUpload: optimalOrNull(ownOptimals, optimalUpload)
+    };
+};

@@ -731,24 +731,30 @@ export const importConfig = async (obj) => {
         restoredIds.push(id);
     }
 
-    // Said out loud, because it is the one thing a restore changes that the
-    // file does not describe: the operator asked for these numbers and is
-    // getting others, and the rows under the old ones stay where they are.
-    if (stripped.size > 0)
-        console.warn(`Restored ${stripped.size} target(s) under new ids: the history already filed `
-            + "under the ids the file names belongs to targets this instance measured with. "
-            + "Those rows keep their old attribution and are shown as having no target.");
-
-    // The other renumber, said apart because it is a different situation: no
-    // history is involved, the name simply decides the id here and the file's
-    // numbers were re-fitted around the names this instance already holds.
+    // The other renumber beside the strip, counted apart because it is a
+    // different situation: no history is involved, the name simply decides
+    // the id here and the file's numbers were re-fitted around the names this
+    // instance already holds. Both are counted now and *said* after the
+    // transaction commits - see reportIdChanges - because warned here they
+    // described ids a refused restore never wrote.
     const renumbered = targetRows.filter((row, index) => Number.isInteger(row.id)
         && restoredIds[index] !== row.id && !stripped.has(row.id)).length;
 
-    if (renumbered > 0)
-        console.warn(`Restored ${renumbered} target(s) under different ids than the file names: `
-            + "a target's name decides its id here, and the file's numbers were re-fitted "
-            + "around the names this instance already holds. The history keeps its attribution.");
+    // Said out loud, because it is the one thing a restore changes that the
+    // file does not describe: the operator asked for these numbers and is
+    // getting others - and in the stripped case the rows under the old ones
+    // stay where they are.
+    const reportIdChanges = () => {
+        if (stripped.size > 0)
+            console.warn(`Restored ${stripped.size} target(s) under new ids: the history already filed `
+                + "under the ids the file names belongs to targets this instance measured with. "
+                + "Those rows keep their old attribution and are shown as having no target.");
+
+        if (renumbered > 0)
+            console.warn(`Restored ${renumbered} target(s) under different ids than the file names: `
+                + "a target's name decides its id here, and the file's numbers were re-fitted "
+                + "around the names this instance already holds. The history keeps its attribution.");
+    };
 
     targetRows = targetRows.map((row, index) => ({
         // The id survives a same-instance restore so the history's targetId
@@ -885,6 +891,11 @@ export const importConfig = async (obj) => {
     } catch {
         return REFUSED;
     }
+
+    // Only about a restore that happened: computed above, said here, so a
+    // refused transaction does not leave two log lines about ids it never
+    // wrote.
+    reportIdChanges();
 
     // Restoring a backup is usually the remediation, so a session issued
     // against the password it replaced must not outlive it. password.js honours

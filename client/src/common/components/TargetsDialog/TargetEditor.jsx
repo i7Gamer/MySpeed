@@ -19,7 +19,7 @@ import {CUSTOM_BACKEND_PLACEHOLDER, IPERF_HOST_PLACEHOLDER} from "@/common/utils
 import {
     iperfHostAccepted, providers, requiresEndpoint, takesEndpoint, takesServerId
 } from "./providers";
-import {optimalsAccepted, targetBody} from "./targetBody";
+import {optimalAccepted, optimalsAccepted, targetBody} from "./targetBody";
 
 /**
  * One target's whole shape: its name, its provider, where it measures, whether
@@ -141,20 +141,26 @@ export const TargetEditor = ({open, onClose, target}) => {
     };
 
     const isIperf = provider === "iperf3";
-    const isUsingCustomUrl = provider === "libre" && Boolean(endpoint);
+    // The value as targetBody will send it - the gate and the body have to
+    // judge the same text, or " none" walks past one and is dropped by the
+    // other.
+    const typedEndpoint = endpoint.trim();
+    // "none" is a well-formed hostname *and* the word targetBody sends as no
+    // endpoint at all - so a save carrying it would silently drop what was
+    // typed: on libre it went out as null behind a green "saved" toast, with
+    // the server select hidden by the very text being dropped. Refused for
+    // every provider that takes an endpoint.
+    const sentinelTyped = takesEndpoint(provider) && typedEndpoint === "none";
+    const isUsingCustomUrl = provider === "libre" && Boolean(typedEndpoint) && !sentinelTyped;
     // An iperf3 target with no host has nothing to measure against, and the
     // server refuses one - as it refuses a host it cannot dial, so the same
     // rule it applies is asked here. Said as a button that will not press,
     // rather than as a red toast after the fact.
-    //
-    // "none" is still refused by name: it is a well-formed hostname, but it is
-    // also the unset sentinel targetBody sends as no endpoint at all - so a
-    // save carrying it would silently drop what was typed.
-    const hasEndpoint = !requiresEndpoint(provider)
-        || (endpoint !== "none" && iperfHostAccepted(endpoint));
+    const hasEndpoint = !requiresEndpoint(provider) || iperfHostAccepted(endpoint);
     // What makes the row saveable at all; the in-flight lock is its own term
     // on the button, so the two reasons for a dead button stay legible apart.
-    const canSave = name.trim() !== "" && hasEndpoint && (provider !== "ookla" || acceptedOokla)
+    const canSave = name.trim() !== "" && hasEndpoint && !sentinelTyped
+        && (provider !== "ookla" || acceptedOokla)
         && optimalsAccepted({ownOptimals, optimalPing, optimalDownload, optimalUpload});
 
     const formatServerLabel = (entry) => {
@@ -310,8 +316,14 @@ export const TargetEditor = ({open, onClose, target}) => {
                                                         twenty-three languages. */}
                                                     {label} <span className="target-optimal-unit">{unit}</span>
                                                 </span>
-                                                <input type="number" className="dialog-input" min="0"
-                                                       placeholder={placeholder || ""}
+                                                {/* input-error beside the dead button: min="0" lets
+                                                    the spinner step to a 0 the save then refuses, and
+                                                    a greyed Update with every other field looking
+                                                    fine names nothing. The pause dialog marks its own
+                                                    "above zero" rule the same way. */}
+                                                <input type="number"
+                                                       className={`dialog-input${optimalAccepted(value) ? "" : " input-error"}`}
+                                                       min="0" placeholder={placeholder || ""}
                                                        value={value} onChange={(e) => set(e.target.value)}/>
                                             </label>
                                         ))}

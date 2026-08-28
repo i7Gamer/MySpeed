@@ -88,8 +88,16 @@ export const triggerEvent = async (name, data) => {
             // The time only: nothing was attempted, so this says nothing about
             // whether the integration still delivers, and must not overwrite
             // what the last actual send found out.
+            //
+            // "What it was asked" means by its own settings. A member that
+            // opted out of alerting is the *target's* decision: nothing about
+            // this integration was exercised, and stamping it painted "last
+            // run just now" on a notifier that has never delivered a single
+            // message - on an instance whose only member has alerts off,
+            // permanently.
             if (suppressesEvent(name, module.module, integration, data)) {
-                tasks.push(triggerActivity(integration.id).catch(() => undefined));
+                if (data?.alerts !== false)
+                    tasks.push(triggerActivity(integration.id).catch(() => undefined));
                 continue;
             }
 

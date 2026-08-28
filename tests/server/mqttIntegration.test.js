@@ -483,6 +483,31 @@ describe("a round of several targets", () => {
             assert.match(body, /Fibre/, "the re-announcement still carries the old name");
     });
 
+    /**
+     * Renaming back is a rename like any other. Keyed as an ever-growing set
+     * of (id, name) pairs, "LAN Box" → "Office" → "LAN Box" found the first
+     * name already recorded and stayed quiet - so the broker kept serving
+     * "Office Download" for a member named "LAN Box" until the process
+     * restarted, the exact failure the name key was added to remove. What the
+     * set has to remember is the name the broker currently holds, one per
+     * member, not every name it has ever held.
+     */
+    it("announces a member renamed back to an earlier name", async () => {
+        const renamed = config({discovery: true, topic: "myspeed/back"});
+
+        await fire("testFinished", renamed, SECONDARY);
+        await settled();
+        await fire("testFinished", renamed, {...SECONDARY, targetName: "Office"});
+        await settled();
+        seen = [];
+
+        await fire("testFinished", renamed, SECONDARY);
+        await settled();
+
+        assert.ok(configTopics().length > 0,
+            "renaming back leaves the broker serving the intermediate name until a restart");
+    });
+
     // The other way round it stays quiet: the same name arriving again is the
     // retained config the broker already holds.
     it("does not re-announce a member whose name has not changed", async () => {

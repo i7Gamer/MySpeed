@@ -145,7 +145,9 @@ const buildHourlyAverages = (entries, zone) => {
         // fabricated zero is not a reading, and one in an hour's bucket halved
         // that hour's latency.
         if (isMeasuredLatency(entry.ping)) bucket.ping.push(entry.ping);
-        if (entry.jitter !== null && entry.jitter !== undefined) bucket.jitter.push(entry.jitter);
+        // usableFigure rather than a null check: an imported -1 placeholder
+        // was an hour's whole jitter reading.
+        if (usableFigure(entry.jitter) !== null) bucket.jitter.push(entry.jitter);
     });
 
     return buckets.map((bucket, hour) => ({
@@ -326,9 +328,13 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
 
         // Measured-only per metric: jitter and the loaded latencies are absent
         // on some providers, and a null must not drag a bucket's average.
+        // Through usableFigure, like the full-resolution branch: an imported
+        // negative placeholder is not a reading either, and guarded on one
+        // branch only, the same range answered two ways depending on row
+        // count - 300 rows drew gaps, 301 bucketed the -1s back in.
         const measuredOnly = (key) => valid
-            .map(entry => entry[key])
-            .filter(value => value !== null && value !== undefined);
+            .map(entry => usableFigure(entry[key]))
+            .filter(value => value !== null);
 
         series.labels.push(new Date(midTime).toISOString());
         series.failed.push(bucket.errors.length > 0);
@@ -414,7 +420,12 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
         ? fullSeries(sorted)
         : downsampledSeries(sorted, from, to, targetPoints);
 
-    const withJitter = succeeded.filter(entry => entry.jitter !== null && entry.jitter !== undefined);
+    // Measured, not merely present: an imported history can hold -1
+    // placeholders in the nullable columns, and admitted here one of them set
+    // the range's minimum jitter and dragged its average - the summary
+    // disagreeing with the chart drawn under it, which shows the same row as
+    // a gap.
+    const withJitter = succeeded.filter(entry => usableFigure(entry.jitter) !== null);
     // The same shape, for the same reason: a successful test can carry a
     // latency nobody measured - see UNMEASURED_LATENCY - and averaging that
     // fabricated zero as a 0 ms reading dragged every ping figure down while
@@ -428,10 +439,11 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
         },
         // Averaged over the tests that measured it: only Ookla reports packet
         // loss, and the unmeasured rows must not drag the average. Null when no
-        // test in the range measured any - absence is not a clean line.
+        // test in the range measured any - absence is not a clean line. Through
+        // usableFigure for the reason withJitter reads through it.
         packetLoss: averageOrNull(succeeded
-            .map(entry => entry.packetLoss)
-            .filter(value => value !== null && value !== undefined)),
+            .map(entry => usableFigure(entry.packetLoss))
+            .filter(value => value !== null)),
         // mapFixed rather than mapRounded: the latency carries decimals now, and
         // `time` below is the only column here that is genuinely whole.
         ping: mapFixed(withPing, "ping"),

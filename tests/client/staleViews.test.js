@@ -193,11 +193,14 @@ describe("the config provider drops an answer for a config it has left", () => {
     });
 
     // The failure path steers navigation and dialogs; a stale failure must
-    // not redirect the visitor away from a node that answered fine.
+    // not redirect the visitor away from a node that answered fine. Anchored
+    // on the *last* .catch: the first one in this chain is the body-parse
+    // fallback inside the 401 branch, and sliced from there the assertion
+    // matched the then-side guard and pinned nothing about the catch.
     it("drops a superseded failure too", () => {
-        const failure = reload.slice(reload.indexOf(".catch("));
+        const failure = reload.slice(reload.lastIndexOf(".catch("));
 
-        assert.match(failure, /superseded\(\)/,
+        assert.match(failure, /if \(superseded\(\)\) return;/,
             "a stale failure still raises the error dialog over a working node");
     });
 });

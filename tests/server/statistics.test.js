@@ -1038,6 +1038,65 @@ describe("an imported negative quality figure on the chart", () => {
         assert.deepEqual(stats.data.downloadLatency, [41]);
         assert.deepEqual(stats.data.uploadLatency, [60]);
     });
+
+    /**
+     * And the same answer once the range is wide enough to be bucketed. The
+     * guard sat only on the full-resolution branch, so the identical data
+     * answered two ways depending on row count: 300 rows drew gaps, 301 rows
+     * bucketed the -1 placeholders into every average they touched and the
+     * jitter dipped below zero again.
+     */
+    it("stays out of the buckets when the range is downsampled", () => {
+        // One placeholder row alone in the first bucket - averaged with
+        // nothing, so a filter that admits it answers exactly -1 - and enough
+        // clean rows later in the day to force the downsampled branch.
+        const FILLER_ROWS = 60;
+        const entries = [
+            at("2026-08-07T00:10:00.000Z",
+                {jitter: -1, downloadLatency: -3, uploadLatency: -2, time: -5}),
+            ...Array.from({length: FILLER_ROWS}, (unused, index) =>
+                at(`2026-08-07T12:${String(index).padStart(2, "0")}:00.000Z`,
+                    {jitter: 2, downloadLatency: 40, uploadLatency: 50, time: 30}))
+        ];
+
+        const stats = buildStatistics(entries, DAY, {maxPoints: 50});
+
+        assert.equal(stats.downsampled, true, "the range was not bucketed, so this holds nothing");
+        for (const key of ["jitter", "downloadLatency", "uploadLatency", "time"])
+            for (const value of stats.data[key])
+                assert.ok(value === null || value >= 0,
+                    `a bucketed ${key} average was dragged below its readings by a placeholder`);
+    });
+});
+
+/**
+ * The summary beside the chart, asked the same question. The gap fix cited a
+ * summary that "skipped the same row", and it did not: the jitter and packet
+ * loss filters asked only for null, so the -1 placeholders set every minimum
+ * and dragged every average - the panel disagreeing with the chart under it.
+ */
+describe("an imported negative quality figure in the summary", () => {
+    const rows = [
+        at("2026-08-07T01:00:00.000Z", {jitter: -1, packetLoss: -2, downloadLatency: -3, uploadLatency: -1}),
+        at("2026-08-07T02:00:00.000Z", {jitter: 2, packetLoss: 0.5, downloadLatency: 40, uploadLatency: 60})
+    ];
+
+    it("does not set the minimum or drag the average", () => {
+        const stats = buildStatistics(rows, DAY);
+
+        assert.equal(stats.jitter.min, 2, "the placeholder is the range's lowest jitter");
+        assert.equal(stats.jitter.avg, 2);
+        assert.equal(stats.packetLoss, 0.5, "the placeholder halved the packet loss");
+        assert.equal(stats.consistency.ping.jitter, 2);
+    });
+
+    it("stays out of the hourly buckets", () => {
+        const stats = buildStatistics(rows, DAY, {offsetMinutes: 0});
+        const one = stats.hourlyAverages.find((bucket) => bucket.hour === 1);
+
+        assert.equal(one.jitter, null,
+            "the placeholder is an hour's whole jitter reading");
+    });
 });
 
 /**

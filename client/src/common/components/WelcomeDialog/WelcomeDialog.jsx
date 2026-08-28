@@ -92,6 +92,11 @@ export const WelcomeDialog = ({open, onClose}) => {
         // inside that window left the reopened wizard replaying the animation
         // over its first step.
         setAnimating(false);
+        // The timer that owns that flag is deliberately NOT cleared here: a
+        // stale one fires false onto false, and this callback is lifted out
+        // of the file by text and run without the component's scope - see
+        // continueStep's comment - so a ref named here is a ReferenceError
+        // in every one of those cases. The unmount effect clears it.
     });
 
     const finish = async (close) => {

@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readSource } from "../helpers/source.js";
 import { welcomeOpens } from "@/common/contexts/Targets/welcomeOutcome.js";
-import { optimalOrNull, optimalsAccepted, targetBody } from "@/common/components/TargetsDialog/targetBody.js";
+import { optimalAccepted, optimalOrNull, optimalsAccepted, targetBody } from "@/common/components/TargetsDialog/targetBody.js";
 import {
     requiresEndpoint, takesEndpoint, takesServerId
 } from "@/common/components/TargetsDialog/providerFields.js";
@@ -186,6 +186,20 @@ describe("what the target editor writes", () => {
     it("sends an empty endpoint as no endpoint", () => {
         assert.equal(targetBody({...FIELDS, provider: "libre", endpoint: ""}).endpoint, null);
     });
+
+    /**
+     * Judged trimmed, exactly as it is sent. The gate compared the raw state
+     * while the body trimmed on the way out, so " none" walked past the
+     * sentinel check and went to the server as the literal host "none" - a
+     * row that reopens with a dead Update button, because the seeded value
+     * now *is* the sentinel.
+     */
+    it("reads the sentinel and the emptiness through the trim it sends", () => {
+        assert.equal(targetBody({...FIELDS, provider: "libre", endpoint: " none "}).endpoint, null);
+        assert.equal(targetBody({...FIELDS, provider: "libre", endpoint: "   "}).endpoint, null);
+        assert.equal(targetBody({...FIELDS, provider: "libre",
+            endpoint: " https://speed.example.net "}).endpoint, "https://speed.example.net");
+    });
 });
 
 /**
@@ -215,6 +229,31 @@ describe("typing an endpoint that begins with the sentinel", () => {
         assert.doesNotMatch(editor, /setEndpoint\(target\?\.endpoint \?\? "none"\)/,
             "an untyped endpoint starts life as the sentinel again");
         assert.match(editor, /setEndpoint\(target\?\.endpoint \?\? ""\)/);
+    });
+
+    /**
+     * But typing the sentinel itself is refused, for every provider that
+     * takes an endpoint. "none" is a well-formed hostname *and* the word
+     * targetBody sends as no endpoint at all - so a save carrying it would
+     * silently drop what was typed: on libre it went out as null behind a
+     * green "saved" toast, with the server select the typed text had hidden.
+     * A dead button is the honest answer, and it is dead against the trimmed
+     * value, which is what the body actually sends.
+     */
+    it("refuses to save a typed sentinel on any endpoint provider", () => {
+        assert.match(editor, /const sentinelTyped = /,
+            "nothing refuses the one host that would be silently dropped");
+        assert.match(editor, /typedEndpoint === "none"/,
+            "the sentinel is judged untrimmed, so ' none' walks past it");
+        assert.match(editor, /const canSave = [^;]*!sentinelTyped/,
+            "the sentinel is judged and the button does not ask");
+    });
+
+    // The custom-URL switch reads the value as it is sent, so whitespace or
+    // a typed sentinel cannot hide the server select while saving nothing.
+    it("decides the libre custom-URL switch on the trimmed value", () => {
+        assert.match(editor, /isUsingCustomUrl = provider === "libre" && Boolean\(typedEndpoint\) && !sentinelTyped/,
+            "typing the sentinel hides the server select while the body sends no URL at all");
     });
 });
 
@@ -293,6 +332,30 @@ describe("a target's own optimal values", () => {
 
             assert.match(editor, /const canSave = [^;]*optimalsAccepted\(/,
                 "the rule exists and the button does not ask it");
+        });
+
+        /**
+         * And the refused field says so where the operator is looking. A dead
+         * button alone is a puzzle - the input's own min="0" calls the typed 0
+         * legal, the browser reports it :valid, and name, provider and
+         * endpoint all look fine - so the field wears the same input-error the
+         * pause dialog puts on its own "must be above zero" rule.
+         */
+        it("marks the refused field, not only the button", () => {
+            const editor = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+            const field = editor.match(/<input type="number"(?:(?!\/>)[^])*?\/>/)?.[0];
+
+            assert.ok(field, "the optimal inputs are no longer recognisable");
+            assert.match(field, /input-error/,
+                "a refused optimal greys the button with nothing on screen naming the field");
+        });
+
+        it("judges one value the way it judges the row", () => {
+            assert.equal(optimalAccepted(""), true);
+            assert.equal(optimalAccepted("0.4"), true);
+            assert.equal(optimalAccepted("0"), false);
+            assert.equal(optimalAccepted("-3"), false);
+            assert.equal(optimalAccepted("abc"), false);
         });
     });
 });
@@ -399,9 +462,11 @@ describe("the editor's own guard", () => {
      * to the shape rule, and asking the rule first would read the sentinel as
      * a saveable host.
      */
+    // The sentinel refusal moved out of this expression and applies to every
+    // endpoint provider now - the sentinel describe above pins it - so this
+    // holds only the iperf3 shape rule itself.
     it("judges the host the way the server will", () => {
         assert.match(editor, /iperfHostAccepted\(endpoint\)/);
-        assert.match(editor, /endpoint !== "none" && iperfHostAccepted\(endpoint\)/);
     });
 
     it("draws the server pickers only where they mean something", () => {

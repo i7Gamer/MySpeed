@@ -4,7 +4,7 @@ import { t } from "i18next";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { convertSpeed, getSpeedUnit, TIME_FORMAT_12H } from "@/common/utils/FormatUtil";
 import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
-import { lineTensionFor, lonePointRadius, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
+import { lineTensionFor, lonePointHoverRadius, lonePointRadius, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
 import { clickable } from "@/common/utils/Clickable";
 import { useChartTheme } from "@/pages/Statistics/charts/useChartTheme";
 import {
@@ -86,7 +86,7 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, onClick, fail
                 pointBackgroundColor: seriesColor,
                 pointBorderColor: seriesColor,
                 pointRadius: lonePointRadius(pointStyle),
-                pointHoverRadius: pointStyle.hoverRadius,
+                pointHoverRadius: lonePointHoverRadius(pointStyle),
                 order: 1
             },
             // Left off entirely when nothing was measured: a line at zero is a

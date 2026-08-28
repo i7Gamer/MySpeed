@@ -47,12 +47,14 @@ const isImportableNumber = (value) =>
  * ones a negative can never legitimately reach. The import mirrors the same
  * rule: a hand-edited or third-party file carrying -1 placeholders in these
  * columns stores them as unmeasured, the way the run that could not measure
- * them would have. The required three are deliberately absent - -1 across
- * ping, download and upload is how a failed run is stored, and the import has
- * to keep restoring those.
+ * them would have. `time` is here too: no provider can report a negative
+ * duration and a failed run stores null, so a negative one is the same
+ * placeholder wearing a different column. The required three are deliberately
+ * absent - -1 across ping, download and upload is how a failed run is stored,
+ * and the import has to keep restoring those.
  */
 const NON_NEGATIVE_COLUMNS = ["jitter", "packetLoss", "downloadLatency", "uploadLatency",
-    "bytesDownloaded", "bytesUploaded"];
+    "bytesDownloaded", "bytesUploaded", "time"];
 
 /**
  * Records a completed - or failed - speedtest and returns its id.

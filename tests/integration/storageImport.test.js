@@ -686,6 +686,32 @@ describe("PUT /api/storage/config and the targets it carries", () => {
             assert.deepEqual(said.filter((line) => /ids/.test(line)), [],
                 "an uneventful same-instance restore warns about nothing");
         });
+
+        /**
+         * Said only about a restore that happened. Both counts are computed
+         * before the transaction, and warned there they described ids a
+         * refused restore never wrote - two log lines about a rollback that
+         * stored nothing.
+         */
+        it("says nothing about a restore that was refused", async () => {
+            const mine = await seedTarget({provider: "ookla", name: "WAN"});
+            await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: mine.id}]);
+
+            // The renumber shape from above, wrapped around a config value the
+            // validation refuses - so the target settling happens and the
+            // transaction is never reached.
+            const said = await warningsWhile(async () => assert.equal((await importConfig(
+                fullBackup({
+                    config: {cron: "not a cron"},
+                    targets: [
+                        {id: mine.id + 70, name: "WAN", provider: "ookla"},
+                        {id: mine.id, name: "NAS", provider: "cloudflare"}
+                    ]
+                }))).status, 500));
+
+            assert.deepEqual(said.filter((line) => /ids/.test(line)), [],
+                "the log says ids changed in a restore that stored nothing");
+        });
     });
 
     /**

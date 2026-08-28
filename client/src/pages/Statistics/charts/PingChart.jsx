@@ -4,7 +4,7 @@ import { t } from "i18next";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { TIME_FORMAT_12H } from "@/common/utils/FormatUtil";
 import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
-import { lineTensionFor, lonePointRadius, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
+import { lineTensionFor, lonePointHoverRadius, lonePointRadius, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
 import { clickable } from "@/common/utils/Clickable";
 import { useChartTheme } from "@/pages/Statistics/charts/useChartTheme";
 import {
@@ -93,7 +93,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
                 pointBackgroundColor: themeColors.ping,
                 pointBorderColor: themeColors.ping,
                 pointRadius: lonePointRadius(pointStyle),
-                pointHoverRadius: pointStyle.hoverRadius,
+                pointHoverRadius: lonePointHoverRadius(pointStyle),
                 order: 1
             },
             // Idle and under-load latency on one axis is the picture that
@@ -110,7 +110,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
                 pointBackgroundColor: themeColors.loaded,
                 pointBorderColor: themeColors.loaded,
                 pointRadius: lonePointRadius(pointStyle),
-                pointHoverRadius: pointStyle.hoverRadius,
+                pointHoverRadius: lonePointHoverRadius(pointStyle),
                 order: 3
             }] : []),
             ...(hasJitterData ? [{
@@ -122,7 +122,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
                 pointBackgroundColor: themeColors.jitter,
                 pointBorderColor: themeColors.jitter,
                 pointRadius: lonePointRadius(pointStyle),
-                pointHoverRadius: pointStyle.hoverRadius,
+                pointHoverRadius: lonePointHoverRadius(pointStyle),
                 order: 2
             }] : []),
             // Left off entirely when nothing was measured: a line at zero is a

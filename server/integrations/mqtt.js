@@ -68,7 +68,7 @@ const topicFor = (base, target) => target ? `${base}/${target.id}` : base;
  * simply replaces a retained message with an identical one - and a stored flag
  * would be a migration and a decision about what a stale one means.
  */
-const announced = new Set();
+const announced = new Map();
 
 /**
  * The retained configs to send in front of this result, if any.
@@ -82,16 +82,20 @@ const announcementsFor = (c, target = null) => {
 
     const prefix = c.discovery_prefix || DEFAULT_DISCOVERY_PREFIX;
     // A secondary member's sensors are announced beside its own first result,
-    // keyed apart from the base set so each is made exactly once. The name is
-    // part of the key because it is part of the payload - "LAN Box Download"
-    // is what the entity is called - and keyed by id alone a rename left the
-    // retained config carrying the old name until the process restarted,
-    // which is the only thing that clears the in-memory set.
-    const key = `${prefix}|${c.topic}|${target ? `${target.id}|${target.name}` : "base"}`;
+    // keyed apart from the base set so each is made exactly once. What the
+    // map remembers under the key is the name the broker currently holds -
+    // the name is part of the payload, "LAN Box Download" is what the entity
+    // is called - so any result whose member wears a different one
+    // re-announces. Keyed by id alone a rename never re-announced at all;
+    // remembered as an ever-growing set of (id, name) pairs, renaming *back*
+    // found the old pair still recorded and left the broker serving the
+    // intermediate name until the process restarted.
+    const key = `${prefix}|${c.topic}|${target ? target.id : "base"}`;
+    const name = target?.name ?? "";
 
-    if (announced.has(key)) return null;
+    if (announced.get(key) === name) return null;
 
-    return {key, messages: discoveryMessages({
+    return {key, name, messages: discoveryMessages({
         stateTopic: c.topic, prefix, version: packageJson.version, target})};
 };
 
@@ -138,7 +142,7 @@ const send = async (c, messages, activity, announcement) => {
             timeout: OUTBOUND_TIMEOUT
         });
 
-        if (announcement) announced.add(announcement.key);
+        if (announcement) announced.set(announcement.key, announcement.name);
 
         noteActivity(activity, false);
     } catch (error) {
