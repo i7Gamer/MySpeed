@@ -1233,6 +1233,38 @@ describe("a corrupt stored number", () => {
             "the deviation counted the placeholder as a reading");
     });
 
+    /**
+     * And the two columns the placeholder is actually written into. A row with
+     * -1 in one of them beside good figures is a success to isFailedTest -
+     * which requires all three - and read through the metricValue default it
+     * was a full reading: min -1 Mbit/s on the card, a chart point below zero,
+     * an hour's bucket and the consistency spread dragged by it. The same
+     * argument this suite already makes for ping, time and jitter, applied to
+     * the trio's other two.
+     */
+    it("keeps the placeholder out of the throughput figures too", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {download: 100, upload: 50}),
+            at("2026-08-07T02:00:00.000Z", {download: -1, upload: -1})
+        ], DAY, {offsetMinutes: 0});
+
+        assert.deepEqual(stats.download, {min: 100, max: 100, avg: 100, median: 100},
+            "the placeholder is the range's minimum download");
+        assert.deepEqual(stats.upload, {min: 50, max: 50, avg: 50, median: 50});
+        assert.deepEqual(stats.data.download, [100, null],
+            "the chart draws a point at minus one megabit");
+        assert.deepEqual(stats.data.upload, [50, null]);
+
+        const hour = stats.hourlyAverages.find((bucket) => bucket.hour === 2);
+        assert.deepEqual({download: hour.download, upload: hour.upload, count: hour.count},
+            {download: null, upload: null, count: 0},
+            "an hour's average is the placeholder, counted as a test behind it");
+
+        // One readable reading after the refusal, so the two-value gate holds.
+        assert.deepEqual(stats.consistency.download, {stdDev: null, consistency: null},
+            "the spread was dragged by the placeholder");
+    });
+
     it("keeps a negative time out of the span the card prints", () => {
         const stats = buildStatistics([
             at("2026-08-07T01:00:00.000Z", {time: 1000}),
@@ -1280,16 +1312,19 @@ describe("a corrupt stored number", () => {
     });
 
     it("does not blow up a downsampled chart point", () => {
+        // Index 1 carries the -1 placeholder: the bucketed branch reads
+        // through its own door, and a raw read there averaged the placeholder
+        // into a bucket the full-resolution branch would have gapped.
         const many = Array.from({length: 60}, (unused, index) =>
             at(`2026-08-07T04:${String(index).padStart(2, "0")}:00.000Z`,
-                index === 0 ? {download: "NaN"} : {download: 100}));
+                index === 0 ? {download: "NaN"} : index === 1 ? {download: -1} : {download: 100}));
 
         const stats = buildStatistics(many, DAY, {maxPoints: 50});
 
         assert.equal(stats.downsampled, true);
         for (const point of stats.data.download)
-            assert.ok(point === null || (Number.isFinite(point) && point < 1e6),
-                "a bucket average concatenated a stored 'NaN'");
+            assert.ok(point === null || point === 100,
+                "a corrupt row or a placeholder dragged a bucket mean off the only real reading");
     });
 });
 

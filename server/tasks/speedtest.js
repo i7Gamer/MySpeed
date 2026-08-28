@@ -9,7 +9,7 @@ import * as serverController from "../controller/servers.js";
 import { toErrorMessage } from '../util/helpers.js';
 import { PHASE_ORDER, PHASE_START, overallProgress } from '../util/providers/progress.js';
 import { failedPayload, finishedPayload } from '../util/notificationPayload.js';
-import { FAILED_TEST, UNMEASURED_LATENCY, impossibleMeasurement, isFailedTest, isMeasuredLatency, usableFigure }
+import { FAILED_TEST, impossibleMeasurement, isFailedTest, measuredPing, usableFigure }
     from '../util/testOutcome.js';
 import { isRateLimitMessage } from '../util/providers/cliOutput.js';
 import { backoffRemainingMs, clearBackoff, isBackingOff, recordRateLimit } from '../util/rateLimitBackoff.js';
@@ -104,10 +104,10 @@ export const RECOMMENDATION_SAMPLE = 10;
 // row that reaches the sample anyway - one whose error column somehow stayed
 // null - would otherwise take "lowest ping" from every genuine test beside it,
 // and the fabricated zero above it would do the same. Asked through
-// isMeasuredLatency rather than spelled again here: the statistics and the alert
-// gate judge this exact question, and a third answer is what put a 0 ms target
-// on the recommendation card beside a page that would not average the same row.
-const lowestRealPing = (ping) => isMeasuredLatency(ping) && ping > UNMEASURED_LATENCY;
+// measuredPing rather than spelled again here: the statistics judge this exact
+// question, and a second spelling is what put a 0 ms target on the
+// recommendation card beside a page that would not average the same row.
+const lowestRealPing = (ping) => measuredPing(ping) !== null;
 
 /**
  * The newest full sample of successful tests, from the line the instance

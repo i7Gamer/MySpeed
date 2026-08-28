@@ -1,6 +1,6 @@
 import { mapFixed, mapRounded } from './helpers.js';
 import { localHourAt, serverZone, zoneFromOffset } from './timezone.js';
-import { isFailedTest, isMeasuredLatency, isSuccessfulTest, usableFigure } from './testOutcome.js';
+import { isFailedTest, isSuccessfulTest, measuredPing, usableFigure } from './testOutcome.js';
 import { metricValue } from './metricValue.js';
 
 export const TARGET_CHART_POINTS = 300;
@@ -75,29 +75,6 @@ const readings = (values) => {
         if (reading !== null) numbers.push(reading);
     }
     return numbers;
-};
-
-/**
- * A ping that was measured, read the way every other column is.
- *
- * isMeasuredLatency asks typeof first - rightly, for the fabricated-zero
- * question it owns - so handed the raw column it was the one gate still
- * refusing a numeric string after the cleanup taught the other columns to
- * read one. Coerce first, then ask; null for everything the gate refuses,
- * which the callers treat as the gap it is.
- *
- * usableFigure, not bare metricValue, for the coercion: metricValue keeps -1
- * for its Prometheus caller to judge, and this reader's callers never judge
- * it - a first cut fed the placeholder straight into min, the chart and the
- * hourly buckets as a reading of minus one millisecond, and the coercion even
- * admitted the string "-1" the old typeof gate refused. usableFigure is the
- * same refusal every sibling column already reads through, which also makes
- * this the same judgement as the recommendation sample's lowestRealPing:
- * a number, not negative, and not the fabricated zero.
- */
-const measuredPing = (value) => {
-    const ping = usableFigure(value);
-    return ping !== null && isMeasuredLatency(ping) ? ping : null;
 };
 
 // The plain mean of a readings() population. The filter this used to carry
@@ -212,9 +189,9 @@ const buildHourlyAverages = (entries, zone) => {
         // Readable at the door, like the two guarded pushes below - and so the
         // count reported beside the hour's figure counts what the figure used,
         // rather than presenting one readable row as an average backed by ten.
-        const download = metricValue(entry.download);
+        const download = usableFigure(entry.download);
         if (download !== null) bucket.download.push(download);
-        const upload = metricValue(entry.upload);
+        const upload = usableFigure(entry.upload);
         if (upload !== null) bucket.upload.push(upload);
         // Guarded like the jitter below it, and for the same reason: a
         // fabricated zero is not a reading, and one in an hour's bucket halved
@@ -265,22 +242,18 @@ const INCREASE_DECIMALS = 2;
  * and a failed test stores -1 placeholders that are not readings.
  */
 const loadedIncrease = (entry) => {
-    // usableFigure, like every other reader of these columns - the bare typeof
-    // that stood here was the file's last second predicate, and one row could
-    // be measured in the ping range and absent from this card. It coerces the
-    // defensive numeric-string spelling and refuses null, junk and the
-    // negative placeholders alike, which is everything the old loop refused.
-    const ping = usableFigure(entry.ping);
+    // usableFigure for the two loaded columns and measuredPing for the idle
+    // one - the same readers every sibling figure goes through. They coerce
+    // the defensive numeric-string spelling and refuse null, junk and the
+    // negative placeholders alike, and measuredPing also refuses the
+    // fabricated zero: subtracted as a real 0 ms baseline, the whole loaded
+    // latency would read as *added* latency - an F grade for a line that was
+    // fine.
+    const ping = measuredPing(entry.ping);
     const downloadLatency = usableFigure(entry.downloadLatency);
     const uploadLatency = usableFigure(entry.uploadLatency);
 
     if (ping === null || downloadLatency === null || uploadLatency === null) return null;
-
-    // A fabricated idle ping is no baseline: 0 is UNMEASURED_LATENCY, and
-    // subtracted as a real 0 ms the whole loaded latency reads as *added*
-    // latency - an F grade for a line that was fine. The same zero every
-    // other reader in this file already skips.
-    if (!isMeasuredLatency(ping)) return null;
 
     return Math.max(0, round(Math.max(downloadLatency, uploadLatency) - ping, INCREASE_DECIMALS));
 };
@@ -372,8 +345,8 @@ const fullSeries = (sorted) => ({
         // total-plus-value bug average() was fixed for, reproduced in the
         // browser on every range small enough not to bucket. Unreadable is a
         // null, which the line already draws as a gap.
-        download: sorted.map(entry => isSuccessfulTest(entry) ? metricValue(entry.download) : null),
-        upload: sorted.map(entry => isSuccessfulTest(entry) ? metricValue(entry.upload) : null),
+        download: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.download) : null),
+        upload: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.upload) : null),
         // usableFigure, matching the measuredOnly("time") read the downsampled
         // branch gives the same column.
         time: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.time) : null),
@@ -446,8 +419,8 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
         // concatenated its way to an eight-figure point or, cleaned, can come
         // up with no reading at all. No reading is a gap, which is what null
         // already draws on this chart.
-        series.data.download.push(averageOrNull(valid.map(entry => entry.download)));
-        series.data.upload.push(averageOrNull(valid.map(entry => entry.upload)));
+        series.data.download.push(averageOrNull(valid.map(entry => usableFigure(entry.download))));
+        series.data.upload.push(averageOrNull(valid.map(entry => usableFigure(entry.upload))));
         // Measured-only like jitter and the two latencies above, not raw: `time`
         // is the one measurement column in this block that is nullable, and
         // average() folds a null in as nought while still counting it in the
@@ -549,8 +522,8 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
         // `time` below is the only column here that is genuinely whole.
         ping: mapFixed(withPing, "ping"),
         jitter: mapFixed(withJitter, "jitter"),
-        download: mapFixed(succeeded, "download"),
-        upload: mapFixed(succeeded, "upload"),
+        download: mapFixed(succeeded, "download", usableFigure),
+        upload: mapFixed(succeeded, "upload", usableFigure),
         // usableFigure, like both chart branches: a -1 here is an imported
         // placeholder, and read raw the span card printed "-1s" beside a chart
         // drawing the same row as a gap.
@@ -562,8 +535,8 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
         errors: series.errors,
         hourlyAverages: buildHourlyAverages(succeeded.filter(isPlaceable), bucketZone),
         consistency: {
-            download: consistencyScore(succeeded.map(entry => entry.download)),
-            upload: consistencyScore(succeeded.map(entry => entry.upload)),
+            download: consistencyScore(succeeded.map(entry => usableFigure(entry.download))),
+            upload: consistencyScore(succeeded.map(entry => usableFigure(entry.upload))),
             ping: {
                 // `deviation`, not `stdDev` like the speeds above: the speeds
                 // feed a consistency percentage whose formula wants the

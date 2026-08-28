@@ -148,6 +148,30 @@ export const isMeasuredLatency = (value) =>
     typeof value === "number" && Number.isFinite(value) && value !== UNMEASURED_LATENCY;
 
 /**
+ * A stored ping that was measured, as the figure - or null.
+ *
+ * The whole question in one place, because it was being assembled twice: the
+ * statistics coerced with usableFigure and then asked isMeasuredLatency, the
+ * recommendation sample asked isMeasuredLatency of an already-coerced value
+ * and refused the placeholder with a comparison of its own. The spellings
+ * agreed - the comments on each even said so - but agreement held by prose is
+ * how the alert gate and the statistics came to disagree about the fabricated
+ * zero in the first place.
+ *
+ * usableFigure and not bare metricValue for the coercion: metricValue keeps -1
+ * for its Prometheus caller to judge, and no caller of this reader judges it -
+ * fed into a min, a chart or an hourly bucket, the placeholder is a reading of
+ * minus one millisecond. isMeasuredLatency then refuses the fabricated zero,
+ * in both spellings, since usableFigure reads "0" as the number it is. Null
+ * for everything refused, which every caller treats as the gap it is.
+ */
+export const measuredPing = (value) => {
+    const ping = usableFigure(value);
+
+    return isMeasuredLatency(ping) ? ping : null;
+};
+
+/**
  * The same two answers as where clauses, for the queries that ask the database
  * rather than a row.
  *
