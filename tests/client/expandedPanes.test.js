@@ -151,6 +151,22 @@ describe("the data the range's tests used", () => {
 });
 
 /**
+ * The same parity for the ping. The expanded pane's rows describe the range's
+ * latency from props.ping, and the collapsed render was the only mount not
+ * handed it - latent while nothing collapsed reads it, and exactly the silent
+ * blank the dataUsed assertion above calls "the trap props.ping already sits
+ * in" the day something does.
+ */
+describe("the ping the overview describes", () => {
+    it("is fed by the page, collapsed and expanded alike", () => {
+        const handed = statistics.match(/ping=\{deferredStatistics\.ping}/g) ?? [];
+
+        assert.equal(handed.length, 2,
+            "one of the two OverviewChart renders lost the prop the detail rows read");
+    });
+});
+
+/**
  * The median on the averages pane: the mean the card leads with moves with one
  * bad afternoon, and the middle of the range does not.
  */

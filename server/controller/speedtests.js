@@ -593,10 +593,14 @@ const extentOf = (entries) => {
     return {from: new Date(first), to: new Date(last === first ? last + 1 : last)};
 };
 
-// One decimal is enough to tell six days from six and a half without implying
-// the cut is that precise; below a tenth of a day the whole-day divisor is the
-// saner figure, so nothing is sent at all.
-const ELAPSED_DAY_DECIMALS = 1;
+// Two decimals, because this is a divisor before it is a display figure: the
+// relative error of rounding is half a unit in the last place over the value,
+// so at the 0.1 floor one decimal made the divisor up to half again the true
+// rate, while two keep it within five percent everywhere the gate lets it out.
+// Below a tenth of a day the whole-day divisor is the saner figure, so nothing
+// is sent at all - judged on the raw span, not the rounded one, which rounded
+// six percent of a day UP into the very tenth the gate then accepted.
+const ELAPSED_DAY_DECIMALS = 2;
 const MIN_ELAPSED_DAYS = 0.1;
 
 /**
@@ -612,9 +616,10 @@ const MIN_ELAPSED_DAYS = 0.1;
 const elapsedDaysOf = (range, now) => {
     if (!range || now >= range.to || now < range.from) return null;
 
-    const elapsed = parseFloat(((now - range.from) / MS_PER_DAY).toFixed(ELAPSED_DAY_DECIMALS));
+    const elapsed = (now - range.from) / MS_PER_DAY;
+    if (elapsed < MIN_ELAPSED_DAYS) return null;
 
-    return elapsed >= MIN_ELAPSED_DAYS ? elapsed : null;
+    return parseFloat(elapsed.toFixed(ELAPSED_DAY_DECIMALS));
 };
 
 /**

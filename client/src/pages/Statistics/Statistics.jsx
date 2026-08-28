@@ -543,7 +543,7 @@ export const Statistics = () => {
                 </p>
             )}
 
-            <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} hourlyAverages={deferredStatistics.hourlyAverages} dataUsed={deferredStatistics.dataUsed} dateRange={chartRange} previous={previous} onClick={() => setExpandedChart('overview')}/>
+            <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} hourlyAverages={deferredStatistics.hourlyAverages} ping={deferredStatistics.ping} dataUsed={deferredStatistics.dataUsed} dateRange={chartRange} previous={previous} onClick={() => setExpandedChart('overview')}/>
             <LatestTestChart test={latestTest} onClick={() => setExpandedChart('latest')}/>
             <ConsistencyChart consistency={deferredStatistics.consistency} onClick={() => setExpandedChart('consistency')}/>
 

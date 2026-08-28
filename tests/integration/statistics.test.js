@@ -602,6 +602,51 @@ describe("GET /api/speedtests/statistics", () => {
         });
     });
 
+    /**
+     * The elapsed-share divisor at its edges, with the clock injected - the
+     * route reads its own clock, so the API cannot hold a request still at
+     * ninety minutes past midnight.
+     *
+     * Two edges, both about the same constant: the below-a-tenth promise used
+     * to be broken by the rounding itself (0.06 rounds UP to the 0.1 the gate
+     * then accepts), and one decimal made the divisor coarser than the rate it
+     * divides - 0.149 elapsed days went out as 0.1, and every per-day figure
+     * read half again its true rate.
+     */
+    describe("the elapsed share of a still-running range", () => {
+        const MS_PER_DAY = 24 * 60 * 60 * 1000;
+        let controller;
+        let parseDateRange;
+
+        before(async () => {
+            controller = await import("../../server/controller/speedtests.js");
+            ({parseDateRange} = await import("../../server/util/dateRange.js"));
+        });
+
+        const range = () => parseDateRange("2026-08-10", "2026-08-16", "Etc/UTC");
+        const afterStart = (days) => new Date(range().from.getTime() + days * MS_PER_DAY);
+
+        it("is withheld below a tenth of a day, not rounded up into one", async () => {
+            const {dateRange} = await controller.listStatistics(range(), {now: afterStart(0.06)});
+
+            assert.equal(dateRange.elapsedDays, undefined,
+                "six percent of a day was rounded up into the tenth the gate then accepts");
+        });
+
+        it("is no coarser than the rate it divides", async () => {
+            const {dateRange} = await controller.listStatistics(range(), {now: afterStart(0.149)});
+
+            assert.equal(dateRange.elapsedDays, 0.15,
+                "0.149 elapsed days went out as 0.1 - half again the true rate");
+        });
+
+        it("still reads naturally at the scale the description shows", async () => {
+            const {dateRange} = await controller.listStatistics(range(), {now: afterStart(6.5)});
+
+            assert.equal(dateRange.elapsedDays, 6.5);
+        });
+    });
+
     describe("timezone handling", () => {
         // 2026-08-06T23:30Z is already 2026-08-07 for a client at UTC+2, so it
         // belongs to a range that starts on the 7th only when the offset is honoured.

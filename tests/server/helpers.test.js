@@ -143,6 +143,40 @@ describe("a value that was never measured", () => {
 });
 
 /**
+ * A value that is present but is not a number.
+ *
+ * sqlite keeps whatever it was handed, and a history imported before
+ * importTests() checked its numeric columns can still hold a string in one -
+ * the situation createRecommendations already defends against with the same
+ * Number.isFinite. Here a string turned the total to NaN quietly, and worse:
+ * the sort comparator answers NaN around a string, so where it lands is
+ * unspecified, and one that sorted into the middle of an odd sample handed
+ * itself to toFixed - a TypeError that took the whole statistics endpoint
+ * down with a 500 over one bad imported row.
+ */
+describe("a value that is not a number at all", () => {
+    it("does not crash the median when a string sorts into the middle", () => {
+        assert.deepEqual(mapFixed([{download: 10}, {download: "poisoned"}, {download: 30}], "download"),
+            {min: 10, max: 30, avg: 20, median: 20});
+    });
+
+    it("does not turn the average into nothing", () => {
+        assert.deepEqual(mapFixed([{download: "50"}, {download: 10}, {download: 30}], "download"),
+            {min: 10, max: 30, avg: 20, median: 20});
+    });
+
+    it("keeps an infinity out of the range", () => {
+        assert.deepEqual(mapRounded([{ping: Infinity}, {ping: 10}, {ping: 20}], "ping"),
+            {min: 10, max: 20, avg: 15, median: 15});
+    });
+
+    it("gives the empty answer when nothing usable remains", () => {
+        assert.deepEqual(mapFixed([{download: "a"}, {download: NaN}], "download"),
+            {min: null, max: null, avg: null, median: null});
+    });
+});
+
+/**
  * The server lists are downloaded during boot and written straight over the
  * previous copy, so a container restarted mid-write left a truncated file - and
  * controller/servers.js answered the metrics scrape, the provider dialog and

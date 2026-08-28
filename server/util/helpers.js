@@ -209,7 +209,15 @@ const mapRange = (entries, type, averageOf) => {
         // real value is ever smaller - while adding nothing to the total and
         // still counting toward the divisor. A measured 0 is a real reading and
         // is not what this skips.
-        if (value === null || value === undefined) continue;
+        //
+        // Number.isFinite rather than a null check, for the reason
+        // createRecommendations gives: sqlite keeps whatever it was handed, and
+        // a history imported before importTests() checked its numeric columns
+        // can still hold a string in one. A string quietly turned the average
+        // to NaN - and the sort comparator answers NaN around it, so one that
+        // landed mid-sample was handed to toFixed by the median: a TypeError
+        // that took the whole statistics endpoint down over one bad row.
+        if (!Number.isFinite(value)) continue;
 
         if (value < min) min = value;
         if (value > max) max = value;
