@@ -76,6 +76,55 @@ const noSymlinks = (() => {
 })();
 
 /**
+ * How a mode is read back: through the same `sh` the lifted block is run in,
+ * because the mode being asserted is the one that block set through it.
+ *
+ * Two spellings, so the reader is not the reason a case fails: GNU stat takes
+ * -c and BSD stat takes -f, and CI is the first but a contributor's box need
+ * not be.
+ */
+const MODE_READER = 'mode() { stat -c "%a" "$1" 2>/dev/null || stat -f "%Lp" "$1"; }';
+
+/**
+ * Whether this machine reports real file modes.
+ *
+ * The block below states 700 for a data directory it creates and takes the
+ * world bits off one it finds, and both of those are assertions about a number
+ * that only exists on a POSIX filesystem. Windows answers 755 for everything -
+ * `chmod 705` reads back as 755 there - so these cases would not fail, they
+ * would pass or fail on whatever that host invents, which is worse than not
+ * running them.
+ *
+ * Probed rather than assumed from `process.platform`, on the same terms as the
+ * symlink check above: what matters is whether the mode set here comes back,
+ * not which operating system is setting it. The probe carries a bit in each
+ * triad, so a host answering with a fixed 755 is told apart from an honest one.
+ */
+const PROBE_MODE = 0o705;
+
+const noModes = (() => {
+    const probe = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-mode-probe-"));
+
+    try {
+        fs.chmodSync(probe, PROBE_MODE);
+
+        const read = execFileSync("sh", ["-c", `${MODE_READER}\nmode "$TARGET"`], {
+            encoding: "utf8",
+            timeout: WALK_TIMEOUT,
+            env: {...process.env, TARGET: probe}
+        }).trim();
+
+        return read === PROBE_MODE.toString(8)
+            ? false
+            : `this machine does not report real file modes - ${PROBE_MODE.toString(8)} reads back as ${read}`;
+    } catch {
+        return "no POSIX shell to read a file mode with - install.sh is a Linux installer and these cases assert the mode it leaves";
+    } finally {
+        fs.rmSync(probe, {recursive: true, force: true});
+    }
+})();
+
+/**
  * Comments stripped before anything is asserted against a script.
  *
  * These scripts explain the bug they were fixed for right beside the fix, so an
@@ -548,7 +597,10 @@ describe("install.sh registers a service that is not root", () => {
          * different decision about a different directory.
          */
         const block = () => {
-            const at = source.indexOf('if [ -L "$INSTALLATION_PATH/data" ]');
+            // The `; then` is what tells this block from the precondition at the
+            // top of the file, which opens with the same `[ -L ]` test and would
+            // otherwise be what every arm below is read out of.
+            const at = source.indexOf('if [ -L "$INSTALLATION_PATH/data" ]; then');
 
             assert.notEqual(at, -1,
                 "nothing asks whether data is a symlink, so a chmod runs as root through a link and lands on the far end of it");
@@ -656,38 +708,18 @@ describe("install.sh registers a service that is not root", () => {
                 "a chmod runs as root through the symlink and lands on whatever the operator pointed data at");
             assert.doesNotMatch(symlinked, /\bmkdir\b/,
                 "the link's own target is created underneath it, or the mkdir fails and takes the install down with it");
+            assert.doesNotMatch(symlinked, /\bexit\b/,
+                "the arm refuses down here, past the point where the service has been stopped and the binary replaced");
         });
 
-        /**
-         * But a link with nothing at the end of it is not a relocated data
-         * directory, and leaving it alone is not a decision that can be carried
-         * out. `[ -L ]` is true of a dangling link, so it took the arm above,
-         * collected the mild warning that its permissions were left as they were
-         * found, and the install ran on to its completion banner - after which
-         * the server's own folder helper throws on the first boot, under a unit
-         * this script writes with Restart=always. The arm had replaced a loud
-         * failure with a sentence presenting a boot-fatal shape as deliberate.
-         *
-         * Refusing is the safest honest answer, because nothing this script does
-         * can make that installation start: creating the target would be
-         * inventing a directory somewhere the operator's link points and this
-         * script cannot see, and removing the link would be deleting the only
-         * record of where their data was meant to live.
-         *
-         * The exit status is pinned the way the root guard's is: a bare `exit`
-         * carries the status of the echo that just printed the refusal, which is
-         * success, and a pipeline driving the install reads that as one.
+        /*
+         * A link the server could never open - one pointing at nothing, or at a
+         * regular file - is refused rather than warned about, and the refusal is
+         * no longer in this arm at all: it is a precondition, and it is asserted
+         * where the preconditions are, in "a data link the server could never
+         * open" below. What is left here acts on nothing, which is what the two
+         * assertions above and the one on `exit` say.
          */
-        it("refuses a link that points at nothing", () => {
-            const symlinked = arms().symlinked;
-
-            assert.match(symlinked, /\[ ! -e "\$INSTALLATION_PATH\/data" \]/,
-                "a dangling link is taken for a relocated data directory, and the install completes over a server that cannot boot");
-            assert.match(symlinked, /\bexit\s+[1-9]/,
-                "the refusal exits with the status of its own echo, i.e. success");
-            assert.match(symlinked, /readlink/,
-                "the refusal never names the target that is missing, which is the one thing the operator has to go on");
-        });
 
         /**
          * And for a link that does point somewhere, the warning has to say the
@@ -713,7 +745,7 @@ describe("install.sh registers a service that is not root", () => {
             const branch = source.indexOf('if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]');
             assert.notEqual(branch, -1, "nothing chooses between the service account and the root fallback any more");
 
-            const decided = source.indexOf('if [ -L "$INSTALLATION_PATH/data" ]');
+            const decided = source.indexOf('if [ -L "$INSTALLATION_PATH/data" ]; then');
             assert.notEqual(decided, -1, "nothing decides the data directory's mode at all");
             assert.ok(decided < branch,
                 "the root fallback creates no data directory, so the server's own helper makes one on first boot instead");
@@ -722,6 +754,108 @@ describe("install.sh registers a service that is not root", () => {
             assert.notEqual(stated, -1, "nothing states the mode of the data directory");
             assert.ok(stated < branch,
                 "the mode is stated inside the service-account branch only, so the fallback install leaves storage.db world-readable");
+        });
+    });
+
+    /**
+     * The one question about that directory that is a precondition rather than a
+     * decision, asked where the preconditions are.
+     *
+     * It used to be the first thing inside the symlink arm, which is a hundred
+     * and fifty lines past the point of no return: `systemctl stop myspeed` has
+     * run and `mv -f "$DOWNLOAD_TMP" myspeed` has already replaced the binary.
+     * So an upgrade whose data target simply was not mounted yet - a NAS that
+     * comes up after the box does - was refused into a deliberately stopped
+     * service with nothing to restart it, which is worse than the installer that
+     * had no refusal at all and at least came back on the next boot.
+     *
+     * Root and the CPU's AVX2 are both settled before that stop, and the two
+     * download failures say "any existing installation has been left untouched"
+     * because they run before the move. This one can say it too now.
+     */
+    describe("a data link the server could never open", () => {
+        // The refusal, bounded by the `fi` that closes it. Located by its whole
+        // condition rather than by the `[ -L ]` it opens with: the arm two
+        // hundred lines below tests the same thing, and a bound taken from the
+        // shorter spelling reads whichever of the two comes first.
+        const CONDITION = 'if [ -L "$INSTALLATION_PATH/data" ] && [ ! -d "$INSTALLATION_PATH/data" ]';
+
+        const refusal = () => {
+            const at = source.indexOf(CONDITION);
+
+            assert.notEqual(at, -1,
+                "nothing asks, before anything on the box has been touched, whether the data link points at something a database can live in");
+
+            const end = source.indexOf("\nfi\n", at);
+            assert.notEqual(end, -1, "the refusal is never closed");
+
+            return source.slice(at, end);
+        };
+
+        /**
+         * Position is the whole of it. A precondition evaluated after the
+         * destructive midpoint is not a precondition; it is a way of ending an
+         * upgrade half done.
+         */
+        it("asks before the service is stopped and the binary replaced", () => {
+            const asked = source.indexOf(CONDITION);
+            const stopped = source.indexOf("systemctl stop myspeed");
+            const replaced = source.indexOf('mv -f "$DOWNLOAD_TMP" myspeed');
+
+            assert.notEqual(asked, -1, "nothing refuses a data link the server could never open");
+            assert.ok(stopped !== -1 && replaced !== -1,
+                "the installer no longer stops the service or moves the download into place");
+
+            assert.ok(asked < stopped,
+                "the refusal runs after `systemctl stop`, so an upgrade whose data target is not mounted yet is left deliberately stopped with nothing to restart it");
+            assert.ok(asked < replaced,
+                "the refusal runs after the downloaded binary has already replaced the installed one");
+        });
+
+        // And says so, which is the sentence the download failures already get
+        // to print and this one could not.
+        it("tells the operator nothing has been touched", () => {
+            assert.match(refusal(), /[Nn]othing has been touched/,
+                "the refusal leaves the operator to work out for themselves whether the service was stopped or the binary replaced");
+        });
+
+        /**
+         * And it is the shape of the target that decides, not whether one is
+         * there.
+         *
+         * `[ ! -e ]` follows the link, so a target that is a regular file - a
+         * NAS export not yet mounted with a stale file left at the name, a path
+         * that was never a directory - answered "the target exists" and took the
+         * mild warning. The install then completed over a server whose first
+         * storage.db open fails ENOTDIR, under a unit with Restart=always: the
+         * identical boot-fatal outcome, dispatched to the identical wrong arm.
+         * `[ ! -d ]` is true of both and false only for the shape that works.
+         */
+        it("refuses a link to a file as well as one to nothing", () => {
+            const block = refusal();
+
+            assert.match(block, /\[ ! -d "\$INSTALLATION_PATH\/data" \]/,
+                "the refusal asks whether the target exists, which a regular file does - and the first storage.db open then fails ENOTDIR");
+            assert.match(block, /is not a directory/,
+                "a link to a file is refused with the message written for one pointing at nothing");
+            assert.match(block, /does not exist/,
+                "a link pointing at nothing is refused with the message written for one pointing at a file");
+        });
+
+        it("names the target, and where a relative one is resolved", () => {
+            const block = refusal();
+
+            assert.match(block, /readlink/,
+                "the refusal never names the target, which is the one thing the operator has to go on");
+            assert.match(block, /resolved against/,
+                "a relative target is resolved against the link's own directory, and the operator is left to guess which directory that is");
+        });
+
+        // Pinned the way the root guard's is: a bare `exit` carries the status
+        // of the echo that just printed the refusal, which is success.
+        it("exits non-zero, so a pipeline does not read it as an install", () => {
+            assert.match(refusal(), /\bexit\s+[1-9]/,
+                "the refusal exits with the status of its own echo, i.e. success");
         });
     });
 
@@ -735,55 +869,101 @@ describe("install.sh registers a service that is not root", () => {
      * round they are - which is precisely how the missing `[ ! -d ]` pin went
      * unnoticed until a mutation found it.
      */
+    /**
+     * A whole `if` block including the `fi` that closes it, so what runs here is
+     * what the installer runs.
+     */
+    const closedBlock = (opening, missing) => {
+        const at = source.indexOf(opening);
+        assert.notEqual(at, -1, missing);
+
+        const end = source.indexOf("\nfi\n", at);
+        assert.notEqual(end, -1, `${missing} - the block is never closed`);
+
+        return source.slice(at, end + "\nfi".length);
+    };
+
+    /**
+     * Both blocks that look at the data directory, in the order the installer
+     * reaches them: the precondition at the top of the file, then the three arms
+     * that decide the mode two hundred lines below.
+     *
+     * Both, because either alone answers a different question from the one being
+     * asked. The refusal without the arms says nothing about which shape reaches
+     * which arm; the arms without the refusal put a link the installer would
+     * have stopped for straight into the warning, which is exactly the dispatch
+     * that was wrong before the refusal was hoisted.
+     *
+     * The arms are located by the `; then` on the end of their condition. The
+     * refusal opens with the same `[ -L ]` test, so the shorter spelling matches
+     * that one first and the rig would run the precondition twice and the arms
+     * not at all.
+     */
+    const decision = () => [
+        closedBlock('if [ -L "$INSTALLATION_PATH/data" ] && [ ! -d "$INSTALLATION_PATH/data" ]',
+            "nothing refuses a data link the server could never open"),
+        closedBlock('if [ -L "$INSTALLATION_PATH/data" ]; then',
+            "nothing asks whether data is a symlink")
+    ].join("\n");
+
+    /**
+     * Against a real installation directory this builds, with the colours
+     * emptied and the delay stubbed out - the arms pause two seconds so an
+     * operator reads the warning, which is two seconds a case here and
+     * nothing to do with what is being asserted.
+     *
+     * SERVICE_ACCOUNT is bound because the block reads it, and the script
+     * settles it well above this point.
+     */
+    const decide = (build) => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-datalink-"));
+        temporary.push(dir);
+        build(dir);
+
+        const script = [
+            "sleep() { :; }",
+            'RED=""; NORMAL=""; YELLOW=""',
+            'SERVICE_ACCOUNT="myspeed"',
+            'INSTALLATION_PATH="$TARGET"',
+            decision()
+        ].join("\n");
+
+        const run = spawnSync("sh", ["-c", script], {
+            encoding: "utf8",
+            timeout: WALK_TIMEOUT,
+            env: {...process.env, TARGET: dir}
+        });
+
+        return {status: run.status, output: `${run.stdout ?? ""}${run.stderr ?? ""}`, dir};
+    };
+
+    // The type is what Windows needs to be told and POSIX ignores, so the case
+    // that points the link at a file says so rather than building a directory
+    // link over one.
+    const link = (dir, target, type = "dir") => {
+        fs.symlinkSync(path.join(dir, target), path.join(dir, "data"), type);
+    };
+
+    // A directory of the given mode where the block expects to find one. Stated
+    // with chmod rather than through mkdir's argument, because mkdir's is masked
+    // by the umask and the whole question here is which bits survive.
+    const seedData = (target, mode) => {
+        const data = path.join(target, "data");
+
+        fs.mkdirSync(data);
+        fs.chmodSync(data, mode);
+    };
+
+    // Read back through the sandbox's own sh, so what is asserted is the mode
+    // the block set rather than node's idea of it.
+    const modeOf = (dir, name) => execFileSync("sh", ["-c", `${MODE_READER}\nmode "$TARGET"`], {
+        encoding: "utf8",
+        timeout: WALK_TIMEOUT,
+        env: {...process.env, TARGET: `${dir}/${name}`}
+    }).trim();
+
     describe("which arm a data directory of each shape reaches",
         {skip: noPosixShell || noSymlinks}, () => {
-
-        // The whole three-armed block including the `fi` that closes it, so what
-        // runs here is what the installer runs.
-        const decision = () => {
-            const at = source.indexOf('if [ -L "$INSTALLATION_PATH/data" ]');
-            assert.notEqual(at, -1, "nothing asks whether data is a symlink");
-
-            const end = source.indexOf("\nfi\n", at);
-            assert.notEqual(end, -1, "the block deciding the data directory's mode is never closed");
-
-            return source.slice(at, end + "\nfi".length);
-        };
-
-        /**
-         * Against a real installation directory this builds, with the colours
-         * emptied and the delay stubbed out - the arms pause two seconds so an
-         * operator reads the warning, which is two seconds a case here and
-         * nothing to do with what is being asserted.
-         *
-         * SERVICE_ACCOUNT is bound because the block reads it, and the script
-         * settles it well above this point.
-         */
-        const decide = (build) => {
-            const dir = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-datalink-"));
-            temporary.push(dir);
-            build(dir);
-
-            const script = [
-                "sleep() { :; }",
-                'RED=""; NORMAL=""; YELLOW=""',
-                'SERVICE_ACCOUNT="myspeed"',
-                'INSTALLATION_PATH="$TARGET"',
-                decision()
-            ].join("\n");
-
-            const run = spawnSync("sh", ["-c", script], {
-                encoding: "utf8",
-                timeout: WALK_TIMEOUT,
-                env: {...process.env, TARGET: dir}
-            });
-
-            return {status: run.status, output: `${run.stdout ?? ""}${run.stderr ?? ""}`, dir};
-        };
-
-        const link = (dir, target) => {
-            fs.symlinkSync(path.join(dir, target), path.join(dir, "data"), "dir");
-        };
 
         it("stops the install when the link points at nothing", () => {
             const {status, output} = decide((dir) => link(dir, "elsewhere"));
@@ -792,6 +972,29 @@ describe("install.sh registers a service that is not root", () => {
                 "a dangling data link runs on to the completion banner, and the server then throws on its first boot under Restart=always");
             assert.match(output, /elsewhere/,
                 "the refusal does not name the target that is missing");
+        });
+
+        /**
+         * And when it points at a regular file, which is the same shape.
+         *
+         * `[ -e ]` follows the link, so a target that happens to be a file -
+         * a NAS export that is not mounted yet and leaves a stale file at that
+         * name, a path that was never a directory - answered "the target is
+         * there", collected the mild warning, and the install ran on to its
+         * completion banner. The server's first storage.db open then fails
+         * ENOTDIR, under the unit this script writes with Restart=always: the
+         * identical boot-fatal outcome the dangling case is refused for.
+         */
+        it("stops the install when the link points at a file", () => {
+            const {status, output} = decide((dir) => {
+                fs.writeFileSync(path.join(dir, "elsewhere"), "");
+                link(dir, "elsewhere", "file");
+            });
+
+            assert.notEqual(status, 0,
+                "a data link pointing at a file takes the mild warning, and the server's first database open then fails ENOTDIR under Restart=always");
+            assert.match(output, /elsewhere/,
+                "the refusal does not name the target that cannot hold a database");
         });
 
         it("leaves a link that points somewhere exactly as it found it", () => {
@@ -816,6 +1019,71 @@ describe("install.sh registers a service that is not root", () => {
             assert.equal(status, 0, "a fresh install is refused");
             assert.ok(fs.statSync(path.join(dir, "data")).isDirectory(),
                 "the data directory is never created, so the server has nowhere to write its database");
+        });
+
+        /**
+         * And the arm none of the cases above reaches, which is the upgrade -
+         * the case the whole series is about.
+         *
+         * It was not run at all. With `chmod o-rwx` replaced by `exit 9` in a
+         * copy of this block, every case above stayed green: the two link
+         * shapes take the first arm and a fresh install takes the second, so
+         * nothing here had ever executed the third.
+         */
+        it("runs the arm for a data directory that is already there", () => {
+            const {status, output} = decide((target) => fs.mkdirSync(path.join(target, "data")));
+
+            assert.equal(status, 0, "an ordinary upgrade stops an install that has nothing wrong with it");
+            assert.doesNotMatch(output, /ABORTED|Warning/,
+                "an upgrade over a plain data directory is dispatched to a refusal or to the link warning");
+        });
+    });
+
+    /**
+     * And what each arm leaves behind, which is a number rather than an exit
+     * status and so needs a filesystem that reports one.
+     *
+     * No case asserted a mode at all, on any arm. The `chmod o-rwx` above could
+     * be swapped for `chmod 700` in a copy of the block - which is the one thing
+     * the arm exists not to do, silently overruling an operator who had opened
+     * the directory to a backup group - and the rig stayed green throughout,
+     * because a mode nothing reads is a mode nothing can be wrong about.
+     */
+    describe("the mode each arm leaves on the data directory",
+        {skip: noPosixShell || noModes}, () => {
+
+        // What an installer older than the stated 700 left behind, what an
+        // operator sharing the directory with a backup group chose, and what
+        // each of the two arms is supposed to answer with.
+        const OLDER_INSTALLER = 0o755;
+        const SHARED_WITH_A_GROUP = 0o750;
+        const STATED_FOR_A_NEW_ONE = "700";
+        const LEFT_ON_AN_EXISTING_ONE = "750";
+
+        it("states 700 for one it creates itself", () => {
+            const {status, dir} = decide(() => {});
+
+            assert.equal(status, 0, "a fresh install is refused");
+            assert.equal(modeOf(dir, "data"), STATED_FOR_A_NEW_ONE,
+                "the data directory is created at whatever the umask allows, so storage.db is readable by every local account");
+        });
+
+        it("takes the world bits off one an older installer left at 0755", () => {
+            const {status, dir} = decide((target) => seedData(target, OLDER_INSTALLER));
+
+            assert.equal(status, 0, "an ordinary upgrade stops an install that has nothing wrong with it");
+            assert.equal(modeOf(dir, "data"), LEFT_ON_AN_EXISTING_ONE,
+                "a data directory an older installer left at 0755 keeps it, so storage.db stays readable by every local account after an upgrade");
+        });
+
+        // The other direction, and the one an absolute mode gets wrong: 0750
+        // root:backup is a decision, and it is still 0750 root:backup after.
+        it("leaves the group an operator opened it to alone", () => {
+            const {status, dir} = decide((target) => seedData(target, SHARED_WITH_A_GROUP));
+
+            assert.equal(status, 0, "an ordinary upgrade stops an install that has nothing wrong with it");
+            assert.equal(modeOf(dir, "data"), LEFT_ON_AN_EXISTING_ONE,
+                "an existing installation is retightened to an absolute mode, overruling an operator who shared it with a group on purpose");
         });
     });
 

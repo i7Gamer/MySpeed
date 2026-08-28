@@ -70,6 +70,58 @@ case "$ARCH" in
         ;;
 esac
 
+# Whether the data directory, if it is a link, points at something a database
+# can live in. Asked here, with the other preconditions, and not down at the
+# three arms that decide that directory's mode.
+#
+# Nothing this script can do repairs the shapes below: creating the target would
+# invent a directory somewhere the operator's link points and this script cannot
+# see, and removing the link would delete the only record of where their data was
+# meant to live. So the answer is to stop - and stopping is only worth anything
+# before the run has changed the machine.
+#
+# Down at the arms it was a precondition evaluated past the midpoint. By then
+# `systemctl stop myspeed` has run and `mv -f "$DOWNLOAD_TMP" myspeed` has
+# replaced the binary, so an upgrade whose target simply was not mounted yet - a
+# NAS that comes up after the box does - was refused into a service deliberately
+# stopped with nothing left to restart it. That is worse than the installer which
+# had no refusal at all and at least came back up on the next boot. Root and the
+# CPU's AVX2 are settled before that stop, and the two download failures below
+# say "left untouched" because they run before the move; this one can now say it
+# too.
+#
+# `[ ! -d ]` rather than `[ ! -e ]`, because -e follows the link. A target that
+# is a regular file - a NAS export not up yet with a stale file left at the name,
+# a path that was never a directory - answered "the target exists", collected the
+# mild warning, and the install completed over a server whose first storage.db
+# open fails ENOTDIR under Restart=always: the same boot-fatal shape, dispatched
+# to the same wrong arm. -d is false for both and true only for the one that
+# works, and the message says which of the two was found.
+if [ -L "$INSTALLATION_PATH/data" ] && [ ! -d "$INSTALLATION_PATH/data" ]; then
+    DATA_LINK_TARGET=$(readlink "$INSTALLATION_PATH/data")
+
+    if [ -e "$INSTALLATION_PATH/data" ]; then
+        DATA_LINK_FAULT="is not a directory"
+    else
+        DATA_LINK_FAULT="does not exist"
+    fi
+
+    # A relative target is resolved against the directory the link itself sits
+    # in, not against the working directory - so "a link to ../storage" leaves
+    # the operator to work out which "..", and an absolute one needs no note.
+    case "$DATA_LINK_TARGET" in
+        /*) DATA_LINK_WHERE="" ;;
+        *) DATA_LINK_WHERE=", resolved against $INSTALLATION_PATH" ;;
+    esac
+
+    echo -e "$RED✗ ABORTED"
+    echo -e "$NORMAL $INSTALLATION_PATH/data is a link to $DATA_LINK_TARGET$DATA_LINK_WHERE, which $DATA_LINK_FAULT."
+    echo -e "$NORMAL MySpeed cannot create its database there, so it would fail on every start."
+    echo -e "$NORMAL Mount that directory, point the link at one that exists, or remove the link, and run this installer again."
+    echo -e "$NORMALℹ Nothing has been touched: the service was not stopped and no file was replaced."
+    exit 1
+fi
+
 echo -e "$GREEN ---------$BLUE Automatic Installation$GREEN ---------"
 echo -e "$BLUE MySpeed$YELLOW is now being installed."
 echo -e "$YELLOW Version:$BLUE MySpeed Release"
@@ -428,15 +480,12 @@ fi
 # told the thing that stops the server booting, which is that the account named
 # in the unit cannot open a database in a directory it does not own.
 #
-# And a link with nothing at the end of it is refused rather than warned about.
-# `[ -L ]` is true of a dangling link, so it collected the mild warning and the
-# install ran on to its completion banner - after which the server's own folder
-# helper throws on the first boot, under the unit written below with
-# Restart=always. That is a boot-fatal shape presented as a deliberate one.
-# Nothing this script can do repairs it: creating the target would invent a
-# directory somewhere the operator's link points and this script cannot see, and
-# removing the link would delete the only record of where their data was meant to
-# live. So it stops, and names the target that is missing.
+# A link this script cannot work with never reaches here at all. Whether the
+# target is a directory is a precondition, not a decision about a mode, and it is
+# settled at the top of the file with the other preconditions - before the
+# service is stopped and before the binary is replaced, which is the only point
+# at which refusing costs the operator nothing. What is left in the arm below
+# acts on nothing, which is why it can stay where it is.
 #
 # A directory this script creates gets 700, checked the way the installation
 # root's mkdir is: `[ ! -d ]` is also true of a path already taken by a regular
@@ -452,14 +501,6 @@ fi
 # the only moment anything is placed to notice. `o-rwx` is the part of the mode
 # nobody chooses on purpose.
 if [ -L "$INSTALLATION_PATH/data" ]; then
-    if [ ! -e "$INSTALLATION_PATH/data" ]; then
-        echo -e "$RED✗ ABORTED"
-        echo -e "$NORMAL $INSTALLATION_PATH/data is a link to $(readlink "$INSTALLATION_PATH/data"), which does not exist."
-        echo -e "$NORMAL MySpeed cannot create its database there, so it would fail on every start."
-        echo -e "$NORMAL Mount that directory, point the link at one that exists, or remove the link, and run this installer again."
-        exit 1
-    fi
-
     echo -e "$YELLOW⚠ Warning: $NORMAL $INSTALLATION_PATH/data is a link, so neither its mode nor its ownership is changed."
     echo -e "$NORMAL The directory it points at must be readable and writable by \"$SERVICE_ACCOUNT\", or MySpeed cannot open its database."
     sleep 2
