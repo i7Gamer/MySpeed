@@ -2,7 +2,7 @@ import tests from '../models/Speedtests.js';
 import { Op } from 'sequelize';
 import { buildStatistics, STATISTICS_COLUMNS } from '../util/statistics.js';
 import { previousRange, truncateToElapsed } from '../util/dateRange.js';
-import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER } from '../util/testOutcome.js';
+import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER, impossibleMeasurement } from '../util/testOutcome.js';
 import { getValue } from './config.js';
 import * as targetsController from './targets.js';
 import db from '../config/database.js';
@@ -413,6 +413,21 @@ export const importTests = async (data) => {
         // download column survives the write and then poisons every average
         // and chart built on top of it.
         if (!NUMERIC_COLUMNS.every((column) => isImportableNumber(entry[column]))) { skipped++; continue; }
+
+        // A negative required measurement beside good figures is a row that is
+        // neither a failure nor a measurement - isFailedTest asks for all
+        // three placeholders at once, so this shape walked past it and was
+        // stored as a success, where every reader believed it: the average,
+        // the grade, the export, and the alert gate, which reads a download of
+        // minus one megabit as an outage. The live path refuses exactly this
+        // through the same judgement and records a failed run; a file's row
+        // carries no run to fail, and the columns are NOT NULL, so the honest
+        // answers left are the two beside it - a failure it does not claim to
+        // be, or no row. Skipped, like every other row no run could have
+        // produced. A full set of placeholders is a failed run and never
+        // reaches this; a measured zero is an outage's honest reading and is
+        // deliberately not caught.
+        if (impossibleMeasurement(entry) !== null) { skipped++; continue; }
 
         // Without the backup's own id. Those are the ids of the instance that
         // wrote the file and mean nothing on the one reading it - written
