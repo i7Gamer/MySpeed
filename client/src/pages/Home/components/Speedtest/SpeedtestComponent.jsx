@@ -218,6 +218,7 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                         row expands into spells it out. */}
                     {props.targetDot && (
                         <span className="target-dot speedtest-target-dot" title={props.targetDot.name}
+                              role="img" aria-label={props.targetDot.name}
                               style={{background: props.targetDot.colour}}/>
                     )}
                 </div>

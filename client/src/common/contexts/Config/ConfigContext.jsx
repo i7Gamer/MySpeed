@@ -1,4 +1,4 @@
-import React, {createContext, useCallback, useEffect, useMemo, useState} from "react";
+import React, {createContext, useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {useAlert} from "../Alert";
 import {login, request} from "@/common/utils/RequestUtil";
 import {promptUntilAccepted} from "@/common/utils/PasswordPrompt";
@@ -116,12 +116,23 @@ export const ConfigProvider = (props) => {
         return openAlertDialog(apiErrorDialog());
     }, [askForCredential, openAlertDialog]);
 
+    // Which reload is current, the way Status, Node, Targets and the
+    // speedtest list already mark theirs: two /config reads can overlap -
+    // switching nodes twice quickly, a save's reload racing a node switch -
+    // and written in arrival order the slower, older answer landed last, so
+    // the whole app read another node's configuration until something
+    // reloaded it.
+    const requestGeneration = useRef(0);
+
     // Memoised on the dialog chain above it - each link a useCallback of its
     // own, because a useMemo over functions rebuilt each render memoises
     // nothing. Defined below the chain for the same reason it is named in the
     // dependency list: a dependency in its temporal dead zone is a
     // ReferenceError, not a lint warning.
     const reloadConfig = useCallback(() => {
+        const generation = ++requestGeneration.current;
+        const superseded = () => generation !== requestGeneration.current;
+
         request("/config").then(async res => {
             // The refusal says which credential it wants, and that is the whole
             // reason the right question can be asked. Throwing a bare 1 here
@@ -159,6 +170,8 @@ export const ConfigProvider = (props) => {
                 throw {credential: false};
             }
         }).then(result => {
+            if (superseded()) return;
+
             // Stored unconditionally. This was a ternary - navigate *or* store -
             // and the redirect took the config with it, leaving every consumer
             // reading {} for the rest of the session. Where to be and what to
@@ -168,6 +181,11 @@ export const ConfigProvider = (props) => {
             setConfig(loaded);
             if (redirectToNodes) navigate("/nodes");
         }).catch((reason) => {
+            // A stale failure is dropped like a stale answer: it steers
+            // navigation and dialogs, and must not redirect the visitor away
+            // from a node whose newer read answered fine.
+            if (superseded()) return;
+
             // The reason travels with it: a refusal that wants a credential is
             // not a node that has gone away, and only one of the two is
             // answered by moving the visitor - see failureOutcome.

@@ -30,3 +30,28 @@ export const pointStyleFor = (pointCount, {compact = false} = {}) => {
  * them invents overshoot the measurement never had, which reads as detail.
  */
 export const lineTensionFor = (pointCount) => pointCount > DENSE_SERIES_THRESHOLD ? 0.1 : 0.35;
+
+// What a reading with no drawn neighbour is given so it stays on screen -
+// the NORMAL radius, because it is the one dot standing in for a line.
+const LONE_POINT_RADIUS = 3;
+
+/**
+ * The per-point radius for a series whose gaps are honest.
+ *
+ * With spanGaps off, a reading between two nulls has no line segment left -
+ * so at the radius-0 densities it was literally invisible: one successful
+ * test in a bad hour, gone from the chart. It gets a dot; everything else
+ * keeps the density's own radius, the gap points included, which chart.js
+ * skips anyway.
+ */
+export const lonePointRadius = ({radius}) => (context) => {
+    const data = context.dataset?.data ?? [];
+    const y = (entry) => (entry && typeof entry === "object" ? entry.y : entry);
+
+    if (y(data[context.dataIndex]) == null) return radius;
+
+    const before = context.dataIndex > 0 ? y(data[context.dataIndex - 1]) : null;
+    const after = context.dataIndex < data.length - 1 ? y(data[context.dataIndex + 1]) : null;
+
+    return before == null && after == null ? Math.max(radius, LONE_POINT_RADIUS) : radius;
+};

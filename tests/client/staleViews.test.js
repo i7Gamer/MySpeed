@@ -169,3 +169,35 @@ describe("the provider dialog resyncs every field it edits", () => {
             "the field effect still keys on more than the provider, which is what made an edit look stored");
     });
 });
+
+/**
+ * The one provider whose fetch had no generation guard left. Status, Node,
+ * Targets and the speedtest list all mark a superseded request stale;
+ * reloadConfig wrote whatever answered, in arrival order - so switching nodes
+ * twice quickly, or a save's reload racing a node switch, could leave the
+ * whole app reading another node's configuration until something reloaded it.
+ */
+describe("the config provider drops an answer for a config it has left", () => {
+    const context = code("common/contexts/Config/ConfigContext.jsx");
+    const reload = context.slice(context.indexOf("const reloadConfig"),
+        context.indexOf("const checkConfig"));
+
+    it("marks each request with a generation", () => {
+        assert.match(reload, /const generation = \+\+requestGeneration\.current/,
+            "nothing tells a superseded config response not to write itself");
+    });
+
+    it("drops a superseded answer instead of storing it", () => {
+        assert.match(reload, /if \(superseded\(\)\) return/,
+            "the slower, older response lands last and wins");
+    });
+
+    // The failure path steers navigation and dialogs; a stale failure must
+    // not redirect the visitor away from a node that answered fine.
+    it("drops a superseded failure too", () => {
+        const failure = reload.slice(reload.indexOf(".catch("));
+
+        assert.match(failure, /superseded\(\)/,
+            "a stale failure still raises the error dialog over a working node");
+    });
+});

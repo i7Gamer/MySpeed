@@ -1,7 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
-    DENSE_SERIES_THRESHOLD, lineTensionFor, pointStyleFor
+    DENSE_SERIES_THRESHOLD, lineTensionFor, lonePointRadius, pointStyleFor
 } from "../../client/src/pages/Statistics/charts/pointDensity.js";
 
 describe("pointStyleFor", () => {
@@ -52,5 +54,80 @@ describe("lineTensionFor", () => {
 
     it("never goes negative, which would loop the line back on itself", () => {
         for (const count of [0, 500, 5000]) assert.ok(lineTensionFor(count) >= 0);
+    });
+});
+
+/**
+ * A gap in the data is a gap on the screen.
+ *
+ * The server goes to lengths to emit null exactly where nothing was measured -
+ * a failed test, a latency nobody took - and `spanGaps: true` then drew the
+ * line straight across it: an outage rendered as a continuous curve, and a
+ * bufferbloat reading interpolated over the tests that never measured one.
+ */
+describe("what the line does at a gap", () => {
+    const read = (file) => fs.readFileSync(
+        fileURLToPath(new URL(`../../client/src/pages/Statistics/charts/${file}`, import.meta.url)),
+        "utf8");
+
+    it("breaks rather than bridging it", () => {
+        for (const file of ["SpeedChart/SpeedChart.jsx", "PingChart.jsx"])
+            assert.doesNotMatch(read(file), /spanGaps: true/,
+                `${file} draws a line across the very nulls the server emits for an outage`);
+    });
+
+    /**
+     * A reading between two gaps has no line segment left once the gaps are
+     * honest, so at the radius-0 densities it was literally invisible - one
+     * successful test in a bad hour, gone from the chart. It gets a dot.
+     */
+    it("gives a reading with no drawn neighbour a visible dot", () => {
+        for (const file of ["SpeedChart/SpeedChart.jsx", "PingChart.jsx"])
+            assert.match(read(file), /pointRadius: lonePointRadius\(pointStyle\)/,
+                `${file} hides a lone reading at the densities that draw no points`);
+    });
+});
+
+describe("lonePointRadius", () => {
+    const dense = {radius: 0, hoverRadius: 4};
+    const normal = {radius: 3, hoverRadius: 6};
+
+    const at = (data, index) => ({dataset: {data}, dataIndex: index});
+    const point = (y) => ({x: 1, y});
+
+    it("keeps the configured radius while the line connects", () => {
+        const data = [point(1), point(2), point(3)];
+
+        assert.equal(lonePointRadius(dense)(at(data, 1)), 0);
+        assert.equal(lonePointRadius(normal)(at(data, 1)), 3);
+    });
+
+    it("makes a reading between two gaps visible", () => {
+        const data = [point(null), point(2), point(null)];
+
+        assert.ok(lonePointRadius(dense)(at(data, 1)) > 0,
+            "the one successful test in a bad hour is invisible");
+    });
+
+    // The edges have one neighbour each; a missing one counts as a gap.
+    it("treats the ends of the series as gaps", () => {
+        assert.ok(lonePointRadius(dense)(at([point(5)], 0)) > 0);
+        assert.ok(lonePointRadius(dense)(at([point(5), point(null)], 0)) > 0);
+        assert.equal(lonePointRadius(dense)(at([point(5), point(6)], 0)), 0,
+            "a series edge with a drawn neighbour needs no dot");
+    });
+
+    it("draws nothing for the gap itself", () => {
+        const data = [point(null), point(2), point(null)];
+
+        assert.equal(lonePointRadius(dense)(at(data, 0)), 0);
+        assert.equal(lonePointRadius(dense)(at(data, 2)), 0);
+    });
+
+    // A visible configured radius stays as it is - a lone dot must not shrink.
+    it("never shrinks a radius that was already visible", () => {
+        const data = [point(null), point(2), point(null)];
+
+        assert.equal(lonePointRadius(normal)(at(data, 1)), 3);
     });
 });
