@@ -7,7 +7,8 @@ import { DataTypes, Sequelize } from "sequelize";
 import { bootServer } from "./helpers/boot.js";
 import sqlite3Shim from "../../server/util/bun-sqlite-shim.js";
 import migrations from "../../server/migrations/index.js";
-import { seedTarget, up as addTargets } from "../../server/migrations/0013-add-targets.js";
+import { BACKFILL_CHUNK_ROWS, seedTarget, up as addTargets } from "../../server/migrations/0013-add-targets.js";
+import { up as indexTargets } from "../../server/migrations/0014-index-speedtests-target.js";
 
 let server;
 let queryInterface;
@@ -35,6 +36,7 @@ describe("migrations", () => {
         assert.ok(names.includes("0009-add-transfer-columns.js"));
         assert.ok(names.includes("0010-widen-speedtest-ping.js"));
         assert.ok(names.includes("0011-add-server-location-column.js"));
+        assert.ok(names.includes("0014-index-speedtests-target.js"));
     });
 
     /**
@@ -444,5 +446,134 @@ describe("0013 seeding the first target", () => {
 
         const attributed = await rows("SELECT `id` FROM `speedtests` WHERE `targetId` IS NOT NULL");
         assert.equal(attributed.length, 0);
+    });
+});
+
+/**
+ * The back-fill over a history bigger than one chunk.
+ *
+ * As a single statement it rewrote every historical row in one go, which is
+ * exactly what a MySQL lock-wait timeout or an OOM interrupts - and a
+ * statement-level rollback leaves every row still NULL, so the retry issued
+ * the identical statement against the identical table and died the identical
+ * death: a boot loop, ended only by hand. Chunked, every boot commits the
+ * chunks it manages, and the retry starts where the last attempt stopped.
+ */
+describe("0013 back-filling a history bigger than one chunk", () => {
+    // One row more than a chunk, so completing takes exactly two.
+    const CHUNKED_HISTORY = BACKFILL_CHUNK_ROWS + 1;
+
+    // On top of what migratedToTwelve already seeded, split so no single
+    // bulkInsert carries more bind parameters than sqlite accepts.
+    const seedRemainder = async () => {
+        const extra = CHUNKED_HISTORY - HISTORY_ROWS;
+        const half = Math.ceil(extra / 2);
+
+        for (const [batch, size] of [[0, half], [1, extra - half]])
+            await fixture.queryInterface.bulkInsert("speedtests",
+                Array.from({length: size}, (unused, index) => ({
+                    ping: 10, download: 100, upload: 50, time: 1, serverId: 0, type: "auto",
+                    created: new Date(Date.UTC(2021, batch, 1, 0, 0, 0, index)).toISOString()
+                })));
+    };
+
+    /** The same query interface, counting the statements that hit the history. */
+    const countingBackfills = (queryInterface, counter) => {
+        const sequelize = Object.create(queryInterface.sequelize, {
+            query: {
+                value: (sql, options) => {
+                    if (String(sql).startsWith("UPDATE `speedtests`")) counter.updates++;
+
+                    return queryInterface.sequelize.query(sql, options);
+                }
+            }
+        });
+
+        return Object.create(queryInterface, {sequelize: {value: sequelize}});
+    };
+
+    /** And one that dies on the nth such statement, the way a lock timeout does. */
+    const failingOnNth = (queryInterface, statement, nth) => {
+        let seen = 0;
+
+        const sequelize = Object.create(queryInterface.sequelize, {
+            query: {
+                value: (sql, options) => {
+                    if (String(sql).startsWith(statement) && ++seen === nth)
+                        throw new Error("the connection went away mid-migration");
+
+                    return queryInterface.sequelize.query(sql, options);
+                }
+            }
+        });
+
+        return Object.create(queryInterface, {sequelize: {value: sequelize}});
+    };
+
+    it("walks the history in chunks rather than one statement", async () => {
+        fixture = await migratedToTwelve(LEGACY_CONFIG);
+        await seedRemainder();
+
+        const counter = {updates: 0};
+        await addTargets(countingBackfills(fixture.queryInterface, counter));
+
+        assert.equal(counter.updates, 2,
+            `a chunk more than one statement's worth of rows took ${counter.updates} statements`);
+
+        const orphans = await rows("SELECT `id` FROM `speedtests` WHERE `targetId` IS NULL");
+        assert.equal(orphans.length, 0, "the chunk walk stopped short of the whole history");
+    });
+
+    it("keeps the chunks a died boot committed, and finishes on the retry", async () => {
+        fixture = await migratedToTwelve(LEGACY_CONFIG);
+        await seedRemainder();
+
+        await assert.rejects(() => addTargets(
+            failingOnNth(fixture.queryInterface, "UPDATE `speedtests`", 2)));
+
+        const attributed = await rows("SELECT `id` FROM `speedtests` WHERE `targetId` IS NOT NULL");
+        assert.equal(attributed.length, BACKFILL_CHUNK_ROWS,
+            "the first chunk's work was lost, so every retry starts from the top again");
+
+        await addTargets(fixture.queryInterface);
+
+        const orphans = await rows("SELECT `id` FROM `speedtests` WHERE `targetId` IS NULL");
+        assert.equal(orphans.length, 0);
+        assert.equal((await rows("SELECT * FROM `targets`")).length, 1);
+    });
+
+    // The index the per-target reads need, created before the back-fill so the
+    // chunk probes use it too - and so the statement each boot retries gets
+    // cheaper, not merely smaller.
+    it("indexes targetId with created, ahead of the back-fill", async () => {
+        fixture = await migratedToTwelve(LEGACY_CONFIG);
+        await addTargets(fixture.queryInterface);
+
+        const indexes = await fixture.queryInterface.showIndex("speedtests");
+        const index = indexes.find((entry) => entry.name === "speedtests_target_created");
+
+        assert.ok(index, `no index on targetId, found: ${indexes.map((entry) => entry.name).join(", ")}`);
+        assert.deepEqual(index.fields.map((field) => field.attribute), ["targetId", "created"]);
+    });
+});
+
+/**
+ * The same index for an instance that upgraded before 0013 learned to create
+ * it: 0013 is recorded there, so its up() never runs again, and only a
+ * migration of its own can reach that database.
+ */
+describe("0014 indexing targetId on an already-upgraded instance", () => {
+    it("adds the index where the old 0013 left none, and only once", async () => {
+        fixture = await migratedToTwelve(LEGACY_CONFIG);
+        await addTargets(fixture.queryInterface);
+
+        // The state the old 0013 left behind.
+        await fixture.queryInterface.removeIndex("speedtests", "speedtests_target_created");
+
+        await indexTargets(fixture.queryInterface);
+        await indexTargets(fixture.queryInterface);
+
+        const indexes = await fixture.queryInterface.showIndex("speedtests");
+        assert.equal(indexes.filter((entry) => entry.name === "speedtests_target_created").length, 1);
     });
 });

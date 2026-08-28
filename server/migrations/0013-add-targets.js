@@ -130,6 +130,36 @@ const TARGETS_SCHEMA = {
 
 const LEGACY_KEYS = ['provider', 'ooklaId', 'libreId', 'libreUrl'];
 
+/**
+ * How many historical rows one back-fill statement rewrites.
+ *
+ * As a single statement the back-fill rewrote the whole table, which is
+ * exactly what a MySQL lock-wait timeout, an OOM, or an MSI service stop
+ * interrupts - and a statement-level rollback leaves every row still NULL, so
+ * the retry issued the identical statement and died the identical death: a
+ * boot loop, ended only by hand. Chunked, each statement commits on its own,
+ * so every boot keeps the chunks it managed and the retry starts where the
+ * last attempt stopped.
+ */
+export const BACKFILL_CHUNK_ROWS = 5000;
+
+export const TARGET_INDEX_NAME = 'speedtests_target_created';
+
+/**
+ * The index every per-target read leans on: the Prometheus scrape's
+ * latest-row-per-target, the ?target= filters on the list, the statistics and
+ * the export, and the back-fill's own is-anything-left probe. Without it each
+ * of those walks the created index (or the whole table) looking for a
+ * targetId it has no way to seek. Guarded, because 0014 adds the same index
+ * to instances that upgraded before this migration learned to.
+ */
+export const ensureTargetIndex = async (queryInterface) => {
+    const indexes = await queryInterface.showIndex('speedtests');
+    if (indexes.some((index) => index.name === TARGET_INDEX_NAME)) return;
+
+    await queryInterface.addIndex('speedtests', ['targetId', 'created'], {name: TARGET_INDEX_NAME});
+};
+
 export async function up(queryInterface) {
     const existing = new Set(await queryInterface.showAllTables());
 
@@ -143,6 +173,11 @@ export async function up(queryInterface) {
             allowNull: true,
             defaultValue: null
         });
+
+    // Ahead of the back-fill, so the chunk walk below seeks instead of
+    // scanning - the statement each interrupted boot retries gets cheaper,
+    // not merely smaller.
+    await ensureTargetIndex(queryInterface);
 
     const [rows] = await queryInterface.sequelize.query(
         'SELECT `key`, `value` FROM `config`', {raw: true});
@@ -189,10 +224,31 @@ export async function up(queryInterface) {
     const [[seedRow]] = await queryInterface.sequelize.query(
         'SELECT `id` FROM `targets` ORDER BY `id` LIMIT 1', {raw: true});
 
-    if (seedRow)
-        await queryInterface.sequelize.query(
-            'UPDATE `speedtests` SET `targetId` = ? WHERE `targetId` IS NULL',
-            {replacements: [seedRow.id]});
+    /*
+     * One chunk per statement, looping until the probe finds nothing left.
+     *
+     * The inner select is wrapped in a derived table because MySQL refuses to
+     * update a table it is selecting from in the same statement (ER 1093);
+     * sqlite reads the wrapped form just as happily. Ordered by id so the
+     * chunks are deterministic, and each statement auto-commits - which is the
+     * whole point: an interrupted upgrade resumes instead of starting over.
+     */
+    if (seedRow) {
+        let remaining = true;
+
+        while (remaining) {
+            await queryInterface.sequelize.query(
+                'UPDATE `speedtests` SET `targetId` = ? WHERE `id` IN ('
+                + 'SELECT `id` FROM (SELECT `id` FROM `speedtests` WHERE `targetId` IS NULL '
+                + 'ORDER BY `id` LIMIT ?) AS `chunk`)',
+                {replacements: [seedRow.id, BACKFILL_CHUNK_ROWS]});
+
+            const [leftovers] = await queryInterface.sequelize.query(
+                'SELECT `id` FROM `speedtests` WHERE `targetId` IS NULL LIMIT 1', {raw: true});
+
+            remaining = leftovers.length > 0;
+        }
+    }
 
     await queryInterface.bulkDelete('config', {key: LEGACY_KEYS});
 }
