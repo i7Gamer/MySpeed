@@ -87,6 +87,7 @@ describe("formatDuration", () => {
         // Number()'s latitude, inherited knowingly from storedFigure - the
         // two spellings below read the same on the server's copy.
         assert.equal(formatDuration("1e3"), "1000s");
+        assert.equal(formatDuration("0x10"), "16s");
     });
 
     it("refuses the placeholder in either spelling", () => {

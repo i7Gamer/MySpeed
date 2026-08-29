@@ -211,7 +211,7 @@ export const OverviewChart = (props) => {
             // and the delta reads like the loss row's, through the shared
             // reader, so a proxied node's placeholder cannot feed the arrow.
             // Optional on time itself: an older node's payload may not carry
-            // the block at all, and a missing row beats a crashed page.
+            // the block at all, and an N/A row beats a crashed page.
             value: formatDuration(props.time?.avg),
             delta: {current: readableFigure(props.time?.avg), previous: readableFigure(previous?.time?.avg),
                 higherIsBetter: false}
