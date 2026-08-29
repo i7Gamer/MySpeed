@@ -493,6 +493,14 @@ const regexEnd = (source, from) => {
  * end of the line with it, which is the failure this replaced. So a line that
  * has already divided keeps whatever follows. The cost is a comment surviving on
  * such a line, which is the direction that is merely noisy.
+ *
+ * Fails loudly at the far end too. A misread that puts the walk into a
+ * template it never leaves drops nothing - the text comes back verbatim, only
+ * never stripped again - which is exactly the kind of quiet wrongness no
+ * suite notices. Valid JavaScript cannot end inside a template, a
+ * substitution or a block comment, so ending in one of those states throws,
+ * naming the state. A file may end in a line comment, and a stray apostrophe
+ * stays tolerated - the string states die at each newline by design.
  */
 export const withoutJsComments = (source) => {
     let out = "";
@@ -506,6 +514,7 @@ export const withoutJsComments = (source) => {
     let word = "";      // the identifier ending at it, when it is one
     let last = null;    // the previous code character, whitespace included
     let divided = false;
+    let arrow = false;  // whether that character closed a `=>`
 
     const code = (character) => {
         out += character;
@@ -515,6 +524,7 @@ export const withoutJsComments = (source) => {
             word = "";
             last = null;
             divided = false;
+            arrow = false;
             return;
         }
 
@@ -526,6 +536,7 @@ export const withoutJsComments = (source) => {
         word = !IDENTIFIER.test(character) ? ""
             : last !== null && IDENTIFIER.test(last) ? word + character
                 : character;
+        arrow = character === ">" && prev === "=";
         prev = character;
         last = character;
     };
@@ -536,9 +547,16 @@ export const withoutJsComments = (source) => {
         prev = character;
         word = "";
         last = character;
+        arrow = false;
     };
 
     const opensRegex = () => {
+        // The arrow leaves the same position a `(` does, and it is two
+        // characters, which is why the set of single ones below cannot hold
+        // it: read as a division instead, the walk is inside the literal's
+        // text, where a stray backtick opens a template that never closes -
+        // modelNullability's filter ended every scan of itself that way.
+        if (arrow) return true;
         if (prev === null) return true;
         if (IDENTIFIER.test(prev)) return REGEX_WORDS.has(word);
 
@@ -563,6 +581,11 @@ export const withoutJsComments = (source) => {
             if (character === "\n") {
                 out += "\n";
                 divided = false;
+            } else if (character === "\r") {
+                // The newline rule includes the carriage return: half the
+                // tree is CRLF, and a comment spanning lines there handed
+                // back bare \n on exactly the commented lines.
+                out += "\r";
             } else if (character === "*" && next === "/") {
                 state = "code";
                 index++;
@@ -651,6 +674,13 @@ export const withoutJsComments = (source) => {
             continue;
         }
 
+        // JSX's own slashes - `</div>`, `<br />` - go through here too and
+        // read as divisions, which costs nothing but the fail-closed noise
+        // above: nothing is dropped, and a trailing comment on such a line
+        // survives into the scan. Handling them specially was measured and
+        // vetoed - not setting `divided` there let a URL in JSX text open a
+        // line comment, which is the eating this walk exists to end.
+
         if (character === "'" || character === '"' || character === "`") {
             state = character === "'" ? "single" : character === '"' ? "double" : "template";
             out += character;
@@ -671,6 +701,20 @@ export const withoutJsComments = (source) => {
 
         code(character);
     }
+
+    // Fail loudly rather than quietly at the far end. Valid JavaScript cannot
+    // end inside a template, a substitution or a block comment, so arriving
+    // here in one of those states means a slash context was misread somewhere
+    // above - and the silent version of that survives every suite: nothing is
+    // dropped, the comments simply stop being stripped, and a scan whose
+    // input keeps its comments cannot be trusted in either direction. The two
+    // line-bounded states stay legal: a file may end in a line comment, and
+    // the string states already die at each newline by design.
+    if (state === "template" || state === "block" || templates.length > 0)
+        throw new Error("the input ends inside a "
+            + (templates.length > 0 ? "template substitution"
+                : state === "block" ? "block comment" : "template")
+            + ", so a slash or backtick context was misread above");
 
     return out;
 };

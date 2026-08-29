@@ -1065,6 +1065,87 @@ describe("withoutJsComments", () => {
         assert.equal(withoutJsComments(source), source,
             "a slash read as a division may have been a literal the walk is now inside, so what follows is kept rather than dropped");
     });
+
+    /**
+     * A slash directly after an arrow opens a literal - the arrow leaves the
+     * same position a `(` does. Read as a division, the walk is inside the
+     * regex's text: a stray backtick in there opens a template that never
+     * closes, and modelNullability.test.js ended every scan of itself in
+     * exactly that state - see the fail-loud cases below, which are how the
+     * misreading was finally caught.
+     */
+    it("strips a trailing comment on a line whose slash opened a regex after an arrow", () => {
+        const code = withoutJsComments("const negative = (s) => /-/.test(s); // the sign, not a range");
+
+        assert.doesNotMatch(code, /sign, not a range/,
+            "the slash after the arrow read as a division, so the line's real comment is fail-closed into the scan");
+        assert.match(code, /\/-\/\.test\(s\);/);
+    });
+
+    // Held by the equality here and by the fail-loud contract below: read as
+    // a division, the escaped slashes put the walk inside the literal's text.
+    it("does not open a comment inside a regex that follows an arrow", () => {
+        const source = String.raw`const scheme = (u) => /^https:\/\//.test(u); const bad = (v) => v === -1;`;
+        const code = withoutJsComments(source);
+
+        assert.match(code, /=== -1/, "the tripwire's reading was eaten with the rest of the line");
+        assert.equal(code, source);
+    });
+
+    // The real shape that ended in a phantom template: the division misread
+    // walks into the regex, "closes" it at the path's own slash, and the
+    // template's closing backtick then reads as an opener. With the arrow
+    // read correctly the literal is consumed whole and the template closes.
+    it("is not thrown into a phantom template by a division misread", () => {
+        const source = "const flagged = files.filter((file) => " +
+            "/^\\s*required:/m.test(readSource(`server/models/${file}`)));";
+
+        assert.equal(withoutJsComments(source), source);
+    });
+
+    /**
+     * The fail-loud contract. Valid JavaScript cannot end inside a template,
+     * a substitution or a block comment, so reaching the end of input in one
+     * of those states means a slash context was misread above - and the old
+     * behaviour, carrying the state silently to the far end, is what let a
+     * misread survive every suite: nothing was dropped, only never stripped
+     * again, and a scan whose input keeps its comments cannot be trusted in
+     * either direction.
+     */
+    it("fails loudly when the input ends inside a template", () => {
+        assert.throws(() => withoutJsComments("const s = `never closed"), /template/);
+    });
+
+    it("fails loudly when it ends inside a block comment", () => {
+        assert.throws(() => withoutJsComments("/* never closed"), /block comment/);
+    });
+
+    it("fails loudly when it ends inside a template substitution", () => {
+        assert.throws(() => withoutJsComments("const s = `a${b"), /substitution/);
+    });
+
+    // The two line-bounded states stay tolerated: a file may end in a line
+    // comment, and a stray apostrophe is a stray apostrophe - the string
+    // state already dies at each newline by design.
+    it("still accepts an input ending in a line comment", () => {
+        assert.equal(withoutJsComments("code(); // trailing to the end").trim(), "code();");
+    });
+
+    it("still tolerates a stray quote at the end of input", () => {
+        assert.equal(withoutJsComments("const oops = 'x"), "const oops = 'x");
+    });
+
+    /**
+     * The newline invariant includes the carriage return. The line-comment
+     * branch has always handed `\r` back; the block branch wrote a bare `\n`
+     * for every line a comment spanned, so half the tree - the CRLF half -
+     * came back with mixed endings on exactly the commented lines.
+     */
+    it("keeps the carriage returns of the lines a block comment spans", () => {
+        const code = withoutJsComments("const a = 1;\r\n/* two\r\n * lines */\r\nconst b = 2;");
+
+        assert.equal(code, "const a = 1;\r\n\r\n\r\nconst b = 2;");
+    });
 });
 
 /**
@@ -1074,44 +1155,57 @@ describe("withoutJsComments", () => {
  * old stripper, which is gone. Each pins a comment that still has to go
  * alongside it, so none of them can be satisfied by a stripper that has simply
  * stopped stripping.
+ *
+ * And each anchor is first proved to still be IN the file. Without that, an
+ * edit to the pinned source rots the case silently in whichever direction it
+ * drifts: a renamed comment passes the "is stripped" half against nothing,
+ * and a reworded keeper turns the case red for a reason that is not the
+ * stripper's. The failure message says which happened.
  */
 describe("withoutJsComments and the files it stopped mangling", () => {
-    it("keeps the language list i18n.js declares under an eager glob", () => {
-        const code = withoutJsComments(readSource("client/src/i18n.js"));
+    const CHARACTERISED = [
+        {
+            name: "the language list i18n.js declares under an eager glob",
+            file: "client/src/i18n.js",
+            keeps: ["'Nederlands'", "'Italiano'", "'Polski'", "'Bahasa Indonesia'"],
+            strips: "Upstream #725"
+        },
+        {
+            name: "the tail of the regex NodeContainer strips a scheme with",
+            file: "client/src/pages/Nodes/components/NodeContainer/NodeContainer.jsx",
+            keeps: [String.raw`replace(/(^\w+:|^)\/\//, '')`],
+            strips: "How often a visible card re-reads its node"
+        },
+        {
+            name: "the message downloadHelper refuses a redirect with",
+            file: "server/util/providers/downloadHelper.js",
+            keeps: ["and only https is followed"],
+            strips: "What a refused download is, as its own type"
+        },
+        {
+            name: "the address urlCredentials rebuilds without its userinfo",
+            file: "server/util/urlCredentials.js",
+            keeps: ["${url.protocol}//${url.host}"],
+            strips: "A URL with any credential taken out of it"
+        }
+    ];
 
-        for (const language of ["'Nederlands'", "'Italiano'", "'Polski'", "'Bahasa Indonesia'"])
-            assert.ok(code.includes(language),
-                `${language} is gone: the glob's own characters opened a comment that ran to the next closer`);
+    for (const {name, file, keeps, strips} of CHARACTERISED)
+        it(`keeps ${name}`, () => {
+            const source = readSource(file);
 
-        assert.ok(!code.includes("Upstream #725"),
-            "the comment above the bundled locale is no longer stripped");
-    });
+            for (const anchor of [...keeps, strips])
+                assert.ok(source.includes(anchor),
+                    `${file} no longer contains ${JSON.stringify(anchor)}: the fixture has drifted, so this case `
+                    + "was checking nothing - re-characterise it against the file as it is now");
 
-    it("keeps the tail of the regex NodeContainer strips a scheme with", () => {
-        const code = withoutJsComments(
-            readSource("client/src/pages/Nodes/components/NodeContainer/NodeContainer.jsx"));
+            const code = withoutJsComments(source);
 
-        assert.ok(code.includes(String.raw`replace(/(^\w+:|^)\/\//, '')`),
-            "the literal's own closer read as a line comment and took the rest of the element with it");
-        assert.ok(!code.includes("How often a visible card re-reads its node"),
-            "the comments in this file are no longer stripped");
-    });
+            for (const anchor of keeps)
+                assert.ok(code.includes(anchor),
+                    `${JSON.stringify(anchor)} is gone from ${file}: the walk read code as a comment again`);
 
-    it("keeps the message downloadHelper refuses a redirect with", () => {
-        const code = withoutJsComments(readSource("server/util/providers/downloadHelper.js"));
-
-        assert.ok(code.includes("and only https is followed"),
-            "the slashes after the substituted protocol read as a line comment");
-        assert.ok(!code.includes("What a refused download is, as its own type"),
-            "the comments in this file are no longer stripped");
-    });
-
-    it("keeps the address urlCredentials rebuilds without its userinfo", () => {
-        const code = withoutJsComments(readSource("server/util/urlCredentials.js"));
-
-        assert.ok(code.includes("${url.protocol}//${url.host}"),
-            "the address lost everything after its scheme, so a scan for the parts it keeps finds nothing");
-        assert.ok(!code.includes("A URL with any credential taken out of it"),
-            "the comments in this file are no longer stripped");
-    });
+            assert.ok(!code.includes(strips),
+                `the comment ${JSON.stringify(strips)} in ${file} is no longer stripped`);
+        });
 });
