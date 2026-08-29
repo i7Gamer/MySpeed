@@ -102,8 +102,8 @@ const ALLOWED = new Map([
     }],
     ["pages/Home/components/Speedtest/SpeedtestComponent.jsx", {
         pattern: /`\$\{props\.packetLoss\}%`/,
-        reason: "the loss chip prints its stored column raw by policy, behind a readableFigure gate the "
-            + "executed row tests hold"
+        reason: "the loss chip prints its stored column raw by policy, behind a readableFigure gate that "
+            + "overviewQuality.test.js executes across measured, text, placeholder and absent spellings"
     }],
     ["common/components/TestDetails/TestDetails.jsx", {
         pattern: /text: `\$\{test\.packetLoss\}%`/,

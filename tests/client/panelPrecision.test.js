@@ -103,6 +103,36 @@ describe("a statistics card rounds what the pane it opens states exactly", () =>
                 `a spread of ${JSON.stringify(junk)} printed as a reading`);
     });
 
+    /**
+     * The enlarged view's ranges, executed rather than pinned: the gate is
+     * the loss row's rule - both ends through the shared reader - and an
+     * executed placeholder pair is what holds it there. A source pin on the
+     * gate line survives a revert that rewrites the comment beside it; a
+     * range of two -1s coming back as a sentence does not.
+     *
+     * No format default in the closure and none in the component: all four
+     * callers pass a formatter, and a defaulted identity arm is an untested
+     * branch that renders a raw figure the day someone leans on it.
+     */
+    const spread = (expanded) => helper(consistency, "const spread = (range, format) => {", {
+        props: {expanded}, readableFigure,
+        t: (key, {min, max}) => `between ${min} and ${max}`
+    });
+
+    it("the stability pane's ranges, from readable ends only", () => {
+        const bracket = (value) => `[${value}]`;
+
+        assert.equal(spread(true)({min: "4", max: "9"}, bracket), "between [4] and [9]",
+            "a text pair an older node sends is readable, and the range stopped saying so");
+        assert.equal(spread(true)({min: -1, max: -1}, bracket), null,
+            "a placeholder pair prints as a range again");
+        assert.equal(spread(true)({min: 4, max: null}, bracket), null,
+            "a range with one measured end renders half a sentence");
+        assert.equal(spread(true)(undefined, bracket), null);
+        assert.equal(spread(false)({min: 4, max: 9}, bracket), null,
+            "the collapsed card grew range sub-lines");
+    });
+
     // The consistency score prints through the shared formatPercent now - its
     // behaviour matrix lives with the formatter's own suite, and the wiring
     // is pinned where each card's value line is.

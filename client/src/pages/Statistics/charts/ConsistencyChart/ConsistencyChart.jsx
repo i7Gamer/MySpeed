@@ -58,7 +58,7 @@ export const ConsistencyChart = (props) => {
      * 260". Null for anything not measured, which renders as no line at all
      * rather than as a range ending in "N/A".
      */
-    const spread = (range, format = (value) => value) => {
+    const spread = (range, format) => {
         if (!props.expanded || !range) return null;
         // Both ends through the shared reader: the null-only gate here was
         // the last sibling of the ones this card's other lines dropped, and

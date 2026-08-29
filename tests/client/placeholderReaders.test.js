@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { walkSources, withoutJsComments } from "../helpers/source.js";
+import { escapeRegExp, walkSources, withoutJsComments } from "../helpers/source.js";
 
 /**
  * The tripwire against the next private placeholder reader.
@@ -133,44 +133,54 @@ const BARE_MINUS_ONE = /(?<![\w.])-1(?![\d.])/;
  */
 const READER_HOME = "common/utils/TestUtil.js";
 
-const FILE_SET = new Set(CLIENT_FILES.map(({file}) => file));
-
 // Assets and styles are imported by path too; they hold no bindings.
 const NON_JS = /\.(?:sass|css|json|webp|png|svg|jpe?g|gif|ico)$/;
 
 /**
- * A specifier as the client file it names, null for packages and assets.
+ * A resolver over a given file list: a specifier as the file it names, null
+ * for packages and assets.
  *
  * Loud for a local js-like specifier that resolves to nothing: that is a
  * moved file, and a guard that silently skips it is a guard with a hole
  * shaped like the next rename.
+ *
+ * Parameterised over the list - and the fixpoint below over the resolver -
+ * so the guard's whole chain can be proven end-to-end on a synthetic tree
+ * with exactly the machinery the real one runs, rather than on per-arm
+ * fixtures that stay green while an arm is missing.
  */
-const resolveSpecifier = (importer, specifier) => {
-    const parts = specifier.startsWith("@/")
-        ? specifier.slice(2).split("/")
-        : (() => {
-            if (!specifier.startsWith("./") && !specifier.startsWith("../")) return null;
+const resolverOver = (files) => {
+    const known = new Set(files.map(({file}) => file));
 
-            const stack = importer.split("/").slice(0, -1);
-            for (const segment of specifier.split("/")) {
-                if (segment === "." || segment === "") continue;
-                if (segment === "..") stack.pop();
-                else stack.push(segment);
-            }
-            return stack;
-        })();
+    return (importer, specifier) => {
+        const parts = specifier.startsWith("@/")
+            ? specifier.slice(2).split("/")
+            : (() => {
+                if (!specifier.startsWith("./") && !specifier.startsWith("../")) return null;
 
-    if (parts === null) return null;
+                const stack = importer.split("/").slice(0, -1);
+                for (const segment of specifier.split("/")) {
+                    if (segment === "." || segment === "") continue;
+                    if (segment === "..") stack.pop();
+                    else stack.push(segment);
+                }
+                return stack;
+            })();
 
-    const base = parts.join("/");
-    for (const candidate of [base, `${base}.js`, `${base}.jsx`, `${base}/index.js`, `${base}/index.jsx`])
-        if (FILE_SET.has(candidate)) return candidate;
+        if (parts === null) return null;
 
-    if (NON_JS.test(base)) return null;
+        const base = parts.join("/");
+        for (const candidate of [base, `${base}.js`, `${base}.jsx`, `${base}/index.js`, `${base}/index.jsx`])
+            if (known.has(candidate)) return candidate;
 
-    throw new Error(`${importer} imports "${specifier}", which resolves to no client source - `
-        + "a moved file leaves this guard with a hole shaped like the rename");
+        if (NON_JS.test(base)) return null;
+
+        throw new Error(`${importer} imports "${specifier}", which resolves to no client source - `
+            + "a moved file leaves this guard with a hole shaped like the rename");
+    };
 };
+
+const resolveSpecifier = resolverOver(CLIENT_FILES);
 
 // Every from-specifier a module writes, import and export-from alike; the
 // braces admit no `;` or `}`, so a lazy bridge cannot span statements.
@@ -180,10 +190,10 @@ const specifiersOf = (code) => [
 ].map((match) => match[1]);
 
 /** Form (a): an export-from whose specifier lands in the reader set. */
-const reExportsFrom = ({file, code}, targets) => [
+const reExportsFrom = ({file, code}, targets, resolve) => [
     ...code.matchAll(/export[^\n"']*from\s*["']([^"']+)["']/g),
     ...code.matchAll(/export\s*\{[^};]*\}\s*from\s*["']([^"']+)["']/g)
-].some((match) => targets.has(resolveSpecifier(file, match[1])));
+].some((match) => targets.has(resolve(file, match[1])));
 
 /**
  * Form (b): names imported from the reader set that the module exports
@@ -191,9 +201,9 @@ const reExportsFrom = ({file, code}, targets) => [
  * import side, local halves (before `as`) on the export side: ESM forbids
  * shadowing an imported name, so an overlap IS a re-export.
  */
-const twoStatementBarrelNames = ({file, code}, targets) => {
+const twoStatementBarrelNames = ({file, code}, targets, resolve) => {
     const locals = [...code.matchAll(/import\s*\{([^};]*)\}\s*from\s*["']([^"']+)["']/g)]
-        .filter((match) => targets.has(resolveSpecifier(file, match[2])))
+        .filter((match) => targets.has(resolve(file, match[2])))
         .flatMap((match) => match[1].split(","))
         .map((binding) => (binding.split(/\bas\b/)[1] ?? binding).trim())
         .filter(Boolean);
@@ -205,16 +215,16 @@ const twoStatementBarrelNames = ({file, code}, targets) => {
     return locals.filter((name) => exported.includes(name));
 };
 
-/** The reader set, grown to a fixpoint over both barrel forms. */
-const readerSources = (() => {
+/** The reader set over a file list, grown to a fixpoint over both barrel forms. */
+const readerSourcesOver = (files, resolve) => {
     const targets = new Set([READER_HOME]);
 
     let grew = true;
     while (grew) {
         grew = false;
-        for (const entry of CLIENT_FILES) {
+        for (const entry of files) {
             if (targets.has(entry.file)) continue;
-            if (reExportsFrom(entry, targets) || twoStatementBarrelNames(entry, targets).length > 0) {
+            if (reExportsFrom(entry, targets, resolve) || twoStatementBarrelNames(entry, targets, resolve).length > 0) {
                 targets.add(entry.file);
                 grew = true;
             }
@@ -222,10 +232,12 @@ const readerSources = (() => {
     }
 
     return targets;
-})();
+};
 
-const readsTestUtil = ({file, code}) =>
-    specifiersOf(code).some((specifier) => readerSources.has(resolveSpecifier(file, specifier)));
+const readerSources = readerSourcesOver(CLIENT_FILES, resolveSpecifier);
+
+const readsTestUtil = ({file, code}, sources = readerSources, resolve = resolveSpecifier) =>
+    specifiersOf(code).some((specifier) => sources.has(resolve(file, specifier)));
 
 describe("the placeholder is read in one place", () => {
     /**
@@ -347,7 +359,9 @@ describe("the placeholder is read in one place", () => {
 describe("every reader of TestUtil is either scanned or accounted for", () => {
     it("places each of them in a tree or in the non-rendering list", () => {
         const unplaced = CLIENT_FILES
-            .filter(readsTestUtil)
+            // Not .filter(readsTestUtil): filter's index argument would land
+            // on the defaulted sources parameter.
+            .filter((entry) => readsTestUtil(entry))
             .map(({file}) => file)
             .filter((file) => !MEASUREMENT_TREES.some((tree) => file.startsWith(`${tree}/`))
                 && !NON_RENDERING.has(file));
@@ -427,21 +441,57 @@ describe("every reader of TestUtil is either scanned or accounted for", () => {
         const targets = new Set([READER_HOME]);
 
         assert.ok(reExportsFrom({file: "common/utils/Barrel.js",
-            code: 'export {readableFigure} from "@/common/utils/TestUtil";'}, targets));
+            code: 'export {readableFigure} from "@/common/utils/TestUtil";'}, targets, resolveSpecifier));
 
         assert.deepEqual(twoStatementBarrelNames({file: "common/utils/Barrel.js",
             code: 'import {readableFigure} from "@/common/utils/TestUtil";\nexport {readableFigure};'},
-        targets), ["readableFigure"]);
+        targets, resolveSpecifier), ["readableFigure"]);
 
         // The alias travels: what is re-exported is the LOCAL binding.
         assert.deepEqual(twoStatementBarrelNames({file: "common/utils/Barrel.js",
             code: 'import {readableFigure as reader} from "@/common/utils/TestUtil";\nexport {reader};'},
-        targets), ["reader"]);
+        targets, resolveSpecifier), ["reader"]);
 
         // Exporting something else entirely is a module, not a barrel.
         assert.deepEqual(twoStatementBarrelNames({file: "common/utils/Own.js",
             code: 'import {isMeasured} from "@/common/utils/TestUtil";\nconst gate = 1;\nexport {gate};'},
-        targets), []);
+        targets, resolveSpecifier), []);
+    });
+
+    /**
+     * The fixpoint itself, proven end-to-end on a synthetic tree: a chain
+     * that passes through BOTH barrel spellings before reaching the consumer.
+     * Either arm deleted - the export-from check or the two-statement check -
+     * breaks a link, the set stops growing, and the consumer goes unseen.
+     * The per-arm fixtures above cannot say that: each proves its own arm
+     * works in isolation, and both stayed green while a probe deleted an arm
+     * from the fixpoint they feed.
+     */
+    it("grows through a chain of both barrel spellings to reach the consumer", () => {
+        const consumer = {file: "pages/Probe/Probe.jsx",
+            code: 'import {readableFigure} from "@/common/utils/TwoStep";'};
+        const bystander = {file: "pages/Probe/Bystander.jsx",
+            code: 'import {other} from "@/common/utils/Elsewhere";'};
+
+        const synthetic = [
+            {file: READER_HOME, code: "export const readableFigure = () => null;"},
+            {file: "common/utils/FromBarrel.js",
+                code: 'export {readableFigure} from "@/common/utils/TestUtil";'},
+            {file: "common/utils/TwoStep.js",
+                code: 'import {readableFigure} from "@/common/utils/FromBarrel";\nexport {readableFigure};'},
+            {file: "common/utils/Elsewhere.js", code: "export const other = 1;"},
+            consumer, bystander
+        ];
+
+        const resolve = resolverOver(synthetic);
+        const sources = readerSourcesOver(synthetic, resolve);
+
+        assert.deepEqual([...sources].sort(),
+            [READER_HOME, "common/utils/FromBarrel.js", "common/utils/TwoStep.js"].sort(),
+            "a barrel arm has been lost, and the reader set stops growing at the missing spelling");
+        assert.ok(readsTestUtil(consumer, sources, resolve),
+            "the consumer at the end of the chain is invisible - the blind spot the fixpoint exists to close");
+        assert.equal(readsTestUtil(bystander, sources, resolve), false);
     });
 
     // The resolver's own contract, at its edges: packages and assets are
@@ -457,5 +507,79 @@ describe("every reader of TestUtil is either scanned or accounted for", () => {
             "common/components/TestDetails/index.js", "a directory import no longer lands on its barrel");
 
         assert.throws(() => resolveSpecifier("pages/Probe/Probe.jsx", "./Moved.js"), /resolves to no client source/);
+    });
+});
+
+/**
+ * And the names themselves, held against shadowing.
+ *
+ * Every scan in this suite and its siblings reads code by name: a pin that
+ * says formatPercent means the shared formatPercent only while no component
+ * declares its own. The probe that proved the class was exactly that - a
+ * component-local `const formatPercent = (value) => ...` walks straight past
+ * every name-match pin and mid-component anchor and hands the page a second
+ * percent rule. So no client file outside common/utils may declare a binding
+ * wearing a shared reader's or formatter's name.
+ *
+ * The names are the two homes' OWN declarations, read from stripped source.
+ * The `export {...}` list and export-from forms deliberately stay out: a
+ * forwarded name's true declaration legitimately lives elsewhere - the four
+ * preference constants FormatUtil forwards are declared in the Preferences
+ * tree, and flagging their home would be this guard firing on the
+ * architecture it is meant to protect.
+ *
+ * The stated bound, like the barrel guard's: a destructuring or a function
+ * parameter can still shadow. A named declaration is the shape the found
+ * probe had, and the shape a person writes when they reinvent a formatter.
+ */
+const SHARED_HOMES = ["common/utils/FormatUtil.js", "common/utils/TestUtil.js"];
+
+const OWN_DECLARATION = /export\s+(?:const|let|var|function)\s+([\w$]+)/g;
+
+const SHARED_NAMES = SHARED_HOMES.flatMap((home) =>
+    [...(fileAt(home)?.code ?? "").matchAll(OWN_DECLARATION)].map(([, name]) => name));
+
+/** Which shared names this code declares a local version of. */
+const shadowsShared = (code) => SHARED_NAMES.filter((name) =>
+    new RegExp(`(?:const|let|var|function)\\s+${escapeRegExp(name)}\\b`).test(code));
+
+describe("a shared name means the shared thing", () => {
+    // A moved home would empty SHARED_NAMES and switch the guard off without
+    // a word - the same silence the tree walk above refuses.
+    it("collects the homes' own declarations, not what they forward", () => {
+        for (const home of SHARED_HOMES)
+            assert.ok(fileAt(home), `${home} is no longer in the tree, and the shadow guard is silently off`);
+
+        assert.ok(SHARED_NAMES.length > 30,
+            "the declaration pattern has stopped matching the homes' exports, so the guard watches almost nothing");
+        assert.ok(SHARED_NAMES.includes("readableFigure"));
+        assert.ok(SHARED_NAMES.includes("formatPercent"));
+
+        // FormatUtil forwards these; their declarations live in the
+        // Preferences tree, which must stay free to keep them.
+        assert.ok(!SHARED_NAMES.includes("SPEED_UNIT_MBPS"));
+        assert.ok(!SHARED_NAMES.includes("TIME_FORMAT_12H"));
+    });
+
+    it("no client file declares its own version of a shared name", () => {
+        const shadows = CLIENT_FILES
+            .filter(({file}) => !file.startsWith("common/utils/"))
+            .flatMap(({file, code}) => shadowsShared(code).map((name) => `${file} declares its own ${name}`));
+
+        assert.deepEqual(shadows, [],
+            "a local declaration wearing a shared reader's name walks past every pin that matches on the name: "
+            + "import the shared one, or call the local thing what it locally is");
+    });
+
+    it("reads a declaration and only a declaration", () => {
+        assert.deepEqual(shadowsShared("const formatPercent = (value) => `${value}%`;"), ["formatPercent"]);
+        assert.deepEqual(shadowsShared("function readableFigure(value) { return value; }"), ["readableFigure"]);
+        assert.deepEqual(shadowsShared("export const isMeasured = (bucket) => bucket;"), ["isMeasured"]);
+
+        // Word-bounded on both sides: a longer name that contains a shared
+        // one is its own name, not a shadow.
+        assert.deepEqual(shadowsShared("const formatPercentage = 1;"), []);
+        assert.deepEqual(shadowsShared("const reformatPercent = 1;"), []);
+        assert.deepEqual(shadowsShared("formatPercent(value);"), [], "a call is not a declaration");
     });
 });

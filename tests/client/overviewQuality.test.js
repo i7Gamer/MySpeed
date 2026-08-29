@@ -114,33 +114,56 @@ describe("the overview row carries both quality figures", () => {
             "packet loss is a percentage, not a latency");
     });
 
+    // The row's list, executed off its own declarations rather than spelled -
+    // the entries are plain JavaScript above the JSX. Both chips' columns are
+    // parameters, so both gates run against real spellings.
+    const built = (jitter, packetLoss = null) => new Function(
+        "props", "t", "isMeasured", "jitterColour", "formatLatency", "printableFigure", "readableFigure",
+        "NOT_MEASURED", "packetLossColour", "faWaveSquare", "jitterInfo", "faLinkSlash", "packetLossInfo",
+        `${figures}\nreturn quality;`)(
+        {jitter, packetLoss}, (key) => key, isMeasured, jitterColour, formatLatency,
+        printableFigure, readableFigure, NOT_MEASURED, packetLossColour, null, null, null, null);
+
     /**
-     * And what it prints for a figure nothing can read is the word, not the
-     * placeholder - executed off the row's own list rather than spelled,
-     * since the entries are plain JavaScript above the JSX. The chip stays
-     * visible for everything isMeasured admits, and the pane this row opens
-     * says N/A for the same jitter through formatLatencyWithUnit: a "-1"
-     * here beside that pane's "N/A" was the row and its pane answering one
-     * question two ways. This chip prints no unit, so it spells the same
-     * refusal from the same readers.
+     * What the row prints for a figure nothing can read is the word, not the
+     * placeholder. The chip stays visible for everything isMeasured admits,
+     * and the pane this row opens says N/A for the same jitter through
+     * formatLatencyWithUnit: a "-1" here beside that pane's "N/A" was the row
+     * and its pane answering one question two ways. This chip prints no unit,
+     * so it spells the same refusal from the same readers.
      */
     it("says N/A rather than printing a jitter nobody measured", () => {
-        const built = (jitter) => new Function(
-            "props", "t", "isMeasured", "jitterColour", "formatLatency", "printableFigure", "readableFigure",
-            "NOT_MEASURED", "packetLossColour", "faWaveSquare", "jitterInfo", "faLinkSlash", "packetLossInfo",
-            `${figures}\nreturn quality;`)(
-            {jitter, packetLoss: null}, (key) => key, isMeasured, jitterColour, formatLatency,
-            printableFigure, readableFigure, NOT_MEASURED, packetLossColour, null, null, null, null)
-            .find((figure) => figure.key === "jitter");
+        const jitterChip = (jitter) => built(jitter).find((figure) => figure.key === "jitter");
 
         for (const unreadable of [-1, "-1", "auto"])
-            assert.equal(built(unreadable).text, NOT_MEASURED,
+            assert.equal(jitterChip(unreadable).text, NOT_MEASURED,
                 `a jitter of ${JSON.stringify(unreadable)} printed as a reading`);
 
-        assert.equal(built(19.96).text, 20, "a real jitter no longer prints its trimmed figure");
+        assert.equal(jitterChip(19.96).text, 20, "a real jitter no longer prints its trimmed figure");
 
         for (const absent of [null, undefined])
-            assert.equal(built(absent), undefined, `a jitter of ${String(absent)} still draws a chip`);
+            assert.equal(jitterChip(absent), undefined, `a jitter of ${String(absent)} still draws a chip`);
+    });
+
+    /**
+     * And the loss chip's gate, executed the same way - this is the gate the
+     * scan suite's exemption vouches for when it lets the chip print its
+     * stored column raw. A chip that appears is one the reader admitted; what
+     * it then prints is the column as stored, "0.5" and "0" alike, which is
+     * the row-and-pane-identical policy the chip's comment states.
+     */
+    it("draws the loss chip only for what the reader admits", () => {
+        const lossChip = (packetLoss) => built(null, packetLoss).find((figure) => figure.key === "packetLoss");
+
+        assert.equal(lossChip("0.5").text, "0.5%", "a text loss an older node sends is readable, and the chip hid it");
+        assert.equal(lossChip(0).text, "0%", "a measured clean line is the best reading there is, and it vanished");
+
+        for (const unreadable of [-1, "-1", "auto"])
+            assert.equal(lossChip(unreadable), undefined,
+                `a loss of ${JSON.stringify(unreadable)} drew a chip, which prints the raw column as a reading`);
+
+        for (const absent of [null, undefined])
+            assert.equal(lossChip(absent), undefined, `a loss of ${String(absent)} drew a chip nobody measured`);
     });
 
     /**

@@ -22,7 +22,10 @@ const MIN_MEASURED_HOURS = 3;
 const SLOWDOWN_DECIMALS = 1;
 const PERCENT = 100;
 
-const isMeasured = (bucket) =>
+// Named for what it judges - a bucket with enough samples to count as an
+// hour - not "isMeasured", which is TestUtil's name for a different judgement
+// (any value at all) and must keep meaning that everywhere it is read.
+const isMeasuredHour = (bucket) =>
     typeof bucket?.download === "number"
     && Number.isFinite(bucket.download)
     && bucket.download > 0
@@ -38,7 +41,7 @@ const isMeasured = (bucket) =>
 export const peakSlowdown = (hourlyAverages) => {
     if (!Array.isArray(hourlyAverages)) return null;
 
-    const measured = hourlyAverages.filter(isMeasured);
+    const measured = hourlyAverages.filter(isMeasuredHour);
     if (measured.length < MIN_MEASURED_HOURS) return null;
 
     const fastest = measured.reduce((best, bucket) => bucket.download > best.download ? bucket : best);
