@@ -58,6 +58,11 @@ const MEASUREMENT_TREES = [
     // Added by the guard at the bottom of this file rather than by a review:
     // the bar reads isFailedTest to colour itself, and was in no tree here.
     "common/components/StatusBar",
+    // The renderer every figure-beside-unit goes through. It reads FormatUtil
+    // rather than TestUtil, so the import-graph guard below cannot see it -
+    // and the one file every measurement renders through is exactly where a
+    // private reader must not hide.
+    "common/components/FigureWithUnit",
     "common/utils"
 ];
 
@@ -110,18 +115,22 @@ const NON_RENDERING = new Map([
 const BARE_MINUS_ONE = /(?<![\w.])-1(?![\d.])/;
 
 /**
- * An import from TestUtil, in the forms this tree actually writes.
+ * An import from TestUtil, in the forms this tree actually writes - and the
+ * export forms it could grow, because a barrel re-exporting the readers would
+ * hand every one of its importers a name this guard cannot see.
  *
- * Two of them, because one pattern cannot cover both: the charts import a named
- * list spread over several lines, which nothing anchored to a single line
- * finds, and everything else is one line - through the build alias
- * `@/common/utils/TestUtil` or a relative path carrying its extension.
+ * Two shapes per keyword, because one pattern cannot cover both: the charts
+ * import a named list spread over several lines, which nothing anchored to a
+ * single line finds, and everything else is one line - through the build
+ * alias `@/common/utils/TestUtil` or a relative path carrying its extension.
+ * The braces admit no `;` or `}`, so a lazy any-character bridge cannot start
+ * at some earlier statement's brace and end at the import's.
  */
 const FROM_TEST_UTIL = String.raw`from\s*["'][^"']*TestUtil(?:\.js)?["']`;
 
 const TEST_UTIL_IMPORTS = [
-    new RegExp(String.raw`import[^\n]*` + FROM_TEST_UTIL),
-    new RegExp(String.raw`import\s*\{[\s\S]*?\}\s*` + FROM_TEST_UTIL)
+    new RegExp(String.raw`(?:import|export)[^\n]*` + FROM_TEST_UTIL),
+    new RegExp(String.raw`(?:import|export)\s*\{[^};]*\}\s*` + FROM_TEST_UTIL)
 ];
 
 const readsTestUtil = ({code}) => TEST_UTIL_IMPORTS.some((pattern) => pattern.test(code));
@@ -178,9 +187,14 @@ describe("the placeholder is read in one place", () => {
 
             assert.notEqual(carrying.length, 0,
                 `${file} no longer carries a -1; drop it from ALLOWED so the list stays a list of facts`);
-            assert.ok(carrying.some((line) => pattern.test(line)),
-                `${file} carries a -1, but on no line ${pattern} matches - the exemption covers nothing, and the -1 it `
-                + "was granted for is unaccounted for");
+            // Exactly one: an exemption names one construct, and a pattern
+            // that has widened to cover a second -1 is a file-wide skip
+            // wearing a narrow entry's clothes.
+            assert.equal(carrying.filter((line) => pattern.test(line)).length, 1,
+                `${file}'s exemption covers ${carrying.filter((line) => pattern.test(line)).length} of its -1 lines `
+                + "where one construct was granted - the pattern has widened past what it names");
+            assert.doesNotMatch("const somethingElse = -1;", pattern,
+                `${file}'s exemption matches a line it was never granted; narrow the pattern to the construct`);
         }
     });
 
@@ -194,8 +208,15 @@ describe("the placeholder is read in one place", () => {
             }
     });
 
-    it("does not read a negative fraction as the placeholder", () => {
-        for (const arithmetic of ["const nudge = -1.5;", "const span = -1.25;", "const many = -12;"])
+    // Both halves of the bareness rule, pinned in both directions: the
+    // lookbehind keeps subtraction out, the lookahead keeps fractions out,
+    // and weakening either turns real code into budget noise - which is how
+    // an exemption gets added that turns off a whole file.
+    it("does not read arithmetic or a negative fraction as the placeholder", () => {
+        for (const arithmetic of [
+            "const nudge = -1.5;", "const span = -1.25;", "const many = -12;",
+            "const last = width-1;", "const before = arr[at-1];", "const shifted = props.at-1;"
+        ])
             assert.doesNotMatch(arithmetic, BARE_MINUS_ONE,
                 `"${arithmetic}" is a number rather than the placeholder, and firing on it is how an exemption gets `
                 + "added that turns off a whole file");
@@ -206,7 +227,9 @@ describe("the placeholder is read in one place", () => {
             "if (tests.indexOf(row) === -1) return null;",
             "const at = -1;",
             "return index === -1 ? null : index;",
-            "value: measured ? figure : -1"
+            "value: measured ? figure : -1",
+            "const bounds = [-1];",
+            "openAt((-1));"
         ])
             assert.match(reader, BARE_MINUS_ONE, `"${reader}" no longer trips the budget`);
     });
@@ -261,11 +284,15 @@ describe("every reader of TestUtil is either scanned or accounted for", () => {
         }
     });
 
-    it("reads every import form the tree writes", () => {
+    it("reads every import form the tree writes, and the export forms it could grow", () => {
         const written = [
             'import {isFailedTest} from "@/common/utils/TestUtil";',
             'import { readableFigure } from "../../../utils/TestUtil.js";',
-            'import {\n    bufferbloat,\n    isMeasured\n} from "@/common/utils/TestUtil";'
+            'import {\n    bufferbloat,\n    isMeasured\n} from "@/common/utils/TestUtil";',
+            'import * as TestUtil from "@/common/utils/TestUtil";',
+            'import TestUtil from "@/common/utils/TestUtil";',
+            'export {readableFigure} from "@/common/utils/TestUtil";',
+            'export * from "@/common/utils/TestUtil";'
         ];
 
         for (const form of written)
@@ -273,9 +300,32 @@ describe("every reader of TestUtil is either scanned or accounted for", () => {
 
         for (const innocent of [
             'const label = "TestUtil";',
-            'import {other} from "./Other.js";'
+            'import {other} from "./Other.js";',
+            // The lazy bridge this pins against: an unrelated export's brace
+            // must not reach across statements to a TestUtil import's quote.
+            'export {helper};\nconst x = from("TestUtil");'
         ])
             assert.equal(readsTestUtil({code: innocent}), false,
                 `"${innocent}" is held to a list it does not belong on`);
+    });
+
+    /**
+     * And no file re-exports the readers at all. A barrel between a component
+     * and TestUtil hands every importer a path this guard does not watch, so
+     * the whole budget quietly narrows to the files that still import
+     * directly. If one is ever wanted, this failure is the reminder that the
+     * guard has to learn the barrel's path in the same change.
+     */
+    it("finds no re-export of TestUtil for importers to hide behind", () => {
+        const RE_EXPORTS = [
+            new RegExp(String.raw`export[^\n]*` + FROM_TEST_UTIL),
+            new RegExp(String.raw`export\s*\{[^};]*\}\s*` + FROM_TEST_UTIL)
+        ];
+
+        for (const {file, code} of CLIENT_FILES)
+            for (const pattern of RE_EXPORTS)
+                assert.doesNotMatch(code, pattern,
+                    `${file} re-exports TestUtil, so its importers read the readers through a name the graph guard `
+                    + "cannot see - import directly, or teach the guard the barrel's path in this same change");
     });
 });
