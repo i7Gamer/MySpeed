@@ -193,27 +193,10 @@ describe("the connection's quality figures sit on the ping card", () => {
     });
 });
 
-/**
- * The value a metric card prints goes through the one refusing renderer.
- *
- * The card used to glue {value} to its unit span raw, so the -1 a mixed row
- * carries printed "-1 ms" beside an icon already grading the same value as a
- * failure, junk printed as a reading, and an absent column left a bare unit
- * standing alone. FigureWithUnit's judgement is formatWithUnit's own - the
- * string form three other views print through - so the pane and the Home row
- * cannot answer the same value two ways.
- */
-describe("the value a metric card prints", () => {
-    it("renders through the shared refusing renderer", () => {
-        assert.match(pane, /<FigureWithUnit value=\{value\} unit=\{unit\} unitClass="detail-metric-unit"\/>/,
-            "the card glues its value to the unit span again, so a placeholder prints as a reading");
-    });
-
-    it("leaves no raw value-beside-unit adjacency behind", () => {
-        assert.doesNotMatch(pane, /\{value\}<span className="detail-metric-unit">/,
-            "the raw adjacency is back beside the component that exists to refuse it");
-    });
-});
+// The metric cards' value rendering is pinned where it is owned: the
+// FigureWithUnit suite holds the wiring of all four call sites and executes
+// the component's refusal, and the raw-render scan's unit-span pattern
+// forbids the adjacency a revert would recreate.
 
 describe("the chart modal", () => {
     const aliasImporter = {

@@ -52,8 +52,9 @@ describe("the latest-test card prints its latencies to one decimal", () => {
 
         assert.match(card, /value=\{formatWithUnit\(formatWhole\(props\.test\.ping\), /,
             "the ping's row no longer prints through the refusing formatter");
-        assert.match(card, /const speedText = \(mbps\) => formatWithUnit\(wholeSpeed\(mbps, preferences\), speedUnit\);/,
-            "the speeds no longer print through the refusing formatter");
+        // The speeds' wiring pin lives in panelPrecision, which owns the
+        // card-vs-pane rounding contract - a verbatim copy here red three
+        // suites for one reformat.
 
         for (const spelt of [-1, "-1"]) {
             assert.equal(formatWithUnit(formatWhole(spelt), "ms"), "N/A",

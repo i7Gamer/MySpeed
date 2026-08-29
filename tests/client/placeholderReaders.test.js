@@ -115,25 +115,117 @@ const NON_RENDERING = new Map([
 const BARE_MINUS_ONE = /(?<![\w.])-1(?![\d.])/;
 
 /**
- * An import from TestUtil, in the forms this tree actually writes - and the
- * export forms it could grow, because a barrel re-exporting the readers would
- * hand every one of its importers a name this guard cannot see.
+ * Which modules hold TestUtil's readers, resolved rather than pattern-matched.
  *
- * Two shapes per keyword, because one pattern cannot cover both: the charts
- * import a named list spread over several lines, which nothing anchored to a
- * single line finds, and everything else is one line - through the build
- * alias `@/common/utils/TestUtil` or a relative path carrying its extension.
- * The braces admit no `;` or `}`, so a lazy any-character bridge cannot start
- * at some earlier statement's brace and end at the import's.
+ * A path-substring pattern knew only direct imports, so a BARREL - a module
+ * re-exporting the readers - handed every one of its importers a specifier
+ * the guard could not see. And the two-statement spelling (import on one
+ * line, `export {name}` on the next) is exactly the barrel someone would
+ * write, invisible to any export-from pattern. So the guard resolves real
+ * specifiers now: the reader set starts at TestUtil and grows to a fixpoint
+ * over both barrel forms, and "reads TestUtil" means "imports anything that
+ * resolves into that set".
+ *
+ * The stated bound: a re-export through a namespace (`import * as U` then
+ * exporting U or its members) or an aliasing assignment (`export const mine =
+ * readableFigure`) is out of textual reach. Named-binding barrels - both
+ * spellings - are the shapes a tree actually grows, and both fail loudly.
  */
-const FROM_TEST_UTIL = String.raw`from\s*["'][^"']*TestUtil(?:\.js)?["']`;
+const READER_HOME = "common/utils/TestUtil.js";
 
-const TEST_UTIL_IMPORTS = [
-    new RegExp(String.raw`(?:import|export)[^\n]*` + FROM_TEST_UTIL),
-    new RegExp(String.raw`(?:import|export)\s*\{[^};]*\}\s*` + FROM_TEST_UTIL)
-];
+const FILE_SET = new Set(CLIENT_FILES.map(({file}) => file));
 
-const readsTestUtil = ({code}) => TEST_UTIL_IMPORTS.some((pattern) => pattern.test(code));
+// Assets and styles are imported by path too; they hold no bindings.
+const NON_JS = /\.(?:sass|css|json|webp|png|svg|jpe?g|gif|ico)$/;
+
+/**
+ * A specifier as the client file it names, null for packages and assets.
+ *
+ * Loud for a local js-like specifier that resolves to nothing: that is a
+ * moved file, and a guard that silently skips it is a guard with a hole
+ * shaped like the next rename.
+ */
+const resolveSpecifier = (importer, specifier) => {
+    const parts = specifier.startsWith("@/")
+        ? specifier.slice(2).split("/")
+        : (() => {
+            if (!specifier.startsWith("./") && !specifier.startsWith("../")) return null;
+
+            const stack = importer.split("/").slice(0, -1);
+            for (const segment of specifier.split("/")) {
+                if (segment === "." || segment === "") continue;
+                if (segment === "..") stack.pop();
+                else stack.push(segment);
+            }
+            return stack;
+        })();
+
+    if (parts === null) return null;
+
+    const base = parts.join("/");
+    for (const candidate of [base, `${base}.js`, `${base}.jsx`, `${base}/index.js`, `${base}/index.jsx`])
+        if (FILE_SET.has(candidate)) return candidate;
+
+    if (NON_JS.test(base)) return null;
+
+    throw new Error(`${importer} imports "${specifier}", which resolves to no client source - `
+        + "a moved file leaves this guard with a hole shaped like the rename");
+};
+
+// Every from-specifier a module writes, import and export-from alike; the
+// braces admit no `;` or `}`, so a lazy bridge cannot span statements.
+const specifiersOf = (code) => [
+    ...code.matchAll(/(?:import|export)[^\n"']*from\s*["']([^"']+)["']/g),
+    ...code.matchAll(/(?:import|export)\s*\{[^};]*\}\s*from\s*["']([^"']+)["']/g)
+].map((match) => match[1]);
+
+/** Form (a): an export-from whose specifier lands in the reader set. */
+const reExportsFrom = ({file, code}, targets) => [
+    ...code.matchAll(/export[^\n"']*from\s*["']([^"']+)["']/g),
+    ...code.matchAll(/export\s*\{[^};]*\}\s*from\s*["']([^"']+)["']/g)
+].some((match) => targets.has(resolveSpecifier(file, match[1])));
+
+/**
+ * Form (b): names imported from the reader set that the module exports
+ * again - the two-statement barrel. Local bindings (after `as`) on the
+ * import side, local halves (before `as`) on the export side: ESM forbids
+ * shadowing an imported name, so an overlap IS a re-export.
+ */
+const twoStatementBarrelNames = ({file, code}, targets) => {
+    const locals = [...code.matchAll(/import\s*\{([^};]*)\}\s*from\s*["']([^"']+)["']/g)]
+        .filter((match) => targets.has(resolveSpecifier(file, match[2])))
+        .flatMap((match) => match[1].split(","))
+        .map((binding) => (binding.split(/\bas\b/)[1] ?? binding).trim())
+        .filter(Boolean);
+
+    const exported = [...code.matchAll(/export\s*\{([^};]*)\}(?!\s*from)/g)]
+        .flatMap((match) => match[1].split(","))
+        .map((binding) => binding.split(/\bas\b/)[0].trim());
+
+    return locals.filter((name) => exported.includes(name));
+};
+
+/** The reader set, grown to a fixpoint over both barrel forms. */
+const readerSources = (() => {
+    const targets = new Set([READER_HOME]);
+
+    let grew = true;
+    while (grew) {
+        grew = false;
+        for (const entry of CLIENT_FILES) {
+            if (targets.has(entry.file)) continue;
+            if (reExportsFrom(entry, targets) || twoStatementBarrelNames(entry, targets).length > 0) {
+                targets.add(entry.file);
+                grew = true;
+            }
+        }
+    }
+
+    return targets;
+})();
+
+const readsTestUtil = ({file, code}) =>
+    specifiersOf(code).some((specifier) => readerSources.has(resolveSpecifier(file, specifier)));
 
 describe("the placeholder is read in one place", () => {
     /**
@@ -285,9 +377,13 @@ describe("every reader of TestUtil is either scanned or accounted for", () => {
     });
 
     it("reads every import form the tree writes, and the export forms it could grow", () => {
+        // Realistic homes, because the resolver walks real paths: the
+        // relative spelling is details.js's own, three directories up to
+        // common/utils.
         const written = [
             'import {isFailedTest} from "@/common/utils/TestUtil";',
-            'import { readableFigure } from "../../../utils/TestUtil.js";',
+            {file: "common/components/TestDetails/utils/details.js",
+                code: 'import { readableFigure } from "../../../utils/TestUtil.js";'},
             'import {\n    bufferbloat,\n    isMeasured\n} from "@/common/utils/TestUtil";',
             'import * as TestUtil from "@/common/utils/TestUtil";',
             'import TestUtil from "@/common/utils/TestUtil";',
@@ -295,37 +391,71 @@ describe("every reader of TestUtil is either scanned or accounted for", () => {
             'export * from "@/common/utils/TestUtil";'
         ];
 
-        for (const form of written)
-            assert.ok(readsTestUtil({code: form}), `this import is invisible to the guard:\n${form}`);
+        for (const form of written) {
+            const entry = typeof form === "string" ? {file: "pages/Probe/Probe.jsx", code: form} : form;
+            assert.ok(readsTestUtil(entry), `this import is invisible to the guard:\n${entry.code}`);
+        }
 
         for (const innocent of [
             'const label = "TestUtil";',
-            'import {other} from "./Other.js";',
+            'import {other} from "@/common/utils/TargetUtil";',
             // The lazy bridge this pins against: an unrelated export's brace
             // must not reach across statements to a TestUtil import's quote.
             'export {helper};\nconst x = from("TestUtil");'
         ])
-            assert.equal(readsTestUtil({code: innocent}), false,
+            assert.equal(readsTestUtil({file: "pages/Probe/Probe.jsx", code: innocent}), false,
                 `"${innocent}" is held to a list it does not belong on`);
     });
 
     /**
-     * And no file re-exports the readers at all. A barrel between a component
-     * and TestUtil hands every importer a path this guard does not watch, so
-     * the whole budget quietly narrows to the files that still import
-     * directly. If one is ever wanted, this failure is the reminder that the
-     * guard has to learn the barrel's path in the same change.
+     * And nothing between a component and TestUtil holds the readers at all:
+     * the reader set, grown to its fixpoint, is TestUtil alone. A barrel in
+     * either spelling - an export-from, or an import re-exported on the next
+     * line - hands every importer a specifier the old pattern guard could
+     * not see, and the fixpoint is what makes both fail here instead.
      */
-    it("finds no re-export of TestUtil for importers to hide behind", () => {
-        const RE_EXPORTS = [
-            new RegExp(String.raw`export[^\n]*` + FROM_TEST_UTIL),
-            new RegExp(String.raw`export\s*\{[^};]*\}\s*` + FROM_TEST_UTIL)
-        ];
+    it("finds no barrel for importers to hide behind", () => {
+        assert.deepEqual([...readerSources], [READER_HOME],
+            "these modules re-export TestUtil's readers, so their importers escape every scan above - "
+            + "import directly, or the budget's trees and this guard must learn the barrel in the same change");
+    });
 
-        for (const {file, code} of CLIENT_FILES)
-            for (const pattern of RE_EXPORTS)
-                assert.doesNotMatch(code, pattern,
-                    `${file} re-exports TestUtil, so its importers read the readers through a name the graph guard `
-                    + "cannot see - import directly, or teach the guard the barrel's path in this same change");
+    // Both barrel forms, proven on fixtures rather than trusted: the
+    // two-statement spelling was the probe that walked straight through the
+    // export-from pattern this fixpoint replaced.
+    it("detects both barrel spellings", () => {
+        const targets = new Set([READER_HOME]);
+
+        assert.ok(reExportsFrom({file: "common/utils/Barrel.js",
+            code: 'export {readableFigure} from "@/common/utils/TestUtil";'}, targets));
+
+        assert.deepEqual(twoStatementBarrelNames({file: "common/utils/Barrel.js",
+            code: 'import {readableFigure} from "@/common/utils/TestUtil";\nexport {readableFigure};'},
+        targets), ["readableFigure"]);
+
+        // The alias travels: what is re-exported is the LOCAL binding.
+        assert.deepEqual(twoStatementBarrelNames({file: "common/utils/Barrel.js",
+            code: 'import {readableFigure as reader} from "@/common/utils/TestUtil";\nexport {reader};'},
+        targets), ["reader"]);
+
+        // Exporting something else entirely is a module, not a barrel.
+        assert.deepEqual(twoStatementBarrelNames({file: "common/utils/Own.js",
+            code: 'import {isMeasured} from "@/common/utils/TestUtil";\nconst gate = 1;\nexport {gate};'},
+        targets), []);
+    });
+
+    // The resolver's own contract, at its edges: packages and assets are
+    // nobody's reader, and a moved file fails loudly rather than leaving a
+    // rename-shaped hole.
+    it("resolves specifiers the way the bundler does, and refuses a dangling one", () => {
+        assert.equal(resolveSpecifier("pages/Probe/Probe.jsx", "react"), null);
+        assert.equal(resolveSpecifier("pages/Probe/Probe.jsx", "./styles.sass"), null);
+        assert.equal(resolveSpecifier("pages/Probe/Probe.jsx", "@/common/utils/TestUtil"), READER_HOME);
+        assert.equal(resolveSpecifier("common/components/TestDetails/utils/details.js",
+            "../../../utils/TestUtil.js"), READER_HOME);
+        assert.equal(resolveSpecifier("pages/Probe/Probe.jsx", "@/common/components/TestDetails"),
+            "common/components/TestDetails/index.js", "a directory import no longer lands on its barrel");
+
+        assert.throws(() => resolveSpecifier("pages/Probe/Probe.jsx", "./Moved.js"), /resolves to no client source/);
     });
 });
