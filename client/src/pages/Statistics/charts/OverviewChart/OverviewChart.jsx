@@ -9,7 +9,7 @@ import {
 import {
     formatBytes, formatDay, formatDuration, formatHour, formatLatencyWithUnit, NOT_MEASURED
 } from "@/common/utils/FormatUtil";
-import {failureRate} from "@/common/utils/TestUtil";
+import {failureRate, readableFigure} from "@/common/utils/TestUtil";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {peakSlowdown} from "@/pages/Statistics/charts/peakHours";
 import Delta from "@/common/components/Delta";
@@ -157,6 +157,13 @@ export const OverviewChart = (props) => {
     const rate = failureRate(props.tests.total, props.tests.failed);
     const previous = props.previous;
 
+    // Through the shared reader, printer and delta alike: the average is
+    // server-fed, and a proxied node can send the -1 placeholder - which the
+    // bare typeof gate this replaces printed as "-1%" beside an arrow
+    // computed from it - or a text figure an older node's payload spells,
+    // which was hidden as N/A while being a reading.
+    const packetLoss = readableFigure(props.packetLoss);
+
     // Each figure's change against the previous window, in the terms that suit
     // it: counts in absolute numbers, the duration as a percentage, packet loss
     // in points of the percentage it already is. The test count carries no
@@ -205,8 +212,8 @@ export const OverviewChart = (props) => {
             // Absent when nothing in the range measured it - only Ookla reports
             // packet loss, and no measurement is not a clean line. "%" binds to
             // its number without a space, unlike the spaced units.
-            value: typeof props.packetLoss === "number" ? `${props.packetLoss}%` : NOT_MEASURED,
-            delta: {current: props.packetLoss, previous: previous?.packetLoss,
+            value: packetLoss !== null ? `${packetLoss}%` : NOT_MEASURED,
+            delta: {current: packetLoss, previous: readableFigure(previous?.packetLoss),
                 higherIsBetter: false, mode: "absolute", unit: "%"}
         }
     ];

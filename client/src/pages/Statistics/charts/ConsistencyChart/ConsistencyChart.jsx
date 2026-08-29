@@ -4,7 +4,7 @@ import {
     faArrowDown, faArrowUp, faGaugeHigh, faPingPongPaddleBall, faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
 import {
-    bufferbloatColour, consistencyColour, gradeForIncrease, jitterColour, pingDeviationColour
+    bufferbloatColour, consistencyColour, gradeForIncrease, jitterColour, pingDeviationColour, readableFigure
 } from "@/common/utils/TestUtil";
 import { formatDateTime } from "@/common/utils/FormatUtil";
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
@@ -34,10 +34,24 @@ export const ConsistencyChart = (props) => {
     const loadedGrade = gradeForIncrease(loaded?.increase);
     const trend = loaded?.trend ?? [];
 
-    const percentage = (value) => value === null || value === undefined ? NOT_MEASURED : `${value}%`;
+    // Through the shared reader, like every stored figure. The payload is
+    // server-fed and a proxied older node's statistics can hold anything: the
+    // null-only gates these replace printed "auto%" and "±auto ms" for junk,
+    // and the -1 placeholder as a reading, beside colours already grading the
+    // same values as never measured. A text figure prints as the number it
+    // spells - which is also why the interpolation takes the COERCED figure,
+    // not the raw value: "85.50" prints 85.5%, the way every formatter reads.
+    const percentage = (value) => {
+        const figure = readableFigure(value);
 
-    const deviation = (value, unit) =>
-        value === null || value === undefined ? NOT_MEASURED : `±${value} ${unit}`;
+        return figure === null ? NOT_MEASURED : `${figure}%`;
+    };
+
+    const deviation = (value, unit) => {
+        const figure = readableFigure(value);
+
+        return figure === null ? NOT_MEASURED : `±${figure} ${unit}`;
+    };
 
     /**
      * The two ends the deviation above is a summary of, for the enlarged view.

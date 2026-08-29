@@ -10,8 +10,10 @@ import {PreferencesContext} from "@/common/contexts/Preferences";
 import {TargetsContext} from "@/common/contexts/Targets";
 import {resolveLimits, roundIndexById, targetColour} from "@/common/utils/TargetUtil";
 import {
-    convertSpeed, formatBytes, formatDateTime, formatLatency, formatLatencyWithUnit, getSpeedUnit
+    convertSpeed, formatBytes, formatDateTime, formatLatency, formatLatencyWithUnit, getSpeedUnit,
+    roundsToZeroLatency
 } from "@/common/utils/FormatUtil";
+import FigureWithUnit from "@/common/components/FigureWithUnit";
 import {
     bufferbloat, bufferbloatColour, connectionChange, getIconBySpeed, gradeForIncrease, isMeasured,
     jitterColour, latencyIncrease, packetLossColour, readableFigure
@@ -65,8 +67,13 @@ const DetailMetric = ({icon, label, value, unit, level, percent, targetLabel, ch
             </div>
 
             <div className="detail-metric-value-row">
+                {/* Through the one refusing renderer: a mixed row's -1 printed
+                    "-1 ms" here beside an icon already grading it a failure,
+                    junk printed as a reading, and an absent column left a bare
+                    unit standing alone - while the views printing through
+                    formatWithUnit said N/A for the same value. */}
                 <div className="detail-metric-value">
-                    {value}<span className="detail-metric-unit">{unit}</span>
+                    <FigureWithUnit value={value} unit={unit} unitClass="detail-metric-unit"/>
                 </div>
                 {sub}
             </div>
@@ -200,9 +207,16 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
     // numeric per-target optimum of 25.44 beside a ping printed 25.4 reads
     // "0.04 ms under" when the line is exactly on target. The percent bar
     // stays on the raw target: whole-percent rounding absorbs the trim.
+    //
+    // One exception to printed-against-printed: a target below the trim's
+    // resolution keeps its raw spelling. formatLatency prints it 0, asTarget
+    // refuses a zero target, and the sentence vanished for exactly the target
+    // it should state a distance from - while the bar and the colour, raw
+    // readers, stayed. roundsToZeroLatency is the predicate for that reading,
+    // and the sentence prints only the difference, never the target itself.
     const ping = formatLatency(test.ping);
     const pingTarget = limits.ping;
-    const printedTarget = formatLatency(limits.ping);
+    const printedTarget = roundsToZeroLatency(limits.ping) ? limits.ping : formatLatency(limits.ping);
     const earlierPing = formatLatency(earlier.ping);
 
     // A percentage says everything worth saying about throughput. For latency it

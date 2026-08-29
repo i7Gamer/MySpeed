@@ -39,27 +39,29 @@ describe("the latest-test card prints its latencies to one decimal", () => {
      * The failure placeholder is not a measurement, and the card says so in
      * words rather than printing the -1 the row stores.
      *
-     * One helper for the three rows that can carry one, lifted out and run: it
-     * was written out at each of them, which is three chances for the next row
-     * to be added without it. A failed run stores -1 in every numeric column, so
-     * every one of the three would print "-1 Mbps" as though it were a reading.
+     * The stop is formatWithUnit now - the one refusal every unit-print in
+     * the interface goes through - rather than a card-local helper wrapped
+     * around each row. So what is pinned is that every value the three rows
+     * draw goes THROUGH the formatter, and what the formatter answers for the
+     * placeholder in either spelling: destination first, wiring second, the
+     * way nodeCardFigures pins the same pipeline.
      */
     it("still names a failed test rather than printing its placeholder", async () => {
-        const source = card.match(/const measured = [^;]*;/);
-        assert.notEqual(source, null, "the card no longer guards the failure placeholder at all");
+        const {formatWithUnit, formatWhole, wholeSpeed} =
+            await import("../../client/src/common/utils/FormatUtil.js");
 
-        // The real readers, injected: the helper recognises the placeholder
-        // through storedFigure, so the lift has to hand it the same judgement
-        // the module uses - a stub here is how a lift drifts from the code it
-        // claims to run.
-        const {storedFigure, FAILED_TEST} = await import("../../client/src/common/utils/TestUtil.js");
-        const measured = new Function("NOT_MEASURED", "storedFigure", "FAILED_TEST",
-            `${source[0]}\nreturn measured;`)("N/A", storedFigure, FAILED_TEST);
+        assert.match(card, /value=\{formatWithUnit\(formatWhole\(props\.test\.ping\), /,
+            "the ping's row no longer prints through the refusing formatter");
+        assert.match(card, /const speedText = \(mbps\) => formatWithUnit\(wholeSpeed\(mbps, preferences\), speedUnit\);/,
+            "the speeds no longer print through the refusing formatter");
 
-        assert.equal(measured(-1, "-1 ms"), "N/A");
-        assert.equal(measured("-1", "-1 ms"), "N/A",
-            "the placeholder in its text spelling prints as a reading of minus one");
-        assert.equal(measured(12.6, "12.6 ms"), "12.6 ms");
+        for (const spelt of [-1, "-1"]) {
+            assert.equal(formatWithUnit(formatWhole(spelt), "ms"), "N/A",
+                `a ping of ${JSON.stringify(spelt)} prints as a reading of minus one`);
+            assert.equal(formatWithUnit(wholeSpeed(spelt, {}), "Mbps"), "N/A",
+                `a speed of ${JSON.stringify(spelt)} prints as a reading of minus one`);
+        }
+        assert.equal(formatWithUnit(formatWhole(12.6), "ms"), "13 ms");
     });
 
     it("prints the jitter beside it at the same precision", () => {

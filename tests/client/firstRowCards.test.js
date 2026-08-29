@@ -59,6 +59,29 @@ describe("the peak-hour row on the overview card", () => {
     });
 });
 
+describe("the packet-loss row on the overview card", () => {
+    /**
+     * The average over the range, read through readableFigure like every
+     * stored figure. The bare typeof gate it replaces knew neither the
+     * placeholder nor the text spelling: a proxied node's -1 printed "-1%"
+     * (and NaN printed "NaN%") beside a delta computed from the same
+     * non-reading, while an older node's text average was hidden as N/A.
+     */
+    it("prints the reading through the shared reader", () => {
+        assert.match(overview, /const packetLoss = readableFigure\(props\.packetLoss\);/);
+        assert.match(overview, /value: packetLoss !== null \? `\$\{packetLoss}%` : NOT_MEASURED/);
+        assert.doesNotMatch(overview, /typeof props\.packetLoss === "number"/,
+            "the bare typeof gate is back, which prints the placeholder and hides the text spelling");
+    });
+
+    // One reading for the row: an arrow computed from a value the printer
+    // beside it refuses would claim a change in a figure nobody measured.
+    it("feeds the delta the same reading", () => {
+        assert.match(overview, /delta: \{current: packetLoss, previous: readableFigure\(previous\?\.packetLoss\)/,
+            "the delta reads the raw column while the printer reads the coerced one");
+    });
+});
+
 describe("the packet-loss row on the latest-test card", () => {
     // Zero is a measurement and the commonest one, so a truthiness check would
     // hide the row on exactly the tests it has the best news for - and junk

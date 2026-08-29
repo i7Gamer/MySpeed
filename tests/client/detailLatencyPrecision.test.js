@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-    convertSpeed, formatLatency, formatLatencyWithUnit, formatWithUnit
+    convertSpeed, formatLatency, formatLatencyWithUnit, formatWithUnit, roundsToZeroLatency
 } from "@/common/utils/FormatUtil.js";
 import { getIconBySpeed, isMeasured, jitterColour, packetLossColour, readableFigure } from "@/common/utils/TestUtil.js";
 import {
@@ -82,7 +82,7 @@ const t = (key, values) => values === undefined ? key : {key, ...values};
 const buildMetrics = ({test, limits = {}, earlier = {}}) => evaluate(
     `${derivations()}\n${metricsLiteral()}\nreturn metrics;`, {
         test, limits, earlier, t,
-        formatLatency, formatWithUnit, changeFrom, differenceFromTarget, percentOfTarget,
+        formatLatency, formatWithUnit, roundsToZeroLatency, changeFrom, differenceFromTarget, percentOfTarget,
         getIconBySpeed, convertSpeed,
         preferences: {}, speedUnit: "Mbit/s",
         quality: null, loadedLatency: () => null,
@@ -187,8 +187,10 @@ describe("the arithmetic: helpers fed the printed figure agree to the decimal", 
     it("hands the colour the target as typed, and the sentence the target as printed", () => {
         assert.match(pane, /const pingTarget = limits\.ping;/,
             "the pane's colour grades a different target than the three views beside it");
-        assert.match(pane, /const printedTarget = formatLatency\(limits\.ping\);/,
-            "the sentence has no printed target to compare its printed ping against");
+        assert.match(pane,
+            /const printedTarget = roundsToZeroLatency\(limits\.ping\) \? limits\.ping : formatLatency\(limits\.ping\);/,
+            "the sentence has no printed target to compare its printed ping against - or a sub-0.05 "
+            + "target prints as 0, which asTarget refuses, and the sentence silently vanishes");
         assert.match(pane, /differenceFromTarget\(ping, printedTarget\)/,
             "the sentence compares a printed ping against an unprinted target");
         assert.match(pane, /getIconBySpeed\(ping, pingTarget, false\)/,
@@ -278,6 +280,28 @@ describe("the ping card computes every figure from the one it prints", () => {
         assert.equal(card.percent, null);
         assert.equal(card.targetLabel, null);
         assert.equal(card.level, "blue");
+    });
+
+    /**
+     * A target below the display's resolution must not lose its sentence.
+     * formatLatency("0.04") prints 0, and asTarget refuses a zero target, so
+     * the label silently vanished while the bar and the colour - raw-target
+     * readers - stayed. roundsToZeroLatency exists for exactly this reading:
+     * real but too small to print. The sentence gets the raw target then; it
+     * prints only the difference, never the target itself, so nothing
+     * unprintable reaches the screen.
+     */
+    it("keeps the sentence for a target below the printable resolution", () => {
+        assert.deepEqual(pingCard({test: {ping: 5.24}, limits: {ping: "0.04"}}).targetLabel,
+            {key: "test.details.over_target", amount: 5.16, unit: "latest.ping_unit"},
+            "the one target that cannot be printed loses its sentence entirely");
+    });
+
+    // A target of exactly zero stays unset - asTarget refuses it on every
+    // path, and the percent bar refuses the same value, so the pane keeps
+    // saying nothing rather than "on target" against a target nobody set.
+    it("still treats a zero target as no target", () => {
+        assert.equal(pingCard({test: {ping: 5.24}, limits: {ping: "0"}}).targetLabel, null);
     });
 
     // The speeds have their own conversion and their own precision, and a
@@ -397,21 +421,27 @@ describe("what the extraction cannot run, read from the source", () => {
      * The one assertion that catches a figure added later and wired to the raw
      * column: nowhere in the pane is a ping read without being trimmed first.
      *
-     * With two exceptions, and neither is a displayed figure. The grade on the
+     * With three exceptions, and none is a displayed figure. The grade on the
      * loaded latency's glyph is worked out from what that direction added over
      * the idle ping, and that arithmetic is shared three ways - with
      * bufferbloat(), which the facts row's grade comes from, and with the
      * server's average of the same quantity across a range. All three read the
      * stored value; trimming it here alone would let this icon disagree with the
-     * grade printed under it. And the TARGET is handed over raw because it is
+     * grade printed under it. The TARGET is handed over raw because it is
      * config, not a measurement: the row, the card and the node view all grade
      * against the typed value, and the pane trimming its copy alone made a
      * boundary ping wear two colours between the row and the pane it opens.
+     * And printedTarget's own line reads the raw target twice - once in the
+     * predicate deciding whether the printed form survives, once as the
+     * fallback for a target the trim would erase - and hands the result to
+     * the sentence's guards, never to the screen.
      */
     it("lets no raw latency reach anything the reader sees", () => {
         const displayed = pane
             .replaceAll("latencyIncrease(value, test.ping)", "")
-            .replaceAll("const pingTarget = limits.ping;", "");
+            .replaceAll("const pingTarget = limits.ping;", "")
+            .replaceAll("const printedTarget = roundsToZeroLatency(limits.ping)"
+                + " ? limits.ping : formatLatency(limits.ping);", "");
 
         assert.doesNotMatch(displayed, /(?<!formatLatency\()\b(test|limits|earlier)\.ping\b/,
             "a ping is still read at the two decimals the column stores");

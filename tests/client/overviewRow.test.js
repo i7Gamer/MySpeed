@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    convertSpeed, formatLatency, formatShortTime, formatWhole, SPEED_UNIT_MBYTES, wholeSpeed
+    formatLatency, formatShortTime, formatWhole, formatWithUnit, NOT_MEASURED, SPEED_UNIT_MBYTES, wholeSpeed
 } from "@/common/utils/FormatUtil.js";
 import { getIconBySpeed } from "@/common/utils/TestUtil.js";
 import { clickable } from "@/common/utils/Clickable.js";
@@ -629,9 +629,11 @@ describe("the figures a row prints", () => {
         const end = row.indexOf(VALUES_END, start);
         assert.notEqual(end, -1, `${VALUES_END} no longer follows them`);
 
-        return new Function("props", "preferences", "formatWhole", "convertSpeed", "wholeSpeed",
+        // Only the names the region actually reads: a closure carrying the old
+        // shape's helpers is what lets a revert to that shape still evaluate.
+        return new Function("props", "preferences", "formatWhole", "wholeSpeed",
             `${row.slice(start, end)}\nreturn {pingValue, downValue, upValue};`)(
-            props, preferences, formatWhole, convertSpeed, wholeSpeed);
+            props, preferences, formatWhole, wholeSpeed);
     };
 
     it("rounds all three measurements to whole numbers", () => {
@@ -684,11 +686,20 @@ describe("the figures a row prints", () => {
         assert.equal(printed({ping: -1, down: -1, up: -1}).pingValue, -1);
     });
 
-    it("still empties the speeds on a row that failed", () => {
+    /**
+     * A failed row shows its reason instead of the three columns - the error
+     * branch in the markup is the gate, and the values derived here are never
+     * drawn for one. They used to be blanked by a ternary as well, which was a
+     * second stop for the same case; the renderer every figure now goes
+     * through is the stop, so even a row that somehow slipped the gate could
+     * not present a failure as minus one megabit.
+     */
+    it("never presents a failed row's placeholders as readings", () => {
         const {downValue, upValue} = printed({ping: -1, down: -1, up: -1, error: "timeout"});
 
-        assert.equal(downValue, "");
-        assert.equal(upValue, "");
+        assert.equal(formatWithUnit(downValue, "Mbps"), NOT_MEASURED);
+        assert.equal(formatWithUnit(upValue, "Mbps"), NOT_MEASURED);
+        assert.match(row, /\{props\.error \? \(/, "the failure branch no longer gates the figures");
     });
 
     // The same gate the pane this row opens uses, and the latest-test card

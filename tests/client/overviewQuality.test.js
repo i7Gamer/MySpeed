@@ -102,10 +102,24 @@ describe("the overview row carries both quality figures", () => {
      * The packet loss beside it is a percentage and keeps the shape it has.
      */
     it("prints the jitter at the one decimal every latency is trimmed to", () => {
-        assert.match(figures, /text:\s*formatLatency\(props\.jitter\)/,
+        assert.match(figures, /text:\s*readableFigure\(props\.jitter\) === null \? NOT_MEASURED : formatLatency\(props\.jitter\)/,
             "the jitter goes out raw, at the two decimals the column stores");
         assert.doesNotMatch(figures, /formatLatency\(props\.packetLoss\)/,
             "packet loss is a percentage, not a latency");
+    });
+
+    /**
+     * And what it prints for a figure nothing can read is the word, not the
+     * placeholder. The chip stays visible - isMeasured gates it, so only null
+     * and undefined hide it - and the pane this row opens says N/A for the
+     * same jitter through formatLatencyWithUnit. This chip prints no unit, so
+     * it spells the same refusal from the same readers: a "-1" here beside an
+     * "N/A" in the opened pane was the row and its pane answering one
+     * question two ways.
+     */
+    it("says N/A rather than printing a jitter nobody measured", () => {
+        assert.match(figures, /readableFigure\(props\.jitter\) === null \? NOT_MEASURED/,
+            "an unreadable jitter prints raw - the placeholder as a reading of minus one");
     });
 
     /**
