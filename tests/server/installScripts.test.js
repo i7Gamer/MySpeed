@@ -1009,10 +1009,21 @@ describe("install.sh registers a service that is not root", () => {
         env: {...process.env, TARGET: `${dir}/${name}`}
     }).trim();
 
+    /**
+     * Gated per case rather than as a block, because only three of these
+     * shapes are links.
+     *
+     * The block asked for a shell and for symlinks together, so a contributor
+     * whose account does not hold SeCreateSymbolicLinkPrivilege lost all six -
+     * including the plain file at the data path, the fresh install and the
+     * ordinary upgrade, none of which creates a link at all. Those three are
+     * the arms an install actually takes, and they were the ones left unrun on
+     * the machine the change was being written on.
+     */
     describe("which arm a data directory of each shape reaches",
-        {skip: noPosixShell || noSymlinks}, () => {
+        {skip: noPosixShell}, () => {
 
-        it("stops the install when the link points at nothing", () => {
+        it("stops the install when the link points at nothing", {skip: noSymlinks}, () => {
             const {status, output} = decide((dir) => link(dir, "elsewhere"));
 
             assert.notEqual(status, 0,
@@ -1032,7 +1043,7 @@ describe("install.sh registers a service that is not root", () => {
          * ENOTDIR, under the unit this script writes with Restart=always: the
          * identical boot-fatal outcome the dangling case is refused for.
          */
-        it("stops the install when the link points at a file", () => {
+        it("stops the install when the link points at a file", {skip: noSymlinks}, () => {
             const {status, output} = decide((dir) => {
                 fs.writeFileSync(path.join(dir, "elsewhere"), "");
                 link(dir, "elsewhere", "file");
@@ -1068,7 +1079,7 @@ describe("install.sh registers a service that is not root", () => {
                 "a plain file is announced as a link, and readlink prints nothing where the target it names should be");
         });
 
-        it("leaves a link that points somewhere exactly as it found it", () => {
+        it("leaves a link that points somewhere exactly as it found it", {skip: noSymlinks}, () => {
             const {status, output, dir} = decide((target) => {
                 fs.mkdirSync(path.join(target, "elsewhere"));
                 link(target, "elsewhere");

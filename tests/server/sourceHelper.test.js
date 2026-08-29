@@ -869,6 +869,36 @@ describe("runBodies", () => {
             "the header pattern widened past comments, so junk after the indicator opens a block");
     });
 
+    /**
+     * And a comment has to be separated from the indicator, which is the same
+     * rule read from the other side.
+     *
+     * YAML 1.2 wants whitespace in front of a `#` for it to begin a comment, so
+     * `run: |#note` is not a header carrying one. It is not a valid node at all
+     * - a parser refuses the document rather than opening a block - and the
+     * pattern accepted it, which is a header invented for a file nothing can
+     * load.
+     *
+     * Walked as a plain scalar instead: the text comes back as the body's first
+     * line, and the `#` lines beneath it are stripped as YAML's own comments -
+     * which is exactly the loss the commented-header case above exists to
+     * prevent. That is acceptable only here, and only because YAML rejects such
+     * a document outright, so no workflow this walk can be pointed at carries
+     * one. What matters is the other direction: read as a header, those `#`
+     * lines would be kept and scanned as shell while the file they came from
+     * was one no runner would ever parse.
+     */
+    it("does not read a comment jammed against the indicator as a header", () => {
+        const [body] = runBodies(workflow(
+            "        run: |#note",
+            "          # a comment among a plain scalar's lines",
+            "          echo one"
+        ));
+
+        assert.deepEqual(body.lines.map((line) => line.trim()), ["|#note", "echo one"],
+            "a `#` with nothing in front of it opens a block header, which YAML does not");
+    });
+
     it("hands back each body as its lines and as one text", () => {
         const [body] = runBodies(workflow(
             "        run: |",

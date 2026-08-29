@@ -310,10 +310,13 @@ const HASH_COMMENT = /^\s*#/;
  * continuation lines have their comments stripped - so every `#` line of the
  * body went with it, and an expression spliced into a shell comment became
  * invisible to the scan written to find exactly that. A comment, though, and
- * nothing else: `| 2` is not YAML's way of writing `|2`, and a header that is
- * followed by anything but a `#` is still not one.
+ * nothing else, and only one with whitespace in front of it: YAML needs a space
+ * before a `#` for a comment to begin there at all, so `|#x` is not a header
+ * carrying one - it is not a node any parser will load. `| 2` is not YAML's way
+ * of writing `|2` either, and a header followed by anything else is still not
+ * one.
  */
-const BLOCK_INDICATOR = /^\s*[|>](?:[1-9][-+]?|[-+][1-9]?)?\s*(?:#.*)?$/;
+const BLOCK_INDICATOR = /^\s*[|>](?:[1-9][-+]?|[-+][1-9]?)?(?:\s+#.*)?\s*$/;
 
 /**
  * Shell-style sources with their comment lines removed, for the assertions
