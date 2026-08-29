@@ -33,11 +33,14 @@ const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", ".."
  * is how half the values here are spelt - deeper nesting stays out, and is
  * the first place to look if a new offender scans clean.
  *
- * Two named hatches, so nobody rediscovers them: a className carried in a
+ * Three named hatches, so nobody rediscovers them: a className carried in a
  * braced BINDING (FigureWithUnit's own span - a binding cannot be judged
  * textually, and a new one is a new private renderer, which the
- * FigureWithUnit suite exists to make unnecessary); and a percent inside a
- * `style={{…}}` line, which is a CSS length, not a reading.
+ * FigureWithUnit suite exists to make unnecessary); a percent inside a
+ * `style={{…}}` line, which is a CSS length, not a reading; and a percent
+ * inside a SENTENCE - the backtick anchor keeps label templates with a
+ * leading interpolation out of reach, so the pane's loss label prints its
+ * stored column beside the chip the exemption below already names.
  */
 
 const UNIT_CALLS = ["speedUnit", 't("latest.ping_unit")', 't("latest.jitter_unit")',

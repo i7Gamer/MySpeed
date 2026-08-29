@@ -102,12 +102,15 @@ describe("the packet-loss row on the overview card", () => {
 
         const stub = (key, values) => values === undefined ? key : {key, ...values};
 
+        // Only the names the region reads - a closure that also supplies the
+        // old shape's NOT_MEASURED would let a revert to the hand-glued
+        // ternary evaluate instead of throwing.
         const lossRow = (packetLoss, previous) => new Function(
-            "props", "t", "formatDuration", "formatPercent", "NOT_MEASURED", "readableFigure", "failureRate",
+            "props", "t", "formatDuration", "formatPercent", "readableFigure", "failureRate",
             "faGaugeHigh", "faCircleExclamation", "faStopwatch", "faLinkSlash",
             `${overview.slice(start, end + 2)}\nreturn items;`)(
             {tests: {total: 10, failed: 1}, time: {avg: 6}, packetLoss, previous}, stub,
-            formatDuration, formatPercent, NOT_MEASURED, readableFigure, failureRate,
+            formatDuration, formatPercent, readableFigure, failureRate,
             null, null, null, null)
             .find((item) => item.title === "statistics.overview.packet_loss_title");
 

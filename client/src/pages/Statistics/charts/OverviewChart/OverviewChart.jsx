@@ -7,7 +7,7 @@ import {
     faHourglassHalf, faLinkSlash, faPingPongPaddleBall, faStopwatch
 } from "@fortawesome/free-solid-svg-icons";
 import {
-    formatBytes, formatDay, formatDuration, formatHour, formatLatencyWithUnit, formatPercent, NOT_MEASURED
+    formatBytes, formatDay, formatDuration, formatHour, formatLatencyWithUnit, formatPercent
 } from "@/common/utils/FormatUtil";
 import {failureRate, readableFigure} from "@/common/utils/TestUtil";
 import {PreferencesContext} from "@/common/contexts/Preferences";

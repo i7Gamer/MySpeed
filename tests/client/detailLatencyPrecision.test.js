@@ -10,6 +10,7 @@ import { getIconBySpeed, isMeasured, jitterColour, packetLossColour, readableFig
 import {
     changeFrom, differenceFromTarget, percentOfTarget
 } from "../../client/src/common/components/TestDetails/utils/details.js";
+import { escapeRegExp } from "../helpers/source.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -194,8 +195,6 @@ describe("the arithmetic: helpers fed the printed figure agree to the decimal", 
         assert.match(pane, /differenceFromTarget\(subResolutionTarget \? test\.ping : ping, printedTarget\)/,
             "the sub-resolution branch mixes a printed ping with a raw target - like against unlike, "
             + "the exact pairing the printed-vs-printed rule exists to forbid");
-        assert.match(pane, /differenceFromTarget\(subResolutionTarget \? test\.ping : ping, printedTarget\)/,
-            "the sentence compares a printed ping against an unprinted target");
         assert.match(pane, /getIconBySpeed\(ping, pingTarget, false\)/,
             "the colour no longer grades against the typed target");
     });
@@ -409,7 +408,7 @@ describe("the quality strip beside the ping", () => {
         // different reading under the same label.
         const resolved = (source, expression) => {
             const declaration = expression && source.match(
-                new RegExp(`const ${expression} = ([^;]+);`))?.[1];
+                new RegExp(`const ${escapeRegExp(expression)} = ([^;]+);`))?.[1];
 
             return declaration ?? expression;
         };
@@ -451,7 +450,7 @@ describe("what the extraction cannot run, read from the source", () => {
      * The one assertion that catches a figure added later and wired to the raw
      * column: nowhere in the pane is a ping read without being trimmed first.
      *
-     * With three exceptions, and none is a displayed figure. The grade on the
+     * With five excepted reads, and none is a displayed figure. The grade on the
      * loaded latency's glyph is worked out from what that direction added over
      * the idle ping, and that arithmetic is shared three ways - with
      * bufferbloat(), which the facts row's grade comes from, and with the

@@ -263,9 +263,16 @@ describe("the stability pane", () => {
     });
 
     // A range in which nothing measured jitter returns explicit nulls, and
-    // "Between N/A and N/A" is worse than saying nothing.
-    it("renders no spread for a metric nothing measured", () => {
-        assert.match(consistency, /if \(range\.min === null \|\| range\.min === undefined\) return null/);
+    // "Between N/A and N/A" is worse than saying nothing - and a proxied
+    // node's placeholder pair is no range either: the null-only gate this
+    // replaces rendered exactly that sentence for {-1, -1}, one sub-line
+    // from a deviation refusing the same value. Both ends must read, or a
+    // half-readable pair prints "between 12 and N/A".
+    it("renders no spread for a range nothing can read", () => {
+        assert.match(consistency,
+            /if \(readableFigure\(range\.min\) === null \|\| readableFigure\(range\.max\) === null\) return null/);
+        assert.doesNotMatch(consistency, /range\.min === null/,
+            "the null-only gate is back, which lets the placeholder pair through as a sentence");
     });
 
     it("shows nothing extra on the card", () => {

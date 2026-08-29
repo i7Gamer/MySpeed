@@ -177,11 +177,12 @@ const CONSISTENCY_FAIR = 70;
  * wrong an answer as the best one - it says the line is unstable when nothing
  * was measured.
  *
- * Read through readableFigure, like gradeBelow above: it was the one grader
- * on the statistics surface still gated on typeof after every printer moved
- * to the shared reader, so a text-spelled score from a proxied history
- * printed "85.5%" beside the blue nothing-was-measured colour - shown and
- * denied at once.
+ * Read through readableFigure, like gradeBelow above: gated on typeof while
+ * its printers moved to the shared reader, a text-spelled score from a
+ * proxied history printed "85.5%" beside the blue nothing-was-measured
+ * colour - shown and denied at once. gradeForIncrease below keeps its typeof
+ * gate deliberately: a refused increase VANISHES its row rather than
+ * contradicting a printed one, which is the honest half of that pair.
  */
 export const consistencyColour = (value) => {
     const figure = readableFigure(value);

@@ -12,10 +12,10 @@ import {NOT_MEASURED, printableFigure} from "@/common/utils/FormatUtil";
  * Before this, the views printing through the string form said N/A while
  * the two gluing their value to a span printed "-1 ms" for the same row.
  *
- * It prints FIGURES: coercion belongs to the formatter each caller chose -
- * formatWhole, wholeSpeed, formatLatency, convertSpeed at the four sites -
- * so a text reading handed raw renders N/A on purpose, loudly, rather than
- * printing a column nothing coerced.
+ * It prints FIGURES: coercion belongs to the formatter each caller chose
+ * (the call sites feed it formatWhole, wholeSpeed, formatLatency and
+ * convertSpeed output), so a text reading handed raw renders N/A on
+ * purpose, loudly, rather than printing a column nothing coerced.
  *
  * The unit class arrives in braces on purpose: the raw-render scan forbids a
  * value interpolated beside a quoted unit-bearing class, and this component is

@@ -90,6 +90,14 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
     const upValue = wholeSpeed(props.up, preferences);
     const speedUnit = getSpeedUnit(preferences);
 
+    // The trimmed jitter the chip below both grades and prints - and refuses
+    // through printableFigure, the unitless half of formatWithUnit's
+    // judgement: this chip prints no unit, so it cannot borrow
+    // formatLatencyWithUnit's refusal the way the pane's chip does, and a
+    // "-1" here beside that pane's "N/A" was the row and its pane answering
+    // one question two ways.
+    const jitterText = formatLatency(props.jitter);
+
     /**
      * What the line does before anything is asked of it, beside the latency
      * itself. The same pair the opened panel shows, in the same order and with
@@ -105,14 +113,6 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
      * glyph and not on the number, which is how the three metrics beside it are
      * already read - a list of a hundred tests is scanned by icon colour.
      */
-    // The trimmed jitter the chip below both grades and prints - and refuses
-    // through printableFigure, the unitless half of formatWithUnit's
-    // judgement: this chip prints no unit, so it cannot borrow
-    // formatLatencyWithUnit's refusal the way the pane's chip does, and a
-    // "-1" here beside that pane's "N/A" was the row and its pane answering
-    // one question two ways.
-    const jitterText = formatLatency(props.jitter);
-
     const quality = [
         isMeasured(props.jitter) && {
             key: "jitter",

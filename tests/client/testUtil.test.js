@@ -9,11 +9,12 @@ import {
 /**
  * The consistency grade reads like the printer beside it.
  *
- * It was the one grader on the statistics surface still gated on typeof
- * number after every printer moved to readableFigure: a text-spelled score
- * from a legacy-restored or proxied history printed "85.5%" beside the blue
- * nothing-was-measured colour - shown and denied at once, the very pair
- * gradeBelow's readers were widened to end.
+ * Gated on typeof while the printers beside it moved to readableFigure, a
+ * text-spelled score from a legacy-restored or proxied history printed
+ * "85.5%" beside the blue nothing-was-measured colour - shown and denied at
+ * once, the very pair gradeBelow's readers were widened to end.
+ * (gradeForIncrease keeps its typeof gate on purpose: a refused increase
+ * vanishes its whole row instead of contradicting a printed reading.)
  */
 describe("consistencyColour", () => {
     it("grades a score in either spelling", () => {

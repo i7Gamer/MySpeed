@@ -60,7 +60,11 @@ export const ConsistencyChart = (props) => {
      */
     const spread = (range, format = (value) => value) => {
         if (!props.expanded || !range) return null;
-        if (range.min === null || range.min === undefined) return null;
+        // Both ends through the shared reader: the null-only gate here was
+        // the last sibling of the ones this card's other lines dropped, and
+        // it rendered "between N/A and N/A" for a proxied node's placeholder
+        // pair - one sub-line from a deviation refusing the same value.
+        if (readableFigure(range.min) === null || readableFigure(range.max) === null) return null;
 
         return t("statistics.consistency.range", {min: format(range.min), max: format(range.max)});
     };

@@ -41,10 +41,10 @@ describe("the latest-test card prints its latencies to one decimal", () => {
      *
      * The stop is formatWithUnit now - the one refusal every unit-print in
      * the interface goes through - rather than a card-local helper wrapped
-     * around each row. So what is pinned is that every value the three rows
-     * draw goes THROUGH the formatter, and what the formatter answers for the
-     * placeholder in either spelling: destination first, wiring second, the
-     * way nodeCardFigures pins the same pipeline.
+     * around each row. Pinned here: the ping row's wiring, and what the
+     * formatter answers for the placeholder in either spelling at every
+     * row's destination; the speeds' wiring pin lives with panelPrecision's
+     * rounding contract.
      */
     it("still names a failed test rather than printing its placeholder", async () => {
         const {formatWithUnit, formatWhole, wholeSpeed} =
