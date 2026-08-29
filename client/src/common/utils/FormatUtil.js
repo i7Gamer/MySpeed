@@ -238,8 +238,10 @@ const MBITS_PER_MBYTE = 8;
  * through untouched, a negative placeholder comes back as the number for the
  * guards to recognise - and converted to the reader's unit as the RAW
  * quotient. The two exported forms round it each to their own display: two
- * decimals for the expanded views, a whole number for the list rows. This
- * preamble lived in three copies before it lived here.
+ * decimals for the expanded views, a whole number for the list rows. Both
+ * speed readers carried this preamble in full before it lived here;
+ * formatLatency and formatWhole keep the guard triple as their own readings,
+ * because what they read is not a speed and has no unit to convert.
  */
 const rawSpeed = (mbps, preferences) => {
     const speed = storedFigure(mbps);

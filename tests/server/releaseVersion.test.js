@@ -606,9 +606,12 @@ describe("what reaches a shell in the release workflow", () => {
      * honest SHAPE, not a difference in behaviour. And of the target word's
      * two conditions, only the undefined half is observable: a redirect at
      * the very end of a line would otherwise read `.operator` off the end of
-     * the array and throw (the trailing-redirect row pins that); the
-     * `!operator` half guards against an operator in target position, which
-     * is not a line bash parses, so no body a runner accepts can reach it.
+     * the array and throw (the trailing-redirect row pins that). The
+     * `!operator` half IS reachable - `>|`, bash's noclobber override, and a
+     * `>(…)` process substitution both put an operator in target position -
+     * but callsIn visits every jq token no matter how a neighbour's call was
+     * read, so where the target word ends one call cannot hide another, and
+     * no verdict turns on the branch either way.
      */
     const readRedirection = (tokens, from) => {
         const operator = (at) => tokens[at] !== undefined && tokens[at].operator;
@@ -695,8 +698,11 @@ describe("what reaches a shell in the release workflow", () => {
      * prefixes, of the spellings a workflow plausibly writes; a value-taking
      * flag not named here leaves its value read as the command - a missed
      * call, the direction this set exists to close, so extend it when a
-     * workflow writes one. The cost of the flat set is noise, not blindness:
-     * `xargs -a jq …` names a FILE jq, and reads here as a call.
+     * workflow writes one. The flat set's usual cost is noise, not blindness
+     * - `xargs -a jq …` names a FILE jq, and reads here as a call - with one
+     * carved-out blind corner: an UNLISTED prefix whose value-flag's value is
+     * itself a listed word (`foo -u sudo jq …`) skips two onto `foo` and
+     * drops the call, a line no workflow has a reason to write.
      */
     const VALUE_TAKING_PREFIX_FLAGS = new Set(["-u", "-g", "-a", "-n", "-I", "-L", "-P", "-s", "-d", "-E"]);
 

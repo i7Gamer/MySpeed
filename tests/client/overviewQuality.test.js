@@ -4,6 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import * as sass from "sass";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { formatLatency, NOT_MEASURED } from "@/common/utils/FormatUtil.js";
+import { isMeasured, jitterColour, packetLossColour, readableFigure } from "@/common/utils/TestUtil.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -110,16 +112,31 @@ describe("the overview row carries both quality figures", () => {
 
     /**
      * And what it prints for a figure nothing can read is the word, not the
-     * placeholder. The chip stays visible - isMeasured gates it, so only null
-     * and undefined hide it - and the pane this row opens says N/A for the
-     * same jitter through formatLatencyWithUnit. This chip prints no unit, so
-     * it spells the same refusal from the same readers: a "-1" here beside an
-     * "N/A" in the opened pane was the row and its pane answering one
-     * question two ways.
+     * placeholder - executed off the row's own list rather than spelled,
+     * since the entries are plain JavaScript above the JSX. The chip stays
+     * visible for everything isMeasured admits, and the pane this row opens
+     * says N/A for the same jitter through formatLatencyWithUnit: a "-1"
+     * here beside that pane's "N/A" was the row and its pane answering one
+     * question two ways. This chip prints no unit, so it spells the same
+     * refusal from the same readers.
      */
     it("says N/A rather than printing a jitter nobody measured", () => {
-        assert.match(figures, /readableFigure\(props\.jitter\) === null \? NOT_MEASURED/,
-            "an unreadable jitter prints raw - the placeholder as a reading of minus one");
+        const built = (jitter) => new Function(
+            "props", "t", "isMeasured", "jitterColour", "formatLatency", "readableFigure",
+            "NOT_MEASURED", "packetLossColour", "faWaveSquare", "jitterInfo", "faLinkSlash", "packetLossInfo",
+            `${figures}\nreturn quality;`)(
+            {jitter, packetLoss: null}, (key) => key, isMeasured, jitterColour, formatLatency,
+            readableFigure, NOT_MEASURED, packetLossColour, null, null, null, null)
+            .find((figure) => figure.key === "jitter");
+
+        for (const unreadable of [-1, "-1", "auto"])
+            assert.equal(built(unreadable).text, NOT_MEASURED,
+                `a jitter of ${JSON.stringify(unreadable)} printed as a reading`);
+
+        assert.equal(built(19.96).text, 20, "a real jitter no longer prints its trimmed figure");
+
+        for (const absent of [null, undefined])
+            assert.equal(built(absent), undefined, `a jitter of ${String(absent)} still draws a chip`);
     });
 
     /**

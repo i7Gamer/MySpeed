@@ -38,9 +38,11 @@ export const ConsistencyChart = (props) => {
     // server-fed and a proxied older node's statistics can hold anything: the
     // null-only gates these replace printed "auto%" and "±auto ms" for junk,
     // and the -1 placeholder as a reading, beside colours already grading the
-    // same values as never measured. A text figure prints as the number it
-    // spells - which is also why the interpolation takes the COERCED figure,
-    // not the raw value: "85.50" prints 85.5%, the way every formatter reads.
+    // same values as never measured. The interpolation takes the COERCED
+    // figure, so a text "85.50" prints 85.5% here, as the formatters read it.
+    // (The test rows' loss chips deliberately differ: they print their own
+    // stored column raw behind the same readableFigure gate, and the row and
+    // the pane it opens show that one figure identically.)
     const percentage = (value) => {
         const figure = readableFigure(value);
 

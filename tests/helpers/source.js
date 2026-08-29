@@ -500,7 +500,10 @@ const regexEnd = (source, from) => {
  * suite notices. Valid JavaScript cannot end inside a template, a
  * substitution or a block comment, so ending in one of those states throws,
  * naming the state. A file may end in a line comment, and a stray apostrophe
- * stays tolerated - the string states die at each newline by design.
+ * stays tolerated - the string states die at each newline by design. A
+ * caller handing this a SLICE rather than a file gets the same throw as a
+ * truncation detector: a slice cut inside one of those states is a slice no
+ * scan should trust either, and the message says both readings.
  */
 export const withoutJsComments = (source) => {
     let out = "";
@@ -714,7 +717,7 @@ export const withoutJsComments = (source) => {
         throw new Error("the input ends inside a "
             + (templates.length > 0 ? "template substitution"
                 : state === "block" ? "block comment" : "template")
-            + ", so a slash or backtick context was misread above");
+            + ": a slash or backtick context was misread above, or a sliced input was cut inside one");
 
     return out;
 };

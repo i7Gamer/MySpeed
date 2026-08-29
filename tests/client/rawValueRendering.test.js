@@ -23,10 +23,17 @@ const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", ".."
  * FigureWithUnit is the same judgement for a value whose unit needs its own
  * span - so the rule is simply that a unit is never glued to a bare value.
  *
- * Three spellings of the gluing, because the first pattern alone missed five
+ * Three spellings of the gluing, because the first pattern alone missed six
  * live sites: the adjacent-interpolation form it was written for, the
  * value-then-unit-span form the Home row and the detail cards shipped, and
- * the template form the latest-test card shipped.
+ * the template form the latest-test card shipped twice.
+ *
+ * One known hatch, named rather than hidden: the unit-span pattern keys on a
+ * QUOTED className, which is what lets FigureWithUnit's own braced span stay
+ * out of its sight - so a component spelling its unit class through a
+ * binding would slip past the same way. That shape is a new private
+ * renderer, which is exactly what the FigureWithUnit suite exists to make
+ * unnecessary; the scan stays a budget, not a proof.
  */
 
 const UNIT_CALLS = ["speedUnit", 't("latest.ping_unit")', 't("latest.jitter_unit")',
@@ -183,9 +190,12 @@ describe("rendering a measurement next to its unit", () => {
                 [...source.text.matchAll(shape)].map((match) =>
                     source.text.split("\n")[lineOf(source.text, match.index) - 1]));
 
-            assert.ok(flagged.some((line) => pattern.test(line)),
-                `${file} carries no flagged line the exemption covers; drop the entry so the list stays a list ` +
-                "of facts");
+            // Exactly one, the -1 budget's rule: an entry names one
+            // construct, and a pattern covering a second flagged line is a
+            // file-wide skip wearing a narrow entry's clothes.
+            assert.equal(flagged.filter((line) => pattern.test(line)).length, 1,
+                `${file}'s exemption covers ${flagged.filter((line) => pattern.test(line)).length} flagged lines ` +
+                "where one construct was granted - drop the entry or narrow the pattern");
         }
     });
 });
