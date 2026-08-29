@@ -70,8 +70,8 @@ case "$ARCH" in
         ;;
 esac
 
-# Whether the data directory, if it is a link, points at something a database
-# can live in. Asked here, with the other preconditions, and not down at the
+# Whether the data path is something a database can live in - a directory, or a
+# link to one. Asked here, with the other preconditions, and not down at the
 # three arms that decide that directory's mode.
 #
 # Nothing this script can do repairs the shapes below: creating the target would
@@ -97,27 +97,52 @@ esac
 # open fails ENOTDIR under Restart=always: the same boot-fatal shape, dispatched
 # to the same wrong arm. -d is false for both and true only for the one that
 # works, and the message says which of the two was found.
-if [ -L "$INSTALLATION_PATH/data" ] && [ ! -d "$INSTALLATION_PATH/data" ]; then
-    DATA_LINK_TARGET=$(readlink "$INSTALLATION_PATH/data")
+#
+# And a link is not the only way that path fails to be a directory. A plain
+# regular file sitting at it - the same stale NAS name, with nothing pointing at
+# it - answered false to `-L`, so the question was never asked: the run stopped
+# the service, replaced the binary, and died at the mkdir two hundred lines below
+# on a path that was already taken. Deliberately stopped, nothing left to restart
+# it, which is the outcome this block was hoisted up here to prevent.
+#
+# So `-L or -e` rather than `-L`. Neither alone: `-e` follows a link and answers
+# false for the dangling one, and `[ ! -d ]` on its own is true of a fresh
+# install with nothing at that path at all, which would refuse every first
+# install on the grounds that it was a first install.
+if { [ -L "$INSTALLATION_PATH/data" ] || [ -e "$INSTALLATION_PATH/data" ]; } && [ ! -d "$INSTALLATION_PATH/data" ]; then
+    echo -e "$RED✗ ABORTED"
 
-    if [ -e "$INSTALLATION_PATH/data" ]; then
-        DATA_LINK_FAULT="is not a directory"
+    # What the operator has to fix differs with which of the two it is, and so
+    # does what can be said about it: readlink on something that is not a link
+    # exits 1 with nothing on stdout, so the link's wording would name a target
+    # that was never there.
+    if [ -L "$INSTALLATION_PATH/data" ]; then
+        DATA_LINK_TARGET=$(readlink "$INSTALLATION_PATH/data")
+
+        if [ -e "$INSTALLATION_PATH/data" ]; then
+            DATA_LINK_FAULT="is not a directory"
+        else
+            DATA_LINK_FAULT="does not exist"
+        fi
+
+        # A relative target is resolved against the directory the link itself
+        # sits in, not against the working directory - so "a link to ../storage"
+        # leaves the operator to work out which "..", and an absolute one needs
+        # no note.
+        case "$DATA_LINK_TARGET" in
+            /*) DATA_LINK_WHERE="" ;;
+            *) DATA_LINK_WHERE=", resolved against $INSTALLATION_PATH" ;;
+        esac
+
+        echo -e "$NORMAL $INSTALLATION_PATH/data is a link to $DATA_LINK_TARGET$DATA_LINK_WHERE, which $DATA_LINK_FAULT."
+        echo -e "$NORMAL MySpeed cannot create its database there, so it would fail on every start."
+        echo -e "$NORMAL Mount that directory, point the link at one that exists, or remove the link, and run this installer again."
     else
-        DATA_LINK_FAULT="does not exist"
+        echo -e "$NORMAL $INSTALLATION_PATH/data is not a directory."
+        echo -e "$NORMAL MySpeed cannot create its database there, so it would fail on every start."
+        echo -e "$NORMAL Move that file out of the way, or remove it, and run this installer again."
     fi
 
-    # A relative target is resolved against the directory the link itself sits
-    # in, not against the working directory - so "a link to ../storage" leaves
-    # the operator to work out which "..", and an absolute one needs no note.
-    case "$DATA_LINK_TARGET" in
-        /*) DATA_LINK_WHERE="" ;;
-        *) DATA_LINK_WHERE=", resolved against $INSTALLATION_PATH" ;;
-    esac
-
-    echo -e "$RED✗ ABORTED"
-    echo -e "$NORMAL $INSTALLATION_PATH/data is a link to $DATA_LINK_TARGET$DATA_LINK_WHERE, which $DATA_LINK_FAULT."
-    echo -e "$NORMAL MySpeed cannot create its database there, so it would fail on every start."
-    echo -e "$NORMAL Mount that directory, point the link at one that exists, or remove the link, and run this installer again."
     echo -e "$NORMALℹ Nothing has been touched: the service was not stopped and no file was replaced."
     exit 1
 fi

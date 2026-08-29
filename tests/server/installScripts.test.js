@@ -518,6 +518,23 @@ describe("install.sh registers a service that is not root", () => {
     const unitStart = source.indexOf("[Unit]");
     const unit = source.slice(unitStart, source.indexOf("EOF", unitStart));
 
+    /**
+     * Where a top-level block opens, which is the start of a line.
+     *
+     * The same condition can be asked again inside another block: the refusal
+     * at the top of the script tests `[ -L ]` on this path a second time,
+     * indented within itself, to choose between the wording for a link and the
+     * wording for a plain file. A bare substring search for the arms' opening
+     * finds that nested test first and every arm below is sliced out of the
+     * refusal instead - so what is searched for is the opening in the column an
+     * opening is in.
+     */
+    const opensAt = (opening) => {
+        const at = source.indexOf(`\n${opening}`);
+
+        return at === -1 ? -1 : at + "\n".length;
+    };
+
     it("does not run the service as root", () => {
         assert.doesNotMatch(unit, /User=root\b/,
             "the service still runs as uid 0, with the downloaded CLI under it");
@@ -597,10 +614,13 @@ describe("install.sh registers a service that is not root", () => {
          * different decision about a different directory.
          */
         const block = () => {
-            // The `; then` is what tells this block from the precondition at the
-            // top of the file, which opens with the same `[ -L ]` test and would
-            // otherwise be what every arm below is read out of.
-            const at = source.indexOf('if [ -L "$INSTALLATION_PATH/data" ]; then');
+            // The `; then` is what tells this block from the precondition at
+            // the top of the file, which asks `[ -L ]` about the same path.
+            // Kept on the anchor rather than trimmed to the shortest spelling
+            // that happens to be unique today: the precondition's condition is
+            // the half of the pair that gets rewritten, and every arm below is
+            // read out of whichever of the two this lands on.
+            const at = opensAt('if [ -L "$INSTALLATION_PATH/data" ]; then');
 
             assert.notEqual(at, -1,
                 "nothing asks whether data is a symlink, so a chmod runs as root through a link and lands on the far end of it");
@@ -745,7 +765,7 @@ describe("install.sh registers a service that is not root", () => {
             const branch = source.indexOf('if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]');
             assert.notEqual(branch, -1, "nothing chooses between the service account and the root fallback any more");
 
-            const decided = source.indexOf('if [ -L "$INSTALLATION_PATH/data" ]; then');
+            const decided = opensAt('if [ -L "$INSTALLATION_PATH/data" ]; then');
             assert.notEqual(decided, -1, "nothing decides the data directory's mode at all");
             assert.ok(decided < branch,
                 "the root fallback creates no data directory, so the server's own helper makes one on first boot instead");
@@ -775,10 +795,10 @@ describe("install.sh registers a service that is not root", () => {
      */
     describe("a data link the server could never open", () => {
         // The refusal, bounded by the `fi` that closes it. Located by its whole
-        // condition rather than by the `[ -L ]` it opens with: the arm two
-        // hundred lines below tests the same thing, and a bound taken from the
-        // shorter spelling reads whichever of the two comes first.
-        const CONDITION = 'if [ -L "$INSTALLATION_PATH/data" ] && [ ! -d "$INSTALLATION_PATH/data" ]';
+        // condition rather than by the `[ -L ]` inside it: the arm two hundred
+        // lines below tests the same thing on the same path, and a bound taken
+        // from the shorter spelling reads whichever of the two comes first.
+        const CONDITION = 'if { [ -L "$INSTALLATION_PATH/data" ] || [ -e "$INSTALLATION_PATH/data" ]; } && [ ! -d "$INSTALLATION_PATH/data" ]';
 
         const refusal = () => {
             const at = source.indexOf(CONDITION);
@@ -842,6 +862,33 @@ describe("install.sh registers a service that is not root", () => {
                 "a link pointing at nothing is refused with the message written for one pointing at a file");
         });
 
+        /**
+         * And a plain regular file at that path, which is not a link and so was
+         * never asked about at all.
+         *
+         * `[ -L ]` is false for it, so the whole precondition was skipped and
+         * the shape was left to the mkdir two hundred lines below - past
+         * `systemctl stop myspeed` and past the move that replaces the binary.
+         * The same boot-fatal path, refused from the same wrong side of the
+         * midpoint the hoist exists to get in front of.
+         *
+         * A bare `[ ! -d ]` cannot be the fix: a fresh install has nothing at
+         * that path and `! -d` is true of nothing too, so every first install
+         * would be refused. The `[ -L ]` cannot go either, because `-e` follows
+         * a link and answers false for the dangling one this block was written
+         * for. It takes all three.
+         */
+        it("asks about a plain file at that path, not only about a link", () => {
+            const opening = refusal().split("\n")[0];
+
+            assert.match(opening, /\[ -e "\$INSTALLATION_PATH\/data" \]/,
+                "a regular file at the data path is not a link, so the refusal never sees it and the mkdir past the point of no return does");
+            assert.match(opening, /\[ -L "\$INSTALLATION_PATH\/data" \]/,
+                "-e follows a link, so a link pointing at nothing answers false to it and the dangling case stops being refused");
+            assert.match(opening, /\[ ! -d "\$INSTALLATION_PATH\/data" \]/,
+                "the refusal no longer asks what shape the path is, so a fresh install with nothing there is refused along with the file");
+        });
+
         it("names the target, and where a relative one is resolved", () => {
             const block = refusal();
 
@@ -874,7 +921,7 @@ describe("install.sh registers a service that is not root", () => {
      * what the installer runs.
      */
     const closedBlock = (opening, missing) => {
-        const at = source.indexOf(opening);
+        const at = opensAt(opening);
         assert.notEqual(at, -1, missing);
 
         const end = source.indexOf("\nfi\n", at);
@@ -895,13 +942,13 @@ describe("install.sh registers a service that is not root", () => {
      * that was wrong before the refusal was hoisted.
      *
      * The arms are located by the `; then` on the end of their condition. The
-     * refusal opens with the same `[ -L ]` test, so the shorter spelling matches
-     * that one first and the rig would run the precondition twice and the arms
-     * not at all.
+     * refusal asks `[ -L ]` about the same path, so a shorter spelling risks
+     * matching that one first, and the rig would then run the precondition twice
+     * and the arms not at all.
      */
     const decision = () => [
-        closedBlock('if [ -L "$INSTALLATION_PATH/data" ] && [ ! -d "$INSTALLATION_PATH/data" ]',
-            "nothing refuses a data link the server could never open"),
+        closedBlock('if { [ -L "$INSTALLATION_PATH/data" ] || [ -e "$INSTALLATION_PATH/data" ]; } && [ ! -d "$INSTALLATION_PATH/data" ]',
+            "nothing refuses a data path the server could never open"),
         closedBlock('if [ -L "$INSTALLATION_PATH/data" ]; then',
             "nothing asks whether data is a symlink")
     ].join("\n");
@@ -997,6 +1044,30 @@ describe("install.sh registers a service that is not root", () => {
                 "the refusal does not name the target that cannot hold a database");
         });
 
+        /**
+         * And when the data path is a plain regular file rather than a link.
+         *
+         * It is the shape the two cases above are refused for, minus the `-L`
+         * that dispatched them: a NAS export that was never mounted and left a
+         * stale file at the name, a path that was never a directory. The
+         * precondition skipped it, so the run went on to stop the service and
+         * replace the binary, and died two hundred lines lower at the mkdir
+         * this file's own path had already taken - deliberately stopped, with
+         * nothing left to restart it.
+         */
+        it("stops the install when a plain file sits at the data path", () => {
+            const {status, output} = decide((dir) => fs.writeFileSync(path.join(dir, "data"), ""));
+
+            assert.notEqual(status, 0,
+                "a regular file at the data path is installed over, and the server's first database open then fails ENOTDIR under Restart=always");
+            assert.match(output, /Nothing has been touched/,
+                "the run is stopped past the point of no return, with the service down and nothing left to restart it");
+            assert.match(output, /is not a directory/,
+                "the operator is not told what is wrong with the path they have a file at");
+            assert.doesNotMatch(output, /is a link to/,
+                "a plain file is announced as a link, and readlink prints nothing where the target it names should be");
+        });
+
         it("leaves a link that points somewhere exactly as it found it", () => {
             const {status, output, dir} = decide((target) => {
                 fs.mkdirSync(path.join(target, "elsewhere"));
@@ -1060,6 +1131,14 @@ describe("install.sh registers a service that is not root", () => {
         const STATED_FOR_A_NEW_ONE = "700";
         const LEFT_ON_AN_EXISTING_ONE = "750";
 
+        // And the same directory with the group given write access, which is
+        // the only fixture that tells `o-rwx` from the absolute modes that
+        // satisfy the two above. 0755 and 0750 both read back 750 after
+        // `chmod o-rwx`, after `chmod 750`, and after `chmod o-rwx,g-w`; 0770
+        // reads back 770 after the first and 750 after either of the others.
+        const GROUP_MAY_WRITE = 0o770;
+        const LEFT_ON_A_GROUP_WRITABLE_ONE = "770";
+
         it("states 700 for one it creates itself", () => {
             const {status, dir} = decide(() => {});
 
@@ -1084,6 +1163,23 @@ describe("install.sh registers a service that is not root", () => {
             assert.equal(status, 0, "an ordinary upgrade stops an install that has nothing wrong with it");
             assert.equal(modeOf(dir, "data"), LEFT_ON_AN_EXISTING_ONE,
                 "an existing installation is retightened to an absolute mode, overruling an operator who shared it with a group on purpose");
+        });
+
+        /**
+         * And the bit an absolute mode takes away without anything noticing.
+         *
+         * The two cases above cannot see it: both fixtures already answer 750,
+         * so `chmod 750` in place of `o-rwx` leaves them green, and so does the
+         * symbolic `chmod o-rwx,g-w` that walks straight past the numeric guard
+         * read out of the source. 0770 is what separates them - a group an
+         * operator gave write access to, on purpose, keeps it.
+         */
+        it("leaves the write bit an operator gave that group alone", () => {
+            const {status, dir} = decide((target) => seedData(target, GROUP_MAY_WRITE));
+
+            assert.equal(status, 0, "an ordinary upgrade stops an install that has nothing wrong with it");
+            assert.equal(modeOf(dir, "data"), LEFT_ON_A_GROUP_WRITABLE_ONE,
+                "an existing installation is retightened to an absolute mode, taking a group's write access off a directory the operator opened to it");
         });
     });
 
