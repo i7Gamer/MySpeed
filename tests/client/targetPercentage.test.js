@@ -176,8 +176,10 @@ describe("the expanded value panes", () => {
      * card, exact in this pane.
      */
     it("convert that optimum into the unit being read", () => {
-        assert.match(average, /const converted = convertSpeed\(mbps, preferences\)/);
-        assert.match(average, /props\.expanded \? converted : formatWhole\(converted\)/,
+        // Exact conversion when expanded, wholeSpeed's single rounding when
+        // collapsed - re-rounding the two-decimal conversion printed every
+        // [8n+3.96, 8n+4) band one megabyte high.
+        assert.match(average, /props\.expanded \? convertSpeed\(mbps, preferences\) : wholeSpeed\(mbps, preferences\)/,
             "the card and the pane it opens no longer state a speed to different precisions");
         assert.match(average, /target: speed\(Number\(props\.target\)\)/);
     });

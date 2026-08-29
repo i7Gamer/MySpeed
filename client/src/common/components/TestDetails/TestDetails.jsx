@@ -14,7 +14,7 @@ import {
 } from "@/common/utils/FormatUtil";
 import {
     bufferbloat, bufferbloatColour, connectionChange, getIconBySpeed, gradeForIncrease, isMeasured,
-    jitterColour, latencyIncrease, packetLossColour
+    jitterColour, latencyIncrease, packetLossColour, readableFigure
 } from "@/common/utils/TestUtil";
 import {changeFrom, differenceFromTarget, percentOfTarget, providerName} from "./utils/details";
 import {describeError} from "./utils/errors";
@@ -190,24 +190,26 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
     // over" a target of 25. Both sides of every comparison, or the figure and
     // the sentence under it disagree again.
     //
-    // The target is whatever was typed into the settings dialog, i.e. a
-    // string - handed over RAW, exactly as the row, the card and the node
-    // view hand it to their graders. The pane used to trim its copy through
-    // formatLatency, and once the formatter learned to read strings that
-    // trim made this the odd view out: 26.0 against a trimmed 20 is orange
-    // where 26.0 against the typed 20.01 is green, so a boundary ping wore
-    // two colours between the row and the pane it opens. The readers coerce
-    // for themselves; only the MEASUREMENT is trimmed, because that is the
-    // figure being printed.
+    // Two spellings of the target, because the colour and the sentence answer
+    // two different questions. The COLOUR asks "is this line meeting the
+    // target every view grades against" - raw, exactly as the row, the card
+    // and the node view hand it to their graders; the pane trimming its copy
+    // alone made a boundary ping wear two colours between the row and the
+    // pane it opens. The SENTENCE asks "how far from the target is the figure
+    // I just printed" - printed against printed, the file's own rule, or a
+    // numeric per-target optimum of 25.44 beside a ping printed 25.4 reads
+    // "0.04 ms under" when the line is exactly on target. The percent bar
+    // stays on the raw target: whole-percent rounding absorbs the trim.
     const ping = formatLatency(test.ping);
     const pingTarget = limits.ping;
+    const printedTarget = formatLatency(limits.ping);
     const earlierPing = formatLatency(earlier.ping);
 
     // A percentage says everything worth saying about throughput. For latency it
     // does not: the plain distance from the target is what the reader wants, and
     // it cannot be read backwards.
     const latencyTargetLabel = () => {
-        const distance = differenceFromTarget(ping, pingTarget);
+        const distance = differenceFromTarget(ping, printedTarget);
         if (distance === null) return null;
         if (distance.direction === "same") return t("test.details.on_target");
 
@@ -252,7 +254,13 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
             text: formatLatencyWithUnit(test.jitter, t("latest.jitter_unit")),
             label: `${t("latest.jitter")} ${formatLatencyWithUnit(test.jitter, t("latest.jitter_unit"))}`
         },
-        isMeasured(test.packetLoss) && {
+        // readableFigure, not isMeasured: this row prints the stored column
+        // raw, so a value the colour grades as never-measured must not print
+        // at all - "auto%" beside blue asserts a reading nobody took. The
+        // latest-test card gates the same column the same way. (The jitter
+        // chip above differs on purpose: its label prints through
+        // formatLatencyWithUnit, which says N/A for what it cannot read.)
+        readableFigure(test.packetLoss) !== null && {
             key: "packetLoss",
             icon: faLinkSlash,
             info: packetLossInfo,

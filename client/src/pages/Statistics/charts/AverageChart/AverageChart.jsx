@@ -6,7 +6,7 @@ import {
 import {useContext} from "react";
 import {t} from "i18next";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatWhole, formatWithUnit, getSpeedUnit, NOT_MEASURED} from "@/common/utils/FormatUtil";
+import {convertSpeed, formatWithUnit, getSpeedUnit, NOT_MEASURED, wholeSpeed} from "@/common/utils/FormatUtil";
 import {consistencyColour, getIconBySpeed} from "@/common/utils/TestUtil";
 import {percentOfTarget} from "@/common/components/TestDetails/utils/details";
 import Delta from "@/common/components/Delta";
@@ -60,12 +60,14 @@ export const AverageChart = (props) => {
      * itself, and that is where the decimals belong.
      *
      * Rounded after the conversion, never before: MB/s is an eighth of what the
-     * column stores.
+     * column stores. And rounded ONCE - re-rounding the two-decimal conversion
+     * printed every [8n+3.96, 8n+4) band one megabyte high, so the collapsed
+     * figure comes from wholeSpeed's raw quotient.
      */
     const speed = (mbps) => {
-        const converted = convertSpeed(mbps, preferences);
+        const converted = props.expanded ? convertSpeed(mbps, preferences) : wholeSpeed(mbps, preferences);
 
-        return formatWithUnit(props.expanded ? converted : formatWhole(converted), speedUnit);
+        return formatWithUnit(converted, speedUnit);
     };
 
     return (

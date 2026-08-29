@@ -70,7 +70,11 @@ describe("the overview row carries both quality figures", () => {
     // provider that never measured one has to stay blank rather than claim a
     // clean line.
     it("tells a measured zero from a figure nobody measured", () => {
-        assert.match(figures, /isMeasured\(props\.packetLoss\)/);
+        // readableFigure for the loss chip, because its label prints the
+        // stored column raw and junk must not print as a reading; isMeasured
+        // for the jitter, whose label says N/A for what it cannot read. The
+        // same split the detail pane and the latest-test card carry.
+        assert.match(figures, /readableFigure\(props\.packetLoss\) !== null/);
         assert.match(figures, /isMeasured\(props\.jitter\)/);
         assert.doesNotMatch(figures, /props\.packetLoss &&/,
             "a packet loss of 0% is falsy, and hiding it hides a clean line");

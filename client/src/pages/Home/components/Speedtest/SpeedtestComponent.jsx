@@ -17,12 +17,12 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {
-    convertSpeed, formatDateTime, formatLatency, formatShortTime, formatWhole, getSpeedUnit
+    formatDateTime, formatLatency, formatShortTime, formatWhole, getSpeedUnit, wholeSpeed
 } from "@/common/utils/FormatUtil";
 import {
     bufferbloatInfo, downloadInfo, jitterInfo, packetLossInfo, pingInfo, uploadInfo
 } from "@/common/utils/MetricInfo";
-import {bufferbloatColour, isMeasured, jitterColour, packetLossColour} from "@/common/utils/TestUtil";
+import {bufferbloatColour, isMeasured, jitterColour, packetLossColour, readableFigure} from "@/common/utils/TestUtil";
 import {clickable} from "@/common/utils/Clickable";
 import HelpButton from "@/common/components/HelpButton";
 import {useMetricInfo} from "@/common/hooks/useMetricInfo";
@@ -68,15 +68,19 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
      * the ping started keeping decimals; see formatWhole.
      *
      * Rounded after the conversion, not before it: MB/s is an eighth of what the
-     * column stores, so rounding first would print a different measurement.
+     * column stores, so rounding first would print a different measurement. And
+     * rounded ONCE, through wholeSpeed - re-rounding the two-decimal conversion
+     * printed every [8n+3.96, 8n+4) band one megabyte high, on this row alone
+     * once the four statistics cards moved: one test, two whole numbers, and
+     * the pane this very row opens siding with the cards.
      *
      * The ping is rounder here than the figure its icon is graded from, which is
      * deliberate - see the pingLevel comment in TestArea for why the colour has
      * to stay where it is.
      */
     const pingValue = formatWhole(props.ping);
-    const downValue = props.error ? "" : formatWhole(convertSpeed(props.down, preferences));
-    const upValue = props.error ? "" : formatWhole(convertSpeed(props.up, preferences));
+    const downValue = props.error ? "" : wholeSpeed(props.down, preferences);
+    const upValue = props.error ? "" : wholeSpeed(props.up, preferences);
     const speedUnit = getSpeedUnit(preferences);
 
     /**
@@ -109,7 +113,11 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
             // line.
             text: formatLatency(props.jitter)
         },
-        isMeasured(props.packetLoss) && {
+        // readableFigure, like the pane this row opens and the latest-test
+        // card beside it: this chip prints the stored column raw, and a value
+        // the colour grades as never-measured must not print "auto%" as a
+        // reading.
+        readableFigure(props.packetLoss) !== null && {
             key: "packetLoss",
             icon: faLinkSlash,
             info: packetLossInfo,

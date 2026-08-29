@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    convertSpeed, formatLatency, formatShortTime, formatWhole, SPEED_UNIT_MBYTES
+    convertSpeed, formatLatency, formatShortTime, formatWhole, SPEED_UNIT_MBYTES, wholeSpeed
 } from "@/common/utils/FormatUtil.js";
 import { getIconBySpeed } from "@/common/utils/TestUtil.js";
 import { clickable } from "@/common/utils/Clickable.js";
@@ -629,9 +629,9 @@ describe("the figures a row prints", () => {
         const end = row.indexOf(VALUES_END, start);
         assert.notEqual(end, -1, `${VALUES_END} no longer follows them`);
 
-        return new Function("props", "preferences", "formatWhole", "convertSpeed",
+        return new Function("props", "preferences", "formatWhole", "convertSpeed", "wholeSpeed",
             `${row.slice(start, end)}\nreturn {pingValue, downValue, upValue};`)(
-            props, preferences, formatWhole, convertSpeed);
+            props, preferences, formatWhole, convertSpeed, wholeSpeed);
     };
 
     it("rounds all three measurements to whole numbers", () => {
@@ -652,6 +652,18 @@ describe("the figures a row prints", () => {
     it("rounds the speed it prints, not the one it stores", () => {
         assert.equal(printed({ping: 12, down: 100, up: 100}, {speedUnit: SPEED_UNIT_MBYTES}).downValue, 13,
             "100 Mbps is 12.5 MB/s, which prints as 13");
+    });
+
+    // And rounds it ONCE: re-rounding the two-decimal conversion printed every
+    // [8n+3.96, 8n+4) band one megabyte high, so this row read one higher than
+    // the four statistics cards - and than the pane this very row opens.
+    it("rounds it once, from the raw quotient", () => {
+        const MBYTES = {speedUnit: SPEED_UNIT_MBYTES};
+
+        assert.equal(printed({ping: 12, down: 3.96, up: 100}, MBYTES).downValue, 0,
+            "0.495 MB/s is zero megabytes, not one");
+        assert.equal(printed({ping: 12, down: 99.97, up: 100}, MBYTES).downValue, 12,
+            "12.49625 rounds to 12, not via 12.5 to 13");
     });
 
     /**
@@ -677,6 +689,15 @@ describe("the figures a row prints", () => {
 
         assert.equal(downValue, "");
         assert.equal(upValue, "");
+    });
+
+    // The same gate the pane this row opens uses, and the latest-test card
+    // beside it: a value readableFigure refuses is no measurement, and this
+    // chip prints the stored column raw - "auto%" beside the blue the colour
+    // grades it would assert a reading nobody took.
+    it("gates the packet-loss chip on a readable figure", () => {
+        assert.match(row, /readableFigure\(props\.packetLoss\) !== null && \{/,
+            "the quality chip prints junk the pane it opens refuses to show");
     });
 
     // The tripwire for a fourth figure wired straight to a prop, or for one of

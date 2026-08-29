@@ -4,7 +4,7 @@ import i18n from "i18next";
 import {
     convertSpeed, formatBytes, formatDateTime, formatDuration, formatLastTest, formatLatency,
     formatLatencyWithUnit, formatShortDay, formatShortTime, formatTime, formatHour, formatWhole,
-    formatWithUnit, generateRelativeTime, getSpeedUnit, NOT_MEASURED, SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES,
+    formatWithUnit, generateRelativeTime, getSpeedUnit, NOT_MEASURED, SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, wholeSpeed,
     TIME_FORMAT_12H, TIME_FORMAT_24H
 } from "@/common/utils/FormatUtil.js";
 
@@ -107,6 +107,17 @@ describe("formatWithUnit", () => {
 
     it("drops the unit entirely when there is no value", () => {
         assert.doesNotMatch(formatWithUnit(null, "Mbps"), /Mbps/);
+    });
+
+    // A negative is never a reading here: the sibling formatters return the
+    // failure placeholder as a number so the graders can recognise it, and
+    // this is where that number must stop instead of printing "-1 Mbps" as a
+    // measurement. Signed values that ARE readings - the change row's
+    // difference - deliberately do not come through here; they render their
+    // own sign.
+    it("refuses a negative rather than printing the placeholder", () => {
+        assert.equal(formatWithUnit(-1, "Mbps"), "N/A");
+        assert.equal(formatWithUnit(-0.5, "ms"), "N/A");
     });
 });
 
@@ -224,6 +235,15 @@ describe("formatLatencyWithUnit", () => {
         assert.equal(formatLatencyWithUnit("0.5", "ms"), "0.5 ms",
             "the chip's colour grades this row while its label denies it was measured");
     });
+
+    // The placeholder is not a reading in ANY spelling. The formatters hand
+    // negatives back as numbers so the graders can recognise the failure -
+    // and the unit printer is where that number must stop: "-1 ms" beside a
+    // blue nothing-was-measured chip asserts a latency nobody measured.
+    it("says nothing was measured for the placeholder, in either spelling", () => {
+        assert.equal(formatLatencyWithUnit(-1, "ms"), NOT_MEASURED);
+        assert.equal(formatLatencyWithUnit("-1", "ms"), NOT_MEASURED);
+    });
 });
 
 /**
@@ -316,6 +336,31 @@ describe("convertSpeed", () => {
     });
 
     /**
+     * The whole-number print, rounded ONCE from the raw quotient.
+     *
+     * formatWhole(convertSpeed(x)) rounded twice in MB/s mode - to two
+     * decimals, then to a whole - so every band [8n+3.96, 8n+4) printed one
+     * megabyte high: 3.96 Mbit/s showed "1 MB/s" where the measurement is 0,
+     * 99.97 showed "13" where it is 12. The bands recur at every multiple of
+     * eight; a single rounding is the correct figure at all of them.
+     */
+    it("rounds a whole-number speed once, from the unrounded quotient", () => {
+        assert.equal(wholeSpeed(3.96, MBYTES), 0, "0.495 MB/s is zero megabytes, not one");
+        assert.equal(wholeSpeed(99.97, MBYTES), 12, "12.49625 rounds to 12, not via 12.5 to 13");
+        assert.equal(wholeSpeed(100, MBYTES), 13, "12.5 still rounds up - the band is only [n+.495, n+.5)");
+        assert.equal(wholeSpeed(841.25, MBYTES), 105);
+        assert.equal(wholeSpeed(841.25, MBPS), 841);
+        assert.equal(wholeSpeed("800", MBYTES), 100, "the text spelling reads like every formatter");
+    });
+
+    it("keeps the placeholder recognisable and junk untouched, like its siblings", () => {
+        assert.equal(wholeSpeed(-1, MBYTES), -1);
+        assert.equal(wholeSpeed("-1", MBYTES), -1);
+        for (const absent of [null, undefined, "N/A", NaN])
+            assert.deepEqual(wholeSpeed(absent, MBYTES), absent, `failed for ${String(absent)}`);
+    });
+
+    /**
      * The defensive text spelling, read for the same reason the formatters
      * above read it - and one deeper: changeFrom compares two converted
      * operands, and a string handed back unconverted left one side in Mbit/s
@@ -331,14 +376,22 @@ describe("convertSpeed", () => {
         assert.equal(convertSpeed("-1", MBYTES), -1);
     });
 
-    // NodeContainer's whole pipeline, both spellings: a text row's ping and
-    // speeds must not disagree within one card about whether they were
-    // measured.
+    // NodeContainer's whole pipeline AS THE COMPONENT NOW SPELLS IT -
+    // formatWithUnit over wholeSpeed. The destination is stated first and the
+    // parity second: an earlier version asserted only that the two spellings
+    // agree, and they agreed on printing "-1 Mbps" - a relational pin locked
+    // onto a shared wrong answer. The band fixtures keep the single rounding
+    // honest: a revert to formatWhole(convertSpeed(...)) prints them one
+    // megabyte high.
     it("prints one card's figures the same for either spelling", () => {
-        const printed = (value) => formatWithUnit(formatWhole(convertSpeed(value, MBYTES)), "MB/s");
+        const printed = (value) => formatWithUnit(wholeSpeed(value, MBYTES), "MB/s");
 
-        assert.equal(printed("800"), printed(800));
-        assert.equal(printed("-1"), printed(-1));
+        assert.equal(printed(800), "100 MB/s");
+        assert.equal(printed("800"), "100 MB/s");
+        assert.equal(printed(3.96), "0 MB/s", "the [8n+3.96, 8n+4) band prints one high when rounded twice");
+        assert.equal(printed(99.97), "12 MB/s");
+        assert.equal(printed(-1), "N/A", "the placeholder is not a reading of minus one");
+        assert.equal(printed("-1"), "N/A");
     });
 });
 

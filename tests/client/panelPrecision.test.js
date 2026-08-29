@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { convertSpeed, formatWhole, formatWithUnit, NOT_MEASURED } from "@/common/utils/FormatUtil.js";
+import { convertSpeed, formatWhole, formatWithUnit, NOT_MEASURED, wholeSpeed } from "@/common/utils/FormatUtil.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -49,7 +49,7 @@ describe("a statistics card rounds what the pane it opens states exactly", () =>
 
     it("the value cards' speeds", () => {
         const speed = (expanded, preferences = {}) => helper(average, "const speed = (mbps) => {", {
-            props: {expanded}, preferences, convertSpeed, formatWhole, formatWithUnit,
+            props: {expanded}, preferences, convertSpeed, formatWhole, formatWithUnit, wholeSpeed,
             speedUnit: preferences === MBYTES ? "MB/s" : "Mbps"
         });
 
@@ -62,7 +62,7 @@ describe("a statistics card rounds what the pane it opens states exactly", () =>
     it("and it rounds them in the unit the reader chose", () => {
         const speed = helper(average, "const speed = (mbps) => {", {
             props: {expanded: false}, preferences: MBYTES,
-            convertSpeed, formatWhole, formatWithUnit, speedUnit: "MB/s"
+            convertSpeed, formatWhole, formatWithUnit, wholeSpeed, speedUnit: "MB/s"
         });
 
         assert.equal(speed(100), "13 MB/s", "100 Mbps is 12.5 MB/s, which prints as 13");
@@ -71,7 +71,7 @@ describe("a statistics card rounds what the pane it opens states exactly", () =>
     it("the stability card's spreads", () => {
         const stdDev = (expanded) => helper(consistency, "const stdDev = (value) => {", {
             props: {expanded}, preferences: {}, speedUnit: "Mbps",
-            convertSpeed, formatWhole,
+            convertSpeed, formatWhole, wholeSpeed,
             deviation: (value, unit) =>
                 value === null || value === undefined ? NOT_MEASURED : `±${value} ${unit}`
         });
@@ -83,7 +83,7 @@ describe("a statistics card rounds what the pane it opens states exactly", () =>
     it("says nothing was measured rather than rounding an absent figure", () => {
         const stdDev = helper(consistency, "const stdDev = (value) => {", {
             props: {expanded: false}, preferences: {}, speedUnit: "Mbps",
-            convertSpeed, formatWhole,
+            convertSpeed, formatWhole, wholeSpeed,
             deviation: (value, unit) =>
                 value === null || value === undefined ? NOT_MEASURED : `±${value} ${unit}`
         });
@@ -98,7 +98,7 @@ describe("a statistics card rounds what the pane it opens states exactly", () =>
      * holds here as long as the card rounds and that pane never does.
      */
     it("the last-test card's three figures", () => {
-        assert.match(latest, /const speedText = \(mbps\) => `\$\{formatWhole\(convertSpeed\(mbps, preferences\)\)}/,
+        assert.match(latest, /const speedText = \(mbps\) => `\$\{wholeSpeed\(mbps, preferences\)}/,
             "the card states a speed at whatever precision it was measured at");
         assert.match(latest, /\$\{formatWhole\(props\.test\.ping\)}/,
             "the card states the ping at the pane's precision");

@@ -25,7 +25,7 @@ import {getIconBySpeed, isFailedTest} from "@/common/utils/TestUtil";
 import {clickable} from "@/common/utils/Clickable";
 import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatLatency, formatWhole, formatWithUnit, getSpeedUnit} from "@/common/utils/FormatUtil";
+import {formatLatency, formatWhole, formatWithUnit, getSpeedUnit, wholeSpeed} from "@/common/utils/FormatUtil";
 import {useNavigate} from "react-router-dom";
 import ContextMenu from "@/common/components/ContextMenu";
 
@@ -40,13 +40,13 @@ export const NodeContainer = (node) => {
     const reloadConfig = useContext(ConfigContext)[1];
     const [preferences] = useContext(PreferencesContext);
     const speedUnit = getSpeedUnit(preferences);
-    // One place, so the two speeds cannot drift apart: converted to the unit the
-    // reader chose, then rounded the way every list row rounds, then labelled.
-    //
-    // In that order. The card used to round what it stored and convert
-    // afterwards, which on MB/s prints an eighth of a rounded figure - decimals
-    // and all - where the overview beside it prints a rounded eighth.
-    const speedText = (mbps) => formatWithUnit(formatWhole(convertSpeed(mbps, preferences)), speedUnit);
+    // One place, so the two speeds cannot drift apart: converted to the unit
+    // the reader chose and rounded ONCE, then labelled. The card used to
+    // round what it stored and convert afterwards - an eighth of a rounded
+    // figure - and then to round the two-decimal conversion again, which
+    // printed every [8n+3.96, 8n+4) band one megabyte high. wholeSpeed is the
+    // rounded eighth, from the raw quotient.
+    const speedText = (mbps) => formatWithUnit(wholeSpeed(mbps, preferences), speedUnit);
     const updateToast = useContext(ToastNotificationContext);
     const alert = useAlert();
     const [nodeData, setNodeData] = useState(null);

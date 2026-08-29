@@ -58,7 +58,8 @@ describe("rendering a measurement next to its unit", () => {
 
         assert.equal(offenders.length, 0,
             `a value is interpolated next to its unit - use formatWithUnit, which says "N/A" ` +
-            `when the value is absent rather than leaving a bare unit:\n${listed}`);
+            `when the value is absent or negative rather than leaving a bare unit ` +
+            `(a SIGNED reading like the change row's difference renders its own sign instead):\n${listed}`);
     });
 
     // The scan is worthless if its own pattern stops matching the thing it

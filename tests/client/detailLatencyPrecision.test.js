@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
     convertSpeed, formatLatency, formatLatencyWithUnit, formatWithUnit
 } from "@/common/utils/FormatUtil.js";
-import { getIconBySpeed, isMeasured, jitterColour, packetLossColour } from "@/common/utils/TestUtil.js";
+import { getIconBySpeed, isMeasured, jitterColour, packetLossColour, readableFigure } from "@/common/utils/TestUtil.js";
 import {
     changeFrom, differenceFromTarget, percentOfTarget
 } from "../../client/src/common/components/TestDetails/utils/details.js";
@@ -99,7 +99,7 @@ const pingCard = (fixture) => {
 const qualityEntries = (test) => evaluate(
     `${qualityRegion()}\nreturn qualityFigures;`, {
         test, t,
-        isMeasured, jitterColour, packetLossColour,
+        isMeasured, jitterColour, packetLossColour, readableFigure,
         formatLatencyWithUnit, formatWithUnit, formatLatency,
         faWaveSquare: null, jitterInfo: null, faLinkSlash: null, packetLossInfo: null
     });
@@ -175,24 +175,47 @@ describe("the arithmetic: helpers fed the printed figure agree to the decimal", 
     // strings that trim made the pane the odd view out: every other view
     // grades against the exact typed target, so a boundary ping wore one
     // colour on the row and another on the pane it opens - for every target
-    // with more than one decimal. The readers coerce for themselves.
-    // The wiring itself, because the divergence lived there: the one view
-    // that trimmed its target graded 26.0/20 where the row beside it graded
-    // 26.0/20.01 - orange on the pane, green on the row it opened from.
-    it("hands the graders the target as typed, like every other view", () => {
+    // with more than one decimal.
+    //
+    // Two targets, because the colour and the sentence answer two different
+    // questions. The COLOUR answers "is this line meeting the target every
+    // view grades against" - raw, or the pane disagrees with the row it
+    // opened from. The SENTENCE answers "how far from the target is the
+    // figure I just printed" - printed against printed, or a numeric
+    // per-target optimum of 25.44 beside a ping printed 25.4 reads "0.04 ms
+    // under" when the line is exactly on target.
+    it("hands the colour the target as typed, and the sentence the target as printed", () => {
         assert.match(pane, /const pingTarget = limits\.ping;/,
-            "the pane's target is spelt differently from the three views beside it");
-        assert.doesNotMatch(pane, /formatLatency\(limits\.ping\)/,
-            "a trimmed target grades a boundary ping a different colour than the row it opened from");
+            "the pane's colour grades a different target than the three views beside it");
+        assert.match(pane, /const printedTarget = formatLatency\(limits\.ping\);/,
+            "the sentence has no printed target to compare its printed ping against");
+        assert.match(pane, /differenceFromTarget\(ping, printedTarget\)/,
+            "the sentence compares a printed ping against an unprinted target");
+        assert.match(pane, /getIconBySpeed\(ping, pingTarget, false\)/,
+            "the colour no longer grades against the typed target");
     });
 
     it("keeps a target stored as a string usable", () => {
         assert.equal(percentOfTarget(formatLatency(25.44), "25", {higherIsBetter: false}), 98);
         assert.deepEqual(differenceFromTarget(formatLatency(25.44), "25"),
             {difference: 0.4, direction: "over"});
-        assert.deepEqual(differenceFromTarget(formatLatency(25.44), "25.44"),
-            {difference: 0.04, direction: "under"},
-            "the sentence reports against the target as typed, not as trimmed");
+        assert.deepEqual(differenceFromTarget(formatLatency(25.44), formatLatency("25.44")),
+            {difference: 0, direction: "same"},
+            "a ping exactly on a fractional target reads as beating it by the decimal the screen never shows");
+    });
+
+    // The fractional-target cases that separate the two wirings - whole-number
+    // fixtures cannot, because formatLatency returns them unchanged.
+    it("colours a boundary ping the same as the row, for a fractional target", () => {
+        assert.equal(getIconBySpeed(formatLatency(25.96), "20.01", false), "green",
+            "the pane grades 26.0/20 where every other view grades 26.0/20.01");
+        assert.equal(getIconBySpeed(25.96, "20.01", false), "green");
+    });
+
+    // The percent bar stays on the raw target: whole-percent rounding absorbs
+    // the trim at this magnitude, and the destination is what is asserted.
+    it("fills the bar to one hundred for a ping exactly on its fractional target", () => {
+        assert.equal(percentOfTarget(formatLatency(25.44), "25.44", {higherIsBetter: false}), 100);
     });
 });
 
@@ -291,6 +314,30 @@ describe("the quality strip beside the ping", () => {
             "the jitter still goes out at the two decimals the column stores");
         assert.equal(entry("jitter").label, "latest.jitter 20 latest.jitter_unit",
             "the name the button is announced by disagrees with the figure it shows");
+    });
+
+    /**
+     * A packet loss readableFigure refuses is no measurement, and this row
+     * prints the stored column RAW - so junk that showed rendered "auto%" or
+     * a bare "%" beside the blue never-measured colour the grader gives it.
+     * The row does not render at all then; decided by what is correct to
+     * show, and applied to the card view the same way. (The jitter chip
+     * differs on purpose: its label prints through formatLatencyWithUnit,
+     * which says N/A for what it cannot read, so showing-with-N/A is that
+     * chip's honest form - this row's raw label has no such word.)
+     */
+    it("drops the packet-loss row for a value nothing can read", () => {
+        for (const junk of ["auto", "", "0,5", -1, "-1", NaN])
+            assert.equal(qualityEntries({jitter: null, packetLoss: junk})
+                .find((figure) => figure.key === "packetLoss"), undefined,
+                `a packet loss of ${JSON.stringify(junk)} rendered as a reading`);
+    });
+
+    it("keeps the packet-loss row for a real reading in either spelling", () => {
+        for (const measured of [0, 1.25, "0.5"])
+            assert.notEqual(qualityEntries({jitter: null, packetLoss: measured})
+                .find((figure) => figure.key === "packetLoss"), undefined,
+                `a packet loss of ${JSON.stringify(measured)} vanished`);
     });
 
     /**

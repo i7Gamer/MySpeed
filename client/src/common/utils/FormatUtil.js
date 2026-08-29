@@ -221,8 +221,16 @@ export const LATENCY_STEP = 0.1;
  * the median; the same instance's newer rows, measured to two decimals, sit a
  * few hundredths apart instead.
  */
-export const roundsToZeroLatency = (ms) =>
-    typeof ms === "number" && Number.isFinite(ms) && ms > 0 && formatLatency(ms) === 0;
+export const roundsToZeroLatency = (ms) => {
+    // storedFigure, like the formatLatency this wraps: a spread spelt as text
+    // prints 0 through the formatter, and the predicate deciding whether that
+    // 0 needs the ±<0.1 wording has to judge the value the formatter prints.
+    const latency = storedFigure(ms);
+
+    return latency !== null && latency > 0 && formatLatency(latency) === 0;
+};
+
+const MBITS_PER_MBYTE = 8;
 
 export const convertSpeed = (mbps, preferences) => {
     // storedFigure first: a numeric string handed back unconverted left
@@ -235,7 +243,7 @@ export const convertSpeed = (mbps, preferences) => {
     if (speed < 0) return speed;
 
     if (preferences?.speedUnit === SPEED_UNIT_MBYTES) {
-        return Math.round((speed / 8) * 100) / 100;
+        return Math.round((speed / MBITS_PER_MBYTE) * 100) / 100;
     }
     return speed;
 };
@@ -345,9 +353,16 @@ export const formatDuration = (seconds) =>
  * The statistics return an explicit null for anything they could not compute -
  * every aggregate over a range in which no test succeeded - and rendering
  * `{value} {unit}` around that leaves a bare unit standing on its own.
+ *
+ * A negative is refused too: the formatters above hand the failure
+ * placeholder back as a number so the graders can recognise it, and this is
+ * where that number must stop - "-1 ms" beside a blue never-measured chip
+ * asserts a latency nobody took. Signed values that ARE readings - the change
+ * row's difference - deliberately never come through here; they render their
+ * own sign (TestDetails' change line), so nothing legitimate is lost.
  */
 export const formatWithUnit = (value, unit) =>
-    typeof value === "number" && Number.isFinite(value) ? `${value} ${unit}` : NOT_MEASURED;
+    typeof value === "number" && Number.isFinite(value) && value >= 0 ? `${value} ${unit}` : NOT_MEASURED;
 
 /**
  * A latency with its unit, at the one decimal every latency is shown at.
@@ -369,6 +384,28 @@ const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"];
 // One decimal from a kilobyte up. "1.1 GB" is as much precision as the figure
 // supports; "1.136 GB" implies a count exact to the megabyte.
 const BYTE_DECIMALS = 1;
+
+/**
+ * A speed as the whole number a list row prints, rounded ONCE.
+ *
+ * formatWhole(convertSpeed(x)) rounded twice in MB/s mode - to two decimals,
+ * then to a whole - so every band [8n+3.96, 8n+4) printed one megabyte high:
+ * 3.96 Mbit/s showed "1 MB/s" where the measurement is 0, and 99.97 showed
+ * "13" where it is 12. The bands recur at every multiple of eight; rounding
+ * once from the raw quotient is the correct figure at all of them. The
+ * expanded views keep convertSpeed, whose two decimals are their display.
+ *
+ * Reads and refuses exactly as its siblings: text spellings read, junk passes
+ * through untouched, and a negative comes back as the number for the guards
+ * to recognise.
+ */
+export const wholeSpeed = (mbps, preferences) => {
+    const speed = storedFigure(mbps);
+    if (speed === null) return mbps;
+    if (speed < 0) return speed;
+
+    return Math.round(preferences?.speedUnit === SPEED_UNIT_MBYTES ? speed / MBITS_PER_MBYTE : speed);
+};
 
 /**
  * A quantity of data in the largest unit that leaves it readable.

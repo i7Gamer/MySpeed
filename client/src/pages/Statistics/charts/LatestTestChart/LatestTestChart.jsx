@@ -4,7 +4,7 @@ import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
     faArrowDown, faArrowUp, faGaugeHigh, faLinkSlash, faPingPongPaddleBall, faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
-import {bufferbloat, bufferbloatColour, FAILED_TEST, getIconBySpeed, isMeasured, packetLossColour, storedFigure} from "@/common/utils/TestUtil";
+import {bufferbloat, bufferbloatColour, FAILED_TEST, getIconBySpeed, isMeasured, packetLossColour, readableFigure, storedFigure} from "@/common/utils/TestUtil";
 import "./styles.sass";
 import {useContext} from "react";
 import {ConfigContext} from "@/common/contexts/Config";
@@ -13,7 +13,7 @@ import {PreferencesContext} from "@/common/contexts/Preferences";
 import {TargetsContext} from "@/common/contexts/Targets";
 import {resolveLimits} from "@/common/utils/TargetUtil";
 import {
-    convertSpeed, formatLatency, formatLatencyWithUnit, formatWhole, getSpeedUnit, NOT_MEASURED
+    formatLatency, formatLatencyWithUnit, formatWhole, getSpeedUnit, NOT_MEASURED, wholeSpeed
 } from "@/common/utils/FormatUtil";
 import TestDetails from "@/common/components/TestDetails";
 import {t} from "i18next";
@@ -51,12 +51,14 @@ export const LatestTestChart = (props) => {
     // providers that cannot measure them; the row simply does not render then.
     const bloat = bufferbloat(props.test);
 
-    // The same rule, for the same reason: only Ookla reports a loss rate, and a
-    // provider that reports none has not measured a clean line. Zero is a
-    // measurement, so the check cannot be on truthiness - and isMeasured is the
-    // gate the detail pane uses for the same column, so a row cannot show on
-    // one view and vanish from the other over its spelling.
-    const hasPacketLoss = isMeasured(props.test.packetLoss);
+    // Only Ookla reports a loss rate, and a provider that reports none has
+    // not measured a clean line. Zero is a measurement, so the check cannot
+    // be on truthiness - and junk is not one, so it reads through
+    // readableFigure: this row prints the stored column raw, and a value the
+    // colour beside it grades as never-measured must not print "auto%" or a
+    // bare "%" as a reading. The detail pane gates the same column the same
+    // way, so a row cannot show on one view and vanish from the other.
+    const hasPacketLoss = readableFigure(props.test.packetLoss) !== null;
 
     // Trimmed to the one decimal every latency in this interface is shown at.
     // The measurement is stored with two, and the card printed both of them
@@ -79,8 +81,11 @@ export const LatestTestChart = (props) => {
      * prints every figure at the precision it was measured at. So the decimals
      * are one click away rather than gone, and the column of readings here is
      * one width rather than five.
+     *
+     * wholeSpeed rounds ONCE from the raw quotient: rounding the two-decimal
+     * conversion again printed every [8n+3.96, 8n+4) band one megabyte high.
      */
-    const speedText = (mbps) => `${formatWhole(convertSpeed(mbps, preferences))} ${speedUnit}`;
+    const speedText = (mbps) => `${wholeSpeed(mbps, preferences)} ${speedUnit}`;
 
     return (
         <StatisticContainer title={t("latest.latest")} onClick={props.onClick} running={status.running}>

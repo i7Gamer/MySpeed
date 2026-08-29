@@ -61,11 +61,14 @@ describe("the peak-hour row on the overview card", () => {
 
 describe("the packet-loss row on the latest-test card", () => {
     // Zero is a measurement and the commonest one, so a truthiness check would
-    // hide the row on exactly the tests it has the best news for. isMeasured
-    // is the gate the detail pane uses for the same column - one rule, so a
-    // row cannot show on one view and vanish from the other.
-    it("shows a loss of zero rather than hiding it", () => {
-        assert.match(latest, /hasPacketLoss = isMeasured\(props\.test\.packetLoss\)/);
+    // hide the row on exactly the tests it has the best news for - and junk
+    // is not one, so the gate reads through readableFigure: the row's label
+    // prints the stored column raw, and a value the colour beside it grades
+    // as never-measured must not print at all. The detail pane gates the same
+    // column the same way - one rule, decided by what is CORRECT to show,
+    // then applied to both views.
+    it("shows a loss of zero rather than hiding it, and junk not at all", () => {
+        assert.match(latest, /hasPacketLoss = readableFigure\(props\.test\.packetLoss\) !== null/);
         assert.doesNotMatch(latest, /\{props\.test\.packetLoss && /);
     });
 

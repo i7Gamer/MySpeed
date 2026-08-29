@@ -11,8 +11,8 @@ import StatisticContainer from "@/pages/Statistics/components/StatisticContainer
 import PanelRow from "@/pages/Statistics/components/PanelRow";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import {
-    convertSpeed, formatLatency, formatLatencyWithUnit, formatWhole, formatWithUnit, getSpeedUnit,
-    LATENCY_STEP, NOT_MEASURED, roundsToZeroLatency
+    convertSpeed, formatLatency, formatLatencyWithUnit, formatWithUnit, getSpeedUnit,
+    LATENCY_STEP, NOT_MEASURED, roundsToZeroLatency, wholeSpeed
 } from "@/common/utils/FormatUtil";
 import "./styles.sass";
 
@@ -68,9 +68,12 @@ export const ConsistencyChart = (props) => {
      * render there.
      */
     const stdDev = (value) => {
-        const converted = convertSpeed(value, preferences);
+        // wholeSpeed when collapsed, for the same single rounding the speed
+        // beside it gets - re-rounding the two-decimal conversion printed the
+        // [8n+3.96, 8n+4) bands one high.
+        const converted = props.expanded ? convertSpeed(value, preferences) : wholeSpeed(value, preferences);
 
-        return deviation(props.expanded ? converted : formatWhole(converted), speedUnit);
+        return deviation(converted, speedUnit);
     };
     // Trimmed to the one decimal a card prints a latency at: the server sends
     // the two it stores, and this card read "5.23 ms" one panel away from a
