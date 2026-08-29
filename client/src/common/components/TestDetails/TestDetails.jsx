@@ -208,22 +208,26 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
     // "0.04 ms under" when the line is exactly on target. The percent bar
     // stays on the raw target: whole-percent rounding absorbs the trim.
     //
-    // One exception to printed-against-printed: a target below the trim's
-    // resolution keeps its raw spelling. formatLatency prints it 0, asTarget
-    // refuses a zero target, and the sentence vanished for exactly the target
-    // it should state a distance from - while the bar and the colour, raw
-    // readers, stayed. roundsToZeroLatency is the predicate for that reading,
-    // and the sentence prints only the difference, never the target itself.
+    // One exception to printed-against-printed, kept like-against-like: a
+    // target below the trim's resolution cannot print - formatLatency shows
+    // it 0, asTarget refuses a zero target, and the sentence vanished for
+    // exactly the target it should state a distance from, while the bar and
+    // the colour, raw readers, stayed. roundsToZeroLatency is the predicate
+    // for that reading, and in that branch BOTH operands are stored: the
+    // printed ping against the raw target read "0.06 ms over" where the line
+    // sat 0.02 from its target. The sentence prints only the difference,
+    // never either operand.
     const ping = formatLatency(test.ping);
     const pingTarget = limits.ping;
-    const printedTarget = roundsToZeroLatency(limits.ping) ? limits.ping : formatLatency(limits.ping);
+    const subResolutionTarget = roundsToZeroLatency(limits.ping);
+    const printedTarget = subResolutionTarget ? limits.ping : formatLatency(limits.ping);
     const earlierPing = formatLatency(earlier.ping);
 
     // A percentage says everything worth saying about throughput. For latency it
     // does not: the plain distance from the target is what the reader wants, and
     // it cannot be read backwards.
     const latencyTargetLabel = () => {
-        const distance = differenceFromTarget(ping, printedTarget);
+        const distance = differenceFromTarget(subResolutionTarget ? test.ping : ping, printedTarget);
         if (distance === null) return null;
         if (distance.direction === "same") return t("test.details.on_target");
 

@@ -188,10 +188,13 @@ describe("the arithmetic: helpers fed the printed figure agree to the decimal", 
         assert.match(pane, /const pingTarget = limits\.ping;/,
             "the pane's colour grades a different target than the three views beside it");
         assert.match(pane,
-            /const printedTarget = roundsToZeroLatency\(limits\.ping\) \? limits\.ping : formatLatency\(limits\.ping\);/,
+            /const printedTarget = subResolutionTarget \? limits\.ping : formatLatency\(limits\.ping\);/,
             "the sentence has no printed target to compare its printed ping against - or a sub-0.05 "
             + "target prints as 0, which asTarget refuses, and the sentence silently vanishes");
-        assert.match(pane, /differenceFromTarget\(ping, printedTarget\)/,
+        assert.match(pane, /differenceFromTarget\(subResolutionTarget \? test\.ping : ping, printedTarget\)/,
+            "the sub-resolution branch mixes a printed ping with a raw target - like against unlike, "
+            + "the exact pairing the printed-vs-printed rule exists to forbid");
+        assert.match(pane, /differenceFromTarget\(subResolutionTarget \? test\.ping : ping, printedTarget\)/,
             "the sentence compares a printed ping against an unprinted target");
         assert.match(pane, /getIconBySpeed\(ping, pingTarget, false\)/,
             "the colour no longer grades against the typed target");
@@ -292,9 +295,26 @@ describe("the ping card computes every figure from the one it prints", () => {
      * unprintable reaches the screen.
      */
     it("keeps the sentence for a target below the printable resolution", () => {
+        // Stored against stored in this branch: the target cannot print, so
+        // the printed ping is no like operand either - 5.24 minus 0.04, not
+        // the trimmed 5.2 minus the raw 0.04.
         assert.deepEqual(pingCard({test: {ping: 5.24}, limits: {ping: "0.04"}}).targetLabel,
-            {key: "test.details.over_target", amount: 5.16, unit: "latest.ping_unit"},
+            {key: "test.details.over_target", amount: 5.2, unit: "latest.ping_unit"},
             "the one target that cannot be printed loses its sentence entirely");
+    });
+
+    // The distance the branch states is the TRUE stored distance: printed
+    // 0.1 against raw 0.04 read "0.06 ms over" where the line sits 0.02 from
+    // its target - three times the real figure, in a pane whose thesis is
+    // that both sides of a comparison come from one domain.
+    it("states the stored distance when the target is below resolution", () => {
+        assert.deepEqual(pingCard({test: {ping: 0.06}, limits: {ping: "0.04"}}).targetLabel,
+            {key: "test.details.over_target", amount: 0.02, unit: "latest.ping_unit"});
+    });
+
+    it("calls a ping exactly on a sub-resolution target on target", () => {
+        assert.equal(pingCard({test: {ping: 0.04}, limits: {ping: "0.04"}}).targetLabel,
+            "test.details.on_target");
     });
 
     // A target of exactly zero stays unset - asTarget refuses it on every
@@ -441,17 +461,19 @@ describe("what the extraction cannot run, read from the source", () => {
      * config, not a measurement: the row, the card and the node view all grade
      * against the typed value, and the pane trimming its copy alone made a
      * boundary ping wear two colours between the row and the pane it opens.
-     * And printedTarget's own line reads the raw target twice - once in the
-     * predicate deciding whether the printed form survives, once as the
-     * fallback for a target the trim would erase - and hands the result to
-     * the sentence's guards, never to the screen.
+     * And the sub-resolution lines read the raw target and the raw ping on
+     * purpose - the predicate deciding whether the printed form survives,
+     * the fallback for a target the trim would erase, and the stored-vs-
+     * stored distance for that branch - all handed to the sentence's
+     * guards, never to the screen.
      */
     it("lets no raw latency reach anything the reader sees", () => {
         const displayed = pane
             .replaceAll("latencyIncrease(value, test.ping)", "")
             .replaceAll("const pingTarget = limits.ping;", "")
-            .replaceAll("const printedTarget = roundsToZeroLatency(limits.ping)"
-                + " ? limits.ping : formatLatency(limits.ping);", "");
+            .replaceAll("const subResolutionTarget = roundsToZeroLatency(limits.ping);", "")
+            .replaceAll("const printedTarget = subResolutionTarget ? limits.ping : formatLatency(limits.ping);", "")
+            .replaceAll("differenceFromTarget(subResolutionTarget ? test.ping : ping, printedTarget)", "");
 
         assert.doesNotMatch(displayed, /(?<!formatLatency\()\b(test|limits|earlier)\.ping\b/,
             "a ping is still read at the two decimals the column stores");

@@ -253,6 +253,10 @@ const rawSpeed = (mbps, preferences) => {
     return preferences?.speedUnit === SPEED_UNIT_MBYTES ? speed / MBITS_PER_MBYTE : speed;
 };
 
+// Two decimals for a converted speed, as the factor a rounding multiplies
+// through - named beside MBITS_PER_MBYTE so neither is a bare number.
+const SPEED_ROUNDING = 100;
+
 export const convertSpeed = (mbps, preferences) => {
     // Reading before refusal, in rawSpeed: a numeric string handed back
     // unconverted left changeFrom comparing one operand in Mbit/s against
@@ -262,10 +266,13 @@ export const convertSpeed = (mbps, preferences) => {
 
     // Two decimals ONLY where a conversion happened. Mbit/s is the unit the
     // column stores, so that figure passes through exact - and junk and the
-    // placeholders keep rawSpeed's passthrough contract in either unit.
+    // placeholders keep rawSpeed's passthrough contract in either unit. The
+    // number-and-sign checks knowingly restate rawSpeed's refusals: rawSpeed
+    // hands back one value that is either a quotient or a passthrough, and
+    // telling those apart here costs less than a tagged return would.
     if (preferences?.speedUnit !== SPEED_UNIT_MBYTES || typeof speed !== "number" || speed < 0) return speed;
 
-    return Math.round(speed * 100) / 100;
+    return Math.round(speed * SPEED_ROUNDING) / SPEED_ROUNDING;
 };
 
 /**
