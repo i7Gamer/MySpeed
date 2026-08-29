@@ -492,18 +492,22 @@ describe("what the extraction cannot run, read from the source", () => {
      * would erase - all handed to the sentence's guards, never to the screen.
      */
     const RAW_TARGET_READS = [
-        "latencyIncrease(value, test.ping)",
-        "const pingTarget = limits.ping;",
-        "roundsToZeroLatency(limits.ping)",
-        "{sentenceTarget: limits.ping, sentenceFigure: test.ping}"
+        ["latencyIncrease(value, test.ping)", 1],
+        ["const pingTarget = limits.ping;", 1],
+        ["roundsToZeroLatency(limits.ping)", 1],
+        ["{sentenceTarget: limits.ping, sentenceFigure: test.ping}", 1]
     ];
 
     // Each entry is a fact about the pane before it is an exception to the
-    // tripwire: one that stops appearing exempts nothing and must go.
-    it("keeps the excepted reads a list of facts", () => {
-        for (const read of RAW_TARGET_READS)
-            assert.ok(pane.includes(read),
-                `"${read}" is no longer in the pane; drop it from RAW_TARGET_READS`);
+    // tripwire - one that stops appearing exempts nothing and must go - and
+    // an EXACT count: the guard below blanks every occurrence, so a second
+    // copy of a granted construct would be a second, never-reviewed raw
+    // read riding a one-time grant.
+    it("keeps the excepted reads a list of facts, each granted exactly once", () => {
+        for (const [read, count] of RAW_TARGET_READS)
+            assert.equal(pane.split(read).length - 1, count,
+                `"${read}" appears ${pane.split(read).length - 1} times in the pane where ${count} was granted; `
+                + "a second copy is a second construct, and the blanking exempts both");
     });
 
     /**
@@ -526,15 +530,37 @@ describe("what the extraction cannot run, read from the source", () => {
     });
 
     /**
+     * The dot is not the only spelling of a read: `const {ping} = test;` -
+     * this codebase's own house form, bufferbloat() writes it - takes the
+     * raw column without ever writing "test.ping". One prefix level is
+     * admitted (props.test), two are the stated bound.
+     */
+    const RAW_LATENCY_DESTRUCTURE = /[{,]\s*ping\b[^}]*\}\s*=\s*(?:[\w$]+\.)?(?:test|limits|earlier)\b/;
+
+    it("reads a destructured ping, and only from a test-shaped object", () => {
+        for (const raw of ["const {ping} = test;", "const {ping: raw} = test;", "const {download, ping} = test;",
+            "const {ping} = limits;", "const {ping} = earlier;", "let {ping, jitter} = test;",
+            "const { ping } = test;", "const {ping} = props.test;"])
+            assert.match(raw, RAW_LATENCY_DESTRUCTURE, `"${raw}" no longer reads as a raw latency`);
+
+        for (const clean of ["const {pingTarget} = config;", "({ping: 25.44})", "const {ping} = other;",
+            "const {pinged} = test;", "const {jitter} = test;", "const {ping} = testUtil;",
+            "formatLatency(test.ping)"])
+            assert.doesNotMatch(clean, RAW_LATENCY_DESTRUCTURE, `"${clean}" is no raw latency read`);
+    });
+
+    /**
      * The one assertion that catches a figure added later and wired to the
      * raw column: nowhere in the pane is a ping read without being trimmed
      * first, the listed constructs aside.
      */
     it("lets no raw latency reach anything the reader sees", () => {
         const displayed = RAW_TARGET_READS.reduce(
-            (source, read) => source.replaceAll(read, ""), pane);
+            (source, [read]) => source.replaceAll(read, ""), pane);
 
         assert.doesNotMatch(displayed, RAW_LATENCY_READ,
             "a ping is still read at the two decimals the column stores");
+        assert.doesNotMatch(displayed, RAW_LATENCY_DESTRUCTURE,
+            "a ping is destructured out of its row at the two decimals the column stores");
     });
 });

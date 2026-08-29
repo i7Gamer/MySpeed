@@ -56,8 +56,12 @@ const UNIT_CALLS = ["speedUnit", 't("latest.ping_unit")', 't("latest.jitter_unit
 
 const UNIT_ALTERNATIVES = UNIT_CALLS.map(escapeRegExp).join("|");
 
-// A JSX/template expression, one nested brace level deep.
-const VALUE = "(?:[^{}]|\\{[^{}]*\\})+";
+// A JSX/template expression, one nested brace level deep - and one LINE
+// deep: every match is attributed, skipped and exempted against the line it
+// STARTS on, so a match that could span lines would be judged against a
+// line holding neither the % nor the construct. No current match spans one;
+// the bound makes that impossible rather than lucky.
+const VALUE = "(?:[^{}\\n]|\\{[^{}\\n]*\\})+";
 
 const CSS_LENGTH_LINE = (line) => line.includes("style={{");
 
@@ -285,7 +289,11 @@ describe("rendering a measurement next to its unit", () => {
             // gluing a second time - the fixed form of the sentence shape.
             '`${t("test.details.packet_loss")} ${lossText}`',
             // A modulo is arithmetic, not a glued percent sign.
-            "const remainder = (value + offset) % steps;"
+            "const remainder = (value + offset) % steps;",
+            // And a value whose braces span lines is out of every pattern's
+            // reach by construction - a spanning match would be judged
+            // against its opening line, which holds nothing it names.
+            "`${\n  value\n}%`"
         ];
 
         for (const shape of fixed)
@@ -316,13 +324,18 @@ describe("rendering a measurement next to its unit", () => {
             const source = files.find((entry) => entry.file === file);
             assert.ok(source, `${file} is no longer in the tree; drop it from ALLOWED`);
 
-            const flagged = flaggedIn(source).map(({source: line}) => line);
+            // Distinct LINES, not matches: one construct can trip two
+            // patterns - or trip one twice on its own line - and neither is
+            // a second granted construct. A second flagged line is.
+            const covered = new Set(flaggedIn(source)
+                .filter(({source: line}) => pattern.test(line))
+                .map(({line}) => line));
 
             // Exactly one, the -1 budget's rule: an entry names one
             // construct, and a pattern covering a second flagged line is a
             // file-wide skip wearing a narrow entry's clothes.
-            assert.equal(flagged.filter((line) => pattern.test(line)).length, 1,
-                `${file}'s exemption covers ${flagged.filter((line) => pattern.test(line)).length} flagged lines ` +
+            assert.equal(covered.size, 1,
+                `${file}'s exemption covers ${covered.size} flagged lines ` +
                 "where one construct was granted - drop the entry or narrow the pattern");
         }
     });

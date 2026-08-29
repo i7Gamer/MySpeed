@@ -586,11 +586,13 @@ describe("every reader of TestUtil is either scanned or accounted for", () => {
  * architecture it is meant to protect.
  *
  * The stated bounds, like the barrel guard's: a destructuring, a parameter
- * without a default, a property assignment and a catch clause can still
- * shadow. The watched forms are the shapes a person writes when they
- * reinvent a formatter - a named declaration in any keyword, a declarator
- * hiding behind a first one, and a function hung on an object under a
- * shared name.
+ * without a default, a property assignment, a catch clause, an async
+ * method, a getter, a computed key and a parameter list that holds a `)`
+ * or spans lines can still shadow. The watched forms are the shapes a
+ * person writes when they reinvent a formatter - a named declaration in
+ * any keyword, a declarator hiding behind a first one, a function hung on
+ * an object under a shared name in any arrow or keyword spelling, and the
+ * shorthand method.
  */
 const SHARED_HOMES = ["common/utils/FormatUtil.js", "common/utils/TestUtil.js"];
 
@@ -624,7 +626,14 @@ const SHADOW_FORMS = [
     // And a shared name given to a FUNCTION on an object - a second percent
     // rule handed round as `helpers.formatPercent`. The value must be a
     // function: a data key that happens to share a name is its own thing.
-    new RegExp(String.raw`[{,]\s*(${NAMES})\s*:\s*(?:\(|function\b|async\b)`, "g")
+    // The bare-parameter arrow is a function too.
+    new RegExp(String.raw`[{,]\s*(${NAMES})\s*:\s*(?:\(|function\b|async\b|[\w$]+\s*=>)`, "g"),
+    // And the shorthand method, the other idiomatic spelling of the same
+    // thing: `{formatPercent(value) {...}}`. The paren group must be
+    // followed by a block and must not cross a line - `[{,]\s*NAME\s*\(`
+    // alone matches every comma-preceded CALL of a shared name, forty of
+    // them in this tree.
+    new RegExp(String.raw`[{,]\s*(${NAMES})\s*\([^)\n]*\)\s*\{`, "g")
 ];
 
 /** Which shared names this code declares a local version of, in any watched form. */
@@ -700,11 +709,17 @@ describe("a shared name means the shared thing", () => {
         assert.deepEqual(shadowsShared("const total = 1, formatPercent = (value) => value;"), ["formatPercent"]);
 
         // And a shared name given to a FUNCTION on an object - the exact
-        // shape that put the renamed peakHours collision straight back.
+        // shape that put the renamed peakHours collision straight back - in
+        // every idiomatic spelling: parenthesised arrow, function keyword,
+        // async, the BARE-parameter arrow, and the shorthand method.
         assert.deepEqual(shadowsShared("const gates = {isMeasured: (bucket) => bucket};"), ["isMeasured"]);
         assert.deepEqual(shadowsShared("const api = {formatPercent: function (value) { return value; }};"),
             ["formatPercent"]);
         assert.deepEqual(shadowsShared("const api = {formatPercent: async (value) => value};"), ["formatPercent"]);
+        assert.deepEqual(shadowsShared("const api = {formatPercent: value => value};"), ["formatPercent"]);
+        assert.deepEqual(shadowsShared("const helpers = {formatPercent(value) { return value; }};"),
+            ["formatPercent"]);
+        assert.deepEqual(shadowsShared("const gates = {isMeasured(bucket) { return bucket; }};"), ["isMeasured"]);
 
         // Word-bounded on both sides: a longer name that contains a shared
         // one is its own name, not a shadow.
@@ -714,8 +729,9 @@ describe("a shared name means the shared thing", () => {
 
         // The stated bounds, pinned as bounds: a destructuring (either
         // spelling), a parameter without a default, a property assignment,
-        // a data key and a catch clause all stay out - and a comparison is
-        // arithmetic, not a declarator.
+        // a data key, a catch clause, an ASYNC method, a getter, a computed
+        // key and a call in an argument list all stay out - and a
+        // comparison is arithmetic, not a declarator.
         assert.deepEqual(shadowsShared("const {formatPercent} = helpers;"), []);
         assert.deepEqual(shadowsShared("const {formatPercent: local} = helpers;"), []);
         assert.deepEqual(shadowsShared("const fn = (a, formatPercent) => a;"), []);
@@ -724,5 +740,10 @@ describe("a shared name means the shared thing", () => {
         assert.deepEqual(shadowsShared("catch (formatPercent) {}"), []);
         assert.deepEqual(shadowsShared("if (a === b, formatPercent === c) {}"), []);
         assert.deepEqual(shadowsShared("let index = 0, total = 1;"), []);
+        assert.deepEqual(shadowsShared("const api = {async formatPercent(value) { return value; }};"), []);
+        assert.deepEqual(shadowsShared("const api = {get formatPercent() { return 1; }};"), []);
+        assert.deepEqual(shadowsShared('const api = {["formatPercent"]: (value) => value};'), []);
+        assert.deepEqual(shadowsShared("foo(a, formatPercent(b));"), [],
+            "a comma-preceded call is not a method - the block anchor is what keeps 40 real calls out");
     });
 });
