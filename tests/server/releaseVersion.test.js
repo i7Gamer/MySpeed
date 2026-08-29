@@ -1139,7 +1139,7 @@ describe("what reaches a shell in the release workflow", () => {
         for (const [flag, host] of FLAG_HOSTS)
             for (const value of ["v", "'v'"])
                 it(`reports a splice behind ${host} ${flag} ${value}`, () => {
-                    const shell = [`${host} ${flag} ${value} jq \".version = \\\"$VERSION\\\"\" package.json`];
+                    const shell = [`${host} ${flag} ${value} jq ".version = \\"$VERSION\\"" package.json`];
                     const source = splice(`${host} ${flag} ${value}`, ...shell);
 
                     assert.ok(walked(source, shell), "the fixture is not being walked at all");
