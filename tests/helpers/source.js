@@ -414,10 +414,263 @@ export const runBodies = (source) => {
 };
 
 /**
- * JS/JSX sources with their comments removed, for the same reason. Block
- * comments go whole; line comments only from `//` that does not follow a
- * colon, so a URL inside a string survives.
+ * What stands in front of a slash that makes it the start of a regex literal
+ * rather than a division.
+ *
+ * Not a parse - that question is genuinely ambiguous in JavaScript and is
+ * settled by the grammar, which this is not. It is the set of positions where a
+ * value cannot already have been produced, so a slash there cannot be dividing
+ * one. Line-start is in the set as well, and is spelled by `prev` being null.
  */
-export const withoutJsComments = (source) => source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+const REGEX_OPENERS = new Set(["(", ",", "=", ":", "[", "!", "&", "|", "?", ";", "{", "}", "+", "*", "%"]);
+
+/** And the words that leave the same position, where a character cannot. */
+const REGEX_WORDS = new Set(["return", "typeof", "case", "in", "of", "instanceof", "new", "do", "else"]);
+
+const IDENTIFIER = /[\w$]/;
+
+/** Whitespace that is not the end of a line, which is the thing being counted. */
+const INLINE_SPACE = /[ \t\r\v\f]/;
+
+/**
+ * The end of the regex literal opening at `from`, or -1 if there is none.
+ *
+ * A literal cannot span a line, so a scan that reaches one has misread a
+ * division and says so rather than running to the far end of the file looking
+ * for a closer. A slash inside a character class is not the closer either -
+ * `[/]` is one slash of data - so the classes are tracked alongside the escapes.
+ */
+const regexEnd = (source, from) => {
+    let inClass = false;
+
+    for (let index = from + 1; index < source.length; index++) {
+        const character = source[index];
+
+        if (character === "\n") return -1;
+        if (character === "\\") index++;
+        else if (character === "[") inClass = true;
+        else if (character === "]") inClass = false;
+        else if (character === "/" && !inClass) return index;
+    }
+
+    return -1;
+};
+
+/**
+ * JS/JSX sources with their comments removed, for the same reason the shell
+ * ones above have theirs: an assertion must not be satisfied by prose about the
+ * thing it is looking for.
+ *
+ * This was two regular expressions - one for the block form, one for the line
+ * form - and both were wrong in the one direction a source scan must not be
+ * wrong in. They dropped code, and a scan whose input has quietly lost the code
+ * it is scanning cannot fail at all.
+ *
+ * The block pattern opened on the two characters that spell an opener wherever
+ * they landed, a glob inside a string included, and then ran to the next closer
+ * anywhere in the file: i18n.js declares its flags with an eager glob whose path
+ * ends in one, and the sixteen languages between that line and the next closer
+ * thirty-seven lines below were gone from every scan that read this file. The
+ * line pattern opened on any two adjacent slashes not preceded by a colon, which
+ * a regex literal ending in an escaped slash is - NodeContainer strips a scheme
+ * with one - and which a template holding an address is, twice in server/util.
+ *
+ * So it is a walk now, with the state a stripper actually needs: strings in all
+ * three quotes with their escapes, a template's substitutions back in code state
+ * to whatever depth they nest, regex literals, and both comment forms. The state
+ * carries across lines, because a block comment does - FormatUtil names the -1
+ * placeholder in the middle of one, in a tree the placeholder tripwire scans.
+ *
+ * One newline comes back for each one removed, and the newline after a stripped
+ * line comment stays. That is not tidiness: half the consumers are anchored
+ * per-line, and the tripwire's allowlist exempts a line rather than a file, so a
+ * walk that closed the gaps would move every one of those readings.
+ *
+ * And it fails closed where the heuristic can be wrong. Whether a slash opens a
+ * literal or divides is decided by what stands in front of it; read as a
+ * division when it was a literal, the walk is inside that literal's text, and
+ * two slashes in there would be stripped as a comment - taking real code to the
+ * end of the line with it, which is the failure this replaced. So a line that
+ * has already divided keeps whatever follows. The cost is a comment surviving on
+ * such a line, which is the direction that is merely noisy.
+ */
+export const withoutJsComments = (source) => {
+    let out = "";
+    let state = "code";
+
+    // The brace depth of each substitution the walk is currently inside, so a
+    // template nested in one of its own substitutions still closes correctly.
+    const templates = [];
+
+    let prev = null;    // the last significant code character on this line
+    let word = "";      // the identifier ending at it, when it is one
+    let last = null;    // the previous code character, whitespace included
+    let divided = false;
+
+    const code = (character) => {
+        out += character;
+
+        if (character === "\n") {
+            prev = null;
+            word = "";
+            last = null;
+            divided = false;
+            return;
+        }
+
+        if (INLINE_SPACE.test(character)) {
+            last = character;
+            return;
+        }
+
+        word = !IDENTIFIER.test(character) ? ""
+            : last !== null && IDENTIFIER.test(last) ? word + character
+                : character;
+        prev = character;
+        last = character;
+    };
+
+    // A construct handed back whole - a string, a template, a literal - counts
+    // as its closing character and nothing else.
+    const closed = (character) => {
+        prev = character;
+        word = "";
+        last = character;
+    };
+
+    const opensRegex = () => {
+        if (prev === null) return true;
+        if (IDENTIFIER.test(prev)) return REGEX_WORDS.has(word);
+
+        return REGEX_OPENERS.has(prev);
+    };
+
+    for (let index = 0; index < source.length; index++) {
+        const character = source[index];
+        const next = source[index + 1];
+
+        // The line ending is handed back rather than eaten, and a carriage
+        // return is part of it: `.*$` left one behind, and so does this.
+        if (state === "line") {
+            if (character === "\n" || character === "\r") {
+                state = "code";
+                code(character);
+            }
+            continue;
+        }
+
+        if (state === "block") {
+            if (character === "\n") {
+                out += "\n";
+                divided = false;
+            } else if (character === "*" && next === "/") {
+                state = "code";
+                index++;
+            }
+            continue;
+        }
+
+        if (state === "single" || state === "double") {
+            out += character;
+
+            // Bounded at the line, because a quote that never closes is more
+            // likely a stray apostrophe than a string - and unbounded it would
+            // suppress every strip to the end of the file.
+            if (character === "\\" && next !== undefined) {
+                out += next;
+                index++;
+            } else if (character === "\n") {
+                state = "code";
+                prev = null;
+                word = "";
+                last = null;
+                divided = false;
+            } else if (character === (state === "single" ? "'" : '"')) {
+                state = "code";
+                closed(character);
+            }
+            continue;
+        }
+
+        if (state === "template") {
+            if (character === "\\" && next !== undefined) {
+                out += character + next;
+                index++;
+            } else if (character === "`") {
+                out += character;
+                state = "code";
+                closed(character);
+            } else if (character === "$" && next === "{") {
+                out += "${";
+                index++;
+                templates.push(0);
+                state = "code";
+                closed("{");
+            } else {
+                out += character;
+                if (character === "\n") divided = false;
+            }
+            continue;
+        }
+
+        if (character === "/") {
+            if (next === "/") {
+                if (divided) {
+                    let end = index;
+                    while (end < source.length && source[end] !== "\n" && source[end] !== "\r") end++;
+
+                    out += source.slice(index, end);
+                    index = end - 1;
+                    continue;
+                }
+
+                state = "line";
+                index++;
+                continue;
+            }
+
+            if (next === "*") {
+                state = "block";
+                index++;
+                continue;
+            }
+
+            if (opensRegex()) {
+                const end = regexEnd(source, index);
+
+                if (end !== -1) {
+                    out += source.slice(index, end + 1);
+                    index = end;
+                    closed("/");
+                    continue;
+                }
+            }
+
+            divided = true;
+            code(character);
+            continue;
+        }
+
+        if (character === "'" || character === '"' || character === "`") {
+            state = character === "'" ? "single" : character === '"' ? "double" : "template";
+            out += character;
+            continue;
+        }
+
+        if (templates.length > 0 && (character === "{" || character === "}")) {
+            const depth = templates.length - 1;
+
+            if (character === "{") templates[depth]++;
+            else if (templates[depth] === 0) {
+                templates.pop();
+                out += character;
+                state = "template";
+                continue;
+            } else templates[depth]--;
+        }
+
+        code(character);
+    }
+
+    return out;
+};

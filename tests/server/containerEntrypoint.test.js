@@ -202,26 +202,43 @@ describe("tightening a volume an older image left open", () => {
      * write the very thing it forbids - and one added there passed this file,
      * and the whole server suite, without a word.
      *
-     * So the second assertion is scoped by content instead of by construct, and
-     * by what a warning says rather than by what it names. Not the word `echo`,
-     * which fails on any line added down there for any reason - a start-up
-     * banner, a port diagnostic - none of which is the warning on every start
-     * that this exists to prevent, and a pin that fires on unrelated edits is
-     * one that gets deleted rather than read. Not the directory's own name
-     * either, which is the same mistake one step quieter: `echo "Using data
-     * directory /myspeed/data"` names it and warns about nothing. What a
-     * warning is actually made of is the verb, so an `echo` carrying one is
-     * that warning, wherever below the gate it is written.
+     * So the second assertion is scoped by content instead of by construct.
+     * Not by the word `echo`, which fails on any line added down there for any
+     * reason - a start-up banner, a port diagnostic - none of which is the
+     * warning on every start that this exists to prevent, and a pin that fires
+     * on unrelated edits is one that gets deleted rather than read.
+     *
+     * By what a warning is made of, which is two things and not one. A verb is
+     * the first: an `echo` carrying one is a warning wherever below the gate it
+     * is written. The directory's own name is the second, and this argued
+     * against including it - on the grounds that `echo "Using data directory
+     * /myspeed/data"` names the path and warns about nothing. That reasoning
+     * cost the pin the plainest phrasing of the very line it forbids: `echo
+     * "Volume /myspeed/data is still world-readable - fix permissions on the
+     * host"` carries no verb from the list, and passed. A warning about this
+     * volume has to name this volume, so the name is the other half of the
+     * shape rather than a weaker version of the first half.
      *
      * The `#` lines are gone before any of this - the whole entrypoint is read
      * through withoutHashComments - so the prose above a line, which is where
      * this file explains at length why nothing warns here, is not itself read
      * as the warning it is describing.
      *
-     * A warning phrased without any of those verbs - `echo "the volume is
-     * still world-readable"` - escapes, and that is the accepted residual. This
-     * is a pin on the shape of the mistake; the construct assertion above is
-     * what stands in front of the way it is actually made.
+     * Two residuals are left, and they point opposite ways.
+     *
+     * An `echo` that names the directory and warns about nothing now fails this
+     * - `echo "Using data directory /myspeed/data"` is the example, and it is a
+     * false failure. That is chosen rather than tolerated: below this gate there
+     * is one reason to name that path, and anything adding a second reason is
+     * worth a person reading this and deciding it is one. The cost is a line of
+     * this file's prose, once; the alternative cost was the warning above going
+     * out on every start of every hardened deployment, unnoticed.
+     *
+     * And a warning that avoids the verbs and the path both - `echo "the volume
+     * is still open to every account here"` - still escapes. That one is
+     * tolerated. This assertion is a pin on the shape of the mistake; the
+     * construct assertion above it is what stands in front of the way the
+     * mistake is actually made.
      */
     it("says nothing when it cannot, rather than warning on every start", () => {
         const {asAnyone} = paths();
@@ -246,7 +263,7 @@ describe("tightening a volume an older image left open", () => {
         assert.doesNotMatch(attempt, /\becho\b/,
             "the rootless path prints a warning for the case it was written to expect, which is a line of alarm on every start of every hardened deployment");
 
-        assert.doesNotMatch(asAnyone, /echo[^\n]*(?:warn|could not|cannot|unable|failed)/i,
+        assert.doesNotMatch(asAnyone, /echo[^\n]*(?:warn|could not|cannot|unable|failed|\/myspeed\/data)/i,
             "something below the gate warns about the volume it could not tighten, which is a line of alarm on every start of every hardened deployment - wherever down there it is written");
     });
 });

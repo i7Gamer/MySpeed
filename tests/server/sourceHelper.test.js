@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import {
     blockEnd, bodyIn, bodyOf, escapeRegExp, findMounts, listSources, mountText, readSource, runBodies,
-    unreadableMountCount
+    unreadableMountCount, withoutJsComments
 } from "../helpers/source.js";
 
 describe("blockEnd", () => {
@@ -912,5 +912,206 @@ describe("runBodies", () => {
 
     it("finds nothing in a workflow that runs nothing", () => {
         assert.deepEqual(runBodies(workflow("      - uses: actions/checkout@v7")), []);
+    });
+});
+
+/**
+ * The comment stripper every source scan reads through, which was two regular
+ * expressions and is now a walk over the characters.
+ *
+ * Both expressions were wrong in the one direction a source scan must not be
+ * wrong in: they dropped code. The block pattern opened on the two characters
+ * that spell a comment opener wherever they landed - a glob inside a string is
+ * enough - and then ran to the next closer anywhere in the file, which is how
+ * i18n.js lost sixteen languages between an eager glob and a comment
+ * thirty-seven lines below it. The line pattern opened on any two adjacent
+ * slashes not preceded by a colon, which a regex literal ending in an escaped
+ * slash is, and which a template carrying an address is.
+ *
+ * A scan whose input has quietly lost the code it is scanning cannot fail, and
+ * every one of the twenty-one suites reading this helper is that kind of scan.
+ *
+ * So these are a characterisation of the walk that replaced them: the shapes
+ * that were probed, and below them the four files in this repository the
+ * expressions actually mangled. Nothing here asserts the old behaviour - the
+ * point of every case is that the walk keeps more code, and drops exactly the
+ * comments.
+ */
+describe("withoutJsComments", () => {
+    it("strips a line that is nothing but a comment", () => {
+        assert.equal(withoutJsComments("// plain").trim(), "");
+    });
+
+    it("keeps the code a trailing comment sits after", () => {
+        const code = withoutJsComments("code(); // trailing");
+
+        assert.match(code, /code\(\);/);
+        assert.doesNotMatch(code, /trailing/);
+    });
+
+    it("keeps the code a block comment sits in front of", () => {
+        assert.equal(withoutJsComments("/* block */ code").trim(), "code");
+    });
+
+    /**
+     * The state has to carry across lines, and the newlines have to survive it.
+     *
+     * FormatUtil.js carries a bare -1 in the middle of a doc comment, in a tree
+     * placeholderReaders.test.js scans - so a walk that forgets it is inside a
+     * block at the end of a line turns that suite red on prose. And every
+     * per-line consumer - the pins anchored with the m flag, the tripwire's own
+     * line-by-line allowlist - reads positions that mean nothing unless one
+     * newline comes back for each one removed.
+     */
+    it("carries a block comment across the lines it spans, and keeps their newlines", () => {
+        const source = [
+            "const before = 1;",
+            "/**",
+            " * -1 is the placeholder a failed test stores in every numeric column.",
+            " */",
+            "const after = 2;"
+        ].join("\n");
+
+        const code = withoutJsComments(source);
+
+        assert.doesNotMatch(code, /placeholder/, "the comment's second line was read as code");
+        assert.doesNotMatch(code, /-1/, "the placeholder named in prose came back as a bare -1");
+        assert.equal(code.split("\n").length, source.split("\n").length,
+            "the removed lines took their newlines with them, so every per-line reader is now three lines out");
+    });
+
+    /**
+     * The shape that was probed first, and the one the tripwire depends on: two
+     * slashes inside a string are two characters, and what follows them on the
+     * line is code.
+     */
+    it("does not start a line comment inside a string", () => {
+        const source = 'const u = "a//b"; const bad = (v) => v === -1;';
+
+        const code = withoutJsComments(source);
+
+        assert.match(code, /=== -1/,
+            "the slashes inside the string opened a comment and the rest of the line went with it");
+        assert.equal(code, source);
+    });
+
+    it("does not open a block comment inside a string either", () => {
+        const source = [
+            'const flags = import.meta.glob("./assets/languages/*.webp");',
+            "/* a real comment */",
+            "const keep = 1;"
+        ].join("\n");
+
+        const code = withoutJsComments(source);
+
+        assert.match(code, /\*\.webp/,
+            "the glob opened a comment, which ran to the next closer and ate everything between");
+        assert.match(code, /const keep = 1;/);
+        assert.doesNotMatch(code, /a real comment/, "the comment that is one survived");
+    });
+
+    it("leaves a division alone", () => {
+        const source = "const half = (a + b) / 2;";
+
+        assert.equal(withoutJsComments(source), source);
+    });
+
+    it("leaves a regex literal made of escaped slashes alone", () => {
+        const source = String.raw`const bare = url.replace(/\/\//, "");`;
+
+        assert.equal(withoutJsComments(source), source,
+            "the literal's escaped slash and its own closer stand adjacent, and read as a line comment");
+    });
+
+    it("reads a slash after return as a literal rather than a division", () => {
+        const source = "const looksRight = (y) => { return /x/.test(y); };";
+
+        assert.equal(withoutJsComments(source), source);
+    });
+
+    it("reads two slashes in a template's text as text", () => {
+        const source = "const address = `${url.protocol}//${url.host}${url.pathname}`;";
+
+        assert.equal(withoutJsComments(source), source,
+            "the template's own slashes opened a comment and took the rest of the address with them");
+    });
+
+    it("still strips a comment inside a template's substitution", () => {
+        const code = withoutJsComments("const u = `a${b /* why */ + c}d`;");
+
+        assert.doesNotMatch(code, /why/, "the substitution never returned to code state");
+        assert.match(code, /\+ c/);
+    });
+
+    /**
+     * The fail-closed rule, and the one place the walk deliberately keeps a
+     * comment.
+     *
+     * Whether a slash opens a literal or divides is decided by what stands in
+     * front of it, which is a heuristic rather than a parse. Read as a division
+     * when it was a literal, the walk is then inside that literal's text - and
+     * two slashes in there would be stripped as a comment, taking real code to
+     * the end of the line with them. That is the direction both expressions
+     * failed in, and the one this replaced them to end.
+     *
+     * So a line that has already divided keeps whatever follows. The cost is a
+     * comment surviving on such a line, which is the harmless direction: a scan
+     * reading more than the code is at worst noisy, and one reading less than
+     * the code cannot fail at all.
+     */
+    it("keeps a trailing comment on a line whose earlier slash was read as a division", () => {
+        const source = "const half = total / 2; // fail-closed, because this line already divided";
+
+        assert.equal(withoutJsComments(source), source,
+            "a slash read as a division may have been a literal the walk is now inside, so what follows is kept rather than dropped");
+    });
+});
+
+/**
+ * The four files in this repository the two expressions actually mangled.
+ *
+ * Pinned by the text that has to come back rather than by a diff against the
+ * old stripper, which is gone. Each pins a comment that still has to go
+ * alongside it, so none of them can be satisfied by a stripper that has simply
+ * stopped stripping.
+ */
+describe("withoutJsComments and the files it stopped mangling", () => {
+    it("keeps the language list i18n.js declares under an eager glob", () => {
+        const code = withoutJsComments(readSource("client/src/i18n.js"));
+
+        for (const language of ["'Nederlands'", "'Italiano'", "'Polski'", "'Bahasa Indonesia'"])
+            assert.ok(code.includes(language),
+                `${language} is gone: the glob's own characters opened a comment that ran to the next closer`);
+
+        assert.ok(!code.includes("Upstream #725"),
+            "the comment above the bundled locale is no longer stripped");
+    });
+
+    it("keeps the tail of the regex NodeContainer strips a scheme with", () => {
+        const code = withoutJsComments(
+            readSource("client/src/pages/Nodes/components/NodeContainer/NodeContainer.jsx"));
+
+        assert.ok(code.includes(String.raw`replace(/(^\w+:|^)\/\//, '')`),
+            "the literal's own closer read as a line comment and took the rest of the element with it");
+        assert.ok(!code.includes("How often a visible card re-reads its node"),
+            "the comments in this file are no longer stripped");
+    });
+
+    it("keeps the message downloadHelper refuses a redirect with", () => {
+        const code = withoutJsComments(readSource("server/util/providers/downloadHelper.js"));
+
+        assert.ok(code.includes("and only https is followed"),
+            "the slashes after the substituted protocol read as a line comment");
+        assert.ok(!code.includes("What a refused download is, as its own type"),
+            "the comments in this file are no longer stripped");
+    });
+
+    it("keeps the address urlCredentials rebuilds without its userinfo", () => {
+        const code = withoutJsComments(readSource("server/util/urlCredentials.js"));
+
+        assert.ok(code.includes("${url.protocol}//${url.host}"),
+            "the address lost everything after its scheme, so a scan for the parts it keeps finds nothing");
+        assert.ok(!code.includes("A URL with any credential taken out of it"),
+            "the comments in this file are no longer stripped");
     });
 });
