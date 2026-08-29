@@ -360,8 +360,11 @@ describe("what reaches a shell in the release workflow", () => {
      *
      * They are what says where one command stops and the next begins, which is
      * the whole of what command position means below. `<` and `>` are here for
-     * the same reason as `|`: a redirect ends the call's arguments, so nothing
-     * behind it is jq's program.
+     * the other half of that job rather than for this one. A redirection does
+     * not end a call - bash lets one stand anywhere in a simple command, so
+     * things do stand behind one - but it has to arrive as words of its own
+     * before the call reader can recognise one and read on past it. `2>&1` is
+     * four of them.
      */
     const OPERATORS = new Set(["|", "&", ";", "(", ")", "`", "<", ">"]);
 
@@ -371,7 +374,8 @@ describe("what reaches a shell in the release workflow", () => {
      * `if`, `while`, `until`, `then`, `else`, `elif`, `do` and `{` are the
      * shell's own - the first three matter most, since their `then`/`do`
      * halves cannot be reached without them; `sudo`, `env`, `time`, `command`
-     * and `xargs` run what follows them, and `!` negates it. Substitutions
+     * and `xargs` run what follows them, `exec` replaces the shell with what
+     * follows it and `nohup` runs it detached, and `!` negates it. Substitutions
      * need no entry here - `$(` and a backtick are operators, so the jq
      * inside one is already the first word of its own command. NAME=value
      * assignment prefixes are handled where the position is judged: the shell
@@ -379,7 +383,7 @@ describe("what reaches a shell in the release workflow", () => {
      */
     const COMMAND_PREFIXES = new Set([
         "if", "while", "until", "then", "else", "elif", "do", "{", "!",
-        "sudo", "env", "time", "command", "xargs"
+        "sudo", "env", "time", "command", "xargs", "exec", "nohup"
     ]);
 
     // A NAME=value environment prefix, which stands before the command
@@ -436,7 +440,9 @@ describe("what reaches a shell in the release workflow", () => {
      *
      *   plain      - what the shell would hand the command, quotes removed
      *   expandable - whether any part of it outside single quotes carries an
-     *                unescaped `$`, which is the whole predicate this file is
+     *                unescaped `$` or an unescaped backtick, either of which
+     *                is the shell building the word before the command sees
+     *                it - which is the whole predicate this file is
      *                about
      *   literal    - whether every character of it came from inside single
      *                quotes, which is the only way to be sure the shell did not
@@ -444,7 +450,10 @@ describe("what reaches a shell in the release workflow", () => {
      *
      * `expandable` is not `plain.includes("$")`: `".version = \$v"` holds a
      * dollar the shell removes the backslash from and expands nothing for, and
-     * reporting that line would demand a change that changes nothing. `literal`
+     * reporting that line would demand a change that changes nothing. A
+     * backtick asks the same question of the older spelling of `$( )`:
+     * unescaped inside double quotes it opens a substitution the shell runs
+     * before the command is executed at all, escaped it is a character. `literal`
      * is not `!expandable` either - `".version = \$v"` is inert too, but it is
      * inert by an escape a later edit can drop, and the liveness check wants the
      * shape that cannot be broken that way.
@@ -495,7 +504,7 @@ describe("what reaches a shell in the release workflow", () => {
 
             if (quote === "\"") {
                 if (character === "\"") quote = null;
-                else add(character, {expands: character === "$"});
+                else add(character, {expands: character === "$" || character === "`"});
                 continue;
             }
 
@@ -554,13 +563,64 @@ describe("what reaches a shell in the release workflow", () => {
         return joined;
     }, []);
 
+    // The two characters a redirection opens with, and the shape of a file
+    // descriptor written in front of one.
+    const REDIRECTIONS = new Set(["<", ">"]);
+    const FILE_DESCRIPTOR = /^[0-9]+$/;
+
+    /**
+     * One redirection standing inside a call, answered as the index behind it -
+     * or as the index it was asked about, when there is no redirection there.
+     *
+     * Its shape is `[fd] ('<'|'>')+ ['&'] [target]`, which is the whole of what
+     * these lines write. Each `<` and `>` is a token of its own, so `>>` arrives
+     * as two and the run is collapsed; `2>&1` puts a file descriptor in front
+     * and another behind an `&`, and that `&` is the one place a call does not
+     * end at one.
+     *
+     * A digit-only word standing before a redirect operator is read as the
+     * file descriptor - whether or not whitespace separated them, because the
+     * tokeniser keeps no positions. That sacrifices `jq 2 > tmp`, whose
+     * literal 2-as-argument reading is folded into the redirect; accepted,
+     * since a bare digit is no jq program anyone writes, and a digit program
+     * is never expandable, so no splice verdict can turn on the difference.
+     * The target is taken only where the next token is a word: `jq . x >`
+     * redirects to nothing, and taking an operator there would swallow the
+     * pipe the call does end at.
+     */
+    const readRedirection = (tokens, from) => {
+        const operator = (at) => tokens[at] !== undefined && tokens[at].operator;
+        const opens = (at) => operator(at) && REDIRECTIONS.has(tokens[at].plain);
+
+        let index = from;
+
+        if (tokens[index] !== undefined && !tokens[index].operator
+            && FILE_DESCRIPTOR.test(tokens[index].plain) && opens(index + 1)) index++;
+
+        if (!opens(index)) return from;
+
+        while (opens(index)) index++;
+
+        // `2>&1`: the descriptor behind the `&` belongs to the redirection,
+        // rather than being the background operator a call ends at.
+        if (operator(index) && tokens[index].plain === "&") index++;
+
+        // The file it names, where one was written.
+        if (tokens[index] !== undefined && !tokens[index].operator) index++;
+
+        return index;
+    };
+
     /**
      * One jq call, from the word `jq` to the end of its arguments: the flags it
      * was given, and the program it was handed.
      *
      * The program is the first word that is neither a flag nor a flag's value,
-     * and the call ends at the first operator - a pipe, a redirect, a closing
-     * paren - because nothing behind one of those is jq's. Flags are collected
+     * and the call ends at the first operator - a pipe, a semicolon, a closing
+     * paren - because nothing behind one of those is jq's. A redirection is not
+     * one of those: `jq > tmp '.x = $v'` hands jq the same program as
+     * `jq '.x = $v' > tmp` does, so the redirect and the file it names are
+     * consumed and the reading goes on behind them. Flags are collected
      * past the program as well: a value bound after the program it belongs to is
      * still bound, and the liveness check has no reason to care where it stands.
      */
@@ -568,7 +628,19 @@ describe("what reaches a shell in the release workflow", () => {
         const flags = [];
         let program = null;
 
-        for (let index = from + 1; index < tokens.length && !tokens[index].operator; index++) {
+        for (let index = from + 1; index < tokens.length; index++) {
+            const behind = readRedirection(tokens, index);
+
+            // A redirection is part of the call without being an argument of
+            // it, so the reading carries on behind the file it names rather
+            // than stopping at the operator that opened it.
+            if (behind !== index) {
+                index = behind - 1;
+                continue;
+            }
+
+            if (tokens[index].operator) break;
+
             const consumed = FLAG_ARITY.get(tokens[index].plain);
 
             if (consumed !== undefined) {
@@ -689,14 +761,14 @@ describe("what reaches a shell in the release workflow", () => {
             why: "the shape this rule exists to ask for is reported as the thing it is the fix for"
         },
         {
-            name: "a binding written after an output flag",
-            shell: ["jq -r --arg v \"$VERSION\" '.version = $v' package.json > tmp && mv tmp package.json"],
-            why: "--arg counts only where it was first seen, so the ordinary flag order is reported as a splice"
+            name: "a read whose file is named by a variable",
+            shell: ["jq -r '.version' \"$FILE\""],
+            why: "-r is a switch and takes no value of its own; given one it swallows the program, and the file named behind it is read as the program instead"
         },
         {
-            name: "a binding written after the program",
-            shell: ["jq '.version = $v' --arg v \"$VERSION\" package.json > tmp"],
-            why: "a bound value written behind the program it belongs to is not read as a binding at all"
+            name: "a read whose output is redirected behind the program",
+            shell: ["jq -r .version package.json > tmp"],
+            why: "a redirect standing behind the program is read as something jq was handed, which would report the shape most of these lines are written in"
         },
         {
             name: "a jq that only reads",
@@ -707,6 +779,11 @@ describe("what reaches a shell in the release workflow", () => {
             name: "a jq variable escaped past the shell",
             shell: ["jq --arg v \"$V\" \".version = \\$v\""],
             why: "the shell does not expand \\$, so what jq parses is the variable --arg bound - reporting it demands a change that changes nothing"
+        },
+        {
+            name: "a backtick escaped past the shell",
+            shell: ["jq \".version = \\`cat VERSION\\`\" package.json"],
+            why: "an escaped backtick is a backtick and nothing else - the shell hands jq the character and runs no command for it, so reporting the line demands a change that changes nothing"
         },
         {
             name: "a program naming jq inside itself",
@@ -744,9 +821,19 @@ describe("what reaches a shell in the release workflow", () => {
             why: "a line nothing runs is reported as a splice, so the fix offered for it is to delete a comment"
         },
         {
+            name: "a comment carrying a separator and a call behind it",
+            shell: ["npm ci # bump; jq \".v = \\\"$V\\\"\" package.json"],
+            why: "a `#` where a word begins ends the line, and a line read on past one reports a call the shell never runs - the `;` in front of this one is what puts it in command position, which is the reason the two rows above cannot notice the same mistake"
+        },
+        {
             name: "a call on a line that is nothing but a comment",
             shell: ["# jq \".v=\\\"$V\\\"\" package.json"],
             why: "a line nothing runs is reported as a splice, so the fix offered for it is to delete a comment"
+        },
+        {
+            name: "a redirect whose target the shell builds",
+            shell: ["jq > \"tmp.$VERSION.json\" .version package.json"],
+            why: "the word behind a redirect is the file the call writes to, not the program it runs - and this is the one line where consuming that word changes a verdict, in the direction of saying nothing about a program jq was never handed"
         },
         {
             name: "an indented output with a bound program",
@@ -832,6 +919,67 @@ describe("what reaches a shell in the release workflow", () => {
             why: "NAME=value prefixes are not the command - the shell strips any number of them before finding it"
         },
         {
+            name: "a splice from a call written as a path",
+            shell: ["/usr/bin/jq \".v = \\\"$V\\\"\" package.json"],
+            why: "a call spelled as a path is not read as a call at all, and an absolute path is how a runner that does not trust its own PATH writes one"
+        },
+        {
+            name: "a splice behind sudo",
+            shell: ["sudo jq \".v = \\\"$V\\\"\" package.json"],
+            why: "a word that runs what follows it is read as the command, and the jq behind it as an argument of that command"
+        },
+        {
+            name: "a splice in the body of a for loop",
+            shell: ["for f in *.json; do jq \".v = \\\"$V\\\"\" \"$f\"; done"],
+            why: "`do` opens the body of every loop the shell has, and a call standing first in one is the command it runs"
+        },
+        {
+            name: "a splice behind exec",
+            shell: ["exec jq \".v = \\\"$V\\\"\" package.json"],
+            why: "exec replaces the shell with the command, which is the same command run one process shallower"
+        },
+        {
+            name: "a splice behind nohup",
+            shell: ["nohup jq \".v = \\\"$V\\\"\" package.json"],
+            why: "nohup runs the command detached, which is the same command with its parent gone"
+        },
+        {
+            name: "a program built by a backtick inside the quotes",
+            shell: ["jq \".version = \\\"`cat VERSION`\\\"\" package.json"],
+            why: "a backtick inside double quotes is the older spelling of $( ), and the shell runs it before jq is executed at all - so the program is built out of whatever it printed"
+        },
+        {
+            name: "a splice under a line ending in an escaped backslash",
+            shell: ["echo a\\\\", "jq \".version = \\\"$VERSION\\\"\" package.json"],
+            shows: "jq \".version = \\\"$VERSION\\\"\" package.json",
+            why: "`\\\\` is an escaped backslash and continues nothing, so the line under it is a line of its own - joined onto the one above, its jq is glued to the word in front of it and the splice is reported nowhere"
+        },
+        {
+            name: "a splice behind stderr redirected onto stdout",
+            shell: ["jq 2>&1 \".version = \\\"$VERSION\\\"\" package.json"],
+            why: "the file descriptor in front of the redirect is read as the program, and the program behind it is never reached"
+        },
+        {
+            name: "a splice behind an appending redirect",
+            shell: ["jq >> out.json \".version = \\\"$VERSION\\\"\""],
+            why: "a redirect is read as the end of the call, so a program written behind one - which bash reads as the same call - is never looked at"
+        },
+        {
+            name: "a splice behind a redirect written before the program",
+            shell: ["jq > tmp \".version = \\\"$VERSION\\\"\" package.json"],
+            why: "bash lets a redirection stand anywhere in a simple command, so a call that redirects first hands jq the same program as one that redirects last"
+        },
+        {
+            name: "a splice behind a discarded stderr",
+            shell: ["jq 2>/dev/null \".version = \\\"$VERSION\\\"\" package.json"],
+            why: "the file the redirect names is read as the program, and 2>/dev/null is how a line that expects to fail is written"
+        },
+        {
+            name: "a splice on a line whose redirect names nothing",
+            shell: ["jq \".version = \\\"$V\\\"\" package.json >"],
+            why: "a redirect with nothing behind it takes the word that is not there, and the program with it"
+        },
+        {
             name: "a splice behind --indent",
             shell: ["jq --indent 2 \".version = \\\"$VERSION\\\"\" package.json > tmp"],
             why: "--indent's own value is read as the program, so the splice standing behind it is never looked at"
@@ -873,6 +1021,28 @@ describe("what reaches a shell in the release workflow", () => {
     it("classifies both of the workflow's own writes as bound", () => {
         assert.deepEqual(boundWrites(release), [".version = $v", ".version = $v"],
             "the two version files are no longer bumped by a jq that binds the version as data");
+    });
+
+    /**
+     * The other half of the reading, which no row in the matrix above can
+     * discriminate: every one of those is judged on the program, and a program
+     * in single quotes is inert whatever the flags around it do.
+     *
+     * This one is judged on the flags. A value bound behind the program it
+     * belongs to is still bound - jq reads its flags wherever they stand - so
+     * the collector has to go on past the program. Stopping there instead
+     * leaves a correct write looking like a call that binds nothing, and the
+     * liveness check below then reports the workflow's own bump as missing.
+     */
+    it("counts a binding written behind the program it belongs to", () => {
+        const shell = ["jq '.version = $v' --arg v \"$VERSION\" package.json > tmp"];
+        const source = splice("a binding written after the program", ...shell);
+
+        assert.ok(walked(source, shell),
+            "the row is not being walked at all, so this asserts nothing");
+
+        assert.equal(boundWrites(source).length, boundWrites(release).length + 1,
+            "a bound value written behind the program it belongs to is not read as a binding at all");
     });
 
     it("hands jq the version as an argument rather than as program text", () => {
