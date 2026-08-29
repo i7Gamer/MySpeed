@@ -565,7 +565,11 @@ describe("what the extraction cannot run, read from the source", () => {
 
         for (const clean of ["const {pingTarget} = config;", "({ping: 25.44})", "const {ping} = other;",
             "const {pinged} = test;", "const {jitter} = test;", "const {ping} = testUtil;",
-            "formatLatency(test.ping)"])
+            "formatLatency(test.ping)",
+            // The stated bounds, pinned as bounds: a parameter destructure
+            // and a nested one stay out of this pattern's reach.
+            "const row = ({ping}) => formatLatency(ping);",
+            "const {test: {ping}} = props;"])
             assert.doesNotMatch(clean, RAW_LATENCY_DESTRUCTURE, `"${clean}" is no raw latency read`);
     });
 

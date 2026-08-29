@@ -137,8 +137,14 @@ describe("a locale string that glues a value to its unit is a reviewed decision"
             "a unit-suffixed interpolation other than the literal {{unit}} walks past the scan");
 
         for (const clean of ["{{percent}} of your target", "Takes {{seconds}} seconds",
-            "100% ready", "{{count}} tests", "{{name}} settings"])
+            "Across {{days}} days", "100% ready", "{{count}} tests", "{{name}} settings"])
             assert.ok(!GLUED.some((pattern) => pattern.test(clean)),
                 `"${clean}" glues nothing, and flagging it is how the inventory becomes a list of everything`);
+
+        // And the vocabulary bound, pinned as a bound: a hand-typed unit
+        // the *_unit keys never spell walks past the scan by design, and
+        // catching it is the review's job the docblock names.
+        assert.ok(!GLUED.some((pattern) => pattern.test("{{value}} Mbit/s")),
+            "a unit spelling outside the *_unit vocabulary is suddenly in reach - update the stated bounds");
     });
 });

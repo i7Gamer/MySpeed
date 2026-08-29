@@ -60,9 +60,10 @@ const UNIT_ALTERNATIVES = UNIT_CALLS.map(escapeRegExp).join("|");
 // deep: every match is attributed, skipped and exempted against the line it
 // STARTS on, so a match that could span lines would be judged against a
 // line holding neither the % nor the construct. The cross-line CLASS is not
-// given up for that: the spanning detector below owns it outright, because
-// a prettier-wrapped ternary glued to its unit is exactly the shipped bug
-// in its most idiomatic modern spelling.
+// given up for that: the spanning detector below owns the wrapped-VALUE
+// half - a prettier-wrapped ternary glued to its unit is the shipped bug in
+// its most idiomatic modern spelling - and the \s* connectors keep a
+// percent split from its value in the one-line forms' own reach.
 const VALUE = "(?:[^{}\\n]|\\{[^{}\\n]*\\})+";
 
 const CSS_LENGTH_LINE = (line) => line.includes("style={{");
@@ -94,18 +95,24 @@ const PATTERNS = [
         // The chip values that glue a stored column by policy are named
         // exemptions below - the one label the anchor excused reads its
         // chip's glue site now; style={{…}} lines are CSS lengths.
-        pattern: new RegExp("\\$\\{" + VALUE + "\\}\\s?%", "g"),
+        // \s*, not \s?: on this CRLF tree a percent on the next line sits
+        // behind TWO whitespace characters, and one optional \s let exactly
+        // that spelling walk out of both this form and its spanning twin.
+        pattern: new RegExp("\\$\\{" + VALUE + "\\}\\s*%", "g"),
         skip: CSS_LENGTH_LINE
     },
     {
         form: "percent (jsx)",
         // The same gluing in JSX text - `{props.packetLoss}%` - which has no
         // backtick for the pattern above to anchor on. The lookbehind keeps
-        // template interpolations out: those are the previous pattern's. No
-        // CSS skip here: a style value in braces is template- or
-        // concat-spelled, so a JSX-text percent on a style line is a reading
-        // that happens to share the line, not a length.
-        pattern: new RegExp(`(?<!\\$)\\{${VALUE}\\}%`, "g")
+        // template interpolations out: those are the previous pattern's. The
+        // connector is \s*, like the template form's: `{props.packetLoss} %`
+        // and the value with its % on the NEXT line both render the glued
+        // reading (JSX strips a text node's leading newline), and both
+        // walked past an exact `}%`. No CSS skip here: a style value in
+        // braces is template- or concat-spelled, so a JSX-text percent on a
+        // style line is a reading that happens to share the line.
+        pattern: new RegExp(`(?<!\\$)\\{${VALUE}\\}\\s*%`, "g")
     },
     {
         form: "percent (concat)",
@@ -189,11 +196,14 @@ const flaggedIn = ({text}) => {
 
 /**
  * The same forms with the value free to span lines. Not used to REPORT
- * offenders - a spanning match has no honest line for the skips and
- * exemptions to judge - but to DETECT them: any gluing these see that the
- * one-line forms do not is a gluing written across lines, and there is no
- * legitimate one. This is what keeps the one-line VALUE an attribution rule
- * rather than a blind spot.
+ * offenders - a spanning match's construct straddles lines - but to DETECT
+ * them: any gluing these see that the one-line forms do not is a gluing
+ * whose VALUE was written across lines. Judged against the OPENING line for
+ * the skips and the exemptions, because that is where the value - the half
+ * the entry or the style names - actually sits; a wrapped granted construct
+ * or a wrapped CSS width is still granted, not a forced reflow. The stated
+ * bound stays the value half's nesting: braces two deep are out of both
+ * pattern sets alike.
  */
 const SPANNING_PATTERNS = PATTERNS.map(({form, pattern}) => ({
     form,
@@ -265,7 +275,11 @@ describe("rendering a measurement next to its unit", () => {
             "percent (jsx)": [
                 '<span className="loss">{props.packetLoss}%</span>',
                 "<p>{readableLoss}%</p>",
-                '<span>{t("x", {count: n})}%</span>'
+                '<span>{t("x", {count: n})}%</span>',
+                // The spaced and the line-split spellings render the same
+                // glued reading - JSX strips a text node's leading newline.
+                '<span className="loss">{props.packetLoss} %</span>',
+                "<span>{props.packetLoss}\n%</span>"
             ],
             "percent (concat)": [
                 '{props.packetLoss + "%"}',
@@ -360,17 +374,25 @@ describe("rendering a measurement next to its unit", () => {
      * it onto one line or route it through a formatter.
      */
     it("lets no gluing span lines", () => {
-        for (const {file, text} of files)
-            for (const [at, {form, pattern}] of PATTERNS.entries()) {
+        for (const {file, text} of files) {
+            const allowed = ALLOWED.get(file);
+            const lines = text.split("\n");
+
+            for (const [at, {form, pattern, skip}] of PATTERNS.entries()) {
                 const singleAt = new Set([...text.matchAll(pattern)].map(({index}) => index));
                 const spanning = [...text.matchAll(SPANNING_PATTERNS[at].pattern)]
-                    .find(({index}) => !singleAt.has(index));
+                    .filter(({index}) => !singleAt.has(index))
+                    .find(({index}) => {
+                        const opening = lines[lineOf(text, index) - 1].trim();
+                        return !skip?.(opening) && !allowed?.pattern.test(opening);
+                    });
 
                 assert.equal(spanning, undefined,
                     `${file} glues a value to its ${form} target across lines, starting at line `
-                    + `${spanning && lineOf(text, spanning.index)} - a spanning gluing has no line the skips `
-                    + "and exemptions could honestly judge");
+                    + `${spanning && lineOf(text, spanning.index)} - split it onto one line or route it `
+                    + "through a formatter");
             }
+        }
     });
 
     // The spanning detector's own recognition: the wrapped percent the

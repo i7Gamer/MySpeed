@@ -182,10 +182,13 @@ describe("the bufferbloat row reads its figures through the shared reader", () =
             "the tooltip states a different figure than the one the grade was taken from");
         assert.equal((card.match(/trendDots\.map/g) ?? []).length, 2,
             "a dot map reads the raw trend again - the aria-label and the dots must both walk the filtered list");
-        // The count catches a revert; this catches an ADDED third map over
-        // the raw block (the derivation's own flatMap stays out - .map( is
-        // not a substring of .flatMap().
+        // The count catches a revert; this catches an ADDED inline map over
+        // the raw block. The derivation's own read stays out because
+        // ".map(" is not a substring of ".flatMap(" - if that derivation
+        // ever legitimately ends in .map, this pin moves with it. Bounds:
+        // a hoisted alias or the data.loadedLatency spelling are the
+        // executed lift's job, not this line's.
         assert.doesNotMatch(card, /loaded\??\.trend[^\n]*\.map\(/,
-            "a map walks the raw trend beside the filtered pair");
+            "an inline map walks the raw trend beside the filtered pair");
     });
 });
