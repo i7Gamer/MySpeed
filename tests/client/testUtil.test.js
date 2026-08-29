@@ -1,9 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    bufferbloat, bufferbloatColour, bufferbloatTrend, connectionChange, failureRate, getIconBySpeed,
+    bufferbloat, bufferbloatColour, bufferbloatTrend, connectionChange, FAILED_TEST, failureRate, getIconBySpeed,
     gradeForIncrease, isFailedTest, jitterColour, latencyIncrease, packetLossColour, pingDeviationColour,
-    previousConnection, TREND_LENGTH
+    previousConnection, storedFigure, TREND_LENGTH
 } from "../../client/src/common/utils/TestUtil.js";
 
 /**
@@ -240,6 +240,39 @@ describe("failureRate", () => {
     });
 });
 
+/**
+ * The client half of the server's metricValue, exported so the formatters and
+ * the placeholder readers judge one spelling. Negatives are deliberately
+ * kept - recognising the -1 placeholder is the caller's job - and the same
+ * latitude Number() gives the server copy ("1e3", "0x10") is accepted here,
+ * because the two are pinned to the same fixtures and a value that reads on
+ * one side must read on the other.
+ */
+describe("storedFigure", () => {
+    it("hands a number back, negatives and zero included", () => {
+        assert.equal(storedFigure(12.5), 12.5);
+        assert.equal(storedFigure(0), 0);
+        assert.equal(storedFigure(-1), -1);
+        assert.equal(storedFigure(-0), -0, "-0 is a zero, not a refusal - and < 0 is false for it everywhere downstream");
+    });
+
+    it("reads the number a string spells, whitespace tolerated", () => {
+        assert.equal(storedFigure("42"), 42);
+        assert.equal(storedFigure(" 42 "), 42);
+        assert.equal(storedFigure("-1"), -1);
+        assert.equal(storedFigure("1e3"), 1000, "Number()'s latitude, shared with the server copy");
+    });
+
+    it("refuses what is not a figure at all", () => {
+        for (const value of [null, undefined, "", "  ", "auto", NaN, Infinity, -Infinity, {}, []])
+            assert.equal(storedFigure(value), null, `${JSON.stringify(value)} was read as a figure`);
+    });
+
+    it("is the sentinel's home", () => {
+        assert.equal(FAILED_TEST, -1);
+    });
+});
+
 const speed = (current, optimal) => getIconBySpeed(current, optimal, true);
 const latency = (current, optimal) => getIconBySpeed(current, optimal, false);
 
@@ -280,6 +313,20 @@ describe("getIconBySpeed", () => {
     it("reports a failed test as an error", () => {
         assert.equal(speed(-1, 100), "error");
         assert.equal(latency(-1, 25), "error");
+    });
+
+    // The placeholder in its text spelling. Compared by identity it fell
+    // through to the ratio, and Number("-1")/target is a finite negative - so
+    // a failed ping graded GREEN (lower is better) and a failed download RED,
+    // on the same row isFailedTest now calls a failure.
+    it("reports a failure spelt as text as the error it is", () => {
+        assert.equal(speed("-1", 100), "error");
+        assert.equal(latency("-1", 25), "error");
+    });
+
+    it("still grades a real reading spelt as text by its ratio", () => {
+        assert.equal(speed("75", 100), "green");
+        assert.equal(latency("45", 25), "red");
     });
 
     /**

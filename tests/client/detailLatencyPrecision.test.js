@@ -169,13 +169,30 @@ describe("the arithmetic: helpers fed the printed figure agree to the decimal", 
         }
     });
 
-    // The target is what the config holds, which is whatever was typed into the
-    // settings dialog - a string. Formatting it has to leave that alone, or the
-    // bar and the label lose the target altogether.
-    it("leaves a target stored as a string usable", () => {
-        assert.equal(percentOfTarget(formatLatency(25.44), formatLatency("25"), {higherIsBetter: false}), 98);
-        assert.deepEqual(differenceFromTarget(formatLatency(25.44), formatLatency("25")),
+    // The target is what the config holds, which is whatever was typed into
+    // the settings dialog - a string, handed over RAW. The pane used to trim
+    // its copy through formatLatency, and once the formatter learned to read
+    // strings that trim made the pane the odd view out: every other view
+    // grades against the exact typed target, so a boundary ping wore one
+    // colour on the row and another on the pane it opens - for every target
+    // with more than one decimal. The readers coerce for themselves.
+    // The wiring itself, because the divergence lived there: the one view
+    // that trimmed its target graded 26.0/20 where the row beside it graded
+    // 26.0/20.01 - orange on the pane, green on the row it opened from.
+    it("hands the graders the target as typed, like every other view", () => {
+        assert.match(pane, /const pingTarget = limits\.ping;/,
+            "the pane's target is spelt differently from the three views beside it");
+        assert.doesNotMatch(pane, /formatLatency\(limits\.ping\)/,
+            "a trimmed target grades a boundary ping a different colour than the row it opened from");
+    });
+
+    it("keeps a target stored as a string usable", () => {
+        assert.equal(percentOfTarget(formatLatency(25.44), "25", {higherIsBetter: false}), 98);
+        assert.deepEqual(differenceFromTarget(formatLatency(25.44), "25"),
             {difference: 0.4, direction: "over"});
+        assert.deepEqual(differenceFromTarget(formatLatency(25.44), "25.44"),
+            {difference: 0.04, direction: "under"},
+            "the sentence reports against the target as typed, not as trimmed");
     });
 });
 
@@ -333,16 +350,21 @@ describe("what the extraction cannot run, read from the source", () => {
      * The one assertion that catches a figure added later and wired to the raw
      * column: nowhere in the pane is a ping read without being trimmed first.
      *
-     * With one exception, and it is not a displayed figure. The grade on the
+     * With two exceptions, and neither is a displayed figure. The grade on the
      * loaded latency's glyph is worked out from what that direction added over
      * the idle ping, and that arithmetic is shared three ways - with
      * bufferbloat(), which the facts row's grade comes from, and with the
      * server's average of the same quantity across a range. All three read the
      * stored value; trimming it here alone would let this icon disagree with the
-     * grade printed under it.
+     * grade printed under it. And the TARGET is handed over raw because it is
+     * config, not a measurement: the row, the card and the node view all grade
+     * against the typed value, and the pane trimming its copy alone made a
+     * boundary ping wear two colours between the row and the pane it opens.
      */
     it("lets no raw latency reach anything the reader sees", () => {
-        const displayed = pane.replaceAll("latencyIncrease(value, test.ping)", "");
+        const displayed = pane
+            .replaceAll("latencyIncrease(value, test.ping)", "")
+            .replaceAll("const pingTarget = limits.ping;", "");
 
         assert.doesNotMatch(displayed, /(?<!formatLatency\()\b(test|limits|earlier)\.ping\b/,
             "a ping is still read at the two decimals the column stores");

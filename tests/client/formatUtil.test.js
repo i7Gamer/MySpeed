@@ -176,6 +176,17 @@ describe("formatLatency", () => {
         for (const absent of [null, undefined, "N/A", NaN])
             assert.deepEqual(formatLatency(absent), absent);
     });
+
+    // The defensive numeric-string spelling a legacy-restored history can
+    // hold: the colour beside the printed figure is graded through the same
+    // reading, so the formatter has to read it too - a chip was green beside
+    // an "N/A" label for exactly this row.
+    it("reads a latency spelt as text, like the reader grading beside it", () => {
+        assert.equal(formatLatency("12.64"), 12.6);
+        assert.equal(formatLatency("0.5"), 0.5);
+        assert.equal(formatLatency("-1"), -1,
+            "the placeholder survives, as the number the interface recognises");
+    });
 });
 
 /**
@@ -207,6 +218,11 @@ describe("formatLatencyWithUnit", () => {
     it("says nothing was measured rather than showing a lone unit", () => {
         for (const absent of [null, undefined, NaN])
             assert.equal(formatLatencyWithUnit(absent, "ms"), NOT_MEASURED, `failed for ${String(absent)}`);
+    });
+
+    it("prints the text spelling it used to call unmeasured", () => {
+        assert.equal(formatLatencyWithUnit("0.5", "ms"), "0.5 ms",
+            "the chip's colour grades this row while its label denies it was measured");
     });
 });
 
@@ -252,7 +268,13 @@ describe("formatWhole", () => {
     it("keeps a genuine zero", () => {
         assert.equal(formatWhole(0), 0);
     });
+
+    it("reads a figure spelt as text, like the row beside it", () => {
+        assert.equal(formatWhole("12.64"), 13);
+        assert.equal(formatWhole("-1"), -1, "the placeholder survives, as a number");
+    });
 });
+
 
 describe("convertSpeed", () => {
     it("leaves a value alone in Mbps", () => {
@@ -291,6 +313,32 @@ describe("convertSpeed", () => {
 
     it("converts zero to zero", () => {
         assert.equal(convertSpeed(0, MBYTES), 0);
+    });
+
+    /**
+     * The defensive text spelling, read for the same reason the formatters
+     * above read it - and one deeper: changeFrom compares two converted
+     * operands, and a string handed back unconverted left one side in Mbit/s
+     * and the other in MB/s, so the change row printed a confident wrong
+     * figure where the old gate printed nothing.
+     */
+    it("reads a speed spelt as text, in either unit", () => {
+        assert.equal(convertSpeed("800", MBYTES), 100);
+        assert.equal(convertSpeed("800", MBPS), 800);
+    });
+
+    it("converts the text placeholder to the number the interface recognises", () => {
+        assert.equal(convertSpeed("-1", MBYTES), -1);
+    });
+
+    // NodeContainer's whole pipeline, both spellings: a text row's ping and
+    // speeds must not disagree within one card about whether they were
+    // measured.
+    it("prints one card's figures the same for either spelling", () => {
+        const printed = (value) => formatWithUnit(formatWhole(convertSpeed(value, MBYTES)), "MB/s");
+
+        assert.equal(printed("800"), printed(800));
+        assert.equal(printed("-1"), printed(-1));
     });
 });
 
@@ -504,6 +552,14 @@ describe("formatBytes", () => {
         assert.equal(formatBytes(100000000), "100 MB");
     });
 
+    // The detail pane gates the traffic row on isMeasured and prints through
+    // this - a legacy text column rendered the row with "N/A / N/A", the
+    // shows-but-denies shape the latency chip had.
+    it("reads a byte count spelt as text, like the row that shows it", () => {
+        assert.equal(formatBytes("1500000"), formatBytes(1500000));
+        assert.equal(formatBytes("1500000"), "1.5 MB");
+    });
+
     it("drops a trailing zero rather than writing 1.0 GB", () => {
         assert.equal(formatBytes(1000000000), "1 GB");
     });
@@ -535,7 +591,7 @@ describe("formatBytes", () => {
     // A column that was never measured, and the -1 a failed run writes into its
     // numeric columns. Neither is a quantity of data.
     it("reports anything that is not a count as unmeasured", () => {
-        for (const value of [null, undefined, NaN, Infinity, -1, "1000", {}])
+        for (const value of [null, undefined, NaN, Infinity, -1, "-1", "auto", {}])
             assert.equal(formatBytes(value), NOT_MEASURED, `value ${String(value)}`);
     });
 });

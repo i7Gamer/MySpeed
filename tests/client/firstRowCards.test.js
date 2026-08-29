@@ -61,9 +61,11 @@ describe("the peak-hour row on the overview card", () => {
 
 describe("the packet-loss row on the latest-test card", () => {
     // Zero is a measurement and the commonest one, so a truthiness check would
-    // hide the row on exactly the tests it has the best news for.
+    // hide the row on exactly the tests it has the best news for. isMeasured
+    // is the gate the detail pane uses for the same column - one rule, so a
+    // row cannot show on one view and vanish from the other.
     it("shows a loss of zero rather than hiding it", () => {
-        assert.match(latest, /typeof props\.test\.packetLoss === "number"/);
+        assert.match(latest, /hasPacketLoss = isMeasured\(props\.test\.packetLoss\)/);
         assert.doesNotMatch(latest, /\{props\.test\.packetLoss && /);
     });
 

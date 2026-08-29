@@ -45,8 +45,9 @@ describe("rounding to the printed decimal can move a ping across a colour bounda
     /**
      * The views hand the target over as config.ping - the string typed into
      * the settings dialog - while the pane trims its copy through
-     * formatLatency first. formatLatency hands a string back untouched, so the
-     * two sides grade against the same target and the colours cannot part
+     * formatLatency first. formatLatency reads the string as the number it
+     * spells, and getIconBySpeed coerces its own copy through Number(), so
+     * the two sides grade against the same value and the colours cannot part
      * ways over it.
      */
     it("grades the same against the target as typed and as the pane trims it", () => {

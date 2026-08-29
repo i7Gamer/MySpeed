@@ -4,9 +4,8 @@ import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
     faArrowDown, faArrowUp, faGaugeHigh, faLinkSlash, faPingPongPaddleBall, faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
-import {bufferbloat, bufferbloatColour, packetLossColour} from "@/common/utils/TestUtil";
+import {bufferbloat, bufferbloatColour, FAILED_TEST, getIconBySpeed, isMeasured, packetLossColour, storedFigure} from "@/common/utils/TestUtil";
 import "./styles.sass";
-import {getIconBySpeed} from "@/common/utils/TestUtil";
 import {useContext} from "react";
 import {ConfigContext} from "@/common/contexts/Config";
 import {StatusContext} from "@/common/contexts/Status";
@@ -46,7 +45,7 @@ export const LatestTestChart = (props) => {
         </StatisticContainer>
     );
 
-    const hasJitter = props.test.jitter !== null && props.test.jitter !== undefined;
+    const hasJitter = isMeasured(props.test.jitter);
 
     // Absent for tests recorded before the quality columns existed and for the
     // providers that cannot measure them; the row simply does not render then.
@@ -54,9 +53,10 @@ export const LatestTestChart = (props) => {
 
     // The same rule, for the same reason: only Ookla reports a loss rate, and a
     // provider that reports none has not measured a clean line. Zero is a
-    // measurement, so the check cannot be on truthiness.
-    const hasPacketLoss = typeof props.test.packetLoss === "number"
-        && Number.isFinite(props.test.packetLoss);
+    // measurement, so the check cannot be on truthiness - and isMeasured is the
+    // gate the detail pane uses for the same column, so a row cannot show on
+    // one view and vanish from the other over its spelling.
+    const hasPacketLoss = isMeasured(props.test.packetLoss);
 
     // Trimmed to the one decimal every latency in this interface is shown at.
     // The measurement is stored with two, and the card printed both of them
@@ -67,8 +67,10 @@ export const LatestTestChart = (props) => {
     const ping = formatLatency(props.test.ping);
 
     // A failed run stores -1 in every numeric column, and "-1 Mbps" reads as a
-    // measurement. One place for it, because the three rows had a copy each.
-    const measured = (value, text) => value === -1 ? NOT_MEASURED : text;
+    // measurement. One place for it, because the three rows had a copy each -
+    // and through storedFigure, so the placeholder is recognised in the text
+    // spelling a legacy-restored history holds, not only by identity.
+    const measured = (value, text) => storedFigure(value) === FAILED_TEST ? NOT_MEASURED : text;
 
     /**
      * Whole, the way this card's three figures are stated.

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
     changeFrom, differenceFromTarget, percentOfTarget, providerName
 } from "../../client/src/common/components/TestDetails/utils/details.js";
+import { convertSpeed, SPEED_UNIT_MBYTES } from "../../client/src/common/utils/FormatUtil.js";
 
 describe("percentOfTarget", () => {
     it("reports how much of the optimum was reached", () => {
@@ -202,6 +203,25 @@ describe("changeFrom", () => {
         it("reads a side spelt as text, like the pane beside it", () => {
             assert.deepEqual(changeFrom("100", 90), {difference: 10, direction: "up"});
             assert.deepEqual(changeFrom(100, "90"), {difference: 10, direction: "up"});
+        });
+
+        /**
+         * Through the unit conversion the pane actually feeds it - not the
+         * bare helper. convertSpeed used to hand a string back unconverted,
+         * so in MB/s mode one operand stayed Mbit/s while the other was
+         * divided by eight, and the card printed "+700 MB/s" of change
+         * between two identical measurements. The helper alone could never
+         * see that: the unit mismatch lives in the composition.
+         */
+        it("compares both sides in one unit, whatever the spelling", () => {
+            const MBYTES = {speedUnit: SPEED_UNIT_MBYTES};
+
+            assert.deepEqual(changeFrom(convertSpeed("800", MBYTES), convertSpeed(800, MBYTES)),
+                {difference: 0, direction: "same"},
+                "two spellings of one measurement read as a change");
+            assert.deepEqual(changeFrom(convertSpeed("100", MBYTES), convertSpeed(400, MBYTES)),
+                {difference: -37.5, direction: "down"},
+                "a halved line must not read as an improvement");
         });
     });
 });

@@ -190,12 +190,17 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
     // over" a target of 25. Both sides of every comparison, or the figure and
     // the sentence under it disagree again.
     //
-    // The target is whatever was typed into the settings dialog, i.e. a string -
-    // formatLatency hands anything that is not a number back untouched, so it
-    // reaches asTarget exactly as it did before, as do the -1 a failed run
-    // stores and the null of a provider that measured nothing.
+    // The target is whatever was typed into the settings dialog, i.e. a
+    // string - handed over RAW, exactly as the row, the card and the node
+    // view hand it to their graders. The pane used to trim its copy through
+    // formatLatency, and once the formatter learned to read strings that
+    // trim made this the odd view out: 26.0 against a trimmed 20 is orange
+    // where 26.0 against the typed 20.01 is green, so a boundary ping wore
+    // two colours between the row and the pane it opens. The readers coerce
+    // for themselves; only the MEASUREMENT is trimmed, because that is the
+    // figure being printed.
     const ping = formatLatency(test.ping);
-    const pingTarget = formatLatency(limits.ping);
+    const pingTarget = limits.ping;
     const earlierPing = formatLatency(earlier.ping);
 
     // A percentage says everything worth saying about throughput. For latency it

@@ -3,6 +3,11 @@ import i18n, {t} from "i18next";
 // React component, which would drag the whole component tree into anything that
 // only wanted to know what "mbps" is called.
 import {SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H} from "@/common/contexts/Preferences/constants";
+// The one reading of a stored figure, shared with the graders: a formatter
+// that refused the text spelling a legacy-restored history holds printed
+// "N/A" beside a colour that graded the same row - and convertSpeed handing a
+// string back unconverted left changeFrom comparing Mbit/s against MB/s.
+import {storedFigure} from "@/common/utils/TestUtil";
 
 /**
  * The language the app is set to, for anything Intl formats.
@@ -181,14 +186,20 @@ const LATENCY_DECIMALS = 1;
  * screen are trimmed to one - and a whole millisecond stays whole rather than
  * gaining a pointless ".0".
  *
- * Anything that is not a number is handed back untouched, as convertSpeed does:
- * null is the server saying it could not compute one, and -1 is the placeholder
- * a failed test stores, which the interface recognises a failure by.
+ * A numeric string is read as the number it spells, like every other reader
+ * of a stored column - the colour beside the printed figure is graded through
+ * the same reading, and a chip was green beside an "N/A" label for exactly
+ * that row. What cannot be read at all is handed back untouched, as
+ * convertSpeed does: null is the server saying it could not compute one, and
+ * a negative is the placeholder a failed test stores - returned as the number,
+ * so the interface recognises the failure in either spelling.
  */
 export const formatLatency = (ms) => {
-    if (typeof ms !== "number" || isNaN(ms) || ms < 0) return ms;
+    const latency = storedFigure(ms);
+    if (latency === null) return ms;
+    if (latency < 0) return latency;
 
-    return parseFloat(ms.toFixed(LATENCY_DECIMALS));
+    return parseFloat(latency.toFixed(LATENCY_DECIMALS));
 };
 
 /** The smallest latency the one decimal above can express. */
@@ -214,14 +225,19 @@ export const roundsToZeroLatency = (ms) =>
     typeof ms === "number" && Number.isFinite(ms) && ms > 0 && formatLatency(ms) === 0;
 
 export const convertSpeed = (mbps, preferences) => {
-    if (mbps === null || mbps === undefined) return mbps;
-    if (typeof mbps !== "number" || isNaN(mbps)) return mbps;
-    if (mbps < 0) return mbps;
+    // storedFigure first: a numeric string handed back unconverted left
+    // changeFrom comparing one operand in Mbit/s against the other in MB/s -
+    // a wrong change with a confident direction, where the old refusal at
+    // least printed nothing. Junk still passes through untouched, and a
+    // negative placeholder comes back as the number, never as a speed.
+    const speed = storedFigure(mbps);
+    if (speed === null) return mbps;
+    if (speed < 0) return speed;
 
     if (preferences?.speedUnit === SPEED_UNIT_MBYTES) {
-        return Math.round((mbps / 8) * 100) / 100;
+        return Math.round((speed / 8) * 100) / 100;
     }
-    return mbps;
+    return speed;
 };
 
 /**
@@ -245,9 +261,14 @@ export const convertSpeed = (mbps, preferences) => {
  * which the interface recognises a failure by.
  */
 export const formatWhole = (value) => {
-    if (typeof value !== "number" || isNaN(value) || value < 0) return value;
+    // The same reading as its two siblings above: without it, a text row's
+    // speeds converted and printed while the ping on the same card stayed
+    // text and rendered "N/A".
+    const figure = storedFigure(value);
+    if (figure === null) return value;
+    if (figure < 0) return figure;
 
-    return Math.round(value);
+    return Math.round(figure);
 };
 
 // What a value the server could not compute is shown as. The statistics return
@@ -356,9 +377,13 @@ const BYTE_DECIMALS = 1;
  * kilobyte the decimal is noise.
  */
 export const formatBytes = (bytes) => {
-    if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) return NOT_MEASURED;
+    // storedFigure, like the formatters above: the traffic row is gated on
+    // isMeasured, so a legacy text column rendered the row with "N/A / N/A" -
+    // shown and denied at once.
+    const count = storedFigure(bytes);
+    if (count === null || count < 0) return NOT_MEASURED;
 
-    let value = bytes;
+    let value = count;
     let step = 0;
 
     // The figure as it will actually be printed. The ladder is climbed against

@@ -44,13 +44,21 @@ describe("the latest-test card prints its latencies to one decimal", () => {
      * to be added without it. A failed run stores -1 in every numeric column, so
      * every one of the three would print "-1 Mbps" as though it were a reading.
      */
-    it("still names a failed test rather than printing its placeholder", () => {
+    it("still names a failed test rather than printing its placeholder", async () => {
         const source = card.match(/const measured = [^;]*;/);
         assert.notEqual(source, null, "the card no longer guards the failure placeholder at all");
 
-        const measured = new Function("NOT_MEASURED", `${source[0]}\nreturn measured;`)("N/A");
+        // The real readers, injected: the helper recognises the placeholder
+        // through storedFigure, so the lift has to hand it the same judgement
+        // the module uses - a stub here is how a lift drifts from the code it
+        // claims to run.
+        const {storedFigure, FAILED_TEST} = await import("../../client/src/common/utils/TestUtil.js");
+        const measured = new Function("NOT_MEASURED", "storedFigure", "FAILED_TEST",
+            `${source[0]}\nreturn measured;`)("N/A", storedFigure, FAILED_TEST);
 
         assert.equal(measured(-1, "-1 ms"), "N/A");
+        assert.equal(measured("-1", "-1 ms"), "N/A",
+            "the placeholder in its text spelling prints as a reading of minus one");
         assert.equal(measured(12.6, "12.6 ms"), "12.6 ms");
     });
 

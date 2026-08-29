@@ -5,7 +5,10 @@ const SPEED_FAIR = 30;
 const LATENCY_BAD = 180;
 const LATENCY_FAIR = 130;
 
-const FAILED_TEST = -1;
+// Exported beside storedFigure below: the sentinel and the reader that
+// recognises it are one contract, and a component comparing against a private
+// -1 is how the card and the pane came to disagree about the same row.
+export const FAILED_TEST = -1;
 
 // Number("") and Number(null) are both 0, which would read as a genuine
 // measurement of zero rather than as an absent one.
@@ -251,8 +254,16 @@ export function gradeForIncrease(increase) {
  * the caller's job - isFailedTest below has to see a failure in either
  * spelling, and a reader that refused negatives would hide exactly the value
  * it needs.
+ *
+ * Number()'s latitude is accepted knowingly: "1e3" reads as 1000 and "0x10"
+ * as 16, exactly as they do through the server's copy - the two are pinned to
+ * the same fixtures, and a value that reads on one side must read on the
+ * other.
+ *
+ * Exported for the formatters and the placeholder readers outside this file,
+ * so a component never spells the judgement for itself again.
  */
-const storedFigure = (value) => {
+export const storedFigure = (value) => {
     if (typeof value === "number") return Number.isFinite(value) ? value : null;
 
     // Only a string, and only one that is entirely a number: Number("") is 0,
@@ -419,7 +430,10 @@ export const isThresholdNumber = (value) =>
     value !== null && value !== undefined && THRESHOLD_NUMBER.test(value.toString());
 
 export function getIconBySpeed(current, optional, higherIsBetter) {
-    if (current === FAILED_TEST) return "error";
+    // storedFigure, so the text spelling of the placeholder is the failure it
+    // is: compared by identity it fell through to the ratio below, where
+    // Number("-1") is a finite negative - a failed ping graded green.
+    if (storedFigure(current) === FAILED_TEST) return "error";
     if (isMissing(current) || isMissing(optional)) return "blue";
 
     const speed = Math.floor((Number(current) / Number(optional)) * 100);
