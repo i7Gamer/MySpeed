@@ -34,14 +34,28 @@ describe("percentOfTarget", () => {
                 assert.equal(percentOfTarget(50, target), null, `target ${JSON.stringify(target)}`);
         });
 
-        // -1 is the placeholder a failed run writes, not a measurement.
-        it("returns null for a failed measurement", () => {
+        // -1 is the placeholder a failed run writes, not a measurement - and
+        // no other negative is one either: a -5 used to pass the old gate,
+        // which only knew the placeholder by name, and printed "-5% of your
+        // target".
+        it("returns null for a failed or negative measurement", () => {
             assert.equal(percentOfTarget(-1, 100), null);
+            assert.equal(percentOfTarget(-5, 100), null);
+            assert.equal(percentOfTarget("-1", 100), null, "the placeholder in its text spelling");
         });
 
-        it("returns null for a missing or non-numeric measurement", () => {
-            for (const current of [null, undefined, "50", NaN, Infinity])
+        it("returns null for a missing or unreadable measurement", () => {
+            for (const current of [null, undefined, "abc", "", NaN, Infinity])
                 assert.equal(percentOfTarget(current, 100), null, `current ${String(current)}`);
+        });
+
+        // The defensive numeric-string spelling a legacy-restored history can
+        // hold. The pane's other readers - bufferbloat, through
+        // readableFigure - learned to read it, and a bare typeof here left
+        // one row earning a grade while its target bar silently vanished.
+        it("reads a measurement spelt as text, like the pane beside it", () => {
+            assert.equal(percentOfTarget("50", 100), 50);
+            assert.equal(percentOfTarget("24", 20, {higherIsBetter: false}), 83);
         });
     });
 
@@ -103,10 +117,14 @@ describe("differenceFromTarget", () => {
                 assert.equal(differenceFromTarget(24, target), null, `target ${JSON.stringify(target)}`);
         });
 
-        it("returns null for a failed or non-numeric measurement", () => {
+        it("returns null for a failed or unreadable measurement", () => {
             assert.equal(differenceFromTarget(-1, 20), null);
-            assert.equal(differenceFromTarget("24", 20), null);
+            assert.equal(differenceFromTarget("abc", 20), null);
             assert.equal(differenceFromTarget(null, 20), null);
+        });
+
+        it("reads a measurement spelt as text, like the pane beside it", () => {
+            assert.deepEqual(differenceFromTarget("24", 20), {difference: 4, direction: "over"});
         });
     });
 });
@@ -176,9 +194,14 @@ describe("changeFrom", () => {
             assert.equal(changeFrom(-1, 100), null);
         });
 
-        it("returns null for non-numeric input", () => {
-            assert.equal(changeFrom("100", 90), null);
-            assert.equal(changeFrom(100, "90"), null);
+        it("returns null for unreadable input", () => {
+            assert.equal(changeFrom("abc", 90), null);
+            assert.equal(changeFrom(100, ""), null);
+        });
+
+        it("reads a side spelt as text, like the pane beside it", () => {
+            assert.deepEqual(changeFrom("100", 90), {difference: 10, direction: "up"});
+            assert.deepEqual(changeFrom(100, "90"), {difference: 10, direction: "up"});
         });
     });
 });

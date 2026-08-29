@@ -449,6 +449,27 @@ describe("latencyIncrease", () => {
 });
 
 /**
+ * The graders behind the loss and jitter chips read the stored column raw,
+ * and the labels beside them print it raw too - so a figure in its defensive
+ * text spelling ("0.5" from a legacy-restored history) rendered beside the
+ * blue "nothing was measured" colour. One row, two answers, which is the
+ * divergence readableFigure exists to end; blue stays for what it refuses.
+ */
+describe("the colour a stored figure earns, however it is spelt", () => {
+    it("grades the text spelling the label beside it prints", () => {
+        assert.equal(packetLossColour("0.5"), "green");
+        assert.equal(packetLossColour(0.5), "green", "the numeric spelling keeps its colour");
+        assert.equal(jitterColour("0.5"), "green");
+        assert.equal(jitterColour("25"), "red", "a bad reading is bad in any spelling");
+    });
+
+    it("stays blue for what is not a measurement in any spelling", () => {
+        for (const value of [null, undefined, "", "auto", NaN, -1, "-1"])
+            assert.equal(packetLossColour(value), "blue", `${JSON.stringify(value)} earned a colour`);
+    });
+});
+
+/**
  * The colour a bufferbloat grade wears.
  *
  * Blue for the absence of one, the way every other grader here answers for a
@@ -498,8 +519,14 @@ describe("packetLossColour", () => {
     // Absent is not perfect: only Ookla reports a loss rate, and green would
     // claim a clean line for every provider that measures none.
     it("has no colour for anything that is not a measurement", () => {
-        for (const value of [null, undefined, NaN, Infinity, -1, "0", {}])
+        for (const value of [null, undefined, NaN, Infinity, -1, "auto", {}])
             assert.equal(packetLossColour(value), "blue", `${String(value)} must not grade`);
+    });
+
+    // A measured zero spelt as text is still the cleanest reading there is -
+    // the label beside the chip prints it, so the colour has to grade it.
+    it("grades the text spelling the label prints", () => {
+        assert.equal(packetLossColour("0"), "green");
     });
 });
 
@@ -518,8 +545,12 @@ describe("jitterColour", () => {
     // The server returns an explicit null for a range in which no test measured
     // jitter, which is not a jitter of zero.
     it("has no colour for anything that is not a measurement", () => {
-        for (const value of [null, undefined, NaN, -1, "5"])
+        for (const value of [null, undefined, NaN, -1, ""])
             assert.equal(jitterColour(value), "blue", `${String(value)} must not grade`);
+    });
+
+    it("grades the text spelling the label prints", () => {
+        assert.equal(jitterColour("5"), "orange");
     });
 });
 
@@ -550,7 +581,7 @@ describe("pingDeviationColour", () => {
     // The card's own reason for existing: a null here is the server saying the
     // range held fewer than two successful tests, which is not a spread of zero.
     it("has no colour for anything that is not a measurement", () => {
-        for (const value of [null, undefined, NaN, Infinity, -1, "2", {}])
+        for (const value of [null, undefined, NaN, Infinity, -1, "auto", {}])
             assert.equal(pingDeviationColour(value), "blue", `${String(value)} must not grade`);
     });
 

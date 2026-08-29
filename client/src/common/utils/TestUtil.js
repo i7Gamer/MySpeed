@@ -118,11 +118,15 @@ const PING_DEVIATION_FAIR = 10;
 
 // Blue for anything that is not a measurement: a range in which nothing
 // reported the figure has no colour to earn, and red would say the line is bad
-// when nothing was measured at all.
+// when nothing was measured at all. Read through readableFigure, because the
+// labels beside these chips print the stored column raw - a loss of "0.5"
+// from a legacy-restored history rendered its figure beside the blue
+// nothing-was-measured colour.
 const gradeBelow = (value, good, fair) => {
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "blue";
-    if (value < good) return "green";
-    if (value < fair) return "orange";
+    const figure = readableFigure(value);
+    if (figure === null) return "blue";
+    if (figure < good) return "green";
+    if (figure < fair) return "orange";
 
     return "red";
 };
@@ -238,26 +242,45 @@ export function gradeForIncrease(increase) {
 }
 
 /**
- * A stored latency column as a non-negative number, or null.
+ * A stored column as the number it spells, or null - negatives included.
  *
- * The same judgement as the server's usableFigure, which this bundle cannot
+ * The client half of the server's metricValue, which this bundle cannot
  * import: a numeric string is read rather than refused, because a history
  * imported before the columns were validated can hold "42" where a number
- * belongs - and the statistics read those rows, so a bare typeof here would
- * grade a range and the result beside it from different rows. Junk, the empty
- * string, non-finite values and the negative failure placeholders are no
- * readings. tests/server/loadedLatencyAgreement.test.js pins the mirror.
+ * belongs. The placeholder -1 is deliberately kept, because recognising it is
+ * the caller's job - isFailedTest below has to see a failure in either
+ * spelling, and a reader that refused negatives would hide exactly the value
+ * it needs.
  */
-const readableFigure = (value) => {
-    if (typeof value === "number") return Number.isFinite(value) && value >= 0 ? value : null;
+const storedFigure = (value) => {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
 
     // Only a string, and only one that is entirely a number: Number("") is 0,
-    // so a bare cast would read an empty column as a zero-millisecond ping.
+    // so a bare cast would read an empty column as a measurement of nought.
     if (typeof value !== "string" || value.trim() === "") return null;
 
     const figure = Number(value);
 
-    return Number.isFinite(figure) && figure >= 0 ? figure : null;
+    return Number.isFinite(figure) ? figure : null;
+};
+
+/**
+ * A stored column as a non-negative number, or null.
+ *
+ * The refusal of negatives layered over storedFigure, exactly as the server's
+ * usableFigure layers over metricValue: junk, the empty string, non-finite
+ * values and the negative failure placeholders are no readings. This is the
+ * reader for every figure that is *used* - graded, compared, subtracted -
+ * and tests/server/loadedLatencyAgreement.test.js pins it to the server's.
+ *
+ * Exported for the detail pane's target math (details.js), so the one row
+ * cannot earn a bufferbloat grade while its target bar refuses the same
+ * spelling.
+ */
+export const readableFigure = (value) => {
+    const figure = storedFigure(value);
+
+    return figure === null || figure < 0 ? null : figure;
 };
 
 /**
@@ -346,12 +369,19 @@ export function failureRate(total, failed) {
  * are pinned to the same fixtures by tests/server/failedTestAgreement.test.js -
  * neither side can import the other, and four copies of this judgement had
  * already drifted apart once.
+ *
+ * The placeholders are recognised by value, not by type, mirroring the
+ * server's isPlaceholder: a legacy-restored history can hold "-1" as text,
+ * and compared with === that row rendered as a successful test delivering
+ * minus one megabit - the one placeholder reader the coercion sweep missed.
  */
 export function isFailedTest(test) {
     if (!test) return false;
     if (test.error) return true;
 
-    return test.ping === FAILED_TEST && test.download === FAILED_TEST && test.upload === FAILED_TEST;
+    const placeholder = (value) => storedFigure(value) === FAILED_TEST;
+
+    return placeholder(test.ping) && placeholder(test.download) && placeholder(test.upload);
 }
 
 /**

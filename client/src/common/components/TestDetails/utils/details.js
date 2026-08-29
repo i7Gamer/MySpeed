@@ -1,18 +1,20 @@
+import { readableFigure } from "../../../utils/TestUtil.js";
+
 /**
  * The numbers a test's detail pane shows beyond the raw measurement.
  *
  * Both are derived from data the list endpoint already returns, so the detail
  * view costs no extra request and works on every historic row.
+ *
+ * Every measurement is read through readableFigure, the judgement the rest of
+ * the pane uses: the failure placeholder and every other negative are refused
+ * in either spelling, and a numeric string from a legacy-restored history is
+ * read rather than dropped. The bare typeof gate this replaces knew the
+ * placeholder by name only, so a -5 printed "-5% of your target" and a stored
+ * "42" earned a bufferbloat grade while its target bar silently vanished.
  */
 const PERCENT = 100;
 const CHANGE_DECIMALS = 2;
-
-// Written by the failure path in place of a real measurement. Comparing against
-// it produces confident nonsense, so every helper here refuses it.
-const FAILED_TEST = -1;
-
-const isUsable = (value) =>
-    typeof value === "number" && Number.isFinite(value) && value !== FAILED_TEST;
 
 // Number("") and Number(null) are both 0, which would read as a configured
 // target of zero rather than as an absent one.
@@ -39,14 +41,15 @@ const asTarget = (value) => {
  */
 export const percentOfTarget = (current, target, {higherIsBetter = true} = {}) => {
     const optimum = asTarget(target);
-    if (optimum === null || !isUsable(current)) return null;
+    const figure = readableFigure(current);
+    if (optimum === null || figure === null) return null;
 
-    if (higherIsBetter) return Math.round((current / optimum) * PERCENT);
+    if (higherIsBetter) return Math.round((figure / optimum) * PERCENT);
 
     // A latency of zero is not a measurement, and dividing by it is worse.
-    if (current <= 0) return null;
+    if (figure === 0) return null;
 
-    return Math.round((optimum / current) * PERCENT);
+    return Math.round((optimum / figure) * PERCENT);
 };
 
 /**
@@ -59,9 +62,10 @@ export const percentOfTarget = (current, target, {higherIsBetter = true} = {}) =
  */
 export const differenceFromTarget = (current, target) => {
     const optimum = asTarget(target);
-    if (optimum === null || !isUsable(current)) return null;
+    const figure = readableFigure(current);
+    if (optimum === null || figure === null) return null;
 
-    const difference = parseFloat((current - optimum).toFixed(CHANGE_DECIMALS));
+    const difference = parseFloat((figure - optimum).toFixed(CHANGE_DECIMALS));
     if (difference === 0) return {difference, direction: "same"};
 
     return {difference: Math.abs(difference), direction: difference > 0 ? "over" : "under"};
@@ -100,9 +104,11 @@ export const providerName = (provider) =>
  * @returns {{difference: number, direction: "up"|"down"|"same"}|null}
  */
 export const changeFrom = (current, previous) => {
-    if (!isUsable(current) || !isUsable(previous)) return null;
+    const now = readableFigure(current);
+    const before = readableFigure(previous);
+    if (now === null || before === null) return null;
 
-    const difference = parseFloat((current - previous).toFixed(CHANGE_DECIMALS));
+    const difference = parseFloat((now - before).toFixed(CHANGE_DECIMALS));
 
     if (difference === 0) return {difference, direction: "same"};
     return {difference, direction: difference > 0 ? "up" : "down"};
