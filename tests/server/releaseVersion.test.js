@@ -462,6 +462,7 @@ describe("what reaches a shell in the release workflow", () => {
         const tokens = [];
         let token = null;
         let quote = null;
+        let commented = false;
 
         const open = () => {
             if (token === null) token = {plain: "", expandable: false, literal: true, operator: false};
@@ -521,7 +522,13 @@ describe("what reaches a shell in the release workflow", () => {
 
             // A comment, and the rest of the line with it - but only where a
             // word begins, because `a#b` is a word and `#` is a character of it.
-            if (character === "#" && token === null) break;
+            // Remembered as well as obeyed: whether the line ended in prose is
+            // what continues() needs, and it is only decidable here, where the
+            // quoting rules have already run.
+            if (character === "#" && token === null) {
+                commented = true;
+                break;
+            }
 
             if (OPERATORS.has(character)) {
                 end();
@@ -534,7 +541,7 @@ describe("what reaches a shell in the release workflow", () => {
 
         end();
 
-        return tokens;
+        return {tokens, commented};
     };
 
     /**
@@ -548,11 +555,17 @@ describe("what reaches a shell in the release workflow", () => {
      * An odd number of trailing backslashes, because `\\` is an escaped
      * backslash and ends nothing. Not inside a comment: a comment ends at the
      * newline whatever stands before it, and joining there would swallow the
-     * line below into prose.
+     * line below into prose - which is why the question "did this line end in
+     * a comment" is answered by the tokeniser, whose quoting rules already
+     * decide it, rather than by a second pattern that knows only whole-line
+     * comments. One approximation stays: a trailing backslash inside single
+     * quotes is literal to bash and still joins here - the glue lands inside
+     * a word, so a jq on the next line is scanned fused to it rather than
+     * missed, which is the direction that merely risks noise.
      */
     const CONTINUES = /(^|[^\\])(\\\\)*\\$/;
 
-    const continues = (line) => !/^\s*#/.test(line) && CONTINUES.test(line);
+    const continues = (line) => !tokenise(line).commented && CONTINUES.test(line);
 
     const joinContinued = (lines) => lines.reduce((joined, line) => {
         const previous = joined[joined.length - 1];
@@ -584,9 +597,18 @@ describe("what reaches a shell in the release workflow", () => {
      * literal 2-as-argument reading is folded into the redirect; accepted,
      * since a bare digit is no jq program anyone writes, and a digit program
      * is never expandable, so no splice verdict can turn on the difference.
-     * The target is taken only where the next token is a word: `jq . x >`
-     * redirects to nothing, and taking an operator there would swallow the
-     * pipe the call does end at.
+     *
+     * Two of the bounds here are wider than any verdict can observe, and are
+     * said so rather than dressed as load-bearing. The `while` over the
+     * operator run reads `>>` as one redirection; collapsed to a single step,
+     * the caller re-enters at the second `>` and reads a second redirection -
+     * same tokens consumed, every verdict identical - so the loop is the
+     * honest SHAPE, not a difference in behaviour. And of the target word's
+     * two conditions, only the undefined half is observable: a redirect at
+     * the very end of a line would otherwise read `.operator` off the end of
+     * the array and throw (the trailing-redirect row pins that); the
+     * `!operator` half guards against an operator in target position, which
+     * is not a line bash parses, so no body a runner accepts can reach it.
      */
     const readRedirection = (tokens, from) => {
         const operator = (at) => tokens[at] !== undefined && tokens[at].operator;
@@ -664,19 +686,42 @@ describe("what reaches a shell in the release workflow", () => {
      * `/usr/bin/jq` is the same command - and so does the second half of a
      * pipeline, which is where the writing usually happens.
      */
+    /**
+     * The flags of the prefix commands that take a value as their next word.
+     *
+     * `sudo -u root jq …` runs jq: the walk back from jq has to step over the
+     * flag AND its value, or `root` stands where the command is looked for
+     * and the jq behind it reads as an argument. One flat set across the
+     * prefixes, of the spellings a workflow plausibly writes; a value-taking
+     * flag not named here leaves its value read as the command - a missed
+     * call, the direction this set exists to close, so extend it when a
+     * workflow writes one. The cost of the flat set is noise, not blindness:
+     * `xargs -a jq …` names a FILE jq, and reads here as a call.
+     */
+    const VALUE_TAKING_PREFIX_FLAGS = new Set(["-u", "-g", "-a", "-n", "-I", "-L", "-P", "-s", "-d", "-E"]);
+
     const callsIn = (line) => {
-        const tokens = tokenise(line);
+        const {tokens} = tokenise(line);
         const calls = [];
 
         for (let index = 0; index < tokens.length; index++) {
             const token = tokens[index];
             if (token.operator || !(token.plain === "jq" || token.plain.endsWith("/jq"))) continue;
 
-            // Walk back over NAME=value prefixes first - the shell strips any
-            // number of them before deciding what the command is.
+            // Walk back over what may stand between a command and the start
+            // of its simple command: NAME=value assignments, a prefix's
+            // flags, and the values those flags consume. One guarded loop,
+            // stopped by operators and quoted words, so a pipe or a
+            // semicolon is never crossed - an unbounded skip once walked
+            // `sort -u | jq …` onto the LEFT command and dropped the call.
             let at = index - 1;
-            while (at >= 0 && !tokens[at].operator && !tokens[at].literal
-                && ASSIGNMENT_PREFIX.test(tokens[at].plain)) at--;
+            while (at >= 0 && !tokens[at].operator && !tokens[at].literal) {
+                if (ASSIGNMENT_PREFIX.test(tokens[at].plain)) { at--; continue; }
+                if (tokens[at].plain.startsWith("-")) { at--; continue; }
+                if (at >= 1 && !tokens[at - 1].operator && !tokens[at - 1].literal
+                    && VALUE_TAKING_PREFIX_FLAGS.has(tokens[at - 1].plain)) { at -= 2; continue; }
+                break;
+            }
 
             const before = tokens[at];
             if (at >= 0 && !before.operator && !COMMAND_PREFIXES.has(before.plain)) continue;
@@ -977,12 +1022,54 @@ describe("what reaches a shell in the release workflow", () => {
         {
             name: "a splice on a line whose redirect names nothing",
             shell: ["jq \".version = \\\"$V\\\"\" package.json >"],
-            why: "a redirect with nothing behind it takes the word that is not there, and the program with it"
+            why: "the program is already read by the time the trailing redirect is - what this row pins is the reader's bounds: without the undefined guard on the target word, a redirect at the very end reads `.operator` off the end of the array and the scan throws instead of answering"
         },
         {
             name: "a splice behind --indent",
             shell: ["jq --indent 2 \".version = \\\"$VERSION\\\"\" package.json > tmp"],
             why: "--indent's own value is read as the program, so the splice standing behind it is never looked at"
+        },
+        {
+            name: "a splice under a comment ending in a backslash",
+            shell: ["npm ci # step one \\", "jq \".version = \\\"$VERSION\\\"\" package.json"],
+            shows: "jq \".version = \\\"$VERSION\\\"\" package.json",
+            why: "a backslash at the end of a comment is prose - the comment runs to its newline - but the join read it as a continuation and swallowed the command below into the comment"
+        },
+        {
+            name: "a splice under a whole-line comment ending in a backslash",
+            shell: ["# prepare the bump \\", "jq \".version = \\\"$VERSION\\\"\" package.json"],
+            shows: "jq \".version = \\\"$VERSION\\\"\" package.json",
+            why: "a line that is nothing but prose ends at its newline whatever it ends in, and joining there hid the command below inside a comment"
+        },
+        {
+            name: "a splice behind sudo with a user flag",
+            shell: ["sudo -u root jq \".version = \\\"$V\\\"\" package.json"],
+            why: "the flag's value stood where the command is looked for, so the jq behind it read as an argument of `root`"
+        },
+        {
+            name: "a splice behind exec with a name flag",
+            shell: ["exec -a myspeed jq \".version = \\\"$V\\\"\" package.json"],
+            why: "exec's -a names the process and takes that name as its next word, which is not the command either"
+        },
+        {
+            name: "a splice behind xargs with an attached count",
+            shell: ["echo package.json | xargs -n1 jq \".version = \\\"$V\\\"\""],
+            why: "a flag with its value attached is one word starting with a dash, and the walk stopped on it"
+        },
+        {
+            name: "a splice behind time with a bare flag",
+            shell: ["time -p jq \".version = \\\"$V\\\"\" package.json"],
+            why: "a bare flag between the prefix and the command is enough to hide the call"
+        },
+        {
+            name: "a splice behind env with a bare flag",
+            shell: ["env -i jq \".version = \\\"$V\\\"\" package.json"],
+            why: "env -i empties the environment and runs what follows, which is the same command"
+        },
+        {
+            name: "a splice piped from a command ending in a flag",
+            shell: ["sort -u | jq \".version = \\\"$VERSION\\\"\""],
+            why: "the walk over a prefix's flags must stop at the pipe: unbounded, it stepped over the operator onto the LEFT command and the call was dropped - a missed splice, the one direction this scan must not fail in"
         }
     ];
 
