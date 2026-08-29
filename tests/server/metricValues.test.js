@@ -65,7 +65,7 @@ describe("the recommendation sample", () => {
     const body = bodyOf(speedtestTask, "export const createRecommendations");
 
     it("reads its three figures through the shared readers", () => {
-        assert.match(body, /metricValue\(entry\.ping\)/,
+        assert.match(body, /measuredPing\(entry\.ping\)/,
             "the sample's ping is judged by a different rule than the page beside it");
         // usableFigure, not metricValue, for the speeds: metricValue keeps
         // the -1 placeholder for its Prometheus caller to judge, and fed to

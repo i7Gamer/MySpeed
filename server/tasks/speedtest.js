@@ -20,7 +20,6 @@ import * as pauseController from '../controller/pause.js';
 import { withinQuietHours } from './timer.js';
 import errorHandler from '../util/errorHandler.js';
 import { outageFrom } from '../util/databaseOutage.js';
-import { metricValue } from '../util/metricValue.js';
 
 // The placeholder a failed test stores in every numeric column. The client
 // tells a failure apart by it, so it is not a value anyone should read as one.
@@ -99,15 +98,11 @@ const setRunning = (running, sendRequest = true) => {
 // seeds exactly one sample's worth of rows.
 export const RECOMMENDATION_SAMPLE = 10;
 
-// What a ping has to be before it counts as something that was measured: a
-// reading, and a positive one. FAILED sits below every real latency, so a failed
-// row that reaches the sample anyway - one whose error column somehow stayed
-// null - would otherwise take "lowest ping" from every genuine test beside it,
-// and the fabricated zero above it would do the same. Asked through
-// measuredPing rather than spelled again here: the statistics judge this exact
-// question, and a second spelling is what put a 0 ms target on the
-// recommendation card beside a page that would not average the same row.
-const lowestRealPing = (ping) => measuredPing(ping) !== null;
+// What the speed accumulators start from, and what the bail below refuses to
+// publish: a maximum that never left this value means no sampled row
+// delivered a readable byte in that direction, and an optimum of zero grades
+// every later test against nothing.
+const NO_THROUGHPUT = 0;
 
 /**
  * The newest full sample of successful tests, from the line the instance
@@ -145,24 +140,24 @@ export const createRecommendations = async () => {
     const list = await recommendationSample();
     if (list === null) return;
 
-    let recommendations = {ping: Infinity, down: 0, up: 0};
+    let recommendations = {ping: Infinity, down: NO_THROUGHPUT, up: NO_THROUGHPUT};
     for (const entry of list) {
         // Through the shared readers, the judgement every other consumer of
         // these rows leans on - the statistics moved to them, and a second
         // predicate here is what diverged. The protections the old bare
         // finite check carried still hold: an empty string - which compares
         // as zero and once took "lowest ping" from the whole sample - reads
-        // as null, as does "NaN" and every other junk shape. The ping stays
-        // on metricValue because lowestRealPing judges the placeholder for
-        // itself; the speeds go through usableFigure, which refuses it - fed
-        // to max against the 0 the accumulators start from, a sample of -1
-        // placeholders left them there, and the untouched zeros were then
-        // published as a 0 Mbit/s optimum in both directions.
-        const ping = metricValue(entry.ping);
+        // as null, as does "NaN" and every other junk shape. measuredPing
+        // refuses the placeholder and the fabricated zero outright - a failed
+        // row whose error column somehow stayed null would otherwise take
+        // "lowest ping" from every genuine test - and usableFigure refuses
+        // the speeds' placeholder, which fed to max against the value the
+        // accumulators start from once published a 0 Mbit/s optimum.
+        const ping = measuredPing(entry.ping);
         const download = usableFigure(entry.download);
         const upload = usableFigure(entry.upload);
 
-        if (lowestRealPing(ping) && ping < recommendations.ping)
+        if (ping !== null && ping < recommendations.ping)
             recommendations.ping = ping;
 
         if (download !== null && download > recommendations.down)
@@ -172,15 +167,19 @@ export const createRecommendations = async () => {
             recommendations.up = upload;
     }
 
-    // Nothing in the sample measured a latency - or delivered a byte - so
-    // there is nothing to recommend. Falling through handed the accumulators'
-    // own starting values to the controller: the untouched Infinity became a
-    // null ping, and the untouched zeros a 0 Mbit/s optimum the dialog then
-    // offers as a target. A sample that genuinely measured only nought
-    // everywhere is refused too - an optimum of zero grades every later test
-    // against nothing. Yesterday's recommendation simply stays.
+    // Nothing in the sample measured a latency - or delivered a byte in one
+    // of the directions - so there is nothing to recommend. Falling through
+    // handed the accumulators' own starting values to the controller: the
+    // untouched Infinity became a null ping, and the untouched zeros a
+    // 0 Mbit/s optimum the dialog then offers as a target. The whole update
+    // is withheld, healthy direction included: a partial update would mix two
+    // samples, and the card only feeds a dialog the operator confirms, so
+    // yesterday's recommendation simply staying beats a published zero. A
+    // sample that genuinely measured only nought in a direction is refused by
+    // the same comparison, and rightly - an optimum of zero grades every
+    // later test against nothing.
     if (!Number.isFinite(recommendations.ping)) return;
-    if (recommendations.down === 0 || recommendations.up === 0) return;
+    if (recommendations.down === NO_THROUGHPUT || recommendations.up === NO_THROUGHPUT) return;
 
     await controller.update(recommendations.ping, recommendations.down, recommendations.up);
 }

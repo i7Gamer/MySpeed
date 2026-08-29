@@ -31,3 +31,26 @@ export const metricValue = (value) => {
 
     return Number.isFinite(parsed) ? parsed : null;
 };
+
+/**
+ * An optional figure, or null when it is not one.
+ *
+ * The nullable columns - jitter, packet loss, the two loaded latencies - ask a
+ * different question from the required trio and get a different answer. Null
+ * already means "nobody measured this", so a negative one has an honest home to
+ * go to, and failing a whole run over a jitter of -0.2 would throw away a
+ * perfectly good throughput measurement - the opposite of what #875 is about.
+ *
+ * A measured zero is kept, for the same reason it is kept everywhere: a line
+ * that lost no packets is a fact, not an absence.
+ *
+ * Lives beside metricValue, its only dependency, so the string helpers that
+ * read through it do not drag testOutcome's sequelize import into every
+ * integration - it is re-exported from testOutcome.js, where its siblings
+ * live, and importers may use either door.
+ */
+export const usableFigure = (value) => {
+    const figure = metricValue(value);
+
+    return figure === null || figure < 0 ? null : figure;
+};

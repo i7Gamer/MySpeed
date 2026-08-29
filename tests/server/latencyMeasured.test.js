@@ -82,10 +82,9 @@ describe("measuredPing", () => {
 
     it("is the judgement the recommendation sample reads", () => {
         const speedtest = readSource("server/tasks/speedtest.js");
-        const [line] = speedtest.match(/const lowestRealPing = [^\n]+/) ?? [""];
 
-        assert.match(line, /measuredPing\(/,
-            "lowestRealPing spells the judgement out instead of asking it");
+        assert.match(speedtest, /const ping = measuredPing\(entry\.ping\)/,
+            "the sample's ping is judged by a spelling of its own again");
     });
 });
 

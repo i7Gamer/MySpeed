@@ -1,5 +1,8 @@
 import fs from 'node:fs';
-import { usableFigure } from './testOutcome.js';
+// From metricValue.js, the dependency-free leaf, not from testOutcome.js:
+// this file's string helpers are imported by every integration, and the
+// testOutcome door would drag sequelize along with them.
+import { usableFigure } from './metricValue.js';
 
 const pad = (n) => String(n).padStart(2, "0");
 

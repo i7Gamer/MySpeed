@@ -41,6 +41,12 @@ const unmeasured = () => Array.from({length: RECOMMENDATION_SAMPLE},
 const throughputPlaceholders = () => Array.from({length: RECOMMENDATION_SAMPLE},
     (unused, i) => failure({created: minutesAgo(20 - i), error: null, ping: 30 - i}));
 
+// One direction real, the other all placeholders - the shape that pins the
+// bail's OR: with both columns zeroed together, `down === 0` short-circuits
+// and the up-half of the guard could be deleted without a test noticing.
+const uploadPlaceholders = () => Array.from({length: RECOMMENDATION_SAMPLE},
+    (unused, i) => failure({created: minutesAgo(20 - i), error: null, ping: 30 - i, download: 100 + i * 10}));
+
 before(async () => {
     server = await bootServer();
     target = await seedTarget({provider: "ookla"});
@@ -167,6 +173,18 @@ describe("createRecommendations", () => {
 
         assert.equal(await recommendations.getCurrent(), null,
             "a sample of throughput placeholders was written as a 0 Mbit/s recommendation");
+    });
+
+    // The whole update is withheld, healthy direction included - a partial
+    // update would mix two samples, and the card only feeds a dialog the
+    // operator confirms, so stale beats a published zero.
+    it("recommends nothing when one direction never delivered a byte", async () => {
+        await seedTests(server.tests, uploadPlaceholders());
+
+        await createRecommendations();
+
+        assert.equal(await recommendations.getCurrent(), null,
+            "a sample with no readable upload published a 0 Mbit/s upload target");
     });
 
     it("leaves the standing recommendation alone when the sample delivered nothing", async () => {

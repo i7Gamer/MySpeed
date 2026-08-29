@@ -42,6 +42,10 @@ const CASES = [
     // hold. The server reads it through metricValue; a client comparing with
     // === called the same row a success and rendered it as a -1 Mbit/s
     // measurement - the one placeholder reader the coercion sweep missed.
+    // These cases pin the ROW predicates only: the SQL filters below stay
+    // numeric on purpose (a hand-edited TEXT "-1" is never equal to the
+    // integer -1 in sqlite, so such a row passes the where-clause and is
+    // refused a layer later by the row readers - see the filters' comment).
     {name: "a failure imported as text", row: test({ping: "-1", download: "-1", upload: "-1"}), failed: true},
     {name: "a mixed row imported as text", row: test({ping: "-1", download: "480.2", upload: "-1"}), failed: false},
     // "auto" is not a placeholder and not a reading; nothing may promote an
