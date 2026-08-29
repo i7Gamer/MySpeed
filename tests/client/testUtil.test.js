@@ -13,8 +13,9 @@ import {
  * text-spelled score from a legacy-restored or proxied history printed
  * "85.5%" beside the blue nothing-was-measured colour - shown and denied at
  * once, the very pair gradeBelow's readers were widened to end.
- * (gradeForIncrease keeps its typeof gate on purpose: a refused increase
- * vanishes its whole row instead of contradicting a printed reading.)
+ * (gradeForIncrease keeps its typeof gate for a narrower reason: its
+ * increases are computed - by latencyIncrease and the server's averaging -
+ * never read from a stored column, so there is no text spelling to admit.)
  */
 describe("consistencyColour", () => {
     it("grades a score in either spelling", () => {

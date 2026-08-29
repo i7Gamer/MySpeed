@@ -181,8 +181,11 @@ const CONSISTENCY_FAIR = 70;
  * its printers moved to the shared reader, a text-spelled score from a
  * proxied history printed "85.5%" beside the blue nothing-was-measured
  * colour - shown and denied at once. gradeForIncrease below keeps its typeof
- * gate deliberately: a refused increase VANISHES its row rather than
- * contradicting a printed one, which is the honest half of that pair.
+ * gate for a narrower reason: it is never handed a stored column -
+ * latencyIncrease computes its operand, bufferbloat() refuses unreadable
+ * inputs before it, and the range panel hands it the server's computed
+ * average - so there is no text spelling to admit, and the strict gate is
+ * what notices a producer changing shape.
  */
 export const consistencyColour = (value) => {
     const figure = readableFigure(value);

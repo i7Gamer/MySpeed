@@ -182,18 +182,30 @@ const resolverOver = (files) => {
 
 const resolveSpecifier = resolverOver(CLIENT_FILES);
 
-// Every from-specifier a module writes, import and export-from alike; the
-// braces admit no `;` or `}`, so a lazy bridge cannot span statements.
-const specifiersOf = (code) => [
-    ...code.matchAll(/(?:import|export)[^\n"']*from\s*["']([^"']+)["']/g),
-    ...code.matchAll(/(?:import|export)\s*\{[^};]*\}\s*from\s*["']([^"']+)["']/g)
-].map((match) => match[1]);
+/**
+ * Both from-forms for a statement keyword: the plain spelling, and the braced
+ * one whose braces admit no `;` or `}` - so a lazy bridge cannot span
+ * statements. One factory, because the import scan and the export-from scan
+ * are the same two shapes differing only in which keyword opens them, and
+ * two hand-copied pairs is how one of them drifts.
+ */
+const fromPatterns = (keyword) => [
+    new RegExp(`${keyword}[^\\n"']*from\\s*["']([^"']+)["']`, "g"),
+    new RegExp(`${keyword}\\s*\\{[^};]*\\}\\s*from\\s*["']([^"']+)["']`, "g")
+];
+
+const IMPORT_OR_EXPORT_FROM = fromPatterns("(?:import|export)");
+const EXPORT_FROM = fromPatterns("export");
+
+// Every from-specifier a module writes, import and export-from alike.
+const specifiersOf = (code) => IMPORT_OR_EXPORT_FROM
+    .flatMap((pattern) => [...code.matchAll(pattern)])
+    .map((match) => match[1]);
 
 /** Form (a): an export-from whose specifier lands in the reader set. */
-const reExportsFrom = ({file, code}, targets, resolve) => [
-    ...code.matchAll(/export[^\n"']*from\s*["']([^"']+)["']/g),
-    ...code.matchAll(/export\s*\{[^};]*\}\s*from\s*["']([^"']+)["']/g)
-].some((match) => targets.has(resolve(file, match[1])));
+const reExportsFrom = ({file, code}, targets, resolve) => EXPORT_FROM
+    .flatMap((pattern) => [...code.matchAll(pattern)])
+    .some((match) => targets.has(resolve(file, match[1])));
 
 /**
  * Form (b): names imported from the reader set that the module exports

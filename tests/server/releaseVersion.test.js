@@ -703,15 +703,13 @@ describe("what reaches a shell in the release workflow", () => {
      * carved-out blind corner: an UNLISTED prefix whose value-flag's value is
      * itself a listed word (`foo -u sudo jq …`, quoted or bare) skips two
      * onto `foo` and drops the call, a line no workflow has a reason to
-     * write. Every member is exercised: FLAG_HOSTS below generates a matrix
-     * row per (prefix, flag), and a membership self-test holds the two lists
-     * to each other, so a typo or a trimmed set goes red instead of quietly
-     * narrowing the walk.
+     * write. One structure carries both jobs - the walk asks the keys, and
+     * each key maps to the prefix it is real on, from which the matrix below
+     * generates a row per flag in both value spellings - so a flag cannot be
+     * in the walk and out of the matrix, and a typo or a trimmed map goes
+     * red in the generated rows instead of quietly narrowing the walk.
      */
-    const VALUE_TAKING_PREFIX_FLAGS = new Set(["-u", "-g", "-a", "-n", "-I", "-L", "-P", "-s", "-d", "-E"]);
-
-    // Which prefix each value-taking flag is real on, for the generated rows.
-    const FLAG_HOSTS = new Map([
+    const VALUE_TAKING_PREFIX_FLAGS = new Map([
         ["-u", "sudo"], ["-g", "sudo"], ["-a", "exec"],
         ["-n", "xargs"], ["-I", "xargs"], ["-L", "xargs"], ["-P", "xargs"],
         ["-s", "xargs"], ["-d", "xargs"], ["-E", "xargs"]
@@ -1127,16 +1125,13 @@ describe("what reaches a shell in the release workflow", () => {
     /**
      * Every value-taking flag, exercised on the prefix it is real on - in
      * both spellings of its value. Without these, eight of the ten members
-     * were decoration: only -u and -a had rows, so a typo or a trimmed set
-     * kept all 68 tests green while the walk quietly narrowed.
+     * were decoration: only -u and -a had rows, so a typo or a trimmed map
+     * kept all 68 tests green while the walk quietly narrowed. Generated
+     * from the same map the walk reads, so membership and exercise cannot
+     * drift apart.
      */
     describe("every value-taking prefix flag earns its place", () => {
-        it("hosts every member of the set, and nothing else", () => {
-            assert.deepEqual([...FLAG_HOSTS.keys()].sort(), [...VALUE_TAKING_PREFIX_FLAGS].sort(),
-                "the flag set and its hosts drifted apart, so some flags are exercised by no row");
-        });
-
-        for (const [flag, host] of FLAG_HOSTS)
+        for (const [flag, host] of VALUE_TAKING_PREFIX_FLAGS)
             for (const value of ["v", "'v'"])
                 it(`reports a splice behind ${host} ${flag} ${value}`, () => {
                     const shell = [`${host} ${flag} ${value} jq ".version = \\"$VERSION\\"" package.json`];

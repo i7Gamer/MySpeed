@@ -206,7 +206,11 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
     // I just printed" - printed against printed, the file's own rule, or a
     // numeric per-target optimum of 25.44 beside a ping printed 25.4 reads
     // "0.04 ms under" when the line is exactly on target. The percent bar
-    // stays on the raw target: whole-percent rounding absorbs the trim.
+    // stays on the raw target - not because rounding hides the trim (a 1.44
+    // target under a 2 ms ping fills 72% raw and 70% printed) but because
+    // the bar is a glance-width, not a stated figure, and the raw target is
+    // what the colour beside it grades; the sentence is where a figure is
+    // stated, and it alone pairs printed with printed.
     //
     // One exception to printed-against-printed, kept like-against-like: a
     // target below the trim's resolution cannot print - formatLatency shows
@@ -217,17 +221,22 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
     // printed ping against the raw target read "0.06 ms over" where the line
     // sat 0.02 from its target. The sentence prints only the difference,
     // never either operand.
+    //
+    // The operands travel as a pair for exactly that reason: one destructure
+    // picks both sides of the branch, so no later edit can hand the sentence
+    // a printed ping beside a raw target.
     const ping = formatLatency(test.ping);
     const pingTarget = limits.ping;
-    const subResolutionTarget = roundsToZeroLatency(limits.ping);
-    const printedTarget = subResolutionTarget ? limits.ping : formatLatency(limits.ping);
+    const {sentenceTarget, sentenceFigure} = roundsToZeroLatency(limits.ping)
+        ? {sentenceTarget: limits.ping, sentenceFigure: test.ping}
+        : {sentenceTarget: formatLatency(limits.ping), sentenceFigure: ping};
     const earlierPing = formatLatency(earlier.ping);
 
     // A percentage says everything worth saying about throughput. For latency it
     // does not: the plain distance from the target is what the reader wants, and
     // it cannot be read backwards.
     const latencyTargetLabel = () => {
-        const distance = differenceFromTarget(subResolutionTarget ? test.ping : ping, printedTarget);
+        const distance = differenceFromTarget(sentenceFigure, sentenceTarget);
         if (distance === null) return null;
         if (distance.direction === "same") return t("test.details.on_target");
 

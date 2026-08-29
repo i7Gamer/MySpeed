@@ -188,13 +188,17 @@ describe("the arithmetic: helpers fed the printed figure agree to the decimal", 
     it("hands the colour the target as typed, and the sentence the target as printed", () => {
         assert.match(pane, /const pingTarget = limits\.ping;/,
             "the pane's colour grades a different target than the three views beside it");
-        assert.match(pane,
-            /const printedTarget = subResolutionTarget \? limits\.ping : formatLatency\(limits\.ping\);/,
-            "the sentence has no printed target to compare its printed ping against - or a sub-0.05 "
-            + "target prints as 0, which asTarget refuses, and the sentence silently vanishes");
-        assert.match(pane, /differenceFromTarget\(subResolutionTarget \? test\.ping : ping, printedTarget\)/,
-            "the sub-resolution branch mixes a printed ping with a raw target - like against unlike, "
-            + "the exact pairing the printed-vs-printed rule exists to forbid");
+        // The sentence's operands travel as a PAIR - one destructure picks
+        // both, so a branch cannot mix a printed ping with a raw target:
+        // like-against-unlike is the exact pairing the printed-vs-printed
+        // rule exists to forbid.
+        assert.match(pane, /\{sentenceTarget: formatLatency\(limits\.ping\), sentenceFigure: ping\}/,
+            "the sentence has no printed target to compare its printed ping against");
+        assert.match(pane, /\{sentenceTarget: limits\.ping, sentenceFigure: test\.ping\}/,
+            "the sub-resolution branch lost its stored-against-stored pair - a sub-0.05 target prints "
+            + "as 0, which asTarget refuses, and the sentence silently vanishes");
+        assert.match(pane, /differenceFromTarget\(sentenceFigure, sentenceTarget\)/,
+            "the sentence no longer reads the paired operands");
         assert.match(pane, /getIconBySpeed\(ping, pingTarget, false\)/,
             "the colour no longer grades against the typed target");
     });
@@ -314,6 +318,25 @@ describe("the ping card computes every figure from the one it prints", () => {
     it("calls a ping exactly on a sub-resolution target on target", () => {
         assert.equal(pingCard({test: {ping: 0.04}, limits: {ping: "0.04"}}).targetLabel,
             "test.details.on_target");
+    });
+
+    /**
+     * The whole card for the awkwardest pair: a ping that prints 0 against a
+     * target too small to print. The sentence is the one informative element
+     * - stored against stored, 0.02 over - while the bar refuses the printed
+     * zero (a zero figure is no divisor) and the icon grades 0-over-target as
+     * the best ratio there is, green. Coherent, if lopsided: no element
+     * claims a different distance, and the one that can state a figure states
+     * the true one.
+     */
+    it("keeps the sentence informative for a printed-zero ping on a sub-resolution target", () => {
+        const card = pingCard({test: {ping: 0.03}, limits: {ping: "0.01"}});
+
+        assert.deepEqual(card.targetLabel,
+            {key: "test.details.over_target", amount: 0.02, unit: "latest.ping_unit"});
+        assert.equal(card.value, 0, "formatLatency prints a 0.03 ping as 0");
+        assert.equal(card.percent, null, "the bar divides by a printed zero");
+        assert.equal(card.level, "green");
     });
 
     // A target of exactly zero stays unset - asTarget refuses it on every
@@ -447,32 +470,48 @@ describe("what the extraction cannot run, read from the source", () => {
     });
 
     /**
-     * The one assertion that catches a figure added later and wired to the raw
-     * column: nowhere in the pane is a ping read without being trimmed first.
+     * The reads the tripwire below excepts, one construct per line - and one
+     * LINE per construct, because the guard blanks them by literal
+     * replacement and a multi-line entry silently stops matching the CRLF
+     * source, which reads as the construct having gone away.
      *
-     * With five excepted reads, and none is a displayed figure. The grade on the
-     * loaded latency's glyph is worked out from what that direction added over
-     * the idle ping, and that arithmetic is shared three ways - with
-     * bufferbloat(), which the facts row's grade comes from, and with the
-     * server's average of the same quantity across a range. All three read the
-     * stored value; trimming it here alone would let this icon disagree with the
-     * grade printed under it. The TARGET is handed over raw because it is
-     * config, not a measurement: the row, the card and the node view all grade
-     * against the typed value, and the pane trimming its copy alone made a
-     * boundary ping wear two colours between the row and the pane it opens.
-     * And the sub-resolution lines read the raw target and the raw ping on
-     * purpose - the predicate deciding whether the printed form survives,
-     * the fallback for a target the trim would erase, and the stored-vs-
-     * stored distance for that branch - all handed to the sentence's
-     * guards, never to the screen.
+     * None is a displayed figure. The grade on the loaded latency's glyph is
+     * worked out from what that direction added over the idle ping, and that
+     * arithmetic is shared three ways - with bufferbloat(), which the facts
+     * row's grade comes from, and with the server's average of the same
+     * quantity across a range; all three read the stored value, and trimming
+     * it here alone would let this icon disagree with the grade printed
+     * under it. The TARGET is handed over raw because it is config, not a
+     * measurement: every view grades against the typed value, and the pane
+     * trimming its copy alone made a boundary ping wear two colours between
+     * the row and the pane it opens. And the sub-resolution machinery reads
+     * raw on purpose - the predicate deciding whether the printed form
+     * survives, and the stored-against-stored pair for the target the trim
+     * would erase - all handed to the sentence's guards, never to the screen.
+     */
+    const RAW_TARGET_READS = [
+        "latencyIncrease(value, test.ping)",
+        "const pingTarget = limits.ping;",
+        "roundsToZeroLatency(limits.ping)",
+        "{sentenceTarget: limits.ping, sentenceFigure: test.ping}"
+    ];
+
+    // Each entry is a fact about the pane before it is an exception to the
+    // tripwire: one that stops appearing exempts nothing and must go.
+    it("keeps the excepted reads a list of facts", () => {
+        for (const read of RAW_TARGET_READS)
+            assert.ok(pane.includes(read),
+                `"${read}" is no longer in the pane; drop it from RAW_TARGET_READS`);
+    });
+
+    /**
+     * The one assertion that catches a figure added later and wired to the
+     * raw column: nowhere in the pane is a ping read without being trimmed
+     * first, the listed constructs aside.
      */
     it("lets no raw latency reach anything the reader sees", () => {
-        const displayed = pane
-            .replaceAll("latencyIncrease(value, test.ping)", "")
-            .replaceAll("const pingTarget = limits.ping;", "")
-            .replaceAll("const subResolutionTarget = roundsToZeroLatency(limits.ping);", "")
-            .replaceAll("const printedTarget = subResolutionTarget ? limits.ping : formatLatency(limits.ping);", "")
-            .replaceAll("differenceFromTarget(subResolutionTarget ? test.ping : ping, printedTarget)", "");
+        const displayed = RAW_TARGET_READS.reduce(
+            (source, read) => source.replaceAll(read, ""), pane);
 
         assert.doesNotMatch(displayed, /(?<!formatLatency\()\b(test|limits|earlier)\.ping\b/,
             "a ping is still read at the two decimals the column stores");

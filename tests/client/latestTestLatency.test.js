@@ -19,9 +19,11 @@ const card = fs.readFileSync(path.join(CLIENT_SRC,
  * "12.64 ms" on this card and "12.6 ms" in the pane that opens from clicking
  * it, one on top of the other.
  *
- * A source scan, as with the other rendering rules: node cannot parse JSX, and
- * every one of these renders perfectly - it renders a figure at a precision the
- * card beside it contradicts.
+ * Source scans for the wiring - node cannot parse JSX, and every one of these
+ * renders perfectly, just at a precision the card beside it contradicts - and
+ * the shared formatters executed where the interesting behaviour is theirs:
+ * the placeholder rows below import formatWithUnit and run it against both
+ * spellings of the failure value at every row's destination.
  */
 describe("the latest-test card prints its latencies to one decimal", () => {
     it("finds the card to check", () => {
