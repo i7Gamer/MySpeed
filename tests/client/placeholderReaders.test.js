@@ -560,8 +560,10 @@ describe("every reader of TestUtil is either scanned or accounted for", () => {
  * declares its own. The probe that proved the class was exactly that - a
  * component-local `const formatPercent = (value) => ...` walks straight past
  * every name-match pin and mid-component anchor and hands the page a second
- * percent rule. So no client file outside common/utils may declare a binding
- * wearing a shared reader's or formatter's name.
+ * percent rule. So no client file but the two homes themselves may declare a
+ * binding wearing a shared reader's or formatter's name - the utils tree
+ * included, because a helper one directory from its home is exactly where a
+ * second reader hides.
  *
  * The names are the two homes' OWN declarations, read from stripped source.
  * The `export {...}` list and export-from forms deliberately stay out: a

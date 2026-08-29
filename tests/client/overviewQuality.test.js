@@ -146,13 +146,6 @@ describe("the overview row carries both quality figures", () => {
     });
 
     /**
-     * And the loss chip's gate, executed the same way - this is the gate the
-     * scan suite's exemption vouches for when it lets the chip print its
-     * stored column raw. A chip that appears is one the reader admitted; what
-     * it then prints is the column as stored, "0.5" and "0" alike, which is
-     * the row-and-pane-identical policy the chip's comment states.
-     */
-    /**
      * And each chip dressed in ITS OWN grader's colour, executed with a
      * pair the two graders disagree on. The source pins at the bottom hold
      * each level's spelling; this is the second net, the one that survives
@@ -171,6 +164,13 @@ describe("the overview row carries both quality figures", () => {
             "a fixture both graders agree on proves nothing here");
     });
 
+    /**
+     * And the loss chip's gate, executed the same way - this is the gate the
+     * scan suite's exemption vouches for when it lets the chip print its
+     * stored column raw. A chip that appears is one the reader admitted; what
+     * it then prints is the column as stored, "0.5" and "0" alike, which is
+     * the row-and-pane-identical policy the chip's comment states.
+     */
     it("draws the loss chip only for what the reader admits", () => {
         const lossChip = (packetLoss) => built(null, packetLoss).find((figure) => figure.key === "packetLoss");
 

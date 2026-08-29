@@ -31,8 +31,9 @@ const CLIENT_SRC = "client/src";
  * backtick included. The percent template is unanchored: the anchored form
  * saw only a template that was EXACTLY value-then-%, so a percent later in
  * a longer sentence - one shipped, gated only by its own ternary - and a
- * spaced one walked past it, and the label templates the anchor used to
- * excuse are named exemptions instead. The value half admits one level of
+ * spaced one walked past it. The one label template the anchor used to
+ * excuse now reads its chip's hoisted glue site - a fixed form, not an
+ * exemption. The value half admits one level of
  * nested braces, because t("key", {opts}) is how half the values here are
  * spelt - deeper nesting stays out, and is the first place to look if a new
  * offender scans clean.
@@ -84,8 +85,9 @@ const PATTERNS = [
         // "-1%". Unanchored, because the anchored form saw only a template
         // that was EXACTLY value-then-%: a percent later in a longer
         // sentence, or spaced the way some locales want, walked past it.
-        // The two label templates that glue a stored column by policy are
-        // named exemptions below; style={{…}} lines are CSS lengths.
+        // The chip values that glue a stored column by policy are named
+        // exemptions below - the one label the anchor excused reads its
+        // chip's glue site now; style={{…}} lines are CSS lengths.
         pattern: new RegExp("\\$\\{" + VALUE + "\\}\\s?%", "g"),
         skip: CSS_LENGTH_LINE
     },

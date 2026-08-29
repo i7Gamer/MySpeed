@@ -706,8 +706,10 @@ describe("what reaches a shell in the release workflow", () => {
      * write. One structure carries both jobs - the walk asks the keys, and
      * each key maps to the prefix it is real on, from which the matrix below
      * generates a row per flag in both value spellings - so a flag cannot be
-     * in the walk and out of the matrix, and a typo or a trimmed map goes
-     * red in the generated rows instead of quietly narrowing the walk.
+     * in the walk and out of the matrix. The rows alone cannot catch a
+     * corrupted map, though: they are generated FROM it and change in
+     * lockstep, which is why the entry-list pin beside them holds the map
+     * to a literal it cannot generate.
      */
     const VALUE_TAKING_PREFIX_FLAGS = new Map([
         ["-u", "sudo"], ["-g", "sudo"], ["-a", "exec"],

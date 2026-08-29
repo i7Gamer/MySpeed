@@ -87,15 +87,6 @@ describe("the packet-loss row on the overview card", () => {
     });
 
     /**
-     * The row's wiring, executed off the card's own statements rather than
-     * pattern-matched: a revert that respells the reader - `const packetLoss
-     * = props.packetLoss;` - satisfies every source regex above while
-     * reintroducing the placeholder deltas. formatPercent hides such a
-     * revert from the printed VALUE (it re-reads idempotently), so the
-     * discriminator is delta.current: null for everything refused, the
-     * coerced number for everything read.
-     */
-    /**
      * One lift for every row of the card's items list, guards included: the
      * loss and duration cases below build different props and find different
      * titles, and a second copy of the slice bounds was a second thing to
@@ -131,6 +122,15 @@ describe("the packet-loss row on the overview card", () => {
     const durationRow = (avg, previous) =>
         overviewRow({time: {avg}, previous}, "statistics.overview.average_title");
 
+    /**
+     * The row's wiring, executed off the card's own statements rather than
+     * pattern-matched: a revert that respells the reader - `const packetLoss
+     * = props.packetLoss;` - satisfies every source regex above while
+     * reintroducing the placeholder deltas. formatPercent hides such a
+     * revert from the printed VALUE (it re-reads idempotently), so the
+     * discriminator is delta.current: null for everything refused, the
+     * coerced number for everything read.
+     */
     it("builds the row from the coerced reading, delta included", () => {
         for (const [refused, label] of [[-1, "the placeholder"], ["-1", "its text spelling"],
             ["auto", "junk"], [NaN, "NaN"]]) {
