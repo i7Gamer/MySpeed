@@ -26,21 +26,30 @@ const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", ".."
  * so the rule is simply that neither a unit nor a % is ever glued to a bare
  * value.
  *
- * Four spellings of the gluing, each added because a live site wore it while
- * the patterns before it were blind: adjacent interpolations, the
- * value-then-unit-span form, the unit template, and the percent template.
+ * Six spellings of the gluing. Four shipped on a live site while the patterns
+ * before them were blind: adjacent interpolations, the value-then-unit-span
+ * form, the unit template, and the percent template. Two more were probe
+ * shapes that walked clean past those four - a percent glued in JSX text
+ * (`{props.packetLoss}%`) and one glued by concatenation (`value + "%"`).
  * The value half admits one level of nested braces, because t("key", {opts})
  * is how half the values here are spelt - deeper nesting stays out, and is
  * the first place to look if a new offender scans clean.
+ *
+ * The walk covers .jsx and .js alike: a chart helper or a context is as able
+ * to glue a percent as a component, and the .js half being unwalked was an
+ * unnamed hatch. What that half flags today is exactly one line -
+ * formatPercent's own body, which is where the % is finally and deliberately
+ * glued, named below.
  *
  * Three named hatches, so nobody rediscovers them: a className carried in a
  * braced BINDING (FigureWithUnit's own span - a binding cannot be judged
  * textually, and a new one is a new private renderer, which the
  * FigureWithUnit suite exists to make unnecessary); a percent inside a
- * `style={{…}}` line, which is a CSS length, not a reading; and a percent
- * inside a SENTENCE - the backtick anchor keeps label templates with a
- * leading interpolation out of reach, so the pane's loss label prints its
- * stored column beside the chip the exemption below already names.
+ * `style={{…}}` line, which is a CSS length, not a reading - every percent
+ * form shares that skip; and a percent inside a SENTENCE - the backtick
+ * anchor keeps label templates with a leading interpolation out of reach, so
+ * the pane's loss label prints its stored column beside the chip the
+ * exemption below already names.
  */
 
 const UNIT_CALLS = ["speedUnit", 't("latest.ping_unit")', 't("latest.jitter_unit")',
@@ -78,6 +87,23 @@ const PATTERNS = [
         // interpolation does not match; style={{…}} lines are CSS lengths.
         pattern: new RegExp("`\\$\\{" + VALUE + "\\}%`", "g"),
         skip: CSS_LENGTH_LINE
+    },
+    {
+        form: "percent (jsx)",
+        // The same gluing in JSX text - `{props.packetLoss}%` - which has no
+        // backtick for the pattern above to anchor on. The lookbehind keeps
+        // template interpolations out: those are the previous pattern's. No
+        // CSS skip here: a style value in braces is template- or
+        // concat-spelled, so a JSX-text percent on a style line is a reading
+        // that happens to share the line, not a length.
+        pattern: new RegExp(`(?<!\\$)\\{${VALUE}\\}%`, "g")
+    },
+    {
+        form: "percent (concat)",
+        // And the spelling with no braces at all: a value concatenated with
+        // its percent sign.
+        pattern: /\+\s*["']%["']/g,
+        skip: CSS_LENGTH_LINE
     }
 ];
 
@@ -88,6 +114,11 @@ const PATTERNS = [
  * pattern covers a second flagged line is a file-wide skip in narrow clothes.
  */
 const ALLOWED = new Map([
+    ["common/utils/FormatUtil.js", {
+        pattern: /return figure === null \? NOT_MEASURED : `\$\{figure\}%`;/,
+        reason: "the formatter the whole rule points at: formatPercent's own body is where the % is finally glued, "
+            + "behind the refusal the rule exists to route values through"
+    }],
     ["common/components/TargetsDialog/TargetEditor.jsx", {
         pattern: /\{label\} <span className="target-optimal-unit">/,
         reason: "a form field's caption beside the unit the field is asked in - a label, not a measurement"
@@ -123,7 +154,9 @@ const sourcesIn = (directory) => fs.readdirSync(directory, {withFileTypes: true}
     const full = path.join(directory, entry.name);
     if (entry.isDirectory()) return sourcesIn(full);
 
-    return entry.name.endsWith(".jsx") ? [full] : [];
+    // .js as well as .jsx: a chart helper glues a percent as readily as a
+    // component, and the walk not covering it was an unnamed hatch.
+    return entry.name.endsWith(".jsx") || entry.name.endsWith(".js") ? [full] : [];
 });
 
 const files = sourcesIn(CLIENT_SRC).map((file) => ({
@@ -201,13 +234,33 @@ describe("rendering a measurement next to its unit", () => {
             percent: [
                 "`${packetLoss}%`",
                 "`${props.packetLoss}%`"
+            ],
+            "percent (jsx)": [
+                '<span className="loss">{props.packetLoss}%</span>',
+                "<p>{readableLoss}%</p>",
+                '<span>{t("x", {count: n})}%</span>'
+            ],
+            "percent (concat)": [
+                '{props.packetLoss + "%"}',
+                "score + '%'",
+                'text: loss + "%"'
             ]
         };
 
-        for (const {form, pattern} of PATTERNS)
-            for (const shape of shipped[form])
-                assert.ok(new RegExp(pattern.source).test(shape),
+        // Driven off the shapes, not off PATTERNS: a pattern deleted from the
+        // list must fail here as "gone", not leave its shapes silently
+        // unwatched while the loop walks the patterns that remain.
+        for (const [form, shapes] of Object.entries(shipped)) {
+            const entry = PATTERNS.find((candidate) => candidate.form === form);
+            assert.ok(entry, `the ${form} pattern is gone, and the shapes it caught are unwatched`);
+
+            for (const shape of shapes)
+                assert.ok(new RegExp(entry.pattern.source).test(shape),
                     `the ${form} pattern no longer recognises the shape that shipped broken:\n${shape}`);
+        }
+
+        assert.equal(Object.keys(shipped).length, PATTERNS.length,
+            "a pattern has no shipped shapes pinned, so nothing notices when it stops matching them");
     });
 
     it("does not object to the formatted forms or the named hatches", () => {
@@ -220,7 +273,9 @@ describe("rendering a measurement next to its unit", () => {
             // no textual pattern can judge - the named hatch.
             "<>{value}<span className={unitClass}>{unit}</span></>",
             // A sentence with a leading interpolation is not a bare percent.
-            '`${t("test.details.packet_loss")} ${test.packetLoss}%`'
+            '`${t("test.details.packet_loss")} ${test.packetLoss}%`',
+            // A modulo is arithmetic, not a glued percent sign.
+            "const remainder = (value + offset) % steps;"
         ];
 
         for (const shape of fixed)
@@ -229,9 +284,14 @@ describe("rendering a measurement next to its unit", () => {
                     `the ${form} pattern reports the fixed form:\n${shape}`);
 
         // The CSS-length hatch is a line skip, not a pattern gap: the percent
-        // pattern sees the shape and the skip names why it is no reading.
+        // pattern sees the shape and the skip names why it is no reading. The
+        // JSX spelling structurally cannot match a template's `${x}%` - the
+        // nested-brace arm consumes the closer - which is why it needs no
+        // skip of its own.
         const width = 'style={{width: `${Math.min(percent, MAX_BAR_PERCENT)}%`}}';
         assert.ok(new RegExp(PATTERNS.find(({form}) => form === "percent").pattern.source).test(width));
+        assert.equal(new RegExp(PATTERNS.find(({form}) => form === "percent (jsx)").pattern.source).test(width), false,
+            "the JSX percent form has started matching template interpolations, which are the percent pattern's");
         assert.ok(CSS_LENGTH_LINE(width), "a CSS bar width is reported as a reading again");
     });
 
