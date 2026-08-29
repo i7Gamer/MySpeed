@@ -41,9 +41,12 @@ export const ConsistencyChart = (props) => {
     const loadedIncrease = loaded ? readableFigure(loaded.increase) : null;
     const loadedGrade = gradeForIncrease(loadedIncrease);
     // And each dot's increase through the same reader: a dot nothing can
-    // read is no dot, rather than a blue dot titled "null".
-    const trendDots = (loaded?.trend ?? []).flatMap((entry) => {
-        const increase = readableFigure(entry.increase);
+    // read is no dot, rather than a blue dot titled "null". Array-gated,
+    // with the entry optional, because these derivations run on every
+    // render BEFORE the row's own gate: the payload can mangle the block
+    // itself, and a crashed page is worse than a missing strip.
+    const trendDots = (Array.isArray(loaded?.trend) ? loaded.trend : []).flatMap((entry) => {
+        const increase = readableFigure(entry?.increase);
         return increase === null ? [] : [{...entry, increase}];
     });
 
@@ -198,23 +201,28 @@ export const ConsistencyChart = (props) => {
                                       a history at a glance. role="img" with the
                                       grades spelled out in the label, because
                                       colour alone is not a reading a screen
-                                      reader can take. */}
-                                  <span className="bufferbloat-trend"
-                                        role="img"
-                                        title={t("latest.bufferbloat_trend")}
-                                        aria-label={t("latest.bufferbloat_trend") + ": " +
-                                            trendDots.map((entry) => gradeForIncrease(entry.increase)).join(", ")}>
-                                      {trendDots.map((entry) => (
-                                          <span key={entry.created}
-                                                className={"bufferbloat-trend-dot icon-"
-                                                    + bufferbloatColour(gradeForIncrease(entry.increase))}
-                                                // The grade leads: it is no longer
-                                                // written anywhere the pointer is.
-                                                title={gradeForIncrease(entry.increase) + " · " +
-                                                    formatDateTime(entry.created, preferences) + " · " +
-                                                    t("latest.bufferbloat", {increase: entry.increase})}/>
-                                      ))}
-                                  </span>
+                                      reader can take. Only while a dot
+                                      survived the reader: an empty strip
+                                      announced as "trend:" is not a reading
+                                      either. */}
+                                  {trendDots.length > 0 && (
+                                      <span className="bufferbloat-trend"
+                                            role="img"
+                                            title={t("latest.bufferbloat_trend")}
+                                            aria-label={t("latest.bufferbloat_trend") + ": " +
+                                                trendDots.map((entry) => gradeForIncrease(entry.increase)).join(", ")}>
+                                          {trendDots.map((entry) => (
+                                              <span key={entry.created}
+                                                    className={"bufferbloat-trend-dot icon-"
+                                                        + bufferbloatColour(gradeForIncrease(entry.increase))}
+                                                    // The grade leads: it is no longer
+                                                    // written anywhere the pointer is.
+                                                    title={gradeForIncrease(entry.increase) + " · " +
+                                                        formatDateTime(entry.created, preferences) + " · " +
+                                                        t("latest.bufferbloat", {increase: entry.increase})}/>
+                                          ))}
+                                      </span>
+                                  )}
                                   {/* How many tests the average is over. It has
                                       only ever been in the title above, where a
                                       grade of "A" from three tests and one from

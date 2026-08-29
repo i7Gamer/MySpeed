@@ -125,5 +125,34 @@ describe("peakSlowdown", () => {
             assert.equal(peakSlowdown(day(hour(3, 100, [5]), hour(9, 90), hour(20, 45))), null,
                 "an array count still passes the sample floor");
         });
+
+        /**
+         * The hour is the one field that reaches the screen, and the old
+         * typeof gate only ever admitted current-server buckets, which
+         * always carry one - reading the other figures is what makes a
+         * bucket WITHOUT a readable hour reachable, and "Slowest at
+         * undefined:00" is not a reading.
+         */
+        it("refuses a bucket whose hour nothing can read", () => {
+            const hourless = [
+                {download: 100, count: 10}, {download: 80, count: 10}, {download: 50, count: 10}
+            ];
+            assert.equal(peakSlowdown(hourless), null,
+                "three hourless buckets named a slowest hour of undefined:00");
+
+            const nullHour = peakSlowdown(day(
+                {hour: null, download: 100, upload: 100, ping: 10, jitter: 1, count: 10},
+                hour(9, 90), hour(20, 45)));
+            assert.equal(nullHour, null, "a null hour set the fastest hour");
+        });
+
+        it("reads a text-spelled hour as the hour it names", () => {
+            const result = peakSlowdown(day(
+                {hour: "3", download: 100, upload: 100, ping: 10, jitter: 1, count: 10},
+                hour(12, 80), hour(20, 50)));
+
+            assert.deepEqual(result, {slowdown: 50, slowestHour: 20, fastestHour: 3},
+                "the hour went out as the text the payload spelt");
+        });
     });
 });

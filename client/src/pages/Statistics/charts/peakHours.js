@@ -36,11 +36,17 @@ const PERCENT = 100;
  * slowdown with its hours swapped.
  */
 const measuredHours = (hourlyAverages) => hourlyAverages.flatMap((bucket) => {
+    // The hour too, because it is the one field that reaches the screen:
+    // the old typeof gate only ever admitted current-server buckets, which
+    // always carry one - reading the other figures is what makes a bucket
+    // without a readable hour reachable, and "Slowest at undefined:00" is
+    // not a reading.
+    const hour = readableFigure(bucket?.hour);
     const download = readableFigure(bucket?.download);
     const samples = readableFigure(bucket?.count);
 
-    return download !== null && download > 0 && samples !== null && samples >= MIN_HOUR_SAMPLES
-        ? [{hour: bucket.hour, download}] : [];
+    return hour !== null && download !== null && download > 0 && samples !== null && samples >= MIN_HOUR_SAMPLES
+        ? [{hour, download}] : [];
 });
 
 /**

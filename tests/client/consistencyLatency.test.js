@@ -143,4 +143,31 @@ describe("the bufferbloat row reads its figures through the shared reader", () =
         assert.deepEqual(trendDots.map(({created}) => created), ["2026-08-01", "2026-08-03"],
             "the dots lost the timestamps their keys and titles read");
     });
+
+    /**
+     * The block itself can be mangled, not only the figures in it: these
+     * derivations run on every render, BEFORE the row's own gate, so a
+     * trend that is not an array - or an entry that is not an object -
+     * must come back as no dots rather than as a TypeError that unmounts
+     * the whole statistics page. The old shape was accidentally safe here
+     * (the iteration lived inside the hidden row); the hoist must be safe
+     * on purpose.
+     */
+    it("survives a trend the payload mangles", () => {
+        for (const mangled of [{}, "n/a", 0, null, undefined])
+            assert.deepEqual(loadedFigures({increase: 12.5, tests: 4, trend: mangled}).trendDots, [],
+                `a trend of ${JSON.stringify(mangled)} crashed the card or grew dots`);
+
+        assert.deepEqual(loadedFigures({increase: 12.5, tests: 4,
+            trend: [null, {increase: 7, created: "2026-08-03"}]})
+            .trendDots.map(({increase}) => increase), [7],
+            "a null entry crashed the card rather than dropping its dot");
+    });
+
+    // An all-refused trend is no strip at all: a childless role="img" span
+    // announced as "trend:" with nothing after the colon is not a reading.
+    it("draws the trend strip only when a dot survived", () => {
+        assert.match(card, /\{trendDots\.length > 0 && \(/,
+            "an all-refused trend renders an empty labelled image strip");
+    });
 });
