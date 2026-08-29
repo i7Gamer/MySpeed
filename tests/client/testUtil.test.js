@@ -1,10 +1,36 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    bufferbloat, bufferbloatColour, bufferbloatTrend, connectionChange, FAILED_TEST, failureRate, getIconBySpeed,
-    gradeForIncrease, isFailedTest, jitterColour, latencyIncrease, packetLossColour, pingDeviationColour,
-    previousConnection, storedFigure, TREND_LENGTH
+    bufferbloat, bufferbloatColour, bufferbloatTrend, connectionChange, consistencyColour, FAILED_TEST, failureRate,
+    getIconBySpeed, gradeForIncrease, isFailedTest, jitterColour, latencyIncrease, packetLossColour,
+    pingDeviationColour, previousConnection, storedFigure, TREND_LENGTH
 } from "../../client/src/common/utils/TestUtil.js";
+
+/**
+ * The consistency grade reads like the printer beside it.
+ *
+ * It was the one grader on the statistics surface still gated on typeof
+ * number after every printer moved to readableFigure: a text-spelled score
+ * from a legacy-restored or proxied history printed "85.5%" beside the blue
+ * nothing-was-measured colour - shown and denied at once, the very pair
+ * gradeBelow's readers were widened to end.
+ */
+describe("consistencyColour", () => {
+    it("grades a score in either spelling", () => {
+        assert.equal(consistencyColour(95), "green");
+        assert.equal(consistencyColour("95"), "green");
+        assert.equal(consistencyColour(85.5), "orange");
+        assert.equal(consistencyColour("85.50"), "orange",
+            "a text score wears the never-measured blue beside a printer that prints it");
+        assert.equal(consistencyColour(42), "red");
+        assert.equal(consistencyColour("1e3"), "green", "Number()'s latitude, as every reader accepts it");
+    });
+
+    it("stays blue for what no reader can read", () => {
+        for (const refused of [-1, "-1", "auto", NaN, null, undefined, ""])
+            assert.equal(consistencyColour(refused), "blue", `${JSON.stringify(refused)} earned a grade`);
+    });
+});
 
 /**
  * A step in the numbers reads as the line degrading. Often it is not: the lease

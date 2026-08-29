@@ -6,8 +6,8 @@ import {
 import {useContext} from "react";
 import {t} from "i18next";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatWithUnit, getSpeedUnit, NOT_MEASURED, wholeSpeed} from "@/common/utils/FormatUtil";
-import {consistencyColour, getIconBySpeed} from "@/common/utils/TestUtil";
+import {convertSpeed, formatPercent, formatWithUnit, getSpeedUnit, wholeSpeed} from "@/common/utils/FormatUtil";
+import {consistencyColour, getIconBySpeed, readableFigure} from "@/common/utils/TestUtil";
 import {percentOfTarget} from "@/common/components/TestDetails/utils/details";
 import Delta from "@/common/components/Delta";
 import "./styles.sass";
@@ -174,11 +174,18 @@ export const AverageChart = (props) => {
                     across every test in the range. The two sit on the same page,
                     so they cannot share a glyph. */}
                 {props.expanded && (
+                    /* Through the shared percent rule and reader, exactly as
+                       the stability card prints the same server object: the
+                       null-only gates here printed a proxied node's -1 as
+                       "-1%" and dressed a refused spread as "±N/A", one page
+                       from a card saying N/A for the same payload. The ±
+                       line hides for what no reader can read - it is an
+                       optional sub-line, where the stability card's is a
+                       permanent description that says N/A instead. */
                     <PanelRow icon={faCompress} title={t("statistics.values.consistency")}
                               level={consistencyColour(steadiness.consistency)}
-                              value={steadiness.consistency === null || steadiness.consistency === undefined
-                                  ? NOT_MEASURED : `${steadiness.consistency}%`}
-                              description={steadiness.stdDev !== null && steadiness.stdDev !== undefined
+                              value={formatPercent(steadiness.consistency)}
+                              description={readableFigure(steadiness.stdDev) !== null
                                   && <span>{"±" + speed(steadiness.stdDev)}</span>}/>
                 )}
 

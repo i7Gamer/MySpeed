@@ -11,7 +11,7 @@ import StatisticContainer from "@/pages/Statistics/components/StatisticContainer
 import PanelRow from "@/pages/Statistics/components/PanelRow";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import {
-    convertSpeed, formatLatency, formatLatencyWithUnit, formatWithUnit, getSpeedUnit,
+    convertSpeed, formatLatency, formatLatencyWithUnit, formatPercent, formatWithUnit, getSpeedUnit,
     LATENCY_STEP, NOT_MEASURED, roundsToZeroLatency, wholeSpeed
 } from "@/common/utils/FormatUtil";
 import "./styles.sass";
@@ -40,15 +40,10 @@ export const ConsistencyChart = (props) => {
     // and the -1 placeholder as a reading, beside colours already grading the
     // same values as never measured. The interpolation takes the COERCED
     // figure, so a text "85.50" prints 85.5% here, as the formatters read it.
-    // (The test rows' loss chips deliberately differ: they print their own
-    // stored column raw behind the same readableFigure gate, and the row and
-    // the pane it opens show that one figure identically.)
-    const percentage = (value) => {
-        const figure = readableFigure(value);
-
-        return figure === null ? NOT_MEASURED : `${figure}%`;
-    };
-
+    // (The scores print through the shared formatPercent below; the test
+    // rows' loss chips deliberately differ - they print their own stored
+    // column raw behind the same readableFigure gate, and the row and the
+    // pane it opens show that one figure identically.)
     const deviation = (value, unit) => {
         const figure = readableFigure(value);
 
@@ -137,7 +132,7 @@ export const ConsistencyChart = (props) => {
             <div className="consistency-container">
                 <PanelRow icon={faArrowDown} title={t("latest.down")}
                           level={consistencyColour(data.download.consistency)}
-                          value={percentage(data.download.consistency)}
+                          value={formatPercent(data.download.consistency)}
                           description={<>
                               <span>{stdDev(data.download.stdDev)}</span>
                               {spreads.download && <span>{spreads.download}</span>}
@@ -145,7 +140,7 @@ export const ConsistencyChart = (props) => {
 
                 <PanelRow icon={faArrowUp} title={t("latest.up")}
                           level={consistencyColour(data.upload.consistency)}
-                          value={percentage(data.upload.consistency)}
+                          value={formatPercent(data.upload.consistency)}
                           description={<>
                               <span>{stdDev(data.upload.stdDev)}</span>
                               {spreads.upload && <span>{spreads.upload}</span>}

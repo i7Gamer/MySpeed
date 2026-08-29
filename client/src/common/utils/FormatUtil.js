@@ -7,7 +7,9 @@ import {SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H} fr
 // that refused the text spelling a legacy-restored history holds printed
 // "N/A" beside a colour that graded the same row - and convertSpeed handing a
 // string back unconverted left changeFrom comparing Mbit/s against MB/s.
-import {storedFigure} from "@/common/utils/TestUtil";
+// readableFigure for formatPercent below, the same layered reading the
+// graders use.
+import {readableFigure, storedFigure} from "@/common/utils/TestUtil";
 
 /**
  * The language the app is set to, for anything Intl formats.
@@ -366,6 +368,22 @@ export const formatDuration = (seconds) =>
     typeof seconds === "number" && Number.isFinite(seconds) ? `${seconds}s` : NOT_MEASURED;
 
 /**
+ * Whether a value is a figure the printers below would print.
+ *
+ * The judgement under formatWithUnit, exported on its own for the printers
+ * that carry no unit of their own - the overview row's jitter chip, and
+ * FigureWithUnit, whose unit lives in a styled span. Both spelled the
+ * refusal around this missing export before, one through readableFigure and
+ * one by formatting a string only to compare it against N/A.
+ *
+ * It judges what a FORMATTER produced, so text spellings are false on
+ * purpose: coercion is the formatters' job, and a printer handed a raw
+ * column should refuse it loudly rather than print what nothing coerced.
+ */
+export const printableFigure = (value) =>
+    typeof value === "number" && Number.isFinite(value) && value >= 0;
+
+/**
  * A measurement with its unit, or a statement that there is none.
  *
  * The statistics return an explicit null for anything they could not compute -
@@ -379,8 +397,23 @@ export const formatDuration = (seconds) =>
  * row's difference - deliberately never come through here; they render their
  * own sign (TestDetails' change line), so nothing legitimate is lost.
  */
-export const formatWithUnit = (value, unit) =>
-    typeof value === "number" && Number.isFinite(value) && value >= 0 ? `${value} ${unit}` : NOT_MEASURED;
+export const formatWithUnit = (value, unit) => printableFigure(value) ? `${value} ${unit}` : NOT_MEASURED;
+
+/**
+ * A score with its %, or a statement that there is none.
+ *
+ * The percent rule was written twice in one review round - a chart-local
+ * helper and an inline ternary - while a third variant with a null-only gate
+ * survived on the sibling card, printing a proxied node's -1 placeholder as
+ * "-1%". One home: text spellings coerce and print the number they spell,
+ * junk and the placeholders say N/A. "%" binds to its number without a
+ * space, unlike the spaced units above.
+ */
+export const formatPercent = (value) => {
+    const figure = readableFigure(value);
+
+    return figure === null ? NOT_MEASURED : `${figure}%`;
+};
 
 /**
  * A latency with its unit, at the one decimal every latency is shown at.

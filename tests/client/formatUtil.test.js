@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import i18n from "i18next";
 import {
     convertSpeed, formatBytes, formatDateTime, formatDuration, formatLastTest, formatLatency,
-    formatLatencyWithUnit, formatShortDay, formatShortTime, formatTime, formatHour, formatWhole,
-    formatWithUnit, generateRelativeTime, getSpeedUnit, NOT_MEASURED, SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, wholeSpeed,
-    TIME_FORMAT_12H, TIME_FORMAT_24H
+    formatLatencyWithUnit, formatPercent, formatShortDay, formatShortTime, formatTime, formatHour, formatWhole,
+    formatWithUnit, generateRelativeTime, getSpeedUnit, NOT_MEASURED, printableFigure,
+    SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, wholeSpeed, TIME_FORMAT_12H, TIME_FORMAT_24H
 } from "@/common/utils/FormatUtil.js";
 
 // Moved here from the latest-test panel when the status bar replaced it, and
@@ -118,6 +118,56 @@ describe("formatWithUnit", () => {
     it("refuses a negative rather than printing the placeholder", () => {
         assert.equal(formatWithUnit(-1, "Mbps"), "N/A");
         assert.equal(formatWithUnit(-0.5, "ms"), "N/A");
+    });
+});
+
+/**
+ * The judgement under formatWithUnit, exported on its own for the two places
+ * that print a figure WITHOUT gluing a unit to it - the overview row's jitter
+ * chip, and FigureWithUnit, whose unit lives in its own span. One predicate,
+ * three printers: the sites spelled it around the missing export before, one
+ * through readableFigure and one by formatting a string to compare it away.
+ *
+ * Text readings are FALSE on purpose: this judges what a FORMATTER produced,
+ * and the formatters coerce text before it gets here. A site that hands the
+ * predicate a raw column sees its text readings refused - that is the
+ * contract, pinned again where FigureWithUnit executes it.
+ */
+describe("printableFigure", () => {
+    it("accepts exactly what formatWithUnit prints", () => {
+        for (const printable of [0, 12.5, 2366.32])
+            assert.equal(printableFigure(printable), true, `${printable} refused`);
+
+        for (const refused of [-1, -0.5, NaN, Infinity, -Infinity, "12.5", "-1", "auto", "", null, undefined, true])
+            assert.equal(printableFigure(refused), false, `${JSON.stringify(refused)} accepted`);
+    });
+
+    // The two must never drift: every value the predicate accepts prints, and
+    // every value it refuses says N/A.
+    it("agrees with formatWithUnit on every class", () => {
+        for (const value of [0, 12.5, -1, "-1", "12.5", "auto", NaN, null, undefined])
+            assert.equal(printableFigure(value), formatWithUnit(value, "x") !== NOT_MEASURED,
+                `the predicate and the printer disagree about ${JSON.stringify(value)}`);
+    });
+});
+
+/**
+ * The percent rule, shared: it was written twice in one round (a chart-local
+ * helper and an inline ternary) and a third variant with the old null-only
+ * gate survived on the sibling card, printing "-1%" for a proxied node's
+ * placeholder. One home, reading like every formatter: text spellings coerce,
+ * junk and placeholders say N/A.
+ */
+describe("formatPercent", () => {
+    it("prints a score in either spelling", () => {
+        assert.equal(formatPercent(92.5), "92.5%");
+        assert.equal(formatPercent("85.50"), "85.5%", "a text score prints the number it spells");
+        assert.equal(formatPercent(0), "0%", "zero is a measurement, not an absence");
+    });
+
+    it("refuses what is no score", () => {
+        for (const refused of [-1, "-1", "auto", NaN, null, undefined, ""])
+            assert.equal(formatPercent(refused), NOT_MEASURED, `${JSON.stringify(refused)} printed as a score`);
     });
 });
 

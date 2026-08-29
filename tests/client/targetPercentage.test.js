@@ -191,9 +191,22 @@ describe("the expanded value panes", () => {
     });
 
     // Every aggregate is an explicit null for a range in which nothing
-    // succeeded, and "null%" is what interpolating one produces.
+    // succeeded, and "null%" is what interpolating one produces - and a
+    // proxied node's placeholder or junk is no score either. One shared rule
+    // for the whole class: the null-only gate this replaces printed "-1%"
+    // here while the stability card said N/A for the same payload.
     it("say N/A rather than null when nothing was measured", () => {
-        assert.match(average, /steadiness\.consistency === null \|\| steadiness\.consistency === undefined\s*\?\s*NOT_MEASURED/);
+        assert.match(average, /formatPercent\(steadiness\.consistency\)/,
+            "the score is glued to its % by hand again, which prints placeholders and junk as readings");
+        assert.doesNotMatch(average, /steadiness\.consistency ===/,
+            "the null-only gate is back beside the shared rule");
+    });
+
+    // The spread's ± must never dress a refused figure: readableFigure gates
+    // the line, so junk and placeholders hide it rather than printing "±N/A".
+    it("hide the spread line for a figure nothing can read", () => {
+        assert.match(average, /readableFigure\(steadiness\.stdDev\) !== null/,
+            "the spread renders ±N/A for a placeholder a proxied node can send");
     });
 
     // The figures are over the tests that succeeded; the failures are in the

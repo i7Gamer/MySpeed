@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as sass from "sass";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { formatLatency, NOT_MEASURED } from "@/common/utils/FormatUtil.js";
+import { formatLatency, NOT_MEASURED, printableFigure } from "@/common/utils/FormatUtil.js";
 import { isMeasured, jitterColour, packetLossColour, readableFigure } from "@/common/utils/TestUtil.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
@@ -43,8 +43,10 @@ const declares = (selector, property) => bodiesFor(selector).some((body) => prop
  */
 describe("the overview row carries both quality figures", () => {
     // What each figure is made of, and the markup that draws them - the list is
-    // built above the JSX, which renders it through one loop.
-    const figures = row.slice(row.indexOf("const quality = ["), row.indexOf("const fadeOut"));
+    // built above the JSX, which renders it through one loop. The slice opens
+    // at the trimmed jitter the list reads, so the executed lift below sees
+    // the same declarations the component does.
+    const figures = row.slice(row.indexOf("const jitterText = formatLatency"), row.indexOf("const fadeOut"));
     // To the *next* heading close, not the first in the file: the date and the
     // failure line above are headings too.
     const suffixAt = row.indexOf('className="quality-suffix"');
@@ -104,8 +106,10 @@ describe("the overview row carries both quality figures", () => {
      * The packet loss beside it is a percentage and keeps the shape it has.
      */
     it("prints the jitter at the one decimal every latency is trimmed to", () => {
-        assert.match(figures, /text:\s*readableFigure\(props\.jitter\) === null \? NOT_MEASURED : formatLatency\(props\.jitter\)/,
+        assert.match(figures, /const jitterText = formatLatency\(props\.jitter\);/,
             "the jitter goes out raw, at the two decimals the column stores");
+        assert.match(figures, /text:\s*printableFigure\(jitterText\) \? jitterText : NOT_MEASURED/,
+            "the chip's refusal no longer reads through the unitless half of formatWithUnit's judgement");
         assert.doesNotMatch(figures, /formatLatency\(props\.packetLoss\)/,
             "packet loss is a percentage, not a latency");
     });
@@ -122,11 +126,11 @@ describe("the overview row carries both quality figures", () => {
      */
     it("says N/A rather than printing a jitter nobody measured", () => {
         const built = (jitter) => new Function(
-            "props", "t", "isMeasured", "jitterColour", "formatLatency", "readableFigure",
+            "props", "t", "isMeasured", "jitterColour", "formatLatency", "printableFigure", "readableFigure",
             "NOT_MEASURED", "packetLossColour", "faWaveSquare", "jitterInfo", "faLinkSlash", "packetLossInfo",
             `${figures}\nreturn quality;`)(
             {jitter, packetLoss: null}, (key) => key, isMeasured, jitterColour, formatLatency,
-            readableFigure, NOT_MEASURED, packetLossColour, null, null, null, null)
+            printableFigure, readableFigure, NOT_MEASURED, packetLossColour, null, null, null, null)
             .find((figure) => figure.key === "jitter");
 
         for (const unreadable of [-1, "-1", "auto"])
@@ -189,7 +193,10 @@ describe("the overview row carries both quality figures", () => {
      * a jitter of 40 ms sat in exactly the same grey as one of 2.
      */
     it("grades both figures with the same functions the pane uses", () => {
-        assert.match(figures, /level:\s*jitterColour\(formatLatency\(props\.jitter\)\)/);
+        // The grade reads the same hoisted 1-dp figure the text prints -
+        // detailLatencyPrecision's belt resolves the name back to
+        // formatLatency(props.jitter) and holds it against the pane's.
+        assert.match(figures, /level:\s*jitterColour\(jitterText\)/);
         assert.match(figures, /level:\s*packetLossColour\(props\.packetLoss\)/);
     });
 

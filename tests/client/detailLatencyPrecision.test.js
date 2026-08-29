@@ -384,8 +384,18 @@ describe("the quality strip beside the ping", () => {
     it("grades it from the figure the row that expands to this pane grades it from", () => {
         const argument = (source) => source.match(/jitterColour\(([^)]*\)?)\)/)?.[1];
 
+        // The row grades a hoisted const now; what the belt compares is the
+        // expression behind the name, so a hoist cannot satisfy it with a
+        // different reading under the same label.
+        const resolved = (source, expression) => {
+            const declaration = expression && source.match(
+                new RegExp(`const ${expression} = ([^;]+);`))?.[1];
+
+            return declaration ?? expression;
+        };
+
         const inPane = argument(qualityRegion());
-        const inRow = argument(row);
+        const inRow = resolved(row, argument(row));
 
         assert.notEqual(inPane, undefined, "the pane no longer grades the jitter");
         assert.notEqual(inRow, undefined, "the row no longer grades the jitter");

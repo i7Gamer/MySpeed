@@ -7,7 +7,7 @@ import {
     faHourglassHalf, faLinkSlash, faPingPongPaddleBall, faStopwatch
 } from "@fortawesome/free-solid-svg-icons";
 import {
-    formatBytes, formatDay, formatDuration, formatHour, formatLatencyWithUnit, NOT_MEASURED
+    formatBytes, formatDay, formatDuration, formatHour, formatLatencyWithUnit, formatPercent, NOT_MEASURED
 } from "@/common/utils/FormatUtil";
 import {failureRate, readableFigure} from "@/common/utils/TestUtil";
 import {PreferencesContext} from "@/common/contexts/Preferences";
@@ -210,9 +210,10 @@ export const OverviewChart = (props) => {
             title: t("statistics.overview.packet_loss_title"),
             description: t("statistics.overview.packet_loss_description"),
             // Absent when nothing in the range measured it - only Ookla reports
-            // packet loss, and no measurement is not a clean line. "%" binds to
-            // its number without a space, unlike the spaced units.
-            value: packetLoss !== null ? `${packetLoss}%` : NOT_MEASURED,
+            // packet loss, and no measurement is not a clean line. The shared
+            // percent rule over the already-coerced figure (idempotent), so
+            // the printer and the delta read one column once.
+            value: formatPercent(packetLoss),
             delta: {current: packetLoss, previous: readableFigure(previous?.packetLoss),
                 higherIsBetter: false, mode: "absolute", unit: "%"}
         }

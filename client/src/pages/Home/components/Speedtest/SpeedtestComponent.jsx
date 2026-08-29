@@ -17,7 +17,8 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {
-    formatDateTime, formatLatency, formatShortTime, formatWhole, getSpeedUnit, NOT_MEASURED, wholeSpeed
+    formatDateTime, formatLatency, formatShortTime, formatWhole, getSpeedUnit, NOT_MEASURED, printableFigure,
+    wholeSpeed
 } from "@/common/utils/FormatUtil";
 import FigureWithUnit from "@/common/components/FigureWithUnit";
 import {
@@ -104,6 +105,14 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
      * glyph and not on the number, which is how the three metrics beside it are
      * already read - a list of a hundred tests is scanned by icon colour.
      */
+    // The trimmed jitter the chip below both grades and prints - and refuses
+    // through printableFigure, the unitless half of formatWithUnit's
+    // judgement: this chip prints no unit, so it cannot borrow
+    // formatLatencyWithUnit's refusal the way the pane's chip does, and a
+    // "-1" here beside that pane's "N/A" was the row and its pane answering
+    // one question two ways.
+    const jitterText = formatLatency(props.jitter);
+
     const quality = [
         isMeasured(props.jitter) && {
             key: "jitter",
@@ -112,16 +121,12 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
             label: t("info.jitter.title"),
             // Graded from the same 1-dp figure printed below it, as the ping's
             // colour is - see the pane's quality strip for why.
-            level: jitterColour(formatLatency(props.jitter)),
+            level: jitterColour(jitterText),
             // A latency, printed at the one decimal the ping beside it uses:
             // it is stored with two, and stood next to a ping trimmed to one -
             // the same measurement in the same unit written two ways on one
-            // line. And N/A for what no reader can read, spelt from the shared
-            // readers: this chip prints no unit, so it cannot borrow
-            // formatLatencyWithUnit's refusal the way the pane's chip does -
-            // and a "-1" here beside that pane's "N/A" was the row and its
-            // pane answering one question two ways.
-            text: readableFigure(props.jitter) === null ? NOT_MEASURED : formatLatency(props.jitter)
+            // line.
+            text: printableFigure(jitterText) ? jitterText : NOT_MEASURED
         },
         // readableFigure, like the pane this row opens and the latest-test
         // card beside it: this chip prints the stored column raw, and a value

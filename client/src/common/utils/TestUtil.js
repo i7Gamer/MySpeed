@@ -176,11 +176,18 @@ const CONSISTENCY_FAIR = 70;
  * failed has no consistency to report, and the worst possible colour is as
  * wrong an answer as the best one - it says the line is unstable when nothing
  * was measured.
+ *
+ * Read through readableFigure, like gradeBelow above: it was the one grader
+ * on the statistics surface still gated on typeof after every printer moved
+ * to the shared reader, so a text-spelled score from a proxied history
+ * printed "85.5%" beside the blue nothing-was-measured colour - shown and
+ * denied at once.
  */
 export const consistencyColour = (value) => {
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "blue";
-    if (value >= CONSISTENCY_GOOD) return "green";
-    if (value >= CONSISTENCY_FAIR) return "orange";
+    const figure = readableFigure(value);
+    if (figure === null) return "blue";
+    if (figure >= CONSISTENCY_GOOD) return "green";
+    if (figure >= CONSISTENCY_FAIR) return "orange";
 
     return "red";
 };

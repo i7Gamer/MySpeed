@@ -103,17 +103,13 @@ describe("a statistics card rounds what the pane it opens states exactly", () =>
                 `a spread of ${JSON.stringify(junk)} printed as a reading`);
     });
 
-    // The consistency score beside it reads the same way - a text score from
-    // an older node prints as the number it spells, junk and the placeholder
-    // say N/A instead of "auto%" beside the blue the colour already grades.
-    it("prints a score in either spelling and refuses what is no score", () => {
-        const percentage = helper(consistency, "const percentage = (value) => {",
-            {readableFigure, NOT_MEASURED});
-
-        assert.equal(percentage(92.5), "92.5%");
-        assert.equal(percentage("85.50"), "85.5%", "a text score reads as the number it spells");
-        for (const junk of ["auto", -1, null, undefined])
-            assert.equal(percentage(junk), NOT_MEASURED, `${JSON.stringify(junk)} printed as a score`);
+    // The consistency score prints through the shared formatPercent now - its
+    // behaviour matrix lives with the formatter's own suite, and the wiring
+    // is pinned where each card's value line is.
+    it("prints the score through the shared percent rule", () => {
+        assert.match(consistency, /value=\{formatPercent\(data\.download\.consistency\)\}/,
+            "the stability card glues its score to a % by hand again");
+        assert.match(consistency, /value=\{formatPercent\(data\.upload\.consistency\)\}/);
     });
 
     /**

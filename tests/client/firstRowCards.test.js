@@ -69,7 +69,8 @@ describe("the packet-loss row on the overview card", () => {
      */
     it("prints the reading through the shared reader", () => {
         assert.match(overview, /const packetLoss = readableFigure\(props\.packetLoss\);/);
-        assert.match(overview, /value: packetLoss !== null \? `\$\{packetLoss}%` : NOT_MEASURED/);
+        assert.match(overview, /value: formatPercent\(packetLoss\)/,
+            "the score is glued to its % by hand again instead of the shared rule");
         assert.doesNotMatch(overview, /typeof props\.packetLoss === "number"/,
             "the bare typeof gate is back, which prints the placeholder and hides the text spelling");
     });
