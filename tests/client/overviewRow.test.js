@@ -697,6 +697,11 @@ describe("the figures a row prints", () => {
     it("never presents a failed row's placeholders as readings", () => {
         const {downValue, upValue} = printed({ping: -1, down: -1, up: -1, error: "timeout"});
 
+        // The exact placeholder, held: any rewiring - the old error-blanking
+        // ternary's "", a raw prop, a formatter swap - moves this value, and
+        // the destination assert below alone could not tell those apart.
+        assert.equal(downValue, -1);
+        assert.equal(upValue, -1);
         assert.equal(formatWithUnit(downValue, "Mbps"), NOT_MEASURED);
         assert.equal(formatWithUnit(upValue, "Mbps"), NOT_MEASURED);
         assert.match(row, /\{props\.error \? \(/, "the failure branch no longer gates the figures");

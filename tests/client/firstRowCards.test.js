@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { formatDuration, formatPercent, NOT_MEASURED } from "@/common/utils/FormatUtil.js";
+import { failureRate, readableFigure } from "@/common/utils/TestUtil.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const CLIENT_SRC = path.join(ROOT, "client", "src");
@@ -80,6 +82,52 @@ describe("the packet-loss row on the overview card", () => {
     it("feeds the delta the same reading", () => {
         assert.match(overview, /delta: \{current: packetLoss, previous: readableFigure\(previous\?\.packetLoss\)/,
             "the delta reads the raw column while the printer reads the coerced one");
+    });
+
+    /**
+     * The row's wiring, executed off the card's own statements rather than
+     * pattern-matched: a revert that respells the reader - `const packetLoss
+     * = props.packetLoss;` - satisfies every source regex above while
+     * reintroducing the placeholder deltas. formatPercent hides such a
+     * revert from the printed VALUE (it re-reads idempotently), so the
+     * discriminator is delta.current: null for everything refused, the
+     * coerced number for everything read.
+     */
+    it("builds the row from the coerced reading, delta included", () => {
+        const start = overview.indexOf("const rate = failureRate");
+        assert.notEqual(start, -1, "the card no longer derives its rows where this lift expects");
+
+        const end = overview.indexOf("];", start);
+        assert.notEqual(end, -1, "the items list no longer closes where this lift expects");
+
+        const stub = (key, values) => values === undefined ? key : {key, ...values};
+
+        const lossRow = (packetLoss, previous) => new Function(
+            "props", "t", "formatDuration", "formatPercent", "NOT_MEASURED", "readableFigure", "failureRate",
+            "faGaugeHigh", "faCircleExclamation", "faStopwatch", "faLinkSlash",
+            `${overview.slice(start, end + 2)}\nreturn items;`)(
+            {tests: {total: 10, failed: 1}, time: {avg: 6}, packetLoss, previous}, stub,
+            formatDuration, formatPercent, NOT_MEASURED, readableFigure, failureRate,
+            null, null, null, null)
+            .find((item) => item.title === "statistics.overview.packet_loss_title");
+
+        for (const [refused, label] of [[-1, "the placeholder"], ["-1", "its text spelling"],
+            ["auto", "junk"], [NaN, "NaN"]]) {
+            const item = lossRow(refused);
+
+            assert.equal(item.value, NOT_MEASURED, `${label} printed as a reading`);
+            assert.equal(item.delta.current, null,
+                `${label} reached the delta, so the arrow claims a change in a figure nobody measured`);
+        }
+
+        const zero = lossRow(0);
+        assert.equal(zero.value, "0%", "a measured zero is the best reading there is");
+        assert.equal(zero.delta.current, 0);
+
+        const text = lossRow("0.5", {packetLoss: "1.5"});
+        assert.equal(text.value, "0.5%", "a text reading prints the number it spells");
+        assert.equal(text.delta.current, 0.5);
+        assert.equal(text.delta.previous, 1.5, "the previous window's figure is not read the same way");
     });
 });
 
