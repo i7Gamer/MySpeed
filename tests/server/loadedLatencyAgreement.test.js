@@ -100,6 +100,27 @@ describe("the two ways the added latency is worked out", () => {
     });
 
     /**
+     * Liveness for the string spellings: every case above is satisfied by
+     * BOTH sides refusing a row - null agrees with null - so this is the half
+     * that pins the reading itself. A symmetric retreat to the old typeof
+     * gate on both sides kept the whole suite green while the feature was
+     * gone; the one-sided drift the suite exists for was still caught.
+     */
+    it("produces a figure for the numeric-string spellings on both sides", () => {
+        const spelt = CASES.filter((testCase) => testCase.name.startsWith("numeric-string"));
+        assert.ok(spelt.length >= 2, "the string fixtures this pins have been renamed away");
+
+        for (const testCase of spelt) {
+            const entry = at("2026-08-07T01:00:00.000Z", testCase);
+
+            assert.notEqual(bufferbloat(entry)?.increase ?? null, null,
+                `the client refuses the ${testCase.name} row`);
+            assert.notEqual(buildStatistics([entry], DAY).consistency.loadedLatency.increase, null,
+                `the server refuses the ${testCase.name} row`);
+        }
+    });
+
+    /**
      * And they agree that a fabricated idle ping is no baseline. 0 is
      * UNMEASURED_LATENCY - the sentinel a successful run stores when nobody
      * took the latency, and the value the INTEGER column of migration 0012's

@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { metricValue } from './metricValue.js';
+import { usableFigure } from './testOutcome.js';
 
 const pad = (n) => String(n).padStart(2, "0");
 
@@ -192,11 +192,14 @@ const medianOf = (values, averageOf) => {
 // every value onto the call stack, which throws RangeError somewhere above
 // ~125k values - a range holding a year of five-minute tests - and took the
 // whole statistics endpoint down with it.
-// `read` is the column's own judgement of what counts as a reading. metricValue
-// is the default the measurement columns share; a column with a stricter rule -
-// time, whose -1 is an imported placeholder and not a duration - passes its own
-// reader, so the summary refuses exactly what the charts beside it refuse.
-const mapRange = (entries, type, averageOf, read = metricValue) => {
+// `read` is the column's own judgement of what counts as a reading.
+// usableFigure is the default: it reads the defensive numeric-string spelling
+// and refuses junk and the negative placeholders alike, so the next column
+// handed here raw is safe by default - under the old metricValue default,
+// which keeps -1 for its Prometheus caller to judge, a caller that forgot to
+// pass a stricter reader printed "min -1 Mbit/s" on the range card. A column
+// with a different rule still passes its own reader.
+const mapRange = (entries, type, averageOf, read = usableFigure) => {
     let min = Infinity;
     let max = -Infinity;
     let total = 0;
@@ -213,16 +216,16 @@ const mapRange = (entries, type, averageOf, read = metricValue) => {
         // still counting toward the divisor. A measured 0 is a real reading and
         // is not what this skips.
         //
-        // metricValue rather than a bare finite check. The corruption storage
-        // actually delivers is non-numeric text - a junk string like "NaN"
-        // quietly turned the average to NaN, and the sort comparator answers
-        // NaN around it, so one that landed mid-sample was handed to toFixed
-        // by the median: a TypeError that took the whole statistics endpoint
-        // down over one bad row. metricValue refuses exactly that, and reads a
-        // *numeric* string as the number it spells - a defensive half no
-        // current row exercises (both backends coerce well-formed digits at
-        // write for these DOUBLE columns), kept because metricValue is the one
-        // judgement Prometheus and the recommendation sample share, and a
+        // A shared reader rather than a bare finite check. The corruption
+        // storage actually delivers is non-numeric text - a junk string like
+        // "NaN" quietly turned the average to NaN, and the sort comparator
+        // answers NaN around it, so one that landed mid-sample was handed to
+        // toFixed by the median: a TypeError that took the whole statistics
+        // endpoint down over one bad row. The reader refuses exactly that,
+        // and reads a *numeric* string as the number it spells - a defensive
+        // half no current row exercises (both backends coerce well-formed
+        // digits at write for these DOUBLE columns), kept because it is the
+        // judgement every other consumer of these columns shares, and a
         // second predicate here is how one row answered two surfaces
         // differently. Read the one, refuse the other.
         const value = read(entry[type]);

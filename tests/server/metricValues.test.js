@@ -64,11 +64,16 @@ describe("the recommendation sample", () => {
     const speedtestTask = readSource("server/tasks/speedtest.js");
     const body = bodyOf(speedtestTask, "export const createRecommendations");
 
-    it("reads its three figures through metricValue", () => {
+    it("reads its three figures through the shared readers", () => {
         assert.match(body, /metricValue\(entry\.ping\)/,
             "the sample's ping is judged by a different rule than the page beside it");
-        assert.match(body, /metricValue\(entry\.download\)/);
-        assert.match(body, /metricValue\(entry\.upload\)/);
+        // usableFigure, not metricValue, for the speeds: metricValue keeps
+        // the -1 placeholder for its Prometheus caller to judge, and fed to
+        // max against the 0 the accumulators start from, a placeholder sample
+        // published a 0 Mbit/s optimum - the behavioural pin lives in
+        // tests/integration/recommendations.test.js.
+        assert.match(body, /usableFigure\(entry\.download\)/);
+        assert.match(body, /usableFigure\(entry\.upload\)/);
     });
 
     it("no longer keeps a bare finite check of its own", () => {

@@ -147,19 +147,20 @@ export const createRecommendations = async () => {
 
     let recommendations = {ping: Infinity, down: 0, up: 0};
     for (const entry of list) {
-        // Through metricValue, the judgement every other reader of these rows
-        // leans on - the statistics moved to it, and a second predicate here
-        // is what diverged. The protections the old bare finite check carried
-        // still hold: an empty string - which compares as zero and once took
-        // "lowest ping" from the whole sample - reads as null, as does "NaN"
-        // and every other junk shape. Neither backend can actually hand these
-        // DOUBLE columns back as numeric text (both coerce well-formed digits
-        // at write), so the string-reading half is the same defensive contract
-        // metricValue states for Prometheus, held here for one reason: two
-        // rules over one row is how the card and the chart came to disagree.
+        // Through the shared readers, the judgement every other consumer of
+        // these rows leans on - the statistics moved to them, and a second
+        // predicate here is what diverged. The protections the old bare
+        // finite check carried still hold: an empty string - which compares
+        // as zero and once took "lowest ping" from the whole sample - reads
+        // as null, as does "NaN" and every other junk shape. The ping stays
+        // on metricValue because lowestRealPing judges the placeholder for
+        // itself; the speeds go through usableFigure, which refuses it - fed
+        // to max against the 0 the accumulators start from, a sample of -1
+        // placeholders left them there, and the untouched zeros were then
+        // published as a 0 Mbit/s optimum in both directions.
         const ping = metricValue(entry.ping);
-        const download = metricValue(entry.download);
-        const upload = metricValue(entry.upload);
+        const download = usableFigure(entry.download);
+        const upload = usableFigure(entry.upload);
 
         if (lowestRealPing(ping) && ping < recommendations.ping)
             recommendations.ping = ping;
@@ -171,11 +172,15 @@ export const createRecommendations = async () => {
             recommendations.up = upload;
     }
 
-    // Nothing in the sample measured a latency, so there is nothing to
-    // recommend. Falling through handed the untouched Infinity to the
-    // controller, whose Math.round() passes it along unchanged, and the row came
-    // back with a null ping beside a perfectly good download and upload.
+    // Nothing in the sample measured a latency - or delivered a byte - so
+    // there is nothing to recommend. Falling through handed the accumulators'
+    // own starting values to the controller: the untouched Infinity became a
+    // null ping, and the untouched zeros a 0 Mbit/s optimum the dialog then
+    // offers as a target. A sample that genuinely measured only nought
+    // everywhere is refused too - an optimum of zero grades every later test
+    // against nothing. Yesterday's recommendation simply stays.
     if (!Number.isFinite(recommendations.ping)) return;
+    if (recommendations.down === 0 || recommendations.up === 0) return;
 
     await controller.update(recommendations.ping, recommendations.down, recommendations.up);
 }

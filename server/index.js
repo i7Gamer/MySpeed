@@ -242,7 +242,9 @@ const reportDatabaseDamage = async () => {
  *   that carries the peer's address makes every event "distinct", and every
  *   event writing a full entry is the exact growth this exists to end. The
  *   cost is real but small: a genuinely different codeless fault mid-window
- *   waits for the next window, having ridden the count meanwhile.
+ *   waits for the next window, having ridden the count meanwhile - and one
+ *   that never recurs is recorded only as part of that count, its own
+ *   message never reaching the log.
  * - Suppression is silent, and counted per fault. A console line per
  *   suppressed event only moved the unbounded growth into the journal every
  *   deployment here captures; and one shared count flushed EMFILE's storm

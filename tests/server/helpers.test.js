@@ -176,6 +176,18 @@ describe("a value that is not a number at all", () => {
             {min: 10, max: 20, avg: 15, median: 15});
     });
 
+    // The failure placeholder, refused by default. The default reader used to
+    // be metricValue, which keeps -1 for its Prometheus caller to judge - so
+    // every raw-row caller had to remember to pass usableFigure, and the two
+    // that forgot printed "min -1 Mbit/s" on the range card. With no raw
+    // caller left on the lenient default, the next column added here is safe
+    // by default instead of by memory.
+    it("keeps the failure placeholder out of the range by default", () => {
+        assert.deepEqual(mapFixed([{download: -1}, {download: "-1"}, {download: 50}], "download"),
+            {min: 50, max: 50, avg: 50, median: 50},
+            "the placeholder was read as a measurement of minus one");
+    });
+
     it("gives the empty answer when nothing usable remains", () => {
         assert.deepEqual(mapFixed([{download: "a"}, {download: NaN}], "download"),
             {min: null, max: null, avg: null, median: null});

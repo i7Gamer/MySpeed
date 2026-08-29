@@ -34,6 +34,13 @@ const RECOMMENDATION_SAMPLE = 10;
 const unmeasured = () => Array.from({length: RECOMMENDATION_SAMPLE},
     (unused, i) => failure({created: minutesAgo(20 - i), error: null}));
 
+// A sample whose pings are real and whose speeds are all the placeholder.
+// Only a hand-edited or legacy-imported history holds the shape - a real
+// failure writes -1 into every column at once - but the loop must not turn
+// it into a 0 Mbit/s target.
+const throughputPlaceholders = () => Array.from({length: RECOMMENDATION_SAMPLE},
+    (unused, i) => failure({created: minutesAgo(20 - i), error: null, ping: 30 - i}));
+
 before(async () => {
     server = await bootServer();
     target = await seedTarget({provider: "ookla"});
@@ -143,6 +150,35 @@ describe("createRecommendations", () => {
         const current = await recommendations.getCurrent();
         assert.equal(current.ping, 21,
             "a latency nobody measured was published as the best of the sample");
+    });
+
+    /**
+     * The same story one column over. metricValue keeps the -1 placeholder
+     * for its Prometheus caller to judge, and the speed accumulators start at
+     * the 0 the loop takes max against - so a sample whose throughput columns
+     * are all placeholders beside real pings published a recommended optimum
+     * of 0 Mbit/s in both directions, which the dialog then offers as a
+     * target and the config accepts.
+     */
+    it("recommends nothing when no test in the sample delivered a byte", async () => {
+        await seedTests(server.tests, throughputPlaceholders());
+
+        await createRecommendations();
+
+        assert.equal(await recommendations.getCurrent(), null,
+            "a sample of throughput placeholders was written as a 0 Mbit/s recommendation");
+    });
+
+    it("leaves the standing recommendation alone when the sample delivered nothing", async () => {
+        await seedTests(server.tests, successes());
+        await createRecommendations();
+
+        await seedTests(server.tests, throughputPlaceholders());
+        await createRecommendations();
+
+        const current = await recommendations.getCurrent();
+        assert.deepEqual({ping: current.ping, download: current.download, upload: current.upload},
+            {ping: 21, download: 190, upload: 95});
     });
 
     it("recommends nothing when no test in the sample measured a ping", async () => {

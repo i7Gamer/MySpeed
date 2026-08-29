@@ -339,12 +339,13 @@ const fullSeries = (sorted) => ({
         // hold -1 placeholders, and passed through they drew a jitter dipping
         // below zero on a chart whose summary skipped the same row.
         jitter: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.jitter) : null),
-        // metricValue like the downsampled branch beside this one, not raw: a
-        // corrupt stored string shipped here reached the client as JSON text,
-        // where the chart's own average reducer concatenated it - the exact
-        // total-plus-value bug average() was fixed for, reproduced in the
-        // browser on every range small enough not to bucket. Unreadable is a
-        // null, which the line already draws as a gap.
+        // usableFigure like the downsampled branch beside this one, not raw:
+        // a corrupt stored string shipped here reached the client as JSON
+        // text, where the chart's own average reducer concatenated it - the
+        // exact total-plus-value bug average() was fixed for, reproduced in
+        // the browser on every range small enough not to bucket - and an
+        // imported -1 placeholder drew a chart point below zero. Unreadable
+        // is a null, which the line already draws as a gap.
         download: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.download) : null),
         upload: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.upload) : null),
         // usableFigure, matching the measuredOnly("time") read the downsampled
