@@ -41,11 +41,16 @@ const unmeasured = () => Array.from({length: RECOMMENDATION_SAMPLE},
 const throughputPlaceholders = () => Array.from({length: RECOMMENDATION_SAMPLE},
     (unused, i) => failure({created: minutesAgo(20 - i), error: null, ping: 30 - i}));
 
-// One direction real, the other all placeholders - the shape that pins the
-// bail's OR: with both columns zeroed together, `down === 0` short-circuits
-// and the up-half of the guard could be deleted without a test noticing.
+// One direction real, the other all placeholders - the shapes that pin the
+// bail's OR arm by arm: with both columns zeroed together the first
+// comparison short-circuits, so either half of the guard could be deleted
+// without a test noticing. One fixture per arm, because each pins only the
+// arm its placeholder column reaches.
 const uploadPlaceholders = () => Array.from({length: RECOMMENDATION_SAMPLE},
     (unused, i) => failure({created: minutesAgo(20 - i), error: null, ping: 30 - i, download: 100 + i * 10}));
+
+const downloadPlaceholders = () => Array.from({length: RECOMMENDATION_SAMPLE},
+    (unused, i) => failure({created: minutesAgo(20 - i), error: null, ping: 30 - i, upload: 50 + i * 5}));
 
 before(async () => {
     server = await bootServer();
@@ -185,6 +190,15 @@ describe("createRecommendations", () => {
 
         assert.equal(await recommendations.getCurrent(), null,
             "a sample with no readable upload published a 0 Mbit/s upload target");
+    });
+
+    it("recommends nothing when the other direction never delivered one either", async () => {
+        await seedTests(server.tests, downloadPlaceholders());
+
+        await createRecommendations();
+
+        assert.equal(await recommendations.getCurrent(), null,
+            "a sample with no readable download published a 0 Mbit/s download target");
     });
 
     it("leaves the standing recommendation alone when the sample delivered nothing", async () => {
