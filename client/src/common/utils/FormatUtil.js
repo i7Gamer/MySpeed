@@ -232,20 +232,36 @@ export const roundsToZeroLatency = (ms) => {
 
 const MBITS_PER_MBYTE = 8;
 
-export const convertSpeed = (mbps, preferences) => {
-    // storedFigure first: a numeric string handed back unconverted left
-    // changeFrom comparing one operand in Mbit/s against the other in MB/s -
-    // a wrong change with a confident direction, where the old refusal at
-    // least printed nothing. Junk still passes through untouched, and a
-    // negative placeholder comes back as the number, never as a speed.
+/**
+ * The one reading a speed takes before any display: coerced through
+ * storedFigure - a numeric string reads as the number it spells, junk passes
+ * through untouched, a negative placeholder comes back as the number for the
+ * guards to recognise - and converted to the reader's unit as the RAW
+ * quotient. The two exported forms round it each to their own display: two
+ * decimals for the expanded views, a whole number for the list rows. This
+ * preamble lived in three copies before it lived here.
+ */
+const rawSpeed = (mbps, preferences) => {
     const speed = storedFigure(mbps);
     if (speed === null) return mbps;
     if (speed < 0) return speed;
 
-    if (preferences?.speedUnit === SPEED_UNIT_MBYTES) {
-        return Math.round((speed / MBITS_PER_MBYTE) * 100) / 100;
-    }
-    return speed;
+    return preferences?.speedUnit === SPEED_UNIT_MBYTES ? speed / MBITS_PER_MBYTE : speed;
+};
+
+export const convertSpeed = (mbps, preferences) => {
+    // Reading before refusal, in rawSpeed: a numeric string handed back
+    // unconverted left changeFrom comparing one operand in Mbit/s against
+    // the other in MB/s - a wrong change with a confident direction, where
+    // the old refusal at least printed nothing.
+    const speed = rawSpeed(mbps, preferences);
+
+    // Two decimals ONLY where a conversion happened. Mbit/s is the unit the
+    // column stores, so that figure passes through exact - and junk and the
+    // placeholders keep rawSpeed's passthrough contract in either unit.
+    if (preferences?.speedUnit !== SPEED_UNIT_MBYTES || typeof speed !== "number" || speed < 0) return speed;
+
+    return Math.round(speed * 100) / 100;
 };
 
 /**
@@ -395,17 +411,12 @@ const BYTE_DECIMALS = 1;
  * once from the raw quotient is the correct figure at all of them. The
  * expanded views keep convertSpeed, whose two decimals are their display.
  *
- * Reads and refuses exactly as its siblings: text spellings read, junk passes
- * through untouched, and a negative comes back as the number for the guards
- * to recognise.
+ * formatWhole over the RAW quotient, which is the whole definition: the
+ * rounding is formatWhole's, the reading and the refusals are rawSpeed's -
+ * text spellings read, junk passes through untouched, and a negative comes
+ * back as the number for the guards to recognise.
  */
-export const wholeSpeed = (mbps, preferences) => {
-    const speed = storedFigure(mbps);
-    if (speed === null) return mbps;
-    if (speed < 0) return speed;
-
-    return Math.round(preferences?.speedUnit === SPEED_UNIT_MBYTES ? speed / MBITS_PER_MBYTE : speed);
-};
+export const wholeSpeed = (mbps, preferences) => formatWhole(rawSpeed(mbps, preferences));
 
 /**
  * A quantity of data in the largest unit that leaves it readable.

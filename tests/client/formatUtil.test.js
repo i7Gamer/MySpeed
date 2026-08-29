@@ -372,6 +372,15 @@ describe("convertSpeed", () => {
         assert.equal(convertSpeed("800", MBPS), 800);
     });
 
+    // The guard the shared-preamble composition has to keep: Mbit/s is the
+    // unit the column stores, so the figure passes through EXACT - the
+    // two-decimal rounding belongs to the conversion alone, and a stored
+    // 93.716 must never come back 93.72.
+    it("never rounds in the unit the column already stores", () => {
+        assert.equal(convertSpeed(93.716, MBPS), 93.716);
+        assert.equal(convertSpeed(93.716, undefined), 93.716);
+    });
+
     it("converts the text placeholder to the number the interface recognises", () => {
         assert.equal(convertSpeed("-1", MBYTES), -1);
     });
