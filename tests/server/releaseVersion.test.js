@@ -701,10 +701,21 @@ describe("what reaches a shell in the release workflow", () => {
      * workflow writes one. The flat set's usual cost is noise, not blindness
      * - `xargs -a jq …` names a FILE jq, and reads here as a call - with one
      * carved-out blind corner: an UNLISTED prefix whose value-flag's value is
-     * itself a listed word (`foo -u sudo jq …`) skips two onto `foo` and
-     * drops the call, a line no workflow has a reason to write.
+     * itself a listed word (`foo -u sudo jq …`, quoted or bare) skips two
+     * onto `foo` and drops the call, a line no workflow has a reason to
+     * write. Every member is exercised: FLAG_HOSTS below generates a matrix
+     * row per (prefix, flag), and a membership self-test holds the two lists
+     * to each other, so a typo or a trimmed set goes red instead of quietly
+     * narrowing the walk.
      */
     const VALUE_TAKING_PREFIX_FLAGS = new Set(["-u", "-g", "-a", "-n", "-I", "-L", "-P", "-s", "-d", "-E"]);
+
+    // Which prefix each value-taking flag is real on, for the generated rows.
+    const FLAG_HOSTS = new Map([
+        ["-u", "sudo"], ["-g", "sudo"], ["-a", "exec"],
+        ["-n", "xargs"], ["-I", "xargs"], ["-L", "xargs"], ["-P", "xargs"],
+        ["-s", "xargs"], ["-d", "xargs"], ["-E", "xargs"]
+    ]);
 
     const callsIn = (line) => {
         const {tokens} = tokenise(line);
@@ -717,13 +728,18 @@ describe("what reaches a shell in the release workflow", () => {
             // Walk back over what may stand between a command and the start
             // of its simple command: NAME=value assignments, a prefix's
             // flags, and the values those flags consume. One guarded loop,
-            // stopped by operators and quoted words, so a pipe or a
-            // semicolon is never crossed - an unbounded skip once walked
-            // `sort -u | jq …` onto the LEFT command and dropped the call.
+            // stopped by operators, so a pipe or a semicolon is never
+            // crossed - an unbounded skip once walked `sort -u | jq …` onto
+            // the LEFT command and dropped the call. Literal-ness is judged
+            // per branch rather than at the loop's gate: an assignment or a
+            // flag must be unquoted to mean anything to the shell, but the
+            // VALUE a flag consumes may be quoted - `sudo -u 'root' jq …`
+            // runs jq exactly as the bare spelling does, and a gate on the
+            // quoted word left that call unwalked and its splice unreported.
             let at = index - 1;
-            while (at >= 0 && !tokens[at].operator && !tokens[at].literal) {
-                if (ASSIGNMENT_PREFIX.test(tokens[at].plain)) { at--; continue; }
-                if (tokens[at].plain.startsWith("-")) { at--; continue; }
+            while (at >= 0 && !tokens[at].operator) {
+                if (!tokens[at].literal && ASSIGNMENT_PREFIX.test(tokens[at].plain)) { at--; continue; }
+                if (!tokens[at].literal && tokens[at].plain.startsWith("-")) { at--; continue; }
                 if (at >= 1 && !tokens[at - 1].operator && !tokens[at - 1].literal
                     && VALUE_TAKING_PREFIX_FLAGS.has(tokens[at - 1].plain)) { at -= 2; continue; }
                 break;
@@ -1076,6 +1092,11 @@ describe("what reaches a shell in the release workflow", () => {
             name: "a splice piped from a command ending in a flag",
             shell: ["sort -u | jq \".version = \\\"$VERSION\\\"\""],
             why: "the walk over a prefix's flags must stop at the pipe: unbounded, it stepped over the operator onto the LEFT command and the call was dropped - a missed splice, the one direction this scan must not fail in"
+        },
+        {
+            name: "a splice behind a quoted flag value",
+            shell: ["sudo -u 'root' jq \".version = \\\"$VERSION\\\"\" package.json"],
+            why: "the shell strips the quotes before sudo sees its user, so the quoted spelling runs the same jq - but a walk gated on unquoted words stopped at 'root' and the splice went unreported"
         }
     ];
 
@@ -1102,6 +1123,30 @@ describe("what reaches a shell in the release workflow", () => {
             assert.ok(reported[0].includes(row.shows ?? row.shell[0].trim()),
                 "some other line was reported, so this one is still going unnoticed");
         });
+
+    /**
+     * Every value-taking flag, exercised on the prefix it is real on - in
+     * both spellings of its value. Without these, eight of the ten members
+     * were decoration: only -u and -a had rows, so a typo or a trimmed set
+     * kept all 68 tests green while the walk quietly narrowed.
+     */
+    describe("every value-taking prefix flag earns its place", () => {
+        it("hosts every member of the set, and nothing else", () => {
+            assert.deepEqual([...FLAG_HOSTS.keys()].sort(), [...VALUE_TAKING_PREFIX_FLAGS].sort(),
+                "the flag set and its hosts drifted apart, so some flags are exercised by no row");
+        });
+
+        for (const [flag, host] of FLAG_HOSTS)
+            for (const value of ["v", "'v'"])
+                it(`reports a splice behind ${host} ${flag} ${value}`, () => {
+                    const shell = [`${host} ${flag} ${value} jq \".version = \\\"$VERSION\\\"\" package.json`];
+                    const source = splice(`${host} ${flag} ${value}`, ...shell);
+
+                    assert.ok(walked(source, shell), "the fixture is not being walked at all");
+                    assert.equal(splices(source).length, 1,
+                        `the ${flag} flag's value stood where the command is looked for, and the call was dropped`);
+                });
+    });
 
     /**
      * The rule the two lines in the workflow are held to, stated over what they
