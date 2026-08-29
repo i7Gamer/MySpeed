@@ -170,4 +170,17 @@ describe("the bufferbloat row reads its figures through the shared reader", () =
         assert.match(card, /\{trendDots\.length > 0 && \(/,
             "an all-refused trend renders an empty labelled image strip");
     });
+
+    /**
+     * The markup held to the bindings the lift executes: the lift's region
+     * closes before the JSX, so without these a revert of the tooltip to
+     * the raw column - or of a dot map to the raw trend - keeps every
+     * executed case green while the screen shows the uncoerced payload.
+     */
+    it("renders the coerced figure and the filtered dots, not the raw payload", () => {
+        assert.match(card, /\{increase: loadedIncrease, tests: loaded\.tests\}/,
+            "the tooltip states a different figure than the one the grade was taken from");
+        assert.equal((card.match(/trendDots\.map/g) ?? []).length, 2,
+            "a dot map reads the raw trend again - the aria-label and the dots must both walk the filtered list");
+    });
 });

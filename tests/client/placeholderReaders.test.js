@@ -497,12 +497,16 @@ describe("every reader of TestUtil is either scanned or accounted for", () => {
         const bystander = {file: "pages/Probe/Bystander.jsx",
             code: 'import {other} from "@/common/utils/Elsewhere";'};
 
+        // Dependency-LAST, deliberately: TwoStep is visited before FromBarrel
+        // has joined the set, so only the fixpoint's second sweep can catch
+        // it - a single-pass mutant of the loop fails here, where a
+        // dependency-first ordering let one pass get lucky.
         const synthetic = [
-            {file: READER_HOME, code: "export const readableFigure = () => null;"},
-            {file: "common/utils/FromBarrel.js",
-                code: 'export {readableFigure} from "@/common/utils/TestUtil";'},
             {file: "common/utils/TwoStep.js",
                 code: 'import {readableFigure} from "@/common/utils/FromBarrel";\nexport {readableFigure};'},
+            {file: "common/utils/FromBarrel.js",
+                code: 'export {readableFigure} from "@/common/utils/TestUtil";'},
+            {file: READER_HOME, code: "export const readableFigure = () => null;"},
             {file: "common/utils/Elsewhere.js", code: "export const other = 1;"},
             consumer, bystander
         ];
@@ -527,13 +531,22 @@ describe("every reader of TestUtil is either scanned or accounted for", () => {
      * that stops the set growing over real entries.
      */
     it("sees a planted barrel through the real pipeline", () => {
-        const probe = {file: "common/utils/__probe__.js",
+        // A chained pair straddling the real list: probeB sits FIRST and
+        // re-exports probeA, which sits LAST - so probeB is reachable only
+        // on the fixpoint's second sweep, and a single-pass mutant of the
+        // loop fails here instead of riding the list order.
+        const probeA = {file: "common/utils/__probe__.js",
             code: 'export {readableFigure} from "@/common/utils/TestUtil";'};
-        const files = CLIENT_FILES.concat([probe]);
+        const probeB = {file: "common/utils/__probeB__.js",
+            code: 'export {readableFigure} from "@/common/utils/__probe__";'};
+        const files = [probeB, ...CLIENT_FILES, probeA];
         const resolve = resolverOver(files);
+        const sources = readerSourcesOver(files, resolve);
 
-        assert.ok(readerSourcesOver(files, resolve).has(probe.file),
+        assert.ok(sources.has(probeA.file),
             "the real pipeline no longer grows past TestUtil - its file list or resolver has been gutted");
+        assert.ok(sources.has(probeB.file),
+            "the set stops growing after one sweep, so a barrel earlier in the walk than its dependency is unseen");
     });
 
     // The resolver's own contract, at its edges: packages and assets are

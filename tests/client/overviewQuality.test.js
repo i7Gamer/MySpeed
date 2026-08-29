@@ -122,7 +122,10 @@ describe("the overview row carries both quality figures", () => {
         "NOT_MEASURED", "packetLossColour", "faWaveSquare", "jitterInfo", "faLinkSlash", "packetLossInfo",
         `${figures}\nreturn quality;`)(
         {jitter, packetLoss}, (key) => key, isMeasured, jitterColour, formatLatency,
-        printableFigure, readableFigure, NOT_MEASURED, packetLossColour, null, null, null, null);
+        printableFigure, readableFigure, NOT_MEASURED, packetLossColour,
+        // Distinct sentinels, not nulls: with four nulls the two chips'
+        // identity fields were interchangeable and a full swap stayed green.
+        "wave-glyph", "jitter-info", "link-slash-glyph", "loss-info");
 
     /**
      * What the row prints for a figure nothing can read is the word, not the
@@ -162,6 +165,25 @@ describe("the overview row carries both quality figures", () => {
         assert.equal(lossChip.level, packetLossColour(0.5));
         assert.notEqual(jitterChip.level, lossChip.level,
             "a fixture both graders agree on proves nothing here");
+    });
+
+    /**
+     * And in its own glyph, info and caption - the closure hands each icon
+     * and info a distinct sentinel precisely so this can be said: with four
+     * nulls, a swap of every identity field between the two chips left all
+     * 2850 tests green while the jitter chip wore the loss chip's face.
+     */
+    it("carries each chip's own glyph, info and caption", () => {
+        const chips = built(10, 0.5);
+        const jitterChip = chips.find((figure) => figure.key === "jitter");
+        const lossChip = chips.find((figure) => figure.key === "packetLoss");
+
+        assert.equal(jitterChip.icon, "wave-glyph");
+        assert.equal(jitterChip.info, "jitter-info");
+        assert.equal(jitterChip.label, "info.jitter.title");
+        assert.equal(lossChip.icon, "link-slash-glyph");
+        assert.equal(lossChip.info, "loss-info");
+        assert.equal(lossChip.label, "info.packet_loss.title");
     });
 
     /**
