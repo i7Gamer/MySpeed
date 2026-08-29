@@ -95,7 +95,15 @@ describe("the packet-loss row on the overview card", () => {
      * discriminator is delta.current: null for everything refused, the
      * coerced number for everything read.
      */
-    it("builds the row from the coerced reading, delta included", () => {
+    /**
+     * One lift for every row of the card's items list, guards included: the
+     * loss and duration cases below build different props and find different
+     * titles, and a second copy of the slice bounds was a second thing to
+     * move in lockstep - the copy had already dropped the locator guards, so
+     * a moved region would have died as a bare SyntaxError from indexOf(-1)
+     * instead of the named message.
+     */
+    const overviewRow = (propsOverride, title) => {
         const start = overview.indexOf("const rate = failureRate");
         assert.notEqual(start, -1, "the card no longer derives its rows where this lift expects");
 
@@ -107,15 +115,23 @@ describe("the packet-loss row on the overview card", () => {
         // Only the names the region reads - a closure that also supplies the
         // old shape's NOT_MEASURED would let a revert to the hand-glued
         // ternary evaluate instead of throwing.
-        const lossRow = (packetLoss, previous) => new Function(
+        return new Function(
             "props", "t", "formatDuration", "formatPercent", "readableFigure", "failureRate",
             "faGaugeHigh", "faCircleExclamation", "faStopwatch", "faLinkSlash",
             `${overview.slice(start, end + 2)}\nreturn items;`)(
-            {tests: {total: 10, failed: 1}, time: {avg: 6}, packetLoss, previous}, stub,
+            {tests: {total: 10, failed: 1}, time: {avg: 6}, packetLoss: null, ...propsOverride}, stub,
             formatDuration, formatPercent, readableFigure, failureRate,
             null, null, null, null)
-            .find((item) => item.title === "statistics.overview.packet_loss_title");
+            .find((item) => item.title === title);
+    };
 
+    const lossRow = (packetLoss, previous) =>
+        overviewRow({packetLoss, previous}, "statistics.overview.packet_loss_title");
+
+    const durationRow = (avg, previous) =>
+        overviewRow({time: {avg}, previous}, "statistics.overview.average_title");
+
+    it("builds the row from the coerced reading, delta included", () => {
         for (const [refused, label] of [[-1, "the placeholder"], ["-1", "its text spelling"],
             ["auto", "junk"], [NaN, "NaN"]]) {
             const item = lossRow(refused);
@@ -143,19 +159,6 @@ describe("the packet-loss row on the overview card", () => {
      * identical payload.
      */
     it("builds the duration row from the coerced reading too", () => {
-        const start = overview.indexOf("const rate = failureRate");
-        const end = overview.indexOf("];", start);
-        const stub = (key, values) => values === undefined ? key : {key, ...values};
-
-        const durationRow = (avg, previous) => new Function(
-            "props", "t", "formatDuration", "formatPercent", "readableFigure", "failureRate",
-            "faGaugeHigh", "faCircleExclamation", "faStopwatch", "faLinkSlash",
-            `${overview.slice(start, end + 2)}\nreturn items;`)(
-            {tests: {total: 10, failed: 1}, time: {avg}, packetLoss: null, previous}, stub,
-            formatDuration, formatPercent, readableFigure, failureRate,
-            null, null, null, null)
-            .find((item) => item.title === "statistics.overview.average_title");
-
         for (const [refused, label] of [[-1, "the placeholder"], ["-1", "its text spelling"],
             ["auto", "junk"]]) {
             const item = durationRow(refused, {time: {avg: 6}});

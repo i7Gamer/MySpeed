@@ -119,6 +119,23 @@ describe("a statistics card rounds what the pane it opens states exactly", () =>
         t: (key, {min, max}) => `between ${min} and ${max}`
     });
 
+    /**
+     * Every call site carries a formatter, pinned because the identity
+     * default is gone: a fifth sub-line written `spread(ranges.x)` keeps
+     * every suite green and throws `format is not a function` at render,
+     * and there is no error boundary between that and a blank page. The
+     * bound: `[^)]*` stops at the first `)`, so a nested single-argument
+     * call could satisfy the comma - the count assertion is the second net,
+     * and today's four sites are flat.
+     */
+    it("hands every spread call a formatter", () => {
+        const calls = [...consistency.matchAll(/\bspread\(([^)]*)\)/g)];
+
+        assert.equal(calls.length, 4, "a spread call joined or left; hold it to this rule and update the count");
+        for (const [call, args] of calls)
+            assert.match(args, /,/, `"${call}" leans on a default the function no longer has`);
+    });
+
     it("the stability pane's ranges, from readable ends only", () => {
         const bracket = (value) => `[${value}]`;
 

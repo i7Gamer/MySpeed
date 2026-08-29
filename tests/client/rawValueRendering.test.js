@@ -1,11 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { escapeRegExp } from "../helpers/source.js";
+import { escapeRegExp, walkSources } from "../helpers/source.js";
 
-const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
+const CLIENT_SRC = "client/src";
 
 /**
  * Gluing a value to its unit in the markup is the shape behind every one of
@@ -161,18 +158,12 @@ const ALLOWED = new Map([
     }]
 ]);
 
-const sourcesIn = (directory) => fs.readdirSync(directory, {withFileTypes: true}).flatMap((entry) => {
-    const full = path.join(directory, entry.name);
-    if (entry.isDirectory()) return sourcesIn(full);
-
-    // .js as well as .jsx: a chart helper glues a percent as readily as a
-    // component, and the walk not covering it was an unnamed hatch.
-    return entry.name.endsWith(".jsx") || entry.name.endsWith(".js") ? [full] : [];
-});
-
-const files = sourcesIn(CLIENT_SRC).map((file) => ({
-    file: path.relative(CLIENT_SRC, file).replaceAll(path.sep, "/"),
-    text: fs.readFileSync(file, "utf8")
+// The shared walk - .js as well as .jsx is its default, because a chart
+// helper glues a percent as readily as a component - and the RAW source: the
+// scan reads comments and strings deliberately (see the docblock below).
+const files = walkSources(CLIENT_SRC).map(({path, source}) => ({
+    file: path.slice(CLIENT_SRC.length + 1),
+    text: source
 }));
 
 const lineOf = (text, index) => text.slice(0, index).split("\n").length;

@@ -1131,6 +1131,22 @@ describe("what reaches a shell in the release workflow", () => {
      * drift apart.
      */
     describe("every value-taking prefix flag earns its place", () => {
+        /**
+         * The map pinned by value, because the matrix is generated FROM the
+         * map and so can never disagree with it: a typo'd flag, a deleted
+         * one, or one moved to a prefix it is not real on changes the rows
+         * in lockstep with the walk, and everything stays green while the
+         * walk quietly narrows. This list is the one thing the map is held
+         * against.
+         */
+        it("still walks the flags the workflows write, each on its own prefix", () => {
+            assert.deepEqual([...VALUE_TAKING_PREFIX_FLAGS],
+                [["-u", "sudo"], ["-g", "sudo"], ["-a", "exec"], ["-n", "xargs"], ["-I", "xargs"],
+                    ["-L", "xargs"], ["-P", "xargs"], ["-s", "xargs"], ["-d", "xargs"], ["-E", "xargs"]],
+                "a flag left the map, or moved to a prefix it is not real on, so its value once again stands "
+                + "where the command is looked for");
+        });
+
         for (const [flag, host] of VALUE_TAKING_PREFIX_FLAGS)
             for (const value of ["v", "'v'"])
                 it(`reports a splice behind ${host} ${flag} ${value}`, () => {
