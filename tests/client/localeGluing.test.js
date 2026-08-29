@@ -21,10 +21,15 @@ import { flatten } from "../../scripts/localeGaps.js";
  * interpolation is importFeedback's per-locale grammar territory, not this
  * file's.
  *
- * The stated bound: an inventory reviews the strings, not the call sites. A
- * component can still hand a raw column to a reviewed key - the reasons
- * below name the gates that make today's call sites safe, and holding those
- * gates in place is the source suites' job.
+ * The stated bounds, plural. An inventory reviews the strings, not the call
+ * sites: a component can still hand a raw column to a reviewed key - the
+ * reasons below name the gates that make today's call sites safe, and
+ * holding those gates in place is the source suites' job. And the watched
+ * VOCABULARY is the *_unit spellings, the inline "s", and unit-suffixed
+ * interpolations: a hand-typed unit nothing spells (Mbit/s), a spelled-out
+ * word (seconds, days - the clean list below holds those out on purpose)
+ * and a unit-less pairing like data_used_value's "{{down}} down / {{up}}
+ * up" are out of textual reach here and stay the review's job.
  */
 const en = readLocale("en");
 
@@ -39,10 +44,14 @@ const unitWords = [...new Set(strings
 
 const PERCENT_ADJACENT = /\{\{\w+\}\}\s?%/;
 const UNIT_ADJACENT = new RegExp(`\\{\\{\\w+\\}\\}\\s?(?:${[...unitWords, "s"].map(escapeRegExp).join("|")})\\b`);
-// A value glued to an INTERPOLATED unit - the pane's own spelling.
-const UNIT_INTERPOLATION = /\{\{\w+\}\}\s?\{\{unit\}\}/;
+// A value glued to an INTERPOLATED unit - {{unit}} today, and any
+// unit-suffixed name a future string interpolates ({{speedUnit}} included).
+const UNIT_INTERPOLATION = /\{\{\w+\}\}\s?\{\{\w*[uU]nit\}\}/;
 
 const GLUED = [PERCENT_ADJACENT, UNIT_ADJACENT, UNIT_INTERPOLATION];
+
+// ms, Mbps, MB/s - the distinct values behind the four *_unit keys.
+const UNIT_SPELLINGS = 3;
 
 /**
  * Every glued string, and why its call sites are safe. A reason names the
@@ -54,7 +63,7 @@ const INVENTORY = new Map([
     ["test.details.over_target",
         "differenceFromTarget's difference with its unit interpolated, behind the sentence's null gate"],
     ["test.details.under_target",
-        "the same construct as over_target, in the other direction"],
+        "differenceFromTarget's null gate, like over_target - the same sentence in the other direction"],
     ["latest.bufferbloat",
         "a tooltip fed the already-coerced increase, behind a grade gate"],
     ["latest.loaded_latency",
@@ -79,11 +88,12 @@ describe("a locale string that glues a value to its unit is a reviewed decision"
     it("reads the source locale", () => {
         assert.ok(strings.length > 500,
             `en.json flattened to ${strings.length} strings where hundreds exist - the read or the flatten broke`);
-        // Exact, like every floor in these suites: a retired *_unit key
-        // updates it in the same change rather than silently narrowing the
-        // adjacency alternation.
-        assert.equal(unitWords.length, 3,
-            "the *_unit keys stopped yielding the three unit spellings, so the adjacency pattern drifted");
+        // Exact over the DISTINCT spellings, which is all a value-derived
+        // floor can pin: four *_unit keys yield three words, because both
+        // latencies spell ms - so a retired latency key changes nothing
+        // here, and a retired speed spelling fails until this updates.
+        assert.equal(unitWords.length, UNIT_SPELLINGS,
+            "the *_unit keys stopped yielding the three distinct spellings, so the adjacency pattern drifted");
     });
 
     it("holds every glued string to the inventory", () => {
@@ -109,6 +119,9 @@ describe("a locale string that glues a value to its unit is a reviewed decision"
             assert.ok(value !== undefined, `"${key}" is no longer in en.json; drop it from the inventory`);
             assert.ok(GLUED.some((pattern) => pattern.test(value)),
                 `"${key}" no longer glues anything; drop it so the inventory stays a list of facts`);
+            // Existence and gluing are held mechanically; that the reason
+            // NAMES a gate is review's job - the docblock's rule, enforced
+            // by the person adding the entry, not fakeable by an assert.
             assert.ok(reason.length > 0, `"${key}" carries no reason`);
         }
     });
@@ -120,6 +133,8 @@ describe("a locale string that glues a value to its unit is a reviewed decision"
         assert.match("{{down}} / {{up}} ms latency", UNIT_ADJACENT);
         assert.match("{{seconds}}s elapsed", UNIT_ADJACENT);
         assert.match("{{amount}} {{unit}} over your target", UNIT_INTERPOLATION);
+        assert.match("{{value}} {{speedUnit}}", UNIT_INTERPOLATION,
+            "a unit-suffixed interpolation other than the literal {{unit}} walks past the scan");
 
         for (const clean of ["{{percent}} of your target", "Takes {{seconds}} seconds",
             "100% ready", "{{count}} tests", "{{name}} settings"])

@@ -10,7 +10,7 @@ import { getIconBySpeed, isMeasured, jitterColour, packetLossColour, readableFig
 import {
     changeFrom, differenceFromTarget, percentOfTarget
 } from "../../client/src/common/components/TestDetails/utils/details.js";
-import { escapeRegExp } from "../helpers/source.js";
+import { escapeRegExp, withoutJsComments } from "../helpers/source.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -498,16 +498,27 @@ describe("what the extraction cannot run, read from the source", () => {
         ["{sentenceTarget: limits.ping, sentenceFigure: test.ping}", 1]
     ];
 
+    // The counts and the guard read the pane's CODE, comments stripped: the
+    // pane's own prose already names its constructs, and counted raw, an
+    // ordinary comment quoting a granted read broke the build - while a
+    // construct surviving only in a comment satisfied the facts test with
+    // the code gone.
+    const paneCode = withoutJsComments(pane);
+
     // Each entry is a fact about the pane before it is an exception to the
     // tripwire - one that stops appearing exempts nothing and must go - and
     // an EXACT count: the guard below blanks every occurrence, so a second
     // copy of a granted construct would be a second, never-reviewed raw
     // read riding a one-time grant.
     it("keeps the excepted reads a list of facts, each granted exactly once", () => {
-        for (const [read, count] of RAW_TARGET_READS)
-            assert.equal(pane.split(read).length - 1, count,
-                `"${read}" appears ${pane.split(read).length - 1} times in the pane where ${count} was granted; `
-                + "a second copy is a second construct, and the blanking exempts both");
+        for (const [read, count] of RAW_TARGET_READS) {
+            const seen = paneCode.split(read).length - 1;
+
+            assert.equal(seen, count, seen === 0
+                ? `"${read}" is no longer in the pane; drop it from RAW_TARGET_READS`
+                : `"${read}" appears ${seen} times in the pane where ${count} was granted; a second copy is `
+                + "a second construct, and the blanking exempts both");
+        }
     });
 
     /**
@@ -516,12 +527,17 @@ describe("what the extraction cannot run, read from the source", () => {
      * unit half - and the optional `?` matters: the hardened siblings two
      * files over write house-style optional chaining, so the next defensive
      * pass over this pane will too, and a guard that only knows the bare
-     * dot lets exactly that edit walk out of it.
+     * dot lets exactly that edit walk out of it. The names are the pane's
+     * whole row-holding scope: test, limits, earlier - and previous and
+     * previousConnection, the props earlier aliases and the guard only ever
+     * watched through the alias.
      */
-    const RAW_LATENCY_READ = /(?<!formatLatency(?:WithUnit)?\()\b(test|limits|earlier)\??\.ping\b/;
+    const RAW_LATENCY_READ =
+        /(?<!formatLatency(?:WithUnit)?\()\b(test|limits|earlier|previousConnection|previous)\??\.ping\b/;
 
     it("reads a raw ping in either chaining spelling, and only a raw one", () => {
-        for (const raw of ["const x = test.ping;", "const x = test?.ping;", "limits?.ping", "earlier?.ping;"])
+        for (const raw of ["const x = test.ping;", "const x = test?.ping;", "limits?.ping", "earlier?.ping;",
+            "previous.ping", "previous?.ping", "previousConnection.ping"])
             assert.match(raw, RAW_LATENCY_READ, `"${raw}" no longer reads as a raw latency`);
 
         for (const guarded of ["formatLatency(test.ping)", "formatLatency(test?.ping)",
@@ -533,14 +549,18 @@ describe("what the extraction cannot run, read from the source", () => {
      * The dot is not the only spelling of a read: `const {ping} = test;` -
      * this codebase's own house form, bufferbloat() writes it - takes the
      * raw column without ever writing "test.ping". One prefix level is
-     * admitted (props.test), two are the stated bound.
+     * admitted, in either chaining (props.test, props?.test); two levels, a
+     * parameter destructure (`({ping}) => ...`) and a nested one
+     * (`{test: {ping}}`) are the stated bounds.
      */
-    const RAW_LATENCY_DESTRUCTURE = /[{,]\s*ping\b[^}]*\}\s*=\s*(?:[\w$]+\.)?(?:test|limits|earlier)\b/;
+    const RAW_LATENCY_DESTRUCTURE =
+        /[{,]\s*ping\b[^}]*\}\s*=\s*(?:[\w$]+\??\.)?(?:test|limits|earlier|previousConnection|previous)\b/;
 
     it("reads a destructured ping, and only from a test-shaped object", () => {
         for (const raw of ["const {ping} = test;", "const {ping: raw} = test;", "const {download, ping} = test;",
             "const {ping} = limits;", "const {ping} = earlier;", "let {ping, jitter} = test;",
-            "const { ping } = test;", "const {ping} = props.test;"])
+            "const { ping } = test;", "const {ping} = props.test;", "const {ping} = props?.test;",
+            "const {ping: previousPing} = previous;", "const {ping} = previousConnection;"])
             assert.match(raw, RAW_LATENCY_DESTRUCTURE, `"${raw}" no longer reads as a raw latency`);
 
         for (const clean of ["const {pingTarget} = config;", "({ping: 25.44})", "const {ping} = other;",
@@ -556,7 +576,7 @@ describe("what the extraction cannot run, read from the source", () => {
      */
     it("lets no raw latency reach anything the reader sees", () => {
         const displayed = RAW_TARGET_READS.reduce(
-            (source, [read]) => source.replaceAll(read, ""), pane);
+            (source, [read]) => source.replaceAll(read, ""), paneCode);
 
         assert.doesNotMatch(displayed, RAW_LATENCY_READ,
             "a ping is still read at the two decimals the column stores");

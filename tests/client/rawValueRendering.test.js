@@ -59,9 +59,10 @@ const UNIT_ALTERNATIVES = UNIT_CALLS.map(escapeRegExp).join("|");
 // A JSX/template expression, one nested brace level deep - and one LINE
 // deep: every match is attributed, skipped and exempted against the line it
 // STARTS on, so a match that could span lines would be judged against a
-// line holding neither the % nor the construct. No current match spans one;
-// this bound keeps the VALUE half on its line by construction (the \s
-// connectors between value and unit are the remaining, narrower reach).
+// line holding neither the % nor the construct. The cross-line CLASS is not
+// given up for that: the spanning detector below owns it outright, because
+// a prettier-wrapped ternary glued to its unit is exactly the shipped bug
+// in its most idiomatic modern spelling.
 const VALUE = "(?:[^{}\\n]|\\{[^{}\\n]*\\})+";
 
 const CSS_LENGTH_LINE = (line) => line.includes("style={{");
@@ -186,6 +187,19 @@ const flaggedIn = ({text}) => {
     }));
 };
 
+/**
+ * The same forms with the value free to span lines. Not used to REPORT
+ * offenders - a spanning match has no honest line for the skips and
+ * exemptions to judge - but to DETECT them: any gluing these see that the
+ * one-line forms do not is a gluing written across lines, and there is no
+ * legitimate one. This is what keeps the one-line VALUE an attribution rule
+ * rather than a blind spot.
+ */
+const SPANNING_PATTERNS = PATTERNS.map(({form, pattern}) => ({
+    form,
+    pattern: new RegExp(pattern.source.replaceAll("[^{}\\n]", "[^{}]"), "g")
+}));
+
 const offenders = files.flatMap(({file, text}) => {
     const allowed = ALLOWED.get(file);
 
@@ -290,11 +304,7 @@ describe("rendering a measurement next to its unit", () => {
             // gluing a second time - the fixed form of the sentence shape.
             '`${t("test.details.packet_loss")} ${lossText}`',
             // A modulo is arithmetic, not a glued percent sign.
-            "const remainder = (value + offset) % steps;",
-            // And a value whose braces span lines is out of every pattern's
-            // reach by construction - a spanning match would be judged
-            // against its opening line, which holds nothing it names.
-            "`${\n  value\n}%`"
+            "const remainder = (value + offset) % steps;"
         ];
 
         for (const shape of fixed)
@@ -325,19 +335,54 @@ describe("rendering a measurement next to its unit", () => {
             const source = files.find((entry) => entry.file === file);
             assert.ok(source, `${file} is no longer in the tree; drop it from ALLOWED`);
 
-            // Distinct LINES, not matches: one construct can trip two
-            // patterns - or trip one twice on its own line - and neither is
-            // a second granted construct. A second flagged line is.
-            const covered = new Set(flaggedIn(source)
-                .filter(({source: line}) => pattern.test(line))
-                .map(({line}) => line));
+            // MATCH count, not distinct lines: the scan itself exempts by
+            // line text, so a second construct grown onto a granted line is
+            // invisible everywhere but here - this count is the only net
+            // under a granted line. (A single construct tripping two
+            // patterns would double-count; none of the nine does, and the
+            // day one legitimately must, this widens deliberately.)
+            const flagged = flaggedIn(source).map(({source: line}) => line);
 
             // Exactly one, the -1 budget's rule: an entry names one
-            // construct, and a pattern covering a second flagged line is a
+            // construct, and a pattern covering a second flagged match is a
             // file-wide skip wearing a narrow entry's clothes.
-            assert.equal(covered.size, 1,
-                `${file}'s exemption covers ${covered.size} flagged lines ` +
-                "where one construct was granted - drop the entry or narrow the pattern");
+            assert.equal(flagged.filter((line) => pattern.test(line)).length, 1,
+                `${file}'s exemption covers ${flagged.filter((line) => pattern.test(line)).length} flagged ` +
+                "matches where one construct was granted - drop the entry or narrow the pattern");
         }
+    });
+
+    /**
+     * And nothing glues across lines at all: the one-line VALUE keeps
+     * attribution honest, and this is what keeps it from being a blind
+     * spot. Any gluing the spanning forms see that the one-line forms do
+     * not was written across lines - and there is no legitimate one: split
+     * it onto one line or route it through a formatter.
+     */
+    it("lets no gluing span lines", () => {
+        for (const {file, text} of files)
+            for (const [at, {form, pattern}] of PATTERNS.entries()) {
+                const singleAt = new Set([...text.matchAll(pattern)].map(({index}) => index));
+                const spanning = [...text.matchAll(SPANNING_PATTERNS[at].pattern)]
+                    .find(({index}) => !singleAt.has(index));
+
+                assert.equal(spanning, undefined,
+                    `${file} glues a value to its ${form} target across lines, starting at line `
+                    + `${spanning && lineOf(text, spanning.index)} - a spanning gluing has no line the skips `
+                    + "and exemptions could honestly judge");
+            }
+    });
+
+    // The spanning detector's own recognition: the wrapped percent the
+    // one-line patterns cannot see must be exactly what the spanning forms
+    // still catch.
+    it("recognises a gluing written across lines", () => {
+        const wrapped = "`${\n  value\n}%`";
+        const percentAt = PATTERNS.findIndex(({form}) => form === "percent");
+
+        assert.ok(new RegExp(SPANNING_PATTERNS[percentAt].pattern.source).test(wrapped),
+            "the spanning percent form no longer sees a value wrapped across lines");
+        assert.equal(new RegExp(PATTERNS[percentAt].pattern.source).test(wrapped), false,
+            "the one-line form matches a spanning value, so the detector cannot tell the two apart");
     });
 });
