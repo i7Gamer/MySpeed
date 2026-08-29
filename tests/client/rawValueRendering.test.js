@@ -30,26 +30,27 @@ const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", ".."
  * before them were blind: adjacent interpolations, the value-then-unit-span
  * form, the unit template, and the percent template. Two more were probe
  * shapes that walked clean past those four - a percent glued in JSX text
- * (`{props.packetLoss}%`) and one glued by concatenation (`value + "%"`).
- * The value half admits one level of nested braces, because t("key", {opts})
- * is how half the values here are spelt - deeper nesting stays out, and is
- * the first place to look if a new offender scans clean.
+ * (`{props.packetLoss}%`) and one glued by concatenation, in any quote the
+ * backtick included. The percent template is unanchored: the anchored form
+ * saw only a template that was EXACTLY value-then-%, so a percent later in
+ * a longer sentence - one shipped, gated only by its own ternary - and a
+ * spaced one walked past it, and the label templates the anchor used to
+ * excuse are named exemptions instead. The value half admits one level of
+ * nested braces, because t("key", {opts}) is how half the values here are
+ * spelt - deeper nesting stays out, and is the first place to look if a new
+ * offender scans clean.
  *
  * The walk covers .jsx and .js alike: a chart helper or a context is as able
  * to glue a percent as a component, and the .js half being unwalked was an
- * unnamed hatch. What that half flags today is exactly one line -
- * formatPercent's own body, which is where the % is finally and deliberately
- * glued, named below.
+ * unnamed hatch.
  *
- * Three named hatches, so nobody rediscovers them: a className carried in a
+ * Two named hatches, so nobody rediscovers them: a className carried in a
  * braced BINDING (FigureWithUnit's own span - a binding cannot be judged
  * textually, and a new one is a new private renderer, which the
- * FigureWithUnit suite exists to make unnecessary); a percent inside a
- * `style={{…}}` line, which is a CSS length, not a reading - every percent
- * form shares that skip; and a percent inside a SENTENCE - the backtick
- * anchor keeps label templates with a leading interpolation out of reach, so
- * the pane's loss label prints its stored column beside the chip the
- * exemption below already names.
+ * FigureWithUnit suite exists to make unnecessary); and a percent inside a
+ * `style={{…}}` line, which is a CSS length, not a reading - the template
+ * and concat forms share that skip, and the JSX-text form needs none
+ * because it structurally cannot match a template's percent.
  */
 
 const UNIT_CALLS = ["speedUnit", 't("latest.ping_unit")', 't("latest.jitter_unit")',
@@ -82,10 +83,13 @@ const PATTERNS = [
     },
     {
         form: "percent",
-        // A template that is exactly value-then-% - the spelling that printed
-        // "-1%". Backtick-anchored both ends, so a sentence with a leading
-        // interpolation does not match; style={{…}} lines are CSS lengths.
-        pattern: new RegExp("`\\$\\{" + VALUE + "\\}%`", "g"),
+        // A value-then-% anywhere in a template - the spelling that printed
+        // "-1%". Unanchored, because the anchored form saw only a template
+        // that was EXACTLY value-then-%: a percent later in a longer
+        // sentence, or spaced the way some locales want, walked past it.
+        // The two label templates that glue a stored column by policy are
+        // named exemptions below; style={{…}} lines are CSS lengths.
+        pattern: new RegExp("\\$\\{" + VALUE + "\\}\\s?%", "g"),
         skip: CSS_LENGTH_LINE
     },
     {
@@ -101,8 +105,9 @@ const PATTERNS = [
     {
         form: "percent (concat)",
         // And the spelling with no braces at all: a value concatenated with
-        // its percent sign.
-        pattern: /\+\s*["']%["']/g,
+        // its percent sign, in any quote including the backtick - the
+        // backreference keeps mismatched quotes from reading as the shape.
+        pattern: /\+\s*(["'`])%\1/g,
         skip: CSS_LENGTH_LINE
     }
 ];
@@ -137,8 +142,14 @@ const ALLOWED = new Map([
             + "overviewQuality.test.js executes across measured, text, placeholder and absent spellings"
     }],
     ["common/components/TestDetails/TestDetails.jsx", {
-        pattern: /text: `\$\{test\.packetLoss\}%`/,
-        reason: "the pane's loss chip, same stored-column-raw policy behind the same gate"
+        pattern: /const lossText = `\$\{test\.packetLoss\}%`;/,
+        reason: "the pane's loss chip and its label share one glue site, same stored-column-raw policy behind "
+            + "the same gate - one construct, which is all a file can be granted"
+    }],
+    ["common/components/IntegrationDialog/templateVariables.js", {
+        pattern: /`%\$\{name\}%`/,
+        reason: "not a percentage: the token's % signs are the delimiters the server substitutes on - "
+            + "%ping% is a name, not a reading"
     }],
     ["pages/Statistics/charts/LatestTestChart/LatestTestChart.jsx", {
         pattern: /`\$\{props\.test\.packetLoss\}%`/,
@@ -233,7 +244,11 @@ describe("rendering a measurement next to its unit", () => {
             ],
             percent: [
                 "`${packetLoss}%`",
-                "`${props.packetLoss}%`"
+                "`${props.packetLoss}%`",
+                // The two shapes the anchored form walked past: a percent
+                // inside a longer sentence, and one spaced off its value.
+                "`${props.tests.failed} (${rate}%)`",
+                "`${rate} %`"
             ],
             "percent (jsx)": [
                 '<span className="loss">{props.packetLoss}%</span>',
@@ -243,7 +258,8 @@ describe("rendering a measurement next to its unit", () => {
             "percent (concat)": [
                 '{props.packetLoss + "%"}',
                 "score + '%'",
-                'text: loss + "%"'
+                'text: loss + "%"',
+                "text: loss + `%`"
             ]
         };
 
@@ -272,8 +288,9 @@ describe("rendering a measurement next to its unit", () => {
             // The component's own span: the class is a braced BINDING, which
             // no textual pattern can judge - the named hatch.
             "<>{value}<span className={unitClass}>{unit}</span></>",
-            // A sentence with a leading interpolation is not a bare percent.
-            '`${t("test.details.packet_loss")} ${test.packetLoss}%`',
+            // The pane's label reads the hoisted glue site rather than
+            // gluing a second time - the fixed form of the sentence shape.
+            '`${t("test.details.packet_loss")} ${lossText}`',
             // A modulo is arithmetic, not a glued percent sign.
             "const remainder = (value + offset) % steps;"
         ];

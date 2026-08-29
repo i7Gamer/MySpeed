@@ -204,7 +204,11 @@ export const OverviewChart = (props) => {
             description: t("statistics.overview.failed_description"),
             // A count alone says nothing without the total beside it: 23 is a
             // rounding error across a year and an outage across an afternoon.
-            value: rate === null ? props.tests.failed : `${props.tests.failed} (${rate}%)`,
+            // Through the shared percent rule: rate is failureRate's output,
+            // already a non-negative number or null, so formatPercent prints
+            // exactly what the hand-glued % printed - and the scan sees a
+            // formatter instead of a raw gluing.
+            value: rate === null ? props.tests.failed : `${props.tests.failed} (${formatPercent(rate)})`,
             delta: {current: props.tests.failed, previous: previous?.tests?.failed,
                 higherIsBetter: false, mode: "absolute"}
         },

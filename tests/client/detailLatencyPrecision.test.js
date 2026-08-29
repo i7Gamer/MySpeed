@@ -42,7 +42,9 @@ const between = (source, from, to) => {
 };
 
 const DERIVATIONS_START = "const ping = formatLatency";
-const QUALITY_START = "const qualityFigures";
+// The region opens at the loss chip's hoisted glue site: the chip's text and
+// label both read it, so the executed strip below needs it in the slice.
+const QUALITY_START = "const lossText";
 const QUALITY_END = "const quality =";
 const METRICS_START = "const metrics = [";
 const METRICS_END = "\n    ];";

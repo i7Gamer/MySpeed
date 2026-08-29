@@ -257,6 +257,12 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
      * and it measures it once. Repeated under both directions it would read as
      * two measurements, and neither of them was taken.
      */
+    // One glue site for the chip's figure and for the label that announces
+    // it: two copies of the same interpolation are two lines to keep in
+    // step, and the scan's exemption names ONE construct per file. Read
+    // only behind the reader's gate below, like the trimmed ping above.
+    const lossText = `${test.packetLoss}%`;
+
     const qualityFigures = [
         // Both graded against what a call needs rather than against a configured
         // optimum - there is a setting for the ping above them and none for
@@ -292,8 +298,8 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
             icon: faLinkSlash,
             info: packetLossInfo,
             level: packetLossColour(test.packetLoss),
-            text: `${test.packetLoss}%`,
-            label: `${t("test.details.packet_loss")} ${test.packetLoss}%`
+            text: lossText,
+            label: `${t("test.details.packet_loss")} ${lossText}`
         }
     ].filter(Boolean);
 
