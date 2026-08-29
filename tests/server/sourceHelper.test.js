@@ -707,6 +707,29 @@ describe("runBodies", () => {
             "a continuation line reaches the same shell and is not read at all");
     });
 
+    /**
+     * And the other side of that rule, which nothing was holding.
+     *
+     * A plain scalar is not one string the way a block is: its continuation
+     * lines are still YAML, so a `#` line among them is YAML's own comment and
+     * never reaches the shell at all. That is the branch the case below depends
+     * on being there - keeping those lines would put the prose explaining a
+     * splice into the body being scanned for one - and neutralising it changed
+     * no result in any suite reading this walk. A guard that can be deleted
+     * without a failure is one that will be.
+     */
+    it("drops a comment among a plain scalar's continuation lines", () => {
+        const [body] = runBodies(workflow(
+            "        run: echo one",
+            "          # never splice ${{ inputs.version }} into a shell",
+            "          echo two",
+            "      - name: Next step"
+        ));
+
+        assert.deepEqual(body.lines.map((line) => line.trim()), ["echo one", "echo two"],
+            "a comment among a plain scalar's lines is YAML's own and reaches no shell, so the sentence warning about a splice is read as one");
+    });
+
     // A blank line inside a block scalar is part of it, not the end of it.
     it("keeps a blank line inside a block", () => {
         const bodies = runBodies(workflow(
@@ -778,6 +801,72 @@ describe("runBodies", () => {
             assert.deepEqual(body.lines.map((line) => line.trim()), ["echo one"],
                 `"${header}" is not read as a block header, so the indicator is handed back as shell`);
         }
+    });
+
+    /**
+     * And a header may carry a comment, which YAML allows and this did not.
+     *
+     * YAML 1.2 §8.1.1 puts an optional comment after the block header, so
+     * `run: | # bump the version` opens a block scalar like any other. The
+     * pattern anchored at the end of the line, so a header with one matched
+     * nothing and the whole step was read as a plain scalar - which fails twice
+     * over. The header text comes back as the body's first line, and every `#`
+     * line of the real body is then stripped as YAML's own comment: exactly the
+     * carrier the case above exists to keep, made invisible again by nothing
+     * more than a comment on the header.
+     */
+    it("reads a block header that carries a comment", () => {
+        const [body] = runBodies(workflow(
+            "        run: | # bump the version",
+            "          # title: ${{ github.event.pull_request.title }}",
+            "          echo building"
+        ));
+
+        assert.deepEqual(body.lines.map((line) => line.trim()),
+            ["# title: ${{ github.event.pull_request.title }}", "echo building"],
+            "the commented header is read as a one-liner, so it leaks in as the body's first line and the shell comment carrying a splice is stripped");
+    });
+
+    it("reads a folded one that carries a comment", () => {
+        const [body] = runBodies(workflow(
+            "        run: > # folded, and explained",
+            "          # note: ${{ inputs.version }}",
+            "          echo building"
+        ));
+
+        assert.deepEqual(body.lines.map((line) => line.trim()),
+            ["# note: ${{ inputs.version }}", "echo building"],
+            "a folded header with a comment is read as a one-liner");
+    });
+
+    // The two halves together, which is the shape neither fix covers alone.
+    it("reads one that states its indentation and carries a comment", () => {
+        const [body] = runBodies(workflow(
+            "        run: |2 # two columns in, and why",
+            "          # note: ${{ inputs.version }}",
+            "          echo building"
+        ));
+
+        assert.deepEqual(body.lines.map((line) => line.trim()),
+            ["# note: ${{ inputs.version }}", "echo building"],
+            "an indentation indicator and a comment on the same header are not read together");
+    });
+
+    /**
+     * But a comment is the only thing that may follow it. `| 2` is not YAML's
+     * way of writing `|2`, and reading it as a header would take a real
+     * one-liner's first word for an indicator - so what is not a comment is
+     * still not a header, and the line is the body it has always been.
+     */
+    it("does not read what is not a comment after the indicator as one", () => {
+        const [body] = runBodies(workflow(
+            "        run: | 2",
+            "          # a comment among a plain scalar's lines",
+            "          echo one"
+        ));
+
+        assert.deepEqual(body.lines.map((line) => line.trim()), ["| 2", "echo one"],
+            "the header pattern widened past comments, so junk after the indicator opens a block");
     });
 
     it("hands back each body as its lines and as one text", () => {

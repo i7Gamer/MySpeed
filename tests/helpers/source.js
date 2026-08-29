@@ -303,8 +303,17 @@ const HASH_COMMENT = /^\s*#/;
  * order - `|2`, `>2-`, `|-2`. A header carrying a digit matched nothing, so it
  * was taken for a one-liner and the indicator came back as the body's own first
  * line, with the real body appended underneath.
+ *
+ * And a comment after it, which YAML 1.2 §8.1.1 allows: `run: | # bump the
+ * version` opens a block like any other. Anchored at the end of the line, a
+ * header with one failed the same way and cost more, because a plain scalar's
+ * continuation lines have their comments stripped - so every `#` line of the
+ * body went with it, and an expression spliced into a shell comment became
+ * invisible to the scan written to find exactly that. A comment, though, and
+ * nothing else: `| 2` is not YAML's way of writing `|2`, and a header that is
+ * followed by anything but a `#` is still not one.
  */
-const BLOCK_INDICATOR = /^\s*[|>](?:[1-9][-+]?|[-+][1-9]?)?\s*$/;
+const BLOCK_INDICATOR = /^\s*[|>](?:[1-9][-+]?|[-+][1-9]?)?\s*(?:#.*)?$/;
 
 /**
  * Shell-style sources with their comment lines removed, for the assertions

@@ -192,15 +192,23 @@ describe("tightening a volume an older image left open", () => {
      * chmod that fails ends the container before the server it exists to start
      * has run at all.
      *
-     * Asked of that attempt and not of everything below the gate. The silence
-     * being pinned is this line's, and scanning the whole remainder for the word
-     * `echo` fails on any line added down there for any reason - a start-up
-     * banner, a diagnostic - none of which is the warning on every start that
-     * this exists to prevent. A pin that fires on unrelated edits is one that
-     * gets deleted rather than read.
+     * Asked of that attempt first, because that is the construct the `2>` and
+     * the `|| true` belong to. But not only of it: read that narrowly the pin
+     * says nothing about a warning written on its own line beneath, which is the
+     * plainest way to write the very thing it forbids - and one added there
+     * passed this file, and the whole server suite, without a word.
+     *
+     * So the second assertion is scoped by content instead of by construct. Not
+     * the word `echo`, which fails on any line added down there for any reason -
+     * a start-up banner, a port diagnostic - none of which is the warning on
+     * every start that this exists to prevent, and a pin that fires on unrelated
+     * edits is one that gets deleted rather than read. An `echo` that names a
+     * warning or names the directory this path could not tighten is that
+     * warning, wherever below the gate it is written.
      */
     it("says nothing when it cannot, rather than warning on every start", () => {
-        const lines = paths().asAnyone.split("\n");
+        const {asAnyone} = paths();
+        const lines = asAnyone.split("\n");
         const at = lines.findIndex((line) => /chmod o-rwx/.test(line));
 
         assert.notEqual(at, -1, "the rootless path no longer attempts it at all");
@@ -220,5 +228,8 @@ describe("tightening a volume an older image left open", () => {
             "set -e turns a chmod this path is not allowed to make into a container that never starts the server");
         assert.doesNotMatch(attempt, /\becho\b/,
             "the rootless path prints a warning for the case it was written to expect, which is a line of alarm on every start of every hardened deployment");
+
+        assert.doesNotMatch(asAnyone, /echo[^\n]*(?:Warning|\/myspeed\/data)/i,
+            "something below the gate warns about the volume it could not tighten, which is a line of alarm on every start of every hardened deployment - wherever down there it is written");
     });
 });
