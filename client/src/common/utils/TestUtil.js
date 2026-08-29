@@ -375,7 +375,8 @@ export function bufferbloat(test) {
  * the successes it filtered out of the same array (buildStatistics in
  * server/util/statistics.js), so neither can arrive as text or below zero,
  * and the node proxy forwards another instance's copy of that same
- * arithmetic verbatim (server/routes/nodes.js). So the Number.isFinite gate
+ * arithmetic verbatim (proxyRequest in server/controller/node.js). So the
+ * Number.isFinite gate
  * is kept for gradeForIncrease's reason rather than the measurement
  * readers': strict on a computed operand is how a producer that changed
  * shape gets noticed instead of coerced. The pins in testUtil hold that

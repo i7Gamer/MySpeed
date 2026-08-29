@@ -743,6 +743,10 @@ describe("a shared name means the shared thing", () => {
         assert.deepEqual(shadowsShared("const api = {async formatPercent(value) { return value; }};"), []);
         assert.deepEqual(shadowsShared("const api = {get formatPercent() { return 1; }};"), []);
         assert.deepEqual(shadowsShared('const api = {["formatPercent"]: (value) => value};'), []);
+        assert.deepEqual(shadowsShared("const api = {formatPercent(value = f()) { return value; }};"), [],
+            "a parameter list holding a ) is the shorthand form's stated bound");
+        assert.deepEqual(shadowsShared("const api = {formatPercent(\n    value\n) { return value; }};"), [],
+            "a line-spanning parameter list is the shorthand form's stated bound");
         assert.deepEqual(shadowsShared("foo(a, formatPercent(b));"), [],
             "a comma-preceded call is not a method - the block anchor is what keeps 40 real calls out");
     });

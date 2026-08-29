@@ -170,8 +170,8 @@ describe("the overview row carries both quality figures", () => {
     /**
      * And in its own glyph, info and caption - the closure hands each icon
      * and info a distinct sentinel precisely so this can be said: with four
-     * nulls, a swap of every identity field between the two chips left all
-     * 2850 tests green while the jitter chip wore the loss chip's face.
+     * nulls, a swap of every identity field between the two chips left
+     * every suite green while the jitter chip wore the loss chip's face.
      */
     it("carries each chip's own glyph, info and caption", () => {
         const chips = built(10, 0.5);

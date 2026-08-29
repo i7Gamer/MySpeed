@@ -60,7 +60,8 @@ const UNIT_ALTERNATIVES = UNIT_CALLS.map(escapeRegExp).join("|");
 // deep: every match is attributed, skipped and exempted against the line it
 // STARTS on, so a match that could span lines would be judged against a
 // line holding neither the % nor the construct. No current match spans one;
-// the bound makes that impossible rather than lucky.
+// this bound keeps the VALUE half on its line by construction (the \s
+// connectors between value and unit are the remaining, narrower reach).
 const VALUE = "(?:[^{}\\n]|\\{[^{}\\n]*\\})+";
 
 const CSS_LENGTH_LINE = (line) => line.includes("style={{");

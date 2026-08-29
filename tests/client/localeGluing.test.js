@@ -69,7 +69,8 @@ const INVENTORY = new Map([
     ["statistics.consistency.loaded_latency_average",
         "a tooltip whose increase is coerced at the card's boundary and whose tests is a computed count"],
     ["status.elapsed",
-        "a live tick counter - the only no-space gluing in the file, and never a stored column"]
+        "a live tick counter - the only no-space UNIT gluing in the file (of_target's percent is the "
+        + "no-space other), and never a stored column"]
 ]);
 
 describe("a locale string that glues a value to its unit is a reviewed decision", () => {
@@ -78,8 +79,11 @@ describe("a locale string that glues a value to its unit is a reviewed decision"
     it("reads the source locale", () => {
         assert.ok(strings.length > 500,
             `en.json flattened to ${strings.length} strings where hundreds exist - the read or the flatten broke`);
-        assert.ok(unitWords.length >= 3,
-            "the *_unit keys stopped yielding unit spellings, so the adjacency pattern watches almost nothing");
+        // Exact, like every floor in these suites: a retired *_unit key
+        // updates it in the same change rather than silently narrowing the
+        // adjacency alternation.
+        assert.equal(unitWords.length, 3,
+            "the *_unit keys stopped yielding the three unit spellings, so the adjacency pattern drifted");
     });
 
     it("holds every glued string to the inventory", () => {
