@@ -198,12 +198,15 @@ const flaggedIn = ({text}) => {
  * The same forms with the value free to span lines. Not used to REPORT
  * offenders - a spanning match's construct straddles lines - but to DETECT
  * them: any gluing these see that the one-line forms do not is a gluing
- * whose VALUE was written across lines. Judged against the OPENING line for
- * the skips and the exemptions, because that is where the value - the half
- * the entry or the style names - actually sits; a wrapped granted construct
- * or a wrapped CSS width is still granted, not a forced reflow. The stated
- * bound stays the value half's nesting: braces two deep are out of both
- * pattern sets alike.
+ * whose VALUE was written across lines. The CSS skip transfers to the
+ * OPENING line, where the style marker actually sits, so a wrapped bar
+ * width is not a forced reflow. An ALLOWED grant deliberately does NOT
+ * transfer: an exemption's pattern names the whole construct, which no
+ * single line of a wrap can carry - so granting by opening line was
+ * unreachable for real grants and only ever excused offenders that wrapped
+ * onto a granted line. A granted construct that must wrap is a new review,
+ * not an inherited grant. The stated bound stays the value half's nesting:
+ * braces two deep are out of both pattern sets alike.
  */
 const SPANNING_PATTERNS = PATTERNS.map(({form, pattern}) => ({
     form,
@@ -375,17 +378,13 @@ describe("rendering a measurement next to its unit", () => {
      */
     it("lets no gluing span lines", () => {
         for (const {file, text} of files) {
-            const allowed = ALLOWED.get(file);
             const lines = text.split("\n");
 
             for (const [at, {form, pattern, skip}] of PATTERNS.entries()) {
                 const singleAt = new Set([...text.matchAll(pattern)].map(({index}) => index));
                 const spanning = [...text.matchAll(SPANNING_PATTERNS[at].pattern)]
                     .filter(({index}) => !singleAt.has(index))
-                    .find(({index}) => {
-                        const opening = lines[lineOf(text, index) - 1].trim();
-                        return !skip?.(opening) && !allowed?.pattern.test(opening);
-                    });
+                    .find(({index}) => !skip?.(lines[lineOf(text, index) - 1].trim()));
 
                 assert.equal(spanning, undefined,
                     `${file} glues a value to its ${form} target across lines, starting at line `
