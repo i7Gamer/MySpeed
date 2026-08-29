@@ -493,17 +493,22 @@ fi
 # and the server writes this path as an unprivileged account, so a link planted
 # under a compromise is the other thing that can be waiting at the end of it.
 #
-# docker-entrypoint.sh's `chown -h` is not the precedent this used to cite. That
-# -h is about the links the server can plant *inside* a volume the container does
-# own; whether the root of the volume may itself be a link is a different
-# question, and the container never asks it.
+# The handover below says -h for the same reason docker-entrypoint.sh does, and
+# for the same two directories: this tree is written by the unprivileged service
+# account, so a link planted under it by a compromise is waiting for the next
+# upgrade, which runs as root. GNU's chown already refuses to follow links under
+# -R - its default is -P, verified against coreutils 9.1 for an operand link and
+# for one planted inside the tree alike - but POSIX leaves -R without -H/-L/-P
+# unspecified, and a property that keeps root from re-owning an arbitrary file
+# should be stated in the command rather than trusted to a default. -h beside -R
+# is the same GNU/busybox/BSD extension the entrypoint already relies on, and on
+# the hosts this installer supports it changes nothing but the saying.
 #
-# What is left alone is said in full, because it is more than the mode. `chown -R`
-# does not follow a symlink operand either - GNU's -R defaults to -P - so the
-# handover below changes the link itself and never the directory at the far end.
-# An operator told only that "permissions are left as they were found" is not
-# told the thing that stops the server booting, which is that the account named
-# in the unit cannot open a database in a directory it does not own.
+# What is left alone is said in full, because it is more than the mode. With -h
+# the handover below changes a link itself and never the directory at the far
+# end. An operator told only that "permissions are left as they were found" is
+# not told the thing that stops the server booting, which is that the account
+# named in the unit cannot open a database in a directory it does not own.
 #
 # A link this script cannot work with never reaches here at all. Whether the
 # target is a directory is a precondition, not a decision about a mode, and it is
@@ -568,7 +573,7 @@ if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]; then
     # on Debian and RHEL but not everywhere, and a chown that names a group that
     # does not exist changes nothing at all.
     mkdir -p "$INSTALLATION_PATH/bin"
-    chown -R "$SERVICE_USER" "$INSTALLATION_PATH/data" "$INSTALLATION_PATH/bin"
+    chown -Rh "$SERVICE_USER" "$INSTALLATION_PATH/data" "$INSTALLATION_PATH/bin"
 else
     echo -e "$YELLOW⚠ Warning: $NORMAL $SERVICE_FALLBACK, so MySpeed will run as root."
     sleep 2

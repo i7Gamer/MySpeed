@@ -571,7 +571,7 @@ describe("install.sh registers a service that is not root", () => {
      * they are owned by root because that is what installed them.
      */
     it("hands the installation to the account that will run it", () => {
-        assert.match(source, /chown -R "\$SERVICE_USER" "\$INSTALLATION_PATH\/data" "\$INSTALLATION_PATH\/bin"/,
+        assert.match(source, /chown -Rh "\$SERVICE_USER" "\$INSTALLATION_PATH\/data" "\$INSTALLATION_PATH\/bin"/,
             "the new account cannot write the database it inherits");
         assert.ok(source.indexOf("chown") < unitStart,
             "the service is registered before it can read its own directory");
@@ -746,11 +746,11 @@ describe("install.sh registers a service that is not root", () => {
          * whole of what is left as it was found.
          *
          * It said "permissions", which reads as the mode alone - and the mode is
-         * the half that matters least here. `chown -R` does not follow a symlink
-         * operand either (GNU's -R defaults to -P), so the handover a few lines
-         * below changes the link itself and never the directory at the far end:
-         * the service account is left unable to open storage.db, and the only
-         * thing that said so was a sentence about permissions.
+         * the half that matters least here. `chown -Rh` never follows a symlink
+         * - the -h states what GNU's -P default already did - so the handover a
+         * few lines below changes the link itself and never the directory at
+         * the far end: the service account is left unable to open storage.db,
+         * and the only thing that said so was a sentence about permissions.
          */
         it("names the ownership it leaves alone, and the account that needs it", () => {
             const symlinked = arms().symlinked;
@@ -1323,6 +1323,17 @@ describe("install.sh registers a service that is not root", () => {
                 `chown runs over the whole of whatever -d was given: ${line.trim()}`);
             assert.match(line, /\$INSTALLATION_PATH\/(data|bin)/,
                 `chown names something other than the directories the server writes: ${line.trim()}`);
+            // -h stated, not left to a default. GNU's -R already lchowns the
+            // links it meets (proven against coreutils 9.1: an operand link
+            // and a link planted inside the tree both kept their targets'
+            // owners) - but POSIX leaves -R-without-H/L/P unspecified, and
+            // the tree this walks is written by the unprivileged service
+            // account, so "a planted link's target is never re-owned by
+            // root's upgrade" must be a flag a test can read, not a
+            // coreutils default it has to trust. docker-entrypoint.sh made
+            // the same choice on the same two directories.
+            assert.match(line, /^\s*chown\s+-[A-Za-z]*h\b/,
+                `chown trusts the platform default not to follow links: ${line.trim()}`);
         });
     });
 
