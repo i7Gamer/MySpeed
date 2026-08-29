@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { formatDuration, formatPercent, NOT_MEASURED } from "@/common/utils/FormatUtil.js";
+import {
+    formatBytes, formatDuration, formatLatencyWithUnit, formatPercent, NOT_MEASURED
+} from "@/common/utils/FormatUtil.js";
 import { failureRate, readableFigure } from "@/common/utils/TestUtil.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
@@ -131,6 +133,107 @@ describe("the packet-loss row on the overview card", () => {
         assert.equal(text.value, "0.5%", "a text reading prints the number it spells");
         assert.equal(text.delta.current, 0.5);
         assert.equal(text.delta.previous, 1.5, "the previous window's figure is not read the same way");
+    });
+
+    /**
+     * The duration row beside it, held to the same destinations: its
+     * formatter was the one that neither coerced nor refused, so a proxied
+     * node's -1 printed "-1s" with a green improvement arrow computed from
+     * the placeholder - one row above a loss row answering N/A for the
+     * identical payload.
+     */
+    it("builds the duration row from the coerced reading too", () => {
+        const start = overview.indexOf("const rate = failureRate");
+        const end = overview.indexOf("];", start);
+        const stub = (key, values) => values === undefined ? key : {key, ...values};
+
+        const durationRow = (avg, previous) => new Function(
+            "props", "t", "formatDuration", "formatPercent", "readableFigure", "failureRate",
+            "faGaugeHigh", "faCircleExclamation", "faStopwatch", "faLinkSlash",
+            `${overview.slice(start, end + 2)}\nreturn items;`)(
+            {tests: {total: 10, failed: 1}, time: {avg}, packetLoss: null, previous}, stub,
+            formatDuration, formatPercent, readableFigure, failureRate,
+            null, null, null, null)
+            .find((item) => item.title === "statistics.overview.average_title");
+
+        for (const [refused, label] of [[-1, "the placeholder"], ["-1", "its text spelling"],
+            ["auto", "junk"]]) {
+            const item = durationRow(refused, {time: {avg: 6}});
+
+            assert.equal(item.value, NOT_MEASURED, `${label} printed as a duration`);
+            assert.equal(item.delta.current, null,
+                `${label} reached the delta, so the arrow claims an improvement from a figure nobody measured`);
+        }
+
+        const text = durationRow("6", {time: {avg: "-1"}});
+        assert.equal(text.value, "6s", "a text duration prints the number it spells");
+        assert.equal(text.delta.current, 6);
+        assert.equal(text.delta.previous, null, "a refused previous window still feeds the arrow");
+    });
+});
+
+/**
+ * The enlarged view's rows, run off the card's own statements: the ping,
+ * duration-spread and data-used gates were the null-only shape the loss row
+ * dropped, so a proxied node's placeholder payload rendered "between N/A and
+ * N/A" rows whose deltas were computed from -1.
+ */
+describe("the enlarged overview's rows refuse what no reader can read", () => {
+    const lifted = (props) => {
+        const start = overview.indexOf("const expandedItems = (props) => {");
+        assert.notEqual(start, -1, "the enlarged rows are no longer derived where this lift expects");
+
+        const end = overview.indexOf("\n};", start);
+        assert.notEqual(end, -1, "expandedItems no longer closes where this lift expects");
+
+        const stub = (key, values) => values === undefined ? key : {key, ...values};
+
+        return new Function(
+            "t", "formatLatencyWithUnit", "formatDuration", "formatBytes", "readableFigure", "testsPerDay",
+            "faPingPongPaddleBall", "faHourglassHalf", "faCalendarDay", "faDatabase",
+            `${overview.slice(start, end + 3)}\nreturn expandedItems;`)(
+            stub, formatLatencyWithUnit, formatDuration, formatBytes, readableFigure, () => null,
+            null, null, null, null)(props);
+    };
+
+    // Every fixture carries tests: testsPerDay's argument is dereferenced
+    // before the stub can decline the row.
+    const BASE = {tests: {total: 10}};
+
+    const row = (props, title) => lifted({...BASE, ...props}).find((item) => item.title === title);
+
+    it("hides the latency row for an average nothing can read", () => {
+        for (const refused of [-1, "-1", "auto", NaN])
+            assert.equal(row({ping: {avg: refused, min: refused, max: refused, median: refused}},
+                "latest.ping"), undefined, `an average of ${JSON.stringify(refused)} still drew the row`);
+    });
+
+    it("keeps it for a readable average, delta included, in either spelling", () => {
+        const item = row({ping: {avg: "23.47", min: 8.91, max: 132.76, median: 22.05},
+            previous: {ping: {avg: -1}}}, "latest.ping");
+
+        assert.notEqual(item, undefined);
+        assert.equal(item.delta.current, 23.47, "the delta reads the raw column");
+        assert.equal(item.delta.previous, null, "a refused previous window still feeds the arrow");
+    });
+
+    it("hides the duration spread unless both ends read", () => {
+        assert.equal(row({time: {min: -1, max: -1}}, "statistics.overview.span_title"), undefined,
+            "a placeholder pair printed as a spread");
+        assert.equal(row({time: {min: 2, max: "auto"}}, "statistics.overview.span_title"), undefined,
+            "a spread with a refused end printed as \"2s – N/A\"");
+        assert.notEqual(row({time: {min: "2", max: "9"}}, "statistics.overview.span_title"), undefined,
+            "a readable text pair vanished");
+    });
+
+    it("hides the data row for a total nothing can read", () => {
+        assert.equal(row({dataUsed: {total: -1, download: -1, upload: -1}},
+            "test.details.data_used"), undefined, "a placeholder total drew the row");
+
+        const item = row({dataUsed: {total: 3000, download: 2000, upload: 1000},
+            previous: {dataUsed: {total: "-1"}}}, "test.details.data_used");
+        assert.equal(item.delta.current, 3000);
+        assert.equal(item.delta.previous, null);
     });
 });
 

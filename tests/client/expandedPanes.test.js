@@ -78,7 +78,9 @@ describe("the overview pane", () => {
     });
 
     it("compares that latency with the previous window, the right way up", () => {
-        assert.match(overview, /previous: props\.previous\?\.ping\?\.avg, higherIsBetter: false/);
+        assert.match(overview,
+            /previous: readableFigure\(props\.previous\?\.ping\?\.avg\), higherIsBetter: false/,
+            "the delta reads the raw column, so a placeholder in the previous window claims a change");
     });
 
     it("states the duration spread the card summarises as an average", () => {
@@ -142,11 +144,14 @@ describe("the data the range's tests used", () => {
     });
 
     it("renders no row rather than a total of nought when nothing measured it", () => {
-        assert.match(overview, /typeof dataUsed\?\.total === "number"/);
+        assert.match(overview, /const dataTotal = readableFigure\(dataUsed\?\.total\);/);
+        assert.doesNotMatch(overview, /typeof dataUsed\?\.total === "number"/,
+            "the bare typeof gate is back, which renders the placeholder and hides the text spelling");
     });
 
     it("compares the total without colouring it", () => {
-        assert.match(overview, /previous: props\.previous\?\.dataUsed\?\.total, higherIsBetter: null/);
+        assert.match(overview,
+            /previous: readableFigure\(props\.previous\?\.dataUsed\?\.total\), higherIsBetter: null/);
     });
 });
 
@@ -298,11 +303,22 @@ describe("the stability pane", () => {
  * bare " Mbps" on screen before.
  */
 describe("an empty range", () => {
+    // Through the shared reader, like the loss row: the null-only gate
+    // rendered a proxied node's -1 as an N/A row whose delta was computed
+    // from the placeholder, and hid an older node's text average while it
+    // was a reading.
     it("drops the latency row rather than describing it as N/A to N/A", () => {
-        assert.match(overview, /props\.ping\?\.avg === null \|\| props\.ping\?\.avg === undefined \? null : props\.ping/);
+        assert.match(overview, /const pingAverage = readableFigure\(props\.ping\?\.avg\);/);
+        assert.doesNotMatch(overview, /props\.ping\?\.avg === null \|\| props\.ping\?\.avg === undefined/,
+            "the null-only gate is back, which renders the placeholder as an N/A row with a live delta");
     });
 
+    // Both ends must read, the spread()'s own rule one card over: a one-end
+    // gate printed "2s – N/A", and a placeholder pair "-1s – -1s".
     it("drops the duration spread the same way", () => {
-        assert.match(overview, /props\.time\?\.min !== null && props\.time\?\.min !== undefined/);
+        assert.match(overview,
+            /readableFigure\(props\.time\?\.min\) !== null && readableFigure\(props\.time\?\.max\) !== null/);
+        assert.doesNotMatch(overview, /props\.time\?\.min !== null/,
+            "the one-end gate is back, which prints a spread with a refused end");
     });
 });

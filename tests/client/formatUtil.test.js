@@ -75,8 +75,27 @@ describe("formatDuration", () => {
         assert.equal(formatDuration(0), "0s");
     });
 
+    // Through the shared reader, like every formatter beside it: it was the
+    // one that neither coerced nor refused, so the overview's duration row
+    // printed a proxied node's -1 as "-1s" - beside a loss row answering
+    // N/A for the identical payload - while an older node's text average
+    // was hidden as N/A while being a reading.
+    it("reads a duration spelt as text", () => {
+        assert.equal(formatDuration("6"), "6s");
+        assert.equal(formatDuration("23.47"), "23.47s");
+        assert.equal(formatDuration("0"), "0s", "a measured zero in its text spelling");
+        // Number()'s latitude, inherited knowingly from storedFigure - the
+        // two spellings below read the same on the server's copy.
+        assert.equal(formatDuration("1e3"), "1000s");
+    });
+
+    it("refuses the placeholder in either spelling", () => {
+        assert.equal(formatDuration(-1), "N/A", "the placeholder printed as a duration of minus one second");
+        assert.equal(formatDuration("-1"), "N/A");
+    });
+
     it("says nothing was measured rather than concatenating null", () => {
-        for (const absent of [null, undefined])
+        for (const absent of [null, undefined, "auto", ""])
             assert.equal(formatDuration(absent), "N/A", `failed for ${JSON.stringify(absent)}`);
     });
 

@@ -75,16 +75,22 @@ const expandedItems = (props) => {
     const items = [];
     const ms = t("latest.ping_unit");
 
-    // Explicitly null for a range in which nothing succeeded, which is a row
-    // that does not render rather than "Average latency, between N/A and N/A".
-    const ping = props.ping?.avg === null || props.ping?.avg === undefined ? null : props.ping;
+    // The average as the shared reader takes it, which decides whether the
+    // row exists at all: the null-only gate rendered a proxied node's -1 as
+    // an "Average latency, between N/A and N/A" row whose delta was computed
+    // from the placeholder, and hid an older node's text average while it
+    // was a reading. The parts of the sentence refuse individually through
+    // their formatter - a readable average is not hidden because the median
+    // beside it is junk.
+    const pingAverage = readableFigure(props.ping?.avg);
+    const ping = props.ping;
 
     // Trimmed to one decimal, like every other latency in the app. The server
     // stores these through mapFixed at two, and this pane was the last reader
     // still printing them raw - "23.47 ms" beside a stability card and a detail
     // pane saying 23.5 for the same measurement, which is the fault
     // ConsistencyChart was changed to fix without the twin being applied here.
-    if (ping) items.push({
+    if (pingAverage !== null) items.push({
         icon: faPingPongPaddleBall,
         title: t("latest.ping"),
         // The median rides in the description beside the spread: one spike
@@ -94,13 +100,15 @@ const expandedItems = (props) => {
             {min: formatLatencyWithUnit(ping.min, ms), max: formatLatencyWithUnit(ping.max, ms),
                 median: formatLatencyWithUnit(ping.median, ms)}),
         value: formatLatencyWithUnit(ping.avg, ms),
-        delta: {current: ping.avg, previous: props.previous?.ping?.avg, higherIsBetter: false}
+        delta: {current: pingAverage, previous: readableFigure(props.previous?.ping?.avg), higherIsBetter: false}
     });
 
     // The average duration sits on the card; what it hides is the spread, and a
     // range whose slowest test took ten times its fastest is a range where
-    // something was wrong with the line rather than with the schedule.
-    if (props.time?.min !== null && props.time?.min !== undefined) items.push({
+    // something was wrong with the line rather than with the schedule. Both
+    // ends must read - the spread()'s own rule one card over: a one-end gate
+    // printed "2s – N/A", and a placeholder pair "-1s – -1s".
+    if (readableFigure(props.time?.min) !== null && readableFigure(props.time?.max) !== null) items.push({
         icon: faHourglassHalf,
         title: t("statistics.overview.span_title"),
         description: t("statistics.overview.span_description"),
@@ -128,8 +136,11 @@ const expandedItems = (props) => {
     // columns existed say nothing, not nought. A direction the provider never
     // reported renders as the panel's own N/A rather than as a zero.
     const dataUsed = props.dataUsed;
+    // The shared reader, not a typeof: the bare gate rendered a placeholder
+    // total as an N/A row with a delta arrow, and hid a text-spelled one.
+    const dataTotal = readableFigure(dataUsed?.total);
 
-    if (typeof dataUsed?.total === "number") items.push({
+    if (dataTotal !== null) items.push({
         icon: faDatabase,
         title: t("test.details.data_used"),
         description: t("test.details.data_used_value",
@@ -137,7 +148,7 @@ const expandedItems = (props) => {
         value: formatBytes(dataUsed.total),
         // More traffic is neither good nor bad - it mostly tracks how many
         // tests ran - so the change is worth a word but not a colour.
-        delta: {current: dataUsed.total, previous: props.previous?.dataUsed?.total, higherIsBetter: null}
+        delta: {current: dataTotal, previous: readableFigure(props.previous?.dataUsed?.total), higherIsBetter: null}
     });
 
     return items;
@@ -196,9 +207,13 @@ export const OverviewChart = (props) => {
             title: t("statistics.overview.average_title"),
             description: t("statistics.overview.average_description"),
             // The server returns an explicit null average when nothing in the
-            // range succeeded, which used to render as the literal "nulls".
-            value: formatDuration(props.time.avg),
-            delta: {current: props.time.avg, previous: previous?.time?.avg,
+            // range succeeded, which used to render as the literal "nulls" -
+            // and the delta reads like the loss row's, through the shared
+            // reader, so a proxied node's placeholder cannot feed the arrow.
+            // Optional on time itself: an older node's payload may not carry
+            // the block at all, and a missing row beats a crashed page.
+            value: formatDuration(props.time?.avg),
+            delta: {current: readableFigure(props.time?.avg), previous: readableFigure(previous?.time?.avg),
                 higherIsBetter: false}
         },
         {

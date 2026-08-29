@@ -371,8 +371,20 @@ export function formatLastTest(created) {
     return t("status.last_test", {time: generateRelativeTime(created)});
 }
 
-export const formatDuration = (seconds) =>
-    typeof seconds === "number" && Number.isFinite(seconds) ? `${seconds}s` : NOT_MEASURED;
+/**
+ * A test's duration with its unit, or the statement that there is none.
+ *
+ * Through the shared reader, like every formatter beside it - it was the one
+ * that neither coerced nor refused, so the overview's duration row printed a
+ * proxied node's -1 placeholder as "-1s" with an improvement arrow computed
+ * from it, one row above a loss row answering N/A for the identical payload,
+ * while an older node's text average was hidden as N/A while being a reading.
+ */
+export const formatDuration = (seconds) => {
+    const duration = readableFigure(seconds);
+
+    return duration === null ? NOT_MEASURED : `${duration}s`;
+};
 
 /**
  * Whether a value is a figure the printers below would print.
