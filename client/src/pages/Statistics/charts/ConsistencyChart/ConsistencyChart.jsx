@@ -30,6 +30,12 @@ export const ConsistencyChart = (props) => {
     // Every figure in this panel is taken over the selected range, this one
     // included: it used to be the grade of the single newest test, from a
     // request that carried no range at all.
+    //
+    // loaded.tests is a count, not a column: the server answers it with the
+    // length of the array it averaged (loadedLatencyOver in
+    // server/util/statistics.js), so it needs none of the coercion the
+    // increase below gets - the same computed-operand split the grade's
+    // strict gate is kept for, one line further out.
     const loaded = data.loadedLatency;
     // Coerced once at the card's boundary, for the grade and the tooltip
     // alike - gradeForIncrease keeps its strict gate because its operands

@@ -123,6 +123,17 @@ describe("the packet-loss row on the overview card", () => {
         overviewRow({time: {avg}, previous}, "statistics.overview.average_title");
 
     /**
+     * The failed row's degradation, executed: failureRate is deliberately
+     * strict - counts are array lengths on the server, so a text count is
+     * a producer that changed shape - and what the row does then is print
+     * the bare count with no share beside it, not crash and not coerce.
+     */
+    it("prints the bare count when the rate refuses the payload", () => {
+        assert.equal(overviewRow({tests: {total: "100", failed: 3}},
+            "statistics.overview.failed_title").value, 3);
+    });
+
+    /**
      * The row's wiring, executed off the card's own statements rather than
      * pattern-matched: a revert that respells the reader - `const packetLoss
      * = props.packetLoss;` - satisfies every source regex above while

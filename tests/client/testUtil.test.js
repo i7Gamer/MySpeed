@@ -267,6 +267,24 @@ describe("failureRate", () => {
         for (const [total, failed] of [[undefined, 1], [10, undefined], [-1, 1], [10, null]])
             assert.equal(failureRate(total, failed), null, `failed for ${total}/${failed}`);
     });
+
+    /**
+     * The strict half of the contract, pinned AS the contract: both
+     * operands are array lengths on the server, so a text or negative
+     * count is a producer that changed shape, not a spelling to coerce -
+     * gradeForIncrease's reason, stated in the function's own docblock.
+     * The row degrades to the bare count then; firstRowCards executes
+     * that.
+     */
+    it("refuses a count spelled as text rather than coercing it", () => {
+        assert.equal(failureRate("100", 3), null);
+        assert.equal(failureRate(100, "3"), null);
+        assert.equal(failureRate("100", "3"), null);
+    });
+
+    it("refuses a negative count, which no length can be", () => {
+        assert.equal(failureRate(100, -1), null);
+    });
 });
 
 /**

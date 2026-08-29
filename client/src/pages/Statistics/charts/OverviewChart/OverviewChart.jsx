@@ -194,6 +194,8 @@ export const OverviewChart = (props) => {
             icon: faGaugeHigh,
             title: t("statistics.overview.total_title"),
             description: t("statistics.overview.total_description"),
+            // The raw count: total is an array length on the server and
+            // cannot be the -1 placeholder a measurement column can hold.
             value: props.tests.total,
             delta: {current: props.tests.total, previous: previous?.tests?.total,
                 higherIsBetter: null, mode: "absolute"}
