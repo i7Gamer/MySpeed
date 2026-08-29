@@ -72,4 +72,58 @@ describe("peakSlowdown", () => {
             assert.equal(result.slowdown, 40);
         });
     });
+
+    /**
+     * The buckets are server-fed, and a proxied older node's payload can
+     * spell either figure as text - the same doctrine every other reader of
+     * this payload moved to. The downloads must be COERCED before the
+     * comparisons below the gate, not merely admitted: "100" < "50"
+     * lexicographically, and a gate-only widening reported a negative
+     * slowdown with its hours swapped.
+     */
+    describe("figures a proxied node spells as text", () => {
+        it("reads text downloads and compares them as numbers", () => {
+            const result = peakSlowdown(day(hour(3, "100"), hour(12, "80"), hour(20, "50")));
+
+            assert.deepEqual(result, {slowdown: 50, slowestHour: 20, fastestHour: 3});
+        });
+
+        // "50" < "75" < "100" is false in string order - "75" sorts above
+        // both - so this day is the one a lexicographic comparison gets
+        // wrong in every field at once.
+        it("orders a text day by magnitude, not by first character", () => {
+            const result = peakSlowdown(day(hour(1, "100"), hour(9, "50"), hour(18, "75")));
+
+            assert.deepEqual(result, {slowdown: 50, slowestHour: 9, fastestHour: 1});
+        });
+
+        it("mixes text and numeric hours in one day", () => {
+            const result = peakSlowdown(day(hour(2, "110"), hour(11, 55), hour(19, 88)));
+
+            assert.deepEqual(result, {slowdown: 50, slowestHour: 11, fastestHour: 2});
+        });
+
+        it("counts an hour whose sample count is spelled as text", () => {
+            const result = peakSlowdown(day(hour(3, 100, "5"), hour(12, 80), hour(20, 50)));
+
+            assert.equal(result.slowdown, 50);
+        });
+
+        it("still refuses what no reader can read", () => {
+            const junk = day(hour(2, "auto"), hour(5, -1), hour(7, "-1"),
+                hour(9, 100), hour(15, 90), hour(23, 60));
+
+            assert.equal(peakSlowdown(junk).slowdown, 40,
+                "a placeholder or junk bucket set the floor");
+        });
+
+        // ToNumber let these through the sample floor - an array wrapping a
+        // number, and an Infinity - and neither is a count of tests.
+        it("refuses a sample count only coercion could read", () => {
+            assert.equal(peakSlowdown(day(hour(3, 100, Infinity), hour(9, 90), hour(20, 45))), null,
+                "an Infinity count still passes the sample floor");
+            assert.equal(peakSlowdown(day(hour(3, 100, [5]), hour(9, 90), hour(20, 45))), null,
+                "an array count still passes the sample floor");
+        });
+    });
 });

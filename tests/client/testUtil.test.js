@@ -15,8 +15,8 @@ import {
  * once, the very pair gradeBelow's readers were widened to end.
  * (gradeForIncrease keeps its typeof gate for a narrower reason: its
  * increases are computed - by latencyIncrease client-side, by the server
- * for the range average and the trend points - never read from a stored
- * column, so there is no text spelling to admit.)
+ * for the range average and the trend points, which the stability card
+ * coerces at its boundary - so nothing reaches the gate unread.)
  */
 describe("consistencyColour", () => {
     it("grades a score in either spelling", () => {

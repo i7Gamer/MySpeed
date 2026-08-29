@@ -100,6 +100,12 @@ const expandedItems = (props) => {
             {min: formatLatencyWithUnit(ping.min, ms), max: formatLatencyWithUnit(ping.max, ms),
                 median: formatLatencyWithUnit(ping.median, ms)}),
         value: formatLatencyWithUnit(ping.avg, ms),
+        // The delta compares the raw averages, not the printed ones -
+        // AverageChart's own stated convention: a percentage is the same in
+        // either unit, and rounding both sides first reports a change that
+        // is an artefact of the one decimal. The accepted edge: two windows
+        // printing the same trimmed figure can show a small arrow, because
+        // the measurement moved even though the display did not.
         delta: {current: pingAverage, previous: readableFigure(props.previous?.ping?.avg), higherIsBetter: false}
     });
 

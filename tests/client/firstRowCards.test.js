@@ -217,6 +217,41 @@ describe("the enlarged overview's rows refuse what no reader can read", () => {
         assert.equal(item.delta.previous, null, "a refused previous window still feeds the arrow");
     });
 
+    /**
+     * The accepted trade, pinned as decided: the row's existence hangs on
+     * the AVERAGE alone, and the sentence's parts refuse individually - a
+     * readable average is not hidden because the spread beside it is junk,
+     * so a mixed payload renders the value with N/A parts in its caption.
+     * The caption is also the row's only statement that the figure is an
+     * average over the range, which is why it does not simply vanish.
+     */
+    it("keeps a readable average even when every spread part refuses", () => {
+        const item = row({ping: {avg: 23.47, min: -1, max: -1, median: -1}}, "latest.ping");
+
+        assert.notEqual(item, undefined, "junk beside a readable average hid the row");
+        assert.deepEqual(item.description,
+            {key: "statistics.overview.ping_description", min: "N/A", max: "N/A", median: "N/A"},
+            "a refused spread part printed as a reading inside the sentence");
+        assert.equal(item.delta.current, 23.47);
+    });
+
+    /**
+     * The delta compares the raw averages, not the printed ones -
+     * AverageChart's own stated convention: a percentage is the same in
+     * either unit, and rounding both sides first reports a change that is
+     * an artefact of the one decimal. The accepted edge, pinned: two
+     * windows that PRINT the same trimmed figure can still show a small
+     * arrow, because the measurement moved even though the display did not.
+     */
+    it("computes the delta from the measurement, not from its display", () => {
+        const item = row({ping: {avg: 23.44, min: 8.91, max: 132.76, median: 22.05},
+            previous: {ping: {avg: 23.41}}}, "latest.ping");
+
+        assert.deepEqual({current: item.delta.current, previous: item.delta.previous},
+            {current: 23.44, previous: 23.41},
+            "both windows print 23.4 ms, and the arrow between them reads the stored change by convention");
+    });
+
     it("hides the duration spread unless both ends read", () => {
         assert.equal(row({time: {min: -1, max: -1}}, "statistics.overview.span_title"), undefined,
             "a placeholder pair printed as a spread");

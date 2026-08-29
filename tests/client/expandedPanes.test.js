@@ -306,8 +306,11 @@ describe("an empty range", () => {
     // Through the shared reader, like the loss row: the null-only gate
     // rendered a proxied node's -1 as an N/A row whose delta was computed
     // from the placeholder, and hid an older node's text average while it
-    // was a reading.
-    it("drops the latency row rather than describing it as N/A to N/A", () => {
+    // was a reading. Only the AVERAGE decides the row: a readable average
+    // keeps it even when the spread parts beside it refuse to N/A - the
+    // caption is the row's one statement that the figure is an average,
+    // and firstRowCards executes that trade as decided.
+    it("hides the latency row only for an average nothing can read", () => {
         assert.match(overview, /const pingAverage = readableFigure\(props\.ping\?\.avg\);/);
         assert.doesNotMatch(overview, /props\.ping\?\.avg === null \|\| props\.ping\?\.avg === undefined/,
             "the null-only gate is back, which renders the placeholder as an N/A row with a live delta");

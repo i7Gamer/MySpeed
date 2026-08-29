@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatLatency, formatLatencyWithUnit } from "@/common/utils/FormatUtil.js";
+import { gradeForIncrease, readableFigure } from "@/common/utils/TestUtil.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -80,9 +81,66 @@ describe("the stability card prints its latencies to one decimal", () => {
     // pinned to the server's arithmetic by the loaded-latency agreement tests,
     // and the tooltips quote it verbatim.
     it("leaves the bufferbloat increase at the server's two decimals", () => {
-        assert.doesNotMatch(card, /formatLatency\w*\(loaded\.increase/,
+        assert.doesNotMatch(card, /formatLatency\w*\((?:loaded\.increase|loadedIncrease)/,
             "the average increase was trimmed away from the pinned figure");
         assert.doesNotMatch(card, /formatLatency\w*\(entry\.increase/,
             "a trend dot's increase was trimmed away from the pinned figure");
+    });
+});
+
+/**
+ * The bufferbloat row's figures, built by the card's own statements and read
+ * back. gradeForIncrease keeps its strict gate on purpose - its operands are
+ * computed - so the card coerces at its boundary: the payload is server-fed,
+ * and a proxied older node can spell the average increase or a dot's as
+ * text. The strict gate behind the old read dropped the whole row for a
+ * spelling the deviation beside it reads fine.
+ */
+describe("the bufferbloat row reads its figures through the shared reader", () => {
+    const region = () => {
+        const start = card.indexOf("const loaded = data.loadedLatency;");
+        assert.notEqual(start, -1, "the card no longer derives the loaded row where this lift expects");
+        const end = card.indexOf("\n    });", start);
+        assert.notEqual(end, -1, "the loaded derivations are no longer a block this lift can close");
+
+        return card.slice(start, end + "\n    });".length);
+    };
+
+    const loadedFigures = (loadedLatency) => new Function(
+        "data", "readableFigure", "gradeForIncrease",
+        `${region()}\nreturn {loadedIncrease, loadedGrade, trendDots};`)(
+        {loadedLatency}, readableFigure, gradeForIncrease);
+
+    it("grades a readable increase in either spelling", () => {
+        const numeric = loadedFigures({increase: 12.5, tests: 40, trend: []});
+        const text = loadedFigures({increase: "12.5", tests: 40, trend: []});
+
+        assert.equal(numeric.loadedGrade, gradeForIncrease(12.5));
+        assert.notEqual(numeric.loadedGrade, null);
+        assert.equal(text.loadedGrade, numeric.loadedGrade,
+            "a text-spelled increase drops the whole row - grade, dots and count");
+        assert.equal(text.loadedIncrease, 12.5,
+            "the tooltip states the raw spelling rather than the coerced reading");
+    });
+
+    it("still drops the row for what no reader can read", () => {
+        for (const unreadable of ["auto", null, undefined, -1, "-1"])
+            assert.equal(loadedFigures({increase: unreadable, tests: 4, trend: []}).loadedGrade, null,
+                `an increase of ${JSON.stringify(unreadable)} graded as a reading`);
+
+        assert.equal(loadedFigures(undefined).loadedGrade, null, "a payload without the block crashed or graded");
+    });
+
+    it("keeps a dot per readable increase and no dot for the rest", () => {
+        const {trendDots} = loadedFigures({increase: 5, tests: 9, trend: [
+            {increase: "3", created: "2026-08-01"},
+            {increase: null, created: "2026-08-02"},
+            {increase: 7, created: "2026-08-03"}
+        ]});
+
+        assert.deepEqual(trendDots.map(({increase}) => increase), [3, 7],
+            "an unreadable dot renders - as a blue dot titled null - or a text one vanished");
+        assert.deepEqual(trendDots.map(({created}) => created), ["2026-08-01", "2026-08-03"],
+            "the dots lost the timestamps their keys and titles read");
     });
 });

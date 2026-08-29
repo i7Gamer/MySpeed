@@ -184,9 +184,10 @@ const CONSISTENCY_FAIR = 70;
  * gate for a narrower reason: it is never handed a stored column -
  * latencyIncrease computes its operand, bufferbloat() refuses unreadable
  * inputs before it, and the range panel hands it the server's computed
- * average and the trend dots' per-point increases, computed and filtered
- * the same way - so there is no text spelling to admit, and the strict
- * gate is what notices a producer changing shape.
+ * average and the trend dots' per-point increases, coerced at the card's
+ * boundary through readableFigure because a proxied older node's payload
+ * can spell either as text - so nothing reaches this gate unread, and the
+ * strict gate is what notices a producer changing shape.
  */
 export const consistencyColour = (value) => {
     const figure = readableFigure(value);

@@ -31,8 +31,21 @@ export const ConsistencyChart = (props) => {
     // included: it used to be the grade of the single newest test, from a
     // request that carried no range at all.
     const loaded = data.loadedLatency;
-    const loadedGrade = gradeForIncrease(loaded?.increase);
-    const trend = loaded?.trend ?? [];
+    // Coerced once at the card's boundary, for the grade and the tooltip
+    // alike - gradeForIncrease keeps its strict gate because its operands
+    // are computed, so the card reads the server-fed spelling first: a
+    // proxied older node can spell the increase as text, and the strict
+    // gate behind a raw read dropped the whole row - grade, dots and count -
+    // for a payload the deviation beside it reads fine. Junk still drops
+    // the row: null from the reader is null to the gate.
+    const loadedIncrease = loaded ? readableFigure(loaded.increase) : null;
+    const loadedGrade = gradeForIncrease(loadedIncrease);
+    // And each dot's increase through the same reader: a dot nothing can
+    // read is no dot, rather than a blue dot titled "null".
+    const trendDots = (loaded?.trend ?? []).flatMap((entry) => {
+        const increase = readableFigure(entry.increase);
+        return increase === null ? [] : [{...entry, increase}];
+    });
 
     // Through the shared reader, like every stored figure. The payload is
     // server-fed and a proxied older node's statistics can hold anything: the
@@ -177,7 +190,7 @@ export const ConsistencyChart = (props) => {
                     <PanelRow icon={faGaugeHigh} title={t("latest.quality")}
                               level={bufferbloatColour(loadedGrade)}
                               value={<span title={t("statistics.consistency.loaded_latency_average",
-                                  {increase: loaded.increase, tests: loaded.tests})}>{loadedGrade}</span>}
+                                  {increase: loadedIncrease, tests: loaded.tests})}>{loadedGrade}</span>}
                               description={<>
                                   {/* One dot per recent test rather than the
                                       letters. Grades run together as text -
@@ -190,8 +203,8 @@ export const ConsistencyChart = (props) => {
                                         role="img"
                                         title={t("latest.bufferbloat_trend")}
                                         aria-label={t("latest.bufferbloat_trend") + ": " +
-                                            trend.map((entry) => gradeForIncrease(entry.increase)).join(", ")}>
-                                      {trend.map((entry) => (
+                                            trendDots.map((entry) => gradeForIncrease(entry.increase)).join(", ")}>
+                                      {trendDots.map((entry) => (
                                           <span key={entry.created}
                                                 className={"bufferbloat-trend-dot icon-"
                                                     + bufferbloatColour(gradeForIncrease(entry.increase))}
