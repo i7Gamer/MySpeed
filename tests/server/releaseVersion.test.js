@@ -334,15 +334,75 @@ describe("what reaches a shell in the release workflow", () => {
      * twice, in prose, above the steps that follow it - and a rule dropped at the
      * next interpreter on the same line is one nobody can check by reading. jq's
      * --arg binds a value as data, which is what env: does for the shell.
+     *
+     * The question this asks of a line, in one sentence: does the shell build
+     * the program jq runs?
+     *
+     * Which is a question about quoting, and nothing else. `'.version = $v'` is
+     * handed to jq exactly as written, `$v` and all, because single quotes are
+     * inert - the `$v` jq reads is jq's own variable, the one --arg bound.
+     * `".version = \"$VERSION\""` is not: the shell expands $VERSION and jq is
+     * handed whatever it held. So the rule is *not* "does the call bind a value
+     * with --arg" - a call can bind one value and splice another on the same
+     * line, and did in the version of this scan that asked that - it is "is the
+     * program token one the shell expands".
+     *
+     * Answering that needs the line read the way the shell reads it, so the
+     * three helpers below are one tokeniser, one call reader, and one predicate,
+     * rather than a regex per defect. The regexes that stood here each answered
+     * a piece of it and each was wrong somewhere else: `\bjq\b` split a program
+     * that names jq into two calls, `"[^"]*"` ended a string at an escaped
+     * quote, and a `#` was a comment only when it began the line.
      */
-    const JQ = /\bjq\b/;
-    const EVERY_JQ = /\bjq\b/g;
+
+    /**
+     * Characters that end a word and stand on their own.
+     *
+     * They are what says where one command stops and the next begins, which is
+     * the whole of what command position means below. `<` and `>` are here for
+     * the same reason as `|`: a redirect ends the call's arguments, so nothing
+     * behind it is jq's program.
+     */
+    const OPERATORS = new Set(["|", "&", ";", "(", ")", "`", "<", ">"]);
+
+    /**
+     * Words a command may stand behind while still being the command.
+     *
+     * `if`, `while`, `until`, `then`, `else`, `elif`, `do` and `{` are the
+     * shell's own - the first three matter most, since their `then`/`do`
+     * halves cannot be reached without them; `sudo`, `env`, `time`, `command`
+     * and `xargs` run what follows them, and `!` negates it. Substitutions
+     * need no entry here - `$(` and a backtick are operators, so the jq
+     * inside one is already the first word of its own command. NAME=value
+     * assignment prefixes are handled where the position is judged: the shell
+     * strips any number of them before finding the command.
+     */
+    const COMMAND_PREFIXES = new Set([
+        "if", "while", "until", "then", "else", "elif", "do", "{", "!",
+        "sudo", "env", "time", "command", "xargs"
+    ]);
+
+    // A NAME=value environment prefix, which stands before the command
+    // without being it. Judged on the unquoted spelling: a fully
+    // single-quoted 'NAME=v' is an argument (`literal` excludes it below),
+    // and a shell name cannot be quoted anyway - the remaining
+    // approximation, a fully double-quoted "NAME=v" read as a prefix, is a
+    // line no workflow has a reason to write.
+    const ASSIGNMENT_PREFIX = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+    /**
+     * Inside double quotes a backslash is only an escape before one of these.
+     * Anywhere else it is a character of its own - `"C:\Users"` holds a
+     * backslash, not an escaped U - and reading it as an escape would swallow
+     * the character behind it.
+     */
+    const DOUBLE_QUOTE_ESCAPES = new Set(["$", "`", "\"", "\\"]);
 
     /**
      * The flags whose value is the token after them, which is exactly what
      * stands between `jq` and its program on the lines this is about.
      *
-     * Two apiece for the four that bind a jq variable - the name, then the
+     * Two apiece for the five that bind a jq variable - the name, then the
      * value bound to it - and one apiece for the three that carry a plain
      * value: `-f` and its long form name the file the program is read from,
      * `--indent` a column count, `-L` a module directory. Everything else jq
@@ -351,244 +411,493 @@ describe("what reaches a shell in the release workflow", () => {
      * positional arguments mean.
      *
      * Leaving one out is not a gap in a corner. Its value is read as the
-     * program instead, so `--indent 2` makes the program `2` - which assigns
-     * nothing, and excuses whatever was really written behind it.
+     * program instead, so `--indent 2` makes the program `2` - which is not a
+     * program the shell expands, and so excuses whatever was really written
+     * behind it. `--argfile` was the one missing, and it is the deprecated
+     * spelling of exactly the flag this rule tells people to reach for.
      */
-    const NAMED_VALUE_FLAGS = new Map([
-        ["--arg", 2], ["--argjson", 2], ["--slurpfile", 2], ["--rawfile", 2],
+    const FLAG_ARITY = new Map([
+        ["--arg", 2], ["--argjson", 2], ["--slurpfile", 2], ["--rawfile", 2], ["--argfile", 2],
         ["-f", 1], ["--from-file", 1], ["--indent", 1], ["-L", 1]
     ]);
 
-    // The subset that binds its value to a jq variable, which is the whole of
-    // what this rule asks for: a program reading `$v` is reading data, whichever
-    // of them put the value there.
-    const BINDING_FLAGS = new Set(["--arg", "--argjson", "--slurpfile", "--rawfile"]);
-
-    // Split on whitespace outside quotes, so a program carrying spaces - which
-    // `.version = $v` does - comes back as one token rather than three.
-    const tokensOf = (text) => text.match(/'[^']*'|"[^"]*"|\S+/g) ?? [];
-
-    const unquote = (token) => token.replace(/^(['"])([\s\S]*)\1$/, "$2");
+    // The subset that binds its value to a jq variable, which is what the
+    // liveness check below looks for: a program reading `$v` is reading data,
+    // whichever of them put the value there.
+    const BINDING_FLAGS = new Set(["--arg", "--argjson", "--slurpfile", "--rawfile", "--argfile"]);
 
     /**
-     * Every jq call on a line, each as its own tokens.
+     * One line of shell, as the words the shell would make of it.
      *
-     * One line may hold several, and a pipeline's later half is where the
-     * writing usually happens - `jq . f | jq "…$VERSION…"` was read at the
-     * first call, whose program is `.`, and the second was never looked at.
+     * A word is not a quoted run and not a whitespace-delimited run: it is
+     * whatever the quoting rules glue together, so `'.version = '"$VERSION"` is
+     * one word built from two segments, and `.deps.jq` inside single quotes is
+     * part of a word rather than a command. Each word comes back as
      *
-     * Bounded by the next `jq` rather than by the pipe, so a redirect or an
-     * `&& mv` trailing the last call stays with it. programOf stops at the
-     * program either way.
+     *   plain      - what the shell would hand the command, quotes removed
+     *   expandable - whether any part of it outside single quotes carries an
+     *                unescaped `$`, which is the whole predicate this file is
+     *                about
+     *   literal    - whether every character of it came from inside single
+     *                quotes, which is the only way to be sure the shell did not
+     *                touch it
+     *
+     * `expandable` is not `plain.includes("$")`: `".version = \$v"` holds a
+     * dollar the shell removes the backslash from and expands nothing for, and
+     * reporting that line would demand a change that changes nothing. `literal`
+     * is not `!expandable` either - `".version = \$v"` is inert too, but it is
+     * inert by an escape a later edit can drop, and the liveness check wants the
+     * shape that cannot be broken that way.
      */
-    const callsOn = (line) => {
-        const starts = [...line.matchAll(EVERY_JQ)].map(({index}) => index);
+    const tokenise = (line) => {
+        const tokens = [];
+        let token = null;
+        let quote = null;
 
-        return starts.map((from, which) =>
-            tokensOf(line.slice(from, starts[which + 1] ?? line.length)).slice(1));
-    };
+        const open = () => {
+            if (token === null) token = {plain: "", expandable: false, literal: true, operator: false};
+            return token;
+        };
+        const add = (character, {expands = false, inert = false} = {}) => {
+            open().plain += character;
+            if (expands) token.expandable = true;
+            if (!inert) token.literal = false;
+        };
+        const end = () => {
+            if (token !== null) tokens.push(token);
+            token = null;
+        };
 
-    /**
-     * The program one call was given: its first argument that is neither a flag
-     * nor a flag's value.
-     */
-    const programOf = (tokens) => {
-        for (let index = 0; index < tokens.length; index++) {
-            const consumed = NAMED_VALUE_FLAGS.get(tokens[index]);
+        for (let index = 0; index < line.length; index++) {
+            const character = line[index];
 
-            if (consumed !== undefined) index += consumed;
-            else if (!tokens[index].startsWith("-")) return unquote(tokens[index]);
+            // Nothing is special inside single quotes, the closing one aside.
+            if (quote === "'") {
+                if (character === "'") quote = null;
+                else add(character, {inert: true});
+                continue;
+            }
+
+            if (character === "\\") {
+                const escaped = line[index + 1];
+
+                if (escaped === undefined || (quote === "\"" && !DOUBLE_QUOTE_ESCAPES.has(escaped))) {
+                    add("\\");
+                    continue;
+                }
+
+                // The character behind it is data, whatever it is: this is what
+                // keeps `\$v` out of the report and `\"` from ending the string.
+                add(escaped);
+                index++;
+                continue;
+            }
+
+            if (quote === "\"") {
+                if (character === "\"") quote = null;
+                else add(character, {expands: character === "$"});
+                continue;
+            }
+
+            if (character === "'" || character === "\"") {
+                open();
+                quote = character;
+                continue;
+            }
+
+            if (/\s/.test(character)) {
+                end();
+                continue;
+            }
+
+            // A comment, and the rest of the line with it - but only where a
+            // word begins, because `a#b` is a word and `#` is a character of it.
+            if (character === "#" && token === null) break;
+
+            if (OPERATORS.has(character)) {
+                end();
+                tokens.push({plain: character, expandable: false, literal: false, operator: true});
+                continue;
+            }
+
+            add(character, {expands: character === "$"});
         }
 
-        return "";
+        end();
+
+        return tokens;
     };
 
     /**
-     * A program that assigns or interpolates, which is the only kind this rule
-     * has anything to say about.
+     * A line the shell would read on into the next one.
      *
-     * The filter was every line carrying the word jq, and the demand on each was
-     * `--arg`. A read - `VERSION=$(jq -r .version package.json)` - would have
-     * failed it and been told to bind a value with --arg, which is advice for an
-     * argument that program does not take. A rule whose failure message is wrong
-     * for a correct line is one somebody eventually silences.
+     * A backslash immediately before the newline is removed along with it, so a
+     * call written across two lines is one call - and a scan that reads the two
+     * halves separately finds a jq with no program on the first and no jq at all
+     * on the second, which is a splice reported nowhere.
      *
-     * `=` that is not `==`, `!=`, `<=` or `>=`, or a `$` anywhere in the
-     * program, which is where a value spliced by the shell would land.
+     * An odd number of trailing backslashes, because `\\` is an escaped
+     * backslash and ends nothing. Not inside a comment: a comment ends at the
+     * newline whatever stands before it, and joining there would swallow the
+     * line below into prose.
      */
-    const WRITES = /(^|[^=!<>])=([^=]|$)|\$/;
+    const CONTINUES = /(^|[^\\])(\\\\)*\\$/;
 
-    const writes = (tokens) => WRITES.test(programOf(tokens));
+    const continues = (line) => !/^\s*#/.test(line) && CONTINUES.test(line);
+
+    const joinContinued = (lines) => lines.reduce((joined, line) => {
+        const previous = joined[joined.length - 1];
+
+        if (previous !== undefined && continues(previous)) joined[joined.length - 1] = previous.slice(0, -1) + line;
+        else joined.push(line);
+
+        return joined;
+    }, []);
 
     /**
-     * Whether that call binds any value as data, wherever the flag stands among
-     * the others.
+     * One jq call, from the word `jq` to the end of its arguments: the flags it
+     * was given, and the program it was handed.
      *
-     * Asked of the tokens rather than of the line, which is the only place the
-     * answer is. The test was `jq\s+--arg`, so `jq -r --arg v "$VERSION" …` -
-     * the same binding with an output flag written first - was reported as a
-     * splice, and told to do the thing it was already doing.
+     * The program is the first word that is neither a flag nor a flag's value,
+     * and the call ends at the first operator - a pipe, a redirect, a closing
+     * paren - because nothing behind one of those is jq's. Flags are collected
+     * past the program as well: a value bound after the program it belongs to is
+     * still bound, and the liveness check has no reason to care where it stands.
      */
-    const binds = (tokens) => tokens.some((token) => BINDING_FLAGS.has(token));
+    const readCall = (tokens, from) => {
+        const flags = [];
+        let program = null;
+
+        for (let index = from + 1; index < tokens.length && !tokens[index].operator; index++) {
+            const consumed = FLAG_ARITY.get(tokens[index].plain);
+
+            if (consumed !== undefined) {
+                flags.push(tokens[index].plain);
+                index += consumed;
+            } else if (tokens[index].plain.startsWith("-")) flags.push(tokens[index].plain);
+            else if (program === null) program = tokens[index];
+        }
+
+        return {flags, program};
+    };
 
     /**
-     * The body lines that are code rather than prose.
+     * Every jq call on a line - which is every word that *is* jq, standing where
+     * a command can stand.
      *
-     * The walk hands a block scalar's `#` lines back deliberately - the block is
-     * one string, so an expression on a commented line is substituted into it
-     * before bash is anywhere near the `#`, and the scan written to find that
-     * needs them. These two consumers ask what jq is actually executed with, and
-     * a commented-out call is executed with nothing.
+     * Both halves matter. `jq` has to be the whole word, or `.deps.jq` in a
+     * program and `bump.jq` after `-f` each start a call that was never written;
+     * and it has to be in command position, or the jq in `apt-get install -y jq`
+     * is read as one, with the package behind it for a program. A path counts -
+     * `/usr/bin/jq` is the same command - and so does the second half of a
+     * pipeline, which is where the writing usually happens.
      */
-    const liveLines = (source) => runBodies(source)
-        .flatMap(({lines}) => lines)
-        .filter((line) => withoutHashComments(line) !== "");
+    const callsIn = (line) => {
+        const tokens = tokenise(line);
+        const calls = [];
 
-    const rewriting = (source) => liveLines(source).filter((line) => callsOn(line).some(writes));
+        for (let index = 0; index < tokens.length; index++) {
+            const token = tokens[index];
+            if (token.operator || !(token.plain === "jq" || token.plain.endsWith("/jq"))) continue;
 
-    const unbound = (source) => rewriting(source)
-        .filter((line) => callsOn(line).some((tokens) => writes(tokens) && !binds(tokens)))
+            // Walk back over NAME=value prefixes first - the shell strips any
+            // number of them before deciding what the command is.
+            let at = index - 1;
+            while (at >= 0 && !tokens[at].operator && !tokens[at].literal
+                && ASSIGNMENT_PREFIX.test(tokens[at].plain)) at--;
+
+            const before = tokens[at];
+            if (at >= 0 && !before.operator && !COMMAND_PREFIXES.has(before.plain)) continue;
+
+            calls.push(readCall(tokens, index));
+        }
+
+        return calls;
+    };
+
+    // Every line a body actually runs, continuations joined within the body they
+    // were written in.
+    const shellLines = (source) => runBodies(source).flatMap(({lines}) => joinContinued(lines));
+
+    /**
+     * The lines this rule reports: a jq whose program the shell builds.
+     *
+     * Nothing about --arg. A call that binds a value and splices another is
+     * still splicing, and exempting it was how `jq --arg v "$V" ".version =
+     * \"$VERSION\""` passed - the fix applied to one value and not to the one
+     * beside it.
+     */
+    const splices = (source) => shellLines(source)
+        .filter((line) => callsIn(line).some(({program}) => program !== null && program.expandable))
         .map((line) => line.trim());
 
-    it("hands jq the version as an argument rather than as program text", () => {
-        assert.notEqual(rewriting(release).length, 0, "nothing rewrites the version files with jq any more");
-
-        assert.deepEqual(unbound(release), [],
-            "jq is handed a program rather than an argument; bind the value with --arg and read it as a jq variable");
-
-        const expanded = rewriting(release)
-            .filter((line) => /\.version\s*=\s*[\\"']*\$VERSION\b/.test(line))
-            .map((line) => line.trim());
-
-        assert.deepEqual(expanded, [],
-            "the shell expands the version into the jq program before jq parses it, which is the splice this file spends two comments refusing");
-    });
+    /**
+     * And the shape it asks for, so that deleting the rewrite fails here rather
+     * than passing quietly: a call that binds a value as data and hands jq a
+     * program in single quotes, which the shell cannot have touched.
+     *
+     * The programs themselves rather than the lines holding them, because that
+     * is what the assertions have questions about. A commented-out copy cannot
+     * satisfy this - the tokeniser stops at the `#` - which is the point: the
+     * check that something still rewrites the version was satisfied by a comment
+     * describing a write that had been deleted.
+     */
+    const boundWrites = (source) => shellLines(source)
+        .flatMap((line) => callsIn(line))
+        .filter(({flags, program}) => flags.some((flag) => BINDING_FLAGS.has(flag))
+            && program !== null && program.literal && program.plain.includes(".version"))
+        .map(({program}) => program.plain);
 
     /**
-     * And says nothing about a jq that only reads.
+     * The whole of what this rule answers, written as cases rather than as a
+     * handful of examples somebody added the day a defect was found.
      *
-     * There is no such line in the workflow, which is the whole reason this
-     * needs a copy: a narrowing that cannot be demonstrated against the tree is
-     * one nobody can tell from the rule it replaced, and the first person to add
-     * a read would be handed advice for a program that assigns nothing.
+     * Every row is one line a run: body could hold, spliced into the real
+     * workflow and judged there - so each row also proves the walk reaches an
+     * added step, which is what stops the rows expecting nothing from passing
+     * because the fixture was never read at all.
      */
-    const withARead = () => [
+    const splice = (name, ...shell) => [
         release,
-        "      - name: Read the version back",
+        `      - name: ${name}`,
         "        run: |",
-        "          VERSION=$(jq -r .version package.json)",
-        "          echo \"$VERSION\""
+        ...shell.map((line) => `          ${line}`)
     ].join("\n");
 
-    it("asks nothing of a jq that only reads", () => {
-        assert.ok(runBodies(withARead()).flatMap(({lines}) => lines).some((line) => JQ.test(line)
-            && line.includes("jq -r .version package.json")),
-            "the added read is not being walked at all, so this asserts nothing");
+    // Whether the walk reached every line of a row's fixture. Raw body lines,
+    // not joined ones: this asks whether the fixture arrived, not what the rule
+    // makes of it.
+    const walked = (source, shell) => {
+        const lines = runBodies(source).flatMap(({lines}) => lines).map((line) => line.trim());
 
-        assert.deepEqual(unbound(withARead()), [],
-            "a jq that reads a value is told to bind it with --arg, which is advice for a program it does not have");
-    });
-
-    /**
-     * Every jq on the line, judged on the tokens of the call it belongs to.
-     *
-     * Three things decided this and none of them was the tokeniser that reads
-     * the call. Boundness was a regex demanding `--arg` immediately after `jq`,
-     * so the same flag one token later - `jq -r --arg v "$VERSION" …`, which is
-     * the ordinary shape - was reported as unbound and handed advice for what
-     * the line already did. The program was read from the *first* jq on the
-     * line, so the half of `jq . f | jq "…$VERSION…"` that does the writing was
-     * never looked at. And the flags known to take a value were only the ones
-     * that bind a name, so `-f` and `--indent` had their value read as the
-     * program: `--indent 2` made the program `2`, which assigns nothing, and
-     * the splice standing behind it went unreported.
-     *
-     * Each is silent in one direction or the other, which is why they are
-     * asserted against spliced copies rather than against the workflow. It is
-     * correct today, so it passes either way - which is exactly how all three
-     * survived.
-     */
-    const splice = (...lines) => [release, ...lines].join("\n");
-
-    it("reads --arg wherever it stands among the flags", () => {
-        const bound = splice(
-            "      - name: Bump it with an output flag written first",
-            "        run: |",
-            "          jq -r --arg v \"$VERSION\" '.version = $v' package.json > tmp && mv tmp package.json"
-        );
-
-        assert.deepEqual(unbound(bound), [],
-            "--arg counts only as the first token after jq, so the ordinary flag order is reported as the splice it is the fix for");
-    });
-
-    it("looks at every jq on the line, not only the first", () => {
-        const piped = splice(
-            "      - name: Bump it in the second half of a pipeline",
-            "        run: |",
-            "          jq . package.json | jq \".version = \\\"$VERSION\\\"\" > tmp"
-        );
-
-        const reported = unbound(piped);
-
-        assert.equal(reported.length, 1,
-            "the program is read from the first jq on the line, so a rewrite in the second half of a pipeline is never looked at");
-        assert.match(reported[0], /\|\s*jq/,
-            "some other line was reported, so the piped splice is still going unnoticed");
-    });
+        return shell.every((line) => lines.includes(line.trim()));
+    };
 
     /**
-     * And a flag's value is that flag's, not the program.
+     * The lines this rule has nothing to say about.
      *
-     * `-f` names the file jq reads its program from, so the token after it is a
-     * path. Read as the program, a path carrying a shell variable is a `$` this
-     * rule reports - advice to bind a value to a program that is not on the
-     * line at all.
+     * Half of them are the shapes it is *for* - a value bound with --arg and a
+     * program in single quotes, which the shell hands to jq untouched - and the
+     * other half are lines that merely name jq. Both directions matter equally:
+     * a rule that reports a correct line is one somebody silences, and every
+     * one of these was reported by some version of this scan.
      */
-    it("does not read a value-taking flag's value as the program", () => {
-        const fromFile = splice(
-            "      - name: Bump it with a program file",
-            "        run: |",
-            "          jq -f \"$BUMP\" package.json > tmp && mv tmp package.json"
-        );
+    const INERT = [
+        {
+            name: "the write the workflow performs",
+            shell: ["jq --arg v \"$VERSION\" '.version = $v' package.json > tmp && mv tmp package.json"],
+            why: "the shape this rule exists to ask for is reported as the thing it is the fix for"
+        },
+        {
+            name: "a binding written after an output flag",
+            shell: ["jq -r --arg v \"$VERSION\" '.version = $v' package.json > tmp && mv tmp package.json"],
+            why: "--arg counts only where it was first seen, so the ordinary flag order is reported as a splice"
+        },
+        {
+            name: "a binding written after the program",
+            shell: ["jq '.version = $v' --arg v \"$VERSION\" package.json > tmp"],
+            why: "a bound value written behind the program it belongs to is not read as a binding at all"
+        },
+        {
+            name: "a jq that only reads",
+            shell: ["jq -r .version package.json"],
+            why: "a read is told to bind its value with --arg, which is advice for a program that assigns nothing"
+        },
+        {
+            name: "a jq variable escaped past the shell",
+            shell: ["jq --arg v \"$V\" \".version = \\$v\""],
+            why: "the shell does not expand \\$, so what jq parses is the variable --arg bound - reporting it demands a change that changes nothing"
+        },
+        {
+            name: "a program naming jq inside itself",
+            shell: ["jq --arg v \"$V\" '.deps.jq = $v' package.json"],
+            why: "the word jq inside the program starts a second call that was never on the line"
+        },
+        {
+            name: "a program read from a file",
+            shell: ["jq -f bump.jq package.json > tmp"],
+            why: "the program is in a file this cannot read, and the path is not it"
+        },
+        {
+            name: "a program file named by a shell variable",
+            shell: ["jq -f \"$BUMP\" package.json > tmp"],
+            why: "-f's value is read as the program, so a path holding a shell variable is reported as a splice"
+        },
+        {
+            name: "jq called by its full path",
+            shell: ["/usr/bin/jq '.x = $v' --arg v \"$V\" package.json"],
+            why: "a call written as a path is either missed entirely or read from the wrong token"
+        },
+        {
+            name: "an echo that mentions jq",
+            shell: ["echo \"bumped with jq $VERSION\""],
+            why: "a quoted mention of jq is read as a call, and the rest of the message as its program"
+        },
+        {
+            name: "jq named as an argument to something else",
+            shell: ["apt-get install -y jq $EXTRA_TOOLS"],
+            why: "jq standing where a command cannot is read as one, and whatever follows it as its program"
+        },
+        {
+            name: "a call commented out behind a real command",
+            shell: ["npm ci # jq \".v=\\\"$V\\\"\" package.json"],
+            why: "a line nothing runs is reported as a splice, so the fix offered for it is to delete a comment"
+        },
+        {
+            name: "a call on a line that is nothing but a comment",
+            shell: ["# jq \".v=\\\"$V\\\"\" package.json"],
+            why: "a line nothing runs is reported as a splice, so the fix offered for it is to delete a comment"
+        },
+        {
+            name: "an indented output with a bound program",
+            shell: ["jq --indent 2 '.x = $v' --arg v \"$V\" package.json"],
+            why: "--indent's own value is read as the program, and a column count assigns nothing"
+        }
+    ];
 
-        assert.deepEqual(unbound(fromFile), [],
-            "-f's value is read as the program, so a path holding a shell variable is reported as a splice");
+    /**
+     * And the lines it is for: a program the shell builds before jq is executed
+     * at all.
+     *
+     * Every one of these is the same mistake wearing different clothes, which
+     * is the point - the rule is about what reaches jq, not about the shape of
+     * the line that got it there. A scan that catches only the shape somebody
+     * wrote down once catches the next one never.
+     */
+    const SPLICED = [
+        {
+            name: "a version expanded into the program",
+            shell: ["jq \".version = \\\"$VERSION\\\"\" package.json > tmp"],
+            why: "the splice this rule exists to refuse"
+        },
+        {
+            name: "an interpolated read, escaped quotes and all",
+            shell: ["jq -e \".targets[\\\"$NAME\\\"]\" targets.json"],
+            why: "a program built out of a value is a program built out of a value whether it writes or reads; a name carrying a quote closes the string and the rest is jq's to parse"
+        },
+        {
+            name: "a splice with a binding written after it",
+            shell: ["jq \".v = \\\"$V\\\"\" --arg v \"$V\" package.json"],
+            why: "a --arg anywhere on the line excuses the program in front of it, which is the one place the value never went"
+        },
+        {
+            name: "a program that binds one value and splices another",
+            shell: ["jq --arg v \"$V\" \".version = \\\"$VERSION\\\" | .n = $v\""],
+            why: "the call binds a value, so the value it splices is never looked at"
+        },
+        {
+            name: "a splice behind --argfile",
+            shell: ["jq --argfile v defaults.json \".x = \\\"$V\\\"\""],
+            why: "a flag whose arity is unknown has its own value read as the program, and the program behind it never reached"
+        },
+        {
+            name: "a splice in the second half of a pipeline",
+            shell: ["jq . package.json | jq \".v = \\\"$V\\\"\" > tmp"],
+            why: "the program is read from the first jq on the line, so a rewrite in the second half is never looked at"
+        },
+        {
+            name: "a splice inside a command substitution",
+            shell: ["VERSION=$(jq \".v = \\\"$V\\\"\" package.json)"],
+            why: "a call opened by $( is not in command position by the letter of the rule, and is a call by every other measure"
+        },
+        {
+            name: "a splice inside backticks",
+            shell: ["V=`jq \".v = \\\"$V\\\"\" package.json`"],
+            why: "the older spelling of the same substitution, and the one nobody updates"
+        },
+        {
+            name: "a splice on a continued line",
+            shell: ["jq --arg v \"$V\" \\", "\".version = \\\"$VERSION\\\"\" package.json"],
+            shows: "\".version = \\\"$VERSION\\\"\" package.json",
+            why: "the shell removes a backslash-newline before it parses anything, so a call split across two lines is one call"
+        },
+        {
+            name: "a splice concatenated onto a single-quoted program",
+            shell: ["jq '.version = '\"$VERSION\" package.json"],
+            why: "the quotes open and close within the word, and the half that carries the value is the unquoted one"
+        },
+        {
+            name: "a splice tested by an if",
+            shell: ["if jq \".version = \\\"$VERSION\\\"\" package.json; then echo ok; fi"],
+            why: "the word after `if` is the command - a prefix set that knows `then` but not `if` misses the half that must come first"
+        },
+        {
+            name: "a splice driving a while",
+            shell: ["while jq \".version = \\\"$VERSION\\\"\" package.json; do sleep 1; done"],
+            why: "the word after `while` (and `until`) is the command, exactly as after `if`"
+        },
+        {
+            name: "a splice behind an environment assignment",
+            shell: ["JQ_COLORS=1 jq \".version = \\\"$VERSION\\\"\" package.json"],
+            why: "NAME=value prefixes are not the command - the shell strips any number of them before finding it"
+        },
+        {
+            name: "a splice behind --indent",
+            shell: ["jq --indent 2 \".version = \\\"$VERSION\\\"\" package.json > tmp"],
+            why: "--indent's own value is read as the program, so the splice standing behind it is never looked at"
+        }
+    ];
+
+    for (const row of INERT)
+        it(`says nothing about ${row.name}`, () => {
+            const source = splice(row.name, ...row.shell);
+
+            assert.ok(walked(source, row.shell),
+                `${row.name} is not being walked at all, so this asserts nothing`);
+
+            assert.deepEqual(splices(source), [], row.why);
+        });
+
+    for (const row of SPLICED)
+        it(`reports ${row.name}`, () => {
+            const source = splice(row.name, ...row.shell);
+
+            assert.ok(walked(source, row.shell),
+                `${row.name} is not being walked at all, so this asserts nothing`);
+
+            const reported = splices(source);
+
+            assert.equal(reported.length, 1, row.why);
+            assert.ok(reported[0].includes(row.shows ?? row.shell[0].trim()),
+                "some other line was reported, so this one is still going unnoticed");
+        });
+
+    /**
+     * The rule the two lines in the workflow are held to, stated over what they
+     * are rather than over what they are not.
+     *
+     * Read as programs rather than as lines, because the assertion is about
+     * what jq is handed: a value bound with --arg, and a program the shell
+     * cannot have touched.
+     */
+    it("classifies both of the workflow's own writes as bound", () => {
+        assert.deepEqual(boundWrites(release), [".version = $v", ".version = $v"],
+            "the two version files are no longer bumped by a jq that binds the version as data");
     });
 
-    // The other direction of the same omission, and the costly one: the value
-    // read as the program assigns nothing, so the real program behind it is
-    // never reached.
-    it("still finds the program standing behind such a flag", () => {
-        const indented = splice(
-            "      - name: Bump it with the output indented",
-            "        run: |",
-            "          jq --indent 2 \".version = \\\"$VERSION\\\"\" package.json > tmp"
-        );
+    it("hands jq the version as an argument rather than as program text", () => {
+        assert.notEqual(boundWrites(release).length, 0,
+            "nothing rewrites the version files with jq any more");
 
-        const reported = unbound(indented);
+        assert.deepEqual(splices(release), [],
+            "jq is handed a program rather than an argument; bind the value with --arg and read it as a jq variable");
 
-        assert.equal(reported.length, 1,
-            "--indent's own value is read as the program, so the splice standing behind it is never looked at");
-        assert.match(reported[0], /--indent/,
-            "some other line was reported, so the splice behind the flag is still going unnoticed");
-    });
-
-    // And still refuses the shape it is for, which is what a narrowing risks: a
-    // filter that exempts one line too many is a rule that cannot fail at all.
-    it("still catches a version expanded into the program", () => {
-        const spliced = [
-            release,
-            "      - name: Bump it the way the comments above refuse",
-            "        run: |",
-            "          jq \".version = \\\"$VERSION\\\"\" package.json > tmp"
-        ].join("\n");
-
-        const reported = unbound(spliced);
-
-        assert.equal(reported.length, 1,
-            "the narrowing exempts the very splice this rule exists to refuse");
-        assert.match(reported[0], /jq\s+"\.version\s*=/,
-            "some other line was reported, so the splice is still going unnoticed");
+        /**
+         * And what those bound programs do, which is the half the rule above
+         * cannot see: it asks only that the program is inert and mentions
+         * .version, so a call narrowed to `'.version'` - a read - would satisfy
+         * it while the release shipped the previous version's number.
+         *
+         * This is where the old third assertion pointed, and it pointed at the
+         * absence of `.version = "$VERSION"` among the reported lines - which
+         * the assertion above now covers completely, over every line rather
+         * than over one spelling of one splice. So it is turned around: not
+         * that no line splices the version, but that the lines which bind it
+         * still assign it.
+         */
+        for (const program of boundWrites(release))
+            assert.match(program, /\.version\s*=/,
+                `${program} binds the version and assigns nothing, so the bump leaves the file unchanged`);
     });
 
     /**
@@ -600,13 +909,12 @@ describe("what reaches a shell in the release workflow", () => {
      * asks a different question - what jq is executed with - and a commented-out
      * call is executed with nothing.
      *
-     * Counting one costs both directions at once. The liveness check above is
-     * satisfied by a commented-out copy of a write that has been deleted, so the
-     * assertion that something still rewrites the version passes over a release
-     * that rewrites nothing; and a bad line somebody commented out rather than
-     * removed is reported as a live splice, whose fix is to delete a comment.
+     * Counting one costs both directions at once, and the expensive direction is
+     * this one: the check that something still rewrites the version is satisfied
+     * by a commented-out copy of the write that was deleted, so a release that
+     * bumps nothing passes. The other direction is a row in the matrix above.
      */
-    const withoutTheRealWrites = () => release.split("\n").filter((line) => !JQ.test(line)).join("\n");
+    const withoutTheRealWrites = () => release.split("\n").filter((line) => !/\bjq\b/.test(line)).join("\n");
 
     it("does not count a commented-out write as one that still happens", () => {
         const commented = [
@@ -616,18 +924,7 @@ describe("what reaches a shell in the release workflow", () => {
             "          # jq --arg v \"$VERSION\" '.version = $v' package.json > tmp && mv tmp package.json"
         ].join("\n");
 
-        assert.equal(rewriting(commented).length, 0,
+        assert.equal(boundWrites(commented).length, 0,
             "the check that something still rewrites the version is satisfied by a commented-out copy of the write that was deleted");
-    });
-
-    it("does not report a commented-out one as a live splice", () => {
-        const commented = splice(
-            "      - name: The splice, commented out rather than deleted",
-            "        run: |",
-            "          # jq \".version = \\\"$VERSION\\\"\" package.json > tmp"
-        );
-
-        assert.deepEqual(unbound(commented), [],
-            "a line nothing runs is reported as a splice, so the fix offered for it is to delete a comment");
     });
 });
