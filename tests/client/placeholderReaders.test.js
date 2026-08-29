@@ -43,6 +43,12 @@ const CLIENT_FILES = walkSources(CLIENT_SRC).map(({path, source}) => ({
     code: withoutJsComments(source)
 }));
 
+// Exact for the same reason every floor here is: a walk quietly filtered to
+// a subset - components only, say - leaves every guard over it running on
+// less than it claims. A file legitimately removed updates the floor in the
+// same change.
+const MIN_CLIENT_FILES = 213;
+
 const filesIn = (tree) => CLIENT_FILES.filter(({file}) => file.startsWith(`${tree}/`));
 
 const fileAt = (name) => CLIENT_FILES.find(({file}) => file === name);
@@ -264,6 +270,12 @@ describe("the placeholder is read in one place", () => {
             assert.equal(code.split("\n").length, source.split("\n").length,
                 `${file} comes back from the stripper with a different number of lines, so an exemption granted for `
                 + "one line now covers another");
+    });
+
+    it("walks the whole client tree", () => {
+        assert.ok(CLIENT_FILES.length >= MIN_CLIENT_FILES,
+            `the walk found ${CLIENT_FILES.length} sources where at least ${MIN_CLIENT_FILES} exist, so every `
+            + "guard in this file runs on less than it claims");
     });
 
     for (const tree of MEASUREMENT_TREES) {
@@ -506,6 +518,24 @@ describe("every reader of TestUtil is either scanned or accounted for", () => {
         assert.equal(readsTestUtil(bystander, sources, resolve), false);
     });
 
+    /**
+     * The real pipeline, not only the synthetic: today's true answer is
+     * TestUtil alone, which is also the degenerate answer over a gutted
+     * file list - so a probe barrel rides the REAL list and must be seen.
+     * Kills a CLIENT_FILES that has lost TestUtil (the probe's specifier
+     * then resolves to nothing and the resolver throws) and any regression
+     * that stops the set growing over real entries.
+     */
+    it("sees a planted barrel through the real pipeline", () => {
+        const probe = {file: "common/utils/__probe__.js",
+            code: 'export {readableFigure} from "@/common/utils/TestUtil";'};
+        const files = CLIENT_FILES.concat([probe]);
+        const resolve = resolverOver(files);
+
+        assert.ok(readerSourcesOver(files, resolve).has(probe.file),
+            "the real pipeline no longer grows past TestUtil - its file list or resolver has been gutted");
+    });
+
     // The resolver's own contract, at its edges: packages and assets are
     // nobody's reader, and a moved file fails loudly rather than leaving a
     // rename-shaped hole.
@@ -540,32 +570,79 @@ describe("every reader of TestUtil is either scanned or accounted for", () => {
  * tree, and flagging their home would be this guard firing on the
  * architecture it is meant to protect.
  *
- * The stated bound, like the barrel guard's: a destructuring or a function
- * parameter can still shadow. A named declaration is the shape the found
- * probe had, and the shape a person writes when they reinvent a formatter.
+ * The stated bounds, like the barrel guard's: a destructuring, a parameter
+ * without a default, a property assignment and a catch clause can still
+ * shadow. The watched forms are the shapes a person writes when they
+ * reinvent a formatter - a named declaration in any keyword, a declarator
+ * hiding behind a first one, and a function hung on an object under a
+ * shared name.
  */
 const SHARED_HOMES = ["common/utils/FormatUtil.js", "common/utils/TestUtil.js"];
 
-const OWN_DECLARATION = /export\s+(?:const|let|var|function)\s+([\w$]+)/g;
+// async and class carry no export in either home today; the forms are
+// watched so the day one does, its name joins without this regex learning
+// about it in review.
+const OWN_DECLARATION = /export\s+(?:async\s+)?(?:const|let|var|function|class)\s+([\w$]+)/g;
 
 const SHARED_NAMES = SHARED_HOMES.flatMap((home) =>
     [...(fileAt(home)?.code ?? "").matchAll(OWN_DECLARATION)].map(([, name]) => name));
 
-/** Which shared names this code declares a local version of. */
-const shadowsShared = (code) => SHARED_NAMES.filter((name) =>
-    new RegExp(`(?:const|let|var|function)\\s+${escapeRegExp(name)}\\b`).test(code));
+// Exact: a genuinely retired export updates this in the same change, and
+// slack is how the guard stays green while an export-list refactor unwatches
+// a third of what it claims to watch.
+const MIN_SHARED_NAMES = 46;
+
+// One alternation of the names per form rather than one regex per name: the
+// per-name loop over the tree costs roughly nineteen times what the joined
+// patterns do, paid on every run of this suite.
+const NAMES = SHARED_NAMES.map(escapeRegExp).join("|");
+
+const SHADOW_FORMS = [
+    // The declaration the found probe had - a component-local const, let,
+    // var, function or class wearing a shared name.
+    new RegExp(String.raw`(?:const|let|var|function|class)\s+(${NAMES})\b`, "g"),
+    // The same declaration hiding behind a first declarator: `const a = 1,
+    // formatPercent = ...` walks past a pattern anchored on the keyword.
+    // The lookahead keeps comparisons out: `, formatPercent === c` is
+    // arithmetic, not a declarator.
+    new RegExp(String.raw`,\s*(${NAMES})\s*=(?!=)`, "g"),
+    // And a shared name given to a FUNCTION on an object - a second percent
+    // rule handed round as `helpers.formatPercent`. The value must be a
+    // function: a data key that happens to share a name is its own thing.
+    new RegExp(String.raw`[{,]\s*(${NAMES})\s*:\s*(?:\(|function\b|async\b)`, "g")
+];
+
+/** Which shared names this code declares a local version of, in any watched form. */
+const shadowsShared = (code) => SHADOW_FORMS
+    .flatMap((form) => [...code.matchAll(form)].map(([, name]) => name));
+
+/** The scan itself over a given entry list - one body, so the fixture below proves the shipped scan. */
+const shadowsIn = (entries) => entries
+    .filter(({file}) => !SHARED_HOMES.includes(file))
+    .flatMap(({file, code}) => shadowsShared(code).map((name) => `${file} declares its own ${name}`));
 
 describe("a shared name means the shared thing", () => {
     // A moved home would empty SHARED_NAMES and switch the guard off without
-    // a word - the same silence the tree walk above refuses.
+    // a word - the same silence the tree walk above refuses. The floor is
+    // exact: a genuinely retired export updates it in the same change, and
+    // slack is how a guard stays green while a third of what it watches
+    // vanishes into an export-list refactor.
     it("collects the homes' own declarations, not what they forward", () => {
         for (const home of SHARED_HOMES)
             assert.ok(fileAt(home), `${home} is no longer in the tree, and the shadow guard is silently off`);
 
-        assert.ok(SHARED_NAMES.length > 30,
-            "the declaration pattern has stopped matching the homes' exports, so the guard watches almost nothing");
+        assert.ok(SHARED_NAMES.length >= MIN_SHARED_NAMES,
+            `the homes declare ${SHARED_NAMES.length} names where at least ${MIN_SHARED_NAMES} exist - the `
+            + "declaration pattern has stopped matching an export form");
         assert.ok(SHARED_NAMES.includes("readableFigure"));
         assert.ok(SHARED_NAMES.includes("formatPercent"));
+
+        // The forms neither home uses yet, watched so the day one does its
+        // name joins without this regex learning about it in review.
+        assert.deepEqual([..."export async function probeAsync() {}".matchAll(OWN_DECLARATION)]
+            .map(([, name]) => name), ["probeAsync"]);
+        assert.deepEqual([..."export class ProbeClass {}".matchAll(OWN_DECLARATION)]
+            .map(([, name]) => name), ["ProbeClass"]);
 
         // FormatUtil forwards these; their declarations live in the
         // Preferences tree, which must stay free to keep them.
@@ -573,25 +650,64 @@ describe("a shared name means the shared thing", () => {
         assert.ok(!SHARED_NAMES.includes("TIME_FORMAT_12H"));
     });
 
-    it("no client file declares its own version of a shared name", () => {
-        const shadows = CLIENT_FILES
-            .filter(({file}) => !file.startsWith("common/utils/"))
-            .flatMap(({file, code}) => shadowsShared(code).map((name) => `${file} declares its own ${name}`));
-
-        assert.deepEqual(shadows, [],
+    it("no client file but the homes declares its own version of a shared name", () => {
+        assert.deepEqual(shadowsIn(CLIENT_FILES), [],
             "a local declaration wearing a shared reader's name walks past every pin that matches on the name: "
             + "import the shared one, or call the local thing what it locally is");
     });
 
-    it("reads a declaration and only a declaration", () => {
+    // The scan body is one helper, so this fixture proves the SHIPPED scan
+    // and not a re-spelling of it: only the two homes are excluded, and a
+    // helper one directory from its home - the utils tree itself - is
+    // exactly where a second reader hides.
+    it("watches every file but the homes themselves, the utils tree included", () => {
+        const entries = [
+            {file: "common/utils/FormatUtil.js", code: "const formatPercent = 1;"},
+            {file: "common/utils/TargetUtil.js", code: "const isMeasured = (value) => value;"},
+            {file: "pages/Probe/Probe.jsx", code: "const formatPercent = (value) => value;"},
+            {file: "pages/Probe/Clean.jsx", code: "const other = 1;"}
+        ];
+
+        assert.deepEqual(shadowsIn(entries), [
+            "common/utils/TargetUtil.js declares its own isMeasured",
+            "pages/Probe/Probe.jsx declares its own formatPercent"
+        ]);
+    });
+
+    it("reads every declaration shape a shadow has worn, and only declarations", () => {
         assert.deepEqual(shadowsShared("const formatPercent = (value) => `${value}%`;"), ["formatPercent"]);
         assert.deepEqual(shadowsShared("function readableFigure(value) { return value; }"), ["readableFigure"]);
         assert.deepEqual(shadowsShared("export const isMeasured = (bucket) => bucket;"), ["isMeasured"]);
+        assert.deepEqual(shadowsShared("class formatPercent {}"), ["formatPercent"]);
+
+        // The declaration hiding behind a first declarator, which walks
+        // past any pattern anchored on the keyword.
+        assert.deepEqual(shadowsShared("const total = 1, formatPercent = (value) => value;"), ["formatPercent"]);
+
+        // And a shared name given to a FUNCTION on an object - the exact
+        // shape that put the renamed peakHours collision straight back.
+        assert.deepEqual(shadowsShared("const gates = {isMeasured: (bucket) => bucket};"), ["isMeasured"]);
+        assert.deepEqual(shadowsShared("const api = {formatPercent: function (value) { return value; }};"),
+            ["formatPercent"]);
+        assert.deepEqual(shadowsShared("const api = {formatPercent: async (value) => value};"), ["formatPercent"]);
 
         // Word-bounded on both sides: a longer name that contains a shared
         // one is its own name, not a shadow.
         assert.deepEqual(shadowsShared("const formatPercentage = 1;"), []);
         assert.deepEqual(shadowsShared("const reformatPercent = 1;"), []);
         assert.deepEqual(shadowsShared("formatPercent(value);"), [], "a call is not a declaration");
+
+        // The stated bounds, pinned as bounds: a destructuring (either
+        // spelling), a parameter without a default, a property assignment,
+        // a data key and a catch clause all stay out - and a comparison is
+        // arithmetic, not a declarator.
+        assert.deepEqual(shadowsShared("const {formatPercent} = helpers;"), []);
+        assert.deepEqual(shadowsShared("const {formatPercent: local} = helpers;"), []);
+        assert.deepEqual(shadowsShared("const fn = (a, formatPercent) => a;"), []);
+        assert.deepEqual(shadowsShared("printers.formatPercent = (value) => value;"), []);
+        assert.deepEqual(shadowsShared("const flags = {isMeasured: true};"), []);
+        assert.deepEqual(shadowsShared("catch (formatPercent) {}"), []);
+        assert.deepEqual(shadowsShared("if (a === b, formatPercent === c) {}"), []);
+        assert.deepEqual(shadowsShared("let index = 0, total = 1;"), []);
     });
 });

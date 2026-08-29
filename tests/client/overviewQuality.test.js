@@ -152,6 +152,25 @@ describe("the overview row carries both quality figures", () => {
      * it then prints is the column as stored, "0.5" and "0" alike, which is
      * the row-and-pane-identical policy the chip's comment states.
      */
+    /**
+     * And each chip dressed in ITS OWN grader's colour, executed with a
+     * pair the two graders disagree on. The source pins at the bottom hold
+     * each level's spelling; this is the second net, the one that survives
+     * a respelling - a swap of the two grader calls leaves both pins
+     * matching somewhere in the region while both chips wear the other
+     * figure's colour.
+     */
+    it("dresses each chip in its own grader's colour", () => {
+        const chips = built(10, 0.5);
+        const jitterChip = chips.find((figure) => figure.key === "jitter");
+        const lossChip = chips.find((figure) => figure.key === "packetLoss");
+
+        assert.equal(jitterChip.level, jitterColour(formatLatency(10)));
+        assert.equal(lossChip.level, packetLossColour(0.5));
+        assert.notEqual(jitterChip.level, lossChip.level,
+            "a fixture both graders agree on proves nothing here");
+    });
+
     it("draws the loss chip only for what the reader admits", () => {
         const lossChip = (packetLoss) => built(null, packetLoss).find((figure) => figure.key === "packetLoss");
 

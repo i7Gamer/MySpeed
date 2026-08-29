@@ -252,6 +252,31 @@ describe("the enlarged overview's rows refuse what no reader can read", () => {
             "both windows print 23.4 ms, and the arrow between them reads the stored change by convention");
     });
 
+    /**
+     * Position-sensitive, with three distinct figures: each caption part
+     * must carry ITS OWN figure. Presence pins and refusal cases both pass
+     * a min/max swap - the most common copy-paste regression - so the
+     * mapping itself is executed.
+     */
+    it("maps each caption part to its own figure", () => {
+        const item = row({ping: {avg: 23.47, min: 8.91, max: 132.76, median: 22.05}}, "latest.ping");
+
+        assert.deepEqual(item.description, {
+            key: "statistics.overview.ping_description",
+            min: formatLatencyWithUnit(8.91, "latest.ping_unit"),
+            max: formatLatencyWithUnit(132.76, "latest.ping_unit"),
+            median: formatLatencyWithUnit(22.05, "latest.ping_unit")
+        }, "a caption part reads a neighbour's figure - the swap no presence pin can see");
+
+        const data = row({dataUsed: {total: 3000, download: 2000, upload: 1000}}, "test.details.data_used");
+
+        assert.deepEqual(data.description, {
+            key: "test.details.data_used_value",
+            down: formatBytes(2000),
+            up: formatBytes(1000)
+        }, "the data caption swapped its directions");
+    });
+
     it("hides the duration spread unless both ends read", () => {
         assert.equal(row({time: {min: -1, max: -1}}, "statistics.overview.span_title"), undefined,
             "a placeholder pair printed as a spread");

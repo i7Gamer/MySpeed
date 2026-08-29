@@ -505,6 +505,25 @@ describe("what the extraction cannot run, read from the source", () => {
     });
 
     /**
+     * A raw read in either chaining spelling, however a refactor writes it.
+     * The lookbehind exempts the one formatted read - with or without the
+     * unit half - and the optional `?` matters: the hardened siblings two
+     * files over write house-style optional chaining, so the next defensive
+     * pass over this pane will too, and a guard that only knows the bare
+     * dot lets exactly that edit walk out of it.
+     */
+    const RAW_LATENCY_READ = /(?<!formatLatency(?:WithUnit)?\()\b(test|limits|earlier)\??\.ping\b/;
+
+    it("reads a raw ping in either chaining spelling, and only a raw one", () => {
+        for (const raw of ["const x = test.ping;", "const x = test?.ping;", "limits?.ping", "earlier?.ping;"])
+            assert.match(raw, RAW_LATENCY_READ, `"${raw}" no longer reads as a raw latency`);
+
+        for (const guarded of ["formatLatency(test.ping)", "formatLatency(test?.ping)",
+            "formatLatencyWithUnit(test.ping, ms)", "other?.ping", "latest.ping_unit", "test.pinged"])
+            assert.doesNotMatch(guarded, RAW_LATENCY_READ, `"${guarded}" is formatted or no latency read at all`);
+    });
+
+    /**
      * The one assertion that catches a figure added later and wired to the
      * raw column: nowhere in the pane is a ping read without being trimmed
      * first, the listed constructs aside.
@@ -513,7 +532,7 @@ describe("what the extraction cannot run, read from the source", () => {
         const displayed = RAW_TARGET_READS.reduce(
             (source, read) => source.replaceAll(read, ""), pane);
 
-        assert.doesNotMatch(displayed, /(?<!formatLatency\()\b(test|limits|earlier)\.ping\b/,
+        assert.doesNotMatch(displayed, RAW_LATENCY_READ,
             "a ping is still read at the two decimals the column stores");
     });
 });
