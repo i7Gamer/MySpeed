@@ -365,6 +365,8 @@
       "packet_loss_description": "Durchschnitt über die Tests, die ihn gemessen haben",
       "peak_title": "Verlangsamung zur Stoßzeit",
       "peak_description": "Am langsamsten gegen {{slowest}}, am schnellsten gegen {{fastest}}",
+      "peak_latency_title": "Latenz zur Stoßzeit",
+      "peak_latency_description": "Steigt von {{best}} gegen {{bestHour}} auf {{worst}} gegen {{worstHour}}",
       "ping_description": "Durchschnittliche Latenz, zwischen {{min}} und {{max}}, Median {{median}}",
       "span_title": "Dauer-Spanne",
       "span_description": "Der kürzeste und der längste Test in diesem Zeitraum",

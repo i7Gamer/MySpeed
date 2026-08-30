@@ -365,6 +365,8 @@
       "packet_loss_description": "Средно за тестовете, които са я измерили",
       "peak_title": "Забавяне в пиковите часове",
       "peak_description": "Най-бавно около {{slowest}}, най-бързо около {{fastest}}",
+      "peak_latency_title": "Латентност в пиковите часове",
+      "peak_latency_description": "Нараства от {{best}} около {{bestHour}} до {{worst}} около {{worstHour}}",
       "ping_description": "Средно закъснение, между {{min}} и {{max}}, медиана {{median}}",
       "span_title": "Разлика в продължителността",
       "span_description": "Най-краткият и най-дългият тест в този период",

@@ -365,6 +365,8 @@
       "packet_loss_description": "Average across the tests that measured it",
       "peak_title": "Peak-hour slowdown",
       "peak_description": "Slowest around {{slowest}}, fastest around {{fastest}}",
+      "peak_latency_title": "Peak-hour latency",
+      "peak_latency_description": "Climbs from {{best}} around {{bestHour}} to {{worst}} around {{worstHour}}",
       "ping_description": "Average latency, between {{min}} and {{max}}, median {{median}}",
       "span_title": "Duration spread",
       "span_description": "The shortest and longest test in this range",

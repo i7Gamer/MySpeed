@@ -365,6 +365,8 @@
       "packet_loss_description": "Średnia z testów, które ją zmierzyły",
       "peak_title": "Spowolnienie w godzinach szczytu",
       "peak_description": "Najwolniej około {{slowest}}, najszybciej około {{fastest}}",
+      "peak_latency_title": "Opóźnienie w godzinach szczytu",
+      "peak_latency_description": "Rośnie z {{best}} około {{bestHour}} do {{worst}} około {{worstHour}}",
       "ping_description": "Średnie opóźnienie, od {{min}} do {{max}}, mediana {{median}}",
       "span_title": "Rozrzut czasu trwania",
       "span_description": "Najkrótszy i najdłuższy test w tym zakresie",

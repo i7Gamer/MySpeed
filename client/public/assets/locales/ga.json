@@ -365,6 +365,8 @@
       "packet_loss_description": "Meán thar na tástálacha a thomhais é",
       "peak_title": "Moilliú buaicuaire",
       "peak_description": "Is moille é thart ar {{slowest}}, is tapúla é thart ar {{fastest}}",
+      "peak_latency_title": "Aga folaigh buaicuaire",
+      "peak_latency_description": "Ardaíonn ó {{best}} timpeall {{bestHour}} go {{worst}} timpeall {{worstHour}}",
       "ping_description": "Meán-aga folaigh, idir {{min}} agus {{max}}, airmheán {{median}}",
       "span_title": "Réimse faid",
       "span_description": "An tástáil is giorra agus an ceann is faide sa raon seo",

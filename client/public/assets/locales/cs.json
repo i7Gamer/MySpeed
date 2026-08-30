@@ -365,6 +365,8 @@
       "packet_loss_description": "Průměr z testů, které ji měřily",
       "peak_title": "Zpomalení ve špičce",
       "peak_description": "Nejpomalejší kolem {{slowest}}, nejrychlejší kolem {{fastest}}",
+      "peak_latency_title": "Latence ve špičce",
+      "peak_latency_description": "Stoupá z {{best}} kolem {{bestHour}} na {{worst}} kolem {{worstHour}}",
       "ping_description": "Průměrná odezva, mezi {{min}} a {{max}}, medián {{median}}",
       "span_title": "Rozptyl doby trvání",
       "span_description": "Nejkratší a nejdelší test v tomto rozsahu",

@@ -365,6 +365,8 @@
       "packet_loss_description": "Gennemsnit på tværs af de tests, der målte det",
       "peak_title": "Opbremsning i myldretiden",
       "peak_description": "Langsomst omkring {{slowest}}, hurtigst omkring {{fastest}}",
+      "peak_latency_title": "Latenstid i spidsbelastning",
+      "peak_latency_description": "Stiger fra {{best}} omkring {{bestHour}} til {{worst}} omkring {{worstHour}}",
       "ping_description": "Gennemsnitlig forsinkelse, mellem {{min}} og {{max}}, median {{median}}",
       "span_title": "Spredning i varighed",
       "span_description": "Den korteste og den længste test i dette interval",

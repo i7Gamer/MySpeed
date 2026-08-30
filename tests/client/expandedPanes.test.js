@@ -108,7 +108,7 @@ describe("the overview pane", () => {
     });
 
     it("adds none of this to the card", () => {
-        assert.match(overview, /if \(props\.expanded\) items\.push\(\.\.\.expandedItems\(props\)\)/);
+        assert.match(overview, /if \(props\.expanded\) items\.push\(\.\.\.expandedItems\(props, preferences\)\)/);
     });
 
     it("has every string it interpolates", () => {

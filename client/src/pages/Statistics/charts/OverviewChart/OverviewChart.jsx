@@ -3,7 +3,7 @@ import PanelRow from "@/pages/Statistics/components/PanelRow";
 import {t} from "i18next";
 import {useContext} from "react";
 import {
-    faCalendarDay, faCircleExclamation, faClockRotateLeft, faDatabase, faGaugeHigh,
+    faArrowTrendUp, faCalendarDay, faCircleExclamation, faClockRotateLeft, faDatabase, faGaugeHigh,
     faHourglassHalf, faLinkSlash, faPingPongPaddleBall, faStopwatch
 } from "@fortawesome/free-solid-svg-icons";
 import {
@@ -11,7 +11,7 @@ import {
 } from "@/common/utils/FormatUtil";
 import {failureRate, readableFigure} from "@/common/utils/TestUtil";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {peakSlowdown} from "@/pages/Statistics/charts/peakHours";
+import {peakLatencyRise, peakSlowdown} from "@/pages/Statistics/charts/peakHours";
 import Delta from "@/common/components/Delta";
 import "./styles.sass";
 
@@ -71,7 +71,7 @@ const testsPerDay = (total, dateRange) => {
  * upload do, the duration card states only its average, and nothing said how
  * often the schedule actually ran.
  */
-const expandedItems = (props) => {
+const expandedItems = (props, preferences) => {
     const items = [];
     const ms = t("latest.ping_unit");
 
@@ -107,6 +107,26 @@ const expandedItems = (props) => {
         // printing the same trimmed figure can show a small arrow, because
         // the measurement moved even though the display did not.
         delta: {current: pingAverage, previous: readableFigure(props.previous?.ping?.avg), higherIsBetter: false}
+    });
+
+    // The latency half of the peak row's story, from the same buckets: the
+    // hourly chart plots the speeds alone, so the per-hour latency the payload
+    // has always carried was stated nowhere. Worst hour against best, like the
+    // slowdown on the card - and no delta for the same reason it has none: the
+    // previous window's summary carries no hourly buckets.
+    const latency = peakLatencyRise(props.hourlyAverages);
+
+    if (latency) items.push({
+        icon: faArrowTrendUp,
+        title: t("statistics.overview.peak_latency_title"),
+        description: t("statistics.overview.peak_latency_description", {
+            best: formatLatencyWithUnit(latency.bestPing, ms),
+            bestHour: formatHour(latency.bestHour, preferences),
+            worst: formatLatencyWithUnit(latency.worstPing, ms),
+            worstHour: formatHour(latency.worstHour, preferences)
+        }),
+        value: `+${formatLatencyWithUnit(latency.rise, ms)}`,
+        delta: null
     });
 
     // The average duration sits on the card; what it hides is the spread, and a
@@ -268,7 +288,7 @@ export const OverviewChart = (props) => {
     // stated. These are deliberately not on the card: five rows is what fits
     // beside two others, and each of these needs its description read to mean
     // anything.
-    if (props.expanded) items.push(...expandedItems(props));
+    if (props.expanded) items.push(...expandedItems(props, preferences));
 
     return (
         <StatisticContainer title={title} size="large" onClick={props.onClick}>

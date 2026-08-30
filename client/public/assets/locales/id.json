@@ -365,6 +365,8 @@
       "packet_loss_description": "Rata-rata dari pengujian yang mengukurnya",
       "peak_title": "Perlambatan saat jam sibuk",
       "peak_description": "Paling lambat sekitar {{slowest}}, paling cepat sekitar {{fastest}}",
+      "peak_latency_title": "Latensi jam sibuk",
+      "peak_latency_description": "Naik dari {{best}} sekitar pukul {{bestHour}} menjadi {{worst}} sekitar pukul {{worstHour}}",
       "ping_description": "Latensi rata-rata, antara {{min}} dan {{max}}, median {{median}}",
       "span_title": "Rentang durasi",
       "span_description": "Pengujian terpendek dan terpanjang dalam rentang ini",

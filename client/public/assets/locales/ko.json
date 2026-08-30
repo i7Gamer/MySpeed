@@ -365,6 +365,8 @@
       "packet_loss_description": "패킷 손실을 측정한 테스트들의 평균",
       "peak_title": "혼잡 시간대 저하",
       "peak_description": "{{slowest}}경 가장 느리고 {{fastest}}경 가장 빠름",
+      "peak_latency_title": "혼잡 시간대 지연 시간",
+      "peak_latency_description": "{{bestHour}}경 {{best}}에서 {{worstHour}}경 {{worst}}(으)로 상승합니다",
       "ping_description": "평균 지연 시간, {{min}}에서 {{max}} 사이, 중앙값 {{median}}",
       "span_title": "소요 시간 범위",
       "span_description": "이 범위에서 가장 짧은 테스트와 가장 긴 테스트",

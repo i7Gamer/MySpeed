@@ -365,6 +365,8 @@
       "packet_loss_description": "Bunu ölçen testlerin ortalaması",
       "peak_title": "Yoğun saat yavaşlaması",
       "peak_description": "En yavaş {{slowest}} civarında, en hızlı {{fastest}} civarında",
+      "peak_latency_title": "Yoğun saat gecikmesi",
+      "peak_latency_description": "{{bestHour}} civarındaki {{best}} değerinden {{worstHour}} civarında {{worst}} değerine yükselir",
       "ping_description": "Ortalama gecikme, {{min}} ile {{max}} arasında, medyan {{median}}",
       "span_title": "Süre farkı",
       "span_description": "Bu aralıktaki en kısa ve en uzun test",

@@ -365,6 +365,8 @@
       "packet_loss_description": "Media sui test che l'hanno misurata",
       "peak_title": "Rallentamento nelle ore di punta",
       "peak_description": "Più lento verso le {{slowest}}, più veloce verso le {{fastest}}",
+      "peak_latency_title": "Latenza nelle ore di punta",
+      "peak_latency_description": "Sale da {{best}} verso le {{bestHour}} a {{worst}} verso le {{worstHour}}",
       "ping_description": "Latenza media, tra {{min}} e {{max}}, mediana {{median}}",
       "span_title": "Scarto di durata",
       "span_description": "Il test più breve e quello più lungo di questo intervallo",

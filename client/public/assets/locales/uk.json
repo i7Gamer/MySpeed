@@ -365,6 +365,8 @@
       "packet_loss_description": "Середнє за тестами, які її виміряли",
       "peak_title": "Уповільнення в години пік",
       "peak_description": "Найповільніше близько {{slowest}}, найшвидше близько {{fastest}}",
+      "peak_latency_title": "Затримка в години пік",
+      "peak_latency_description": "Зростає з {{best}} близько {{bestHour}} до {{worst}} близько {{worstHour}}",
       "ping_description": "Середня затримка, від {{min}} до {{max}}, медіана {{median}}",
       "span_title": "Розкид тривалості",
       "span_description": "Найкоротший і найдовший тест у цьому діапазоні",

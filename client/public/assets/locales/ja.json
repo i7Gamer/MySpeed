@@ -365,6 +365,8 @@
       "packet_loss_description": "測定できたテストの平均",
       "peak_title": "ピーク時間帯の速度低下",
       "peak_description": "最も遅いのは {{slowest}} 頃、最も速いのは {{fastest}} 頃",
+      "peak_latency_title": "ピーク時の遅延",
+      "peak_latency_description": "{{bestHour}}頃の{{best}}から{{worstHour}}頃の{{worst}}に上昇します",
       "ping_description": "平均レイテンシー（{{min}} 〜 {{max}}、中央値 {{median}}）",
       "span_title": "所要時間のばらつき",
       "span_description": "この範囲で最も短いテストと最も長いテスト",

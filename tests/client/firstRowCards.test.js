@@ -4,9 +4,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-    formatBytes, formatDuration, formatLatencyWithUnit, formatPercent, NOT_MEASURED
+    formatBytes, formatDuration, formatHour, formatLatencyWithUnit, formatPercent, NOT_MEASURED
 } from "@/common/utils/FormatUtil.js";
 import { failureRate, readableFigure } from "@/common/utils/TestUtil.js";
+import { peakLatencyRise } from "@/pages/Statistics/charts/peakHours.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const CLIENT_SRC = path.join(ROOT, "client", "src");
@@ -28,7 +29,7 @@ const english = JSON.parse(fs.readFileSync(
  */
 describe("the peak-hour row on the overview card", () => {
     it("is computed rather than restated in the component", () => {
-        assert.match(overview, /import \{peakSlowdown} from "@\/pages\/Statistics\/charts\/peakHours"/);
+        assert.match(overview, /import \{peakLatencyRise, peakSlowdown} from "@\/pages\/Statistics\/charts\/peakHours"/);
         assert.match(overview, /const peak = peakSlowdown\(props\.hourlyAverages\)/);
     });
 
@@ -193,8 +194,8 @@ describe("the packet-loss row on the overview card", () => {
  * N/A" rows whose deltas were computed from -1.
  */
 describe("the enlarged overview's rows refuse what no reader can read", () => {
-    const lifted = (props) => {
-        const start = overview.indexOf("const expandedItems = (props) => {");
+    const lifted = (props, preferences) => {
+        const start = overview.indexOf("const expandedItems = (props, preferences) => {");
         assert.notEqual(start, -1, "the enlarged rows are no longer derived where this lift expects");
 
         const end = overview.indexOf("\n};", start);
@@ -202,12 +203,17 @@ describe("the enlarged overview's rows refuse what no reader can read", () => {
 
         const stub = (key, values) => values === undefined ? key : {key, ...values};
 
+        // peakLatencyRise and formatHour ride in as the real ones: the
+        // latency row's cases below execute the whole chain from buckets to
+        // caption, the way the loss row's execute failureRate.
         return new Function(
-            "t", "formatLatencyWithUnit", "formatDuration", "formatBytes", "readableFigure", "testsPerDay",
-            "faPingPongPaddleBall", "faHourglassHalf", "faCalendarDay", "faDatabase",
+            "t", "formatLatencyWithUnit", "formatDuration", "formatBytes", "formatHour",
+            "readableFigure", "testsPerDay", "peakLatencyRise",
+            "faPingPongPaddleBall", "faHourglassHalf", "faCalendarDay", "faDatabase", "faArrowTrendUp",
             `${overview.slice(start, end + 3)}\nreturn expandedItems;`)(
-            stub, formatLatencyWithUnit, formatDuration, formatBytes, readableFigure, () => null,
-            null, null, null, null)(props);
+            stub, formatLatencyWithUnit, formatDuration, formatBytes, formatHour,
+            readableFigure, () => null, peakLatencyRise,
+            null, null, null, null, null)(props, preferences);
     };
 
     // Every fixture carries tests: testsPerDay's argument is dereferenced
@@ -308,6 +314,59 @@ describe("the enlarged overview's rows refuse what no reader can read", () => {
             previous: {dataUsed: {total: "-1"}}}, "test.details.data_used");
         assert.equal(item.delta.current, 3000);
         assert.equal(item.delta.previous, null);
+    });
+
+    /**
+     * The latency twin of the peak-hour row, executed from buckets to
+     * caption. Its guards live in peakLatencyRise and have their own matrix;
+     * what is pinned here is the row built on top: each caption part carries
+     * ITS OWN figure and ITS OWN hour - four distinct values, so a best/worst
+     * swap fails - and the rise goes out formatted, with no delta for the
+     * summary that carries no buckets.
+     */
+    const LATENCY_BUCKETS = [
+        {hour: 4, ping: 8, download: 100, count: 10},
+        {hour: 13, ping: 12, download: 100, count: 10},
+        {hour: 20, ping: 21, download: 100, count: 10}
+    ];
+
+    it("draws the peak-latency row from the buckets, each part its own figure", () => {
+        const item = row({hourlyAverages: LATENCY_BUCKETS}, "statistics.overview.peak_latency_title");
+
+        assert.notEqual(item, undefined, "three measured hours drew no latency row");
+        assert.equal(item.value, `+${formatLatencyWithUnit(13, "latest.ping_unit")}`);
+        assert.deepEqual(item.description, {
+            key: "statistics.overview.peak_latency_description",
+            best: formatLatencyWithUnit(8, "latest.ping_unit"),
+            bestHour: formatHour(4, undefined),
+            worst: formatLatencyWithUnit(21, "latest.ping_unit"),
+            worstHour: formatHour(20, undefined)
+        }, "a caption part reads a neighbour's figure or hour - the swap no presence pin can see");
+        assert.equal(item.delta, null, "the previous summary carries no buckets to compare against");
+    });
+
+    // The clock preference reaches the hours through the shared formatter.
+    it("names the latency hours on the clock the reader chose", () => {
+        const item = lifted({...BASE, hourlyAverages: LATENCY_BUCKETS}, {timeFormat: "12h"})
+            .find((entry) => entry.title === "statistics.overview.peak_latency_title");
+
+        assert.equal(item.description.bestHour, "4:00 AM");
+        assert.equal(item.description.worstHour, "8:00 PM");
+    });
+
+    it("renders no latency row when the range cannot support it", () => {
+        for (const absent of [undefined, {}, "n/a", [], LATENCY_BUCKETS.slice(0, 2)])
+            assert.equal(row({hourlyAverages: absent}, "statistics.overview.peak_latency_title"),
+                undefined, `buckets of ${JSON.stringify(absent)} drew the row`);
+    });
+});
+
+describe("the peak-latency row's strings", () => {
+    it("has both of them, each caption part named", () => {
+        assert.equal(typeof english.statistics.overview.peak_latency_title, "string");
+        for (const part of ["best", "bestHour", "worst", "worstHour"])
+            assert.match(english.statistics.overview.peak_latency_description,
+                new RegExp(`\\{\\{${part}}}`), `the description lost its {{${part}}} part`);
     });
 });
 

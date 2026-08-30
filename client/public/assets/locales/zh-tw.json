@@ -365,6 +365,8 @@
       "packet_loss_description": "以有測得此值的測試取平均",
       "peak_title": "尖峰時段降速",
       "peak_description": "{{slowest}} 前後最慢，{{fastest}} 前後最快",
+      "peak_latency_title": "尖峰時段延遲",
+      "peak_latency_description": "從 {{bestHour}} 左右的 {{best}} 升至 {{worstHour}} 左右的 {{worst}}",
       "ping_description": "平均延遲，介於 {{min}} 與 {{max}} 之間，中位數 {{median}}",
       "span_title": "耗時範圍",
       "span_description": "此範圍內最短與最長的測試",

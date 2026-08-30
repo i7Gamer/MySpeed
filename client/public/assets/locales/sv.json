@@ -365,6 +365,8 @@
       "packet_loss_description": "Genomsnitt över de tester som mätte den",
       "peak_title": "Nedgång i högtrafik",
       "peak_description": "Långsammast runt {{slowest}}, snabbast runt {{fastest}}",
+      "peak_latency_title": "Latens under högtrafik",
+      "peak_latency_description": "Stiger från {{best}} runt {{bestHour}} till {{worst}} runt {{worstHour}}",
       "ping_description": "Genomsnittlig latens, mellan {{min}} och {{max}}, median {{median}}",
       "span_title": "Längdspridning",
       "span_description": "Det kortaste och det längsta testet i den här perioden",
