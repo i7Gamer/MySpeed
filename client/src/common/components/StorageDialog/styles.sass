@@ -204,6 +204,21 @@ $storage-row-band: 2.375rem
       color: $subtext
       opacity: 0.8
 
+    // The export hint's two sentences share one grid cell, so the paragraph
+    // is always as tall as the longer of them and the toggle beneath cannot
+    // move when they swap. visibility rather than display keeps the hidden
+    // sentence's box reserving that height, and the aria-hidden that mutes
+    // it for a reader is the hook, so screen and reader cannot disagree.
+    .storage-row-hint-swap
+      display: grid
+
+      span
+        grid-area: 1 / 1
+        min-width: 0
+
+      span[aria-hidden="true"]
+        visibility: hidden
+
     // Under the hint and indented to the same place: it chooses what this row
     // exports, so it belongs to the row's description rather than beside its
     // button - where it took the button out of the column Import and Reset
