@@ -34,4 +34,22 @@ describe("switching the language", () => {
 
         assert.match(pagination, /useTranslation/, "the memoised pagination never hears the change");
     });
+
+    /**
+     * Re-rendering the labels is only half of it: the sliding highlight is
+     * positioned by measuring the active tab, and the tab's width changes with
+     * the language. updateActiveBackground is keyed on [activeIndex] alone, so
+     * its effect never re-runs on a language switch - the pill stays sized to
+     * the previous language's tab and detaches from the one it now sits over.
+     * The component subscribes to the change itself and re-measures, and removes
+     * the subscription rather than leaking a handler into an unmounted tree.
+     */
+    it("re-measures the sliding highlight when the language changes", () => {
+        const pagination = read("common/components/Header/components/Pagination/Pagination.jsx");
+
+        assert.match(pagination, /i18n\.on\(["']languageChanged["']/,
+            "the pill is never re-measured when the labels change width with the language");
+        assert.match(pagination, /i18n\.off\(["']languageChanged["']/,
+            "the language subscription is never removed, so it fires into an unmounted component");
+    });
 });

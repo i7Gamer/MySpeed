@@ -13,11 +13,8 @@ let sent = [];
 before(async () => {
     server = await bootServer();
     runSpeedtest = (await import("../../server/tasks/speedtest.js")).create;
-
-    // A fresh install has no provider, and a run without one is refused before
-    // anything is measured or announced. Preview mode supplies the result, but
-    // the setting still has to name someone.
-    await setConfig(server.config, "provider", "cloudflare");
+    // No target is seeded: preview mode supplies its own stand-in member, the
+    // way a demo instance runs with an empty targets table.
 });
 
 after(async () => {

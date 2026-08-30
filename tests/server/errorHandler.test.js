@@ -260,6 +260,70 @@ describe("errorHandler", () => {
         });
     });
 
+    /**
+     * Which failure it was, not merely that there was one.
+     *
+     * server/index.js keeps distinct start-up codes - 111 for a database that
+     * would not open, 112 for a start-up that did not finish - so an operator,
+     * and whatever supervises the process, can tell an expected clash from a
+     * state that cannot be reasoned about. The http listener's bind failure is
+     * the second of those, and it exited on its own precisely because reporting
+     * it through here would have flattened it to the generic 1 - which left the
+     * failure out of data/logs/error.log altogether, the one file the log's own
+     * header points bug reports at.
+     */
+    describe("the exit code", () => {
+        // The start-up code server/index.js names; kept here as the value a
+        // caller may ask for, not as anything this module knows about.
+        const STARTUP_FAILED_EXIT = 112;
+
+        it("is the one the caller named", async () => {
+            assert.equal((await runHandler(`{fatal: true, code: ${STARTUP_FAILED_EXIT}}`)).code,
+                STARTUP_FAILED_EXIT, "a caller's own start-up code was flattened to the generic 1");
+        });
+
+        it("still writes the log before leaving with it", async () => {
+            await runHandler(`{fatal: true, code: ${STARTUP_FAILED_EXIT}}`);
+
+            assert.match(logContents(), /boom/, "the exit outran the write it was waiting on");
+        });
+
+        // Every existing caller passes no code at all, so the default is the
+        // one thing here that must not move.
+        it("stays 1 when none is named", async () => {
+            assert.equal((await runHandler("{fatal: true}")).code, 1);
+        });
+
+        /**
+         * And it is named where its neighbours are named.
+         *
+         * Every other code that reaches this function has a name at the top of
+         * the module it comes from: server/index.js keeps 111, 112, 113 and 114
+         * that way, each with a paragraph saying what it asks of the operator.
+         * The default sat in the destructuring as a bare 1 - which says only
+         * "a failure", and says it in the one place a reader looking for the
+         * answer is least likely to check.
+         *
+         * The value is what every existing caller relies on and is pinned by the
+         * case above; this asks only that it also be reachable by a name.
+         */
+        it("names the default rather than leaving a literal in the signature", () => {
+            const module = fs.readFileSync(path.resolve("server/util/errorHandler.js"), "utf8");
+
+            assert.match(module, /const\s+[A-Z][A-Z_]*\s*=\s*1;/,
+                "there is no named constant for the code a caller that names none exits with");
+            assert.doesNotMatch(module, /code\s*=\s*\d/,
+                "the default exit code is a bare number in the destructuring, unlike every code its callers name");
+        });
+
+        it("is not consulted at all when the error is not fatal", async () => {
+            const {code, stdout} = await runHandler(`{fatal: false, code: ${STARTUP_FAILED_EXIT}}`);
+
+            assert.equal(code, 0, "a code turned a survivable error into an exit");
+            assert.match(stdout, /survived/);
+        });
+    });
+
     // The regression this guards: server/index.js installs an unhandledRejection
     // handler specifically so one failing integration cannot take the server
     // down, and the handler then exited anyway.

@@ -117,3 +117,47 @@ export const cloudflareList = [
     {os: 'linux', arch: 'arm64', suffix: 'cfspeedtest-aarch64-unknown-linux-gnu.tar.gz',
         sha256: '0d4778e1ca6856dc1f3303337039a15abee21f09a3ef804ea22bfd09d1b41133'}
 ];
+/**
+ * iperf3, which is a different kind of entry from the three above.
+ *
+ * These are static builds: they carry their own libc, so the one Linux
+ * download serves glibc and musl alike - the distinction cfspeedtest needs a
+ * refusal for does not arise here.
+ *
+ * Most of them are also the executable itself rather than an archive
+ * containing one, which is what `archive` says. The Windows build is the
+ * exception and is the only one that unpacks: it is a Cygwin build, and the
+ * zip carries iperf3.exe together with the cygwin1.dll without which it will
+ * not start, so both members are extracted under their own names.
+ *
+ * The digests are the ones GitHub states for each release asset, which is the
+ * same footing as cfspeedtest's above; the Windows archive's was additionally
+ * recomputed from the asset as served.
+ *
+ * The macOS builds are per OS version. arm64 takes the macOS 14 build rather
+ * than the 15 one on purpose - a binary built against an older SDK runs on the
+ * newer system and not the other way about - and Intel is offered only a macOS
+ * 15 build, which is the only one published.
+ */
+export const iperfVersion = "3.21";
+export const iperfList = [
+    // MacOS
+    {os: 'darwin', arch: 'x64', suffix: 'iperf3-amd64-osx-15',
+        sha256: '71474bb614e2d48f3c5fcb63ae7b77b51e37043f989478ee9021223db856a8e6'},
+    {os: 'darwin', arch: 'arm64', suffix: 'iperf3-arm64-osx-14',
+        sha256: 'ffe369fe1b556b62bb2b6c2b4708cc9905c06fea810c7ca74459769a03ddccff'},
+
+    // Windows. The one archive, and the one entry carrying a second file.
+    {os: 'win32', arch: 'x64', suffix: 'iperf3-amd64-win.zip', archive: true,
+        sha256: '425c87f0618d0527c959e1c2edcb213c5383f87522d31e9e7f5220ab49371afa'},
+
+    // Linux
+    {os: 'linux', arch: 'x64', suffix: 'iperf3-amd64',
+        sha256: 'fde45980958b6a5b32e947d379699a8a3b54152d4971cce87ffa4c93ca2d2b9e'},
+    {os: 'linux', arch: 'arm64', suffix: 'iperf3-arm64v8',
+        sha256: '6c005b04dfab35840fbf1d1b3202c8997afed95de3db0b78fe95c3834dc5233a'},
+    {os: 'linux', arch: 'arm', suffix: 'iperf3-arm32v7',
+        sha256: '2e16f26c4a44985425db57fdf4be05dbd2cd81a1726e7eaec19bbc15e2a36e0d'},
+    {os: 'linux', arch: 'ia32', suffix: 'iperf3-i386',
+        sha256: '6929b78eaa177234e1c4b8c990687b25919c9d15b7db47bad64552ea983f60aa'}
+];

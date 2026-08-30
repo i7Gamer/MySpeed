@@ -5,7 +5,10 @@ const SPEED_FAIR = 30;
 const LATENCY_BAD = 180;
 const LATENCY_FAIR = 130;
 
-const FAILED_TEST = -1;
+// Exported beside storedFigure below: the sentinel and the reader that
+// recognises it are one contract, and a component comparing against a private
+// -1 is how the card and the pane came to disagree about the same row.
+export const FAILED_TEST = -1;
 
 // Number("") and Number(null) are both 0, which would read as a genuine
 // measurement of zero rather than as an absent one.
@@ -118,11 +121,15 @@ const PING_DEVIATION_FAIR = 10;
 
 // Blue for anything that is not a measurement: a range in which nothing
 // reported the figure has no colour to earn, and red would say the line is bad
-// when nothing was measured at all.
+// when nothing was measured at all. Read through readableFigure, because the
+// labels beside these chips print the stored column raw - a loss of "0.5"
+// from a legacy-restored history rendered its figure beside the blue
+// nothing-was-measured colour.
 const gradeBelow = (value, good, fair) => {
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "blue";
-    if (value < good) return "green";
-    if (value < fair) return "orange";
+    const figure = readableFigure(value);
+    if (figure === null) return "blue";
+    if (figure < good) return "green";
+    if (figure < fair) return "orange";
 
     return "red";
 };
@@ -169,11 +176,24 @@ const CONSISTENCY_FAIR = 70;
  * failed has no consistency to report, and the worst possible colour is as
  * wrong an answer as the best one - it says the line is unstable when nothing
  * was measured.
+ *
+ * Read through readableFigure, like gradeBelow above: gated on typeof while
+ * its printers moved to the shared reader, a text-spelled score from a
+ * proxied history printed "85.5%" beside the blue nothing-was-measured
+ * colour - shown and denied at once. gradeForIncrease below keeps its typeof
+ * gate for a narrower reason: it is never handed a stored column -
+ * latencyIncrease computes its operand, bufferbloat() refuses unreadable
+ * inputs before it, and the range panel hands it the server's computed
+ * average and the trend dots' per-point increases, coerced at the card's
+ * boundary through readableFigure because a proxied older node's payload
+ * can spell either as text - so nothing reaches this gate unread, and the
+ * strict gate is what notices a producer changing shape.
  */
 export const consistencyColour = (value) => {
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "blue";
-    if (value >= CONSISTENCY_GOOD) return "green";
-    if (value >= CONSISTENCY_FAIR) return "orange";
+    const figure = readableFigure(value);
+    if (figure === null) return "blue";
+    if (figure >= CONSISTENCY_GOOD) return "green";
+    if (figure >= CONSISTENCY_FAIR) return "orange";
 
     return "red";
 };
@@ -238,6 +258,56 @@ export function gradeForIncrease(increase) {
 }
 
 /**
+ * A stored column as the number it spells, or null - negatives included.
+ *
+ * The client half of the server's metricValue, which this bundle cannot
+ * import: a numeric string is read rather than refused, because a history
+ * imported before the columns were validated can hold "42" where a number
+ * belongs. The placeholder -1 is deliberately kept, because recognising it is
+ * the caller's job - isFailedTest below has to see a failure in either
+ * spelling, and a reader that refused negatives would hide exactly the value
+ * it needs.
+ *
+ * Number()'s latitude is accepted knowingly: "1e3" reads as 1000 and "0x10"
+ * as 16, exactly as they do through the server's copy - the two are pinned to
+ * the same fixtures, and a value that reads on one side must read on the
+ * other.
+ *
+ * Exported for the formatters and the placeholder readers outside this file,
+ * so a component never spells the judgement for itself again.
+ */
+export const storedFigure = (value) => {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+
+    // Only a string, and only one that is entirely a number: Number("") is 0,
+    // so a bare cast would read an empty column as a measurement of nought.
+    if (typeof value !== "string" || value.trim() === "") return null;
+
+    const figure = Number(value);
+
+    return Number.isFinite(figure) ? figure : null;
+};
+
+/**
+ * A stored column as a non-negative number, or null.
+ *
+ * The refusal of negatives layered over storedFigure, exactly as the server's
+ * usableFigure layers over metricValue: junk, the empty string, non-finite
+ * values and the negative failure placeholders are no readings. This is the
+ * reader for every figure that is *used* - graded, compared, subtracted -
+ * and tests/server/loadedLatencyAgreement.test.js pins it to the server's.
+ *
+ * Exported for the detail pane's target math (details.js), so the one row
+ * cannot earn a bufferbloat grade while its target bar refuses the same
+ * spelling.
+ */
+export const readableFigure = (value) => {
+    const figure = storedFigure(value);
+
+    return figure === null || figure < 0 ? null : figure;
+};
+
+/**
  * How much latency one transfer added, which is what the grades are read
  * against.
  *
@@ -257,10 +327,19 @@ export function gradeForIncrease(increase) {
  * tests/server/loadedLatencyAgreement.test.js pins the two to each other.
  */
 export function latencyIncrease(loaded, ping) {
-    for (const value of [loaded, ping])
-        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+    const loadedFigure = readableFigure(loaded);
+    const pingFigure = readableFigure(ping);
+    if (loadedFigure === null || pingFigure === null) return null;
 
-    return Math.max(0, parseFloat((loaded - ping).toFixed(INCREASE_DECIMALS)));
+    // A fabricated idle ping is no baseline. 0 is the sentinel a successful
+    // run stores when nobody measured the latency (the server's
+    // UNMEASURED_LATENCY, which this bundle cannot import), so subtracted as
+    // a real 0 ms the whole loaded latency reads as *added* latency - an F
+    // grade for a line that was fine. The server's loadedIncrease skips the
+    // same zero, and loadedLatencyAgreement.test.js holds the two together.
+    if (pingFigure === 0) return null;
+
+    return Math.max(0, parseFloat((loadedFigure - pingFigure).toFixed(INCREASE_DECIMALS)));
 }
 
 export function bufferbloat(test) {
@@ -273,11 +352,13 @@ export function bufferbloat(test) {
     //
     // Both directions, before the worse of them is taken: Math.max(null, 5) is
     // 5, so a single unmeasured direction would otherwise be graded as though
-    // the other one were the whole story. The ping is guarded below.
-    for (const value of [downloadLatency, uploadLatency])
-        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+    // the other one were the whole story. The ping is guarded in
+    // latencyIncrease, through the same reading.
+    const download = readableFigure(downloadLatency);
+    const upload = readableFigure(uploadLatency);
+    if (download === null || upload === null) return null;
 
-    const increase = latencyIncrease(Math.max(downloadLatency, uploadLatency), ping);
+    const increase = latencyIncrease(Math.max(download, upload), ping);
     if (increase === null) return null;
 
     return {increase, grade: gradeForIncrease(increase)};
@@ -288,6 +369,17 @@ export function bufferbloat(test) {
  *
  * Null when nothing was measured - 0/0 is NaN, and "no tests" must not be
  * presented as "nothing failed".
+ *
+ * Both operands are counted, never stored. The server answers `total` with
+ * the length of the rows it was handed and `failed` with that length minus
+ * the successes it filtered out of the same array (buildStatistics in
+ * server/util/statistics.js), so neither can arrive as text or below zero,
+ * and the node proxy forwards another instance's copy of that same
+ * arithmetic verbatim (proxyRequest in server/controller/node.js). So the
+ * Number.isFinite gate is kept for gradeForIncrease's reason rather than
+ * the measurement readers': strict on a computed operand is how a producer
+ * that changed shape gets noticed instead of coerced. The pins in testUtil
+ * hold that contract, the text spelling included.
  */
 export function failureRate(total, failed) {
     if (!Number.isFinite(total) || !Number.isFinite(failed)) return null;
@@ -312,12 +404,19 @@ export function failureRate(total, failed) {
  * are pinned to the same fixtures by tests/server/failedTestAgreement.test.js -
  * neither side can import the other, and four copies of this judgement had
  * already drifted apart once.
+ *
+ * The placeholders are recognised by value, not by type, mirroring the
+ * server's isPlaceholder: a legacy-restored history can hold "-1" as text,
+ * and compared with === that row rendered as a successful test delivering
+ * minus one megabit - the one placeholder reader the coercion sweep missed.
  */
 export function isFailedTest(test) {
     if (!test) return false;
     if (test.error) return true;
 
-    return test.ping === FAILED_TEST && test.download === FAILED_TEST && test.upload === FAILED_TEST;
+    const placeholder = (value) => storedFigure(value) === FAILED_TEST;
+
+    return placeholder(test.ping) && placeholder(test.download) && placeholder(test.upload);
 }
 
 /**
@@ -355,7 +454,10 @@ export const isThresholdNumber = (value) =>
     value !== null && value !== undefined && THRESHOLD_NUMBER.test(value.toString());
 
 export function getIconBySpeed(current, optional, higherIsBetter) {
-    if (current === FAILED_TEST) return "error";
+    // storedFigure, so the text spelling of the placeholder is the failure it
+    // is: compared by identity it fell through to the ratio below, where
+    // Number("-1") is a finite negative - a failed ping graded green.
+    if (storedFigure(current) === FAILED_TEST) return "error";
     if (isMissing(current) || isMissing(optional)) return "blue";
 
     const speed = Math.floor((Number(current) / Number(optional)) * 100);

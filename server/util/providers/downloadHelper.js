@@ -196,6 +196,64 @@ export const downloadAndExtract = async (url, {outputDir, binaryRegex, outputNam
 };
 
 /**
+ * The mode a downloaded executable is given, when the platform has modes.
+ *
+ * Owner may read, write and execute; group and others may read and execute.
+ * The server spawns this file, so it has to carry the bit - a release asset
+ * published as a bare binary arrives without one, unlike a tar member, which
+ * carries its mode inside the archive.
+ */
+export const EXECUTABLE_MODE = 0o755;
+
+/**
+ * Fetches a release asset that is the executable itself, rather than an
+ * archive containing one.
+ *
+ * The three CLIs that came before all publish archives, so everything here
+ * unpacked. iperf3's static builds are published as bare binaries per
+ * architecture - `iperf3-amd64` - and handing one to the extractor fails on
+ * "nothing matching /iperf3/ was found", which is true and explains nothing.
+ *
+ * Verified before it is put in place, and put in place by a rename rather than
+ * a second download: the check is what stands between a replaced upstream
+ * asset and a file this server spawns on a schedule, so nothing unverified may
+ * ever exist at the path the runner reaches for. A rename within one
+ * filesystem is atomic, so there is no moment where a half-written file sits
+ * there either - and the temporary directory can be on another filesystem, so
+ * the copy fallback is not optional.
+ */
+export const downloadBinary = async (url, {outputPath, sha256, client = get, tmp = tmpFile,
+    mode = EXECUTABLE_MODE} = {}) => {
+
+    const staged = tmp('');
+
+    try {
+        await downloadToFile(url, staged, {client});
+        await verifyDigest(staged, sha256);
+
+        // Before it is in place, so the file the runner can reach is never one
+        // that is not yet executable.
+        if (process.platform !== "win32") await fs.promises.chmod(staged, mode);
+
+        await fs.promises.mkdir(path.dirname(outputPath), {recursive: true});
+
+        try {
+            await fs.promises.rename(staged, outputPath);
+            return;
+        } catch (error) {
+            // EXDEV: os.tmpdir() and ./bin are on different filesystems, which
+            // is the normal case in a container with a mounted data volume.
+            if (error.code !== "EXDEV") throw error;
+        }
+
+        await fs.promises.copyFile(staged, outputPath);
+        if (process.platform !== "win32") await fs.promises.chmod(outputPath, mode);
+    } finally {
+        await fs.promises.unlink(staged).catch(() => undefined);
+    }
+};
+
+/**
  * Takes the binary out of a release archive, and says so when it could not.
  *
  * decompress resolves with an empty array rather than rejecting when no plugin
@@ -221,6 +279,40 @@ export const extractBinary = async (archivePath, outputDir, binaryRegex, outputN
 
     if (extracted.length === 0)
         throw new Error(`Extraction failed: nothing matching ${binaryRegex} was found in ${archivePath}`
+            + " - the archive may be in a format this build cannot unpack, or the download may not be an archive at all");
+
+    return extracted;
+};
+
+/**
+ * Takes several members out of an archive, each under its own name.
+ *
+ * extractBinary above renames whatever it matched to one output name, which is
+ * right when the archive holds one executable and wrong the moment it holds
+ * that executable and something the executable needs: iperf3's Windows build
+ * is a Cygwin one, and the published zip carries iperf3.exe beside the
+ * cygwin1.dll without which it will not start. Matched by that helper's rule
+ * both files would be written to the same path, leaving whichever came second.
+ *
+ * The basename is kept rather than the archive's path, so a member nested in a
+ * directory still lands beside its siblings in ./bin - and a crafted archive
+ * cannot write outside the output directory by naming itself "../".
+ *
+ * The fourth parameter is ignored and present so this can be handed to
+ * downloadAndExtract in place of extractBinary.
+ */
+export const extractFiles = async (archivePath, outputDir, fileRegex) => {
+    const extracted = await decompress(archivePath, outputDir, {
+        plugins: [decompressTarGz(), decompressUnzip()],
+        filter: file => fileRegex.test(file.path),
+        map: file => {
+            file.path = path.basename(file.path);
+            return file;
+        }
+    });
+
+    if (extracted.length === 0)
+        throw new Error(`Extraction failed: nothing matching ${fileRegex} was found in ${archivePath}`
             + " - the archive may be in a format this build cannot unpack, or the download may not be an archive at all");
 
     return extracted;

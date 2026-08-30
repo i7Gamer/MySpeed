@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readSource, withoutHashComments } from "../helpers/source.js";
+import { readSource, runBodies, withoutHashComments } from "../helpers/source.js";
 
 // Comments stripped before anything is asserted, for the reason the shared
 // helper states: a comment naming verify-binary.ps1 is found by an indexOf
@@ -188,40 +188,48 @@ describe("no workflow interpolates untrusted input into a shell body", () => {
     // event payload a stranger can write.
     const UNTRUSTED = /\$\{\{\s*(inputs\.|github\.event\.(pull_request|issue|comment|head_commit)\b)/;
 
-    // Every `run:` block, whether folded or inline.
-    const runBodies = (source) => {
-        const bodies = [];
-        const lines = source.split("\n");
-
-        for (let index = 0; index < lines.length; index++) {
-            const match = /^(\s*)(?:- )?run:\s*(\|-?|>-?)?\s*(.*)$/.exec(lines[index]);
-            if (!match) continue;
-
-            const [, indent, block, inline] = match;
-            if (!block) {
-                bodies.push(inline);
-                continue;
-            }
-
-            for (let next = index + 1; next < lines.length; next++) {
-                if (lines[next].trim() !== "" && !lines[next].startsWith(indent + "  ")) break;
-                bodies.push(lines[next]);
-            }
-        }
-
-        return bodies;
-    };
+    const splicedInto = (source) => runBodies(source)
+        .flatMap(({lines}) => lines)
+        .filter((line) => UNTRUSTED.test(line))
+        .map((line) => line.trim());
 
     for (const file of FILES) {
         it(`${file} keeps it out of every run: body`, () => {
-            const offending = runBodies(withoutHashComments(readSource(`.github/workflows/${file}`)))
-                .filter((line) => UNTRUSTED.test(line))
-                .map((line) => line.trim());
-
-            assert.deepEqual(offending, [],
+            assert.deepEqual(splicedInto(readSource(`.github/workflows/${file}`)), [],
                 "this value is substituted into the shell source before bash parses it; pass it through env: instead");
         });
     }
+
+    /**
+     * And a `#` is not a hiding place, which is the one shape this scan could
+     * not see.
+     *
+     * A block scalar is one string. The expression on a commented line is
+     * substituted into it before bash reads the `#` in front of it, so the line
+     * is a splice like any other - and a title carrying `"; curl … #` is exactly
+     * the payload a pull request can write. The walk feeding this scan stripped
+     * those lines as though they were YAML's own comments, so the carrier
+     * nobody would think to look for came back clean.
+     *
+     * Asserted against a synthetic workflow rather than waiting for one in the
+     * tree: the files above are correct today, so the loop passes either way,
+     * which is the whole reason the gap survived.
+     */
+    it("sees one written as a shell comment inside a body", () => {
+        const synthetic = [
+            "jobs:",
+            "  build:",
+            "    steps:",
+            "      - name: Build",
+            "        run: |",
+            "          # title: ${{ github.event.pull_request.title }}",
+            "          echo building"
+        ].join("\n");
+
+        assert.deepEqual(splicedInto(synthetic),
+            ["# title: ${{ github.event.pull_request.title }}"],
+            "a comment inside a run body is stripped before the scan reads it, so an expression spliced into one is reported as clean");
+    });
 });
 
 /**

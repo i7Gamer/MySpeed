@@ -2,8 +2,12 @@ import {useContext, useEffect, useRef, useState, useCallback} from "react";
 import {createPortal} from "react-dom";
 import {ConfigContext} from "@/common/contexts/Config";
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
+import {TargetsContext} from "@/common/contexts/Targets";
 import Speedtest from "../Speedtest";
 import {bufferbloat, getIconBySpeed, previousConnection} from "@/common/utils/TestUtil";
+import {
+    previousOfTarget, resolveLimits, roundIndexById, targetColour
+} from "@/common/utils/TargetUtil";
 import {formatDay, formatFullDay, formatLatency} from "@/common/utils/FormatUtil";
 import {TIMEFRAME_ALL} from "@/common/utils/TimeframeUtil";
 import "./styles.sass";
@@ -19,6 +23,7 @@ const STICKY_DATE_LINGER_MS = 1200;
 const TestArea = () => {
     const config = useContext(ConfigContext)[0];
     const {speedtests, loadMoreTests, loading, hasMore, range, selectTimeframe} = useContext(SpeedtestContext);
+    const {targets, byId, selectedTarget} = useContext(TargetsContext);
     const [stickyDate, setStickyDate] = useState(null);
     const [showStickyDate, setShowStickyDate] = useState(false);
     const [showBackToTop, setShowBackToTop] = useState(false);
@@ -206,6 +211,22 @@ const TestArea = () => {
                     const date = new Date(Date.parse(test.created));
                     const isLast = index === speedtests.length - 1;
 
+                    /**
+                     * What this row is graded against: its own target's
+                     * optimal values where set, the instance-wide settings
+                     * everywhere else - including every row whose target is
+                     * gone or predates targets. One resolver, shared with the
+                     * detail pane, so a row cannot change colour when opened.
+                     */
+                    const target = byId[test.targetId];
+                    const limits = resolveLimits(target, config);
+
+                    // The dot only means something on a mixed list: two or
+                    // more targets, none of them chipped down to. Filtered,
+                    // every row is the chip's target and the dot says nothing.
+                    const dotIndex = targets.length >= 2 && selectedTarget === null
+                        ? roundIndexById(targets, test.targetId) : -1;
+
                     return (
                         <Speedtest
                             key={test.id}
@@ -223,7 +244,7 @@ const TestArea = () => {
                             // two views of it is the worse fault; a row that
                             // shows a rounder figure than it grades is the same
                             // trade the jitter already makes in that pane.
-                            pingLevel={getIconBySpeed(formatLatency(test.ping), config.ping, false)}
+                            pingLevel={getIconBySpeed(formatLatency(test.ping), limits.ping, false)}
                             jitter={test.jitter}
                             // Beside the jitter, the way the opened panel pairs
                             // them: they are the two things the line does under
@@ -238,19 +259,26 @@ const TestArea = () => {
                             // grade the same as the panel's.
                             bufferbloat={bufferbloat(test)}
                             down={test.download}
-                            downLevel={getIconBySpeed(test.download, config.download, true)}
+                            downLevel={getIconBySpeed(test.download, limits.download, true)}
                             up={test.upload}
-                            upLevel={getIconBySpeed(test.upload, config.upload, true)}
+                            upLevel={getIconBySpeed(test.upload, limits.upload, true)}
                             error={test.error}
+                            // Which target measured this row, as a coloured
+                            // dot in the date cell - only on a mixed list,
+                            // where the question arises. Null otherwise.
+                            targetDot={dotIndex >= 0
+                                ? {colour: targetColour(dotIndex), name: target?.name} : null}
                             // The columns above are what the collapsed row draws.
                             // The detail panel reads the stored row itself, so
                             // the fields only it shows are no longer unpacked
                             // one by one on the way in.
                             test={test}
-                            // Newest first, so the next entry is the
-                            // chronologically earlier test - what the detail
-                            // view compares against.
-                            previous={speedtests[index + 1]}
+                            // The chronologically earlier test *of this
+                            // target*, not simply the next row: an unfiltered
+                            // list interleaves the round's targets, and every
+                            // "since last time" figure is a difference between
+                            // two measurements - see previousOfTarget.
+                            previous={previousOfTarget(speedtests, index)}
                             // Not the row before: that one may carry no
                             // identity, and comparing against it would report
                             // no change across the very gap one hides in.

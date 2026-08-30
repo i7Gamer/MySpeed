@@ -125,3 +125,48 @@ describe("the topic field", () => {
         assert.notEqual(fieldNamed("message_thread_id").secret, true);
     });
 });
+
+/**
+ * A topic id that is stored but cannot be honoured.
+ *
+ * The field's own regex admits "0", and 0 is not a forum topic - Telegram
+ * numbers General as 1. A stored "0" is a truthy string, so it was sent, and
+ * Telegram answered 400 for a thread that does not exist: the notification was
+ * lost and the integration marked failed. A numeric 0, which an unvalidated
+ * imported row can carry, was falsy and dropped silently instead.
+ *
+ * Fixed on the send rather than by tightening the field: the same regex runs in
+ * the browser and the card resends every declared field on save, so refusing a
+ * value that is already stored would block an unrelated edit on a field the
+ * operator never touched.
+ */
+describe("a topic id that is not a topic", () => {
+    const threadOf = async (message_thread_id) =>
+        (await finish({message_thread_id})).body.message_thread_id;
+
+    it("is left off rather than refused by telegram", async () => {
+        assert.equal(await threadOf("0"), undefined);
+        assert.equal(await threadOf(0), undefined);
+    });
+
+    it("is left off when it is junk an import could carry", async () => {
+        assert.equal(await threadOf("abc"), undefined);
+        assert.equal(await threadOf("-1"), undefined);
+        assert.equal(await threadOf("1.5"), undefined);
+        assert.equal(await threadOf({}), undefined);
+    });
+
+    // The shapes that already answered "no topic", which must keep doing so.
+    it("is left off when there is none", async () => {
+        assert.equal(await threadOf(""), undefined);
+        assert.equal(await threadOf(null), undefined);
+        assert.equal(await threadOf(undefined), undefined);
+    });
+
+    // Whitespace is what a copied id arrives with, and it is a real topic.
+    it("is carried for a real topic, trimmed", async () => {
+        assert.equal(await threadOf("42"), "42");
+        assert.equal(await threadOf(" 42 "), "42");
+        assert.equal(await threadOf(42), "42");
+    });
+});

@@ -1,5 +1,6 @@
 import express from 'express';
 import * as testController from '../controller/speedtests.js';
+import * as targetsController from '../controller/targets.js';
 import promClient from 'prom-client';
 import * as config from '../controller/config.js';
 import * as serverController from '../controller/servers.js';
@@ -10,6 +11,7 @@ import {
 import { matchesSetupToken } from '../util/setupToken.js';
 import { isFailedTest } from '../util/testOutcome.js';
 import { metricValue } from '../util/metricValue.js';
+import { ownsUnlabelledSeries } from '../util/unlabelledSeries.js';
 import { createQueue } from '../util/serialiseQueue.js';
 import { clientGone } from '../util/clientGone.js';
 
@@ -107,7 +109,34 @@ const authorizeMetrics = async (req, res) => {
     return true;
 };
 
-const speedLabels = ['server_id', 'server_name', 'server_host'];
+/**
+ * `target` and `provider` joined the label set without a flag day, and the
+ * emptiness is the mechanism: to Prometheus an empty label value is identical
+ * to an absent one, so the primary target - the first enabled by order, the
+ * same one the recommendations describe - exports with target="" provider=""
+ * and every series an existing dashboard follows keeps its exact identity and
+ * history across the upgrade. Additional targets export the same metric names
+ * with their name and provider filled in, and those series first appear at
+ * the moment the operator adds a second target, which is when they are
+ * wanted. myspeed_target_info maps names for group_left joins, and the
+ * documented convention is: the unlabeled series is the primary - or, where
+ * no target leads the round at all, whichever line nothing else in the
+ * instance could be mistaken for. collect() and ownsUnlabelledSeries hold
+ * that second half, and say why it is not simply "the newest row".
+ *
+ * `target_id` joined them for the one thing a name cannot do: tell two targets
+ * of one name apart. Duplicates were legal before the door on the routes, the
+ * welcome wizard's second Done made exact pairs, and a backup carrying one is
+ * restored rather than refused - and a series is its label set, so two lines
+ * exporting the same one are not two series. The second overwrote the first
+ * and one of the two vanished from the scrape entirely: no gap, no stale
+ * marker, and a group_left join against the two matching info rows failed the
+ * query outright. The primary's stays empty like the rest of its labels, so
+ * the identity that upgrade preserved is preserved again.
+ */
+const speedLabels = ['server_id', 'server_name', 'server_host', 'target_id', 'target', 'provider'];
+
+const UNLABELLED_TARGET = {target_id: '', target: '', provider: ''};
 
 const pingGauge = new promClient.Gauge({name: 'myspeed_ping', help: 'Current ping in ms', labelNames: speedLabels});
 const jitterGauge = new promClient.Gauge({name: 'myspeed_jitter', help: 'Current jitter in ms', labelNames: speedLabels});
@@ -151,6 +180,11 @@ const serverInfoGauge = new promClient.Gauge({
     help: 'Static info about the speedtest server (always 1). Join via group_left to add server metadata to other metrics.',
     labelNames: speedLabels
 });
+const targetInfoGauge = new promClient.Gauge({
+    name: 'myspeed_target_info',
+    help: 'One row per configured target (always 1). The measurement series of the primary target carry empty target and target_id labels; an alias row with the same empty labels carries its target_id, so a join on (target_id, target, provider) resolves every series.',
+    labelNames: ['target_id', 'target', 'provider']
+});
 
 const resolveServerLabels = (latest) => {
     const serverId = latest.serverId ?? 0;
@@ -179,7 +213,7 @@ const resolveServerLabels = (latest) => {
 
 
 const ALL_GAUGES = [pingGauge, jitterGauge, downloadGauge, uploadGauge, timeGauge, serverInfoGauge,
-    packetLossGauge, downloadLatencyGauge, uploadLatencyGauge, testFailedGauge];
+    packetLossGauge, downloadLatencyGauge, uploadLatencyGauge, testFailedGauge, targetInfoGauge];
 
 // Removed rather than reset, because this one carries no labels: reset() gives
 // an unlabelled gauge the value 0 and exports it, and 0 is a server id a real
@@ -207,44 +241,22 @@ const clearGauges = () => {
  */
 const scrapes = createQueue();
 
-const collect = async (res) => {
-    const serve = async () => {
-        res.set('Content-Type', promClient.register.contentType);
-        res.end(await promClient.register.metrics());
-    };
+/**
+ * One target's series set, from its latest row.
+ *
+ * The attempt happened, against a server, whether or not it succeeded - and
+ * which server it was is most of the diagnosis when one server is what keeps
+ * failing. Every value goes through metricValue: prom-client throws for
+ * anything that is not a number, and the throw is ahead of the response - so
+ * one unreadable column in the newest test answered 500 for every scrape
+ * until a newer test landed, which Prometheus reads as the exporter being
+ * down. An unreadable measurement leaves its series absent instead, which is
+ * what an absent series already means here - the provider did not report it.
+ */
+const setSeries = (latest, targetLabels) => {
+    const labels = {...resolveServerLabels(latest), ...targetLabels};
 
-    // Cleared before anything is decided, so a branch that sets fewer series
-    // than the last scrape cannot leave the previous values standing as though
-    // they were current.
-    clearGauges();
-
-    const latest = await testController.getLatest();
-
-    // Nothing measured yet is not a broken exporter - it is an instance that
-    // was installed five minutes ago. The families are simply empty, which is
-    // what an absent series already means everywhere else here.
-    if (!latest) return serve();
-
-    const labels = resolveServerLabels(latest);
-
-    // The attempt happened, against a server, whether or not it succeeded -
-    // and which server it was is most of the diagnosis when one server is what
-    // keeps failing.
     serverInfoGauge.set(labels, 1);
-    /*
-     * Every value below goes through metricValue, and none of them used to.
-     *
-     * prom-client throws for anything that is not a number, and the throw is
-     * ahead of the response - so one unreadable column in the newest test
-     * answered 500 for every scrape until a newer test landed, which Prometheus
-     * reads as the exporter being down. `?? 0` covered the null this route was
-     * first bitten by and nothing else: serverId was the one numeric column the
-     * history import never validated, so "auto" could be written into it
-     * through the API, and any measurement column can hold a string on a
-     * history imported before that validation existed - the case
-     * createRecommendations guards against by name.
-     */
-    currentServerGauge.set(metricValue(latest.serverId) ?? 0);
 
     // Positive, not merely truthy: a failed test's duration is -1 like the rest
     // of its row, and exporting that would be the placeholder this branch
@@ -254,14 +266,11 @@ const collect = async (res) => {
 
     if (isFailedTest(latest)) {
         testFailedGauge.set(labels, 1);
-        return serve();
+        return;
     }
 
     testFailedGauge.set(labels, 0);
 
-    // An unreadable measurement leaves its series absent, which is what an
-    // absent series already means here - the provider did not report it. That
-    // is the honest answer, and it keeps the rest of the scrape standing.
     const measured = (gauge, value) => {
         const reading = metricValue(value);
         if (reading !== null) gauge.set(labels, reading);
@@ -278,6 +287,77 @@ const collect = async (res) => {
     measured(packetLossGauge, latest.packetLoss);
     measured(downloadLatencyGauge, latest.downloadLatency);
     measured(uploadLatencyGauge, latest.uploadLatency);
+};
+
+const collect = async (res) => {
+    const serve = async () => {
+        res.set('Content-Type', promClient.register.contentType);
+        res.end(await promClient.register.metrics());
+    };
+
+    // Cleared before anything is decided, so a branch that sets fewer series
+    // than the last scrape cannot leave the previous values standing as though
+    // they were current.
+    clearGauges();
+
+    const allTargets = await targetsController.listAll();
+    const primary = await targetsController.primaryTarget();
+
+    for (const row of allTargets)
+        targetInfoGauge.set({target_id: String(row.id), target: row.name, provider: row.provider}, 1);
+
+    // The primary's series carry the empty target label - identity-preserving
+    // for every dashboard built before targets existed. An instance from
+    // before the migration has no targets at all and exports its overall
+    // latest the same unlabeled way, which is exactly what it exported before.
+    //
+    // With no primary at all - every target's "Scheduled" switched off, which
+    // PATCH /targets/:id permits for the last one as readily as for any other -
+    // this used to fall through to that same instance-wide latest, and on an
+    // instance with several targets that is another line's reading wearing the
+    // identity a pre-1.4 alert reads as the internet line: a hand-started LAN
+    // run exported as myspeed_download{target=""} while the WAN was down, and
+    // exported a second time under its own name because the loop below skipped
+    // only a primary that exists. ownsUnlabelledSeries says when the fallback
+    // is a reading nothing else could be mistaken for and when the series has
+    // no owner at all; its docstring holds the reasoning.
+    const overallLatest = primary ? undefined : await testController.getLatest();
+
+    const primaryLatest = primary
+        ? await testController.getLatest(primary.id)
+        : ownsUnlabelledSeries(allTargets, overallLatest) ? overallLatest : undefined;
+
+    // Which target the unlabelled series speaks for, so the loop below does not
+    // export that same reading a second time under its own name and leave every
+    // sum() over the family double-counting one measurement. The primary owns it
+    // whether or not it has a row to report; with no primary it is whichever
+    // target the fallback landed on, and null where the fallback landed on rows
+    // that belong to no target - or on nothing.
+    const unlabelledTargetId = primary ? primary.id : (primaryLatest?.targetId ?? null);
+
+    // The alias row the join actually needs. A group_left join matches by the
+    // series' own labels, and the unlabelled series wears target="" provider=""
+    // - labels no named row above carries - so the one set of series the
+    // convention exists for was the one set the join could never match. Written
+    // for whichever target owns the unlabelled series this scrape, which is
+    // not always the primary; the reasoning above says when it is not.
+    if (unlabelledTargetId !== null)
+        targetInfoGauge.set({target_id: String(unlabelledTargetId), target: '', provider: ''}, 1);
+
+    if (primaryLatest) {
+        setSeries(primaryLatest, UNLABELLED_TARGET);
+        currentServerGauge.set(metricValue(primaryLatest.serverId) ?? 0);
+    }
+
+    // Every other target - the manual-only diagnostic box included - exports
+    // under its own name the moment it has a row to report.
+    for (const row of allTargets) {
+        if (row.id === unlabelledTargetId) continue;
+
+        const latest = await testController.getLatest(row.id);
+        if (latest) setSeries(latest,
+            {target_id: String(row.id), target: row.name, provider: row.provider});
+    }
 
     return serve();
 };

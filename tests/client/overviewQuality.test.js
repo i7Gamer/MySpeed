@@ -4,6 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import * as sass from "sass";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { formatLatency, NOT_MEASURED, printableFigure } from "@/common/utils/FormatUtil.js";
+import { isMeasured, jitterColour, packetLossColour, readableFigure } from "@/common/utils/TestUtil.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -41,8 +43,10 @@ const declares = (selector, property) => bodiesFor(selector).some((body) => prop
  */
 describe("the overview row carries both quality figures", () => {
     // What each figure is made of, and the markup that draws them - the list is
-    // built above the JSX, which renders it through one loop.
-    const figures = row.slice(row.indexOf("const quality = ["), row.indexOf("const fadeOut"));
+    // built above the JSX, which renders it through one loop. The slice opens
+    // at the trimmed jitter the list reads, so the executed lift below sees
+    // the same declarations the component does.
+    const figures = row.slice(row.indexOf("const jitterText = formatLatency"), row.indexOf("const fadeOut"));
     // To the *next* heading close, not the first in the file: the date and the
     // failure line above are headings too.
     const suffixAt = row.indexOf('className="quality-suffix"');
@@ -70,7 +74,11 @@ describe("the overview row carries both quality figures", () => {
     // provider that never measured one has to stay blank rather than claim a
     // clean line.
     it("tells a measured zero from a figure nobody measured", () => {
-        assert.match(figures, /isMeasured\(props\.packetLoss\)/);
+        // readableFigure for the loss chip, because its label prints the
+        // stored column raw and junk must not print as a reading; isMeasured
+        // for the jitter, whose label says N/A for what it cannot read. The
+        // same split the detail pane and the latest-test card carry.
+        assert.match(figures, /readableFigure\(props\.packetLoss\) !== null/);
         assert.match(figures, /isMeasured\(props\.jitter\)/);
         assert.doesNotMatch(figures, /props\.packetLoss &&/,
             "a packet loss of 0% is falsy, and hiding it hides a clean line");
@@ -98,10 +106,105 @@ describe("the overview row carries both quality figures", () => {
      * The packet loss beside it is a percentage and keeps the shape it has.
      */
     it("prints the jitter at the one decimal every latency is trimmed to", () => {
-        assert.match(figures, /text:\s*formatLatency\(props\.jitter\)/,
+        assert.match(figures, /const jitterText = formatLatency\(props\.jitter\);/,
             "the jitter goes out raw, at the two decimals the column stores");
+        assert.match(figures, /text:\s*printableFigure\(jitterText\) \? jitterText : NOT_MEASURED/,
+            "the chip's refusal no longer reads through the unitless half of formatWithUnit's judgement");
         assert.doesNotMatch(figures, /formatLatency\(props\.packetLoss\)/,
             "packet loss is a percentage, not a latency");
+    });
+
+    // The row's list, executed off its own declarations rather than spelled -
+    // the entries are plain JavaScript above the JSX. Both chips' columns are
+    // parameters, so both gates run against real spellings.
+    const built = (jitter, packetLoss = null) => new Function(
+        "props", "t", "isMeasured", "jitterColour", "formatLatency", "printableFigure", "readableFigure",
+        "NOT_MEASURED", "packetLossColour", "faWaveSquare", "jitterInfo", "faLinkSlash", "packetLossInfo",
+        `${figures}\nreturn quality;`)(
+        {jitter, packetLoss}, (key) => key, isMeasured, jitterColour, formatLatency,
+        printableFigure, readableFigure, NOT_MEASURED, packetLossColour,
+        // Distinct sentinels, not nulls: with four nulls the two chips'
+        // identity fields were interchangeable and a full swap stayed green.
+        "wave-glyph", "jitter-info", "link-slash-glyph", "loss-info");
+
+    /**
+     * What the row prints for a figure nothing can read is the word, not the
+     * placeholder. The chip stays visible for everything isMeasured admits,
+     * and the pane this row opens says N/A for the same jitter through
+     * formatLatencyWithUnit: a "-1" here beside that pane's "N/A" was the row
+     * and its pane answering one question two ways. This chip prints no unit,
+     * so it spells the same refusal from the same readers.
+     */
+    it("says N/A rather than printing a jitter nobody measured", () => {
+        const jitterChip = (jitter) => built(jitter).find((figure) => figure.key === "jitter");
+
+        for (const unreadable of [-1, "-1", "auto"])
+            assert.equal(jitterChip(unreadable).text, NOT_MEASURED,
+                `a jitter of ${JSON.stringify(unreadable)} printed as a reading`);
+
+        assert.equal(jitterChip(19.96).text, 20, "a real jitter no longer prints its trimmed figure");
+
+        for (const absent of [null, undefined])
+            assert.equal(jitterChip(absent), undefined, `a jitter of ${String(absent)} still draws a chip`);
+    });
+
+    /**
+     * And each chip dressed in ITS OWN grader's colour, executed with a
+     * pair the two graders disagree on. The source pins at the bottom hold
+     * each level's spelling; this is the second net, the one that survives
+     * a respelling - a swap of the two grader calls leaves both pins
+     * matching somewhere in the region while both chips wear the other
+     * figure's colour.
+     */
+    it("dresses each chip in its own grader's colour", () => {
+        const chips = built(10, 0.5);
+        const jitterChip = chips.find((figure) => figure.key === "jitter");
+        const lossChip = chips.find((figure) => figure.key === "packetLoss");
+
+        assert.equal(jitterChip.level, jitterColour(formatLatency(10)));
+        assert.equal(lossChip.level, packetLossColour(0.5));
+        assert.notEqual(jitterChip.level, lossChip.level,
+            "a fixture both graders agree on proves nothing here");
+    });
+
+    /**
+     * And in its own glyph, info and caption - the closure hands each icon
+     * and info a distinct sentinel precisely so this can be said: with four
+     * nulls, a swap of every identity field between the two chips left
+     * every suite green while the jitter chip wore the loss chip's face.
+     */
+    it("carries each chip's own glyph, info and caption", () => {
+        const chips = built(10, 0.5);
+        const jitterChip = chips.find((figure) => figure.key === "jitter");
+        const lossChip = chips.find((figure) => figure.key === "packetLoss");
+
+        assert.equal(jitterChip.icon, "wave-glyph");
+        assert.equal(jitterChip.info, "jitter-info");
+        assert.equal(jitterChip.label, "info.jitter.title");
+        assert.equal(lossChip.icon, "link-slash-glyph");
+        assert.equal(lossChip.info, "loss-info");
+        assert.equal(lossChip.label, "info.packet_loss.title");
+    });
+
+    /**
+     * And the loss chip's gate, executed the same way - this is the gate the
+     * scan suite's exemption vouches for when it lets the chip print its
+     * stored column raw. A chip that appears is one the reader admitted; what
+     * it then prints is the column as stored, "0.5" and "0" alike, which is
+     * the row-and-pane-identical policy the chip's comment states.
+     */
+    it("draws the loss chip only for what the reader admits", () => {
+        const lossChip = (packetLoss) => built(null, packetLoss).find((figure) => figure.key === "packetLoss");
+
+        assert.equal(lossChip("0.5").text, "0.5%", "a text loss an older node sends is readable, and the chip hid it");
+        assert.equal(lossChip(0).text, "0%", "a measured clean line is the best reading there is, and it vanished");
+
+        for (const unreadable of [-1, "-1", "auto"])
+            assert.equal(lossChip(unreadable), undefined,
+                `a loss of ${JSON.stringify(unreadable)} drew a chip, which prints the raw column as a reading`);
+
+        for (const absent of [null, undefined])
+            assert.equal(lossChip(absent), undefined, `a loss of ${String(absent)} drew a chip nobody measured`);
     });
 
     /**
@@ -154,7 +257,10 @@ describe("the overview row carries both quality figures", () => {
      * a jitter of 40 ms sat in exactly the same grey as one of 2.
      */
     it("grades both figures with the same functions the pane uses", () => {
-        assert.match(figures, /level:\s*jitterColour\(formatLatency\(props\.jitter\)\)/);
+        // The grade reads the same hoisted 1-dp figure the text prints -
+        // detailLatencyPrecision's belt resolves the name back to
+        // formatLatency(props.jitter) and holds it against the pane's.
+        assert.match(figures, /level:\s*jitterColour\(jitterText\)/);
         assert.match(figures, /level:\s*packetLossColour\(props\.packetLoss\)/);
     });
 

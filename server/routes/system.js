@@ -3,6 +3,7 @@ import password from '../middlewares/password.js';
 import previewReadOnly from '../middlewares/previewReadOnly.js';
 import { isPreviewInstance } from '../util/previewMode.js';
 import * as serverController from '../controller/servers.js';
+import { REGISTRY } from '../util/providers/registry.js';
 import * as interfaces from '../util/loadInterfaces.js';
 import { getJson } from '../util/http.js';
 // The import attribute is required by the ESM spec for JSON modules; bun is
@@ -27,7 +28,10 @@ app.get("/version", password(false), async (req, res) => {
 });
 
 app.get("/server/:provider", password(false), (req, res) => {
-    if (!["ookla", "libre"].includes(req.params.provider))
+    // Providers without a server list answer 400 exactly as unknown ones do:
+    // both are "there is no list to give", and the registry is the one place
+    // that knows which is which.
+    if (!REGISTRY[req.params.provider]?.serverList)
         return res.status(400).json({message: "Invalid provider"});
 
     res.json(serverController.getByMode(req.params.provider));

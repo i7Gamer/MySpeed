@@ -61,12 +61,21 @@ describe("the march the demo bar makes", () => {
  * line for the same file.
  */
 describe("the preview branch", () => {
-    const execute = bodyOf(readSource("server/tasks/speedtest.js"), "const execute = async");
-    const preview = execute.slice(execute.indexOf('PREVIEW_MODE === "true"'), execute.indexOf("} else {"));
+    const source = readSource("server/tasks/speedtest.js");
+    const execute = bodyOf(source, "const executeTarget = async");
+    const preview = execute.slice(execute.indexOf('mode === "preview"'), execute.indexOf("} else {"));
 
-    it("latches the run before it pretends, without notifying the integrations", () => {
-        assert.match(preview, /setRunning\(true,\s*false\)/,
-            "the demo's run never sets the running state, so the status endpoint reports nothing");
+    // The latch moved up to the round when runs became rounds; what the demo
+    // member must still never do is fire anybody's webhook over a pretended
+    // result. The judgement is a named const now, because the round's
+    // completion event mirrors it - see roundFreshness.test.js.
+    it("latches the round before it pretends, without notifying the integrations", () => {
+        const round = bodyOf(source, "const executeRound");
+
+        assert.match(round, /const announce = members\[0\]\.provider !== "preview"/,
+            "the demo's round no longer judges whether it may announce itself");
+        assert.match(round, /setRunning\(true,\s*announce\)/,
+            "the demo's round either never sets the running state, or announces a pretended run");
     });
 
     it("walks the bar while it waits", () => {

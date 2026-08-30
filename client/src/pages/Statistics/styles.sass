@@ -15,7 +15,9 @@
   // The toolbar spaces itself from the header and the area's own gap spaces
   // the charts from it - its standalone bottom margin would stack on that gap
   // and open a wider seam here than the same toolbar leaves on the overview.
-  > .page-toolbar
+  // The target chips answer to the same rule, being the toolbar's second row.
+  > .page-toolbar,
+  > .target-chips
     margin-bottom: 0
 
 .statistic-stale
@@ -168,7 +170,20 @@
 
     // The shimmer after the toolbar stands where the summary will, so it
     // spans the same row and the two below it pair up like the content.
-    > .page-toolbar + .skeleton-chart
+    //
+    // After either of the two rows the toolbar can be: on an instance with
+    // more than one target the chip row sits between it and the first shimmer,
+    // and matching only the toolbar left that shimmer at its 30% share - so
+    // the loading page drew three half-width shimmers and snapped into
+    // summary-plus-pairs when the content landed, which is the reflow this
+    // rule exists to prevent.
+    //
+    // Two selectors rather than one :is() with a comma inside it: this
+    // stylesheet is read by statisticsReflow.test.js, which splits a selector
+    // list on commas to count the cards given a whole row, and a comma nested
+    // inside a functional selector reads there as one more card.
+    > .page-toolbar + .skeleton-chart,
+    > .target-chips + .skeleton-chart
       flex: 1 1 100%
 
 // And one to a row. The floor is the cards' own 16rem: below about 524px of

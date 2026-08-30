@@ -28,14 +28,30 @@ const CASES = [
     {name: "barely loaded", ping: 12, downloadLatency: 13, uploadLatency: 12},
     {name: "under the idle ping", ping: 60, downloadLatency: 20, uploadLatency: 20},
     {name: "heavily buffered", ping: 14, downloadLatency: 620, uploadLatency: 480},
-    {name: "fractional", ping: 11.4, downloadLatency: 47.75, uploadLatency: 30.2}
+    {name: "fractional", ping: 11.4, downloadLatency: 47.75, uploadLatency: 30.2},
+    /**
+     * The spellings the all-numeric fixtures above were blind to. The server's
+     * loadedIncrease widened to coerce a numeric string - the defensive
+     * imported-history contract every other reader took on - and the mirror
+     * here kept its typeof gate, so the consistency card counted a row the
+     * per-test grade beside it refused: the exact divergence this suite exists
+     * to make impossible, invisible because nothing below spelt a number as
+     * text. The placeholders pin the other half - both sides must refuse them.
+     */
+    {name: "numeric-string ping", ping: "20", downloadLatency: 50, uploadLatency: 60},
+    {name: "numeric-string loaded latency", ping: 10, downloadLatency: "90", uploadLatency: 20},
+    {name: "placeholder ping", ping: -1, downloadLatency: 50, uploadLatency: 60},
+    {name: "placeholder loaded latency", ping: 10, downloadLatency: -1, uploadLatency: 20},
+    {name: "unmeasured ping, spelt as text", ping: "0", downloadLatency: 50, uploadLatency: 60}
 ];
 
 describe("the two ways the added latency is worked out", () => {
     for (const testCase of CASES) {
         it(`agrees on a single ${testCase.name} test`, () => {
             const entry = at("2026-08-07T01:00:00.000Z", testCase);
-            const {increase} = bufferbloat(entry);
+            // Null-tolerant on purpose: for the placeholder and unmeasured
+            // spellings the agreement is that BOTH sides refuse the row.
+            const increase = bufferbloat(entry)?.increase ?? null;
             const {loadedLatency} = buildStatistics([entry], DAY).consistency;
 
             assert.equal(loadedLatency.increase, increase,
@@ -47,7 +63,10 @@ describe("the two ways the added latency is worked out", () => {
         const entries = CASES.map((testCase, index) =>
             at(`2026-08-07T${String(index + 1).padStart(2, "0")}:00:00.000Z`, testCase));
 
-        const perTest = entries.map((entry) => bufferbloat(entry).increase);
+        // Only what the client would grade: the server averages over the rows
+        // that measured, and the refusal cases above must not drag it down.
+        const perTest = entries.map((entry) => bufferbloat(entry)?.increase ?? null)
+            .filter((value) => value !== null);
         const expected = perTest.reduce((total, value) => total + value, 0) / perTest.length;
 
         const {increase} = buildStatistics(entries, DAY).consistency.loadedLatency;
@@ -73,7 +92,54 @@ describe("the two ways the added latency is worked out", () => {
 
         const {trend} = buildStatistics(entries, DAY).consistency.loadedLatency;
 
+        // The trend only carries points the client would grade too - a refused
+        // row is skipped on both sides, not drawn as a gap.
         assert.deepEqual(trend.map((point) => point.increase),
-            entries.map((entry) => bufferbloat(entry).increase));
+            entries.map((entry) => bufferbloat(entry)?.increase ?? null)
+                .filter((value) => value !== null));
+    });
+
+    /**
+     * Liveness for the string spellings: every case above is satisfied by
+     * BOTH sides refusing a row - null agrees with null - so this is the half
+     * that pins the reading itself. A symmetric retreat to the old typeof
+     * gate on both sides kept the whole suite green while the feature was
+     * gone; the one-sided drift the suite exists for was still caught.
+     */
+    it("produces a figure for the numeric-string spellings on both sides", () => {
+        const spelt = CASES.filter((testCase) => testCase.name.startsWith("numeric-string"));
+        assert.ok(spelt.length >= 2, "the string fixtures this pins have been renamed away");
+
+        for (const testCase of spelt) {
+            const entry = at("2026-08-07T01:00:00.000Z", testCase);
+
+            assert.notEqual(bufferbloat(entry)?.increase ?? null, null,
+                `the client refuses the ${testCase.name} row`);
+            assert.notEqual(buildStatistics([entry], DAY).consistency.loadedLatency.increase, null,
+                `the server refuses the ${testCase.name} row`);
+        }
+    });
+
+    /**
+     * And they agree that a fabricated idle ping is no baseline. 0 is
+     * UNMEASURED_LATENCY - the sentinel a successful run stores when nobody
+     * took the latency, and the value the INTEGER column of migration 0012's
+     * day rounded a sub-half-millisecond ping down to. Judged as a real 0 ms,
+     * the whole loaded latency reads as *added* latency, and a line that was
+     * fine grades F. The statistics skip the same zero everywhere else -
+     * withPing, the series, the hourly buckets - so this was the one reader
+     * left believing it.
+     */
+    it("agrees that a run whose idle ping was never measured has no figure", () => {
+        const entry = at("2026-08-07T01:00:00.000Z",
+            {ping: 0, downloadLatency: 90, uploadLatency: 20});
+
+        assert.equal(bufferbloat(entry), null,
+            "the client graded a bufferbloat figure off a ping nobody measured");
+
+        const {loadedLatency} = buildStatistics([entry], DAY).consistency;
+        assert.equal(loadedLatency.increase, null,
+            "the server averaged a figure computed off a ping nobody measured");
+        assert.deepEqual(loadedLatency.trend, []);
     });
 });

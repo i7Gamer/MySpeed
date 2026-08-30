@@ -2,8 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import {
-    KILL_GRACE, SHUTDOWN_EXIT_WAIT, SHUTDOWN_KILL_GRACE, exitError, hasExited, terminate,
-    trackProcess, untrackProcess, waitForActiveProcessExit
+    KILL_GRACE, SHUTDOWN_EXIT_WAIT, SHUTDOWN_KILL_GRACE, WINDOWS_DLL_NOT_FOUND, exitError,
+    hasExited, terminate, trackProcess, untrackProcess, waitForActiveProcessExit
 } from "../../server/util/speedtest.js";
 import { SHUTDOWN_GRACE_MS } from "../../server/util/shutdown.js";
 
@@ -228,5 +228,26 @@ describe("exitError", () => {
 
     it("reports a code of null - a child taken by a signal - as a failure", () => {
         assert.notEqual(exitError(null, {}), null);
+    });
+
+    /**
+     * STATUS_DLL_NOT_FOUND. On Windows, spawn succeeds and the process dies
+     * before main() with nothing on either stream, so the generic wording -
+     * "exited without producing a result" - described a run that never began.
+     * The stored error is what the operator reads, and it has to say a library
+     * the CLI needs is not beside it in bin/.
+     */
+    it("explains the Windows code that means the CLI never started", () => {
+        const message = exitError(WINDOWS_DLL_NOT_FOUND, {});
+
+        assert.match(message, /library/);
+        assert.match(message, /bin\//);
+        assert.doesNotMatch(message, /without producing a result/);
+    });
+
+    // The new branch sits behind the unchanged gate: a result that arrived
+    // despite the code is still a result.
+    it("still keeps a result that arrived despite it", () => {
+        assert.equal(exitError(WINDOWS_DLL_NOT_FOUND, {type: "result", download: {bandwidth: 1}}), null);
     });
 });

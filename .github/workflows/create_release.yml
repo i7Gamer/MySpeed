@@ -33,6 +33,27 @@ jobs:
       release_id: ${{ steps.create_release.outputs.id }}
 
     steps:
+      # Dispatch carries no branch restriction and the push below targets the
+      # default branch by name, so a run started from a feature branch would
+      # push that branch's HEAD onto the default one. Refused here, before the
+      # checkout writes a write-token into .git/config or anything is pushed.
+      #
+      # Both names read through env, for the reason stated below the checkout: a
+      # `${{ }}` expression is substituted into the shell source before bash
+      # parses it, and a refname may hold `"`, `;`, a backtick or `$()`. Spliced
+      # in, the branch this step exists to refuse was the branch that decided
+      # what the step ran - inside the one job in this workflow holding
+      # contents: write, and at the one step that runs before anything else.
+      - name: Refuse to release from a non-default branch
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [ "$REF_NAME" != "$DEFAULT_BRANCH" ]; then
+            echo "Release must be dispatched from the default branch, not $REF_NAME." >&2
+            exit 1
+          fi
+
       - name: Checkout project
         uses: actions/checkout@v7
         with:
@@ -83,20 +104,39 @@ jobs:
       # and shown by /version against the latest release tag. Bumping afterwards
       # shipped binaries stamped with the previous version, which then reported
       # themselves as out of date the moment they started.
+      #
+      # Through env like the steps around it. The value is validated by the time
+      # it gets here, so this is the rule being kept rather than a hole being
+      # closed - and a rule with exceptions in the file that states it is one
+      # nobody can check by reading.
+      #
+      # And through --arg for the same reason, one interpreter further in. Written
+      # as `jq ".version = \"$VERSION\""`, the shell expands the variable before
+      # jq is executed at all, so what jq parses is a program built out of the
+      # value - the care taken on the line above buys nothing the moment the
+      # language changes. --arg binds it as data, which is what env: does for the
+      # shell.
       - name: Bump version files
+        env:
+          VERSION: ${{ steps.get_version.outputs.version }}
         run: |
-          V="${{ steps.get_version.outputs.version }}"
-          jq ".version = \"$V\"" package.json > tmp && mv tmp package.json
-          jq ".version = \"$V\"" client/package.json > tmp && mv tmp client/package.json
+          jq --arg v "$VERSION" '.version = $v' package.json > tmp && mv tmp package.json
+          jq --arg v "$VERSION" '.version = $v' client/package.json > tmp && mv tmp client/package.json
 
+      # Read through env, never spliced into the script body - the same rule
+      # the branch guard above follows, in the one step that performs the push
+      # that guard exists to protect.
       - name: Commit and push version bump
+        env:
+          VERSION: ${{ steps.get_version.outputs.version }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.json client/package.json
           if ! git diff --staged --quiet; then
-            git commit -m "chore: bump version to ${{ steps.get_version.outputs.version }}"
-            git push origin HEAD:${{ github.event.repository.default_branch }}
+            git commit -m "chore: bump version to $VERSION"
+            git push origin HEAD:"$DEFAULT_BRANCH"
           fi
 
       # Not github.sha: that is the dispatched commit, which predates the bump.
@@ -109,10 +149,17 @@ jobs:
       # published, which is finalize-release - long after every build job has tried
       # to check the tag out and failed. Releases only ever succeeded when a tag
       # left over from an earlier attempt happened to still be there.
+      #
+      # Both through env, for the reason stated at the branch guard - and this is
+      # the step that guard exists to protect, so it is the last one that should
+      # have been splicing anything into a shell.
       - name: Push release tag
+        env:
+          TAG: ${{ steps.get_version.outputs.tag }}
+          SHA: ${{ steps.sha.outputs.sha }}
         run: |
-          git tag "${{ steps.get_version.outputs.tag }}" "${{ steps.sha.outputs.sha }}"
-          git push origin "${{ steps.get_version.outputs.tag }}"
+          git tag "$TAG" "$SHA"
+          git push origin "$TAG"
 
       # Everything downstream builds from this tag rather than from the dispatched
       # ref, so the artifacts and the version they report come from the same commit.
@@ -153,9 +200,13 @@ jobs:
   # 1.3.3, a failed release left `:latest` on a version that no longer had a
   # GitHub release - which happened three times the night 1.3.3 was cut, and
   # left `docker pull myspeed` on an unreleased build for about four hours.
+  #
+  # Also behind build-msi: the MSI is the other artifact the release must ship,
+  # so :latest must not be published before it has built - otherwise a failed
+  # MSI leaves Docker on a version whose GitHub release stays a draft.
   publish-docker:
     name: "Publish Docker"
-    needs: [create-release, build-binaries, build-docker]
+    needs: [create-release, build-binaries, build-docker, build-msi]
     uses: ./.github/workflows/publish-docker.yml
     with:
       tags: |

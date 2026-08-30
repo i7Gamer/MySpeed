@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { parseData, parseOokla, parseLibre, parseCloudflare } from "../../server/util/providers/parseData.js";
 import { FAILED_TEST, isFailedTest } from "../../server/util/testOutcome.js";
+import { readSource } from "../helpers/source.js";
 
 /**
  * These functions turn raw provider CLI output into the exact numbers persisted
@@ -816,5 +817,126 @@ describe("parseData", () => {
 
     it("rejects an unknown provider", () => {
         assert.throws(() => parseData("nonsense", {}), (e) => e.message === "Invalid provider");
+    });
+
+    /**
+     * A required measurement the parser could not read is the failure
+     * placeholder, not NaN. An Ookla result whose download block is present but
+     * empty makes roundSpeed answer NaN, and NaN walked past both write-path
+     * guards - isFailedTest wants all three placeholders at once,
+     * impossibleMeasurement asks `< 0` - so the row stored the literal "NaN" in
+     * a NOT NULL column on a test isFailedTest called a success, and every
+     * average that summed it turned into string concatenation.
+     */
+    it("stores an unreadable measurement as the placeholder, never NaN", () => {
+        const parsed = parseData("ookla", {
+            ping: {latency: 12}, download: {}, upload: {bandwidth: 1250000, elapsed: 1000}
+        });
+
+        assert.equal(parsed.download, FAILED_TEST, "an empty bandwidth block stored NaN");
+        assert.equal(Number.isNaN(parsed.download), false);
+        assert.ok(Number.isFinite(parsed.upload), "the measurement beside it was thrown away too");
+    });
+
+    it("reads all three unreadable as a failed run", () => {
+        const parsed = parseData("ookla", {ping: {}, download: {}, upload: {}});
+
+        assert.equal(isFailedTest(parsed), true,
+            "a result with no readable measurement was stored as a success");
+    });
+
+    // A genuine measurement is left exactly as the parser produced it - the
+    // normalisation only touches values that are not finite numbers.
+    it("leaves a real measurement alone", () => {
+        const parsed = parseData("ookla", {
+            ping: {latency: 5, jitter: 1}, download: {bandwidth: 1250000, elapsed: 1000},
+            upload: {bandwidth: 625000, elapsed: 1000}
+        });
+
+        assert.equal(parsed.download, 10);
+        assert.equal(parsed.upload, 5);
+    });
+
+    /**
+     * A numeric string is a measurement, not a failure. The librespeed CLI
+     * already reports jitter as a string, and metricValue documents the same
+     * spelling across imported histories - so a parser drift to string speeds
+     * must be stored as the number it spells, not rewritten into the failure
+     * placeholder, recorded as a failed run and retried while the line was
+     * fine. Judged by metricValue, the one reader that owns this call.
+     */
+    it("stores a numeric string as the number it spells", () => {
+        const parsed = parseData("libre", {
+            ping: 12.7, jitter: "3.456", elapsed: 8000, download: "90.5", upload: "40.25",
+            server: {name: "Berlin", url: "http://berlin.example.net"}
+        });
+
+        assert.equal(parsed.download, 90.5,
+            "a numeric-string speed was rewritten into the failure placeholder");
+        assert.equal(parsed.upload, 40.25);
+    });
+
+    /**
+     * One list of required measurements, owned by testOutcome - the module
+     * whose impossibleMeasurement iterates it. A private copy here must be
+     * kept in step by hand, and a fourth required column added to one list
+     * would silently not be normalised (or not be judged) by the other.
+     */
+    it("shares testOutcome's list of required measurements", async () => {
+        const outcome = await import("../../server/util/testOutcome.js");
+
+        assert.deepEqual(outcome.REQUIRED_MEASUREMENTS, ["ping", "download", "upload"],
+            "the list is not exported, so the dispatcher keeps a private copy that can drift");
+        assert.doesNotMatch(readSource("server/util/providers/parseData.js"),
+            /const REQUIRED_MEASUREMENTS/,
+            "the dispatcher still declares its own copy of the list");
+    });
+});
+
+/**
+ * A provider result that is missing the blocks the parser reads.
+ *
+ * parseOokla read `test.ping.latency`, `test.download.bandwidth` and
+ * `test.upload.bandwidth` directly while everything below them was
+ * optional-chained, so the top and the bottom of the function disagreed about
+ * whether the input could be trusted. A malformed result threw a TypeError
+ * whose message names a JavaScript property, and that string is what reaches
+ * the failed test's error column - where the operator reads it.
+ *
+ * Refused rather than parsed around. Letting the figures come back null would
+ * store a row that isFailedTest does not recognise as a failure, so a test that
+ * measured nothing would be averaged in as though it had.
+ */
+describe("a result missing the blocks the parser needs", () => {
+    const complete = {
+        ping: {latency: 12.6, jitter: 3.4},
+        download: {bandwidth: 12500000, elapsed: 5000},
+        upload: {bandwidth: 6250000, elapsed: 5000}
+    };
+
+    const readable = (error) => error instanceof Error && !(error instanceof TypeError)
+        && /ping|download|upload/i.test(error.message);
+
+    for (const block of ["ping", "download", "upload"])
+        it(`refuses an ookla result with no ${block}, in words`, () => {
+            const {[block]: _removed, ...without} = complete;
+
+            assert.throws(() => parseOokla(without), readable);
+        });
+
+    it("refuses an ookla result that is nothing at all", () => {
+        assert.throws(() => parseOokla(undefined), readable);
+        assert.throws(() => parseOokla(null), readable);
+    });
+
+    it("still parses a complete one", () => {
+        assert.equal(parseOokla(complete).ping, 12.6);
+    });
+
+    // parseLibre spreads its input, which tolerates null - and then reads a
+    // property off it, which does not.
+    it("refuses a libre result that is nothing at all", () => {
+        assert.throws(() => parseLibre(null), (e) => e instanceof Error);
+        assert.throws(() => parseLibre(undefined), (e) => e instanceof Error);
     });
 });

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-    convertSpeed, formatLatency, formatWhole, formatWithUnit, NOT_MEASURED, SPEED_UNIT_MBYTES
+    formatLatency, formatWhole, formatWithUnit, NOT_MEASURED, SPEED_UNIT_MBYTES, wholeSpeed
 } from "@/common/utils/FormatUtil.js";
 import { getIconBySpeed, isFailedTest } from "@/common/utils/TestUtil.js";
 
@@ -49,11 +49,17 @@ const dataFor = (test, config = {}) => {
     return captured;
 };
 
-/** What one speed reads as, built by the card's own helper. */
+/**
+ * What one speed reads as, built by the card's own helper.
+ *
+ * The closure carries only the names the helper reads: supplying the old
+ * shape's formatWhole and convertSpeed as well is what would let a revert to
+ * round-after-convert still evaluate - the band fixture below is the other net.
+ */
 const speedText = (mbps, preferences = {}, unit = "Mbps") => new Function(
-    "preferences", "speedUnit", "formatWithUnit", "formatWhole", "convertSpeed",
+    "preferences", "speedUnit", "formatWithUnit", "wholeSpeed",
     `${slice("const speedText =", ";")}\nreturn speedText;`)(
-    preferences, unit, formatWithUnit, formatWhole, convertSpeed)(mbps);
+    preferences, unit, formatWithUnit, wholeSpeed)(mbps);
 
 /**
  * A node card is a list row like any other, and it prints whole numbers.
@@ -83,6 +89,10 @@ describe("the figures a node card prints", () => {
     it("rounds the speed it prints, not the one it stores", () => {
         assert.equal(speedText(100, {speedUnit: SPEED_UNIT_MBYTES}, "MB/s"), "13 MB/s",
             "100 Mbps is 12.5 MB/s, which prints as 13");
+        // The band fixture: 100 agrees under round-after-convert too, so it
+        // alone cannot notice that shape coming back.
+        assert.equal(speedText(99.97, {speedUnit: SPEED_UNIT_MBYTES}, "MB/s"), "12 MB/s",
+            "12.49625 rounds once to 12, not via 12.5 to 13");
         assert.equal(dataFor({download: 93.72}).download, 93.72,
             "the stored speed is rounded before anything can convert it");
     });
@@ -123,6 +133,26 @@ describe("the figures a node card prints", () => {
         assert.equal(data.failed, true);
         assert.equal(data.ping, -1);
         assert.equal(data.pingIcon, "error");
+    });
+
+    /**
+     * A MIXED row is not a failure - one real reading keeps it - so the card
+     * renders its figures, and the placeholder among them must print as
+     * unmeasured, not as "-1 ms" beside an error-red icon. The row's ping
+     * travels through formatWhole into formatWithUnit exactly as the render
+     * does at the card's ping line; both spellings, because a legacy-restored
+     * history holds either.
+     */
+    it("prints a mixed row's placeholder as unmeasured, not as minus one", () => {
+        for (const spelt of [-1, "-1"]) {
+            const data = dataFor({ping: spelt, download: 480.2, upload: -1});
+
+            assert.equal(data.failed, false, "one real reading keeps the row");
+            assert.equal(formatWithUnit(data.ping, "ms"), NOT_MEASURED,
+                `a ping of ${JSON.stringify(spelt)} printed as a reading`);
+        }
+        assert.equal(speedText(-1), NOT_MEASURED, "the speed placeholder printed as minus one megabit");
+        assert.equal(speedText("-1"), NOT_MEASURED);
     });
 
     // The tripwire for the two speeds drifting apart, which is what one-line

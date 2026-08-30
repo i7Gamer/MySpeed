@@ -54,22 +54,23 @@
       "server_id": "ID serveru",
       "server_id_placeholder": "Libovolné ID serveru, nebo ponechte prázdné",
       "custom_url": "Vlastní URL",
+      "iperf_host": "Server iperf3",
       "choose_automatically": "Vybrat automaticky",
       "ookla_license": "Přečetl(a) jsem si a přijímám <Eula>EULA</Eula>, <GDPR>zásady ochrany osobních údajů</GDPR> a <TOS>podmínky služby</TOS> společnosti Ookla.",
       "ookla_desc": "Oblíbený poskytovatel s globální sítí serverů",
       "libre_desc": "Open-source test rychlosti, který lze provozovat na vlastním serveru",
-      "cloudflare_desc": "Rychlé testování přes CDN"
+      "cloudflare_desc": "Rychlé testování přes CDN",
+      "iperf3_desc": "Váš vlastní server iperf3, ve vaší síti"
     }
   },
   "dropdown": {
     "settings": "Nastavení",
     "changes_applied": "Vaše změny byly uloženy.",
     "language_changed": "Jazyk byl změněn.",
-    "provider_changed": "Poskytovatel byl změněn.",
     "changes_unsaved": "Vaše změny nebyly použity. Zkontrolujte zadané údaje.",
     "invalid": "Neplatný vstup",
     "optimal_values": "Optimální hodnoty",
-    "change_provider": "Změnit poskytovatele",
+    "targets": "Testovací cíle",
     "password": "Změnit heslo",
     "cron": "Nastavit frekvenci",
     "storage": "Správa úložiště",
@@ -135,7 +136,6 @@
     "statistics": "Statistiky"
   },
   "update": {
-    "provider_title": "Nastavit poskytovatele testů rychlosti",
     "new_password": "Nastavte nové heslo",
     "password_placeholder": "Nové heslo",
     "show_password": "Zobrazit heslo",
@@ -305,6 +305,7 @@
       "unchanged": "Beze změny od posledního testu",
       "measured_at": "Změřeno",
       "measured_with": "Změřeno pomocí",
+      "target": "Cíl",
       "seconds": "{{seconds}} s",
       "data_used": "Přenesená data",
       "data_used_value": "{{down}} staženo / {{up}} nahráno",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "Průměr",
     "compare": {
-      "note": "Změny v porovnání s {{from}} – {{to}}"
+      "note": "Změny v porovnání s {{from}} – {{to}}",
+      "note_partial": "Změny v porovnání s {{from}} – {{to}}, do stejné denní doby"
     },
     "downsampled": "Zprůměrováno · zobrazeno {{shown}} z {{total}} testů",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "Průměr z testů, které ji měřily",
       "peak_title": "Zpomalení ve špičce",
       "peak_description": "Nejpomalejší kolem {{slowest}}, nejrychlejší kolem {{fastest}}",
-      "ping_description": "Průměrná odezva, mezi {{min}} a {{max}}",
+      "peak_latency_title": "Latence ve špičce",
+      "peak_latency_description": "Stoupá z {{best}} kolem {{bestHour}} na {{worst}} kolem {{worstHour}}",
+      "ping_description": "Průměrná odezva, mezi {{min}} a {{max}}, medián {{median}}",
       "span_title": "Rozptyl doby trvání",
       "span_description": "Nejkratší a nejdelší test v tomto rozsahu",
       "density_title": "Testů za den",
-      "density_description": "Za období {{days}} dní"
+      "density_description": "Za období {{days}} dní",
+      "density_description_partial": "Za {{elapsed}} z {{days}} dní"
     },
     "values": {
       "min": "Minimum",
@@ -377,7 +382,8 @@
       "up": "Hodnoty nahrávání",
       "target": "Cíl: {{target}}",
       "consistency": "Konzistence",
-      "samples": "Změřené testy"
+      "samples": "Změřené testy",
+      "median": "Medián"
     },
     "failed_test": "Neúspěšný test",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "Momentálně jste v demo režimu. Některé funkce jsou zakázány a některá nastavení nelze měnit. Pokud chcete využívat všechny funkce, můžete si <Link>nainstalovat MySpeed</Link> na vlastní server."
   },
   "integrations": {
-    "none_active": "Tato integrace není aktivní. <br/><Bold>Vytvořit</Bold>",
+    "none_added": "Zatím nejsou nastavené žádné integrace.",
     "preview_active": "Integrace jsou v demo režimu zakázány.",
     "display_name": "Název integrace",
     "create": "Vytvořit",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "Poslední test právě teď",
     "elapsed": "Uplynulo {{seconds}} s",
-    "next_test_approx": "Další v ~{{time}}"
+    "next_test_approx": "Další v ~{{time}}",
+    "target_of": "Cíl {{index}} z {{count}}"
+  },
+  "targets": {
+    "title": "Testovací cíle",
+    "description": "Každý plánovaný test změří každý plánovaný cíl jednou, jeden po druhém. Cíle mimo plán lze spustit pouze odsud.",
+    "add": "Přidat cíl",
+    "edit_title": "Upravit cíl",
+    "name": "Název",
+    "name_placeholder": "např. Praha",
+    "scheduled": "Plánovaný",
+    "alerts": "Upozornění a doporučení",
+    "own_optimals": "Vlastní optimální hodnoty",
+    "all": "Všechny cíle",
+    "saved": "Cíl byl uložen.",
+    "removed": "Cíl byl smazán.",
+    "run_now": "Spustit test nyní",
+    "move_up": "Posunout nahoru",
+    "move_down": "Posunout dolů",
+    "delete_confirm": {
+      "title": "Smazat tento cíl?",
+      "description": "Cíl <Bold>{{name}}</Bold> bude smazán. Testy, které už změřil, zůstanou v historii.",
+      "yes": "Smazat"
+    }
   }
 }

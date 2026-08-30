@@ -54,22 +54,23 @@
       "server_id": "ID del servidor",
       "server_id_placeholder": "Qualsevol ID de servidor, o deixa-ho buit",
       "custom_url": "URL personalitzat",
+      "iperf_host": "Servidor iperf3",
       "choose_automatically": "Tria automàticament",
       "ookla_license": "He llegit i accepto l'<Eula>EULA</Eula>, la <GDPR>política de privadesa</GDPR> i les <TOS>condicions del servei</TOS> d'Ookla.",
       "ookla_desc": "Proveïdor popular amb una xarxa global de servidors",
       "libre_desc": "Prova de velocitat de codi obert i autoallotjable",
-      "cloudflare_desc": "Proves ràpides basades en CDN"
+      "cloudflare_desc": "Proves ràpides basades en CDN",
+      "iperf3_desc": "El teu propi servidor iperf3, a la teva xarxa"
     }
   },
   "dropdown": {
     "settings": "Configuració",
     "changes_applied": "Els canvis s'han desat.",
     "language_changed": "S'ha canviat l'idioma.",
-    "provider_changed": "S'ha canviat el proveïdor.",
     "changes_unsaved": "Els canvis no s'han aplicat. Comprova les dades introduïdes.",
     "invalid": "Entrada no vàlida",
     "optimal_values": "Valors òptims",
-    "change_provider": "Canvia el proveïdor",
+    "targets": "Destinacions de prova",
     "password": "Canvia la contrasenya",
     "cron": "Estableix la freqüència",
     "storage": "Gestiona l'emmagatzematge",
@@ -135,7 +136,6 @@
     "statistics": "Estadístiques"
   },
   "update": {
-    "provider_title": "Estableix el proveïdor de proves de velocitat",
     "new_password": "Estableix una contrasenya nova",
     "password_placeholder": "Contrasenya nova",
     "show_password": "Mostra la contrasenya",
@@ -305,6 +305,7 @@
       "unchanged": "Sense canvis des de la darrera prova",
       "measured_at": "Mesurat el",
       "measured_with": "Mesurat amb",
+      "target": "Destinació",
       "seconds": "{{seconds}} s",
       "data_used": "Dades utilitzades",
       "data_used_value": "{{down}} de baixada / {{up}} de pujada",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "Mitjana",
     "compare": {
-      "note": "Canvis respecte a {{from}} – {{to}}"
+      "note": "Canvis respecte a {{from}} – {{to}}",
+      "note_partial": "Canvis respecte a {{from}} – {{to}}, fins a la mateixa hora del dia"
     },
     "downsampled": "Amb mitjanes · es mostren {{shown}} de {{total}} proves",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "Mitjana de les proves que l'han mesurada",
       "peak_title": "Alentiment en hores punta",
       "peak_description": "Més lent cap a les {{slowest}}, més ràpid cap a les {{fastest}}",
-      "ping_description": "Latència mitjana, entre {{min}} i {{max}}",
+      "peak_latency_title": "Latència en hora punta",
+      "peak_latency_description": "Puja de {{best}} cap a les {{bestHour}} a {{worst}} cap a les {{worstHour}}",
+      "ping_description": "Latència mitjana, entre {{min}} i {{max}}, mediana {{median}}",
       "span_title": "Dispersió de la durada",
       "span_description": "La prova més curta i la més llarga d'aquest interval",
       "density_title": "Proves per dia",
-      "density_description": "Al llarg de {{days}} dies"
+      "density_description": "Al llarg de {{days}} dies",
+      "density_description_partial": "Al llarg de {{elapsed}} de {{days}} dies"
     },
     "values": {
       "min": "Mínim",
@@ -377,7 +382,8 @@
       "up": "Valors de pujada",
       "target": "Objectiu: {{target}}",
       "consistency": "Regularitat",
-      "samples": "Proves mesurades"
+      "samples": "Proves mesurades",
+      "median": "Mediana"
     },
     "failed_test": "Prova fallida",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "Ara mateix ets en mode de demostració. Algunes funcions estan desactivades i alguns paràmetres no es poden canviar. Si vols utilitzar totes les funcions, pots <Link>instal·lar MySpeed</Link> al teu propi servidor."
   },
   "integrations": {
-    "none_active": "Aquesta integració no està activa. <br/><Bold>Crea</Bold>",
+    "none_added": "Encara no hi ha cap integració configurada.",
     "preview_active": "Les integracions estan desactivades durant el mode de demostració.",
     "display_name": "Nom de la integració",
     "create": "Crea",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "Darrera prova ara mateix",
     "elapsed": "Temps transcorregut: {{seconds}} s",
-    "next_test_approx": "La següent a les ~{{time}}"
+    "next_test_approx": "La següent a les ~{{time}}",
+    "target_of": "Destinació {{index}} de {{count}}"
+  },
+  "targets": {
+    "title": "Destinacions de prova",
+    "description": "Cada prova programada mesura un cop totes les destinacions programades, l'una darrere l'altra. Les destinacions fora de la programació només s'executen des d'aquí.",
+    "add": "Afegeix una destinació",
+    "edit_title": "Edita la destinació",
+    "name": "Nom",
+    "name_placeholder": "p. ex. Barcelona",
+    "scheduled": "Programada",
+    "alerts": "Avisos i recomanacions",
+    "own_optimals": "Valors òptims propis",
+    "all": "Totes les destinacions",
+    "saved": "S'ha desat la destinació.",
+    "removed": "S'ha eliminat la destinació.",
+    "run_now": "Executa una prova ara",
+    "move_up": "Mou amunt",
+    "move_down": "Mou avall",
+    "delete_confirm": {
+      "title": "Vols eliminar aquesta destinació?",
+      "description": "S'eliminarà <Bold>{{name}}</Bold>. Les proves que ja ha mesurat es conserven a l'historial.",
+      "yes": "Elimina"
+    }
   }
 }

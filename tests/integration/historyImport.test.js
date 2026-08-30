@@ -84,6 +84,97 @@ describe("importing a history", () => {
     });
 
     /**
+     * A negative quality figure is not a reading, wherever the file got it.
+     *
+     * The live write path already says so: every nullable figure goes through
+     * usableFigure and every byte count through byteCount, so a run cannot
+     * store a negative jitter. The import checked only "is a finite number",
+     * which admits the -1 placeholders a hand-edited or third-party file
+     * carries - and a negative byte count *subtracts* from the data-used
+     * total, while a negative jitter draws a dip below zero on the chart.
+     *
+     * The required three stay untouched: -1 across ping, download and upload
+     * is how a failed run is stored, and the import must keep restoring those.
+     */
+    it("stores a negative quality figure as unmeasured, the way a run would", async () => {
+        await testModel.destroy({where: {}});
+
+        const {status} = await importHistory([{...row(0),
+            jitter: -1, packetLoss: -2, downloadLatency: -3, uploadLatency: -4,
+            bytesDownloaded: -1_000_000, bytesUploaded: -5, time: -30}]);
+
+        assert.equal(status, 200);
+
+        const [stored] = await testModel.findAll();
+        for (const column of ["jitter", "packetLoss", "downloadLatency", "uploadLatency",
+            "bytesDownloaded", "bytesUploaded", "time"])
+            assert.equal(stored[column], null,
+                `${column} kept a negative figure the live path would have refused`);
+    });
+
+    it("still restores a failed run's -1 placeholders", async () => {
+        await testModel.destroy({where: {}});
+
+        const {status} = await importHistory([{...row(0),
+            ping: -1, download: -1, upload: -1, error: "no route to host"}]);
+
+        assert.equal(status, 200);
+
+        const [stored] = await testModel.findAll();
+        assert.equal(stored.ping, -1, "the failure placeholder was rewritten");
+        assert.equal(stored.error, "no route to host");
+    });
+
+    /**
+     * The required three cannot be nulled - the columns are NOT NULL - and a
+     * negative one beside good figures is a row that is neither a failure nor
+     * a measurement: the live path refuses exactly this shape through
+     * impossibleMeasurement and records a failed run instead. A file's row
+     * carries no run to fail, so it is skipped and counted, the way every
+     * other unusable row is - stored, every reader believed it: the average,
+     * the grade, the export, and the alert gate, which reads a download of
+     * minus one megabit as an outage.
+     */
+    it("skips a row that claims success over an impossible measurement", async () => {
+        await testModel.destroy({where: {}});
+
+        const {status, body} = await importHistory([
+            {...row(0), download: -1},
+            {...row(1), ping: -0.5},
+            row(2)
+        ]);
+
+        assert.equal(status, 200);
+        assert.deepEqual({imported: body.imported, skipped: body.skipped}, {imported: 1, skipped: 2},
+            "a row no run could have produced was restored as a measurement");
+        assert.equal(await testModel.count(), 1);
+    });
+
+    // All three placeholders with no error text is still a failed run - that
+    // is the shape isFailedTest names without needing the message - and a
+    // history from an instance whose error column was lost must keep its
+    // failures.
+    it("keeps an errorless failed run, which is not an impossible row", async () => {
+        await testModel.destroy({where: {}});
+
+        const {status, body} = await importHistory([{...row(0), ping: -1, download: -1, upload: -1}]);
+
+        assert.equal(status, 200);
+        assert.equal(body.imported, 1, "a failed run without its message was thrown away");
+    });
+
+    // Zero is deliberately not impossible: a line that carried nothing in the
+    // time allowed is a real reading, and what an outage looks like.
+    it("keeps a measured zero", async () => {
+        await testModel.destroy({where: {}});
+
+        const {status, body} = await importHistory([{...row(0), download: 0}]);
+
+        assert.equal(status, 200);
+        assert.equal(body.imported, 1, "an outage's honest zero was skipped as corrupt");
+    });
+
+    /**
      * A row the database itself refuses must not take the rest down with it.
      *
      * Everything the payload can get wrong is caught by the checks above the

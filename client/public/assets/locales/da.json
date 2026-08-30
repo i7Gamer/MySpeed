@@ -54,22 +54,23 @@
       "server_id": "Server-ID",
       "server_id_placeholder": "Et vilkårligt server-ID, eller lad feltet stå tomt",
       "custom_url": "Brugerdefineret URL",
+      "iperf_host": "iperf3-server",
       "choose_automatically": "Vælg automatisk",
       "ookla_license": "Jeg har læst og accepterer <Eula>EULA</Eula>, <GDPR>privatlivspolitik</GDPR> og <TOS>servicevilkår</TOS> fra Ookla.",
       "ookla_desc": "Populær udbyder med globalt servernetværk",
       "libre_desc": "Open-source, selv-hostable speedtest",
-      "cloudflare_desc": "Hurtig CDN-baseret test"
+      "cloudflare_desc": "Hurtig CDN-baseret test",
+      "iperf3_desc": "Din egen iperf3-server, på dit netværk"
     }
   },
   "dropdown": {
     "settings": "Indstillinger",
     "changes_applied": "Dine ændringer er blevet gemt.",
     "language_changed": "Sproget er blevet ændret.",
-    "provider_changed": "Udbyderen er blevet ændret.",
     "changes_unsaved": "Dine ændringer blev ikke gemt. Kontroller din indtastning.",
     "invalid": "Ugyldig indtastning",
     "optimal_values": "Optimale værdier",
-    "change_provider": "Skift udbyder",
+    "targets": "Testmål",
     "password": "Skift adgangskode",
     "cron": "Indstil frekvens",
     "storage": "Administrer lager",
@@ -135,7 +136,6 @@
     "statistics": "Statistik"
   },
   "update": {
-    "provider_title": "Vælg speedtest-udbyder",
     "new_password": "Indstil en ny adgangskode",
     "password_placeholder": "Ny adgangskode",
     "show_password": "Vis adgangskoden",
@@ -305,6 +305,7 @@
       "unchanged": "Uændret siden sidste test",
       "measured_at": "Målt den",
       "measured_with": "Målt med",
+      "target": "Mål",
       "seconds": "{{seconds}} s",
       "data_used": "Forbrugte data",
       "data_used_value": "{{down}} ned / {{up}} op",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "Gennemsnit",
     "compare": {
-      "note": "Ændringer sammenlignet med {{from}} – {{to}}"
+      "note": "Ændringer sammenlignet med {{from}} – {{to}}",
+      "note_partial": "Ændringer sammenlignet med {{from}} – {{to}}, frem til samme tidspunkt på dagen"
     },
     "downsampled": "Gennemsnit · viser {{shown}} af {{total}} tests",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "Gennemsnit på tværs af de tests, der målte det",
       "peak_title": "Opbremsning i myldretiden",
       "peak_description": "Langsomst omkring {{slowest}}, hurtigst omkring {{fastest}}",
-      "ping_description": "Gennemsnitlig forsinkelse, mellem {{min}} og {{max}}",
+      "peak_latency_title": "Latenstid i spidsbelastning",
+      "peak_latency_description": "Stiger fra {{best}} omkring {{bestHour}} til {{worst}} omkring {{worstHour}}",
+      "ping_description": "Gennemsnitlig forsinkelse, mellem {{min}} og {{max}}, median {{median}}",
       "span_title": "Spredning i varighed",
       "span_description": "Den korteste og den længste test i dette interval",
       "density_title": "Tests pr. dag",
-      "density_description": "Over {{days}} dage"
+      "density_description": "Over {{days}} dage",
+      "density_description_partial": "Over {{elapsed}} af {{days}} dage"
     },
     "values": {
       "min": "Minimum",
@@ -377,7 +382,8 @@
       "up": "Upload-værdier",
       "target": "Mål: {{target}}",
       "consistency": "Ensartethed",
-      "samples": "Målte tests"
+      "samples": "Målte tests",
+      "median": "Median"
     },
     "failed_test": "Mislykket test",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "Du er i øjeblikket i demo-tilstand. Nogle funktioner er deaktiveret, og visse indstillinger kan ikke ændres. Hvis du vil bruge alle funktioner, kan du <Link>installere MySpeed</Link> på din egen server."
   },
   "integrations": {
-    "none_active": "Denne integration er ikke aktiv. <br/><Bold>Opret</Bold>",
+    "none_added": "Der er endnu ikke opsat nogen integrationer.",
     "preview_active": "Integrationer er deaktiveret i demo-tilstand.",
     "display_name": "Integrationsnavn",
     "create": "Opret",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "Sidste test lige nu",
     "elapsed": "{{seconds}} s forløbet",
-    "next_test_approx": "Næste kl. ~{{time}}"
+    "next_test_approx": "Næste kl. ~{{time}}",
+    "target_of": "Mål {{index}} af {{count}}"
+  },
+  "targets": {
+    "title": "Testmål",
+    "description": "Hver planlagt test måler hvert planlagt mål én gang, ét efter ét. Mål uden for tidsplanen kører kun herfra.",
+    "add": "Tilføj mål",
+    "edit_title": "Rediger mål",
+    "name": "Navn",
+    "name_placeholder": "f.eks. København",
+    "scheduled": "Planlagt",
+    "alerts": "Advarsler & anbefalinger",
+    "own_optimals": "Egne optimale værdier",
+    "all": "Alle mål",
+    "saved": "Målet er blevet gemt.",
+    "removed": "Målet er blevet fjernet.",
+    "run_now": "Kør test nu",
+    "move_up": "Flyt op",
+    "move_down": "Flyt ned",
+    "delete_confirm": {
+      "title": "Slet dette mål?",
+      "description": "<Bold>{{name}}</Bold> bliver slettet. De tests, det allerede har målt, bliver i historikken.",
+      "yes": "Slet"
+    }
   }
 }

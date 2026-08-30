@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import i18n from "i18next";
 import {
     convertSpeed, formatBytes, formatDateTime, formatDuration, formatLastTest, formatLatency,
-    formatLatencyWithUnit, formatShortDay, formatShortTime, formatTime, formatHour, formatWhole,
-    formatWithUnit, generateRelativeTime, getSpeedUnit, NOT_MEASURED, SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES,
-    TIME_FORMAT_12H, TIME_FORMAT_24H
+    formatLatencyWithUnit, formatPercent, formatShortDay, formatShortTime, formatTime, formatHour, formatWhole,
+    formatWithUnit, generateRelativeTime, getSpeedUnit, NOT_MEASURED, printableFigure,
+    SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, wholeSpeed, TIME_FORMAT_12H, TIME_FORMAT_24H
 } from "@/common/utils/FormatUtil.js";
 
 // Moved here from the latest-test panel when the status bar replaced it, and
@@ -75,8 +75,28 @@ describe("formatDuration", () => {
         assert.equal(formatDuration(0), "0s");
     });
 
+    // Through the shared reader, like every formatter beside it: it was the
+    // one that neither coerced nor refused, so the overview's duration row
+    // printed a proxied node's -1 as "-1s" - beside a loss row answering
+    // N/A for the identical payload - while an older node's text average
+    // was hidden as N/A while being a reading.
+    it("reads a duration spelt as text", () => {
+        assert.equal(formatDuration("6"), "6s");
+        assert.equal(formatDuration("23.47"), "23.47s");
+        assert.equal(formatDuration("0"), "0s", "a measured zero in its text spelling");
+        // Number()'s latitude, inherited knowingly from storedFigure - the
+        // two spellings below read the same on the server's copy.
+        assert.equal(formatDuration("1e3"), "1000s");
+        assert.equal(formatDuration("0x10"), "16s");
+    });
+
+    it("refuses the placeholder in either spelling", () => {
+        assert.equal(formatDuration(-1), "N/A", "the placeholder printed as a duration of minus one second");
+        assert.equal(formatDuration("-1"), "N/A");
+    });
+
     it("says nothing was measured rather than concatenating null", () => {
-        for (const absent of [null, undefined])
+        for (const absent of [null, undefined, "auto", ""])
             assert.equal(formatDuration(absent), "N/A", `failed for ${JSON.stringify(absent)}`);
     });
 
@@ -107,6 +127,67 @@ describe("formatWithUnit", () => {
 
     it("drops the unit entirely when there is no value", () => {
         assert.doesNotMatch(formatWithUnit(null, "Mbps"), /Mbps/);
+    });
+
+    // A negative is never a reading here: the sibling formatters return the
+    // failure placeholder as a number so the graders can recognise it, and
+    // this is where that number must stop instead of printing "-1 Mbps" as a
+    // measurement. Signed values that ARE readings - the change row's
+    // difference - deliberately do not come through here; they render their
+    // own sign.
+    it("refuses a negative rather than printing the placeholder", () => {
+        assert.equal(formatWithUnit(-1, "Mbps"), "N/A");
+        assert.equal(formatWithUnit(-0.5, "ms"), "N/A");
+    });
+});
+
+/**
+ * The judgement under formatWithUnit, exported on its own for the two places
+ * that print a figure WITHOUT gluing a unit to it - the overview row's jitter
+ * chip, and FigureWithUnit, whose unit lives in its own span. One predicate,
+ * three printers: the sites spelled it around the missing export before, one
+ * through readableFigure and one by formatting a string to compare it away.
+ *
+ * Text readings are FALSE on purpose: this judges what a FORMATTER produced,
+ * and the formatters coerce text before it gets here. A site that hands the
+ * predicate a raw column sees its text readings refused - that is the
+ * contract, pinned again where FigureWithUnit executes it.
+ */
+describe("printableFigure", () => {
+    it("accepts exactly what formatWithUnit prints", () => {
+        for (const printable of [0, 12.5, 2366.32])
+            assert.equal(printableFigure(printable), true, `${printable} refused`);
+
+        for (const refused of [-1, -0.5, NaN, Infinity, -Infinity, "12.5", "-1", "auto", "", null, undefined, true])
+            assert.equal(printableFigure(refused), false, `${JSON.stringify(refused)} accepted`);
+    });
+
+    // The two must never drift: every value the predicate accepts prints, and
+    // every value it refuses says N/A.
+    it("agrees with formatWithUnit on every class", () => {
+        for (const value of [0, 12.5, -1, "-1", "12.5", "auto", NaN, null, undefined])
+            assert.equal(printableFigure(value), formatWithUnit(value, "x") !== NOT_MEASURED,
+                `the predicate and the printer disagree about ${JSON.stringify(value)}`);
+    });
+});
+
+/**
+ * The percent rule, shared: it was written twice in one round (a chart-local
+ * helper and an inline ternary) and a third variant with the old null-only
+ * gate survived on the sibling card, printing "-1%" for a proxied node's
+ * placeholder. One home, reading like every formatter: text spellings coerce,
+ * junk and placeholders say N/A.
+ */
+describe("formatPercent", () => {
+    it("prints a score in either spelling", () => {
+        assert.equal(formatPercent(92.5), "92.5%");
+        assert.equal(formatPercent("85.50"), "85.5%", "a text score prints the number it spells");
+        assert.equal(formatPercent(0), "0%", "zero is a measurement, not an absence");
+    });
+
+    it("refuses what is no score", () => {
+        for (const refused of [-1, "-1", "auto", NaN, null, undefined, ""])
+            assert.equal(formatPercent(refused), NOT_MEASURED, `${JSON.stringify(refused)} printed as a score`);
     });
 });
 
@@ -176,6 +257,17 @@ describe("formatLatency", () => {
         for (const absent of [null, undefined, "N/A", NaN])
             assert.deepEqual(formatLatency(absent), absent);
     });
+
+    // The defensive numeric-string spelling a legacy-restored history can
+    // hold: the colour beside the printed figure is graded through the same
+    // reading, so the formatter has to read it too - a chip was green beside
+    // an "N/A" label for exactly this row.
+    it("reads a latency spelt as text, like the reader grading beside it", () => {
+        assert.equal(formatLatency("12.64"), 12.6);
+        assert.equal(formatLatency("0.5"), 0.5);
+        assert.equal(formatLatency("-1"), -1,
+            "the placeholder survives, as the number the interface recognises");
+    });
 });
 
 /**
@@ -207,6 +299,20 @@ describe("formatLatencyWithUnit", () => {
     it("says nothing was measured rather than showing a lone unit", () => {
         for (const absent of [null, undefined, NaN])
             assert.equal(formatLatencyWithUnit(absent, "ms"), NOT_MEASURED, `failed for ${String(absent)}`);
+    });
+
+    it("prints the text spelling it used to call unmeasured", () => {
+        assert.equal(formatLatencyWithUnit("0.5", "ms"), "0.5 ms",
+            "the chip's colour grades this row while its label denies it was measured");
+    });
+
+    // The placeholder is not a reading in ANY spelling. The formatters hand
+    // negatives back as numbers so the graders can recognise the failure -
+    // and the unit printer is where that number must stop: "-1 ms" beside a
+    // blue nothing-was-measured chip asserts a latency nobody measured.
+    it("says nothing was measured for the placeholder, in either spelling", () => {
+        assert.equal(formatLatencyWithUnit(-1, "ms"), NOT_MEASURED);
+        assert.equal(formatLatencyWithUnit("-1", "ms"), NOT_MEASURED);
     });
 });
 
@@ -252,7 +358,13 @@ describe("formatWhole", () => {
     it("keeps a genuine zero", () => {
         assert.equal(formatWhole(0), 0);
     });
+
+    it("reads a figure spelt as text, like the row beside it", () => {
+        assert.equal(formatWhole("12.64"), 13);
+        assert.equal(formatWhole("-1"), -1, "the placeholder survives, as a number");
+    });
 });
+
 
 describe("convertSpeed", () => {
     it("leaves a value alone in Mbps", () => {
@@ -291,6 +403,74 @@ describe("convertSpeed", () => {
 
     it("converts zero to zero", () => {
         assert.equal(convertSpeed(0, MBYTES), 0);
+    });
+
+    /**
+     * The whole-number print, rounded ONCE from the raw quotient.
+     *
+     * formatWhole(convertSpeed(x)) rounded twice in MB/s mode - to two
+     * decimals, then to a whole - so every band [8n+3.96, 8n+4) printed one
+     * megabyte high: 3.96 Mbit/s showed "1 MB/s" where the measurement is 0,
+     * 99.97 showed "13" where it is 12. The bands recur at every multiple of
+     * eight; a single rounding is the correct figure at all of them.
+     */
+    it("rounds a whole-number speed once, from the unrounded quotient", () => {
+        assert.equal(wholeSpeed(3.96, MBYTES), 0, "0.495 MB/s is zero megabytes, not one");
+        assert.equal(wholeSpeed(99.97, MBYTES), 12, "12.49625 rounds to 12, not via 12.5 to 13");
+        assert.equal(wholeSpeed(100, MBYTES), 13, "12.5 still rounds up - the band is only [n+.495, n+.5)");
+        assert.equal(wholeSpeed(841.25, MBYTES), 105);
+        assert.equal(wholeSpeed(841.25, MBPS), 841);
+        assert.equal(wholeSpeed("800", MBYTES), 100, "the text spelling reads like every formatter");
+    });
+
+    it("keeps the placeholder recognisable and junk untouched, like its siblings", () => {
+        assert.equal(wholeSpeed(-1, MBYTES), -1);
+        assert.equal(wholeSpeed("-1", MBYTES), -1);
+        for (const absent of [null, undefined, "N/A", NaN])
+            assert.deepEqual(wholeSpeed(absent, MBYTES), absent, `failed for ${String(absent)}`);
+    });
+
+    /**
+     * The defensive text spelling, read for the same reason the formatters
+     * above read it - and one deeper: changeFrom compares two converted
+     * operands, and a string handed back unconverted left one side in Mbit/s
+     * and the other in MB/s, so the change row printed a confident wrong
+     * figure where the old gate printed nothing.
+     */
+    it("reads a speed spelt as text, in either unit", () => {
+        assert.equal(convertSpeed("800", MBYTES), 100);
+        assert.equal(convertSpeed("800", MBPS), 800);
+    });
+
+    // The guard the shared-preamble composition has to keep: Mbit/s is the
+    // unit the column stores, so the figure passes through EXACT - the
+    // two-decimal rounding belongs to the conversion alone, and a stored
+    // 93.716 must never come back 93.72.
+    it("never rounds in the unit the column already stores", () => {
+        assert.equal(convertSpeed(93.716, MBPS), 93.716);
+        assert.equal(convertSpeed(93.716, undefined), 93.716);
+    });
+
+    it("converts the text placeholder to the number the interface recognises", () => {
+        assert.equal(convertSpeed("-1", MBYTES), -1);
+    });
+
+    // NodeContainer's whole pipeline AS THE COMPONENT NOW SPELLS IT -
+    // formatWithUnit over wholeSpeed. The destination is stated first and the
+    // parity second: an earlier version asserted only that the two spellings
+    // agree, and they agreed on printing "-1 Mbps" - a relational pin locked
+    // onto a shared wrong answer. The band fixtures keep the single rounding
+    // honest: a revert to formatWhole(convertSpeed(...)) prints them one
+    // megabyte high.
+    it("prints one card's figures the same for either spelling", () => {
+        const printed = (value) => formatWithUnit(wholeSpeed(value, MBYTES), "MB/s");
+
+        assert.equal(printed(800), "100 MB/s");
+        assert.equal(printed("800"), "100 MB/s");
+        assert.equal(printed(3.96), "0 MB/s", "the [8n+3.96, 8n+4) band prints one high when rounded twice");
+        assert.equal(printed(99.97), "12 MB/s");
+        assert.equal(printed(-1), "N/A", "the placeholder is not a reading of minus one");
+        assert.equal(printed("-1"), "N/A");
     });
 });
 
@@ -504,6 +684,14 @@ describe("formatBytes", () => {
         assert.equal(formatBytes(100000000), "100 MB");
     });
 
+    // The detail pane gates the traffic row on isMeasured and prints through
+    // this - a legacy text column rendered the row with "N/A / N/A", the
+    // shows-but-denies shape the latency chip had.
+    it("reads a byte count spelt as text, like the row that shows it", () => {
+        assert.equal(formatBytes("1500000"), formatBytes(1500000));
+        assert.equal(formatBytes("1500000"), "1.5 MB");
+    });
+
     it("drops a trailing zero rather than writing 1.0 GB", () => {
         assert.equal(formatBytes(1000000000), "1 GB");
     });
@@ -535,7 +723,7 @@ describe("formatBytes", () => {
     // A column that was never measured, and the -1 a failed run writes into its
     // numeric columns. Neither is a quantity of data.
     it("reports anything that is not a count as unmeasured", () => {
-        for (const value of [null, undefined, NaN, Infinity, -1, "1000", {}])
+        for (const value of [null, undefined, NaN, Infinity, -1, "-1", "auto", {}])
             assert.equal(formatBytes(value), NOT_MEASURED, `value ${String(value)}`);
     });
 });

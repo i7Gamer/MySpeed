@@ -105,6 +105,16 @@ export default (registerEvent) => {
     registerEvent("testFinished", async ({data: c}, data, activity) => {
         const tags = {
             host: c.host || os.hostname(),
+            // Which member measured the point, and with what. Tags are what a
+            // series is grouped by, so without them every target's points
+            // shared one series - a panel averaging the WAN with the LAN box -
+            // and with precision=s, two members finishing in the same second
+            // were one point, last writer wins. buildLine drops the empty
+            // values a pre-target row carries, and escapes the rest.
+            target: data.targetName,
+            targetId: data.targetId,
+            provider: data.provider,
+            // The operator's own tags last, so theirs win a name collision.
             ...parseTags(c.tags)
         };
 

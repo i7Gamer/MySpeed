@@ -67,6 +67,17 @@ export const OOKLA_RESULT_HOST = "speedtest.net";
 export const CUSTOM_BACKEND_PLACEHOLDER = "https://speed.test/backend/";
 
 /**
+ * The shape an iperf3 server's address takes, shown in the field.
+ *
+ * An address rather than a URL, and a private one: the field takes a host and
+ * a port, and the machine it names is nearly always on the operator's own
+ * network - which is the whole reason to measure with it. The port is iperf3's
+ * own default, so the example is also the answer for a server started with no
+ * arguments.
+ */
+export const IPERF_HOST_PLACEHOLDER = "10.0.0.5:5201";
+
+/**
  * What each integration is called, where that is a product rather than a word.
  *
  * Keyed by the name the server registers the module under, which is also what

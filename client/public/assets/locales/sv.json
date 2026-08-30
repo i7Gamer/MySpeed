@@ -54,22 +54,23 @@
       "server_id": "Server-ID",
       "server_id_placeholder": "Valfritt server-ID, eller lämna tomt",
       "custom_url": "Anpassad URL",
+      "iperf_host": "iperf3-server",
       "choose_automatically": "Välj automatiskt",
       "ookla_license": "Jag har läst och godkänner Ooklas <Eula>EULA</Eula>, <GDPR>integritetspolicy</GDPR> och <TOS>användarvillkor</TOS>.",
       "ookla_desc": "Populär leverantör med globalt servernätverk",
       "libre_desc": "Hastighetstest med öppen källkod som du kan hosta själv",
-      "cloudflare_desc": "Snabb CDN-baserad testning"
+      "cloudflare_desc": "Snabb CDN-baserad testning",
+      "iperf3_desc": "Din egen iperf3-server, i ditt nätverk"
     }
   },
   "dropdown": {
     "settings": "Inställningar",
     "changes_applied": "Dina ändringar har sparats.",
     "language_changed": "Språket har ändrats.",
-    "provider_changed": "Leverantören har ändrats.",
     "changes_unsaved": "Dina ändringar tillämpades inte. Kontrollera din inmatning.",
     "invalid": "Ogiltig inmatning",
     "optimal_values": "Optimala värden",
-    "change_provider": "Byt leverantör",
+    "targets": "Testmål",
     "password": "Byt lösenord",
     "cron": "Ange frekvens",
     "storage": "Hantera lagring",
@@ -135,7 +136,6 @@
     "statistics": "Statistik"
   },
   "update": {
-    "provider_title": "Välj hastighetstestleverantör",
     "new_password": "Ange ett nytt lösenord",
     "password_placeholder": "Nytt lösenord",
     "show_password": "Visa lösenord",
@@ -305,6 +305,7 @@
       "unchanged": "Oförändrat sedan förra testet",
       "measured_at": "Uppmätt",
       "measured_with": "Uppmätt med",
+      "target": "Mål",
       "seconds": "{{seconds}} s",
       "data_used": "Dataanvändning",
       "data_used_value": "{{down}} ned / {{up}} upp",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "Genomsnitt",
     "compare": {
-      "note": "Förändringar jämfört med {{from}} – {{to}}"
+      "note": "Förändringar jämfört med {{from}} – {{to}}",
+      "note_partial": "Förändringar jämfört med {{from}} – {{to}}, fram till samma tid på dagen"
     },
     "downsampled": "Genomsnitt · visar {{shown}} av {{total}} tester",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "Genomsnitt över de tester som mätte den",
       "peak_title": "Nedgång i högtrafik",
       "peak_description": "Långsammast runt {{slowest}}, snabbast runt {{fastest}}",
-      "ping_description": "Genomsnittlig latens, mellan {{min}} och {{max}}",
+      "peak_latency_title": "Latens under högtrafik",
+      "peak_latency_description": "Stiger från {{best}} runt {{bestHour}} till {{worst}} runt {{worstHour}}",
+      "ping_description": "Genomsnittlig latens, mellan {{min}} och {{max}}, median {{median}}",
       "span_title": "Längdspridning",
       "span_description": "Det kortaste och det längsta testet i den här perioden",
       "density_title": "Tester per dag",
-      "density_description": "Över {{days}} dagar"
+      "density_description": "Över {{days}} dagar",
+      "density_description_partial": "Över {{elapsed}} av {{days}} dagar"
     },
     "values": {
       "min": "Lägsta",
@@ -377,7 +382,8 @@
       "up": "Uppladdningsvärden",
       "target": "Mål: {{target}}",
       "consistency": "Jämnhet",
-      "samples": "Uppmätta tester"
+      "samples": "Uppmätta tester",
+      "median": "Median"
     },
     "failed_test": "Misslyckat test",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "Du är just nu i demoläge. Vissa funktioner är inaktiverade och vissa inställningar kan inte ändras. Om du vill använda alla funktioner kan du <Link>installera MySpeed</Link> på din egen server."
   },
   "integrations": {
-    "none_active": "Den här integrationen är inte aktiv. <br/><Bold>Skapa</Bold>",
+    "none_added": "Inga integrationer har konfigurerats än.",
     "preview_active": "Integrationer är inaktiverade i demoläget.",
     "display_name": "Integrationsnamn",
     "create": "Skapa",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "Senaste testet alldeles nyss",
     "elapsed": "{{seconds}} s har gått",
-    "next_test_approx": "Nästa ca kl. {{time}}"
+    "next_test_approx": "Nästa ca kl. {{time}}",
+    "target_of": "Mål {{index}} av {{count}}"
+  },
+  "targets": {
+    "title": "Testmål",
+    "description": "Varje schemalagt test mäter varje schemalagt mål en gång, ett efter ett. Mål utanför schemat körs bara härifrån.",
+    "add": "Lägg till mål",
+    "edit_title": "Redigera mål",
+    "name": "Namn",
+    "name_placeholder": "t.ex. Stockholm",
+    "scheduled": "Schemalagt",
+    "alerts": "Aviseringar & rekommendationer",
+    "own_optimals": "Egna optimala värden",
+    "all": "Alla mål",
+    "saved": "Målet har sparats.",
+    "removed": "Målet har tagits bort.",
+    "run_now": "Kör test nu",
+    "move_up": "Flytta upp",
+    "move_down": "Flytta ned",
+    "delete_confirm": {
+      "title": "Ta bort det här målet?",
+      "description": "<Bold>{{name}}</Bold> kommer att tas bort. De tester som målet redan har mätt finns kvar i historiken.",
+      "yes": "Ta bort"
+    }
   }
 }

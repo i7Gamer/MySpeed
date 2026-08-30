@@ -64,7 +64,23 @@ COPY --from=client-build /client/build /myspeed/build
 # bin/ is created and owned here because the CLIs are downloaded into it on
 # first boot, and it deliberately sits outside the data volume so an upgrade
 # refetches binaries matching the new image.
-RUN mkdir -p /myspeed/data /myspeed/bin && chown -R bun:bun /myspeed
+#
+# data/ is created here for a second reason, and at a stated mode. VOLUME takes
+# the mode and the ownership of whatever stands at the path when the image is
+# built, so this line is what the volume comes out as - and under the build's 022
+# umask that was 0755. storage.db holds the admin password hash and every
+# integration secret and is written 0644 inside it, data/certs holds the TLS
+# private key, and the server downloads and spawns third-party binaries, so
+# "readable by every account in the container" is not an empty set.
+#
+# server/util/createFolders.js states the same 700, and cannot reach it here: it
+# decides the mode of a directory it creates, and this one exists before the
+# server has ever started. Split off bin, which is a downloaded executable rather
+# than a secret and keeps the umask's mode - the same split the helper's own list
+# makes. chown after chmod, and it preserves the mode.
+RUN mkdir -p /myspeed/bin \
+    && mkdir -p /myspeed/data && chmod 700 /myspeed/data \
+    && chown -R bun:bun /myspeed
 
 COPY --from=cfspeedtest-build --chown=bun:bun /out/bin/cfspeedtest /myspeed/bin/cfspeedtest
 

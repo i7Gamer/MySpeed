@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, setConfig } from "./helpers/boot.js";
+import { bootServer, seedTarget, setConfig } from "./helpers/boot.js";
 
 /**
  * The configured timezone, checked where it has to be checked: inside runTask.
@@ -81,7 +81,7 @@ const setWindow = async (start, end) => {
 beforeEach(async () => {
     timer.stopTimer();
     await server.tests.destroy({where: {}});
-    await setConfig(server.config, "provider", PROVIDER);
+    await seedTarget({provider: PROVIDER});
     await setConfig(server.config, "scheduleOffset", "false");
     await setWindow("none", "none");
     await setConfig(server.config, "timezone", "none");

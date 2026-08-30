@@ -16,7 +16,7 @@ import {postRequest} from "@/common/utils/RequestUtil";
  * answer was already known to be "not blocked". The refusal that matters is the
  * server's, which is read off the response below.
  */
-export const startSpeedtest = async ({updateStatus, setRunning, updateTests, alert}) => {
+export const startSpeedtest = async ({updateStatus, setRunning, updateTests, alert, targetId = null}) => {
     await updateStatus();
 
     setRunning(true);
@@ -25,7 +25,11 @@ export const startSpeedtest = async ({updateStatus, setRunning, updateTests, ale
         // fetch only rejects on network errors, so a 409/410 has to be read off
         // the response - otherwise a refused start looked like a success and
         // left the gauge spinning until the next status poll.
-        const response = await postRequest("/speedtests/run");
+        //
+        // Named, the run measures that one target - the manager's per-row
+        // button, and the only way a manual-only target runs at all. Unnamed,
+        // it is a full round of every scheduled target, as before.
+        const response = await postRequest("/speedtests/run", targetId != null ? {targetId} : {});
 
         if (!response.ok) {
             setRunning(false);

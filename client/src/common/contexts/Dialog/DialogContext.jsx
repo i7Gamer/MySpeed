@@ -82,6 +82,13 @@ export const Dialog = ({open, onClose, className, disableClose, label, children}
         if (open && !visible) {
             setVisible(true);
             isClosingRef.current = false;
+        } else if (open && visible && isClosingRef.current) {
+            // Reopened while still fading out: the box is up but mid-close, so
+            // drop the closing state and strip the hidden classes it was given,
+            // leaving it recoverable rather than stuck behind its own fade.
+            isClosingRef.current = false;
+            areaRef.current?.classList.remove("dialog-area-hidden");
+            dialogRef.current?.classList.remove("dialog-hidden");
         } else if (!open && visible && !isClosingRef.current) {
             isClosingRef.current = true;
             areaRef.current?.classList.add("dialog-area-hidden");
@@ -104,7 +111,27 @@ export const Dialog = ({open, onClose, className, disableClose, label, children}
     }, []);
 
     const handleAnimationEnd = (e) => {
-        if (e.animationName === "fadeOut") {
+        // A child element's own fadeOut bubbles up to this handler; only the
+        // dialog box's own fade ends the close.
+        if (e.target !== dialogRef.current) return;
+
+        // The closing flag, not the `open` prop, is what says a close is
+        // underway. Escape, the X and the backdrop all go through handleClose,
+        // which never touches `open` - the parent only learns of the close from
+        // the onClose below - so `open` is still true for the whole of an
+        // internally started fade, and gating on it left every such dialog
+        // stuck: faded to invisible, still mounted, its transparent backdrop
+        // swallowing every click on the app. A reopen within the fade is the
+        // one ending that must not finish the close, and the effect above
+        // answers it by clearing this flag and stripping the hidden classes,
+        // which cancels the fade. That effect is passive, though, so an
+        // animation ending in the same frame as the reopen can still reach
+        // here first with the flag up: the close then completes and the
+        // reopen is swallowed - one extra click, on a window a frame wide.
+        // Accepted, because the states are indistinguishable from in here
+        // (`open` is true for an ordinary internal close too), and every
+        // alternative traded this for a stuck dialog or a remount.
+        if (e.animationName === "fadeOut" && isClosingRef.current) {
             setVisible(false);
             isClosingRef.current = false;
             onClose?.();

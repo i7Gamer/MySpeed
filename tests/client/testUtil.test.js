@@ -1,10 +1,39 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    bufferbloat, bufferbloatColour, bufferbloatTrend, connectionChange, failureRate, getIconBySpeed,
-    gradeForIncrease, isFailedTest, jitterColour, latencyIncrease, packetLossColour, pingDeviationColour,
-    previousConnection, TREND_LENGTH
+    bufferbloat, bufferbloatColour, bufferbloatTrend, connectionChange, consistencyColour, FAILED_TEST, failureRate,
+    getIconBySpeed, gradeForIncrease, isFailedTest, jitterColour, latencyIncrease, packetLossColour,
+    pingDeviationColour, previousConnection, storedFigure, TREND_LENGTH
 } from "../../client/src/common/utils/TestUtil.js";
+
+/**
+ * The consistency grade reads like the printer beside it.
+ *
+ * Gated on typeof while the printers beside it moved to readableFigure, a
+ * text-spelled score from a legacy-restored or proxied history printed
+ * "85.5%" beside the blue nothing-was-measured colour - shown and denied at
+ * once, the very pair gradeBelow's readers were widened to end.
+ * (gradeForIncrease keeps its typeof gate for a narrower reason: its
+ * increases are computed - by latencyIncrease client-side, by the server
+ * for the range average and the trend points, which the stability card
+ * coerces at its boundary - so nothing reaches the gate unread.)
+ */
+describe("consistencyColour", () => {
+    it("grades a score in either spelling", () => {
+        assert.equal(consistencyColour(95), "green");
+        assert.equal(consistencyColour("95"), "green");
+        assert.equal(consistencyColour(85.5), "orange");
+        assert.equal(consistencyColour("85.50"), "orange",
+            "a text score wears the never-measured blue beside a printer that prints it");
+        assert.equal(consistencyColour(42), "red");
+        assert.equal(consistencyColour("1e3"), "green", "Number()'s latitude, as every reader accepts it");
+    });
+
+    it("stays blue for what no reader can read", () => {
+        for (const refused of [-1, "-1", "auto", NaN, null, undefined, ""])
+            assert.equal(consistencyColour(refused), "blue", `${JSON.stringify(refused)} earned a grade`);
+    });
+});
 
 /**
  * A step in the numbers reads as the line degrading. Often it is not: the lease
@@ -238,6 +267,57 @@ describe("failureRate", () => {
         for (const [total, failed] of [[undefined, 1], [10, undefined], [-1, 1], [10, null]])
             assert.equal(failureRate(total, failed), null, `failed for ${total}/${failed}`);
     });
+
+    /**
+     * The strict half of the contract, pinned AS the contract: both
+     * operands are array lengths on the server, so a text or negative
+     * count is a producer that changed shape, not a spelling to coerce -
+     * gradeForIncrease's reason, stated in the function's own docblock.
+     * The row degrades to the bare count then; firstRowCards executes
+     * that.
+     */
+    it("refuses a count spelled as text rather than coercing it", () => {
+        assert.equal(failureRate("100", 3), null);
+        assert.equal(failureRate(100, "3"), null);
+        assert.equal(failureRate("100", "3"), null);
+    });
+
+    it("refuses a negative count, which no length can be", () => {
+        assert.equal(failureRate(100, -1), null);
+    });
+});
+
+/**
+ * The client half of the server's metricValue, exported so the formatters and
+ * the placeholder readers judge one spelling. Negatives are deliberately
+ * kept - recognising the -1 placeholder is the caller's job - and the same
+ * latitude Number() gives the server copy ("1e3", "0x10") is accepted here,
+ * because the two are pinned to the same fixtures and a value that reads on
+ * one side must read on the other.
+ */
+describe("storedFigure", () => {
+    it("hands a number back, negatives and zero included", () => {
+        assert.equal(storedFigure(12.5), 12.5);
+        assert.equal(storedFigure(0), 0);
+        assert.equal(storedFigure(-1), -1);
+        assert.equal(storedFigure(-0), -0, "-0 is a zero, not a refusal - and < 0 is false for it everywhere downstream");
+    });
+
+    it("reads the number a string spells, whitespace tolerated", () => {
+        assert.equal(storedFigure("42"), 42);
+        assert.equal(storedFigure(" 42 "), 42);
+        assert.equal(storedFigure("-1"), -1);
+        assert.equal(storedFigure("1e3"), 1000, "Number()'s latitude, shared with the server copy");
+    });
+
+    it("refuses what is not a figure at all", () => {
+        for (const value of [null, undefined, "", "  ", "auto", NaN, Infinity, -Infinity, {}, []])
+            assert.equal(storedFigure(value), null, `${JSON.stringify(value)} was read as a figure`);
+    });
+
+    it("is the sentinel's home", () => {
+        assert.equal(FAILED_TEST, -1);
+    });
 });
 
 const speed = (current, optimal) => getIconBySpeed(current, optimal, true);
@@ -280,6 +360,20 @@ describe("getIconBySpeed", () => {
     it("reports a failed test as an error", () => {
         assert.equal(speed(-1, 100), "error");
         assert.equal(latency(-1, 25), "error");
+    });
+
+    // The placeholder in its text spelling. Compared by identity it fell
+    // through to the ratio, and Number("-1")/target is a finite negative - so
+    // a failed ping graded GREEN (lower is better) and a failed download RED,
+    // on the same row isFailedTest now calls a failure.
+    it("reports a failure spelt as text as the error it is", () => {
+        assert.equal(speed("-1", 100), "error");
+        assert.equal(latency("-1", 25), "error");
+    });
+
+    it("still grades a real reading spelt as text by its ratio", () => {
+        assert.equal(speed("75", 100), "green");
+        assert.equal(latency("45", 25), "red");
     });
 
     /**
@@ -406,10 +500,21 @@ describe("latencyIncrease", () => {
     // A failed run stores -1 in both columns; a provider that measures no loaded
     // latency stores nothing at all. Neither is an increase of zero.
     it("has no answer for anything that is not a pair of measurements", () => {
-        for (const value of [null, undefined, NaN, Infinity, -1, "30", {}]) {
+        for (const value of [null, undefined, NaN, Infinity, -1, "auto", "", {}]) {
             assert.equal(latencyIncrease(value, 10), null, `loaded ${String(value)}`);
             assert.equal(latencyIncrease(50, value), null, `ping ${String(value)}`);
         }
+    });
+
+    // The defensive numeric-string spelling an imported history can hold. The
+    // server's statistics read it (usableFigure), so refusing it here would
+    // grade a range and the result beside it from different rows -
+    // tests/server/loadedLatencyAgreement.test.js pins the mirror.
+    it("reads a latency spelt as text, the way the server does", () => {
+        assert.equal(latencyIncrease("50", 10), 40);
+        assert.equal(latencyIncrease(50, "10"), 40);
+        assert.equal(latencyIncrease("-1", 10), null, "the placeholder is no reading in any spelling");
+        assert.equal(latencyIncrease(50, "0"), null, "an unmeasured ping is no baseline in any spelling");
     });
 
     // One expression for the quantity, so a per-direction icon and the grade it
@@ -434,6 +539,27 @@ describe("latencyIncrease", () => {
             assert.equal(bufferbloat({ping: 10, downloadLatency: 50, uploadLatency: absent}), null,
                 `upload ${String(absent)}`);
         }
+    });
+});
+
+/**
+ * The graders behind the loss and jitter chips read the stored column raw,
+ * and the labels beside them print it raw too - so a figure in its defensive
+ * text spelling ("0.5" from a legacy-restored history) rendered beside the
+ * blue "nothing was measured" colour. One row, two answers, which is the
+ * divergence readableFigure exists to end; blue stays for what it refuses.
+ */
+describe("the colour a stored figure earns, however it is spelt", () => {
+    it("grades the text spelling the label beside it prints", () => {
+        assert.equal(packetLossColour("0.5"), "green");
+        assert.equal(packetLossColour(0.5), "green", "the numeric spelling keeps its colour");
+        assert.equal(jitterColour("0.5"), "green");
+        assert.equal(jitterColour("25"), "red", "a bad reading is bad in any spelling");
+    });
+
+    it("stays blue for what is not a measurement in any spelling", () => {
+        for (const value of [null, undefined, "", "auto", NaN, -1, "-1"])
+            assert.equal(packetLossColour(value), "blue", `${JSON.stringify(value)} earned a colour`);
     });
 });
 
@@ -487,8 +613,14 @@ describe("packetLossColour", () => {
     // Absent is not perfect: only Ookla reports a loss rate, and green would
     // claim a clean line for every provider that measures none.
     it("has no colour for anything that is not a measurement", () => {
-        for (const value of [null, undefined, NaN, Infinity, -1, "0", {}])
+        for (const value of [null, undefined, NaN, Infinity, -1, "auto", {}])
             assert.equal(packetLossColour(value), "blue", `${String(value)} must not grade`);
+    });
+
+    // A measured zero spelt as text is still the cleanest reading there is -
+    // the label beside the chip prints it, so the colour has to grade it.
+    it("grades the text spelling the label prints", () => {
+        assert.equal(packetLossColour("0"), "green");
     });
 });
 
@@ -507,8 +639,12 @@ describe("jitterColour", () => {
     // The server returns an explicit null for a range in which no test measured
     // jitter, which is not a jitter of zero.
     it("has no colour for anything that is not a measurement", () => {
-        for (const value of [null, undefined, NaN, -1, "5"])
+        for (const value of [null, undefined, NaN, -1, ""])
             assert.equal(jitterColour(value), "blue", `${String(value)} must not grade`);
+    });
+
+    it("grades the text spelling the label prints", () => {
+        assert.equal(jitterColour("5"), "orange");
     });
 });
 
@@ -539,7 +675,7 @@ describe("pingDeviationColour", () => {
     // The card's own reason for existing: a null here is the server saying the
     // range held fewer than two successful tests, which is not a spread of zero.
     it("has no colour for anything that is not a measurement", () => {
-        for (const value of [null, undefined, NaN, Infinity, -1, "2", {}])
+        for (const value of [null, undefined, NaN, Infinity, -1, "auto", {}])
             assert.equal(pingDeviationColour(value), "blue", `${String(value)} must not grade`);
     });
 

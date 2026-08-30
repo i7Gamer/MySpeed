@@ -209,9 +209,10 @@ describe("i18n keys", () => {
             /^options\.cron\.[a-z_]+$/,
             // pause.${preset.id} and its _desc - PauseDialog.jsx
             /^pause\.[a-z]+(_desc)?$/,
-            // dialog.provider.${current.id}_desc - ProviderDialog.jsx and the
-            // welcome dialog's ProviderChooser
-            /^dialog\.provider\.[a-z]+_desc$/,
+            // dialog.provider.${current.id}_desc - the target editor and the
+            // welcome dialog's ProviderChooser. Digits too: iperf3 is a
+            // provider id with one in it.
+            /^dialog\.provider\.[a-z0-9]+_desc$/,
             // status.phase.${status.phase} - StatusBarComponent.jsx
             /^status\.phase\.[a-z]+$/,
             // storage.retention_options.${preset.id} - the storage dialog's

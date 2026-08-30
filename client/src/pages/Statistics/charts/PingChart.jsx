@@ -4,7 +4,7 @@ import { t } from "i18next";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { TIME_FORMAT_12H } from "@/common/utils/FormatUtil";
 import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
-import { lineTensionFor, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
+import { lineTensionFor, lonePointHoverRadius, lonePointRadius, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
 import { clickable } from "@/common/utils/Clickable";
 import { useChartTheme } from "@/pages/Statistics/charts/useChartTheme";
 import {
@@ -92,9 +92,8 @@ const PingChart = memo(({ compact = false, ...props }) => {
                 fill: true,
                 pointBackgroundColor: themeColors.ping,
                 pointBorderColor: themeColors.ping,
-                pointRadius: pointStyle.radius,
-                pointHoverRadius: pointStyle.hoverRadius,
-                spanGaps: true,
+                pointRadius: lonePointRadius(pointStyle),
+                pointHoverRadius: lonePointHoverRadius(pointStyle),
                 order: 1
             },
             // Idle and under-load latency on one axis is the picture that
@@ -110,9 +109,8 @@ const PingChart = memo(({ compact = false, ...props }) => {
                 fill: false,
                 pointBackgroundColor: themeColors.loaded,
                 pointBorderColor: themeColors.loaded,
-                pointRadius: pointStyle.radius,
-                pointHoverRadius: pointStyle.hoverRadius,
-                spanGaps: true,
+                pointRadius: lonePointRadius(pointStyle),
+                pointHoverRadius: lonePointHoverRadius(pointStyle),
                 order: 3
             }] : []),
             ...(hasJitterData ? [{
@@ -123,9 +121,8 @@ const PingChart = memo(({ compact = false, ...props }) => {
                 fill: true,
                 pointBackgroundColor: themeColors.jitter,
                 pointBorderColor: themeColors.jitter,
-                pointRadius: pointStyle.radius,
-                pointHoverRadius: pointStyle.hoverRadius,
-                spanGaps: true,
+                pointRadius: lonePointRadius(pointStyle),
+                pointHoverRadius: lonePointHoverRadius(pointStyle),
                 order: 2
             }] : []),
             // Left off entirely when nothing was measured: a line at zero is a

@@ -54,22 +54,23 @@
       "server_id": "ID do servidor",
       "server_id_placeholder": "Qualquer ID de servidor, ou deixe em branco",
       "custom_url": "URL personalizada",
+      "iperf_host": "Servidor iperf3",
       "choose_automatically": "Escolha automaticamente",
       "ookla_license": "Eu li e aceito o <Eula>EULA</Eula>, <GDPR>a política de privacidade</GDPR> e os <TOS>termos de serviço</TOS> da Ookla.",
       "ookla_desc": "Provedor popular com uma rede global de servidores",
       "libre_desc": "Speedtest de código aberto e auto-hospedável",
-      "cloudflare_desc": "Teste rápido baseado em CDN."
+      "cloudflare_desc": "Teste rápido baseado em CDN.",
+      "iperf3_desc": "Seu próprio servidor iperf3, na sua rede"
     }
   },
   "dropdown": {
     "settings": "Configurações",
     "changes_applied": "Suas alterações foram salvas.",
     "language_changed": "O idioma foi alterado.",
-    "provider_changed": "O provedor foi alterado.",
     "changes_unsaved": "Suas alterações não foram aplicadas. Verifique sua entrada.",
     "invalid": "Entrada inválida",
     "optimal_values": "Valores ideais",
-    "change_provider": "Mudar de provedor",
+    "targets": "Destinos de teste",
     "password": "Alterar senha",
     "cron": "Definir frequência",
     "storage": "Gerenciar o armazenamento",
@@ -135,7 +136,6 @@
     "statistics": "Estatísticas"
   },
   "update": {
-    "provider_title": "Definir o provedor do speedtest",
     "new_password": "Definir uma nova senha",
     "password_placeholder": "Nova senha",
     "show_password": "Mostrar a senha",
@@ -305,6 +305,7 @@
       "unchanged": "Sem alteração desde o último teste",
       "measured_at": "Medido em",
       "measured_with": "Medido com",
+      "target": "Destino",
       "seconds": "{{seconds}} s",
       "data_used": "Dados usados",
       "data_used_value": "{{down}} de descida / {{up}} de subida",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "Média",
     "compare": {
-      "note": "Mudanças em relação a {{from}} – {{to}}"
+      "note": "Mudanças em relação a {{from}} – {{to}}",
+      "note_partial": "Mudanças em relação a {{from}} – {{to}}, até o mesmo horário do dia"
     },
     "downsampled": "Média · mostrando {{shown}} de {{total}} testes",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "Média entre os testes que a mediram",
       "peak_title": "Lentidão no horário de pico",
       "peak_description": "Mais lento por volta de {{slowest}}, mais rápido por volta de {{fastest}}",
-      "ping_description": "Latência média, entre {{min}} e {{max}}",
+      "peak_latency_title": "Latência na hora de pico",
+      "peak_latency_description": "Sobe de {{best}} por volta das {{bestHour}} para {{worst}} por volta das {{worstHour}}",
+      "ping_description": "Latência média, entre {{min}} e {{max}}, mediana {{median}}",
       "span_title": "Variação de duração",
       "span_description": "O teste mais curto e o mais longo deste período",
       "density_title": "Testes por dia",
-      "density_description": "Ao longo de {{days}} dias"
+      "density_description": "Ao longo de {{days}} dias",
+      "density_description_partial": "Ao longo de {{elapsed}} de {{days}} dias"
     },
     "values": {
       "min": "Mínimo",
@@ -377,7 +382,8 @@
       "up": "Valores de upload",
       "target": "Meta: {{target}}",
       "consistency": "Regularidade",
-      "samples": "Testes medidos"
+      "samples": "Testes medidos",
+      "median": "Mediana"
     },
     "failed_test": "Teste com falha",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "No momento, você está no modo de demonstração. Alguns recursos estão desativados e algumas configurações não podem ser alteradas. Se quiser usar todos os recursos, você pode <Link>instalar o MySpeed</Link> em seu próprio servidor."
   },
   "integrations": {
-    "none_active": "Essa integração não está ativa. <br/><Bold>Criar</Bold>",
+    "none_added": "Nenhuma integração configurada ainda.",
     "preview_active": "As integrações são desativadas durante o modo de demonstração.",
     "display_name": "Nome da integração",
     "create": "Criar",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "Último teste agora mesmo",
     "elapsed": "{{seconds}} s decorridos",
-    "next_test_approx": "Próximo às ~{{time}}"
+    "next_test_approx": "Próximo às ~{{time}}",
+    "target_of": "Destino {{index}} de {{count}}"
+  },
+  "targets": {
+    "title": "Destinos de teste",
+    "description": "Cada teste agendado mede todos os destinos agendados uma vez, um após o outro. Os destinos fora do agendamento só são executados a partir daqui.",
+    "add": "Adicionar destino",
+    "edit_title": "Editar destino",
+    "name": "Nome",
+    "name_placeholder": "ex.: São Paulo",
+    "scheduled": "Agendado",
+    "alerts": "Alertas e recomendações",
+    "own_optimals": "Valores ideais próprios",
+    "all": "Todos os destinos",
+    "saved": "O destino foi salvo.",
+    "removed": "O destino foi removido.",
+    "run_now": "Executar teste agora",
+    "move_up": "Mover para cima",
+    "move_down": "Mover para baixo",
+    "delete_confirm": {
+      "title": "Excluir este destino?",
+      "description": "<Bold>{{name}}</Bold> será excluído. Os testes que ele já mediu permanecem no histórico.",
+      "yes": "Excluir"
+    }
   }
 }

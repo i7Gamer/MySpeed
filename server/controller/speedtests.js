@@ -1,9 +1,10 @@
 import tests from '../models/Speedtests.js';
 import { Op } from 'sequelize';
 import { buildStatistics, STATISTICS_COLUMNS } from '../util/statistics.js';
-import { previousRange } from '../util/dateRange.js';
-import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER } from '../util/testOutcome.js';
+import { previousRange, truncateToElapsed } from '../util/dateRange.js';
+import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER, impossibleMeasurement } from '../util/testOutcome.js';
 import { getValue } from './config.js';
+import * as targetsController from './targets.js';
 import db from '../config/database.js';
 
 const DEFAULT_RETENTION_DAYS = 365;
@@ -42,6 +43,20 @@ const isImportableNumber = (value) =>
     value === null || value === undefined || (typeof value === "number" && Number.isFinite(value));
 
 /**
+ * The nullable figures a run stores through usableFigure and byteCount - the
+ * ones a negative can never legitimately reach. The import mirrors the same
+ * rule: a hand-edited or third-party file carrying -1 placeholders in these
+ * columns stores them as unmeasured, the way the run that could not measure
+ * them would have. `time` is here too: no provider can report a negative
+ * duration and a failed run stores null, so a negative one is the same
+ * placeholder wearing a different column. The required three are deliberately
+ * absent - -1 across ping, download and upload is how a failed run is stored,
+ * and the import has to keep restoring those.
+ */
+const NON_NEGATIVE_COLUMNS = ["jitter", "packetLoss", "downloadLatency", "uploadLatency",
+    "bytesDownloaded", "bytesUploaded", "time"];
+
+/**
  * Records a completed - or failed - speedtest and returns its id.
  *
  * Named rather than positional: this took eleven parameters, and its caller
@@ -54,7 +69,7 @@ export const create = async ({
     resultId = null, error = null, jitter = null, serverName = null, serverHost = null, serverLocation = null,
     packetLoss = null, downloadLatency = null, uploadLatency = null,
     isp = null, externalIp = null, provider = null,
-    bytesDownloaded = null, bytesUploaded = null
+    bytesDownloaded = null, bytesUploaded = null, targetId = null
 }) => {
     // The timestamp travels back out with the id: the integrations are told
     // when the test was recorded, and reading it off the row here is what makes
@@ -64,7 +79,7 @@ export const create = async ({
 
     const row = await tests.create({ping, jitter, download, upload, error, serverId, serverName, serverHost, serverLocation, type,
         resultId, time, packetLoss, downloadLatency, uploadLatency, isp, externalIp, provider,
-        bytesDownloaded, bytesUploaded, created});
+        bytesDownloaded, bytesUploaded, targetId, created});
 
     return {id: row.id, created};
 }
@@ -87,11 +102,17 @@ export const getOne = async (id) => {
  * concurrent insert, and ids stop agreeing with time on any imported history.
  *
  * Each page keeps the shape listAll gave every download so far: a null error
- * means a successful test and the column is dropped, resultId the same.
+ * means a successful test and the column is dropped, resultId the same - plus
+ * the target's name, which is the row's own targetId resolved to the one thing
+ * about its target that still means something on another instance.
  */
 export const EXPORT_PAGE_ROWS = 2500;
 
 export const listPages = async function* (pageSize = EXPORT_PAGE_ROWS) {
+    // Read once for the whole walk rather than per page: the targets change far
+    // more slowly than a two-year history takes to stream, and a page is
+    // already a database round trip.
+    const {byId: targetNames} = await targetsController.readTargetIndex();
     let after;
 
     for (;;) {
@@ -101,6 +122,23 @@ export const listPages = async function* (pageSize = EXPORT_PAGE_ROWS) {
         for (const row of rows) {
             if (row.error === null) delete row.error;
             if (row.resultId === null) delete row.resultId;
+
+            // The column CSV_COLUMNS has promised since the dashboard export
+            // gained it, and which every backup CSV wrote as '""' on every
+            // row: these rows come straight off the model, so they carry
+            // `targetId` and no name at all, and the CSV writer, which reads
+            // each row by column name, found nothing there. targetId is not a
+            // CSV column either, so the backup - the one export meant to be
+            // complete - was the only one carrying no target information
+            // whatsoever.
+            //
+            // Null where the row has no target, where its target has since
+            // been deleted, and on every row recorded before targets existed;
+            // exportTests answers the same for those. The import reads this
+            // name back through importedTargetId, which is what keeps a
+            // history landing on the right line rather than on whoever holds
+            // that id where it lands.
+            row.targetName = targetNames.get(row.targetId) ?? null;
         }
 
         yield rows;
@@ -141,8 +179,10 @@ export const LIST_ORDER = [["created", "DESC"], ["id", "DESC"]];
  * every write guarantees that format, so a lexicographic comparison is
  * chronological on every backend the project supports.
  */
-export const listFilter = ({after, afterId, range} = {}) => {
+export const listFilter = ({after, afterId, range, target} = {}) => {
     const conditions = [];
+
+    if (target !== undefined) conditions.push({targetId: target});
 
     if (range) conditions.push({created: {[Op.between]: [range.from.toISOString(), range.to.toISOString()]}});
 
@@ -164,11 +204,11 @@ export const listFilter = ({after, afterId, range} = {}) => {
     return conditions.length === 1 ? conditions[0] : {[Op.and]: conditions};
 };
 
-export const listTests = async (afterId, limit, range = null, after = null) => {
+export const listTests = async (afterId, limit, range = null, after = null, target = undefined) => {
     limit = Math.min(parseInt(limit) || DEFAULT_TEST_LIMIT, MAX_TEST_LIMIT);
 
     let dbEntries = await tests.findAll({
-        where: listFilter({after, afterId, range}),
+        where: listFilter({after, afterId, range, target}),
         order: LIST_ORDER,
         limit
     });
@@ -189,25 +229,44 @@ export const listTests = async (afterId, limit, range = null, after = null) => {
  * failed test among the newest ten shrank the sample below the required size
  * and the recommendations silently stopped updating until the failure aged out.
  */
-export const listSuccessful = async (limit) => tests.findAll({
-    where: SUCCESSFUL_TEST_FILTER,
+export const listSuccessful = async (limit, targetId = undefined) => tests.findAll({
+    // The sample describes one target's line when one is named - mixing a LAN
+    // box's gigabit rows into a WAN target's sample is how a recommendation
+    // stops meaning anything.
+    where: targetId === undefined
+        ? SUCCESSFUL_TEST_FILTER
+        : {[Op.and]: [SUCCESSFUL_TEST_FILTER, {targetId}]},
     order: LIST_ORDER,
     limit
 });
 
 /**
- * How many tests failed since the given moment.
+ * How many tests failed since the given moment - of the given targets, when a
+ * scope is handed in.
  *
  * A count rather than the rows: this is polled while a test runs, and the only
  * thing asked of it is a number.
+ *
+ * The scope follows latestOfTargets' contract: undefined means the whole
+ * instance, an empty list means nobody's failures count and the answer is
+ * zero without asking the database a question whose IN () clause it may
+ * refuse.
  *
  * Both halves are joined explicitly, for the reason listFilter is: the shared
  * filter is keyed by Op.or, and a second Op-keyed clause written into the same
  * object would replace it.
  */
-export const countFailuresSince = async (since) => tests.count({
-    where: {[Op.and]: [{created: {[Op.gte]: since.toISOString()}}, FAILED_TEST_FILTER]}
-});
+export const countFailuresSince = async (since, targetIds = undefined) => {
+    if (targetIds !== undefined && targetIds.length === 0) return 0;
+
+    return tests.count({
+        where: {[Op.and]: [
+            {created: {[Op.gte]: since.toISOString()}},
+            FAILED_TEST_FILTER,
+            ...(targetIds !== undefined ? [{targetId: {[Op.in]: targetIds}}] : [])
+        ]}
+    });
+};
 
 export const deleteTests = async () => {
     await tests.destroy({where: {}});
@@ -312,6 +371,14 @@ export const importTests = async (data) => {
     // from the body and a refusal answered less than a failure did.
     if (!Array.isArray(data)) return {ok: false, imported: 0, skipped: 0};
 
+    // The targets this instance holds, read once for the whole file rather than
+    // once per row: a restore is one batch of writes, and a target created
+    // while it runs has no business claiming half of it. Nothing else about
+    // this instance is read - see importedTargetId for why a rule that also
+    // asked whether the history table was empty could not survive a restore
+    // that follows a cron tick, or an import that is retried.
+    const local = await targetsController.readTargetIndex();
+
     let imported = 0;
     let skipped = 0;
 
@@ -347,6 +414,21 @@ export const importTests = async (data) => {
         // and chart built on top of it.
         if (!NUMERIC_COLUMNS.every((column) => isImportableNumber(entry[column]))) { skipped++; continue; }
 
+        // A negative required measurement beside good figures is a row that is
+        // neither a failure nor a measurement - isFailedTest asks for all
+        // three placeholders at once, so this shape walked past it and was
+        // stored as a success, where every reader believed it: the average,
+        // the grade, the export, and the alert gate, which reads a download of
+        // minus one megabit as an outage. The live path refuses exactly this
+        // through the same judgement and records a failed run; a file's row
+        // carries no run to fail, and the columns are NOT NULL, so the honest
+        // answers left are the two beside it - a failure it does not claim to
+        // be, or no row. Skipped, like every other row no run could have
+        // produced. A full set of placeholders is a failed run and never
+        // reaches this; a measured zero is an outage's honest reading and is
+        // deliberately not caught.
+        if (impossibleMeasurement(entry) !== null) { skipped++; continue; }
+
         // Without the backup's own id. Those are the ids of the instance that
         // wrote the file and mean nothing on the one reading it - written
         // through, every id already taken raised a UNIQUE violation, which was
@@ -355,7 +437,32 @@ export const importTests = async (data) => {
         // MySpeed is reinstalled and runs for a week before anyone gets to the
         // backup, and the restore then silently discards exactly the
         // overlapping week. Left to the database, nothing collides.
-        const {id, ...row} = entry;
+        const {id, targetId, targetName, ...row} = entry;
+
+        // As unmeasured, not as an error: the row is the history somebody is
+        // restoring, and one poisoned figure must not cost the measurements
+        // beside it.
+        for (const column of NON_NEGATIVE_COLUMNS)
+            if (typeof row[column] === "number" && row[column] < 0) row[column] = null;
+
+        // The file's targetId does not go through either, and it is dropped
+        // rather than trusted: it is an id of the instance that wrote the file,
+        // and on an instance that already measures its own lines it did not
+        // fail to mean anything - it pointed at whichever target happens to
+        // hold that number here, an attribution that is wrong rather than
+        // missing and that nothing in the interface or in the counts below
+        // reports. What places the row instead is the target name the export
+        // writes beside it, resolved against the targets this instance holds.
+        //
+        // A name that resolves to nothing leaves the row in the history with no
+        // target at all, which every reader already handles - it is what the
+        // rows of a deleted target have carried all along, since the column is
+        // deliberately not a foreign key.
+        //
+        // Which also puts the column beyond a payload's reach: targetId is not
+        // in NUMERIC_COLUMNS, so until now a hand-edited backup could park a
+        // string in an INTEGER column and sqlite would keep it.
+        row.targetId = targetsController.importedTargetId(entry, local);
 
         batch.push(row);
         if (batch.length >= IMPORT_CHUNK_ROWS) await flush();
@@ -383,8 +490,11 @@ const findEvery = async (query = {}) => tests.findAll({order: [["created", "ASC"
 // (create() uses toISOString(), importTests() rejects anything else) - so a
 // lexicographic BETWEEN is chronologically correct on every supported backend.
 // Filtering here rather than in JS keeps the whole table out of memory.
-const findInRange = async ({from, to}, query = {}) => findEvery({
-    where: {created: {[Op.between]: [from.toISOString(), to.toISOString()]}},
+const findInRange = async ({from, to}, query = {}, target = undefined) => findEvery({
+    where: {
+        created: {[Op.between]: [from.toISOString(), to.toISOString()]},
+        ...(target !== undefined && {targetId: target})
+    },
     ...query
 });
 
@@ -399,10 +509,53 @@ const findInRange = async ({from, to}, query = {}) => findEvery({
  */
 const STATISTICS_QUERY = {attributes: STATISTICS_COLUMNS, raw: true};
 
+/**
+ * The same read plus the one column the aggregation itself never looks at:
+ * which target each row measured.
+ *
+ * Not added to STATISTICS_COLUMNS, whose contract is exactly the set
+ * statistics.js reads - the test beside that file scans its source and fails a
+ * column that is selected and read nowhere in it. It rides on the read that is
+ * happening anyway rather than asking a question of its own, because the
+ * summary already holds every row it covers in memory: one integer per row is
+ * far cheaper than a second scan of the same window, which is the cost
+ * comparePrevious is opt-in to avoid.
+ *
+ * What it is for: the client grades a page's cards against one target's optimal
+ * values when the page is showing one target, and "one target is configured" is
+ * not that. Deleting a target leaves its rows behind - the history is the
+ * history - and a restored export comes back with no target at all, since the
+ * file carries the target's name and no id that would mean anything on another
+ * instance. Nothing narrows a single-target page's query, so those rows sit
+ * inside every figure on it, and only the rows themselves can say so. See
+ * pageTarget in client/src/common/utils/TargetUtil.js.
+ *
+ * Exported so a test can hold the extra column in place. Nothing here would
+ * break if it were dropped from this list: the rows would simply arrive without
+ * it, targetsPresent would answer [null] for every page, and the client reads a
+ * page of nulls as a mixture - so every single-target instance would quietly go
+ * back to grading against the instance-wide settings with not one assertion
+ * failing.
+ */
+export const SUMMARISED_ROWS_QUERY = {attributes: [...STATISTICS_COLUMNS, "targetId"], raw: true};
+
+/**
+ * The distinct targets the summarised rows belong to, a row that names none
+ * counted as null.
+ *
+ * At most one entry per target however many rows were summarised, so it costs
+ * the payload nothing. Exported for its test, which is what holds it to
+ * answering null rather than undefined for an untargeted row: the client
+ * compares these against target ids, and undefined would compare equal to
+ * nothing while reading - in a log, in a test failure - exactly like the
+ * absence it stands for.
+ */
+export const targetsPresent = (entries) => [...new Set(entries.map((entry) => entry.targetId ?? null))];
+
 // What a period-over-period comparison actually uses: the summary figures the
 // panels show. The series, labels and hourly buckets are deliberately not
 // carried - nothing draws a ghost chart, and they are most of the payload.
-const SUMMARY_KEYS = ["tests", "packetLoss", "ping", "jitter", "download", "upload", "time", "consistency"];
+const SUMMARY_KEYS = ["tests", "packetLoss", "ping", "jitter", "download", "upload", "time", "consistency", "dataUsed"];
 
 /**
  * The same summary, for the window immediately before the range.
@@ -415,13 +568,28 @@ const previousSummary = async (range, options) => {
     const previous = previousRange(range, options);
     if (!previous.valid) return null;
 
-    const statistics = buildStatistics(await findInRange(previous, STATISTICS_QUERY), previous, options);
+    // Cut to what the range has actually lived through: a range ending today
+    // is a part-week, and counted against a whole previous week every total
+    // read lower on every partial day. Null when none of the range has
+    // happened yet - there is nothing a comparison could be about.
+    const window = truncateToElapsed(range, previous, options.now ?? new Date());
+    if (window === null) return null;
+
+    // The comparison answers for the same slice the range does - a filtered
+    // window compared against everyone's previous window would report a delta
+    // between two different questions.
+    const statistics = buildStatistics(
+        await findInRange(window, STATISTICS_QUERY, options.target), window, options);
 
     return {
         ...Object.fromEntries(SUMMARY_KEYS.map((key) => [key, statistics[key]])),
         dateRange: {
-            from: previous.from.toISOString(),
-            to: previous.to.toISOString()
+            from: window.from.toISOString(),
+            to: window.to.toISOString(),
+            // Says the last day is covered only up to now's own wall clock, so
+            // the note above the deltas can say so too. Absent, not false, for
+            // a complete window - the way every other optional echo travels.
+            ...(window.partial && {partial: true})
         }
     };
 };
@@ -460,6 +628,35 @@ const extentOf = (entries) => {
     return {from: new Date(first), to: new Date(last === first ? last + 1 : last)};
 };
 
+// Two decimals, because this is a divisor before it is a display figure: the
+// relative error of rounding is half a unit in the last place over the value,
+// so at the 0.1 floor one decimal made the divisor up to half again the true
+// rate, while two keep it within five percent everywhere the gate lets it out.
+// Below a tenth of a day the whole-day divisor is the saner figure, so nothing
+// is sent at all - judged on the raw span, not the rounded one, which rounded
+// six percent of a day UP into the very tenth the gate then accepted.
+const ELAPSED_DAY_DECIMALS = 2;
+const MIN_ELAPSED_DAYS = 0.1;
+
+/**
+ * How much of a still-running range has actually elapsed, in days - or null
+ * for a window that is complete or has not begun, which keep the whole-day
+ * figure beside it as their honest divisor.
+ *
+ * Measured in elapsed time rather than calendar days deliberately: this is the
+ * divisor for a rate, and "how long has the sampling been running" is a
+ * question about elapsed time. The whole-day count stays what the headings and
+ * every complete window are described by.
+ */
+const elapsedDaysOf = (range, now) => {
+    if (!range || now >= range.to || now < range.from) return null;
+
+    const elapsed = (now - range.from) / MS_PER_DAY;
+    if (elapsed < MIN_ELAPSED_DAYS) return null;
+
+    return parseFloat(elapsed.toFixed(ELAPSED_DAY_DECIMALS));
+};
+
 /**
  * The statistics for a range, or for every test there is when given none.
  *
@@ -469,15 +666,28 @@ const extentOf = (entries) => {
  * there is no previous window to compare it against.
  */
 export const listStatistics = async (range, options = {}) => {
+    // One reading of the clock for the whole answer: the previous window's cut
+    // and the elapsed-day figure below must not disagree about when now was.
+    const now = options.now ?? new Date();
+    const targetWhere = options.target !== undefined ? {where: {targetId: options.target}} : {};
     const entries = range
-        ? await findInRange(range, STATISTICS_QUERY)
-        : await findEvery(STATISTICS_QUERY);
+        ? await findInRange(range, SUMMARISED_ROWS_QUERY, options.target)
+        : await findEvery({...SUMMARISED_ROWS_QUERY, ...targetWhere});
 
     const covered = range ?? extentOf(entries);
+    const elapsedDays = elapsedDaysOf(range, now);
 
     return {
         ...buildStatistics(entries, covered, options),
-        ...(range && options.comparePrevious ? {previous: await previousSummary(range, options)} : {}),
+        // Which targets these figures were actually built from. The client
+        // cannot work that out from the target list alone - a single-target
+        // instance still holds the rows of every target it has deleted, and
+        // every row an import brought back without one - and it is those rows
+        // that make the sole target's optima the wrong thing to judge the page
+        // by. A filtered request answers the one target it was narrowed to,
+        // which is the same statement about the same rows.
+        targetIds: targetsPresent(entries),
+        ...(range && options.comparePrevious ? {previous: await previousSummary(range, {...options, now})} : {}),
         // The window actually answered for, which the client names its headings
         // after and measures its per-day figures against. Whole days rather than
         // the exact span: an all-time range on a young instance is the extent of
@@ -490,7 +700,14 @@ export const listStatistics = async (range, options = {}) => {
             // saving change inside it can move; the ceiling of the span is only
             // right for the all-time extent, whose bounds are two real test
             // instants rather than two midnights.
-            days: covered.days ?? Math.max(1, Math.ceil((covered.to - covered.from) / MS_PER_DAY))
+            days: covered.days ?? Math.max(1, Math.ceil((covered.to - covered.from) / MS_PER_DAY)),
+            // And, for a range that is still running, how much of it has: a
+            // seven-day range at Wednesday noon has been sampled for two and a
+            // half days, and a per-day figure divided by seven understates the
+            // rate by the days that have not happened yet. Absent for every
+            // complete window - and from an older node, which the client's
+            // whole-day fallback already covers.
+            ...(elapsedDays !== null && {elapsedDays})
         }
     };
 };
@@ -527,19 +744,70 @@ export const removeOld = async () => {
  */
 export const retentionCutoffFilter = (cutoff) => ({[Op.lte]: cutoff.toISOString()});
 
-export const getLatest = async () => {
-    let latest = await tests.findOne({order: [["created", "DESC"]]});
+export const getLatest = async (targetId = undefined) => {
+    let latest = await tests.findOne({
+        // LIST_ORDER, not `created` alone: an imported history can carry two
+        // rows with the identical stamp - the retried restore does exactly
+        // that - and "the latest" must not depend on which of them the engine
+        // happens to visit last.
+        order: LIST_ORDER,
+        ...(targetId !== undefined && {where: {targetId}})
+    });
     if (latest === null) return undefined;
     if (latest.error === null) delete latest.error;
     if (latest.resultId === null) delete latest.resultId;
     return latest;
 }
 
+/**
+ * The newest test belonging to any of the given targets.
+ *
+ * One query rather than getLatest() per target: /status asks this on every
+ * poll, and the answer it wants is a single row. (The keep-alive used to be
+ * the caller here; it asks getLatest() per watched target now, because its
+ * question became "does any watched line's newest result stand as a failure"
+ * rather than "what is the newest watched row".)
+ *
+ * Ordered by LIST_ORDER, the same way getLatest is. A round writes its
+ * members' rows seconds apart at most, and an imported history can carry two
+ * rows with the identical stamp; the id breaks that tie towards the row
+ * written last, which is the one whose notification the caller is being asked
+ * whether to preserve.
+ *
+ * An empty list is answered without asking the database at all. It is a real
+ * case - every configured target has alerts switched off - and `IN ()` is not
+ * something to hand to three dialects when the answer is already known. sqlite
+ * happens to tolerate it, so this short circuit is a precaution for the two
+ * backends the suite cannot boot rather than something a test here can see.
+ *
+ * Undefined rather than null for "nothing", so a caller can hold this and
+ * getLatest to the same contract. The null columns getLatest deletes are left
+ * alone: the only reader is isFailedTest, which asks whether `error` is truthy.
+ */
+export const latestOfTargets = async (targetIds) => {
+    if (targetIds.length === 0) return undefined;
+
+    return await tests.findOne({where: {targetId: {[Op.in]: targetIds}}, order: LIST_ORDER}) ?? undefined;
+}
+
 // Named field by field rather than spread, so an export is a deliberate choice
 // about what leaves the database. The cost is that a new column is exported as
 // empty until it is named here - which is how the server name and host stayed
 // out of every export from the moment they were added.
-export const exportTests = async (range) => (await findInRange(range)).map(entry => ({
+export const exportTests = async (range, target = undefined) => {
+    // Resolved to names, because an export is read by people and other tools -
+    // and by the import on another instance: a bare targetId is meaningless
+    // outside this one, while the name says which line the row measured, and
+    // importedTargetId resolves it back against the local targets on a restore.
+    // Orphaned and pre-target rows export null.
+    //
+    // Through the shared index rather than an object built here: the lookup is
+    // by a value an older import could have left as a string, and one
+    // `names["toString"]` answering with Object.prototype's function is
+    // exactly the trap this file's neighbours keep being fixed for.
+    const {byId: names} = await targetsController.readTargetIndex();
+
+    return (await findInRange(range, {}, target)).map(entry => ({
     id: entry.id,
     ping: entry.ping,
     jitter: entry.jitter,
@@ -569,5 +837,7 @@ export const exportTests = async (range) => (await findInRange(range)).map(entry
     // long before it was exported, and left out of every export until the
     // column guard in retentionAndExport asked why.
     resultId: entry.resultId,
+    targetName: names.get(entry.targetId) ?? null,
     error: entry.error
 }));
+};

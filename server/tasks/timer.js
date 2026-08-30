@@ -6,7 +6,6 @@ import { CronExpressionParser } from "cron-parser";
 import { create as createSpeedtest } from './speedtest.js';
 import { isQuietHour } from '../util/quietHours.js';
 import { serverZone, zoneFromName } from '../util/timezone.js';
-import { backoffRemainingMs } from '../util/rateLimitBackoff.js';
 import errorHandler from "../util/errorHandler.js";
 
 const MS_PER_MINUTE = 60_000;
@@ -106,25 +105,35 @@ export const pendingRunAt = () => {
     return earliest === null ? null : new Date(earliest).toISOString();
 };
 
-const calculateMaxDelay = (cron) => {
+// Exported for its test. The delay it bounds must stay well inside the
+// interval, or a run offset near the cap lands on the next tick and is dropped
+// as an overlap.
+export const calculateMaxDelay = (cron) => {
     try {
         const parser = CronExpressionParser.parse(cron);
         const next1 = parser.next().getTime();
         const next2 = parser.next().getTime();
         const intervalMs = next2 - next1;
-        const intervalMinutes = intervalMs / 60000;
+        const intervalMinutes = intervalMs / MS_PER_MINUTE;
 
-        if (intervalMinutes <= 1) {
-            return 30 * 1000; // 30 seconds
-        } else if (intervalMinutes <= 30) {
-            return 2 * 60 * 1000; // 2 minutes
-        } else if (intervalMinutes <= 60) {
-            return 3 * 60 * 1000; // 3 minutes
-        } else {
-            return 5 * 60 * 1000; // 5 minutes
-        }
+        // The interval-agnostic tier, the same steps as before. Nothing is said
+        // here about intervals of a minute or less: half of one is already at or
+        // below the floor the return applies, so the floor decides those
+        // whatever cap they are handed, and a tier of their own only looked as
+        // though it were the thing deciding them.
+        let cap;
+        if (intervalMinutes <= 30) cap = 2 * MS_PER_MINUTE;
+        else if (intervalMinutes <= 60) cap = 3 * MS_PER_MINUTE;
+        else cap = 5 * MS_PER_MINUTE;
+
+        // Never more than half the interval - the cap the minutely branch
+        // already was, generalised: a flat two minutes overshot every interval
+        // between one and four minutes, so a */2 cron could be delayed by its
+        // whole gap and run at half its rate. Never below the floor either, or
+        // getRandomDelay's range turns inside out.
+        return Math.max(OFFSET_MIN_DELAY_MS, Math.min(cap, intervalMs / 2));
     } catch {
-        return 2 * 60 * 1000; // Default to 2 minutes if parsing fails
+        return 2 * MS_PER_MINUTE; // Default to 2 minutes if parsing fails
     }
 };
 
@@ -261,40 +270,20 @@ export const nextRun = (cron = currentCron, quietHours = null, timezone = curren
  *
  * Read fresh on every run rather than held: the window can be changed between
  * two tests, and a cached copy would go on silencing the old hours.
+ *
+ * Exported for the round loop in tasks/speedtest.js, which asks it again
+ * between members - the window can begin during a round the same way it can
+ * begin during the schedule offset's sleep. That import closes a module cycle
+ * (this file imports the round's create), which is safe because both sides
+ * only call across it at runtime, never while the modules are still loading.
  */
-const withinQuietHours = async () => isQuietHour(new Date(),
+export const withinQuietHours = async () => isQuietHour(new Date(),
     await config.getValue("quietHoursStart"), await config.getValue("quietHoursEnd"),
     // Read fresh alongside the window, not taken from currentTimezone: the two
     // are always changed together (a timezone change restarts the schedule), and
     // reading the same source as the window keeps them from disagreeing if that
     // ever stops being true.
     zoneFromName(await config.getValue("timezone")));
-
-/**
- * Whether the provider is still inside the hold a refusal earned, and says so
- * when it is.
- *
- * One home for the message, because the question is asked twice: once before the
- * schedule offset and once on the far side of it, the same way the pause and the
- * quiet hours are. The sleep is up to five minutes, and a run started by hand
- * during it can be refused and record a hold that did not exist when this run
- * began.
- *
- * Only the scheduled runs are held, which is the rule the quiet hours already
- * follow for the reason their own module gives: a test started by hand is
- * somebody asking for one now, and refusing that would be a fault rather than a
- * courtesy. So this is consulted here rather than inside create().
- */
-const heldByBackoff = (provider) => {
-    const remaining = backoffRemainingMs(provider);
-
-    if (remaining === 0) return false;
-
-    console.warn(`The ${provider} provider refused the last test for too many requests. `
-        + `Skipping this one - trying again in ${Math.ceil(remaining / MS_PER_MINUTE)} minutes.`);
-
-    return true;
-};
 
 export const runTask = async () => {
     if (pauseController.currentState) {
@@ -319,8 +308,9 @@ export const runTask = async () => {
         return;
     }
 
-    if (heldByBackoff(await config.getValue("provider"))) return;
-
+    // The rate-limit holds are consulted inside the round rather than here:
+    // they are per provider, and a mixed round should skip only the provider
+    // that refused, not the iperf3 box standing next to it.
     const scheduleOffset = await config.getValue("scheduleOffset");
 
     if (scheduleOffset === "true" && currentCron) {
@@ -338,10 +328,6 @@ export const runTask = async () => {
         // those reads were in flight was seen by no guard at all and one test
         // still fired from the schedule that had just been replaced.
         const quietHoursBegan = await withinQuietHours();
-        // Read again for the same reason, and here rather than after the guards:
-        // the provider can be changed while the offset sleeps, and asking for it
-        // below would put an await between the last guard and the speedtest.
-        const provider = await config.getValue("provider");
 
         if (scheduleChangedSince(startedIn)) {
             console.warn("The schedule changed during the delay. Skipping this test...");
@@ -357,8 +343,6 @@ export const runTask = async () => {
             console.warn("Quiet hours began during delay. Skipping this test...");
             return;
         }
-
-        if (heldByBackoff(provider)) return;
     }
 
     await createSpeedtest("auto");

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
     changeFrom, differenceFromTarget, percentOfTarget, providerName
 } from "../../client/src/common/components/TestDetails/utils/details.js";
+import { convertSpeed, SPEED_UNIT_MBYTES } from "../../client/src/common/utils/FormatUtil.js";
 
 describe("percentOfTarget", () => {
     it("reports how much of the optimum was reached", () => {
@@ -34,14 +35,28 @@ describe("percentOfTarget", () => {
                 assert.equal(percentOfTarget(50, target), null, `target ${JSON.stringify(target)}`);
         });
 
-        // -1 is the placeholder a failed run writes, not a measurement.
-        it("returns null for a failed measurement", () => {
+        // -1 is the placeholder a failed run writes, not a measurement - and
+        // no other negative is one either: a -5 used to pass the old gate,
+        // which only knew the placeholder by name, and printed "-5% of your
+        // target".
+        it("returns null for a failed or negative measurement", () => {
             assert.equal(percentOfTarget(-1, 100), null);
+            assert.equal(percentOfTarget(-5, 100), null);
+            assert.equal(percentOfTarget("-1", 100), null, "the placeholder in its text spelling");
         });
 
-        it("returns null for a missing or non-numeric measurement", () => {
-            for (const current of [null, undefined, "50", NaN, Infinity])
+        it("returns null for a missing or unreadable measurement", () => {
+            for (const current of [null, undefined, "abc", "", NaN, Infinity])
                 assert.equal(percentOfTarget(current, 100), null, `current ${String(current)}`);
+        });
+
+        // The defensive numeric-string spelling a legacy-restored history can
+        // hold. The pane's other readers - bufferbloat, through
+        // readableFigure - learned to read it, and a bare typeof here left
+        // one row earning a grade while its target bar silently vanished.
+        it("reads a measurement spelt as text, like the pane beside it", () => {
+            assert.equal(percentOfTarget("50", 100), 50);
+            assert.equal(percentOfTarget("24", 20, {higherIsBetter: false}), 83);
         });
     });
 
@@ -103,10 +118,14 @@ describe("differenceFromTarget", () => {
                 assert.equal(differenceFromTarget(24, target), null, `target ${JSON.stringify(target)}`);
         });
 
-        it("returns null for a failed or non-numeric measurement", () => {
+        it("returns null for a failed or unreadable measurement", () => {
             assert.equal(differenceFromTarget(-1, 20), null);
-            assert.equal(differenceFromTarget("24", 20), null);
+            assert.equal(differenceFromTarget("abc", 20), null);
             assert.equal(differenceFromTarget(null, 20), null);
+        });
+
+        it("reads a measurement spelt as text, like the pane beside it", () => {
+            assert.deepEqual(differenceFromTarget("24", 20), {difference: 4, direction: "over"});
         });
     });
 });
@@ -121,6 +140,11 @@ describe("providerName", () => {
         assert.equal(providerName("ookla"), "Ookla");
         assert.equal(providerName("libre"), "LibreSpeed");
         assert.equal(providerName("cloudflare"), "Cloudflare");
+        // Lowercase, which is how the tool spells itself - and named at all,
+        // because a row whose provider is unknown here loses the Target fact's
+        // sub-line and falls back to being treated as one from before the
+        // column existed.
+        assert.equal(providerName("iperf3"), "iperf3");
     });
 
     // Every test recorded before the column existed carries nothing, and naming
@@ -171,9 +195,33 @@ describe("changeFrom", () => {
             assert.equal(changeFrom(-1, 100), null);
         });
 
-        it("returns null for non-numeric input", () => {
-            assert.equal(changeFrom("100", 90), null);
-            assert.equal(changeFrom(100, "90"), null);
+        it("returns null for unreadable input", () => {
+            assert.equal(changeFrom("abc", 90), null);
+            assert.equal(changeFrom(100, ""), null);
+        });
+
+        it("reads a side spelt as text, like the pane beside it", () => {
+            assert.deepEqual(changeFrom("100", 90), {difference: 10, direction: "up"});
+            assert.deepEqual(changeFrom(100, "90"), {difference: 10, direction: "up"});
+        });
+
+        /**
+         * Through the unit conversion the pane actually feeds it - not the
+         * bare helper. convertSpeed used to hand a string back unconverted,
+         * so in MB/s mode one operand stayed Mbit/s while the other was
+         * divided by eight, and the card printed "+700 MB/s" of change
+         * between two identical measurements. The helper alone could never
+         * see that: the unit mismatch lives in the composition.
+         */
+        it("compares both sides in one unit, whatever the spelling", () => {
+            const MBYTES = {speedUnit: SPEED_UNIT_MBYTES};
+
+            assert.deepEqual(changeFrom(convertSpeed("800", MBYTES), convertSpeed(800, MBYTES)),
+                {difference: 0, direction: "same"},
+                "two spellings of one measurement read as a change");
+            assert.deepEqual(changeFrom(convertSpeed("100", MBYTES), convertSpeed(400, MBYTES)),
+                {difference: -37.5, direction: "down"},
+                "a halved line must not read as an improvement");
         });
     });
 });

@@ -1,13 +1,13 @@
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import PanelRow from "@/pages/Statistics/components/PanelRow";
 import {
-    faCompress, faGauge, faGaugeHigh, faMinusCircle, faPlusCircle
+    faCompress, faGauge, faGaugeHigh, faMinusCircle, faPlusCircle, faScaleBalanced
 } from "@fortawesome/free-solid-svg-icons";
 import {useContext} from "react";
 import {t} from "i18next";
 import {PreferencesContext} from "@/common/contexts/Preferences";
-import {convertSpeed, formatWhole, formatWithUnit, getSpeedUnit, NOT_MEASURED} from "@/common/utils/FormatUtil";
-import {consistencyColour, getIconBySpeed} from "@/common/utils/TestUtil";
+import {convertSpeed, formatPercent, formatWithUnit, getSpeedUnit, wholeSpeed} from "@/common/utils/FormatUtil";
+import {consistencyColour, getIconBySpeed, readableFigure} from "@/common/utils/TestUtil";
 import {percentOfTarget} from "@/common/components/TestDetails/utils/details";
 import Delta from "@/common/components/Delta";
 import "./styles.sass";
@@ -60,12 +60,14 @@ export const AverageChart = (props) => {
      * itself, and that is where the decimals belong.
      *
      * Rounded after the conversion, never before: MB/s is an eighth of what the
-     * column stores.
+     * column stores. And rounded ONCE - re-rounding the two-decimal conversion
+     * printed every [8n+3.96, 8n+4) band one megabyte high, so the collapsed
+     * figure comes from wholeSpeed's raw quotient.
      */
     const speed = (mbps) => {
-        const converted = convertSpeed(mbps, preferences);
+        const converted = props.expanded ? convertSpeed(mbps, preferences) : wholeSpeed(mbps, preferences);
 
-        return formatWithUnit(props.expanded ? converted : formatWhole(converted), speedUnit);
+        return formatWithUnit(converted, speedUnit);
     };
 
     return (
@@ -146,6 +148,22 @@ export const AverageChart = (props) => {
                               )}
                           </>}/>
 
+                {/* The middle of the range, beside the mean the card leads
+                    with: one bad afternoon drags an average and leaves a
+                    median standing, so the two disagreeing is itself the
+                    finding. Enlarged view only - the card keeps its three
+                    figures - and compared like the average but not graded
+                    like it: the optimum is a promise about typical
+                    throughput, which the average's own row already judges. */}
+                {props.expanded && (
+                    <PanelRow icon={faScaleBalanced} title={t("statistics.values.median")}
+                              value={<>
+                                  {speed(props.data.median)}
+                                  <Delta current={props.data.median} previous={props.previous?.median}
+                                         higherIsBetter={true}/>
+                              </>}/>
+                )}
+
                 {/* An average says nothing on its own about whether the line
                     held there or swung either side of it, and the stability
                     card scores that a page away from the numbers it is about.
@@ -156,11 +174,18 @@ export const AverageChart = (props) => {
                     across every test in the range. The two sit on the same page,
                     so they cannot share a glyph. */}
                 {props.expanded && (
+                    /* Through the shared percent rule and reader, exactly as
+                       the stability card prints the same server object: the
+                       null-only gates here printed a proxied node's -1 as
+                       "-1%" and dressed a refused spread as "±N/A", one page
+                       from a card saying N/A for the same payload. The ±
+                       line hides for what no reader can read - it is an
+                       optional sub-line, where the stability card's is a
+                       permanent description that says N/A instead. */
                     <PanelRow icon={faCompress} title={t("statistics.values.consistency")}
                               level={consistencyColour(steadiness.consistency)}
-                              value={steadiness.consistency === null || steadiness.consistency === undefined
-                                  ? NOT_MEASURED : `${steadiness.consistency}%`}
-                              description={steadiness.stdDev !== null && steadiness.stdDev !== undefined
+                              value={formatPercent(steadiness.consistency)}
+                              description={readableFigure(steadiness.stdDev) !== null
                                   && <span>{"±" + speed(steadiness.stdDev)}</span>}/>
                 )}
 

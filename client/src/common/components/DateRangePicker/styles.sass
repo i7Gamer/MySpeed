@@ -1,11 +1,16 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/focus" as *
 @use "@/common/styles/layout" as *
+@use "@/common/styles/typography" as *
 
-// The popover's text follows the settings dialog's scale - SelectableOption's
-// 1rem option titles and 0.85rem descriptions - so the two dialogs read as one
-// application. tests/client/dateRangeTextScale.test.js holds them together.
-$dialog-primary-text: 1rem
-$dialog-secondary-text: 0.85rem
+// The popover's text follows the settings dialog's scale, so the two read as
+// one application. It used to say so with a private pair of variables copied
+// from SelectableOption's sizes; both now come from the one place every dialog
+// takes its sizes from, so following the scale and holding to it are the same
+// act. tests/client/dateRangeTextScale.test.js still pins the pair against
+// SelectableOption itself, which is what catches the two drifting apart.
+$dialog-primary-text: $dialog-lead
+$dialog-secondary-text: $dialog-hint
 
 .date-range-picker
   position: relative
@@ -24,7 +29,10 @@ $dialog-secondary-text: 0.85rem
   border: 1px solid $light-gray
   border-radius: 0.6rem
   cursor: pointer
-  transition: all 0.2s ease-in-out
+  // The border is all this control animates, and naming it keeps the focus ring
+  // out of the transition: under `all` the ring eased in over 200ms after a
+  // keypress, which is the one thing a keyboard user should never wait for.
+  transition: border-color 0.2s ease-in-out
   min-width: 0
   max-width: 100%
   // Two of the four the browser brings that this rule does not already state.
@@ -45,14 +53,19 @@ $dialog-secondary-text: 0.85rem
   &:hover
     border-color: $accent-primary
 
+  // The toolbar's controls each drew the browser's own ring - a white double
+  // ring on this theme - where everything around them drew the app's. See
+  // _focus.sass.
+  +focus-ring
+
 .calendar-icon
   color: $subtext
-  font-size: 1rem
+  font-size: $dialog-body
   flex-shrink: 0
 
 .date-range-text
   color: $white
-  font-size: 0.95rem
+  font-size: $dialog-body
   font-weight: 600
   white-space: nowrap
   overflow: hidden
@@ -158,7 +171,7 @@ $dialog-secondary-text: 0.85rem
   color: $subtext
   cursor: pointer
   transition: all 0.15s ease
-  font-size: 0.85rem
+  font-size: $dialog-hint
   
   &:hover:not(:disabled)
     border-color: $accent-primary

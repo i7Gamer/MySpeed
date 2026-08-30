@@ -1,9 +1,11 @@
 import { postText } from "../util/http.js";
 import { replaceVariables, stripTrailingSlashes } from "../util/helpers.js";
 
+// Both templates name the target: on a multi-target instance every message
+// otherwise reads identically whether it describes the WAN or the LAN box.
 const defaults = {
-    finished: "A speedtest is finished:\nPing: %ping% ms (±%jitter% ms)\nUpload: %upload% Mbps\nDownload: %download% Mbps",
-    failed: "A speedtest has failed. Reason: %error%"
+    finished: "A speedtest is finished:\nTarget: %targetName%\nPing: %ping% ms (±%jitter% ms)\nUpload: %upload% Mbps\nDownload: %download% Mbps",
+    failed: "A speedtest has failed.\nTarget: %targetName%\nReason: %error%"
 };
 
 /**
@@ -32,9 +34,25 @@ const headerSafe = (value) => String(value)
     .replace(/[\r\n]+/g, " ")
     .replace(HEADER_SAFE, "");
 
+// The range ntfy accepts, and the one the priority fields' own /^[1-5]$/ below
+// spells out - kept as numbers here because this is where a value that never
+// went through that regex is judged.
+const NTFY_PRIORITY_MIN = 1;
+const NTFY_PRIORITY_MAX = 5;
+
 const buildHeaders = ({token, title, tags}, priority) => {
     const headers = {};
-    if (priority) headers["Priority"] = String(parseInt(priority));
+    // A priority ntfy would refuse is dropped rather than sent - both one that
+    // does not parse to a number, which would go out as the literal header
+    // "NaN", and one that parses to a number outside 1-5. The form's regex
+    // never allows either, but a config import writes the field unvalidated,
+    // and "0" or "7" is truthy enough to survive the callers' fallback. ntfy
+    // rejects the whole request over a Priority it does not accept - losing a
+    // notification an absent priority would have delivered at the server's own
+    // default.
+    const level = parseInt(priority);
+    if (Number.isInteger(level) && level >= NTFY_PRIORITY_MIN && level <= NTFY_PRIORITY_MAX)
+        headers["Priority"] = String(level);
     if (title) headers["Title"] = headerSafe(title);
     if (tags) headers["Tags"] = headerSafe(tags);
     if (token) headers["Authorization"] = "Bearer " + token;

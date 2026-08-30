@@ -17,12 +17,14 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {
-    convertSpeed, formatDateTime, formatLatency, formatShortTime, formatWhole, getSpeedUnit
+    formatDateTime, formatLatency, formatShortTime, formatWhole, getSpeedUnit, NOT_MEASURED, printableFigure,
+    wholeSpeed
 } from "@/common/utils/FormatUtil";
+import FigureWithUnit from "@/common/components/FigureWithUnit";
 import {
     bufferbloatInfo, downloadInfo, jitterInfo, packetLossInfo, pingInfo, uploadInfo
 } from "@/common/utils/MetricInfo";
-import {bufferbloatColour, isMeasured, jitterColour, packetLossColour} from "@/common/utils/TestUtil";
+import {bufferbloatColour, isMeasured, jitterColour, packetLossColour, readableFigure} from "@/common/utils/TestUtil";
 import {clickable} from "@/common/utils/Clickable";
 import HelpButton from "@/common/components/HelpButton";
 import {useMetricInfo} from "@/common/hooks/useMetricInfo";
@@ -68,16 +70,33 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
      * the ping started keeping decimals; see formatWhole.
      *
      * Rounded after the conversion, not before it: MB/s is an eighth of what the
-     * column stores, so rounding first would print a different measurement.
+     * column stores, so rounding first would print a different measurement. And
+     * rounded ONCE, through wholeSpeed - re-rounding the two-decimal conversion
+     * printed every [8n+3.96, 8n+4) band one megabyte high, on this row alone
+     * once the four statistics cards moved: one test, two whole numbers, and
+     * the pane this very row opens siding with the cards.
      *
      * The ping is rounder here than the figure its icon is graded from, which is
      * deliberate - see the pingLevel comment in TestArea for why the colour has
      * to stay where it is.
+     *
+     * Rendered through FigureWithUnit, so what no reader can read - the -1 a
+     * mixed row's unmeasured columns carry, junk, an absent column - says N/A
+     * instead of printing as a reading beside its unit. A fully failed row
+     * never draws these at all; the error branch below is that gate.
      */
     const pingValue = formatWhole(props.ping);
-    const downValue = props.error ? "" : formatWhole(convertSpeed(props.down, preferences));
-    const upValue = props.error ? "" : formatWhole(convertSpeed(props.up, preferences));
+    const downValue = wholeSpeed(props.down, preferences);
+    const upValue = wholeSpeed(props.up, preferences);
     const speedUnit = getSpeedUnit(preferences);
+
+    // The trimmed jitter the chip below both grades and prints - and refuses
+    // through printableFigure, the unitless half of formatWithUnit's
+    // judgement: this chip prints no unit, so it cannot borrow
+    // formatLatencyWithUnit's refusal the way the pane's chip does, and a
+    // "-1" here beside that pane's "N/A" was the row and its pane answering
+    // one question two ways.
+    const jitterText = formatLatency(props.jitter);
 
     /**
      * What the line does before anything is asked of it, beside the latency
@@ -102,14 +121,18 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
             label: t("info.jitter.title"),
             // Graded from the same 1-dp figure printed below it, as the ping's
             // colour is - see the pane's quality strip for why.
-            level: jitterColour(formatLatency(props.jitter)),
+            level: jitterColour(jitterText),
             // A latency, printed at the one decimal the ping beside it uses:
             // it is stored with two, and stood next to a ping trimmed to one -
             // the same measurement in the same unit written two ways on one
             // line.
-            text: formatLatency(props.jitter)
+            text: printableFigure(jitterText) ? jitterText : NOT_MEASURED
         },
-        isMeasured(props.packetLoss) && {
+        // readableFigure, like the pane this row opens and the latest-test
+        // card beside it: this chip prints the stored column raw, and a value
+        // the colour grades as never-measured must not print "auto%" as a
+        // reading.
+        readableFigure(props.packetLoss) !== null && {
             key: "packetLoss",
             icon: faLinkSlash,
             info: packetLossInfo,
@@ -212,6 +235,15 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                     <FontAwesomeIcon icon={props.error ? faInfo : faClockRotateLeft}
                                      className={"container-icon icon-" + (props.error ? "error" : "blue")}/>
                     <h2 className="date-text">{timeString}</h2>
+                    {/* Which target this row belongs to, on a list that mixes
+                        them - TestArea passes it only then. The name rides on
+                        the title so the dot is not colour alone; the pane the
+                        row expands into spells it out. */}
+                    {props.targetDot && (
+                        <span className="target-dot speedtest-target-dot" title={props.targetDot.name}
+                              role="img" aria-label={props.targetDot.name}
+                              style={{background: props.targetDot.colour}}/>
+                    )}
                 </div>
                 {/* A failed test says why here rather than showing three empty
                     columns that have to be expanded to mean anything. The
@@ -247,8 +279,8 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                                  className={"speedtest-icon icon-" + props.pingLevel}/>
                             </HelpButton>
                             <h2 className="speedtest-text">
-                                {pingValue}
-                                <span className="speedtest-unit">{t("latest.ping_unit")}</span>
+                                <FigureWithUnit value={pingValue} unit={t("latest.ping_unit")}
+                                                unitClass="speedtest-unit"/>
                                 {quality.length > 0 && (
                                     <span className="quality-suffix">
                                         {quality.map(({key, icon, info, label, level, text}) => (
@@ -324,8 +356,8 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                 <FontAwesomeIcon icon={faArrowDown}
                                                  className={"speedtest-icon icon-" + props.downLevel}/>
                             </HelpButton>
-                            <h2 className="speedtest-text">{downValue}
-                                <span className="speedtest-unit">{speedUnit}</span>
+                            <h2 className="speedtest-text">
+                                <FigureWithUnit value={downValue} unit={speedUnit} unitClass="speedtest-unit"/>
                             </h2>
                         </div>
                         <div className="speedtest-row speedtest-upload" data-grade={props.upLevel}>
@@ -333,8 +365,8 @@ const SpeedtestComponent = forwardRef((props, forwardedRef) => {
                                 <FontAwesomeIcon icon={faArrowUp}
                                                  className={"speedtest-icon icon-" + props.upLevel}/>
                             </HelpButton>
-                            <h2 className="speedtest-text">{upValue}
-                                <span className="speedtest-unit">{speedUnit}</span>
+                            <h2 className="speedtest-text">
+                                <FigureWithUnit value={upValue} unit={speedUnit} unitClass="speedtest-unit"/>
                             </h2>
                         </div>
                     </>

@@ -2,10 +2,11 @@ import { describe, it, mock } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { Op } from "sequelize";
-import { CSV_HEADER, toCsv } from "../../server/util/csv.js";
+import { CSV_COLUMNS, CSV_HEADER, toCsv } from "../../server/util/csv.js";
 import { streamCsv, streamJsonArray } from "../../server/util/exportStream.js";
 import { EXPORT_PAGE_ROWS, listPages } from "../../server/controller/speedtests.js";
 import model from "../../server/models/Speedtests.js";
+import targetModel from "../../server/models/Targets.js";
 
 /**
  * The history export used to be one string.
@@ -235,8 +236,17 @@ describe("a database that fails mid-walk", () => {
 describe("listPages", () => {
     const PAGE = 2;
 
-    const page = (rows) => {
+    /**
+     * The two reads a page walk makes, both mocked.
+     *
+     * The targets are here because listPages resolves each row's targetId to
+     * its target's name - the column CSV_COLUMNS has always promised and every
+     * backup wrote as '""' - and a unit test that left that read live would go
+     * to the real database for it.
+     */
+    const page = (rows, targets = []) => {
         const calls = [];
+        mock.method(targetModel, "findAll", async () => targets);
         mock.method(model, "findAll", async (query) => {
             calls.push(query);
             return rows(calls.length);
@@ -293,8 +303,53 @@ describe("listPages", () => {
             return collected;
         })();
 
-        assert.deepEqual(rows[0], {id: 2, created: "2026-08-02T10:00:00.000Z"});
-        assert.deepEqual(rows[1], {id: 1, created: "2026-08-01T10:00:00.000Z", error: "boom", resultId: "abc"});
+        assert.deepEqual(rows[0], {id: 2, created: "2026-08-02T10:00:00.000Z", targetName: null});
+        assert.deepEqual(rows[1],
+            {id: 1, created: "2026-08-01T10:00:00.000Z", error: "boom", resultId: "abc", targetName: null});
+    });
+
+    /**
+     * Regression: the backup was the one export that said nothing at all about
+     * which target measured a row. CSV_COLUMNS names targetName, only
+     * exportTests ever produced that key, and these rows come straight off the
+     * model - so the writer wrote '""' into it on every row of every backup,
+     * while the dashboard's export of the same rows filled it.
+     *
+     * targetId is not a CSV column either, so there was no second place to
+     * read it from. And the name is the half that matters: the import resolves
+     * it against the local targets, where the raw id would attribute the row to
+     * whoever happens to hold that number there.
+     */
+    it("names the target each row measured against", async (t) => {
+        page((call) => call === 1
+            ? [{id: 3, created: "2026-08-03T10:00:00.000Z", error: null, resultId: null, targetId: 1},
+                {id: 2, created: "2026-08-02T10:00:00.000Z", error: null, resultId: null, targetId: 7},
+                {id: 1, created: "2026-08-01T10:00:00.000Z", error: null, resultId: null, targetId: null}]
+            : [], [{id: 1, name: "WAN"}]);
+        t.after(() => mock.restoreAll());
+
+        const rows = [];
+        for await (const collected of listPages(4)) rows.push(...collected);
+
+        assert.deepEqual(rows.map((row) => row.targetName), ["WAN", null, null],
+            "a row's target, a row whose target is gone, and a row that never had one");
+    });
+
+    // The two halves meeting: the writer reads each row by column name, so the
+    // name has to be a plain key on the row the walk yields rather than
+    // something derived at the last moment.
+    it("carries that name into the CSV the backup route writes", async (t) => {
+        page((call) => call === 1
+            ? [{id: 1, created: "2026-08-01T10:00:00.000Z", error: null, resultId: null, targetId: 4}]
+            : [], [{id: 4, name: "LAN iperf3"}]);
+        t.after(() => mock.restoreAll());
+
+        const res = capturingResponse();
+        await streamCsv(res, listPages(2));
+
+        const [, row] = res.text().split("\n");
+        assert.equal(row.split(",")[CSV_COLUMNS.indexOf("targetName")], '"LAN iperf3"',
+            "the backup CSV still writes an empty targetName cell");
     });
 
     it("pages a size that keeps the buffer small and the round trips few", () => {

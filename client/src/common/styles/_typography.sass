@@ -1,0 +1,38 @@
+// The text sizes every dialog is drawn at.
+//
+// They live here for the reason the dialog width in layout.sass does: the
+// dialogs are meant to agree, and a size written down once cannot drift apart
+// between them. It had drifted a long way. Across twenty dialog stylesheets
+// there were fifteen different values between 0.7rem and 1.25rem, and the same
+// role was drawn at four of them - a row's heading was 0.9rem in the
+// preferences, 0.95rem in the frequency and targets dialogs, 1rem in the
+// password, storage, targets and welcome dialogs, and 1.05rem when creating a
+// node. Opening two dialogs in turn showed the same kind of text at two sizes.
+//
+// Four steps, because the dialogs only ever say four kinds of thing. Where a
+// role was drawn at several sizes the largest won: the smaller ones were not a
+// decision anybody recorded, and text that is already comfortable must not
+// shrink to meet text that was too small.
+//
+// Glyphs are deliberately not here. An `svg` size is the size of a picture, and
+// the arrows stacked two-to-a-row in the targets dialog live in a 1.1rem box -
+// they answer to the space they sit in rather than to how readable a sentence
+// is, so folding them into a text scale would only break their rows.
+
+// The dialog's own heading - `.dialog-text`, one per dialog. Unchanged: every
+// dialog already agreed on it, which is what made the rest look wrong.
+$dialog-title: 1.25rem
+
+// The dialog's description, and the heading of a section or a labelled row.
+// The prominent line a reader lands on after the title.
+$dialog-lead: 1.05rem
+
+// Body copy, stated values, inputs and buttons - the text a reader spends most
+// of their time in.
+$dialog-body: 1rem
+
+// Secondary text: hints under a control, units, notes, the sentence explaining
+// what a choice does. Quieter than the body on purpose, but only by one step -
+// it was reaching 0.7rem, which is smaller than any browser's minimum for
+// readable text.
+$dialog-hint: 0.9rem

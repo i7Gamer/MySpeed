@@ -27,7 +27,7 @@ export const FormField = ({
                     id={inputId}
                     type="text"
                     className={`form-field-input ${error ? "input-error" : ""}`}
-                    value={value}
+                    value={value ?? ""}
                     onChange={(e) => onChange(e.target.value)}
                     placeholder={placeholder}
                     disabled={disabled}
@@ -57,7 +57,7 @@ export const FormField = ({
                 <textarea
                     id={inputId}
                     className={`form-field-input form-field-textarea ${error ? "input-error" : ""}`}
-                    value={value}
+                    value={value ?? ""}
                     onChange={(e) => onChange(e.target.value)}
                     placeholder={placeholder}
                     disabled={disabled}
@@ -67,7 +67,7 @@ export const FormField = ({
             {type === "boolean" && (
                 <ToggleSwitch
                     id={inputId}
-                    checked={value}
+                    checked={value ?? false}
                     onChange={onChange}
                     disabled={disabled}
                 />

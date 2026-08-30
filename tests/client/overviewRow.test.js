@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    convertSpeed, formatLatency, formatShortTime, formatWhole, SPEED_UNIT_MBYTES
+    formatLatency, formatShortTime, formatWhole, formatWithUnit, NOT_MEASURED, SPEED_UNIT_MBYTES, wholeSpeed
 } from "@/common/utils/FormatUtil.js";
 import { getIconBySpeed } from "@/common/utils/TestUtil.js";
 import { clickable } from "@/common/utils/Clickable.js";
@@ -629,9 +629,11 @@ describe("the figures a row prints", () => {
         const end = row.indexOf(VALUES_END, start);
         assert.notEqual(end, -1, `${VALUES_END} no longer follows them`);
 
-        return new Function("props", "preferences", "formatWhole", "convertSpeed",
+        // Only the names the region actually reads: a closure carrying the old
+        // shape's helpers is what lets a revert to that shape still evaluate.
+        return new Function("props", "preferences", "formatWhole", "wholeSpeed",
             `${row.slice(start, end)}\nreturn {pingValue, downValue, upValue};`)(
-            props, preferences, formatWhole, convertSpeed);
+            props, preferences, formatWhole, wholeSpeed);
     };
 
     it("rounds all three measurements to whole numbers", () => {
@@ -654,6 +656,18 @@ describe("the figures a row prints", () => {
             "100 Mbps is 12.5 MB/s, which prints as 13");
     });
 
+    // And rounds it ONCE: re-rounding the two-decimal conversion printed every
+    // [8n+3.96, 8n+4) band one megabyte high, so this row read one higher than
+    // the four statistics cards - and than the pane this very row opens.
+    it("rounds it once, from the raw quotient", () => {
+        const MBYTES = {speedUnit: SPEED_UNIT_MBYTES};
+
+        assert.equal(printed({ping: 12, down: 3.96, up: 100}, MBYTES).downValue, 0,
+            "0.495 MB/s is zero megabytes, not one");
+        assert.equal(printed({ping: 12, down: 99.97, up: 100}, MBYTES).downValue, 12,
+            "12.49625 rounds to 12, not via 12.5 to 13");
+    });
+
     /**
      * Math.round(null) is 0 and Math.round(undefined) is NaN. A row is drawn
      * from whatever the API returns, and an imported row's columns are barely
@@ -672,11 +686,34 @@ describe("the figures a row prints", () => {
         assert.equal(printed({ping: -1, down: -1, up: -1}).pingValue, -1);
     });
 
-    it("still empties the speeds on a row that failed", () => {
+    /**
+     * A failed row shows its reason instead of the three columns - the error
+     * branch in the markup is the gate, and the values derived here are never
+     * drawn for one. They used to be blanked by a ternary as well, which was a
+     * second stop for the same case; the renderer every figure now goes
+     * through is the stop, so even a row that somehow slipped the gate could
+     * not present a failure as minus one megabit.
+     */
+    it("never presents a failed row's placeholders as readings", () => {
         const {downValue, upValue} = printed({ping: -1, down: -1, up: -1, error: "timeout"});
 
-        assert.equal(downValue, "");
-        assert.equal(upValue, "");
+        // The exact placeholder, held: any rewiring - the old error-blanking
+        // ternary's "", a raw prop, a formatter swap - moves this value, and
+        // the destination assert below alone could not tell those apart.
+        assert.equal(downValue, -1);
+        assert.equal(upValue, -1);
+        assert.equal(formatWithUnit(downValue, "Mbps"), NOT_MEASURED);
+        assert.equal(formatWithUnit(upValue, "Mbps"), NOT_MEASURED);
+        assert.match(row, /\{props\.error \? \(/, "the failure branch no longer gates the figures");
+    });
+
+    // The same gate the pane this row opens uses, and the latest-test card
+    // beside it: a value readableFigure refuses is no measurement, and this
+    // chip prints the stored column raw - "auto%" beside the blue the colour
+    // grades it would assert a reading nobody took.
+    it("gates the packet-loss chip on a readable figure", () => {
+        assert.match(row, /readableFigure\(props\.packetLoss\) !== null && \{/,
+            "the quality chip prints junk the pane it opens refuses to show");
     });
 
     // The tripwire for a fourth figure wired straight to a prop, or for one of
@@ -704,7 +741,7 @@ describe("the figures a row prints", () => {
  * the two, and it is the same trade the jitter already makes in the panel.
  */
 describe("the colour a row's ping wears", () => {
-    const level = (ping, target) => new Function("test", "config", "getIconBySpeed", "formatLatency",
+    const level = (ping, target) => new Function("test", "limits", "getIconBySpeed", "formatLatency",
         `return (${propValue(area, "pingLevel")});`)(
         {ping}, {ping: target}, getIconBySpeed, formatLatency);
 

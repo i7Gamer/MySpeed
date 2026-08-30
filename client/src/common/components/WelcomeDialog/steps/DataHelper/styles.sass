@@ -1,16 +1,18 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/typography" as *
 
 .data-helper
 
+  // A step title, drawn the way every step title is - see ProviderChooser.
   h2
     margin: 0 0 0.75rem
     font-size: 1.15rem
-    font-weight: 500
-    color: $subtext
+    font-weight: 600
+    color: $white
 
   p
     margin: 0
-    font-size: 1rem
+    font-size: $dialog-body
     color: $subtext
 
 
@@ -20,10 +22,35 @@
     gap: 2rem
     margin-top: 1.25rem
 
+    // An equal share of the row each, rather than as much as each one's label
+    // asks for. Sized from their content the three came to more than the banner
+    // holding them - Turkish by 22px, cut away at .welcome-banner - and this is
+    // the step the wizard cannot be closed out of, so the field a reader was
+    // being asked to fill in was the part that went.
+    //
+    // The same fix, for the same reason, as the optimal-values dialog's row of
+    // three: see OptimalValuesDialog, where the widths were first measured.
     .speed
       display: flex
       flex-direction: column
       align-items: center
+      // The three inputs on one line, whatever their labels cost. The fields
+      // are already stretched to a common height by the row above, so pushing
+      // the input to the bottom of that height is what lines them up: with the
+      // content packed at the top instead, a label that wrapped to two lines
+      // carried its own input 45px below the ones beside it. Nothing to do
+      // where every label is one line - there is no spare height to distribute.
+      justify-content: space-between
+      // And the floor underneath it, which is what space-between has none of:
+      // it spreads the ends apart only while there is room, and the field with
+      // the tallest label has none at all - its label and its input would meet.
+      // This was the header's own margin-bottom; stated here it holds in both
+      // directions, which is the one the row turns into on a narrow screen.
+      gap: 0.75rem
+      flex: 1 1 0
+      // The share is a floor without this, not a width: an item will not shrink
+      // past its own content unless it is told it may.
+      min-width: 0
 
       input
         box-sizing: border-box
@@ -32,8 +59,29 @@
       .speed-header
         display: flex
         align-items: center
-        margin-bottom: 0.75rem
-        white-space: nowrap
+        // A flex row of its own, so it needs its own permission - the field
+        // above may shrink while the label inside it still refuses to.
+        min-width: 0
+        // And a ceiling, which is the half of it that actually bites here. The
+        // field centres what it stacks, and an item that is centred rather than
+        // stretched takes its content's width across the column - so the label
+        // sized itself to the words and hung out either side of the input it
+        // names, 179px of it in a 149px field. French and Ukrainian were still
+        // 15px and 10px over with everything below already free to shrink.
+        max-width: 100%
+        // Centred inside that ceiling once it is reached. Below it the box is
+        // still the width of the words and the field centres it as before, so
+        // this only has anything to do on the languages that hit the cap.
+        justify-content: center
+
+        // The label wraps rather than setting the width of the field it names.
+        // It was `white-space: nowrap`, which is what made a two-word
+        // translation as wide as the two words.
+        .speed-text
+          min-width: 0
+
+          h2, p
+            overflow-wrap: break-word
 
         svg
           font-size: 1.75rem
@@ -48,7 +96,7 @@
 
         .speed-text p
           margin: 0
-          font-size: 0.95rem
+          font-size: $dialog-body
           color: $subtext
 
 
@@ -61,10 +109,14 @@
     .speed
       width: 100%
       flex-direction: row
-      justify-content: space-between
-      // The floor between label and input once a long translation has eaten
-      // the room space-between would otherwise leave.
-      gap: 0.75rem
+      // The spread and the gap under it are the base rule's now and hold in
+      // either direction, so only what actually changes with the orientation is
+      // restated here.
+      //
+      // Back to its own height. The share above is what divides a row between
+      // three fields; stacked, there is no row to divide and a basis of zero is
+      // a main size of zero in the direction this now runs.
+      flex: 0 0 auto
 
       input
         width: 50%

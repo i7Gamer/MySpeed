@@ -60,11 +60,39 @@ const holds = new Map();
  * restarting: the wait that just elapsed without the limit lifting is evidence
  * that the next one should be longer. Only a test that actually got through
  * clears it, which is what clearBackoff is for.
+ *
+ * "Consecutive" means consecutive *waits*, not consecutive refusals - the guard
+ * in the body says why - so a refusal that arrives inside a standing hold is
+ * answered with what remains of that hold rather than with a fresh, longer one.
  */
 export const recordRateLimit = (provider, now = Date.now()) => {
     if (!provider) return 0;
 
-    const previous = holds.get(provider)?.wait ?? 0;
+    const standing = holds.get(provider);
+
+    /*
+     * A refusal that arrives while the previous hold is still running is that
+     * same refusal reaching a second caller, not a second one to escalate for.
+     *
+     * Several targets can share a provider now - two Ookla targets pinned to
+     * different servers is the point of the feature - and a round started by
+     * hand consults no hold at all, because a test somebody asked for now is
+     * not the schedule hammering a limiter. So one press of "Run test" on an
+     * instance with three Ookla targets recorded three refusals within seconds
+     * and doubled the wait three times: fifteen minutes became an hour, and the
+     * automatic schedule went quiet for it. The escalation's own justification
+     * is what makes that wrong - it is the wait that elapsed without the limit
+     * lifting that argues for a longer one, and here no wait elapsed at all.
+     *
+     * The deadline is left exactly where it was rather than pushed out, for the
+     * same reason: it says when the *schedule* may ask again, and a run somebody
+     * started by hand must not be able to move it. What is returned is therefore
+     * what is left of the standing hold - the honest answer to how long the
+     * schedule is held, which is what this function has always answered.
+     */
+    if (standing && standing.until > now) return standing.until - now;
+
+    const previous = standing?.wait ?? 0;
     const wait = previous === 0 ? FIRST_BACKOFF_MS : Math.min(previous * 2, MAX_BACKOFF_MS);
 
     holds.set(provider, {wait, until: now + wait});

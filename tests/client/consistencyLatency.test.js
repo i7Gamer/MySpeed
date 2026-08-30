@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatLatency, formatLatencyWithUnit } from "@/common/utils/FormatUtil.js";
+import { gradeForIncrease, readableFigure } from "@/common/utils/TestUtil.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -80,9 +81,114 @@ describe("the stability card prints its latencies to one decimal", () => {
     // pinned to the server's arithmetic by the loaded-latency agreement tests,
     // and the tooltips quote it verbatim.
     it("leaves the bufferbloat increase at the server's two decimals", () => {
-        assert.doesNotMatch(card, /formatLatency\w*\(loaded\.increase/,
+        assert.doesNotMatch(card, /formatLatency\w*\((?:loaded\.increase|loadedIncrease)/,
             "the average increase was trimmed away from the pinned figure");
         assert.doesNotMatch(card, /formatLatency\w*\(entry\.increase/,
             "a trend dot's increase was trimmed away from the pinned figure");
+    });
+});
+
+/**
+ * The bufferbloat row's figures, built by the card's own statements and read
+ * back. gradeForIncrease keeps its strict gate on purpose - its operands are
+ * computed - so the card coerces at its boundary: the payload is server-fed,
+ * and a proxied older node can spell the average increase or a dot's as
+ * text. The strict gate behind the old read dropped the whole row for a
+ * spelling the deviation beside it reads fine.
+ */
+describe("the bufferbloat row reads its figures through the shared reader", () => {
+    const region = () => {
+        const start = card.indexOf("const loaded = data.loadedLatency;");
+        assert.notEqual(start, -1, "the card no longer derives the loaded row where this lift expects");
+        const end = card.indexOf("\n    });", start);
+        assert.notEqual(end, -1, "the loaded derivations are no longer a block this lift can close");
+
+        return card.slice(start, end + "\n    });".length);
+    };
+
+    const loadedFigures = (loadedLatency) => new Function(
+        "data", "readableFigure", "gradeForIncrease",
+        `${region()}\nreturn {loadedIncrease, loadedGrade, trendDots};`)(
+        {loadedLatency}, readableFigure, gradeForIncrease);
+
+    it("grades a readable increase in either spelling", () => {
+        const numeric = loadedFigures({increase: 12.5, tests: 40, trend: []});
+        const text = loadedFigures({increase: "12.5", tests: 40, trend: []});
+
+        assert.equal(numeric.loadedGrade, gradeForIncrease(12.5));
+        assert.notEqual(numeric.loadedGrade, null);
+        assert.equal(text.loadedGrade, numeric.loadedGrade,
+            "a text-spelled increase drops the whole row - grade, dots and count");
+        assert.equal(text.loadedIncrease, 12.5,
+            "the tooltip states the raw spelling rather than the coerced reading");
+    });
+
+    it("still drops the row for what no reader can read", () => {
+        for (const unreadable of ["auto", null, undefined, -1, "-1"])
+            assert.equal(loadedFigures({increase: unreadable, tests: 4, trend: []}).loadedGrade, null,
+                `an increase of ${JSON.stringify(unreadable)} graded as a reading`);
+
+        assert.equal(loadedFigures(undefined).loadedGrade, null, "a payload without the block crashed or graded");
+    });
+
+    it("keeps a dot per readable increase and no dot for the rest", () => {
+        const {trendDots} = loadedFigures({increase: 5, tests: 9, trend: [
+            {increase: "3", created: "2026-08-01"},
+            {increase: null, created: "2026-08-02"},
+            {increase: 7, created: "2026-08-03"}
+        ]});
+
+        assert.deepEqual(trendDots.map(({increase}) => increase), [3, 7],
+            "an unreadable dot renders - as a blue dot titled null - or a text one vanished");
+        assert.deepEqual(trendDots.map(({created}) => created), ["2026-08-01", "2026-08-03"],
+            "the dots lost the timestamps their keys and titles read");
+    });
+
+    /**
+     * The block itself can be mangled, not only the figures in it: these
+     * derivations run on every render, BEFORE the row's own gate, so a
+     * trend that is not an array - or an entry that is not an object -
+     * must come back as no dots rather than as a TypeError that unmounts
+     * the whole statistics page. The old shape was accidentally safe here
+     * (the iteration lived inside the hidden row); the hoist must be safe
+     * on purpose.
+     */
+    it("survives a trend the payload mangles", () => {
+        for (const mangled of [{}, "n/a", 0, null, undefined])
+            assert.deepEqual(loadedFigures({increase: 12.5, tests: 4, trend: mangled}).trendDots, [],
+                `a trend of ${JSON.stringify(mangled)} crashed the card or grew dots`);
+
+        assert.deepEqual(loadedFigures({increase: 12.5, tests: 4,
+            trend: [null, {increase: 7, created: "2026-08-03"}]})
+            .trendDots.map(({increase}) => increase), [7],
+            "a null entry crashed the card rather than dropping its dot");
+    });
+
+    // An all-refused trend is no strip at all: a childless role="img" span
+    // announced as "trend:" with nothing after the colon is not a reading.
+    it("draws the trend strip only when a dot survived", () => {
+        assert.match(card, /\{trendDots\.length > 0 && \(/,
+            "an all-refused trend renders an empty labelled image strip");
+    });
+
+    /**
+     * The markup held to the bindings the lift executes: the lift's region
+     * closes before the JSX, so without these a revert of the tooltip to
+     * the raw column - or of a dot map to the raw trend - keeps every
+     * executed case green while the screen shows the uncoerced payload.
+     */
+    it("renders the coerced figure and the filtered dots, not the raw payload", () => {
+        assert.match(card, /\{increase: loadedIncrease, tests: loaded\.tests\}/,
+            "the tooltip states a different figure than the one the grade was taken from");
+        assert.equal((card.match(/trendDots\.map/g) ?? []).length, 2,
+            "a dot map reads the raw trend again - the aria-label and the dots must both walk the filtered list");
+        // The count catches a revert; this catches an ADDED inline map over
+        // the raw block. The derivation's own read stays out because
+        // ".map(" is not a substring of ".flatMap(" - if that derivation
+        // ever legitimately ends in .map, this pin moves with it. Bounds:
+        // a hoisted alias or the data.loadedLatency spelling are the
+        // executed lift's job, not this line's.
+        assert.doesNotMatch(card, /loaded\??\.trend[^\n]*\.map\(/,
+            "an inline map walks the raw trend beside the filtered pair");
     });
 });

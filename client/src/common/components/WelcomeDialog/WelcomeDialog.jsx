@@ -1,48 +1,102 @@
 import {Dialog} from "@/common/contexts/Dialog";
 import "./styles.sass";
-import {useContext, useState} from "react";
+import {useContext, useEffect, useRef, useState} from "react";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import Greetings from "./steps/Greetings";
 import ProviderChooser from "./steps/ProviderChooser";
 import DataHelper from "./steps/DataHelper";
 import OoklaLicense from "./steps/OoklaLicense";
-import {assertOk, patchRequest, RequestError} from "@/common/utils/RequestUtil";
+import {assertOk, patchRequest, putRequest, RequestError} from "@/common/utils/RequestUtil";
 import {ConfigContext} from "@/common/contexts/Config";
+import {TargetsContext} from "@/common/contexts/Targets";
+import {providerById, requiresEndpoint} from "@/common/components/TargetsDialog/providers";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {faExclamationTriangle} from "@fortawesome/free-solid-svg-icons";
 import {t} from "i18next";
 import {writeStored} from "@/common/utils/Storage";
+import {
+    DEFAULT_PROVIDER, FIRST_STEP, LICENCE_STEP, PROVIDER_STEP, THRESHOLDS_STEP, canAdvance, lastStep, welcomeSeed
+} from "./welcomeStep";
+
+// How long the slide between steps runs - the `slide-in 0.5s` in styles.sass,
+// which is the half this timer has to keep in step with.
+const STEP_ANIMATION_MS = 500;
 
 export const WelcomeDialog = ({open, onClose}) => {
     const [config, reloadConfig] = useContext(ConfigContext);
+    const {reloadTargets} = useContext(TargetsContext);
     const updateToast = useContext(ToastNotificationContext);
-    const [step, setStep] = useState(1);
-    const [provider, setProvider] = useState("ookla");
+    // Named rather than written as 1 and "ookla" here as well: welcomeSeed says
+    // where an opening wizard starts, and a second spelling of that beside it is
+    // the copy that gets left behind.
+    const [step, setStep] = useState(FIRST_STEP);
+    const [provider, setProvider] = useState(DEFAULT_PROVIDER);
+    // Where a provider that has no server pool of its own measures. Held here
+    // rather than in the chooser, because finish() is what has to send it.
+    const [endpoint, setEndpoint] = useState("");
     const [ping, setPing] = useState(0);
     const [download, setDownload] = useState(0);
     const [upload, setUpload] = useState(0);
     const [animating, setAnimating] = useState(false);
+    // The step transition's end, kept so the next transition can clear its
+    // predecessor: fired and forgotten, the first press's timer cleared
+    // `animating` 500 ms after the *first* step change and cut the second
+    // transition short - and one outstanding at unmount ran its setState
+    // against a component that was gone.
+    const animationTimer = useRef(null);
+
+    useEffect(() => () => clearTimeout(animationTimer.current), []);
+    // One run at a time - a second click on a slow link must not save twice.
+    // finish() makes four round trips before it closes anything, so Done sits
+    // there looking ignored for as long as the slowest of them takes, and PUT
+    // /targets inserts a row per call: the second press created a second
+    // identical target on an instance that had not drawn a dashboard yet, and
+    // every scheduled round measured that provider twice from then on.
+    const [saving, setSaving] = useState(false);
 
     /**
-     * Seeded when the wizard opens, not when it mounts.
+     * Seeded when the wizard opens, not when it mounts - all of it, not just
+     * the thresholds.
      *
-     * ConfigProvider renders this itself, so it mounts on the provider's very
+     * TargetsContext renders this itself, so it mounts on the provider's very
      * first render - before the config has been fetched - and an initialiser
-     * never runs again. All three targets stayed at 0, and finish() PATCHes
+     * never runs again. All three thresholds stayed at 0, and finish() PATCHes
      * them unconditionally: clicking through a fresh install without touching
      * that step replaced the shipped defaults with zeroes, which leaves every
      * metric rendering blue forever and no target bar anywhere.
+     *
+     * The step, the provider and the endpoint were left out of that sync, and
+     * they live above the boundary DialogContext unmounts - `if (!visible)
+     * return null` takes the dialog's children, not the component holding the
+     * hooks. So a second freshly installed node, switched to without a page
+     * load, reopened this wizard on its *last* step carrying the first node's
+     * provider and its iperf3 host: no chooser, no way back, and one button
+     * reading Done that wrote node A's answers onto node B.
+     *
+     * Applied from welcomeSeed rather than written out here, so there is one
+     * statement of what an opening wizard shows instead of a list that can be
+     * half updated - which is exactly how the three above came to be missing.
      */
     useSyncOnOpen(open, () => {
-        // parseFloat, because finish() writes all three back unconditionally:
-        // an integer parse rewrote any fractional threshold the wizard was
-        // merely clicked past - "25.9" went back as 25, and "0.4", the
-        // recommended ping on a fast line, went back as 0, a threshold no
-        // latency is ever under. The wizard opens by itself while the provider
-        // is unset, which is exactly when thresholds are being set first.
-        setPing(parseFloat(config.ping) || 0);
-        setDownload(parseFloat(config.download) || 0);
-        setUpload(parseFloat(config.upload) || 0);
+        const seed = welcomeSeed(config);
+
+        setStep(seed.step);
+        setProvider(seed.provider);
+        setEndpoint(seed.endpoint);
+        setPing(seed.ping);
+        setDownload(seed.download);
+        setUpload(seed.upload);
+        // Not an answer, so not part of the seed - but it is state this
+        // component owns, and the rule is worth keeping exceptionless: the
+        // slide-in class stays on for 500ms after a step change, and a close
+        // inside that window left the reopened wizard replaying the animation
+        // over its first step.
+        setAnimating(false);
+        // The timer that owns that flag is deliberately NOT cleared here: a
+        // stale one fires false onto false, and this callback is lifted out
+        // of the file by text and run without the component's scope - see
+        // continueStep's comment - so a ref named here is a ReferenceError
+        // in every one of those cases. The unmount effect clears it.
     });
 
     const finish = async (close) => {
@@ -64,10 +118,48 @@ export const WelcomeDialog = ({open, onClose}) => {
             if (config.previewMode) {
                 writeStored("welcomeShown", "true");
             } else {
-                await patch("/config/provider", provider);
+                // The thresholds first and the target last, because the two
+                // writes are not equally repeatable and nothing here can undo
+                // the other half. A threshold PATCH says what the value *is*,
+                // so running it twice is running it once; PUT /targets inserts
+                // a row every time it is called - `targets.create(fields)`,
+                // with no existence check and no unique index on the name.
+                //
+                // Written the other way round, the refusal an operator can
+                // actually cause landed second: an empty number field is a 400
+                // from the config controller, so the target was already
+                // created, the wizard stayed open - it is mounted disableClose
+                // and close() was never reached - and the only way on was to
+                // press the same Done again, which created a second identical
+                // target. Every scheduled round then measured that provider
+                // twice, on an instance that had not drawn a dashboard yet.
+                // canAdvance now refuses to leave the thresholds step with a
+                // value this would bounce on; the order stays as the second
+                // line of the same defence.
+                //
+                // The reverse failure is harmless: a refused PUT leaves three
+                // thresholds stored, which are the values the operator just
+                // typed, and the wizard stays open because what it is keyed on
+                // is the target list still being empty.
                 await patch("/config/ping", ping);
                 await patch("/config/download", download);
                 await patch("/config/upload", upload);
+
+                // The wizard's provider choice becomes the instance's first
+                // target, named after its provider - the manager dialog is
+                // where it earns a better name. PUT rather than a config
+                // PATCH: the provider stopped being a config key.
+                await assertOk(await putRequest("/targets", {
+                    name: providerById(provider)?.name ?? provider,
+                    provider,
+                    // Only where the provider cannot do without one. A
+                    // LibreSpeed target measures against the public backend
+                    // list until the manager gives it an address of its own,
+                    // and the server refuses an endpoint on a provider that
+                    // takes none - so a value left behind by switching cards
+                    // must not travel with the row.
+                    ...(requiresEndpoint(provider) ? {endpoint: endpoint.trim()} : {})
+                }), "targets");
             }
         } catch (e) {
             updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
@@ -76,16 +168,47 @@ export const WelcomeDialog = ({open, onClose}) => {
         }
 
         reloadConfig();
+        // What closes the wizard for good: the list this dialog opened on the
+        // emptiness of now has a row in it.
+        reloadTargets();
         close();
     };
 
-    const continueStep = (close) => {
-        if (step === (provider === "ookla" ? 4 : 3)) {
-            finish(close);
+    // Whether the step showing may be left at all - see welcomeStep.js. The
+    // button below is dead while this is false, and the handler asks again, so
+    // a step the server would refuse cannot be left however it is pressed.
+    const mayAdvance = canAdvance({step, provider, endpoint, ping, download, upload});
+
+    const continueStep = async (close) => {
+        // The lock sits here rather than inside finish(), for the same reason
+        // the canAdvance re-check does: this is what a click actually reaches,
+        // and TargetEditor's save() - the dialog this shape is borrowed from -
+        // is likewise the button's own handler. It also keeps finish() free of
+        // hooks, which matters more here than it looks: welcomeFinish.test.js
+        // lifts that function out of this file by text and runs it, and a
+        // component variable named inside it is a free identifier that takes
+        // every one of those cases down with a ReferenceError. It is the only
+        // thing in this .jsx anything can execute.
+        if (saving) return;
+        if (!canAdvance({step, provider, endpoint, ping, download, upload})) return;
+
+        if (step === lastStep(provider)) {
+            setSaving(true);
+
+            try {
+                await finish(close);
+            } finally {
+                // However the run ended - a refused write must not leave the
+                // one dialog nobody can dismiss locked shut. Clearing it after
+                // close() is safe rather than a stray setState: TargetsContext
+                // renders this component whether it is open or not.
+                setSaving(false);
+            }
         } else {
             setAnimating(true);
             setStep(step + 1);
-            setTimeout(() => setAnimating(false), 500);
+            clearTimeout(animationTimer.current);
+            animationTimer.current = setTimeout(() => setAnimating(false), STEP_ANIMATION_MS);
         }
     };
 
@@ -101,16 +224,19 @@ export const WelcomeDialog = ({open, onClose}) => {
             {({forceClose}) => (
                 <div className="welcome-banner">
                     <div className={`welcome-inner ${animating ? 'slide-in' : ''}`}>
-                        {step === 1 && <Greetings/>}
-                        {step === 2 && <ProviderChooser provider={provider} setProvider={setProvider}/>}
-                        {step === 3 && <DataHelper ping={ping} setPing={setPing} download={download}
-                                                   setDownload={setDownload} upload={upload} setUpload={setUpload}/>}
-                        {step === 4 && provider === "ookla" && <OoklaLicense/>}
+                        {step === FIRST_STEP && <Greetings/>}
+                        {step === PROVIDER_STEP && <ProviderChooser provider={provider} setProvider={setProvider}
+                                                                    endpoint={endpoint} setEndpoint={setEndpoint}/>}
+                        {step === THRESHOLDS_STEP && <DataHelper ping={ping} setPing={setPing} download={download}
+                                                                 setDownload={setDownload} upload={upload} setUpload={setUpload}/>}
+                        {step === LICENCE_STEP && provider === "ookla" && <OoklaLicense/>}
                     </div>
                     <div className="welcome-actions">
-                        <h3>{t("welcome.step")} {step}/{provider === "ookla" ? 4 : 3}</h3>
-                        <button type="button" className="dialog-btn" onClick={() => continueStep(forceClose)}>
-                            {step === (provider === "ookla" ? 4 : 3) ? t("dialog.done") : t("dialog.continue")}
+                        <h3>{t("welcome.step")} {step}/{lastStep(provider)}</h3>
+                        <button type="button" className="dialog-btn"
+                                disabled={!mayAdvance || saving}
+                                onClick={() => continueStep(forceClose)}>
+                            {step === lastStep(provider) ? t("dialog.done") : t("dialog.continue")}
                         </button>
                     </div>
                 </div>

@@ -1,4 +1,21 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/focus" as *
+@use "@/common/styles/typography" as *
+
+// The band a settings row stands in, whatever it happens to carry.
+//
+// The gap between these rows was already even - 16px the whole way down - but
+// what a reader sees is the distance from one heading to the next, and that is
+// the gap plus the row. The rows are as tall as their controls and the controls
+// are not one height: a button comes to 36px and a select to 38, its
+// line-height being stated where the button's is `normal`. "Stored tests"
+// carries neither - it states a figure and nothing else - so it is a 20px row,
+// and the first step in the list came out 36px against 52 for every other.
+//
+// 38px is the tallest of the three. Measured rather than picked: a floor at the
+// button's 36 would leave the select's own row two pixels over it and simply
+// move the odd step further down the list.
+$storage-row-band: 2.375rem
 
 .storage-dialog-wrapper
   width: 48rem
@@ -39,7 +56,9 @@
   border: 1px solid transparent
   border-radius: 0.6rem
   cursor: pointer
-  transition: all 0.15s ease
+  // Named rather than `all`, which took the focus ring with it - see the
+  // header's icons, where the same line made the ring fade in after a keypress.
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease
 
   &:hover
     background-color: $darker-gray
@@ -51,8 +70,11 @@
 
   span
     margin: 0
-    font-size: 1rem
+    font-size: $dialog-body
     font-weight: 500
+
+  // Was the browser's own ring, which is white on this theme.
+  +focus-ring
 
 .reset-cursor
   cursor: default
@@ -70,6 +92,12 @@
 
 .storage-manager
   flex: 1
+  // It sits beside the tab list in a flex row, and a flex item will not shrink
+  // past its own content without this - so the widest row set the width of the
+  // panel and every row in it hung the same distance past the dialog's edge.
+  // Russian was 20px over on all four rows, Dutch 47, including rows whose own
+  // contents fitted with room to spare.
+  min-width: 0
   display: flex
   flex-direction: column
   gap: 1rem
@@ -78,8 +106,41 @@
 .storage-row
   display: flex
   justify-content: space-between
-  align-items: center
+  // See $storage-row-band. A floor, not a height: the export row carries a
+  // hint and a switch under its heading and is three lines tall, which it stays.
+  min-height: $storage-row-band
+  // Against the top of the row, not its middle. Most of these are a single
+  // line and it makes no difference; the export row is three - a heading, a
+  // hint and the credentials switch - and centring left its button floating
+  // beside the switch, a long way from the words it acts on.
+  align-items: flex-start
   gap: 1rem
+  // One width for the buttons costs room, and the room comes off the label.
+  // Rather than crush the words - Russian, Portuguese, Catalan and Dutch were
+  // all being cut - the buttons take their own line when the two no longer fit
+  // on one. They stay against the right edge there, so the column of them
+  // reads the same either way.
+  flex-wrap: wrap
+
+  .storage-row-actions
+    // Holds the buttons against the right edge on a line they wrap onto, where
+    // space-between has nothing left to push them with. Safe now that these
+    // carry nothing but buttons: while the export row's toggle was in here,
+    // this stranded its words in the middle of the row.
+    margin-left: auto
+
+  .storage-row-actions .dialog-btn
+    // One width down the column. Each button was as wide as its own word, so
+    // Save came out 70px, CSV 67, JSON 77, Import 79 and Delete 80 - a 13px
+    // spread, close enough to read as a mistake rather than as a difference.
+    //
+    // The floor is measured rather than picked: across the twenty-three
+    // locales the widest stable label is Italian's "Importazione" at 143px, so
+    // this holds all of them and the column stays even in every language. The
+    // two transient labels - "Saving..." and the delete confirmation - are
+    // free to grow past it, because a button that visibly changes while it is
+    // armed is the whole point of them.
+    min-width: 9rem
 
   .storage-row-label
     display: flex
@@ -88,28 +149,99 @@
     // The export row carries a hint under its title, so the icon and heading
     // wrap onto one line and the hint takes the next.
     flex-wrap: wrap
+    // The words yield, not the row. Giving the buttons one width put German
+    // exactly flush - "Datenaufbewahrung" plus a 9rem button came to the row's
+    // width to the pixel - and the next translation would have gone over.
+    //
+    // The label asks for its own words and no more, so a row wraps when its
+    // label and its controls genuinely do not fit and not before. This was a
+    // 12rem basis on every row, and a basis is room reserved before the line is
+    // composed: the retention row carries a select as well as a button, so
+    // 192px of reserved label plus 321 of controls came to more than the 515
+    // the panel holds and it wrapped in English with 49px still going spare.
+    // It wrapped in every language, and English was the only one that had any
+    // room to lose - German, Dutch, French, Russian, Portuguese and Catalan all
+    // want between 35 and 108px more than the row has and wrap either way,
+    // which is the right answer there: the label then has the full width for a
+    // word with no break in it.
+    flex: 1 1 auto
+    min-width: 0
+
+    // Except where the label carries a sentence. At `auto` the export row's
+    // hint is part of the label's content, so the label asks for the width of
+    // that whole sentence, the row wraps in every language and the button
+    // leaves the line its heading is on. The basis is what holds it back to a
+    // heading's width and lets the hint wrap inside it.
+    //
+    // Marked on the row in the JSX rather than found here with :has() - the
+    // same call the targets dialog records making, so that somebody adding a
+    // row sees which kind it is where they are writing it.
+    &.storage-row-label-hinted
+      flex-basis: 12rem
 
     svg
       color: $subtext
       font-size: 1rem
       width: 1rem
+      flex-shrink: 0
 
     h3
       margin: 0
-      font-size: 1rem
+      font-size: $dialog-lead
       font-weight: 500
       color: $subtext
+      // And once more at this level. The label above may shrink, but the
+      // heading inside it is a flex item of its own and would not - so the
+      // words were cut off at the label's edge instead of wrapping onto the
+      // second line the label already allows for its hint.
+      min-width: 0
 
     .storage-row-hint
       flex-basis: 100%
       margin: 0
       padding-left: 1.6rem
-      font-size: 0.8rem
+      font-size: $dialog-hint
       color: $subtext
       opacity: 0.8
 
+    // The export hint's two sentences share one grid cell, so the paragraph
+    // is always as tall as the longer of them and the toggle beneath cannot
+    // move when they swap. visibility rather than display keeps the hidden
+    // sentence's box reserving that height, and the aria-hidden that mutes
+    // it for a reader is the hook, so screen and reader cannot disagree.
+    .storage-row-hint-swap
+      display: grid
+
+      span
+        grid-area: 1 / 1
+        min-width: 0
+
+      span[aria-hidden="true"]
+        visibility: hidden
+
+    // Under the hint and indented to the same place: it chooses what this row
+    // exports, so it belongs to the row's description rather than beside its
+    // button - where it took the button out of the column Import and Reset
+    // are in, and stranded its own words mid-row on any language long enough
+    // to wrap.
+    .storage-row-toggle
+      display: flex
+      align-items: center
+      gap: 0.5rem
+      cursor: pointer
+      font-size: $dialog-hint
+      color: $subtext
+      flex-basis: 100%
+      padding-left: 1.6rem
+      margin-top: 0.6rem
+      // The words may wrap; the switch beside them may not be squeezed.
+      min-width: 0
+
+      span
+        min-width: 0
+
   .storage-row-value
-    font-size: 1rem
+    font-size: $dialog-body
     font-weight: 600
     color: $white
     margin: 0
@@ -118,15 +250,6 @@
     display: flex
     gap: 0.5rem
     align-items: center
-
-    .storage-row-toggle
-      display: flex
-      align-items: center
-      gap: 0.5rem
-      cursor: pointer
-      font-size: 0.85rem
-      color: $subtext
-      white-space: nowrap
 
   .dialog-btn
     padding: 0.5rem 1rem
@@ -141,7 +264,7 @@
   border-radius: 0.6rem
   color: $white
   font-family: inherit
-  font-size: 1rem
+  font-size: $dialog-body
   font-weight: 500
   line-height: 1.25
   cursor: pointer
@@ -220,7 +343,7 @@
       position: absolute
       right: 0.85rem
       color: $subtext
-      font-size: 0.875rem
+      font-size: $dialog-hint
       font-weight: 500
       pointer-events: none
 
@@ -237,7 +360,7 @@
   border-radius: 0.6rem
   color: $subtext
   cursor: pointer
-  transition: all 0.15s ease
+  transition: border-color 0.15s ease, color 0.15s ease
 
   &:hover
     border-color: $accent-primary
@@ -245,6 +368,8 @@
 
   svg
     font-size: 0.9rem
+
+  +focus-ring
 
 @media (max-width: 781px)
   .storage-dialog-wrapper

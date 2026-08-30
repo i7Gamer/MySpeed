@@ -148,14 +148,22 @@ describe("the redacted export", () => {
             "a node URL leaves in a redacted backup with its userinfo attached");
     });
 
-    // Both halves, because naming the list proves nothing on its own: an empty
-    // list and a deleted branch each leave the name in place, and either one
-    // ships libreUrl verbatim in a file stamped secretsRedacted.
-    it("strips it from the librespeed URL too", () => {
-        assert.match(source, /CREDENTIAL_BEARING_KEYS = \[[^\]]*"libreUrl"/,
-            "libreUrl is no longer on the list of values that can carry a credential");
+    // The librespeed backend URL lives on the target rows now, and it is the
+    // same kind of value a node URL is: a URL, allowed userinfo. Both halves
+    // pinned - the strip and its redaction switch - because either alone
+    // ships the credential verbatim in a file stamped secretsRedacted.
+    it("strips it from a libre target's endpoint too", () => {
+        assert.match(source, /withoutUrlCredentials\(row\.endpoint\)/,
+            "a target endpoint leaves in a redacted backup with its userinfo attached");
+        assert.match(source, /includeSecrets \? targetRows\s*:/,
+            "the endpoint strip is no longer behind the redaction switch");
+    });
+
+    // And the config half keeps its machinery, list-driven, for the next
+    // credential-shaped config value.
+    it("keeps the config half reading the credential list", () => {
         assert.match(source, /CREDENTIAL_BEARING_KEYS\.includes\([^)]*\)\s*\?\s*withoutUrlCredentials/,
-            "the config half of the export still ships every URL verbatim");
+            "the config half of the export no longer consults the list at all");
     });
 
     // The full export is the one that exists to carry credentials - a restore
@@ -187,15 +195,10 @@ describe("what a configUpdated event carries", () => {
         assert.equal(announcedValue("password", "$2b$10$abcdefghijklmnopqrstuv"), "protected");
     });
 
-    it("strips the credential out of the librespeed URL", () => {
-        assert.equal(announcedValue("libreUrl", "http://admin:hunter2@speed.lan:8080"),
-            "http://speed.lan:8080");
-    });
-
-    it("keeps the address itself, which is what the announcement is about", () => {
-        assert.equal(announcedValue("libreUrl", "https://speed.example.net/backend"),
-            "https://speed.example.net/backend");
-    });
+    // libreUrl - the value this describe existed for - lives on the target
+    // rows now and never passes through announcedValue; the targets routes
+    // fire no configUpdated events. The password case and the list plumbing
+    // stay, because the next credential-shaped config value inherits them.
 
     // An ordinary setting is announced as it was stored. Redacting more than the
     // credentials would make the event useless to the consumers it exists for.
@@ -233,8 +236,10 @@ describe("what a configUpdated event carries", () => {
 
         assert.ok(declared, "the export no longer names the keys that can carry a credential");
 
+        // Empty today - libreUrl moved onto the target rows - and the loop is
+        // what makes the next entry safe: a key added for the export alone is
+        // announced verbatim, which is this bug again under a new name.
         const keys = [...declared[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
-        assert.ok(keys.length > 0, "the list is empty, so neither half redacts anything");
 
         for (const key of keys)
             assert.equal(announcedValue(key, "http://admin:hunter2@host.lan"), "http://host.lan",

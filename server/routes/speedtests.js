@@ -3,6 +3,8 @@ import * as tests from '../controller/speedtests.js';
 import * as pauseController from '../controller/pause.js';
 import * as config from '../controller/config.js';
 import * as testTask from '../tasks/speedtest.js';
+import * as targets from '../controller/targets.js';
+import { isPreviewInstance } from '../util/previewMode.js';
 import password from '../middlewares/password.js';
 import previewReadOnly from '../middlewares/previewReadOnly.js';
 import { ALL_TIME_RANGE, parseDateRange } from '../util/dateRange.js';
@@ -25,6 +27,16 @@ const RECENT_FAILURE_WINDOW_MS = RECENT_FAILURE_WINDOW_HOURS * 60 * 60 * 1000;
 // scroll cursor can be compared against - the same pattern importTests holds
 // its input to.
 const CREATED_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/**
+ * The ?target= filter, three-valued: undefined when absent (no filter), a
+ * number when usable, null when malformed - the caller answers the 400, so
+ * the message lives beside the route the way the other parameter guards do.
+ */
+const parseTargetParam = (value) => {
+    if (value === undefined) return undefined;
+    return /^\d+$/.test(value) ? Number(value) : null;
+};
 
 
 app.get("/", password(true), async (req, res) => {
@@ -57,11 +69,22 @@ app.get("/", password(true), async (req, res) => {
     if (req.query.after !== undefined && !CREATED_PATTERN.test(req.query.after))
         return res.status(400).json({message: "You need to provide an ISO-8601 timestamp in the after parameter"});
 
+    // Half a pair is not a smaller cursor, it is no cursor at all: `after`
+    // alone used to fall through to page one silently, so a caller paginating
+    // with it re-fetched the same rows forever with nothing said - while every
+    // other malformed parameter here earns a 400 that names itself.
+    if (req.query.after !== undefined && !req.query.afterId)
+        return res.status(400).json({message: "The after parameter needs its afterId half - the cursor is the pair"});
+
     const after = req.query.after && req.query.afterId
         ? {created: req.query.after, id: req.query.afterId}
         : null;
 
-    const entries = await tests.listTests(req.query.afterId, req.query.limit, range, after);
+    const target = parseTargetParam(req.query.target);
+    if (target !== undefined && target === null)
+        return res.status(400).json({message: "You need to provide a correct number in the target parameter"});
+
+    const entries = await tests.listTests(req.query.afterId, req.query.limit, range, after, target);
 
     // A viewer sees the measurements, not who the connection is: the operator's
     // provider and address are the operator's to see. A demo visitor is the
@@ -101,9 +124,14 @@ app.get("/statistics", password(true), async (req, res) => {
     if (points !== undefined && /[^0-9]/.test(points))
         return res.status(400).json({message: "You need to provide a correct number in the points parameter"});
 
+    const target = parseTargetParam(req.query.target);
+    if (target !== undefined && target === null)
+        return res.status(400).json({message: "You need to provide a correct number in the target parameter"});
+
     res.json(await tests.listStatistics(range, {
         zone: timezone.zone,
         maxPoints: points,
+        target,
         // The summary of the window immediately before the range, for the
         // period-over-period deltas. Opt-in: it costs a second table scan.
         // Nothing precedes all time, so it is never compared.
@@ -122,7 +150,11 @@ app.get("/export", password(true), async (req, res) => {
         return res.status(400).json({ message: range.message });
     }
 
-    const exportData = await tests.exportTests(range);
+    const target = parseTargetParam(req.query.target);
+    if (target !== undefined && target === null)
+        return res.status(400).json({message: "You need to provide a correct number in the target parameter"});
+
+    const exportData = await tests.exportTests(range, target);
 
     if (isUntrustedReader(req)) exportData.forEach(stripConnectionIdentity);
 
@@ -139,14 +171,78 @@ app.get("/export", password(true), async (req, res) => {
 
 app.post("/run", password(false), async (req, res) => {
     if (pauseController.currentState) return res.status(410).json({message: "The speedtests are currently paused"});
-    if (await config.getValue("provider") === "none") return res.status(410).json({message: "No provider selected"});
+    if (!isPreviewInstance() && await targets.count() === 0)
+        return res.status(410).json({message: "No targets configured"});
     if (testTask.isRunning()) return res.status(409).json({message: "An speedtest is already running"});
+
+    // A named target runs alone - the per-row run button in the targets
+    // dialog, and the one way a disabled (manual-only) target ever runs.
+    // Without one, the whole round of enabled targets runs.
+    const targetId = req.body?.targetId;
+
+    /*
+     * Asked of the set the round will actually run, which is not what the count
+     * above answers for. An unnamed run resolves its members through
+     * roundTargets(), which are the scheduled ones - so an instance whose
+     * targets all have Scheduled switched off (two manual-only diagnostic
+     * boxes, or the one WAN target unchecked for the duration of an outage) has
+     * targets to count and nothing to run. It was answered 200 "Speedtest
+     * successfully created": the toolbar toasted success and drew the gauge,
+     * executeRound then gave up with a 400 that reaches nobody because this
+     * route deliberately does not await it, and there was no row, no failure
+     * and nothing in the log. The per-row run button kept working throughout,
+     * which made the start button look broken at random.
+     *
+     * A second refusal beside the count rather than a replacement for it,
+     * because the two are different situations and this message is all the
+     * operator gets: one instance has nothing set up yet, the other is set up
+     * and has switched itself off. Both are reachable - with no targets at all
+     * only the count can fire, and this one is asked precisely when targets
+     * exist.
+     *
+     * Only for an unnamed run. A named one is judged by getOne below, and
+     * running a target that sits outside the schedule is exactly what that path
+     * exists for.
+     *
+     * The wording is an instruction rather than a code because that is how it
+     * reaches the operator: client/src/common/utils/RunUtil.js puts the body's
+     * message verbatim into the alert dialog. It says what to do about it,
+     * without quoting the label on the switch - the message has no key of its
+     * own, the same as every other message on this route, so it is English in
+     * front of a dialog that is not.
+     */
+    if (!isPreviewInstance() && targetId === undefined && (await targets.roundTargets()).length === 0)
+        return res.status(410).json({message: "No target is scheduled - every target is set to run by "
+            + "hand only. Run one from the targets dialog, or put a target back into the schedule"});
+
+    if (targetId !== undefined) {
+        if (!/^\d+$/.test(String(targetId)))
+            return res.status(400).json({message: "You need to provide a numeric targetId"});
+        if (await targets.getOne(Number(targetId)) === null)
+            return res.status(404).json({message: "The target does not exist"});
+    }
+
+    /*
+     * The round latch, taken here rather than trusted to create(): this route
+     * answers before the round ends and create() *returns* its refusals rather
+     * than throwing, so a second click landing between the awaits above used to
+     * be told 200 "successfully created" while its round was refused into the
+     * void - a success toast for a test that never existed. The isRunning check
+     * at the top still refuses the common case cheaply; this is the answer for
+     * the race it cannot see. Whichever request loses is told the same 409 a
+     * click during a visible run has always got.
+     */
+    if (!testTask.tryReserve())
+        return res.status(409).json({message: "An speedtest is already running"});
 
     // Deliberately not awaited: a speedtest runs for 30-60s and holding the
     // connection open that long trips the default read timeout of every common
     // reverse proxy. The client follows progress via GET /speedtests/status.
-    testTask.create("custom").catch(error =>
-        console.error(`The manually started speedtest failed: ${error?.message ?? error}`));
+    // The reservation above is the latch create() would otherwise take, and its
+    // finally gives it back on every ending.
+    testTask.create("custom", targetId === undefined ? undefined : Number(targetId), {reserved: true})
+        .catch(error =>
+            console.error(`The manually started speedtest failed: ${error?.message ?? error}`));
 
     res.json({message: "Speedtest successfully created"});
 });
@@ -160,7 +256,19 @@ app.post("/run", password(false), async (req, res) => {
  * additive and may be absent.
  */
 app.get("/status", password(true), async (req, res) => {
-    const latest = await tests.getLatest();
+    /*
+     * Whose rows the body speaks for: the alerting targets', through the same
+     * scope the keep-alive already reads, and for the same reason. A diagnostic
+     * iperf3 box with alerts off fails because the machine is asleep, and its
+     * row was presented as the line's last test and counted among the line's
+     * recent failures - the status bar and the health summary blaming the
+     * internet for a target the operator had explicitly opted out of watching.
+     * Null scope means no targets exist at all - the pre-target install and the
+     * demo, whose rows carry no targetId - and there the instance-wide answer
+     * is the only one there is.
+     */
+    const scope = targets.alertingScope(await targets.listAll());
+    const latest = scope === null ? await tests.getLatest() : await tests.latestOfTargets(scope);
     const progress = testTask.getProgress();
 
     /**
@@ -211,7 +319,11 @@ app.get("/status", password(true), async (req, res) => {
         running: testTask.isRunning(),
         ...progress,
         lastTest,
-        recentFailures: await tests.countFailuresSince(new Date(Date.now() - RECENT_FAILURE_WINDOW_MS)),
+        // The same scope as the last test: the count sits beside it in the
+        // body, and the two disagreeing about whose failures matter is the
+        // exact confusion the scoping exists to end.
+        recentFailures: await tests.countFailuresSince(
+            new Date(Date.now() - RECENT_FAILURE_WINDOW_MS), scope ?? undefined),
         // From the stored schedule rather than the running job, so it is right
         // even before the timer has been started for the first time.
         nextTest,

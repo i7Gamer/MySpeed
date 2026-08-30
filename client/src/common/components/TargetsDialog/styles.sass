@@ -1,0 +1,305 @@
+@use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
+@use "@/common/styles/typography" as *
+
+// The editor is reached by a button inside the manager, so it takes the
+// manager's width: drawn at the settings width it made the dialog jump inward
+// when it opened and outward again when it closed. Its own rows carry the same
+// long values the manager's do - a server with its sponsor and city, a backend
+// URL - and had the same 224px to show them in.
+.provider-dialog-wrapper
+  width: $wide-dialog-width
+  max-width: 95vw
+
+  .dialog-main
+    display: block
+
+  /*
+   * One width for every field here, whatever its label says.
+   *
+   * In this dialog the fields sit under one another and read as a column, and
+   * a field that takes whatever its own label leaves over gives that column
+   * four widths inside 48px of each other - close enough to look like a
+   * mistake and far enough to see. The basis is the narrowest of them, so the
+   * longest label still fits beside its field on one line.
+   *
+   * Scoped here rather than onto .provider-input, which the manager also uses:
+   * its interface select is alone on its row and holds a value needing 311px,
+   * so it keeps the full width of the dialog it is in.
+   */
+  .provider-input
+    flex: 0 0 18rem
+    max-width: 100%
+
+.provider-content
+  margin: 1rem 0.5rem
+  user-select: none
+
+.provider-list
+  margin-bottom: 1.25rem
+
+  .selectable-option-image
+    width: 1.75rem
+    height: 1.75rem
+    border-radius: 0.3rem
+
+.target-name-setting
+  margin-bottom: 1.25rem
+
+.provider-settings
+  margin-top: 1.25rem
+  padding-top: 1.25rem
+  border-top: 1px solid $light-gray
+  display: flex
+  flex-direction: column
+  // The gap the provider cards are listed at - these rows are now the same
+  // kind of object, and a column of them should breathe the same way.
+  gap: 0.5rem
+
+/*
+ * A setting is a pair: some words and the control that answers them, with the
+ * dialog's width between them. Something has to carry the eye across that.
+ *
+ * On most of these rows the control does it itself. An input and a select draw
+ * their own border, so the row ends in a visible object and the pair reads as
+ * a pair; a card around one of those is a rounded rectangle fourteen pixels
+ * outside another rounded rectangle - heavier, and saying nothing the field
+ * was not already saying.
+ *
+ * What every row does need is for the words to take the slack rather than the
+ * gap taking it. `space-between` put the label at one edge and the control at
+ * the other and widened the space between them every time the dialog grew.
+ */
+.provider-setting
+  display: flex
+  align-items: center
+  gap: 1rem
+
+  &-label
+    display: flex
+    align-items: center
+    gap: 0.6rem
+    // The words take the spare width, so the distance to the control belongs
+    // to the label rather than being a gap between two floating things.
+    flex: 1 1 auto
+    // Wrapping rather than nowrap: a long translation - "Benutzerdefinierte
+    // URL", "Benachrichtigungen & Empfehlungen" - takes a second line instead
+    // of pushing the field out of the row.
+    min-width: 0
+
+    svg
+      color: $subtext
+      font-size: 1rem
+      width: 1rem
+      flex-shrink: 0
+
+    h3
+      margin: 0
+      font-size: $dialog-lead
+      font-weight: 500
+      color: $subtext
+
+/*
+ * The rows whose control brings no edge of its own.
+ *
+ * A toggle is a small pill against the far margin, so the distance between it
+ * and its label is exactly the void it looks like - and these two sit at the
+ * bottom of the dialog where that distance is widest. The border is what makes
+ * the pair a pair, and the provider cards immediately above are where its
+ * shape comes from: read off that stylesheet by settingsDialogs.test.js, so a
+ * change to the card is a change to these.
+ *
+ * Marked on the row in the JSX rather than found here with :has(), which
+ * nothing in this client uses yet - somebody adding a row should see which
+ * kind it is where they are writing it.
+ */
+.provider-setting-switch
+  padding: 0.875rem 1.125rem
+  border: 1px solid $light-gray
+  border-radius: 0.75rem
+
+.provider-input
+  // A share of the row rather than a fixed width. Pinned to 14rem it could not
+  // use the room the dialog has: the interface select showed 224px of a value
+  // needing 311, and of options needing 415. 14rem stays as the basis, so a
+  // row whose label is long still starts from the width this was drawn at.
+  flex: 1 1 14rem
+  // Without this the basis is a floor and the field pushes the label off the
+  // row instead of sharing it - flex items refuse to shrink past their content.
+  min-width: 0
+  height: 2.5rem
+  box-sizing: border-box
+  margin: 0 !important
+  padding: 0.6rem 0.875rem
+  font-size: $dialog-body
+  text-align: left
+
+.target-optimals
+  display: grid
+  grid-template-columns: repeat(3, 1fr)
+  gap: 0.75rem
+
+.target-optimal
+  display: flex
+  flex-direction: column
+  gap: 0.35rem
+  min-width: 0
+
+  &-label
+    font-size: $dialog-hint
+    color: $subtext
+    white-space: nowrap
+    overflow: hidden
+    text-overflow: ellipsis
+
+  &-unit
+    font-size: $dialog-hint
+
+  input
+    width: 100%
+    min-width: 0
+    box-sizing: border-box
+    margin: 0 !important
+    height: 2.5rem
+    padding: 0.6rem 0.75rem
+    font-size: $dialog-body
+    text-align: left
+
+.provider-license
+  display: flex
+  align-items: flex-start
+  gap: 0.75rem
+  margin: 0
+  margin-top: 1.25rem
+  padding-top: 1.25rem
+  border-top: 1px solid $light-gray
+  cursor: pointer
+
+  // The box draws itself now - see components/Checkbox. All this row still
+  // owns is where it sits against the first line of the sentence beside it.
+  .checkbox
+    margin-top: 0.15rem
+
+  span
+    color: $subtext
+    font-size: $dialog-hint
+    line-height: 1.5
+
+  a
+    color: $accent-primary
+
+// The manager: the round as rows.
+.targets-dialog-wrapper
+  width: $wide-dialog-width
+  max-width: 95vw
+
+  .dialog-main
+    display: block
+
+.targets-content
+  margin: 1rem 0.5rem
+  user-select: none
+
+.targets-description
+  margin: 0 0 1rem 0
+  color: $subtext
+  font-size: $dialog-lead
+  line-height: 1.5
+
+.targets-list
+  display: flex
+  flex-direction: column
+  gap: 0.5rem
+
+.target-row
+  display: flex
+  align-items: center
+  gap: 0.75rem
+  padding: 0.6rem 0.75rem
+  border: 1px solid $light-gray
+  border-radius: 0.5rem
+
+  &-text
+    flex: 1
+    min-width: 0
+
+    h3
+      margin: 0
+      font-size: $dialog-lead
+      font-weight: 600
+      // Said outright, because nothing above it says it: `body, html` sets no
+      // colour, so a heading with none of its own paints in the browser's
+      // default. Every target's name was black on the dark dialog - 1.28:1,
+      // and dimmer than the provider line underneath it, which had a colour.
+      color: $white
+      white-space: nowrap
+      overflow: hidden
+      text-overflow: ellipsis
+
+    p
+      margin: 0
+      color: $subtext
+      font-size: $dialog-hint
+      white-space: nowrap
+      overflow: hidden
+      text-overflow: ellipsis
+
+  &-actions
+    display: flex
+    align-items: center
+    gap: 0.35rem
+    flex-shrink: 0
+
+.target-reorder
+  display: flex
+  flex-direction: column
+
+  .target-action
+    height: 1.1rem
+    font-size: 0.7rem
+
+.target-action
+  background: none
+  border: none
+  padding: 0.25rem
+  color: $subtext
+  cursor: pointer
+  border-radius: 0.3rem
+  line-height: 1
+
+  &:hover:not(:disabled)
+    color: $white
+
+  &:disabled
+    opacity: 0.35
+    cursor: default
+
+  &-danger:hover:not(:disabled)
+    color: $accent-danger
+
+@media screen and (max-width: 520px)
+  .provider-setting
+    flex-direction: column
+    align-items: flex-start
+    gap: 0.5rem
+
+  .provider-input
+    // The row stacks here, so the main axis is vertical and the basis above
+    // would be read as a height - a 14rem-tall select, stretched by the grow.
+    // The field takes the full width of the column instead.
+    flex: none
+    width: 100%
+    min-width: 0
+    max-width: none
+
+  .target-optimals
+    grid-template-columns: 1fr
+
+  .target-row
+    flex-wrap: wrap
+
+    &-text
+      flex-basis: 60%
+
+    &-actions
+      margin-left: auto

@@ -2,7 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import {
-    blockEnd, bodyIn, bodyOf, escapeRegExp, findMounts, listSources, mountText, readSource, unreadableMountCount
+    blockEnd, bodyIn, bodyOf, escapeRegExp, findMounts, listSources, mountText, readSource, runBodies,
+    unreadableMountCount, withoutJsComments
 } from "../helpers/source.js";
 
 describe("blockEnd", () => {
@@ -611,4 +612,600 @@ describe("escapeRegExp", () => {
         assert.equal(new RegExp(escapeRegExp("a|b")).test("a"), false,
             "the pipe still reads as an alternative");
     });
+});
+
+/**
+ * The walk that reads a workflow's shell bodies, which two suites had a copy of.
+ *
+ * What it is used for is asserting that a `${{ }}` expression does *not* reach a
+ * run: body, and the correct way to pass such a value is to bind it through an
+ * `env:` block instead - so a walk whose bound is one step too wide reports every
+ * fix as the bug it fixes, and one that is too narrow reports nothing at all.
+ * Both directions are silent, which is why the walk gets cases of its own rather
+ * than only being exercised through the workflows that happen to be in the tree.
+ */
+describe("runBodies", () => {
+    const workflow = (...lines) => lines.join("\n");
+
+    it("reads a block scalar to the end of its block", () => {
+        const bodies = runBodies(workflow(
+            "        run: |",
+            "          git tag \"$TAG\"",
+            "          git push origin \"$TAG\"",
+            "      - name: Next step"
+        ));
+
+        assert.equal(bodies.length, 1);
+        assert.match(bodies[0].text, /git push origin/);
+        assert.doesNotMatch(bodies[0].text, /Next step/, "the walk ran on into the step that follows");
+    });
+
+    /**
+     * The defect the two copies shared. Both measured the block's indentation
+     * from the dash rather than from the key it opens, so a step written as
+     * `- run:` had a bound two columns too shallow - and every key of that step
+     * sitting after it, `env:` included, came back as part of the shell body.
+     *
+     * An expression bound through env: is precisely what a body is supposed to
+     * read instead of splicing, so the one shape these assertions exist to bless
+     * was the one shape they would have failed.
+     */
+    it("stops at the step's own keys when the run is the first one", () => {
+        const bodies = runBodies(workflow(
+            "      - run: echo \"$FOO\"",
+            "        env:",
+            "          FOO: ${{ inputs.version }}"
+        ));
+
+        assert.equal(bodies.length, 1);
+        assert.match(bodies[0].text, /echo "\$FOO"/, "the one-liner itself is the body");
+        assert.doesNotMatch(bodies[0].text, /\$\{\{/,
+            "the env: block binding the value is read as part of the shell body, so binding it correctly reads as splicing it");
+    });
+
+    // The same step written the usual way round, which is what kept the defect
+    // latent: with no dash on the run: line the bound was already the key's.
+    it("stops at them when the run is not the first one", () => {
+        const bodies = runBodies(workflow(
+            "      - name: A step",
+            "        run: echo \"$FOO\"",
+            "        env:",
+            "          FOO: ${{ inputs.version }}"
+        ));
+
+        assert.equal(bodies.length, 1);
+        assert.doesNotMatch(bodies[0].text, /\$\{\{/);
+    });
+
+    // A folded scalar is a body like any other, and a one-liner is its own.
+    it("reads a folded block and a one-liner alike", () => {
+        const bodies = runBodies(workflow(
+            "        run: >",
+            "          folded body",
+            "      - run: inline body"
+        ));
+
+        assert.deepEqual(bodies.map(({text}) => text.trim()), ["folded body", "inline body"]);
+    });
+
+    /**
+     * A `run:` carrying no block indicator was followed by neither copy in the
+     * same way: one walked its continuation lines, the other took the rest of
+     * the line and stopped. Walked, here - a bound that is never reached costs
+     * nothing, and a body that is silently not read is an assertion made against
+     * an empty string.
+     */
+    it("follows a plain scalar that continues onto the next line", () => {
+        const bodies = runBodies(workflow(
+            "        run: echo one",
+            "          ${{ inputs.version }}",
+            "      - name: Next step"
+        ));
+
+        assert.equal(bodies.length, 1);
+        assert.match(bodies[0].text, /\$\{\{/,
+            "a continuation line reaches the same shell and is not read at all");
+    });
+
+    /**
+     * And the other side of that rule, which nothing was holding.
+     *
+     * A plain scalar is not one string the way a block is: its continuation
+     * lines are still YAML, so a `#` line among them is YAML's own comment and
+     * never reaches the shell at all. That is the branch the case below depends
+     * on being there - keeping those lines would put the prose explaining a
+     * splice into the body being scanned for one - and neutralising it changed
+     * no result in any suite reading this walk. A guard that can be deleted
+     * without a failure is one that will be.
+     */
+    it("drops a comment among a plain scalar's continuation lines", () => {
+        const [body] = runBodies(workflow(
+            "        run: echo one",
+            "          # never splice ${{ inputs.version }} into a shell",
+            "          echo two",
+            "      - name: Next step"
+        ));
+
+        assert.deepEqual(body.lines.map((line) => line.trim()), ["echo one", "echo two"],
+            "a comment among a plain scalar's lines is YAML's own and reaches no shell, so the sentence warning about a splice is read as one");
+    });
+
+    // A blank line inside a block scalar is part of it, not the end of it.
+    it("keeps a blank line inside a block", () => {
+        const bodies = runBodies(workflow(
+            "        run: |",
+            "          first",
+            "",
+            "          second",
+            "      - name: Next step"
+        ));
+
+        assert.match(bodies[0].text, /second/, "the block ended at the blank line");
+    });
+
+    /**
+     * And the prose is gone before anything is read. These workflows explain,
+     * directly above the line, why a `${{` must not appear in a run body - so an
+     * assertion looking for one finds the sentence saying it must not be there.
+     */
+    it("strips the comments that explain what must not be in a body", () => {
+        const bodies = runBodies(workflow(
+            "        # never splice ${{ inputs.version }} into a shell",
+            "        run: |",
+            "          echo \"$VERSION\""
+        ));
+
+        assert.equal(bodies.length, 1);
+        assert.doesNotMatch(bodies[0].text, /\$\{\{/, "the comment warning about a splice is read as one");
+    });
+
+    /**
+     * But only the comments YAML itself would drop.
+     *
+     * Inside a block scalar there is no YAML left to comment: the whole block is
+     * one string, and a `${{ }}` on any line of it is substituted into that
+     * string before bash - or the `#` in front of it - is anywhere near the
+     * value. So `# note: ${{ github.event.pull_request.title }}` is a splice
+     * like any other, and stripping it here handed the scan written to find
+     * exactly that a body it had already been removed from. A carrier nobody
+     * would think to look for, reported clean by the check that exists for it.
+     */
+    it("keeps a shell comment inside a body, where the substitution still happens", () => {
+        const bodies = runBodies(workflow(
+            "        run: |",
+            "          # note: ${{ github.event.pull_request.title }}",
+            "          echo \"$VERSION\""
+        ));
+
+        assert.equal(bodies.length, 1);
+        assert.match(bodies[0].text, /\$\{\{/,
+            "a shell comment is stripped as though it were YAML's, so an expression spliced into one is invisible to every scan built on this");
+    });
+
+    /**
+     * And a header that states its own indentation is still a header.
+     *
+     * YAML lets a block scalar carry an indentation indicator beside the
+     * chomping one, in either order - `|2`, `>2-`, `|-2`. The pattern knew only
+     * the chomping half, so a header carrying a digit matched nothing, was taken
+     * for a one-liner, and the indicator itself came back as the body's first
+     * line - with the real body appended after it.
+     */
+    it("reads a block that states its own indentation", () => {
+        for (const header of ["|", "|-", ">+", "|2", ">2-", "|-2"]) {
+            const [body] = runBodies(workflow(
+                `        run: ${header}`,
+                "          echo one"
+            ));
+
+            assert.deepEqual(body.lines.map((line) => line.trim()), ["echo one"],
+                `"${header}" is not read as a block header, so the indicator is handed back as shell`);
+        }
+    });
+
+    /**
+     * And a header may carry a comment, which YAML allows and this did not.
+     *
+     * YAML 1.2 §8.1.1 puts an optional comment after the block header, so
+     * `run: | # bump the version` opens a block scalar like any other. The
+     * pattern anchored at the end of the line, so a header with one matched
+     * nothing and the whole step was read as a plain scalar - which fails twice
+     * over. The header text comes back as the body's first line, and every `#`
+     * line of the real body is then stripped as YAML's own comment: exactly the
+     * carrier the case above exists to keep, made invisible again by nothing
+     * more than a comment on the header.
+     */
+    it("reads a block header that carries a comment", () => {
+        const [body] = runBodies(workflow(
+            "        run: | # bump the version",
+            "          # title: ${{ github.event.pull_request.title }}",
+            "          echo building"
+        ));
+
+        assert.deepEqual(body.lines.map((line) => line.trim()),
+            ["# title: ${{ github.event.pull_request.title }}", "echo building"],
+            "the commented header is read as a one-liner, so it leaks in as the body's first line and the shell comment carrying a splice is stripped");
+    });
+
+    it("reads a folded one that carries a comment", () => {
+        const [body] = runBodies(workflow(
+            "        run: > # folded, and explained",
+            "          # note: ${{ inputs.version }}",
+            "          echo building"
+        ));
+
+        assert.deepEqual(body.lines.map((line) => line.trim()),
+            ["# note: ${{ inputs.version }}", "echo building"],
+            "a folded header with a comment is read as a one-liner");
+    });
+
+    // The two halves together, which is the shape neither fix covers alone.
+    it("reads one that states its indentation and carries a comment", () => {
+        const [body] = runBodies(workflow(
+            "        run: |2 # two columns in, and why",
+            "          # note: ${{ inputs.version }}",
+            "          echo building"
+        ));
+
+        assert.deepEqual(body.lines.map((line) => line.trim()),
+            ["# note: ${{ inputs.version }}", "echo building"],
+            "an indentation indicator and a comment on the same header are not read together");
+    });
+
+    /**
+     * But a comment is the only thing that may follow it. `| 2` is not YAML's
+     * way of writing `|2`, and reading it as a header would take a real
+     * one-liner's first word for an indicator - so what is not a comment is
+     * still not a header, and the line is the body it has always been.
+     */
+    it("does not read what is not a comment after the indicator as one", () => {
+        const [body] = runBodies(workflow(
+            "        run: | 2",
+            "          # a comment among a plain scalar's lines",
+            "          echo one"
+        ));
+
+        assert.deepEqual(body.lines.map((line) => line.trim()), ["| 2", "echo one"],
+            "the header pattern widened past comments, so junk after the indicator opens a block");
+    });
+
+    /**
+     * And a comment has to be separated from the indicator, which is the same
+     * rule read from the other side.
+     *
+     * YAML 1.2 wants whitespace in front of a `#` for it to begin a comment, so
+     * `run: |#note` is not a header carrying one. It is not a valid node at all
+     * - a parser refuses the document rather than opening a block - and the
+     * pattern accepted it, which is a header invented for a file nothing can
+     * load.
+     *
+     * Walked as a plain scalar instead: the text comes back as the body's first
+     * line, and the `#` lines beneath it are stripped as YAML's own comments -
+     * which is exactly the loss the commented-header case above exists to
+     * prevent. That is acceptable only here, and only because YAML rejects such
+     * a document outright, so no workflow this walk can be pointed at carries
+     * one. What matters is the other direction: read as a header, those `#`
+     * lines would be kept and scanned as shell while the file they came from
+     * was one no runner would ever parse.
+     */
+    it("does not read a comment jammed against the indicator as a header", () => {
+        const [body] = runBodies(workflow(
+            "        run: |#note",
+            "          # a comment among a plain scalar's lines",
+            "          echo one"
+        ));
+
+        assert.deepEqual(body.lines.map((line) => line.trim()), ["|#note", "echo one"],
+            "a `#` with nothing in front of it opens a block header, which YAML does not");
+    });
+
+    it("hands back each body as its lines and as one text", () => {
+        const [body] = runBodies(workflow(
+            "        run: |",
+            "          first",
+            "          second"
+        ));
+
+        assert.deepEqual(body.lines.map((line) => line.trim()), ["first", "second"]);
+        assert.equal(body.text, body.lines.join("\n"));
+    });
+
+    it("finds nothing in a workflow that runs nothing", () => {
+        assert.deepEqual(runBodies(workflow("      - uses: actions/checkout@v7")), []);
+    });
+});
+
+/**
+ * The comment stripper every source scan reads through, which was two regular
+ * expressions and is now a walk over the characters.
+ *
+ * Both expressions were wrong in the one direction a source scan must not be
+ * wrong in: they dropped code. The block pattern opened on the two characters
+ * that spell a comment opener wherever they landed - a glob inside a string is
+ * enough - and then ran to the next closer anywhere in the file, which is how
+ * i18n.js lost sixteen languages between an eager glob and a comment
+ * thirty-seven lines below it. The line pattern opened on any two adjacent
+ * slashes not preceded by a colon, which a regex literal ending in an escaped
+ * slash is, and which a template carrying an address is.
+ *
+ * A scan whose input has quietly lost the code it is scanning cannot fail, and
+ * every one of the twenty-one suites reading this helper is that kind of scan.
+ *
+ * So these are a characterisation of the walk that replaced them: the shapes
+ * that were probed, and below them the four files in this repository the
+ * expressions actually mangled. Nothing here asserts the old behaviour - the
+ * point of every case is that the walk keeps more code, and drops exactly the
+ * comments.
+ */
+describe("withoutJsComments", () => {
+    it("strips a line that is nothing but a comment", () => {
+        assert.equal(withoutJsComments("// plain").trim(), "");
+    });
+
+    it("keeps the code a trailing comment sits after", () => {
+        const code = withoutJsComments("code(); // trailing");
+
+        assert.match(code, /code\(\);/);
+        assert.doesNotMatch(code, /trailing/);
+    });
+
+    it("keeps the code a block comment sits in front of", () => {
+        assert.equal(withoutJsComments("/* block */ code").trim(), "code");
+    });
+
+    /**
+     * The state has to carry across lines, and the newlines have to survive it.
+     *
+     * FormatUtil.js carries a bare -1 in the middle of a doc comment, in a tree
+     * placeholderReaders.test.js scans - so a walk that forgets it is inside a
+     * block at the end of a line turns that suite red on prose. And every
+     * per-line consumer - the pins anchored with the m flag, the tripwire's own
+     * line-by-line allowlist - reads positions that mean nothing unless one
+     * newline comes back for each one removed.
+     */
+    it("carries a block comment across the lines it spans, and keeps their newlines", () => {
+        const source = [
+            "const before = 1;",
+            "/**",
+            " * -1 is the placeholder a failed test stores in every numeric column.",
+            " */",
+            "const after = 2;"
+        ].join("\n");
+
+        const code = withoutJsComments(source);
+
+        assert.doesNotMatch(code, /placeholder/, "the comment's second line was read as code");
+        assert.doesNotMatch(code, /-1/, "the placeholder named in prose came back as a bare -1");
+        assert.equal(code.split("\n").length, source.split("\n").length,
+            "the removed lines took their newlines with them, so every per-line reader is now three lines out");
+    });
+
+    /**
+     * The shape that was probed first, and the one the tripwire depends on: two
+     * slashes inside a string are two characters, and what follows them on the
+     * line is code.
+     */
+    it("does not start a line comment inside a string", () => {
+        const source = 'const u = "a//b"; const bad = (v) => v === -1;';
+
+        const code = withoutJsComments(source);
+
+        assert.match(code, /=== -1/,
+            "the slashes inside the string opened a comment and the rest of the line went with it");
+        assert.equal(code, source);
+    });
+
+    it("does not open a block comment inside a string either", () => {
+        const source = [
+            'const flags = import.meta.glob("./assets/languages/*.webp");',
+            "/* a real comment */",
+            "const keep = 1;"
+        ].join("\n");
+
+        const code = withoutJsComments(source);
+
+        assert.match(code, /\*\.webp/,
+            "the glob opened a comment, which ran to the next closer and ate everything between");
+        assert.match(code, /const keep = 1;/);
+        assert.doesNotMatch(code, /a real comment/, "the comment that is one survived");
+    });
+
+    it("leaves a division alone", () => {
+        const source = "const half = (a + b) / 2;";
+
+        assert.equal(withoutJsComments(source), source);
+    });
+
+    it("leaves a regex literal made of escaped slashes alone", () => {
+        const source = String.raw`const bare = url.replace(/\/\//, "");`;
+
+        assert.equal(withoutJsComments(source), source,
+            "the literal's escaped slash and its own closer stand adjacent, and read as a line comment");
+    });
+
+    it("reads a slash after return as a literal rather than a division", () => {
+        const source = "const looksRight = (y) => { return /x/.test(y); };";
+
+        assert.equal(withoutJsComments(source), source);
+    });
+
+    it("reads two slashes in a template's text as text", () => {
+        const source = "const address = `${url.protocol}//${url.host}${url.pathname}`;";
+
+        assert.equal(withoutJsComments(source), source,
+            "the template's own slashes opened a comment and took the rest of the address with them");
+    });
+
+    it("still strips a comment inside a template's substitution", () => {
+        const code = withoutJsComments("const u = `a${b /* why */ + c}d`;");
+
+        assert.doesNotMatch(code, /why/, "the substitution never returned to code state");
+        assert.match(code, /\+ c/);
+    });
+
+    /**
+     * The fail-closed rule, and the one place the walk deliberately keeps a
+     * comment.
+     *
+     * Whether a slash opens a literal or divides is decided by what stands in
+     * front of it, which is a heuristic rather than a parse. Read as a division
+     * when it was a literal, the walk is then inside that literal's text - and
+     * two slashes in there would be stripped as a comment, taking real code to
+     * the end of the line with them. That is the direction both expressions
+     * failed in, and the one this replaced them to end.
+     *
+     * So a line that has already divided keeps whatever follows. The cost is a
+     * comment surviving on such a line, which is the harmless direction: a scan
+     * reading more than the code is at worst noisy, and one reading less than
+     * the code cannot fail at all.
+     */
+    it("keeps a trailing comment on a line whose earlier slash was read as a division", () => {
+        const source = "const half = total / 2; // fail-closed, because this line already divided";
+
+        assert.equal(withoutJsComments(source), source,
+            "a slash read as a division may have been a literal the walk is now inside, so what follows is kept rather than dropped");
+    });
+
+    /**
+     * A slash directly after an arrow opens a literal - the arrow leaves the
+     * same position a `(` does. Read as a division, the walk is inside the
+     * regex's text: a stray backtick in there opens a template that never
+     * closes, and modelNullability.test.js ended every scan of itself in
+     * exactly that state - see the fail-loud cases below, which are how the
+     * misreading was finally caught.
+     */
+    it("strips a trailing comment on a line whose slash opened a regex after an arrow", () => {
+        const code = withoutJsComments("const negative = (s) => /-/.test(s); // the sign, not a range");
+
+        assert.doesNotMatch(code, /sign, not a range/,
+            "the slash after the arrow read as a division, so the line's real comment is fail-closed into the scan");
+        assert.match(code, /\/-\/\.test\(s\);/);
+    });
+
+    // Held by the equality here and by the fail-loud contract below: read as
+    // a division, the escaped slashes put the walk inside the literal's text.
+    it("does not open a comment inside a regex that follows an arrow", () => {
+        const source = String.raw`const scheme = (u) => /^https:\/\//.test(u); const bad = (v) => v === -1;`;
+        const code = withoutJsComments(source);
+
+        assert.match(code, /=== -1/, "the tripwire's reading was eaten with the rest of the line");
+        assert.equal(code, source);
+    });
+
+    // The real shape that ended in a phantom template: the division misread
+    // walks into the regex, "closes" it at the path's own slash, and the
+    // template's closing backtick then reads as an opener. With the arrow
+    // read correctly the literal is consumed whole and the template closes.
+    it("is not thrown into a phantom template by a division misread", () => {
+        const source = "const flagged = files.filter((file) => " +
+            "/^\\s*required:/m.test(readSource(`server/models/${file}`)));";
+
+        assert.equal(withoutJsComments(source), source);
+    });
+
+    /**
+     * The fail-loud contract. Valid JavaScript cannot end inside a template,
+     * a substitution or a block comment, so reaching the end of input in one
+     * of those states means a slash context was misread above - and the old
+     * behaviour, carrying the state silently to the far end, is what let a
+     * misread survive every suite: nothing was dropped, only never stripped
+     * again, and a scan whose input keeps its comments cannot be trusted in
+     * either direction.
+     */
+    it("fails loudly when the input ends inside a template", () => {
+        assert.throws(() => withoutJsComments("const s = `never closed"), /template/);
+    });
+
+    it("fails loudly when it ends inside a block comment", () => {
+        assert.throws(() => withoutJsComments("/* never closed"), /block comment/);
+    });
+
+    it("fails loudly when it ends inside a template substitution", () => {
+        assert.throws(() => withoutJsComments("const s = `a${b"), /substitution/);
+    });
+
+    // The two line-bounded states stay tolerated: a file may end in a line
+    // comment, and a stray apostrophe is a stray apostrophe - the string
+    // state already dies at each newline by design.
+    it("still accepts an input ending in a line comment", () => {
+        assert.equal(withoutJsComments("code(); // trailing to the end").trim(), "code();");
+    });
+
+    it("still tolerates a stray quote at the end of input", () => {
+        assert.equal(withoutJsComments("const oops = 'x"), "const oops = 'x");
+    });
+
+    /**
+     * The newline invariant includes the carriage return. The line-comment
+     * branch has always handed `\r` back; the block branch wrote a bare `\n`
+     * for every line a comment spanned, so half the tree - the CRLF half -
+     * came back with mixed endings on exactly the commented lines.
+     */
+    it("keeps the carriage returns of the lines a block comment spans", () => {
+        const code = withoutJsComments("const a = 1;\r\n/* two\r\n * lines */\r\nconst b = 2;");
+
+        assert.equal(code, "const a = 1;\r\n\r\n\r\nconst b = 2;");
+    });
+});
+
+/**
+ * The four files in this repository the two expressions actually mangled.
+ *
+ * Pinned by the text that has to come back rather than by a diff against the
+ * old stripper, which is gone. Each pins a comment that still has to go
+ * alongside it, so none of them can be satisfied by a stripper that has simply
+ * stopped stripping.
+ *
+ * And each anchor is first proved to still be IN the file. Without that, an
+ * edit to the pinned source rots the case silently in whichever direction it
+ * drifts: a renamed comment passes the "is stripped" half against nothing,
+ * and a reworded keeper turns the case red for a reason that is not the
+ * stripper's. The failure message says which happened.
+ */
+describe("withoutJsComments and the files it stopped mangling", () => {
+    const CHARACTERISED = [
+        {
+            name: "the language list i18n.js declares under an eager glob",
+            file: "client/src/i18n.js",
+            keeps: ["'Nederlands'", "'Italiano'", "'Polski'", "'Bahasa Indonesia'"],
+            strips: "Upstream #725"
+        },
+        {
+            name: "the tail of the regex NodeContainer strips a scheme with",
+            file: "client/src/pages/Nodes/components/NodeContainer/NodeContainer.jsx",
+            keeps: [String.raw`replace(/(^\w+:|^)\/\//, '')`],
+            strips: "How often a visible card re-reads its node"
+        },
+        {
+            name: "the message downloadHelper refuses a redirect with",
+            file: "server/util/providers/downloadHelper.js",
+            keeps: ["and only https is followed"],
+            strips: "What a refused download is, as its own type"
+        },
+        {
+            name: "the address urlCredentials rebuilds without its userinfo",
+            file: "server/util/urlCredentials.js",
+            keeps: ["${url.protocol}//${url.host}"],
+            strips: "A URL with any credential taken out of it"
+        }
+    ];
+
+    for (const {name, file, keeps, strips} of CHARACTERISED)
+        it(`keeps ${name}`, () => {
+            const source = readSource(file);
+
+            for (const anchor of [...keeps, strips])
+                assert.ok(source.includes(anchor),
+                    `${file} no longer contains ${JSON.stringify(anchor)}: the fixture has drifted, so this case `
+                    + "was checking nothing - re-characterise it against the file as it is now");
+
+            const code = withoutJsComments(source);
+
+            for (const anchor of keeps)
+                assert.ok(code.includes(anchor),
+                    `${JSON.stringify(anchor)} is gone from ${file}: the walk read code as a comment again`);
+
+            assert.ok(!code.includes(strips),
+                `the comment ${JSON.stringify(strips)} in ${file} is no longer stripped`);
+        });
 });

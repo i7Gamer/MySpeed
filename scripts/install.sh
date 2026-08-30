@@ -70,6 +70,83 @@ case "$ARCH" in
         ;;
 esac
 
+# Whether the data path is something a database can live in - a directory, or a
+# link to one. Asked here, with the other preconditions, and not down at the
+# three arms that decide that directory's mode.
+#
+# Nothing this script can do repairs the shapes below: creating the target would
+# invent a directory somewhere the operator's link points and this script cannot
+# see, and removing the link would delete the only record of where their data was
+# meant to live. So the answer is to stop - and stopping is only worth anything
+# before the run has changed the machine.
+#
+# Down at the arms it was a precondition evaluated past the midpoint. By then
+# `systemctl stop myspeed` has run and `mv -f "$DOWNLOAD_TMP" myspeed` has
+# replaced the binary, so an upgrade whose target simply was not mounted yet - a
+# NAS that comes up after the box does - was refused into a service deliberately
+# stopped with nothing left to restart it. That is worse than the installer which
+# had no refusal at all and at least came back up on the next boot. Root and the
+# CPU's AVX2 are settled before that stop, and the two download failures below
+# say "left untouched" because they run before the move; this one can now say it
+# too.
+#
+# `[ ! -d ]` rather than `[ ! -e ]`, because -e follows the link. A target that
+# is a regular file - a NAS export not up yet with a stale file left at the name,
+# a path that was never a directory - answered "the target exists", collected the
+# mild warning, and the install completed over a server whose first storage.db
+# open fails ENOTDIR under Restart=always: the same boot-fatal shape, dispatched
+# to the same wrong arm. -d is false for both and true only for the one that
+# works, and the message says which of the two was found.
+#
+# And a link is not the only way that path fails to be a directory. A plain
+# regular file sitting at it - the same stale NAS name, with nothing pointing at
+# it - answered false to `-L`, so the question was never asked: the run stopped
+# the service, replaced the binary, and died at the mkdir two hundred lines below
+# on a path that was already taken. Deliberately stopped, nothing left to restart
+# it, which is the outcome this block was hoisted up here to prevent.
+#
+# So `-L or -e` rather than `-L`. Neither alone: `-e` follows a link and answers
+# false for the dangling one, and `[ ! -d ]` on its own is true of a fresh
+# install with nothing at that path at all, which would refuse every first
+# install on the grounds that it was a first install.
+if { [ -L "$INSTALLATION_PATH/data" ] || [ -e "$INSTALLATION_PATH/data" ]; } && [ ! -d "$INSTALLATION_PATH/data" ]; then
+    echo -e "$RED✗ ABORTED"
+
+    # What the operator has to fix differs with which of the two it is, and so
+    # does what can be said about it: readlink on something that is not a link
+    # exits 1 with nothing on stdout, so the link's wording would name a target
+    # that was never there.
+    if [ -L "$INSTALLATION_PATH/data" ]; then
+        DATA_LINK_TARGET=$(readlink "$INSTALLATION_PATH/data")
+
+        if [ -e "$INSTALLATION_PATH/data" ]; then
+            DATA_LINK_FAULT="is not a directory"
+        else
+            DATA_LINK_FAULT="does not exist"
+        fi
+
+        # A relative target is resolved against the directory the link itself
+        # sits in, not against the working directory - so "a link to ../storage"
+        # leaves the operator to work out which "..", and an absolute one needs
+        # no note.
+        case "$DATA_LINK_TARGET" in
+            /*) DATA_LINK_WHERE="" ;;
+            *) DATA_LINK_WHERE=", resolved against $INSTALLATION_PATH" ;;
+        esac
+
+        echo -e "$NORMAL $INSTALLATION_PATH/data is a link to $DATA_LINK_TARGET$DATA_LINK_WHERE, which $DATA_LINK_FAULT."
+        echo -e "$NORMAL MySpeed cannot create its database there, so it would fail on every start."
+        echo -e "$NORMAL Mount that directory, point the link at one that exists, or remove the link, and run this installer again."
+    else
+        echo -e "$NORMAL $INSTALLATION_PATH/data is not a directory."
+        echo -e "$NORMAL MySpeed cannot create its database there, so it would fail on every start."
+        echo -e "$NORMAL Move that file out of the way, or remove it, and run this installer again."
+    fi
+
+    echo -e "$NORMALℹ Nothing has been touched: the service was not stopped and no file was replaced."
+    exit 1
+fi
+
 echo -e "$GREEN ---------$BLUE Automatic Installation$GREEN ---------"
 echo -e "$BLUE MySpeed$YELLOW is now being installed."
 echo -e "$YELLOW Version:$BLUE MySpeed Release"
@@ -387,12 +464,96 @@ else
     SERVICE_ACCOUNT="$SERVICE_USER"
 fi
 
+# The mode of the data directory, not only its owner. storage.db is created
+# inside it by the server under systemd's default 022 umask - 0644 in a 0755
+# directory - and it holds the admin password hash and the integration secrets,
+# so at that mode any local account can read it. chown says who owns the
+# directory; 700 is what says no other account may walk into it. Stated rather
+# than left to the umask, the way the installation root's 755 is above - the root
+# needs the traversal the service's account depends on, and the data directory
+# needs the opposite.
+#
+# Above the branch rather than inside it, which is where it started out. Beside
+# the chown it covered only the installs that got a service account: the root
+# fallback - no useradd on the host, or a path an unprivileged account cannot
+# reach - created no data directory at all, so the server's own folder helper
+# made one on first boot at whatever the umask allowed. That is the install this
+# script prints a warning about, and it was the one whose database any local
+# account could read. The helper now states the same 700 for the installs that
+# never run this script at all.
+#
+# Three cases and not one, because the mode of a directory this script makes and
+# the mode of a directory it merely found are different questions - the same
+# distinction the installation root's own chmod draws above. Hoisted here as a
+# bare mkdir and an unconditional chmod, it answered both with 700.
+#
+# A symlink that points somewhere is left entirely alone. chmod follows one, so
+# a mode stated here lands on the far end of it: an operator who moved data onto
+# another volume decided that directory's mode somewhere this script cannot see,
+# and the server writes this path as an unprivileged account, so a link planted
+# under a compromise is the other thing that can be waiting at the end of it.
+#
+# The handover below says -h for the same reason docker-entrypoint.sh does, and
+# for the same two directories: this tree is written by the unprivileged service
+# account, so a link planted under it by a compromise is waiting for the next
+# upgrade, which runs as root. GNU's chown already refuses to follow links under
+# -R - its default is -P, verified against coreutils 9.1 for an operand link and
+# for one planted inside the tree alike - but POSIX leaves -R without -H/-L/-P
+# unspecified, and a property that keeps root from re-owning an arbitrary file
+# should be stated in the command rather than trusted to a default. -h beside -R
+# is the same GNU/busybox/BSD extension the entrypoint already relies on, and on
+# the hosts this installer supports it changes nothing but the saying.
+#
+# What is left alone is said in full, because it is more than the mode. With -h
+# the handover below changes a link itself and never the directory at the far
+# end. An operator told only that "permissions are left as they were found" is
+# not told the thing that stops the server booting, which is that the account
+# named in the unit cannot open a database in a directory it does not own.
+#
+# A link this script cannot work with never reaches here at all. Whether the
+# target is a directory is a precondition, not a decision about a mode, and it is
+# settled at the top of the file with the other preconditions - before the
+# service is stopped and before the binary is replaced, which is the only point
+# at which refusing costs the operator nothing. What is left in the arm below
+# acts on nothing, which is why it can stay where it is.
+#
+# A directory this script creates gets 700, checked the way the installation
+# root's mkdir is: `[ ! -d ]` is also true of a path already taken by a regular
+# file, there is no `set -e`, and an unchecked mkdir then falls through to a
+# chmod that rewrites whatever is at that path, as root, on its way to aborting.
+#
+# A directory that was already there keeps the mode its operator gave it, less
+# the world bits. Retightening it to 700 would silently overrule someone who had
+# opened it to a backup group - 0750 root:backup stays 0750 root:backup - and
+# what this script says above is that a directory already on disk is theirs. But
+# an installer older than that 700 created this one at the umask's 0755, so an
+# upgrade of such an install is carrying a world-readable storage.db and this is
+# the only moment anything is placed to notice. `o-rwx` is the part of the mode
+# nobody chooses on purpose.
+if [ -L "$INSTALLATION_PATH/data" ]; then
+    echo -e "$YELLOW⚠ Warning: $NORMAL $INSTALLATION_PATH/data is a link, so neither its mode nor its ownership is changed."
+    echo -e "$NORMAL The directory it points at must be readable and writable by \"$SERVICE_ACCOUNT\", or MySpeed cannot open its database."
+    sleep 2
+elif [ ! -d "$INSTALLATION_PATH/data" ]; then
+    if ! mkdir -p "$INSTALLATION_PATH/data"; then
+        echo -e "$RED✗ Could not create $INSTALLATION_PATH/data.$NORMAL Check that the installation"
+        echo -e "$NORMAL directory is writable and that the path is not already taken by a file."
+        exit 1
+    fi
+
+    chmod 700 "$INSTALLATION_PATH/data"
+else
+    chmod o-rwx "$INSTALLATION_PATH/data"
+fi
+
 if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]; then
     # These two and nothing else. The server writes its database, its logs and
     # the CLI it downloads under `data` and `bin`, and writes nothing at the
-    # installation root - so creating them here means the account never needs
-    # the root, and a recursive chown never leaves the directories this script
-    # made.
+    # installation root - so handing over those two means the account never
+    # needs the root, and a recursive chown never leaves the directories this
+    # script made. `bin` is created here because only an installation with a
+    # service account has anything to hand it to; `data` is made above, for
+    # both.
     #
     # It used to hand over $INSTALLATION_PATH whole, behind a check that the
     # path held a `myspeed` file. That check could not work: the script writes
@@ -411,8 +572,8 @@ if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]; then
     # The user only, not user:group - useradd --system creates a matching group
     # on Debian and RHEL but not everywhere, and a chown that names a group that
     # does not exist changes nothing at all.
-    mkdir -p "$INSTALLATION_PATH/data" "$INSTALLATION_PATH/bin"
-    chown -R "$SERVICE_USER" "$INSTALLATION_PATH/data" "$INSTALLATION_PATH/bin"
+    mkdir -p "$INSTALLATION_PATH/bin"
+    chown -Rh "$SERVICE_USER" "$INSTALLATION_PATH/data" "$INSTALLATION_PATH/bin"
 else
     echo -e "$YELLOW⚠ Warning: $NORMAL $SERVICE_FALLBACK, so MySpeed will run as root."
     sleep 2

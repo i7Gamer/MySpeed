@@ -167,9 +167,14 @@ describe("the connection's quality figures sit on the ping card", () => {
     });
 
     // Zero loss is the best reading there is and the one most often seen, so a
-    // truthiness check would hide exactly the result worth showing.
+    // truthiness check would hide exactly the result worth showing - and junk
+    // is no reading, so the loss row reads through readableFigure: its label
+    // prints the stored column raw, and "auto%" beside the blue the colour
+    // grades it would assert a reading nobody took. The jitter chip keeps
+    // isMeasured, because its label prints through formatLatencyWithUnit,
+    // which says N/A for what it cannot read.
     it("treats a measured zero as a measurement", () => {
-        assert.match(beforeFacts, /isMeasured\(test\.packetLoss\)/);
+        assert.match(beforeFacts, /readableFigure\(test\.packetLoss\) !== null/);
         assert.match(beforeFacts, /isMeasured\(test\.jitter\)/);
     });
 
@@ -187,6 +192,11 @@ describe("the connection's quality figures sit on the ping card", () => {
             "jitter sits ungraded beside a graded packet loss");
     });
 });
+
+// The metric cards' value rendering is pinned where it is owned: the
+// FigureWithUnit suite holds the wiring of all four call sites and executes
+// the component's refusal, and the raw-render scan's unit-span pattern
+// forbids the adjacency a revert would recreate.
 
 describe("the chart modal", () => {
     const aliasImporter = {

@@ -7,6 +7,7 @@ import setupPushover, { PUSHOVER_MESSAGE_LIMIT } from "../../server/integrations
 import setupWebhook from "../../server/integrations/webhook.js";
 import setupHealthChecks from "../../server/integrations/healthChecks.js";
 import setupInflux from "../../server/integrations/influxdb.js";
+import { bodyOf, readSource } from "../helpers/source.js";
 
 /**
  * These modules are what actually reaches the user when a speedtest finishes or
@@ -88,6 +89,35 @@ describe("influxdb", () => {
         assert.match(written.body, /download=100/);
         assert.doesNotMatch(written.body, /packetLoss/);
         assert.doesNotMatch(written.body, /Latency/);
+    });
+
+    /**
+     * Which member measured the point. Tags are what a series is grouped by,
+     * so without them every target's points shared one series - a Grafana
+     * panel averaging the WAN with the LAN box - and with precision=s, two
+     * members finishing in the same second were one point, last writer wins.
+     * Through buildLine's own escaping, so a name with a space survives.
+     */
+    it("tags the point with the member that measured it", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config,
+            {...RESULT, targetId: 3, targetName: "WAN Box", provider: "iperf3"});
+
+        const [written] = sent;
+        assert.match(written.body, /,target=WAN\\ Box/);
+        assert.match(written.body, /,targetId=3/);
+        assert.match(written.body, /,provider=iperf3/);
+    });
+
+    // A row from before targets existed carries nulls, and buildLine already
+    // drops empty tag values - no tags invented, nothing renamed.
+    it("writes a pre-target row without inventing empty tags", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config,
+            {...RESULT, targetId: null, targetName: null, provider: null});
+
+        assert.doesNotMatch(sent[0].body, /target/);
+        assert.doesNotMatch(sent[0].body, /provider/);
     });
 });
 
@@ -277,7 +307,8 @@ describe("pushover", () => {
             const {events} = load(setupPushover);
             await fire(events, "testFailed", config, failure(LONG));
 
-            assert.match(sent[0].body.message, /^A speedtest has failed\. Reason: Error: \[0\] Cannot open socket/);
+            assert.match(sent[0].body.message, /^A speedtest has failed\./);
+            assert.match(sent[0].body.message, /Reason: Error: \[0\] Cannot open socket/);
         });
 
         // A trimmed message that does not say it was trimmed reads as the whole
@@ -291,9 +322,12 @@ describe("pushover", () => {
 
         it("leaves a message that already fits exactly as it was written", async () => {
             const {events} = load(setupPushover);
-            await fire(events, "testFailed", config, failure("no route to host"));
+            // targetName travels as an explicit null, the way failedPayload
+            // always sends it, so the template renders N/A rather than keeping
+            // the placeholder.
+            await fire(events, "testFailed", config, {...failure("no route to host"), targetName: null});
 
-            assert.equal(sent[0].body.message, "A speedtest has failed. Reason: no route to host");
+            assert.equal(sent[0].body.message, "A speedtest has failed.\nTarget: N/A\nReason: no route to host");
         });
 
         // The limit is on the message, not on the reason, so a long custom
@@ -348,18 +382,20 @@ describe("webhook", () => {
 describe("health checks", () => {
     const config = {url: "https://hc.example.net/ping/uuid"};
 
-    it("pings the bare url when a test finishes", async () => {
+    // The round's completion, not the members' - see "the health checks
+    // keep-alive" below for the lifecycle cases.
+    it("pings the bare url when a round finishes clean", async () => {
         const {events} = load(setupHealthChecks);
-        await fire(events, "testFinished", config, RESULT);
+        await fire(events, "roundFinished", config, {failed: false, failures: 0, members: 1});
 
         assert.equal(sent[0].url, config.url);
     });
 
-    it("uses the /start and /fail sub-paths for the other events", async () => {
+    it("uses the /start and /fail sub-paths for the other outcomes", async () => {
         const {events} = load(setupHealthChecks);
 
         await fire(events, "testStarted", config, undefined);
-        await fire(events, "testFailed", config, failure("boom"));
+        await fire(events, "roundFinished", config, {failed: true, failures: 1, members: 1});
 
         assert.deepEqual(sent.map((request) => request.url),
             [`${config.url}/start`, `${config.url}/fail`]);
@@ -369,7 +405,7 @@ describe("health checks", () => {
     // undefined - a request to the server's own origin.
     it("sends nothing when no url is configured", async () => {
         const {events} = load(setupHealthChecks);
-        await fire(events, "testFinished", {}, RESULT);
+        await fire(events, "roundFinished", {}, {failed: false, failures: 0, members: 1});
 
         assert.deepEqual(sent, []);
     });
@@ -640,19 +676,42 @@ describe("the health checks keep-alive", () => {
         assert.equal(await pinged(undefined), config.url);
     });
 
-    // Only the keep-alive is routed. The other three carry the outcome in the
-    // event itself, and a finished test that landed on /fail would leave the
-    // check down after the line recovered.
-    it("leaves the other three events on their own paths", async () => {
+    /**
+     * The check follows the round, not its members. healthchecks.io models
+     * one check as one monitored thing: /start opens a run and the next ping
+     * closes it. The per-member events fire once per target, so a
+     * multi-target round answered one /start with N pings - and the last
+     * member won: a watched line's /fail was taken back seconds later by the
+     * next member's success, and the check ended the round "up" while the
+     * line was still down.
+     */
+    it("answers the round's start with the round's one outcome", async () => {
         const {events} = load(setupHealthChecks);
-        const failing = {testFailing: true};
 
-        await fire(events, "testFinished", config, failing);
-        await fire(events, "testStarted", config, failing);
-        await fire(events, "testFailed", config, failing);
+        await fire(events, "testStarted", config, undefined);
+        await fire(events, "roundFinished", config, {failed: true, failures: 1, members: 2});
 
         assert.deepEqual(sent.map((request) => request.url),
-            [config.url, `${config.url}/start`, `${config.url}/fail`]);
+            [`${config.url}/start`, `${config.url}/fail`]);
+    });
+
+    it("pings success for a round nothing watched failed in", async () => {
+        const {events} = load(setupHealthChecks);
+
+        await fire(events, "roundFinished", config, {failed: false, failures: 0, members: 2});
+
+        assert.deepEqual(sent.map((request) => request.url), [config.url]);
+    });
+
+    // The per-member events are deliberately not handled any more: each one
+    // was a ping, and the last member's outcome overwrote every earlier one.
+    it("no longer pings once per member", () => {
+        const {events} = load(setupHealthChecks);
+
+        assert.equal(events.testFinished, undefined,
+            "a finished member still pings, so the last member overwrites the round");
+        assert.equal(events.testFailed, undefined,
+            "a failed member still pings ahead of the round's own answer");
     });
 
     /**
@@ -673,9 +732,12 @@ describe("the health checks keep-alive", () => {
 
     it("still forwards everything else a payload carries", async () => {
         const {events} = load(setupHealthChecks);
-        await fire(events, "testFinished", config, {...RESULT, testFailing: false});
+        const outcome = {failed: true, failures: 1, members: 3};
+        await fire(events, "roundFinished", config, {...outcome, testFailing: false});
 
-        assert.deepEqual(sent[0].body, RESULT, "the measurements stopped reaching the ping log");
+        // `failed` stays in, unlike testFailing: it is the round's actual
+        // outcome, which is exactly what a ping log is for.
+        assert.deepEqual(sent[0].body, outcome, "the round's outcome stopped reaching the ping log");
     });
 
     // The trailing slash a url pasted from an address bar carries, which the
@@ -685,5 +747,63 @@ describe("the health checks keep-alive", () => {
         await fire(events, "minutePassed", {url: "https://hc.example.net/ping/uuid/"}, {testFailing: true});
 
         assert.equal(sent[0].url, `${config.url}/fail`);
+    });
+});
+
+/**
+ * Every default template names the member it is talking about.
+ *
+ * The payload has carried %targetName% since targets arrived, and all six
+ * default templates predate it - so on a multi-target instance every
+ * notification read identically whether it described the WAN or the gigabit
+ * LAN box, and the alert that mattered was indistinguishable from the one
+ * that did not. On a pre-target instance the variable renders as N/A, the
+ * shape every unmeasured figure already takes.
+ */
+describe("the default templates", () => {
+    const TEMPLATE_MODULES = ["discord", "telegram", "gotify", "pushover", "email", "ntfy"];
+
+    /**
+     * One template at a time, rather than counting the name across the whole
+     * block: two mentions in the finished message and none in the failed one
+     * satisfied a count, and the failure alert - the notification that matters
+     * most - went back to reading identically for the WAN and the LAN box.
+     *
+     * None of the six bodies carries a double quote of its own, so the value
+     * ends where the string does.
+     */
+    const templateFor = (module, key) => {
+        const defaults = bodyOf(readSource(`server/integrations/${module}.js`), "const defaults =");
+        const written = defaults.match(new RegExp(`\\b${key}: "([^"]*)"`));
+
+        assert.notEqual(written, null, `${module} declares no default ${key} message`);
+
+        return written[1];
+    };
+
+    for (const name of TEMPLATE_MODULES)
+        it(`${name}'s templates name the member they describe`, () => {
+            assert.match(templateFor(name, "finished"), /%targetName%/,
+                `${name}'s finished message does not say which target it describes`);
+            assert.match(templateFor(name, "failed"), /%targetName%/,
+                `${name}'s failure alert does not say which target went down`);
+        });
+
+    it("renders the member's name into the message that goes out", async () => {
+        const {events} = load(setupDiscord);
+        await fire(events, "testFinished",
+            {url: "https://discord.com/api/webhooks/1/token", send_finished: true},
+            {...RESULT, targetName: "WAN Box"});
+
+        assert.match(sent[0].body.embeds[0].description, /WAN Box/);
+    });
+
+    it("names the member in a failure too", async () => {
+        const {events} = load(setupDiscord);
+        await fire(events, "testFailed",
+            {url: "https://discord.com/api/webhooks/1/token", send_failed: true},
+            {...failure("boom"), targetName: "LAN Box"});
+
+        assert.match(sent[0].body.embeds[0].description, /LAN Box/);
     });
 });

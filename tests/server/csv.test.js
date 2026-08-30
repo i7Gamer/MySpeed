@@ -29,7 +29,7 @@ describe("toCsv", () => {
     it("starts with the header row", () => {
         assert.equal(lines([row()])[0],
             "id,ping,jitter,download,upload,time,type,created,provider,serverId,serverName,serverHost,serverLocation," +
-            "packetLoss,downloadLatency,uploadLatency,isp,externalIp,bytesDownloaded,bytesUploaded,resultId,error");
+            "packetLoss,downloadLatency,uploadLatency,isp,externalIp,bytesDownloaded,bytesUploaded,resultId,targetName,error");
     });
 
     // Free text last, so a reader scanning the numeric columns never steps over
@@ -46,7 +46,7 @@ describe("toCsv", () => {
         assert.equal(lines([row()])[1],
             '"1","10","2.5","100","50","30","auto","2026-08-07T10:00:00.000Z","ookla","49631",' +
             '"Arcade Solutions AG","speedtest.arcade.ch","Zurich","0","12.5","44.75","Salt Mobile","2a04:ee41::1",' +
-            '"1135809960","917831105","abc123",""');
+            '"1135809960","917831105","abc123","",""');
     });
 
     // The figures are only worth recording if they leave again, and a zero must

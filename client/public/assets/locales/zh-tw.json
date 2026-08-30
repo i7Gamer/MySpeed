@@ -54,22 +54,23 @@
       "server_id": "伺服器 ID",
       "server_id_placeholder": "任一伺服器 ID，或留空",
       "custom_url": "自訂 URL",
+      "iperf_host": "iperf3 伺服器",
       "choose_automatically": "自動選擇",
       "ookla_license": "我已閱讀並接受 Ookla 的 <Eula>EULA</Eula>、<GDPR>隱私權政策</GDPR>與<TOS>服務條款</TOS>。",
       "ookla_desc": "熱門供應商，擁有遍布全球的伺服器網路",
       "libre_desc": "開放原始碼、可自行架設的速度測試",
-      "cloudflare_desc": "以 CDN 為基礎的快速測試"
+      "cloudflare_desc": "以 CDN 為基礎的快速測試",
+      "iperf3_desc": "您自己的 iperf3 伺服器，就在您的網路上"
     }
   },
   "dropdown": {
     "settings": "設定",
     "changes_applied": "您的變更已儲存。",
     "language_changed": "語言已變更。",
-    "provider_changed": "供應商已變更。",
     "changes_unsaved": "您的變更未被套用。請檢查您的輸入。",
     "invalid": "輸入無效",
     "optimal_values": "最佳值",
-    "change_provider": "變更供應商",
+    "targets": "測速點",
     "password": "變更密碼",
     "cron": "設定頻率",
     "storage": "管理儲存空間",
@@ -135,7 +136,6 @@
     "statistics": "統計"
   },
   "update": {
-    "provider_title": "設定速度測試供應商",
     "new_password": "設定新密碼",
     "password_placeholder": "新密碼",
     "show_password": "顯示密碼",
@@ -305,6 +305,7 @@
       "unchanged": "與上次測試相同",
       "measured_at": "測量時間",
       "measured_with": "測量方式",
+      "target": "測速點",
       "seconds": "{{seconds}} 秒",
       "data_used": "使用流量",
       "data_used_value": "下載 {{down}} / 上傳 {{up}}",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "平均",
     "compare": {
-      "note": "與 {{from}} – {{to}} 相比的變化"
+      "note": "與 {{from}} – {{to}} 相比的變化",
+      "note_partial": "與 {{from}} – {{to}} 相比的變化（截至同一時刻）"
     },
     "downsampled": "已平均 · 顯示 {{total}} 次測試中的 {{shown}} 次",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "以有測得此值的測試取平均",
       "peak_title": "尖峰時段降速",
       "peak_description": "{{slowest}} 前後最慢，{{fastest}} 前後最快",
-      "ping_description": "平均延遲，介於 {{min}} 與 {{max}} 之間",
+      "peak_latency_title": "尖峰時段延遲",
+      "peak_latency_description": "從 {{bestHour}} 左右的 {{best}} 升至 {{worstHour}} 左右的 {{worst}}",
+      "ping_description": "平均延遲，介於 {{min}} 與 {{max}} 之間，中位數 {{median}}",
       "span_title": "耗時範圍",
       "span_description": "此範圍內最短與最長的測試",
       "density_title": "每日測試次數",
-      "density_description": "共 {{days}} 天"
+      "density_description": "共 {{days}} 天",
+      "density_description_partial": "共 {{days}} 天中的 {{elapsed}} 天"
     },
     "values": {
       "min": "最小值",
@@ -377,7 +382,8 @@
       "up": "上傳數值",
       "target": "目標：{{target}}",
       "consistency": "穩定度",
-      "samples": "已測量的測試"
+      "samples": "已測量的測試",
+      "median": "中位數"
     },
     "failed_test": "失敗的測試",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "您目前處於示範模式。部分功能已停用，部分設定無法變更。若要使用所有功能，您可以在自己的伺服器上<Link>安裝 MySpeed</Link>。"
   },
   "integrations": {
-    "none_active": "此整合尚未啟用。<br/><Bold>建立</Bold>",
+    "none_added": "尚未設定任何整合。",
     "preview_active": "示範模式下整合功能已停用。",
     "display_name": "整合名稱",
     "create": "建立",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "上次測試就在剛才",
     "elapsed": "已經過 {{seconds}} 秒",
-    "next_test_approx": "下次約於 {{time}}"
+    "next_test_approx": "下次約於 {{time}}",
+    "target_of": "第 {{index}}/{{count}} 個測速點"
+  },
+  "targets": {
+    "title": "測速點",
+    "description": "每次排程測試都會依序對每個列入排程的測速點各測一次。排程之外的測速點只能從這裡執行。",
+    "add": "新增測速點",
+    "edit_title": "編輯測速點",
+    "name": "名稱",
+    "name_placeholder": "例如：台北",
+    "scheduled": "列入排程",
+    "alerts": "通知與建議",
+    "own_optimals": "單獨的最佳值",
+    "all": "全部測速點",
+    "saved": "測速點已儲存。",
+    "removed": "測速點已刪除。",
+    "run_now": "立即執行測試",
+    "move_up": "上移",
+    "move_down": "下移",
+    "delete_confirm": {
+      "title": "要刪除這個測速點嗎？",
+      "description": "測速點 <Bold>{{name}}</Bold> 將被刪除。它已完成的測試仍會保留在歷史記錄中。",
+      "yes": "刪除"
+    }
   }
 }

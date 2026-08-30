@@ -30,7 +30,7 @@ const SETTINGS_DIALOGS = [
     "common/components/FrequencyDialog/FrequencyDialog.jsx",
     "common/components/OptimalValuesDialog/OptimalValuesDialog.jsx",
     "common/components/PasswordDialog/PasswordDialog.jsx",
-    "common/components/ProviderDialog/ProviderDialog.jsx",
+    "common/components/TargetsDialog/TargetEditor.jsx",
     "common/components/PreferencesDialog/PreferencesDialog.jsx",
     "common/components/WelcomeDialog/WelcomeDialog.jsx"
 ];

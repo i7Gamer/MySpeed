@@ -162,3 +162,52 @@ describe("the discovery messages", () => {
         assert.equal(payload.state_class, "measurement");
     });
 });
+
+/**
+ * A secondary target's sensors: the same device, its own topics and ids.
+ *
+ * The device block must stay the base topic's - Home Assistant groups entities
+ * by it, and a second device would split one instance into several tiles. The
+ * ids and the state topic must not: sensors keyed like the primary's would
+ * adopt its history, and a state topic shared with it is the flapping this
+ * exists to end. Keyed by the target id rather than its name, because a rename
+ * must not orphan the entities.
+ */
+describe("a secondary target's sensors", () => {
+    const messages = () => discoveryMessages({
+        stateTopic: "myspeed/result", version: "1.4.1", target: {id: 7, name: "LAN Box"}});
+
+    const payloads = () => messages().map((message) => JSON.parse(message.payload));
+
+    it("read the member's own subtopic", () => {
+        for (const payload of payloads())
+            assert.equal(payload.state_topic, "myspeed/result/7");
+    });
+
+    it("stay on the same device as the primary's", () => {
+        const base = JSON.parse(discoveryMessages({stateTopic: "myspeed/result"})[0].payload);
+
+        for (const payload of payloads())
+            assert.deepEqual(payload.device.identifiers, base.device.identifiers);
+    });
+
+    it("wear ids, names and config topics of their own", () => {
+        const [download] = payloads();
+
+        assert.equal(download.unique_id, "myspeed_result_t7_download");
+        assert.equal(download.object_id, "myspeed_result_t7_download");
+        assert.match(download.name, /LAN Box/);
+        assert.match(messages()[0].topic, /\/download_t7\/config$/);
+    });
+
+    // The primary's announcement is exactly what it was before targets
+    // existed - nothing may move for the single-target instance.
+    it("change nothing about the primary's own announcement", () => {
+        const [download] = discoveryMessages({stateTopic: "myspeed/result", version: "1.4.1"});
+        const payload = JSON.parse(download.payload);
+
+        assert.equal(payload.unique_id, "myspeed_result_download");
+        assert.equal(payload.name, "Download");
+        assert.equal(payload.state_topic, "myspeed/result");
+    });
+});

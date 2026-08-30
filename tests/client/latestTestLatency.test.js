@@ -19,9 +19,11 @@ const card = fs.readFileSync(path.join(CLIENT_SRC,
  * "12.64 ms" on this card and "12.6 ms" in the pane that opens from clicking
  * it, one on top of the other.
  *
- * A source scan, as with the other rendering rules: node cannot parse JSX, and
- * every one of these renders perfectly - it renders a figure at a precision the
- * card beside it contradicts.
+ * Source scans for the wiring - node cannot parse JSX, and every one of these
+ * renders perfectly, just at a precision the card beside it contradicts - and
+ * the shared formatters executed where the interesting behaviour is theirs:
+ * the placeholder rows below import formatWithUnit and run it against both
+ * spellings of the failure value at every row's destination.
  */
 describe("the latest-test card prints its latencies to one decimal", () => {
     it("finds the card to check", () => {
@@ -39,19 +41,30 @@ describe("the latest-test card prints its latencies to one decimal", () => {
      * The failure placeholder is not a measurement, and the card says so in
      * words rather than printing the -1 the row stores.
      *
-     * One helper for the three rows that can carry one, lifted out and run: it
-     * was written out at each of them, which is three chances for the next row
-     * to be added without it. A failed run stores -1 in every numeric column, so
-     * every one of the three would print "-1 Mbps" as though it were a reading.
+     * The stop is formatWithUnit now - the one refusal every unit-print in
+     * the interface goes through - rather than a card-local helper wrapped
+     * around each row. Pinned here: the ping row's wiring, and what the
+     * formatter answers for the placeholder in either spelling at every
+     * row's destination; the speeds' wiring pin lives with panelPrecision's
+     * rounding contract.
      */
-    it("still names a failed test rather than printing its placeholder", () => {
-        const source = card.match(/const measured = [^;]*;/);
-        assert.notEqual(source, null, "the card no longer guards the failure placeholder at all");
+    it("still names a failed test rather than printing its placeholder", async () => {
+        const {formatWithUnit, formatWhole, wholeSpeed} =
+            await import("../../client/src/common/utils/FormatUtil.js");
 
-        const measured = new Function("NOT_MEASURED", `${source[0]}\nreturn measured;`)("N/A");
+        assert.match(card, /value=\{formatWithUnit\(formatWhole\(props\.test\.ping\), /,
+            "the ping's row no longer prints through the refusing formatter");
+        // The speeds' wiring pin lives in panelPrecision, which owns the
+        // card-vs-pane rounding contract - a verbatim copy here red three
+        // suites for one reformat.
 
-        assert.equal(measured(-1, "-1 ms"), "N/A");
-        assert.equal(measured(12.6, "12.6 ms"), "12.6 ms");
+        for (const spelt of [-1, "-1"]) {
+            assert.equal(formatWithUnit(formatWhole(spelt), "ms"), "N/A",
+                `a ping of ${JSON.stringify(spelt)} prints as a reading of minus one`);
+            assert.equal(formatWithUnit(wholeSpeed(spelt, {}), "Mbps"), "N/A",
+                `a speed of ${JSON.stringify(spelt)} prints as a reading of minus one`);
+        }
+        assert.equal(formatWithUnit(formatWhole(12.6), "ms"), "13 ms");
     });
 
     it("prints the jitter beside it at the same precision", () => {

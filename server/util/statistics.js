@@ -1,6 +1,7 @@
 import { mapFixed, mapRounded } from './helpers.js';
 import { localHourAt, serverZone, zoneFromOffset } from './timezone.js';
-import { isFailedTest, isMeasuredLatency, isSuccessfulTest } from './testOutcome.js';
+import { isFailedTest, isSuccessfulTest, measuredPing, usableFigure } from './testOutcome.js';
+import { metricValue } from './metricValue.js';
 
 export const TARGET_CHART_POINTS = 300;
 
@@ -9,16 +10,16 @@ export const TARGET_CHART_POINTS = 300;
  *
  * A wide range holds every row it summarises in memory at once, and most of a
  * row's weight is text nothing here looks at: a server name, a hostname, an ISP
- * and a result URL. Selecting the ten that matter cut a year of five-minute
- * testing - 105 000 rows - from 190 MB to 128 MB, and its fetch from 693 ms to
- * 257 ms.
+ * and a result URL. Selecting only the columns that matter cut a year of
+ * five-minute testing - 105 000 rows - from 190 MB to 128 MB, and its fetch
+ * from 693 ms to 257 ms, measured when the list held ten.
  *
  * A column added to the aggregation but not to this list arrives as undefined,
  * which is silent; the test beside this file scans the source to keep the two
  * in step.
  */
 export const STATISTICS_COLUMNS = ["created", "error", "ping", "jitter", "download", "upload",
-    "time", "packetLoss", "downloadLatency", "uploadLatency"];
+    "time", "packetLoss", "downloadLatency", "uploadLatency", "bytesDownloaded", "bytesUploaded"];
 
 /**
  * How far the client may push the resolution of a chart.
@@ -48,18 +49,55 @@ const SPEED_DECIMALS = 2;
 
 const round = (value, decimals = SPEED_DECIMALS) => parseFloat(value.toFixed(decimals));
 
+/**
+ * The readable measurements of a stored population, as numbers.
+ *
+ * Through metricValue, and once, at the boundary. The corruption a database
+ * actually delivers is non-numeric text - a live run once stored the literal
+ * string "NaN", which turned `total + value` into concatenation and a 200 Mbit
+ * average into 8.6e13 - and metricValue refuses it. The numeric-string reading
+ * beside that is the defensive half of the same contract: both backends
+ * coerce well-formed digits at write for these DOUBLE columns, so no current
+ * row arrives spelt "42" - but metricValue is the judgement Prometheus and the
+ * recommendation sample lean on, and a second predicate here is how two
+ * surfaces on one page came to disagree about one row. A filter inside each
+ * formula instead of one out here also gave the mean and the spread two
+ * different populations - a coercible string was missing from the mean while
+ * Math.pow folded it, squared, into the deviations.
+ *
+ * Every gate and formula below runs on this cleaned array, so a length is
+ * always the length of what the arithmetic actually saw.
+ */
+const readings = (values) => {
+    const numbers = [];
+    for (const value of values) {
+        const reading = metricValue(value);
+        if (reading !== null) numbers.push(reading);
+    }
+    return numbers;
+};
+
+// The plain mean of a readings() population. The filter this used to carry
+// moved up into readings, where it runs once - inside the reducer it ran again
+// for every derived figure, and standardDeviation's two passes filtered
+// different populations.
 const average = (values) => values.reduce((total, value) => total + value, 0) / values.length;
 
-const averageOrNull = (values, transform = round) =>
-    values.length > 0 ? transform(average(values)) : null;
+// Null when nothing was readable: an empty set has no mean, and a bucket
+// holding only corrupt rows is the same absence wearing data's shape.
+const averageOrNull = (values, transform = round) => {
+    const numbers = readings(values);
+    return numbers.length > 0 ? transform(average(numbers)) : null;
+};
 
 // round() reads .toFixed off its argument, so an absent value has to be carried
 // through rather than handed to it.
 const roundOrNull = (value, decimals) => value === null ? null : round(value, decimals);
 
-// Two values or more, which consistencyScore below is what guarantees - it is
-// the only caller, and it answers anything shorter with nulls before reaching
-// here. This used to carry its own guards for an empty list and a single value,
+// Two *readable* values or more, which consistencyScore below is what
+// guarantees - it is the only caller, it cleans through readings() first, and
+// it answers anything shorter than two of those with nulls before reaching
+// here. So the mean and the deviations run on one and the same population. This used to carry its own guards for an empty list and a single value,
 // and they were right up until that gate moved: a lone reading was answered
 // with 0, which the score then read as a flawlessly steady line. Left in place
 // afterwards they were unreachable, and worse, they described a policy the
@@ -123,13 +161,22 @@ const consistencyScore = (values) => {
     // zero across two is a real reading and still scores a hundred. A day on
     // which the line dropped and every test but one failed is exactly when this
     // card is read, and exactly when it was most confident.
-    if (values.length < 2) return {stdDev: null, consistency: null};
+    // The cleaned population, and the gate asks it rather than the raw rows.
+    // Counting rows the arithmetic then dropped let two corrupt rows through
+    // to a mean of nothing - NaN > 0 is false, so the fallback scored the
+    // emptiness a flawless 100 - and one readable row beside one corrupt was
+    // precisely the lone-reading overclaim described above, back through a
+    // side door.
+    const numbers = readings(values);
+    if (numbers.length < 2) return {stdDev: null, consistency: null};
 
-    const mean = average(values);
-    const score = mean > 0 ? PERCENT - (standardDeviation(values) / mean * PERCENT) : PERCENT;
+    const mean = average(numbers);
+    // Once, for both readers below - it walks the whole population each time.
+    const deviation = standardDeviation(numbers);
+    const score = mean > 0 ? PERCENT - (deviation / mean * PERCENT) : PERCENT;
 
     return {
-        stdDev: round(standardDeviation(values)),
+        stdDev: round(deviation),
         consistency: round(Math.min(Math.max(score, 0), PERCENT), 1)
     };
 };
@@ -139,13 +186,25 @@ const buildHourlyAverages = (entries, zone) => {
 
     entries.forEach(entry => {
         const bucket = buckets[localHourAt(zone, new Date(entry.created))];
-        bucket.download.push(entry.download);
-        bucket.upload.push(entry.upload);
+        // Readable at the door, like the two guarded pushes below - and so the
+        // count reported beside the hour's figure counts what the figure used,
+        // rather than presenting one readable row as an average backed by ten.
+        const download = usableFigure(entry.download);
+        if (download !== null) bucket.download.push(download);
+        const upload = usableFigure(entry.upload);
+        if (upload !== null) bucket.upload.push(upload);
         // Guarded like the jitter below it, and for the same reason: a
         // fabricated zero is not a reading, and one in an hour's bucket halved
-        // that hour's latency.
-        if (isMeasuredLatency(entry.ping)) bucket.ping.push(entry.ping);
-        if (entry.jitter !== null && entry.jitter !== undefined) bucket.jitter.push(entry.jitter);
+        // that hour's latency. Through measuredPing, so the coercion the other
+        // columns get reaches this one too.
+        const ping = measuredPing(entry.ping);
+        if (ping !== null) bucket.ping.push(ping);
+        // usableFigure rather than a null check: an imported -1 placeholder
+        // was an hour's whole jitter reading. Bound and pushed, like its three
+        // siblings - computing the cleaned value and pushing the raw one left
+        // this the one array still holding whatever the column held.
+        const jitter = usableFigure(entry.jitter);
+        if (jitter !== null) bucket.jitter.push(jitter);
     });
 
     return buckets.map((bucket, hour) => ({
@@ -157,6 +216,8 @@ const buildHourlyAverages = (entries, zone) => {
         // discard the precision at the last step.
         ping: averageOrNull(bucket.ping),
         jitter: averageOrNull(bucket.jitter),
+        // The readings the download figure above was taken over - the guarded
+        // push is what keeps this honest.
         count: bucket.download.length
     }));
 };
@@ -181,10 +242,18 @@ const INCREASE_DECIMALS = 2;
  * and a failed test stores -1 placeholders that are not readings.
  */
 const loadedIncrease = (entry) => {
-    const {ping, downloadLatency, uploadLatency} = entry;
+    // usableFigure for the two loaded columns and measuredPing for the idle
+    // one - the same readers every sibling figure goes through. They coerce
+    // the defensive numeric-string spelling and refuse null, junk and the
+    // negative placeholders alike, and measuredPing also refuses the
+    // fabricated zero: subtracted as a real 0 ms baseline, the whole loaded
+    // latency would read as *added* latency - an F grade for a line that was
+    // fine.
+    const ping = measuredPing(entry.ping);
+    const downloadLatency = usableFigure(entry.downloadLatency);
+    const uploadLatency = usableFigure(entry.uploadLatency);
 
-    for (const value of [ping, downloadLatency, uploadLatency])
-        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+    if (ping === null || downloadLatency === null || uploadLatency === null) return null;
 
     return Math.max(0, round(Math.max(downloadLatency, uploadLatency) - ping, INCREASE_DECIMALS));
 };
@@ -264,16 +333,29 @@ const fullSeries = (sorted) => ({
         // since UNMEASURED_LATENCY was written; the line did not, so a range
         // could report a minimum of 20 ms over a chart that visibly touched
         // nought - the same instance answering one question two ways.
-        ping: sorted.map(entry =>
-            isSuccessfulTest(entry) && isMeasuredLatency(entry.ping) ? entry.ping : null),
-        jitter: sorted.map(entry => isSuccessfulTest(entry) ? entry.jitter : null),
-        download: sorted.map(entry => isSuccessfulTest(entry) ? entry.download : null),
-        upload: sorted.map(entry => isSuccessfulTest(entry) ? entry.upload : null),
-        time: sorted.map(entry => isSuccessfulTest(entry) ? entry.time : null),
-        // Null where unmeasured - a gap in the line, like jitter. The ?? guards
-        // rows from before the columns existed, which have no key at all.
-        downloadLatency: sorted.map(entry => isSuccessfulTest(entry) ? entry.downloadLatency ?? null : null),
-        uploadLatency: sorted.map(entry => isSuccessfulTest(entry) ? entry.uploadLatency ?? null : null)
+        ping: sorted.map(entry => isSuccessfulTest(entry) ? measuredPing(entry.ping) : null),
+        // Through usableFigure, the same reading the live write gives these
+        // columns: a history imported before the import refused negatives can
+        // hold -1 placeholders, and passed through they drew a jitter dipping
+        // below zero on a chart whose summary skipped the same row.
+        jitter: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.jitter) : null),
+        // usableFigure like the downsampled branch beside this one, not raw:
+        // a corrupt stored string shipped here reached the client as JSON
+        // text, where the chart's own average reducer concatenated it - the
+        // exact total-plus-value bug average() was fixed for, reproduced in
+        // the browser on every range small enough not to bucket - and an
+        // imported -1 placeholder drew a chart point below zero. Unreadable
+        // is a null, which the line already draws as a gap.
+        download: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.download) : null),
+        upload: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.upload) : null),
+        // usableFigure, matching the measuredOnly("time") read the downsampled
+        // branch gives the same column.
+        time: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.time) : null),
+        // Null where unmeasured - a gap in the line, like jitter. usableFigure
+        // answers null for the absent key of a row from before the columns
+        // existed, and for an imported negative alike.
+        downloadLatency: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.downloadLatency) : null),
+        uploadLatency: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.uploadLatency) : null)
     }
 });
 
@@ -315,9 +397,13 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
 
         // Measured-only per metric: jitter and the loaded latencies are absent
         // on some providers, and a null must not drag a bucket's average.
+        // Through usableFigure, like the full-resolution branch: an imported
+        // negative placeholder is not a reading either, and guarded on one
+        // branch only, the same range answered two ways depending on row
+        // count - 300 rows drew gaps, 301 bucketed the -1s back in.
         const measuredOnly = (key) => valid
-            .map(entry => entry[key])
-            .filter(value => value !== null && value !== undefined);
+            .map(entry => usableFigure(entry[key]))
+            .filter(value => value !== null);
 
         series.labels.push(new Date(midTime).toISOString());
         series.failed.push(bucket.errors.length > 0);
@@ -326,10 +412,16 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
         // a bucket average is a dip of the wrong depth rather than a visible
         // nought, which is the harder of the two to catch. Null when a bucket
         // held nothing else, since a bucket with no reading has no latency.
-        series.data.ping.push(averageOrNull(valid.map(entry => entry.ping).filter(isMeasuredLatency)));
+        series.data.ping.push(averageOrNull(valid.map(entry => measuredPing(entry.ping))));
         series.data.jitter.push(averageOrNull(measuredOnly("jitter")));
-        series.data.download.push(round(average(valid.map(entry => entry.download))));
-        series.data.upload.push(round(average(valid.map(entry => entry.upload))));
+        // averageOrNull like every sibling, not the bare mean: these two
+        // columns are NOT NULL, which is why a raw average looked safe - but a
+        // corrupt stored string is not null, and a bucket holding one either
+        // concatenated its way to an eight-figure point or, cleaned, can come
+        // up with no reading at all. No reading is a gap, which is what null
+        // already draws on this chart.
+        series.data.download.push(averageOrNull(valid.map(entry => usableFigure(entry.download))));
+        series.data.upload.push(averageOrNull(valid.map(entry => usableFigure(entry.upload))));
         // Measured-only like jitter and the two latencies above, not raw: `time`
         // is the one measurement column in this block that is nullable, and
         // average() folds a null in as nought while still counting it in the
@@ -342,6 +434,40 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
     });
 
     return series;
+};
+
+/**
+ * What the testing itself cost in traffic, summed over the rows that measured
+ * it.
+ *
+ * Over the entries rather than the successes: the figure is about traffic, not
+ * about outcomes, and a failure that moved data still moved it. Rows from
+ * before the transfer columns existed - and runs whose provider reported
+ * nothing - hold nulls, which stay out of the sums the way an unmeasured
+ * packet loss stays out of its average: a total over part of the range is a
+ * lower bound, not a claim about rows that said nothing. Null when no row
+ * measured either direction, because absence is not a total of nought.
+ */
+const transferTotals = (entries) => {
+    let download = null;
+    let upload = null;
+
+    // Non-negative as well as numeric: a negative byte count is not traffic,
+    // and summed as bytes each one *subtracts* from the total. The live path
+    // cannot store one - byteCount refuses it - but a history imported before
+    // the import learned the same rule can hold -1 placeholders.
+    const moved = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+
+    for (const entry of entries) {
+        if (moved(entry.bytesDownloaded)) download = (download ?? 0) + entry.bytesDownloaded;
+        if (moved(entry.bytesUploaded)) upload = (upload ?? 0) + entry.bytesUploaded;
+    }
+
+    return {
+        download,
+        upload,
+        total: download === null && upload === null ? null : (download ?? 0) + (upload ?? 0)
+    };
 };
 
 /**
@@ -369,12 +495,17 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
         ? fullSeries(sorted)
         : downsampledSeries(sorted, from, to, targetPoints);
 
-    const withJitter = succeeded.filter(entry => entry.jitter !== null && entry.jitter !== undefined);
+    // Measured, not merely present: an imported history can hold -1
+    // placeholders in the nullable columns, and admitted here one of them set
+    // the range's minimum jitter and dragged its average - the summary
+    // disagreeing with the chart drawn under it, which shows the same row as
+    // a gap.
+    const withJitter = succeeded.filter(entry => usableFigure(entry.jitter) !== null);
     // The same shape, for the same reason: a successful test can carry a
     // latency nobody measured - see UNMEASURED_LATENCY - and averaging that
     // fabricated zero as a 0 ms reading dragged every ping figure down while
     // the alert gate, reading the same row, refused it.
-    const withPing = succeeded.filter(entry => isMeasuredLatency(entry.ping));
+    const withPing = succeeded.filter(entry => measuredPing(entry.ping) !== null);
 
     return {
         tests: {
@@ -383,32 +514,37 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
         },
         // Averaged over the tests that measured it: only Ookla reports packet
         // loss, and the unmeasured rows must not drag the average. Null when no
-        // test in the range measured any - absence is not a clean line.
+        // test in the range measured any - absence is not a clean line. Through
+        // usableFigure for the reason withJitter reads through it.
         packetLoss: averageOrNull(succeeded
-            .map(entry => entry.packetLoss)
-            .filter(value => value !== null && value !== undefined)),
+            .map(entry => usableFigure(entry.packetLoss))
+            .filter(value => value !== null)),
         // mapFixed rather than mapRounded: the latency carries decimals now, and
         // `time` below is the only column here that is genuinely whole.
         ping: mapFixed(withPing, "ping"),
         jitter: mapFixed(withJitter, "jitter"),
-        download: mapFixed(succeeded, "download"),
-        upload: mapFixed(succeeded, "upload"),
-        time: mapRounded(succeeded, "time"),
+        download: mapFixed(succeeded, "download", usableFigure),
+        upload: mapFixed(succeeded, "upload", usableFigure),
+        // usableFigure, like both chart branches: a -1 here is an imported
+        // placeholder, and read raw the span card printed "-1s" beside a chart
+        // drawing the same row as a gap.
+        time: mapRounded(succeeded, "time", usableFigure),
+        dataUsed: transferTotals(entries),
         data: series.data,
         labels: series.labels,
         failed: series.failed,
         errors: series.errors,
         hourlyAverages: buildHourlyAverages(succeeded.filter(isPlaceable), bucketZone),
         consistency: {
-            download: consistencyScore(succeeded.map(entry => entry.download)),
-            upload: consistencyScore(succeeded.map(entry => entry.upload)),
+            download: consistencyScore(succeeded.map(entry => usableFigure(entry.download))),
+            upload: consistencyScore(succeeded.map(entry => usableFigure(entry.upload))),
             ping: {
                 // `deviation`, not `stdDev` like the speeds above: the speeds
                 // feed a consistency percentage whose formula wants the
                 // standard deviation, while this figure is read directly by a
                 // person - so it is the median kind, and named for what it is.
-                deviation: roundOrNull(medianAbsoluteDeviation(withPing.map(entry => entry.ping))),
-                jitter: averageOrNull(withJitter.map(entry => entry.jitter))
+                deviation: roundOrNull(medianAbsoluteDeviation(withPing.map(entry => measuredPing(entry.ping)))),
+                jitter: averageOrNull(withJitter.map(entry => usableFigure(entry.jitter)))
             },
             // The aggregate over every success, the trend over the ones that
             // can be placed on a timeline - already sorted, above.

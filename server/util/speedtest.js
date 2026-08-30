@@ -1,12 +1,12 @@
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import { parseCliOutput } from './providers/cliOutput.js';
 import { parseProgressLine } from './providers/progress.js';
 import { isMuslLinux, MUSL_CLOUDFLARE_REASON } from './providers/libc.js';
 import * as interfacesModule from '../util/loadInterfaces.js';
 import * as config from '../controller/config.js';
-import * as loadLibre from './providers/loadLibre.js';
-import * as loadOokla from './providers/loadOokla.js';
-import * as loadCloudflare from './providers/loadCloudflare.js';
+import { REGISTRY, descriptor, splitEndpoint, binaryPath as providerBinaryPath } from './providers/registry.js';
+import { measureLatency } from './providers/iperfLatency.js';
 import { toErrorMessage } from './helpers.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,17 +16,6 @@ const CLI_TIMEOUT = 180 * MS_PER_SECOND;
 
 // How long a CLI gets to honour SIGTERM before it is killed outright.
 export const KILL_GRACE = 5 * MS_PER_SECOND;
-
-/**
- * How long each LibreSpeed measurement phase runs, in seconds.
- *
- * librespeed-cli's own default. It ran at 5 for a while, and upstream #694's
- * doubled upload readings are what a window that short looks like: TCP spends
- * its first seconds filling buffers at above line rate, and on a five-second
- * sample that spike is most of the average. Three times the data per run is
- * the price of a number that means anything.
- */
-export const LIBRE_DURATION_SECONDS = 15;
 
 /**
  * Whether the child is actually gone.
@@ -203,6 +192,36 @@ export const waitForActiveProcessExit = (timeoutMs = SHUTDOWN_EXIT_WAIT) =>
     });
 
 /**
+ * The code Windows gives a process whose image it could not finish loading -
+ * STATUS_DLL_NOT_FOUND, 0xC0000135, as the unsigned 32-bit number Node reports
+ * on the 'close' event.
+ *
+ * Worth a name because it is the one code that means the CLI never ran at all,
+ * and the one missingBinaryMessage below can never explain: the executable is
+ * on disk, so the spawn succeeds and nothing raises ENOENT. Windows creates the
+ * process, the image loader cannot resolve a library the executable imports,
+ * and it dies before main with both pipes empty - a 'close' carrying a number,
+ * which is exactly the case a bare exit code has to speak for. iperf3's Windows
+ * build is the one in hand: a Cygwin build that will not start without
+ * cygwin1.dll beside it, and "exited with code 3221225781" is a number nobody
+ * can act on.
+ */
+export const WINDOWS_DLL_NOT_FOUND = 3221225781;
+
+/**
+ * What a bare exit code means, for the run that produced nothing else.
+ *
+ * Its own function so that the one code worth translating does not turn the
+ * gate below into a nest of ternaries: that answers whether the code is all we
+ * have, this answers what it says.
+ */
+const exitCodeReason = (code) => code === WINDOWS_DLL_NOT_FOUND
+    ? `The speedtest CLI exited with code ${code} before it ran: Windows could not load a library `
+        + 'it needs, so its install in bin/ is incomplete. Delete the CLI from bin/ and MySpeed '
+        + 'downloads the whole of it again on the next test'
+    : `The speedtest CLI exited with code ${code} without producing a result`;
+
+/**
  * The failure an exit code implies, or null when the streams already said
  * everything worth saying.
  *
@@ -214,7 +233,7 @@ export const waitForActiveProcessExit = (timeoutMs = SHUTDOWN_EXIT_WAIT) =>
  */
 export const exitError = (code, result) =>
     code !== 0 && !result.error && Object.keys(result).length === 0
-        ? `The speedtest CLI exited with code ${code} without producing a result`
+        ? exitCodeReason(code)
         : null;
 
 /**
@@ -261,9 +280,11 @@ export const missingBinaryMessage = (mode, binaryPath, errorCode, musl = isMuslL
 
 /**
  * The module that knows how to fetch each provider's CLI, by the mode that runs
- * it. Injectable so the recovery below is testable without the network.
+ * it - the registry's loaders, in the map shape ensureBinary can be handed a
+ * fake of. Injectable so the recovery below is testable without the network.
  */
-const PROVIDER_LOADERS = {ookla: loadOokla, libre: loadLibre, cloudflare: loadCloudflare};
+const PROVIDER_LOADERS = Object.fromEntries(
+    Object.entries(REGISTRY).map(([id, entry]) => [id, entry.loader]));
 
 /**
  * Makes sure the CLI this run is about to spawn is actually on disk.
@@ -289,7 +310,11 @@ const PROVIDER_LOADERS = {ookla: loadOokla, libre: loadLibre, cloudflare: loadCl
  * naming an internal lookup.
  */
 export const ensureBinary = async (mode, binaryPath, loaders = PROVIDER_LOADERS) => {
-    const loader = loaders[mode];
+    // Object.hasOwn for the reason descriptor() uses it: the map is a plain
+    // object, so a prototype name answers with an inherited function and
+    // `loader.load()` then fails as "load is not a function" - a message about
+    // an internal lookup where the caller wanted one about a provider.
+    const loader = Object.hasOwn(loaders, mode) ? loaders[mode] : undefined;
     if (!loader) return;
 
     try {
@@ -379,10 +404,31 @@ export const streamAccumulator = ({headLimit = MAX_STREAM_HEAD, tailLimit = MAX_
     };
 };
 
+/**
+ * The runs one test is made of, in the order they happen.
+ *
+ * Every provider but one measures both directions in a single invocation and
+ * declares nothing here, which is this single unnamed run. iperf3 measures one
+ * direction per invocation, so it declares two - and they are sequential rather
+ * than iperf3's own --bidir because a bidirectional test has the directions
+ * contending for the same line: on an asymmetric connection the upload's
+ * acknowledgements eat into the download, and a figure measured that way cannot
+ * be compared with the other providers' on the same chart, which is what the
+ * chart is for.
+ *
+ * The key names the direction for the progress readout and for the parser that
+ * merges the runs; a single unnamed run is handed back exactly as it always was.
+ */
+export const SINGLE_RUN = [{key: null, args: []}];
+
+export const runsOf = (provider) => provider.runs ?? SINGLE_RUN;
+
 export default async (mode, serverId, serverUrl, onProgress) => {
-    const binaryPath = mode === "ookla" ? './bin/speedtest' + (process.platform === "win32" ? ".exe" : "")
-        : mode === "libre" ? './bin/librespeed-cli' + (process.platform === "win32" ? ".exe" : "")
-            : './bin/cfspeedtest' + (process.platform === "win32" ? ".exe" : "");
+    // Throws for a mode the registry does not know - the old ternary's else
+    // branch handed anything unrecognised cfspeedtest's path instead, and the
+    // run then failed naming a binary that had nothing to do with it.
+    const provider = descriptor(mode);
+    const binaryPath = providerBinaryPath(mode);
 
     if (!interfacesModule.interfaces) throw new Error("No interfaces found");
 
@@ -399,150 +445,195 @@ export default async (mode, serverId, serverUrl, onProgress) => {
     await ensureBinary(mode, binaryPath);
 
     const startTime = new Date().getTime();
-    let args;
 
-    // The custom-server file, when this run writes one. Held out here because
-    // what removes it is the handler that ends the run, not the branch that
-    // wrote it.
+    const built = provider.buildArgs({serverId, endpoint: serverUrl},
+        {name: currentInterface, address: interfaceIp});
+    const args = built.args;
+
+    // The custom-server file, when this run writes one. buildArgs answers it
+    // as {path, content} rather than writing it, so the side effect lives
+    // here, beside the handler that ends the run and removes it again.
     let temporaryServer = null;
 
-    if (mode === "ookla") {
-        // jsonl rather than json: the CLI reports each phase as it goes instead
-        // of only the finished result, which is what the interface follows a run
-        // with. The final record is the same result either way.
-        args = ['--accept-license', '--accept-gdpr', '--format=jsonl'];
-
-        if (process.platform === "win32") {
-            args.push('--ip=' + interfaceIp);
-        } else {
-            args.push('--interface=' + currentInterface);
-        }
-
-        if (serverId) args.push(`--server-id=${serverId}`);
-    } else if (mode === "libre") {
-        args = ['--json', '--duration=' + LIBRE_DURATION_SECONDS, '--source=' + interfaceIp];
-        if (serverUrl) {
-            const customServerConfig = [{
-                id: 1,
-                name: "Custom Server",
-                server: serverUrl,
-                dlURL: "garbage.php",
-                ulURL: "empty.php",
-                pingURL: "empty.php",
-                getIpURL: "getIP.php"
-            }];
-            temporaryServer = path.join('data', 'servers', 'libre_custom.json');
-            fs.writeFileSync(temporaryServer, JSON.stringify(customServerConfig));
-            args.push(`--local-json=${temporaryServer}`);
-            args.push('--server=1');
-        } else if (serverId) {
-            args.push(`--server=${serverId}`);
-        }
-    } else if (mode === "cloudflare") {
-        args = ['--output-format=json'];
-
-        if (interfaceIp.includes(':')) {
-            args.push('--ipv6=' + interfaceIp);
-        } else {
-            args.push('--ipv4=' + interfaceIp);
-        }
+    if (built.temporaryServer) {
+        temporaryServer = built.temporaryServer.path;
+        fs.writeFileSync(temporaryServer, built.temporaryServer.content);
     }
 
-    let result;
-    const stdout = streamAccumulator();
-    const stderr = streamAccumulator();
+    /**
+     * One invocation of the CLI, start to finish.
+     *
+     * Its own function because a test can be more than one of them - see
+     * runsOf - and everything in here is per-invocation: the child, its
+     * timeout, its escalation, its two stream accumulators and the tracker
+     * entry the shutdown reaches for. The temporary server file is not, so it
+     * stays outside, written once before the first run and taken away after
+     * the last however that went.
+     */
+    const runOnce = async (runArgs, phase) => {
+        // Refused here as well as in the round's own loop, because this covers
+        // every caller rather than that one: a child started after the shutdown
+        // has passed terminateActiveProcess is one nothing can reach, and under
+        // the Windows service there is no namespace to tear it down - it
+        // outlives the server and finishes by writing into a closed handle.
+        if (isShuttingDown()) throw new Error("The server is shutting down");
 
-    // A CLI that accepts the connection and then stalls would hold the run lock
-    // for the lifetime of the process, and no scheduled test would ever run
-    // again.
-    //
-    // The timer is kept here rather than passed to spawn as its `timeout`
-    // option: when a spawn fails outright - a missing binary, which is exactly
-    // what a fresh install before the download has finished looks like - node
-    // emits 'error' and 'close' within milliseconds but never clears that timer,
-    // and the whole process then stays alive until it fires. Owning it means it
-    // is cleared however the run ends.
-    const testProcess = trackProcess(spawn(binaryPath, args, {windowsHide: true}));
+        let result;
+        const stdout = streamAccumulator();
+        const stderr = streamAccumulator();
 
-    let timedOut = false;
-    let escalation;
-    const timeout = setTimeout(() => {
-        timedOut = true;
-        escalation = terminate(testProcess);
-    }, CLI_TIMEOUT);
+        // One decoder per stream, because spawn is given no encoding and each
+        // 'data' chunk is a raw Buffer. buffer.toString() decodes each chunk in
+        // isolation, so a read boundary inside a 2-4 byte UTF-8 sequence became
+        // replacement characters that still parse as JSON - a server named
+        // "Telefónica" stored as "Telef��nica" and carried into the
+        // detail pane, the CSV export and the Prometheus server_host label.
+        // StringDecoder holds an incomplete sequence back until its next byte
+        // arrives.
+        const stdoutDecoder = new StringDecoder("utf8");
+        const stderrDecoder = new StringDecoder("utf8");
 
-    testProcess.stderr.on('data', (buffer) => {
-        // Accumulated, not overwritten: stderr arrives in arbitrary chunks, so
-        // keeping only the last one reported whatever fragment happened to
-        // land last rather than the actual failure. Bounded - see
-        // streamAccumulator - so a CLI wedged in a logging loop cannot grow
-        // the heap for its whole three-minute timeout.
-        stderr.append(buffer.toString());
-    });
+        // A CLI that accepts the connection and then stalls would hold the run
+        // lock for the lifetime of the process, and no scheduled test would
+        // ever run again.
+        //
+        // The timer is kept here rather than passed to spawn as its `timeout`
+        // option: when a spawn fails outright - a missing binary, which is
+        // exactly what a fresh install before the download has finished looks
+        // like - node emits 'error' and 'close' within milliseconds but never
+        // clears that timer, and the whole process then stays alive until it
+        // fires. Owning it means it is cleared however the run ends.
+        const testProcess = trackProcess(spawn(binaryPath, [...args, ...runArgs], {windowsHide: true}));
 
-    // Holds the tail of a chunk that ended mid-line: the CLI writes one record
-    // per line, but a read can split one anywhere.
-    let incomplete = '';
+        let timedOut = false;
+        let escalation;
+        const timeout = setTimeout(() => {
+            timedOut = true;
+            escalation = terminate(testProcess);
+        }, CLI_TIMEOUT);
 
-    testProcess.stdout.on('data', (buffer) => {
-        const text = buffer.toString();
-        stdout.append(text);
+        testProcess.stderr.on('data', (buffer) => {
+            // Accumulated, not overwritten: stderr arrives in arbitrary chunks,
+            // so keeping only the last one reported whatever fragment happened
+            // to land last rather than the actual failure. Bounded - see
+            // streamAccumulator - so a CLI wedged in a logging loop cannot grow
+            // the heap for its whole three-minute timeout.
+            stderr.append(stderrDecoder.write(buffer));
+        });
 
-        if (!onProgress) return;
+        // Holds the tail of a chunk that ended mid-line: the CLI writes one
+        // record per line, but a read can split one anywhere.
+        let incomplete = '';
 
-        const lines = (incomplete + text).split('\n');
-        incomplete = lines.pop();
+        testProcess.stdout.on('data', (buffer) => {
+            const text = stdoutDecoder.write(buffer);
+            stdout.append(text);
 
-        for (const line of lines) {
-            const update = parseProgressLine(mode, line.trim());
-            if (update) onProgress(update);
-        }
-    });
+            if (!onProgress || !provider.streamsProgress) return;
 
-    // Everything the end of a run has to let go of, however it ended. The two
-    // handlers below repeated this between them, which is how the temporary
-    // server file came to be cleaned up by neither.
-    const finish = () => {
-        clearTimeout(timeout);
-        clearTimeout(escalation);
-        untrackProcess(testProcess);
-        removeTemporaryServer(temporaryServer);
+            const lines = (incomplete + text).split('\n');
+            incomplete = lines.pop();
+
+            for (const line of lines) {
+                // The phase is passed in for a provider whose output does not
+                // name one: iperf3's interval records describe whichever
+                // direction this invocation was started for, and only the
+                // caller knows which that is.
+                const update = parseProgressLine(mode, line.trim(), phase);
+                if (update) onProgress(update);
+            }
+        });
+
+        // Everything the end of a run has to let go of, however it ended. The
+        // two handlers below repeated this between them, which is how the
+        // temporary server file came to be cleaned up by neither.
+        const finish = () => {
+            clearTimeout(timeout);
+            clearTimeout(escalation);
+            untrackProcess(testProcess);
+        };
+
+        await new Promise((resolve, reject) => {
+            // A binary that is not there is the one spawn failure whose own
+            // message explains nothing, so it gets one that does. Everything
+            // else is rejected as-is: wrapping it in {message: e} gave the
+            // wrapper a `message` key holding an Error, which the caller then
+            // stored verbatim in a string column.
+            testProcess.on('error', (error) => {
+                finish();
+
+                const missing = missingBinaryMessage(mode, binaryPath, error.code);
+                reject(missing ? new Error(missing) : error);
+            });
+
+            // 'close' rather than 'exit': the process can exit while its pipes
+            // still hold output, and parsing then would read a truncated result.
+            testProcess.on('close', (code) => {
+                finish();
+                result = parseCliOutput(mode, stdout.value(), stderr.value());
+
+                // The exit code has the last word when the streams had nothing
+                // to say. Without it a run that failed instantly and explained
+                // itself nowhere the parser looks was reported as "test timed
+                // out".
+                const failure = exitError(code, result);
+                if (failure) result.error = failure;
+
+                resolve();
+            });
+        });
+
+        // A killed run has whatever output it managed before the signal, which
+        // is not a measurement - it has to say it timed out rather than report
+        // half a test as a result.
+        if (timedOut) throw new Error(`The speedtest did not finish within ${CLI_TIMEOUT / MS_PER_SECOND} seconds`);
+        if (result.error) throw new Error(result.error);
+
+        return result;
     };
 
-    await new Promise((resolve, reject) => {
-        // A binary that is not there is the one spawn failure whose own message
-        // explains nothing, so it gets one that does. Everything else is
-        // rejected as-is: wrapping it in {message: e} gave the wrapper a
-        // `message` key holding an Error, which the caller then stored verbatim
-        // in a string column.
-        testProcess.on('error', (error) => {
-            finish();
+    try {
+        const runs = runsOf(provider);
+        const results = {};
 
-            const missing = missingBinaryMessage(mode, binaryPath, error.code);
-            reject(missing ? new Error(missing) : error);
-        });
+        /*
+         * The latency, for a provider whose CLI does not measure one.
+         *
+         * Before the transfers rather than after, for two reasons: it is the
+         * idle latency that the ping column holds - taken afterwards it would
+         * be measured over a line whose buffers the test had just filled - and
+         * it is the first phase every other provider reports, so the bar moves
+         * in the order the interface draws.
+         */
+        let latency = null;
+        const endpoint = provider.providesLatency === false ? splitEndpoint(serverUrl) : null;
 
-        // 'close' rather than 'exit': the process can exit while its pipes still
-        // hold output, and parsing then would read a truncated result.
-        testProcess.on('close', (code) => {
-            finish();
-            result = parseCliOutput(mode, stdout.value(), stderr.value());
+        if (endpoint) {
+            onProgress?.({phase: "ping", progress: 0, speed: null});
+            latency = await measureLatency({...endpoint, localAddress: interfaceIp});
+        }
 
-            // The exit code has the last word when the streams had nothing to
-            // say. Without it a run that failed instantly and explained itself
-            // nowhere the parser looks was reported as "test timed out".
-            const failure = exitError(code, result);
-            if (failure) result.error = failure;
+        // Sequentially, and that is load-bearing rather than incidental: the
+        // single-active-process invariant the shutdown depends on holds only
+        // while one CLI is live at a time, and two transfers measured at once
+        // would contend for the line they are measuring.
+        for (const run of runs) results[run.key] = await runOnce(run.args, run.key);
 
-            resolve();
-        });
-    });
+        const elapsed = new Date().getTime() - startTime;
 
-    // A killed run has whatever output it managed before the signal, which is
-    // not a measurement - it has to say it timed out rather than report half a
-    // test as a result.
-    if (timedOut) throw new Error(`The speedtest did not finish within ${CLI_TIMEOUT / MS_PER_SECOND} seconds`);
-
-    if (result.error) throw new Error(result.error);
-    return {...result, elapsed: new Date().getTime() - startTime};
+        // A provider that declares no runs is answered exactly as it always
+        // was, with its one result spread flat; one that declares several
+        // hands the parser the set, keyed by direction, for it to merge.
+        return runs === SINGLE_RUN || runs.length === 1 && runs[0].key === null
+            ? {...results[null], elapsed}
+            // `endpoint` travels with the runs because the address dialled is
+            // not in them: under --json-stream it belongs to the start event,
+            // and a parser is handed the end event alone.
+            : {runs: results, latency, endpoint, elapsed};
+    } finally {
+        // However the test ended, including a throw from any of its runs - a
+        // file naming a backend, credentials included, must not outlive the run
+        // that needed it.
+        removeTemporaryServer(temporaryServer);
+    }
 }

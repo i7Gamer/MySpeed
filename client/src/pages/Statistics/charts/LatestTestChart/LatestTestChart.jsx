@@ -4,15 +4,16 @@ import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
     faArrowDown, faArrowUp, faGaugeHigh, faLinkSlash, faPingPongPaddleBall, faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
-import {bufferbloat, bufferbloatColour, packetLossColour} from "@/common/utils/TestUtil";
+import {bufferbloat, bufferbloatColour, getIconBySpeed, isMeasured, packetLossColour, readableFigure} from "@/common/utils/TestUtil";
 import "./styles.sass";
-import {getIconBySpeed} from "@/common/utils/TestUtil";
 import {useContext} from "react";
 import {ConfigContext} from "@/common/contexts/Config";
 import {StatusContext} from "@/common/contexts/Status";
 import {PreferencesContext} from "@/common/contexts/Preferences";
+import {TargetsContext} from "@/common/contexts/Targets";
+import {resolveLimits} from "@/common/utils/TargetUtil";
 import {
-    convertSpeed, formatLatency, formatLatencyWithUnit, formatWhole, getSpeedUnit, NOT_MEASURED
+    formatLatency, formatLatencyWithUnit, formatWhole, formatWithUnit, getSpeedUnit, wholeSpeed
 } from "@/common/utils/FormatUtil";
 import TestDetails from "@/common/components/TestDetails";
 import {t} from "i18next";
@@ -22,10 +23,16 @@ export const LatestTestChart = (props) => {
     const [config] = useContext(ConfigContext);
     const [status] = useContext(StatusContext);
     const [preferences] = useContext(PreferencesContext);
+    const {byId} = useContext(TargetsContext);
     const speedUnit = getSpeedUnit(preferences);
 
     if (!props.test) return <></>;
     if (config === null) return <></>;
+
+    // Graded against the test's own target where it set optima, the global
+    // settings otherwise - the same resolution the pane this card opens into
+    // makes, so opening it cannot change a colour.
+    const limits = resolveLimits(byId?.[props.test.targetId], config);
 
     // Opened, the card becomes the whole record: the three summary rows below
     // are all that fits on a card, and the modal used to render exactly the same
@@ -38,17 +45,20 @@ export const LatestTestChart = (props) => {
         </StatisticContainer>
     );
 
-    const hasJitter = props.test.jitter !== null && props.test.jitter !== undefined;
+    const hasJitter = isMeasured(props.test.jitter);
 
     // Absent for tests recorded before the quality columns existed and for the
     // providers that cannot measure them; the row simply does not render then.
     const bloat = bufferbloat(props.test);
 
-    // The same rule, for the same reason: only Ookla reports a loss rate, and a
-    // provider that reports none has not measured a clean line. Zero is a
-    // measurement, so the check cannot be on truthiness.
-    const hasPacketLoss = typeof props.test.packetLoss === "number"
-        && Number.isFinite(props.test.packetLoss);
+    // Only Ookla reports a loss rate, and a provider that reports none has
+    // not measured a clean line. Zero is a measurement, so the check cannot
+    // be on truthiness - and junk is not one, so it reads through
+    // readableFigure: this row prints the stored column raw, and a value the
+    // colour beside it grades as never-measured must not print "auto%" or a
+    // bare "%" as a reading. The detail pane gates the same column the same
+    // way, so a row cannot show on one view and vanish from the other.
+    const hasPacketLoss = readableFigure(props.test.packetLoss) !== null;
 
     // Trimmed to the one decimal every latency in this interface is shown at.
     // The measurement is stored with two, and the card printed both of them
@@ -58,10 +68,6 @@ export const LatestTestChart = (props) => {
     // a bucket boundary would wear a different colour there.
     const ping = formatLatency(props.test.ping);
 
-    // A failed run stores -1 in every numeric column, and "-1 Mbps" reads as a
-    // measurement. One place for it, because the three rows had a copy each.
-    const measured = (value, text) => value === -1 ? NOT_MEASURED : text;
-
     /**
      * Whole, the way this card's three figures are stated.
      *
@@ -69,20 +75,29 @@ export const LatestTestChart = (props) => {
      * prints every figure at the precision it was measured at. So the decimals
      * are one click away rather than gone, and the column of readings here is
      * one width rather than five.
+     *
+     * wholeSpeed rounds ONCE from the raw quotient: rounding the two-decimal
+     * conversion again printed every [8n+3.96, 8n+4) band one megabyte high.
+     *
+     * And through formatWithUnit, never a bare template: the one refusal for
+     * everything no reader can read - the -1 a failed run stores in either
+     * spelling, junk, and the absent columns of a legacy row, which the old
+     * template printed as the literal "null Mbps".
      */
-    const speedText = (mbps) => `${formatWhole(convertSpeed(mbps, preferences))} ${speedUnit}`;
+    const speedText = (mbps) => formatWithUnit(wholeSpeed(mbps, preferences), speedUnit);
 
     return (
         <StatisticContainer title={t("latest.latest")} onClick={props.onClick} running={status.running}>
             <div className="info-container">
                 <PanelRow icon={faPingPongPaddleBall} title={t("latest.ping")}
-                          level={getIconBySpeed(ping, config.ping, false)}
+                          level={getIconBySpeed(ping, limits.ping, false)}
                           /* Whole, while the colour beside it is graded on the
                              one decimal above - which is what the pane grades
                              and prints, so the two views cannot disagree about
-                             a ping that rounds across a bucket boundary. */
-                          value={measured(props.test.ping,
-                              `${formatWhole(props.test.ping)} ${t("latest.ping_unit")}`)}
+                             a ping that rounds across a bucket boundary. The
+                             formatter is the stop for everything unreadable,
+                             placeholders in either spelling included. */
+                          value={formatWithUnit(formatWhole(props.test.ping), t("latest.ping_unit"))}
                           /* Under the latency rather than hung off it. It is the
                              other half of what the line does at rest, and beside
                              the figure it was a second number in the same unit
@@ -97,12 +112,12 @@ export const LatestTestChart = (props) => {
                           )}/>
 
                 <PanelRow icon={faArrowUp} title={t("latest.up")}
-                          level={getIconBySpeed(props.test.upload, config.upload, true)}
-                          value={measured(props.test.upload, speedText(props.test.upload))}/>
+                          level={getIconBySpeed(props.test.upload, limits.upload, true)}
+                          value={speedText(props.test.upload)}/>
 
                 <PanelRow icon={faArrowDown} title={t("latest.down")}
-                          level={getIconBySpeed(props.test.download, config.download, true)}
-                          value={measured(props.test.download, speedText(props.test.download))}/>
+                          level={getIconBySpeed(props.test.download, limits.download, true)}
+                          value={speedText(props.test.download)}/>
 
                 {/* The share of packets that never arrived, which none of the
                     three figures above can show: a line can be fast in both

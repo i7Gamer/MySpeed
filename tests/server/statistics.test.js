@@ -69,6 +69,20 @@ describe("buildStatistics", () => {
             assert.equal(stats.ping.max, 13.1);
         });
 
+        // The average moves with one bad afternoon; the middle of the range
+        // does not, and the panes now state both.
+        it("reports the median beside the average", () => {
+            const stats = buildStatistics([
+                at("2026-08-07T01:00:00.000Z", {download: 100}),
+                at("2026-08-07T02:00:00.000Z", {download: 110}),
+                at("2026-08-07T03:00:00.000Z", {download: 400})
+            ], DAY);
+
+            assert.equal(stats.download.median, 110);
+            assert.equal(stats.download.avg, 203.33,
+                "the fixture no longer demonstrates the skew the median resists");
+        });
+
         // Regression: a range in which every test failed used to serialise as
         // Infinity/NaN, which JSON.stringify turns into null with no warning.
         it("returns null aggregates when every test failed", () => {
@@ -76,8 +90,8 @@ describe("buildStatistics", () => {
                 at("2026-08-07T01:00:00.000Z", {error: "timeout"}),
                 at("2026-08-07T02:00:00.000Z", {error: "timeout"})
             ], DAY);
-            assert.deepEqual(stats.download, {min: null, max: null, avg: null});
-            assert.deepEqual(stats.ping, {min: null, max: null, avg: null});
+            assert.deepEqual(stats.download, {min: null, max: null, avg: null, median: null});
+            assert.deepEqual(stats.ping, {min: null, max: null, avg: null, median: null});
         });
 
         it("returns null jitter aggregates when no entry reports jitter", () => {
@@ -85,7 +99,7 @@ describe("buildStatistics", () => {
                 at("2026-08-07T01:00:00.000Z", {jitter: null}),
                 at("2026-08-07T02:00:00.000Z", {jitter: null})
             ], DAY);
-            assert.deepEqual(stats.jitter, {min: null, max: null, avg: null});
+            assert.deepEqual(stats.jitter, {min: null, max: null, avg: null, median: null});
         });
 
         it("aggregates only the entries that do report jitter", () => {
@@ -94,7 +108,7 @@ describe("buildStatistics", () => {
                 at("2026-08-07T02:00:00.000Z", {jitter: 4}),
                 at("2026-08-07T03:00:00.000Z", {jitter: 6})
             ], DAY);
-            assert.deepEqual(stats.jitter, {min: 4, max: 6, avg: 5});
+            assert.deepEqual(stats.jitter, {min: 4, max: 6, avg: 5, median: 5});
         });
     });
 
@@ -926,6 +940,421 @@ describe("loaded latency over the range", () => {
             assert.deepEqual(buildStatistics([at("2026-08-07T01:00:00.000Z")], DAY)
                 .consistency.loadedLatency.trend, []);
         });
+    });
+});
+
+/**
+ * What the testing itself cost in traffic. Every provider stores the bytes a
+ * run moved; the summary was the one reader that never looked at them.
+ */
+describe("data used", () => {
+    it("sums both directions over the rows that measured them", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {bytesDownloaded: 1000, bytesUploaded: 400}),
+            at("2026-08-07T02:00:00.000Z", {bytesDownloaded: 2500, bytesUploaded: 600})
+        ], DAY);
+
+        assert.deepEqual(stats.dataUsed, {download: 3500, upload: 1000, total: 4500});
+    });
+
+    // Rows from before the transfer columns existed say nothing, not nought.
+    it("answers null rather than zero when nothing measured it", () => {
+        const stats = buildStatistics([at("2026-08-07T01:00:00.000Z")], DAY);
+
+        assert.deepEqual(stats.dataUsed, {download: null, upload: null, total: null});
+    });
+
+    // A history straddling the columns' arrival sums what was measured: a
+    // lower bound, not a claim about the rows that said nothing.
+    it("keeps a lower bound when only some rows measured it", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {bytesDownloaded: 1000, bytesUploaded: 400}),
+            at("2026-08-07T02:00:00.000Z")
+        ], DAY);
+
+        assert.deepEqual(stats.dataUsed, {download: 1000, upload: 400, total: 1400});
+    });
+
+    // A failure that moved data still moved it - the figure is about traffic,
+    // not about success, which is why it sums entries rather than successes.
+    it("counts a failed run that still moved data", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {error: "timeout", download: -1, bytesDownloaded: 800, bytesUploaded: 100}),
+            at("2026-08-07T02:00:00.000Z", {bytesDownloaded: 200, bytesUploaded: 50})
+        ], DAY);
+
+        assert.deepEqual(stats.dataUsed, {download: 1000, upload: 150, total: 1150});
+    });
+
+    it("totals a direction the provider never reported as the other alone", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {bytesDownloaded: 1200})
+        ], DAY);
+
+        assert.deepEqual(stats.dataUsed, {download: 1200, upload: null, total: 1200});
+    });
+
+    /**
+     * A negative byte count is not traffic. The live path cannot store one -
+     * byteCount refuses it - but a history imported before the import learned
+     * the same rule can hold -1 placeholders, and summed as bytes each one
+     * *subtracts* from the total the panel prints as what the testing cost.
+     */
+    it("keeps a negative placeholder out of the total", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {bytesDownloaded: -1, bytesUploaded: -1}),
+            at("2026-08-07T02:00:00.000Z", {bytesDownloaded: 200, bytesUploaded: 50})
+        ], DAY);
+
+        assert.deepEqual(stats.dataUsed, {download: 200, upload: 50, total: 250});
+    });
+});
+
+/**
+ * What the full-resolution series draws for a quality figure nothing measured.
+ *
+ * The live path stores null for those - usableFigure - but a history imported
+ * before the import learned the same rule can hold the -1 placeholders, and
+ * the series passed them through: a jitter dipping to minus one millisecond,
+ * drawn as a reading on a chart whose summary above skipped the same row.
+ */
+describe("an imported negative quality figure on the chart", () => {
+    it("is a gap, the way an unmeasured one is", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {jitter: -1, downloadLatency: -3, uploadLatency: -2})
+        ], DAY);
+
+        assert.deepEqual(stats.data.jitter, [null]);
+        assert.deepEqual(stats.data.downloadLatency, [null]);
+        assert.deepEqual(stats.data.uploadLatency, [null]);
+    });
+
+    it("leaves the measured figures beside it alone", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {jitter: 2.5, downloadLatency: 41, uploadLatency: 60})
+        ], DAY);
+
+        assert.deepEqual(stats.data.jitter, [2.5]);
+        assert.deepEqual(stats.data.downloadLatency, [41]);
+        assert.deepEqual(stats.data.uploadLatency, [60]);
+    });
+
+    /**
+     * And the same answer once the range is wide enough to be bucketed. The
+     * guard sat only on the full-resolution branch, so the identical data
+     * answered two ways depending on row count: 300 rows drew gaps, 301 rows
+     * bucketed the -1 placeholders into every average they touched and the
+     * jitter dipped below zero again.
+     */
+    it("stays out of the buckets when the range is downsampled", () => {
+        // One placeholder row alone in the first bucket - averaged with
+        // nothing, so a filter that admits it answers exactly -1 - and enough
+        // clean rows later in the day to force the downsampled branch.
+        const FILLER_ROWS = 60;
+        const entries = [
+            at("2026-08-07T00:10:00.000Z",
+                {jitter: -1, downloadLatency: -3, uploadLatency: -2, time: -5}),
+            ...Array.from({length: FILLER_ROWS}, (unused, index) =>
+                at(`2026-08-07T12:${String(index).padStart(2, "0")}:00.000Z`,
+                    {jitter: 2, downloadLatency: 40, uploadLatency: 50, time: 30}))
+        ];
+
+        const stats = buildStatistics(entries, DAY, {maxPoints: 50});
+
+        assert.equal(stats.downsampled, true, "the range was not bucketed, so this holds nothing");
+        for (const key of ["jitter", "downloadLatency", "uploadLatency", "time"])
+            for (const value of stats.data[key])
+                assert.ok(value === null || value >= 0,
+                    `a bucketed ${key} average was dragged below its readings by a placeholder`);
+    });
+});
+
+/**
+ * A non-number stored in a numeric column does not turn an average into
+ * string concatenation.
+ *
+ * sqlite is typeless: a history imported before the columns were checked, or a
+ * live run that stored a NaN as the literal string "NaN", can leave a string
+ * where a double belongs. `total + "NaN"` concatenates, so one such row on an
+ * otherwise-100 line reported a download average in the tens of trillions, a
+ * consistency of 0% with an eight-figure spread, and a chart point at 8.6e13.
+ */
+describe("a corrupt stored number", () => {
+    // The string upload sits deliberately off the mean of its neighbours: a
+    // value that happens to equal the filtered mean contributes a squared
+    // deviation of zero, and the asymmetry this suite pins cancels invisibly -
+    // which is exactly how the first cut of these fixtures stayed green over
+    // the bug.
+    const rows = [
+        at("2026-08-07T01:00:00.000Z", {download: 100, upload: 100}),
+        at("2026-08-07T02:00:00.000Z", {download: "NaN", upload: "600"}),
+        at("2026-08-07T03:00:00.000Z", {download: 300, upload: 300})
+    ];
+
+    /**
+     * The one row that is genuinely unreadable drops out; the readings either
+     * side of it keep their exact figures. The first cut of this guard asserted
+     * only "finite and under a thousand", which passed whether the answer was
+     * honest or fabricated - and it was fabricated: the raw row count let the
+     * two-value gate pass while the arithmetic ran on fewer.
+     */
+    it("keeps the readable readings and drops only the corrupt one", () => {
+        const stats = buildStatistics(rows, DAY, {offsetMinutes: 0});
+
+        assert.deepEqual(stats.consistency.download, {stdDev: 100, consistency: 50},
+            "the corrupt row dragged the spread or thinned the mean");
+        assert.deepEqual(stats.download, {min: 100, max: 300, avg: 200, median: 200});
+    });
+
+    /**
+     * "200" is an imported history's spelling of 200 - sqlite is typeless, and
+     * metricValue documents that population as measurements somebody took. The
+     * alert gate, Prometheus and the failure predicates all read it as a
+     * number; the summary refusing it made the same row measured and absent at
+     * once.
+     */
+    it("reads a numeric string as the measurement it records", () => {
+        const stats = buildStatistics(rows, DAY, {offsetMinutes: 0});
+
+        assert.deepEqual(stats.upload, {min: 100, max: 600, avg: 333.33, median: 300},
+            "a numeric string is excluded from the range it belongs to");
+        assert.equal(stats.consistency.upload.stdDev, 205.48);
+        assert.equal(stats.consistency.upload.consistency, 38.4);
+    });
+
+    // The mean filtered its population while the squared deviations coerced
+    // theirs, so a numeric string was absent from one and huge in the other.
+    it("gives a coerced string the same weight in the mean and the spread", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {download: 100}),
+            at("2026-08-07T02:00:00.000Z", {download: "200"})
+        ], DAY);
+
+        assert.deepEqual(stats.consistency.download, {stdDev: 50, consistency: 66.7},
+            "the string sat in the spread but not the mean, or the other way round");
+    });
+
+    it("counts an hour by the readings its average used", () => {
+        const stats = buildStatistics(rows, DAY, {offsetMinutes: 0});
+        const byHour = (hour) => stats.hourlyAverages.find((bucket) => bucket.hour === hour);
+
+        assert.deepEqual({download: byHour(1).download, count: byHour(1).count}, {download: 100, count: 1});
+        // The corrupt hour: no readable download, and the count says so rather
+        // than presenting the absence as backed by a test.
+        assert.deepEqual({download: byHour(2).download, count: byHour(2).count}, {download: null, count: 0});
+        // Its numeric-string upload is still that hour's real reading.
+        assert.equal(byHour(2).upload, 600);
+    });
+
+    /**
+     * Nothing measured is not a perfect line. The raw-count gate let an
+     * all-corrupt pair through to a mean of nothing, and `NaN > 0` is false -
+     * so the fallback scored the emptiness a flawless 100 with a stdDev JSON
+     * hides as null. One readable row beside one corrupt is the same overclaim
+     * with a mean: a lone reading deviates from itself by nothing, and the
+     * two-value gate exists to refuse exactly that claim.
+     */
+    it("answers nothing measured over rows holding no readable value", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {download: "NaN"}),
+            at("2026-08-07T02:00:00.000Z", {download: "NaN"})
+        ], DAY);
+
+        assert.deepEqual(stats.consistency.download, {stdDev: null, consistency: null},
+            "two unreadable rows scored as a flawlessly stable line");
+    });
+
+    it("refuses the lone-reading overclaim when the other row is corrupt", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {download: 100}),
+            at("2026-08-07T02:00:00.000Z", {download: "NaN"})
+        ], DAY);
+
+        assert.deepEqual(stats.consistency.download, {stdDev: null, consistency: null},
+            "a single readable reading reported itself 100% consistent, ±0");
+    });
+
+    /**
+     * The full-resolution series speaks the same language as the downsampled
+     * one. Below targetPoints the rows used to go into the payload raw, so a
+     * stored "50" reached the client as a JSON string - convertSpeed refuses a
+     * non-number and drew the point 8x too high under a MB/s preference, and
+     * the chart's own average line string-concatenated it into an eight-figure
+     * number: the exact total-plus-value bug this file fixed server-side,
+     * reproduced in the browser, on every range small enough not to bucket.
+     */
+    it("ships the full series as numbers, never raw strings", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {download: 100, upload: 50}),
+            at("2026-08-07T02:00:00.000Z", {download: "50", upload: "25"})
+        ], DAY);
+
+        assert.equal(stats.downsampled, false, "two rows were bucketed, so the raw path went untested");
+        assert.deepEqual(stats.data.download, [100, 50],
+            "a numeric-string row reaches the client payload as a string");
+        assert.deepEqual(stats.data.upload, [50, 25]);
+    });
+
+    it("draws a gap for a full-series value nothing can read", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {download: 100}),
+            at("2026-08-07T02:00:00.000Z", {download: "NaN"})
+        ], DAY);
+
+        assert.deepEqual(stats.data.download, [100, null],
+            "an unreadable value is shipped raw instead of drawn as the gap the chart knows");
+    });
+
+    /**
+     * A -1 in ping or time is the failure placeholder, not a reading - the
+     * same population every usableFigure call in the file cites. measuredPing
+     * gated only on isMeasuredLatency, which never refuses negatives, so an
+     * imported -1 ping was a full reading in every ping figure - min -1 on the
+     * card, a chart point below zero, an hourly bucket averaging it - while
+     * the identical -1 in jitter was refused everywhere; and the coercion even
+     * widened it, admitting the string "-1" the old typeof gate refused. The
+     * time summary had the mirror-image gap: the chart moved to usableFigure
+     * while mapRounded kept reading raw, so the span card printed "-1s".
+     */
+    it("keeps the ping placeholder out of every ping figure", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {ping: 20}),
+            at("2026-08-07T02:00:00.000Z", {ping: -1}),
+            at("2026-08-07T03:00:00.000Z", {ping: "-1"})
+        ], DAY, {offsetMinutes: 0});
+
+        assert.deepEqual(stats.ping, {min: 20, max: 20, avg: 20, median: 20},
+            "the placeholder is the range's lowest ping");
+        assert.deepEqual(stats.data.ping, [20, null, null],
+            "the chart draws a point at minus one millisecond");
+        assert.equal(stats.hourlyAverages.find((bucket) => bucket.hour === 2).ping, null,
+            "an hour's average is the placeholder");
+        assert.equal(stats.consistency.ping.deviation, null,
+            "the deviation counted the placeholder as a reading");
+    });
+
+    /**
+     * And the two columns the placeholder is actually written into. A row with
+     * -1 in one of them beside good figures is a success to isFailedTest -
+     * which requires all three - and read through the metricValue default it
+     * was a full reading: min -1 Mbit/s on the card, a chart point below zero,
+     * an hour's bucket and the consistency spread dragged by it. The same
+     * argument this suite already makes for ping, time and jitter, applied to
+     * the trio's other two.
+     */
+    it("keeps the placeholder out of the throughput figures too", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {download: 100, upload: 50}),
+            at("2026-08-07T02:00:00.000Z", {download: -1, upload: -1})
+        ], DAY, {offsetMinutes: 0});
+
+        assert.deepEqual(stats.download, {min: 100, max: 100, avg: 100, median: 100},
+            "the placeholder is the range's minimum download");
+        assert.deepEqual(stats.upload, {min: 50, max: 50, avg: 50, median: 50});
+        assert.deepEqual(stats.data.download, [100, null],
+            "the chart draws a point at minus one megabit");
+        assert.deepEqual(stats.data.upload, [50, null]);
+
+        const hour = stats.hourlyAverages.find((bucket) => bucket.hour === 2);
+        assert.deepEqual({download: hour.download, upload: hour.upload, count: hour.count},
+            {download: null, upload: null, count: 0},
+            "an hour's average is the placeholder, counted as a test behind it");
+
+        // One readable reading after the refusal, so the two-value gate holds.
+        assert.deepEqual(stats.consistency.download, {stdDev: null, consistency: null},
+            "the spread was dragged by the placeholder");
+    });
+
+    it("keeps a negative time out of the span the card prints", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {time: 1000}),
+            at("2026-08-07T02:00:00.000Z", {time: -1}),
+            at("2026-08-07T03:00:00.000Z", {time: 2000})
+        ], DAY);
+
+        assert.deepEqual(stats.time, {min: 1000, max: 2000, avg: 1500, median: 1500},
+            "the span card prints a negative duration");
+    });
+
+    // The last bare typeof in the file: a loaded-latency row whose ping is
+    // spelt as a string was counted by the range and both series and skipped
+    // by the card beside them.
+    it("counts a loaded-latency row however its ping is spelt", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {ping: 20, downloadLatency: 50, uploadLatency: 60}),
+            at("2026-08-07T02:00:00.000Z", {ping: "20", downloadLatency: 50, uploadLatency: 60})
+        ], DAY);
+
+        assert.equal(stats.consistency.loadedLatency.tests, 2,
+            "the string-spelt row is measured in the range and absent from the card");
+        assert.equal(stats.consistency.loadedLatency.increase, 40);
+    });
+
+    /**
+     * The ping came along too. isMeasuredLatency asks typeof first - rightly,
+     * for the fabricated-zero question it answers - so a numeric-string ping
+     * was the one column still measured-and-absent-at-once: counted by
+     * Prometheus off the same row while every statistics reader dropped it.
+     * Read through metricValue before that gate, the way the other columns are.
+     */
+    it("reads a numeric-string ping everywhere the other columns are read", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {ping: 20}),
+            at("2026-08-07T02:00:00.000Z", {ping: "40"})
+        ], DAY, {offsetMinutes: 0});
+
+        assert.equal(stats.ping.max, 40, "the summary range never saw the string ping");
+        assert.deepEqual(stats.data.ping, [20, 40], "the chart drew a gap over a measured ping");
+        assert.equal(stats.hourlyAverages.find((bucket) => bucket.hour === 2).ping, 40);
+        // Two readings now: median 30, distances [10, 10], their median 10.
+        assert.equal(stats.consistency.ping.deviation, 10,
+            "the spread saw one reading where the range shows two");
+    });
+
+    it("does not blow up a downsampled chart point", () => {
+        // Index 1 carries the -1 placeholder: the bucketed branch reads
+        // through its own door, and a raw read there averaged the placeholder
+        // into a bucket the full-resolution branch would have gapped.
+        const many = Array.from({length: 60}, (unused, index) =>
+            at(`2026-08-07T04:${String(index).padStart(2, "0")}:00.000Z`,
+                index === 0 ? {download: "NaN"} : index === 1 ? {download: -1} : {download: 100}));
+
+        const stats = buildStatistics(many, DAY, {maxPoints: 50});
+
+        assert.equal(stats.downsampled, true);
+        for (const point of stats.data.download)
+            assert.ok(point === null || point === 100,
+                "a corrupt row or a placeholder dragged a bucket mean off the only real reading");
+    });
+});
+
+/**
+ * The summary beside the chart, asked the same question. The gap fix cited a
+ * summary that "skipped the same row", and it did not: the jitter and packet
+ * loss filters asked only for null, so the -1 placeholders set every minimum
+ * and dragged every average - the panel disagreeing with the chart under it.
+ */
+describe("an imported negative quality figure in the summary", () => {
+    const rows = [
+        at("2026-08-07T01:00:00.000Z", {jitter: -1, packetLoss: -2, downloadLatency: -3, uploadLatency: -1}),
+        at("2026-08-07T02:00:00.000Z", {jitter: 2, packetLoss: 0.5, downloadLatency: 40, uploadLatency: 60})
+    ];
+
+    it("does not set the minimum or drag the average", () => {
+        const stats = buildStatistics(rows, DAY);
+
+        assert.equal(stats.jitter.min, 2, "the placeholder is the range's lowest jitter");
+        assert.equal(stats.jitter.avg, 2);
+        assert.equal(stats.packetLoss, 0.5, "the placeholder halved the packet loss");
+        assert.equal(stats.consistency.ping.jitter, 2);
+    });
+
+    it("stays out of the hourly buckets", () => {
+        const stats = buildStatistics(rows, DAY, {offsetMinutes: 0});
+        const one = stats.hourlyAverages.find((bucket) => bucket.hour === 1);
+
+        assert.equal(one.jitter, null,
+            "the placeholder is an hour's whole jitter reading");
     });
 });
 

@@ -76,7 +76,7 @@ const HeaderComponent = () => {
 
     const showDemoDialog = () => alert.openAlert(
         t("preview.title"),
-        <Trans components={{ Link: <a href={INSTALL_URL} target="_blank" /> }}>preview.description</Trans>,
+        <Trans components={{ Link: <a href={INSTALL_URL} target="_blank" rel="noreferrer" /> }}>preview.description</Trans>,
         { buttonText: t("dialog.okay") }
     );
 
@@ -113,18 +113,44 @@ const HeaderComponent = () => {
 
     const openDownloadPage = () => window.open(RELEASES_URL, "_blank");
 
+    /*
+     * Keyed on what this actually reads, plus the node it is reading it from.
+     *
+     * `config` gets a new identity on every reloadConfig, from a dozen places,
+     * so every settings save, password change and node edit refetched a version
+     * none of them had changed - the same waste NodeContext's own effect was
+     * narrowed to avoid.
+     *
+     * Narrowing to the two config fields alone would have been a regression
+     * rather than a fix: switching to a node running a different version
+     * changes neither, so the banner would go on advertising the previously
+     * viewed node's update. Hence currentNode, and hence the clear below -
+     * nothing else ever resets updateAvailable, and a node that is up to date
+     * answers with no banner at all.
+     */
+    const configLoaded = Object.keys(config).length > 0;
+
     useEffect(() => {
-        if (Object.keys(config).length === 0) return;
-        async function updateVersion() {
+        if (!configLoaded) return;
+
+        setUpdateAvailable("");
+        if (config.viewMode) return;
+
+        // Only the newest answer is allowed to land: a node switched away from
+        // while its version request is in flight must not raise a banner on the
+        // instance now being viewed.
+        let current = true;
+
+        (async () => {
             const version = await jsonRequest("/info/version").catch(() => null);
-            if (!version?.remote || !version?.local) return;
+            if (!current || !version?.remote || !version?.local) return;
 
             if (version.remote.localeCompare(version.local, undefined, { numeric: true, sensitivity: 'base' }) === 1)
                 setUpdateAvailable(version.remote);
-        }
+        })();
 
-        if (!config.viewMode) updateVersion();
-    }, [config]);
+        return () => { current = false; };
+    }, [configLoaded, config.viewMode, currentNode]);
 
     const getNodeName = () => nodeTitle(currentNode, findNode, PRODUCT_NAME);
 

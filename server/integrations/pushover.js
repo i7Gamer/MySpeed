@@ -18,9 +18,11 @@ const URL = "https://api.pushover.net/1/messages.json";
  */
 export const PUSHOVER_MESSAGE_LIMIT = 1024;
 
+// Both templates name the target: on a multi-target instance every message
+// otherwise reads identically whether it describes the WAN or the LAN box.
 const defaults = {
-    finished: "A speedtest is finished:\nPing: %ping% ms (±%jitter% ms)\nUpload: %upload% Mbps\nDownload: %download% Mbps",
-    failed: "A speedtest has failed. Reason: %error%"
+    finished: "A speedtest is finished:\nTarget: %targetName%\nPing: %ping% ms (±%jitter% ms)\nUpload: %upload% Mbps\nDownload: %download% Mbps",
+    failed: "A speedtest has failed.\nTarget: %targetName%\nReason: %error%"
 };
 
 // Trimmed here rather than at each call site, so a message added later cannot

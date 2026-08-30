@@ -7,12 +7,16 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import {ConfigContext} from "@/common/contexts/Config";
 import {PreferencesContext} from "@/common/contexts/Preferences";
+import {TargetsContext} from "@/common/contexts/Targets";
+import {resolveLimits, roundIndexById, targetColour} from "@/common/utils/TargetUtil";
 import {
-    convertSpeed, formatBytes, formatDateTime, formatLatency, formatLatencyWithUnit, getSpeedUnit
+    convertSpeed, formatBytes, formatDateTime, formatLatency, formatLatencyWithUnit, getSpeedUnit,
+    roundsToZeroLatency
 } from "@/common/utils/FormatUtil";
+import FigureWithUnit from "@/common/components/FigureWithUnit";
 import {
     bufferbloat, bufferbloatColour, connectionChange, getIconBySpeed, gradeForIncrease, isMeasured,
-    jitterColour, latencyIncrease, packetLossColour
+    jitterColour, latencyIncrease, packetLossColour, readableFigure
 } from "@/common/utils/TestUtil";
 import {changeFrom, differenceFromTarget, percentOfTarget, providerName} from "./utils/details";
 import {describeError} from "./utils/errors";
@@ -63,8 +67,13 @@ const DetailMetric = ({icon, label, value, unit, level, percent, targetLabel, ch
             </div>
 
             <div className="detail-metric-value-row">
+                {/* Through the one refusing renderer: a mixed row's -1 printed
+                    "-1 ms" here beside an icon already grading it a failure,
+                    junk printed as a reading, and an absent column left a bare
+                    unit standing alone - while the views printing through
+                    formatWithUnit said N/A for the same value. */}
                 <div className="detail-metric-value">
-                    {value}<span className="detail-metric-unit">{unit}</span>
+                    <FigureWithUnit value={value} unit={unit} unitClass="detail-metric-unit"/>
                 </div>
                 {sub}
             </div>
@@ -148,6 +157,7 @@ const DetailFact = ({label, children}) => (
 export const TestDetails = ({test, previous, previousConnection, className = "", children}) => {
     const [config] = useContext(ConfigContext);
     const [preferences] = useContext(PreferencesContext);
+    const {targets: targetList, byId} = useContext(TargetsContext);
     // Above the early return: a hook cannot be called conditionally, and a pane
     // rendered with no test is the condition.
     const openInfo = useMetricInfo();
@@ -155,9 +165,15 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
     if (!test) return null;
 
     const speedUnit = getSpeedUnit(preferences);
-    // The targets are what the bars are drawn against; without them percentOfTarget
-    // returns null for every metric and the bars simply do not render.
-    const targets = config ?? {};
+    // The target this row was measured against, when it still exists - a
+    // deleted target's rows, and every row from before targets, resolve to
+    // nothing and are judged by the instance-wide settings below.
+    const targetRow = byId?.[test.targetId];
+    // The limits are what the bars are drawn against; without them
+    // percentOfTarget returns null for every metric and the bars simply do
+    // not render. Resolved per target, the same way the list rows are - a
+    // measurement must not change verdict when its row is opened.
+    const limits = resolveLimits(targetRow, config ?? {});
 
     // The panel keeps the raw output appended when there is no translation for
     // it - it is what an issue report needs.
@@ -181,19 +197,46 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
     // over" a target of 25. Both sides of every comparison, or the figure and
     // the sentence under it disagree again.
     //
-    // The target is whatever was typed into the settings dialog, i.e. a string -
-    // formatLatency hands anything that is not a number back untouched, so it
-    // reaches asTarget exactly as it did before, as do the -1 a failed run
-    // stores and the null of a provider that measured nothing.
+    // Two spellings of the target, because the colour and the sentence answer
+    // two different questions. The COLOUR asks "is this line meeting the
+    // target every view grades against" - raw, exactly as the row, the card
+    // and the node view hand it to their graders; the pane trimming its copy
+    // alone made a boundary ping wear two colours between the row and the
+    // pane it opens. The SENTENCE asks "how far from the target is the figure
+    // I just printed" - printed against printed, the file's own rule, or a
+    // numeric per-target optimum of 25.44 beside a ping printed 25.4 reads
+    // "0.04 ms under" when the line is exactly on target. The percent bar
+    // stays on the raw target - not because rounding hides the trim (a 1.44
+    // target under a 2 ms ping fills 72% raw and 70% printed) but because
+    // the bar is a glance-width, not a stated figure, and the raw target is
+    // what the colour beside it grades; the sentence is where a figure is
+    // stated, and it alone pairs printed with printed.
+    //
+    // One exception to printed-against-printed, kept like-against-like: a
+    // target below the trim's resolution cannot print - formatLatency shows
+    // it 0, asTarget refuses a zero target, and the sentence vanished for
+    // exactly the target it should state a distance from, while the bar and
+    // the colour, raw readers, stayed. roundsToZeroLatency is the predicate
+    // for that reading, and in that branch BOTH operands are stored: the
+    // printed ping against the raw target read "0.06 ms over" where the line
+    // sat 0.02 from its target. The sentence prints only the difference,
+    // never either operand.
+    //
+    // The operands travel as a pair for exactly that reason: one destructure
+    // picks both sides of the branch, so no later edit can hand the sentence
+    // a printed ping beside a raw target.
     const ping = formatLatency(test.ping);
-    const pingTarget = formatLatency(targets.ping);
+    const pingTarget = limits.ping;
+    const {sentenceTarget, sentenceFigure} = roundsToZeroLatency(limits.ping)
+        ? {sentenceTarget: limits.ping, sentenceFigure: test.ping}
+        : {sentenceTarget: formatLatency(limits.ping), sentenceFigure: ping};
     const earlierPing = formatLatency(earlier.ping);
 
     // A percentage says everything worth saying about throughput. For latency it
     // does not: the plain distance from the target is what the reader wants, and
     // it cannot be read backwards.
     const latencyTargetLabel = () => {
-        const distance = differenceFromTarget(ping, pingTarget);
+        const distance = differenceFromTarget(sentenceFigure, sentenceTarget);
         if (distance === null) return null;
         if (distance.direction === "same") return t("test.details.on_target");
 
@@ -214,6 +257,12 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
      * and it measures it once. Repeated under both directions it would read as
      * two measurements, and neither of them was taken.
      */
+    // One glue site for the chip's figure and for the label that announces
+    // it: two copies of the same interpolation are two lines to keep in
+    // step, and the scan's exemption names ONE construct per file. Read
+    // only behind the reader's gate below, like the trimmed ping above.
+    const lossText = `${test.packetLoss}%`;
+
     const qualityFigures = [
         // Both graded against what a call needs rather than against a configured
         // optimum - there is a setting for the ping above them and none for
@@ -238,13 +287,19 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
             text: formatLatencyWithUnit(test.jitter, t("latest.jitter_unit")),
             label: `${t("latest.jitter")} ${formatLatencyWithUnit(test.jitter, t("latest.jitter_unit"))}`
         },
-        isMeasured(test.packetLoss) && {
+        // readableFigure, not isMeasured: this row prints the stored column
+        // raw, so a value the colour grades as never-measured must not print
+        // at all - "auto%" beside blue asserts a reading nobody took. The
+        // latest-test card gates the same column the same way. (The jitter
+        // chip above differs on purpose: its label prints through
+        // formatLatencyWithUnit, which says N/A for what it cannot read.)
+        readableFigure(test.packetLoss) !== null && {
             key: "packetLoss",
             icon: faLinkSlash,
             info: packetLossInfo,
             level: packetLossColour(test.packetLoss),
-            text: `${test.packetLoss}%`,
-            label: `${t("test.details.packet_loss")} ${test.packetLoss}%`
+            text: lossText,
+            label: `${t("test.details.packet_loss")} ${lossText}`
         }
     ].filter(Boolean);
 
@@ -338,9 +393,9 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
             value: convertSpeed(test.download, preferences),
             unit: speedUnit,
             changeUnit: speedUnit,
-            level: getIconBySpeed(test.download, targets.download, true),
-            percent: percentOfTarget(test.download, targets.download),
-            targetLabel: t("test.details.of_target", {percent: percentOfTarget(test.download, targets.download)}),
+            level: getIconBySpeed(test.download, limits.download, true),
+            percent: percentOfTarget(test.download, limits.download),
+            targetLabel: t("test.details.of_target", {percent: percentOfTarget(test.download, limits.download)}),
             change: changeFrom(convertSpeed(test.download, preferences), convertSpeed(earlier.download, preferences)),
             higherIsBetter: true
         },
@@ -353,9 +408,9 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
             value: convertSpeed(test.upload, preferences),
             unit: speedUnit,
             changeUnit: speedUnit,
-            level: getIconBySpeed(test.upload, targets.upload, true),
-            percent: percentOfTarget(test.upload, targets.upload),
-            targetLabel: t("test.details.of_target", {percent: percentOfTarget(test.upload, targets.upload)}),
+            level: getIconBySpeed(test.upload, limits.upload, true),
+            percent: percentOfTarget(test.upload, limits.upload),
+            targetLabel: t("test.details.of_target", {percent: percentOfTarget(test.upload, limits.upload)}),
             change: changeFrom(convertSpeed(test.upload, preferences), convertSpeed(earlier.upload, preferences)),
             higherIsBetter: true
         }
@@ -429,12 +484,33 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                             )}
                         </DetailFact>
 
-                        {/* Which provider measured this. The three do not
-                            measure the same things, so this is what tells a
-                            reader that a missing packet loss below is a provider
-                            that never looked rather than a line that lost
-                            nothing. */}
-                        {providerName(test.provider) && (
+                        {/* Whose measurement this is. One slot, two states:
+                            a row whose target still exists names the target,
+                            with the provider demoted to its sub-line - the
+                            provider is a property of the target now. A row
+                            whose target is gone, or that predates targets,
+                            falls back to naming the provider alone, exactly
+                            as this fact always has. */}
+                        {targetRow ? (
+                            <DetailFact label={t("test.details.target")}>
+                                <span className="detail-target-name">
+                                    <span className="target-dot"
+                                          style={{background: targetColour(roundIndexById(targetList, test.targetId))}}/>
+                                    {targetRow.name}
+                                </span>
+                                {providerName(test.provider) && (
+                                    <span className="detail-secondary">{providerName(test.provider)}</span>
+                                )}
+                                {/* The provider's own result page keeps its
+                                    sub-line home whichever state the slot is
+                                    in. */}
+                                {test.resultId && (
+                                    <span className="detail-secondary">
+                                        <ResultLink resultId={test.resultId}/>
+                                    </span>
+                                )}
+                            </DetailFact>
+                        ) : providerName(test.provider) && (
                             <DetailFact label={t("test.details.measured_with")}>
                                 {providerName(test.provider)}
                                 {/* The provider's own result page hangs under
@@ -576,12 +652,13 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                             </DetailFact>
                         )}
 
-                        {/* Only for a row that cannot name its provider - every
-                            test recorded before that column existed. The link
-                            belongs under the provider's name, but those rows
-                            have no such fact to hang it under, and losing the
-                            link is worse than keeping the row it used to own. */}
-                        {test.resultId && !providerName(test.provider) && (
+                        {/* Only for a row that can name neither its target nor
+                            its provider - every test recorded before those
+                            columns existed. The link belongs under one of
+                            their names, but such rows have no fact to hang it
+                            under, and losing the link is worse than keeping
+                            the row it used to own. */}
+                        {test.resultId && !providerName(test.provider) && !targetRow && (
                             <DetailFact label={t("test.details.result")}>
                                 <ResultLink resultId={test.resultId}/>
                             </DetailFact>

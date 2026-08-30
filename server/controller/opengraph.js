@@ -27,6 +27,7 @@ const loadResvg = () => (resvg ??= import('@resvg/resvg-js').catch((error) => {
 }));
 import moment from 'moment-timezone';
 import * as tests from './speedtests.js';
+import * as targetsController from './targets.js';
 import { parseDateRange } from '../util/dateRange.js';
 import { isFailedTest } from '../util/testOutcome.js';
 import htm from 'htm';
@@ -62,16 +63,73 @@ export const openGraphWindow = (now = new Date()) => {
   return {from: day(yesterday), to: day(now)};
 };
 
-const readStatistics = async () => {
+/** The two days the card averages, as a parsed range. */
+const openGraphRange = () => {
   const {from, to} = openGraphWindow();
 
-  const range = parseDateRange(from, to);
+  return parseDateRange(from, to);
+};
+
+/**
+ * The line the card describes and the figures it has for it.
+ *
+ * One line, not a blend: the card is reachable by anyone on a no-password or
+ * read-level instance and headlines "the" speed, so averaging the gigabit LAN
+ * box into the WAN's figure advertises a number that is neither line's.
+ * headlineOrder owns the ranking, and the recommendations walk the same one.
+ *
+ * But only while it has something to say, and "something" means in the window
+ * the card actually averages. Chosen by configuration alone, a target added
+ * yesterday - which leads the round and has measured nothing - blanked the card
+ * of an instance holding years of rows. Chosen by "has ever measured
+ * anything", a line whose newest row is three weeks old took the card and then
+ * had nothing in the window, so the fallback below published that three-week-old
+ * reading stamped with today's date while the line beside it had measured an
+ * hour ago. So the preference is walked for a line with rows in the window
+ * first, and only then for one with rows at all.
+ *
+ * No line at all is not the same as a blend: where no target has rows, the rows
+ * that exist belong to none of them - an import that could not resolve a name
+ * leaves them unattributed, and a deleted target's stay behind - so there is no
+ * line to mis-name and the instance-wide read is the only one that can fill the
+ * card. Same for a pre-target install, whose rows carry no targetId.
+ */
+const openGraphSubject = async (range) => {
+  const ordered = await targetsController.headlineOrder();
+
+  for (const target of ordered) {
+    const stats = await tests.listStatistics(range, {target: target.id});
+
+    if (hasValues(stats)) return {target, stats};
+  }
+
+  // Nothing measured in the window. A line with older rows still names the one
+  // the single-reading fallback speaks for.
+  for (const target of ordered)
+    if (await tests.getLatest(target.id) !== undefined) return {target, stats: null};
+
+  const instanceWide = await tests.listStatistics(range, {});
+
+  return {target: null, stats: hasValues(instanceWide) ? instanceWide : null};
+};
+
+/**
+ * Exported for its test, the way openGraphWindow is: which line a public image
+ * speaks for is a decision, and the rendering needs satori and a native addon
+ * to ask it any other way.
+ */
+export const openGraphLine = async (range = openGraphRange()) =>
+  (await openGraphSubject(range)).target;
+
+/** Exported for the test that holds the card to one line's figures. */
+export const readStatistics = async () => {
+  const range = openGraphRange();
   if (!range.valid) return null;
 
-  const stats = await tests.listStatistics(range);
-  if (hasValues(stats)) return stats;
+  const {target, stats} = await openGraphSubject(range);
+  if (stats) return stats;
 
-  const latest = await tests.getLatest();
+  const latest = await tests.getLatest(target?.id);
   if (isFailedTest(latest)) return null;
   if (!latest) return null;
 

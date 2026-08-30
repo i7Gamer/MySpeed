@@ -1,5 +1,6 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/layout" as *
+@use "@/common/styles/typography" as *
 
 .password-dialog
   width: $settings-dialog-width
@@ -33,7 +34,7 @@
     color: $subtext
 
   h3
-    font-size: 1rem
+    font-size: $dialog-lead
     font-weight: 500
     color: $subtext
     margin: 0
@@ -71,7 +72,7 @@
 // the 1.25rem the content column puts between its sections - it belongs to the
 // box above it, not between the two.
 .password-mismatch
-  font-size: 0.85rem
+  font-size: $dialog-hint
   margin-top: -0.9rem
   text-align: right
 
@@ -94,7 +95,7 @@
     color: $subtext
 
   h3
-    font-size: 1rem
+    font-size: $dialog-lead
     font-weight: 500
     color: $subtext
     margin: 0

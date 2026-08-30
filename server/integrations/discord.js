@@ -28,9 +28,12 @@ export const DISCORD_DESCRIPTION_LIMIT = 4096;
  */
 export const DISCORD_USERNAME_LIMIT = 80;
 
+// Both templates name the target: on a multi-target instance every message
+// otherwise reads identically whether it describes the WAN or the LAN box. A
+// pre-target row renders it as N/A, the shape every unmeasured figure takes.
 const defaults = {
-    finished: ":sparkles: **A speedtest is finished**\n > :ping_pong: `Ping`: %ping% ms (±%jitter% ms)\n > :arrow_up: `Upload`: %upload% Mbps\n > :arrow_down: `Download`: %download% Mbps",
-    failed: ":x: **A speedtest has failed**\n > `Reason`: %error%"
+    finished: ":sparkles: **A speedtest is finished**\n > :dart: `Target`: %targetName%\n > :ping_pong: `Ping`: %ping% ms (±%jitter% ms)\n > :arrow_up: `Upload`: %upload% Mbps\n > :arrow_down: `Download`: %download% Mbps",
+    failed: ":x: **A speedtest has failed**\n > `Target`: %targetName%\n > `Reason`: %error%"
 };
 
 /**
@@ -42,11 +45,30 @@ const defaults = {
  */
 const USER_AGENT = "MySpeed (https://github.com/i7Gamer/MySpeed)";
 
+/**
+ * The name the webhook posts under, or MySpeed.
+ *
+ * The fallback used to be a bare `||` at each call site, which caught only the
+ * empty string - so a name of spaces passed through and discord answered 400
+ * for a username that is blank once trimmed, dropping the notification.
+ *
+ * Coerced with String() rather than reached through `?.trim()`. Optional
+ * chaining guards null and undefined and not a number, and importConfig
+ * bulk-writes integration rows without running them through validateInput - so
+ * a numeric display name, which is delivered today because truncate coerces the
+ * same way, would start throwing into triggerEvent's per-integration catch and
+ * the notification would vanish.
+ *
+ * Resolved inside send, beside the truncate, for the reason that one is here:
+ * it also catches a name that is blank only after being cut to the limit.
+ */
+const username = (name) => String(name ?? "").trim() || "MySpeed";
+
 // Trimmed here rather than at each call site, so a message added later cannot
 // be the one that is sent whole and refused.
-const send = (url, username, color, description, activity) =>
+const send = (url, name, color, description, activity) =>
     postJson(url, {
-        content: null, username: truncate(username, DISCORD_USERNAME_LIMIT),
+        content: null, username: truncate(username(name), DISCORD_USERNAME_LIMIT),
         embeds: [{
             description: truncate(description, DISCORD_DESCRIPTION_LIMIT),
             color, footer: {text: "MySpeed"}, timestamp: new Date().toISOString()
@@ -91,12 +113,12 @@ const clean = (variables) => stripMarkdown(variables, DISCORD_MARKDOWN);
 
 export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {
-        if (c.send_finished) await send(c.url, c.display_name || "MySpeed", 4572762,
+        if (c.send_finished) await send(c.url, c.display_name, 4572762,
             replaceVariables(c.finished_message || defaults.finished, clean(data)), activity);
     });
 
     registerEvent('testFailed', async ({data: c}, failure, activity) => {
-        if (c.send_failed) await send(c.url, c.display_name || "MySpeed", 12993861,
+        if (c.send_failed) await send(c.url, c.display_name, 12993861,
             replaceVariables(c.error_message || defaults.failed, clean(failure)), activity);
     });
 

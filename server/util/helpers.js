@@ -1,4 +1,8 @@
 import fs from 'node:fs';
+// From metricValue.js, the dependency-free leaf, not from testOutcome.js:
+// this file's string helpers are imported by every integration, and the
+// testOutcome door would drag sequelize along with them.
+import { usableFigure } from './metricValue.js';
 
 const pad = (n) => String(n).padStart(2, "0");
 
@@ -163,7 +167,25 @@ export const toErrorMessage = (error) => {
 
 const AVG_DECIMALS = 2;
 
-const EMPTY_RANGE = {min: null, max: null, avg: null};
+const EMPTY_RANGE = {min: null, max: null, avg: null, median: null};
+
+/**
+ * The middle of the measured values, which the average is not: one spike moves
+ * a mean and leaves a median standing.
+ *
+ * Sorts the array it is handed - mapRange builds it privately for exactly this.
+ * Passed through the same rounding as the average, whatever the count's
+ * parity: the two middles of an even count make it a derived figure, and a
+ * precision that changed with the parity would read as noise.
+ */
+const medianOf = (values, averageOf) => {
+    values.sort((a, b) => a - b);
+    const middle = Math.floor(values.length / 2);
+
+    return averageOf(values.length % 2 === 1
+        ? values[middle]
+        : (values[middle - 1] + values[middle]) / 2);
+};
 
 // Math.min(...[]) is Infinity and 0/0 is NaN, both of which JSON.stringify
 // silently turns into null. Returning explicit nulls keeps the value honest for
@@ -173,15 +195,21 @@ const EMPTY_RANGE = {min: null, max: null, avg: null};
 // every value onto the call stack, which throws RangeError somewhere above
 // ~125k values - a range holding a year of five-minute tests - and took the
 // whole statistics endpoint down with it.
-const mapRange = (entries, type, averageOf) => {
+// `read` is the column's own judgement of what counts as a reading.
+// usableFigure is the default: it reads the defensive numeric-string spelling
+// and refuses junk and the negative placeholders alike, so the next column
+// handed here raw is safe by default - under the old metricValue default,
+// which keeps -1 for its Prometheus caller to judge, a caller that forgot to
+// pass a stricter reader printed "min -1 Mbit/s" on the range card. A column
+// with a different rule still passes its own reader.
+const mapRange = (entries, type, averageOf, read = usableFigure) => {
     let min = Infinity;
     let max = -Infinity;
     let total = 0;
     let counted = 0;
+    const values = [];
 
     for (const entry of entries) {
-        const value = entry[type];
-
         // A measurement that is absent is not a measurement of nought. `time`
         // is nullable in the model and is the one column handed here
         // unfiltered, and a null took the range apart in both directions: it
@@ -190,21 +218,36 @@ const mapRange = (entries, type, averageOf) => {
         // real value is ever smaller - while adding nothing to the total and
         // still counting toward the divisor. A measured 0 is a real reading and
         // is not what this skips.
-        if (value === null || value === undefined) continue;
+        //
+        // A shared reader rather than a bare finite check. The corruption
+        // storage actually delivers is non-numeric text - a junk string like
+        // "NaN" quietly turned the average to NaN, and the sort comparator
+        // answers NaN around it, so one that landed mid-sample was handed to
+        // toFixed by the median: a TypeError that took the whole statistics
+        // endpoint down over one bad row. The reader refuses exactly that,
+        // and reads a *numeric* string as the number it spells - a defensive
+        // half no current row exercises (both backends coerce well-formed
+        // digits at write for these DOUBLE columns), kept because it is the
+        // judgement every other consumer of these columns shares, and a
+        // second predicate here is how one row answered two surfaces
+        // differently. Read the one, refuse the other.
+        const value = read(entry[type]);
+        if (value === null) continue;
 
         if (value < min) min = value;
         if (value > max) max = value;
         total += value;
         counted++;
+        values.push(value);
     }
 
     // Nothing measured at all, whether the set was empty or held only absences.
     if (counted === 0) return {...EMPTY_RANGE};
 
-    return {min, max, avg: averageOf(total / counted)};
+    return {min, max, avg: averageOf(total / counted), median: medianOf(values, averageOf)};
 };
 
-export const mapFixed = (entries, type) =>
-    mapRange(entries, type, (avg) => parseFloat(avg.toFixed(AVG_DECIMALS)));
+export const mapFixed = (entries, type, read) =>
+    mapRange(entries, type, (avg) => parseFloat(avg.toFixed(AVG_DECIMALS)), read);
 
-export const mapRounded = (entries, type) => mapRange(entries, type, Math.round);
+export const mapRounded = (entries, type, read) => mapRange(entries, type, Math.round, read);

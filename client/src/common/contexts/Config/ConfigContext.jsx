@@ -1,4 +1,4 @@
-import React, {createContext, useEffect, useState} from "react";
+import React, {createContext, useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {useAlert} from "../Alert";
 import {login, request} from "@/common/utils/RequestUtil";
 import {promptUntilAccepted} from "@/common/utils/PasswordPrompt";
@@ -9,7 +9,6 @@ import {markPasswordUnset} from "@/common/utils/PasswordSetup";
 import {
     apiErrorDialog, busyDialog, passwordRequiredDialog, setupTokenDialog, throttledDialog
 } from "@/common/contexts/Config/dialog";
-import WelcomeDialog from "@/common/components/WelcomeDialog";
 import LockedNotice from "@/common/components/LockedNotice";
 import {useNavigate} from "react-router-dom";
 import {configOutcome, failureOutcome} from "@/common/contexts/Config/configOutcome";
@@ -24,73 +23,16 @@ export const ConfigProvider = (props) => {
     // nothing to explain. Held as an object because the type itself may be
     // undefined - an older node answers 401 with no type at all.
     const [locked, setLocked] = useState(null);
-    const [welcomeShown, setWelcomeShown] = useState(false);
     const navigate = useNavigate();
 
 
-    const reloadConfig = () => {
-        request("/config").then(async res => {
-            // The refusal says which credential it wants, and that is the whole
-            // reason the right question can be asked. Throwing a bare 1 here
-            // discarded it one line before it was needed, so every refusal -
-            // including one from an instance with no password at all - asked
-            // for "your password".
-            if (res.status === 401 || res.status === 429) {
-                const body = await res.json().catch(() => ({}));
-                // And who refused, which the body cannot say: the proxy relays a
-                // node's answer verbatim, so a child rejecting its stored
-                // password is byte for byte this instance's own session
-                // expiring. Only one of the two is answered by the password box
-                // in front of the visitor - see failureOutcome.
-                throw {credential: true, type: body?.type,
-                    node: res.headers.get(NODE_REFUSAL_HEADER) !== null};
-            }
-
-            // A 503 only counts when the body says it is ours. A reverse proxy
-            // in front of a stopped container answers 503 too, and treating
-            // that as a refusal put a password box in front of a server that
-            // was down - then called the password wrong when the retry failed
-            // the same way. This is the check node.js makes for the same
-            // reason; "could not reach the API" is the truthful answer there.
-            if (res.status === 503) {
-                const body = await res.json().catch(() => ({}));
-                if (body?.type === SERVER_BUSY) throw {credential: true, type: body.type};
-
-                throw {credential: false};
-            }
-            if (!res.ok) throw {credential: false};
-
-            try {
-                return JSON.parse(await res.text());
-            } catch {
-                throw {credential: false};
-            }
-        }).then(result => {
-            // Stored unconditionally. This was a ternary - navigate *or* store -
-            // and the redirect took the config with it, leaving every consumer
-            // reading {} for the rest of the session. Where to be and what to
-            // hold are two separate answers.
-            const {config: loaded, redirectToNodes} = configOutcome(result, readStored("currentNode"));
-
-            setConfig(loaded);
-            if (redirectToNodes) navigate("/nodes");
-        }).catch((reason) => {
-            // The reason travels with it: a refusal that wants a credential is
-            // not a node that has gone away, and only one of the two is
-            // answered by moving the visitor - see failureOutcome.
-            if (failureOutcome(readStored("currentNode"), reason).redirectToNodes) return navigate("/nodes");
-
-            showErrorDialog(reason);
-        });
-    }
-
-    const openAlertDialog = async (dialogConfig) => {
+    const openAlertDialog = useCallback(async (dialogConfig) => {
         await alert.openAlert(dialogConfig.title, dialogConfig.description, {
             buttonText: dialogConfig.buttonText,
             disableClose: dialogConfig.disableCloseButton
         });
         dialogConfig.onSuccess?.();
-    };
+    }, [alert]);
 
     /**
      * Asks for whichever credential the server says it wants, until it is
@@ -103,7 +45,7 @@ export const ConfigProvider = (props) => {
      * unauthenticated visitor meets first, and for a locked-out operator it is
      * the only instruction they get.
      */
-    const askForCredential = async (initialType) => {
+    const askForCredential = useCallback(async (initialType) => {
         // The refusal the loop ended on, which is not always the one it started
         // with - a wrong password often enough becomes a lockout, and the
         // notice has to describe where the operator actually is.
@@ -166,30 +108,113 @@ export const ConfigProvider = (props) => {
         if (promptFor(initialType) === PROMPT_SETUP_TOKEN) markPasswordUnset();
 
         window.location.reload();
-    };
+    }, [alert, openAlertDialog]);
 
-    const showErrorDialog = async (reason) => {
+    const showErrorDialog = useCallback(async (reason) => {
         if (reason?.credential) return askForCredential(reason.type);
 
         return openAlertDialog(apiErrorDialog());
-    };
+    }, [askForCredential, openAlertDialog]);
 
-    const checkConfig = async () => (await request("/config")).json();
+    // Which reload is current, the way Status, Node, Targets and the
+    // speedtest list already mark theirs: two /config reads can overlap -
+    // switching nodes twice quickly, a save's reload racing a node switch -
+    // and written in arrival order the slower, older answer landed last, so
+    // the whole app read another node's configuration until something
+    // reloaded it.
+    const requestGeneration = useRef(0);
 
-    // Once, at mount. reloadConfig reaches `navigate` and `showErrorDialog`,
-    // both rebuilt on every render - listing them would refetch the config on
-    // each one, and each fetch sets the state that causes the next render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    useEffect(reloadConfig, []);
+    // Memoised on the dialog chain above it - each link a useCallback of its
+    // own, because a useMemo over functions rebuilt each render memoises
+    // nothing. Defined below the chain for the same reason it is named in the
+    // dependency list: a dependency in its temporal dead zone is a
+    // ReferenceError, not a lint warning.
+    const reloadConfig = useCallback(() => {
+        const generation = ++requestGeneration.current;
+        const superseded = () => generation !== requestGeneration.current;
 
+        request("/config").then(async res => {
+            // The refusal says which credential it wants, and that is the whole
+            // reason the right question can be asked. Throwing a bare 1 here
+            // discarded it one line before it was needed, so every refusal -
+            // including one from an instance with no password at all - asked
+            // for "your password".
+            if (res.status === 401 || res.status === 429) {
+                const body = await res.json().catch(() => ({}));
+                // And who refused, which the body cannot say: the proxy relays a
+                // node's answer verbatim, so a child rejecting its stored
+                // password is byte for byte this instance's own session
+                // expiring. Only one of the two is answered by the password box
+                // in front of the visitor - see failureOutcome.
+                throw {credential: true, type: body?.type,
+                    node: res.headers.get(NODE_REFUSAL_HEADER) !== null};
+            }
+
+            // A 503 only counts when the body says it is ours. A reverse proxy
+            // in front of a stopped container answers 503 too, and treating
+            // that as a refusal put a password box in front of a server that
+            // was down - then called the password wrong when the retry failed
+            // the same way. This is the check node.js makes for the same
+            // reason; "could not reach the API" is the truthful answer there.
+            if (res.status === 503) {
+                const body = await res.json().catch(() => ({}));
+                if (body?.type === SERVER_BUSY) throw {credential: true, type: body.type};
+
+                throw {credential: false};
+            }
+            if (!res.ok) throw {credential: false};
+
+            try {
+                return JSON.parse(await res.text());
+            } catch {
+                throw {credential: false};
+            }
+        }).then(result => {
+            if (superseded()) return;
+
+            // Stored unconditionally. This was a ternary - navigate *or* store -
+            // and the redirect took the config with it, leaving every consumer
+            // reading {} for the rest of the session. Where to be and what to
+            // hold are two separate answers.
+            const {config: loaded, redirectToNodes} = configOutcome(result, readStored("currentNode"));
+
+            setConfig(loaded);
+            if (redirectToNodes) navigate("/nodes");
+        }).catch((reason) => {
+            // A stale failure is dropped like a stale answer: it steers
+            // navigation and dialogs, and must not redirect the visitor away
+            // from a node whose newer read answered fine.
+            if (superseded()) return;
+
+            // The reason travels with it: a refusal that wants a credential is
+            // not a node that has gone away, and only one of the two is
+            // answered by moving the visitor - see failureOutcome.
+            if (failureOutcome(readStored("currentNode"), reason).redirectToNodes) return navigate("/nodes");
+
+            showErrorDialog(reason);
+        });
+    }, [navigate, showErrorDialog]);
+
+    const checkConfig = useCallback(async () => (await request("/config")).json(), []);
+
+    // At mount, and again only if the memoised chain ever really changes - the
+    // honest spelling of the old "once, at mount" comment, which existed
+    // because reloadConfig used to be rebuilt on every render.
     useEffect(() => {
-        if (config.previewMode && !readStored("welcomeShown")) setWelcomeShown(true);
-        if (!config.previewMode && config.provider === "none") setWelcomeShown(true);
-    }, [config]);
+        reloadConfig();
+    }, [reloadConfig]);
 
+    // One identity per change, the way AlertContext hands its value out: the
+    // providers nest, and an inline array re-rendered everything below on
+    // every render of this one.
+    const contextValue = useMemo(() => [config, reloadConfig, checkConfig],
+        [config, reloadConfig, checkConfig]);
+
+    // The welcome wizard used to hang here, keyed on provider === "none".
+    // "Not set up yet" became an empty target list, so it moved to the
+    // TargetsProvider - which is where that emptiness is known.
     return (
-        <ConfigContext.Provider value={[config, reloadConfig, checkConfig]}>
-            <WelcomeDialog open={welcomeShown} onClose={() => setWelcomeShown(false)}/>
+        <ConfigContext.Provider value={contextValue}>
             {locked && <LockedNotice type={locked.type} onRetry={() => askForCredential(locked.type)}/>}
             {props.children}
         </ConfigContext.Provider>

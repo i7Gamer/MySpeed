@@ -32,7 +32,7 @@ const app = express.Router();
 // `timezone` sits with the quiet hours it governs, and gives up rather more than
 // they do: the window says when the operator's evening begins, and this says
 // which evening - roughly where in the world the instance is being run from.
-const WITHHELD_FROM_UNTRUSTED = ["interface", "ooklaId", "libreId", "libreUrl",
+const WITHHELD_FROM_UNTRUSTED = ["interface",
     "cron", "scheduleOffset", "passwordLevel", "quietHoursStart", "quietHoursEnd", "timezone"];
 
 app.get("/", password(true), async (req, res) => {

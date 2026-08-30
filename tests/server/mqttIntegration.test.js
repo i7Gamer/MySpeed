@@ -1,6 +1,8 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import setupMqtt, { forgetAnnouncements } from "../../server/integrations/mqtt.js";
 import { CONNACK, CONNECT, PUBLISH, readPacket } from "../../server/util/mqtt.js";
 
@@ -401,6 +403,133 @@ describe("home assistant discovery", () => {
         await settled();
 
         assert.deepEqual(configTopics(), []);
+    });
+});
+
+/**
+ * A round of several targets, told apart by the topics.
+ *
+ * Every member used to publish to the one configured topic, so a Home
+ * Assistant sensor read the WAN's 250 and the LAN box's 940 in turn and
+ * flapped between lines - a graph describing no line at all. The primary
+ * member keeps the topic the single-target instance always had, so nothing
+ * breaks for anyone; a secondary member gets a subtopic of its own, keyed by
+ * its stable id rather than a name a rename would move.
+ */
+describe("a round of several targets", () => {
+    const SECONDARY = {...RESULT, targetId: 7, targetName: "LAN Box", primary: false};
+
+    it("publishes a secondary member under its own subtopic", async () => {
+        await fire("testFinished", config(), SECONDARY);
+
+        assert.equal((await published()).topic, "myspeed/result/7");
+    });
+
+    it("keeps the primary member on the topic it always had", async () => {
+        await fire("testFinished", config(), {...RESULT, targetId: 3, targetName: "WAN", primary: true});
+
+        assert.equal((await published()).topic, "myspeed/result");
+    });
+
+    // A payload from a node too old to say which member is primary keeps
+    // behaving the way the single-target instance always did.
+    it("treats a payload that does not say as the primary", async () => {
+        await fire("testFinished", config(), RESULT);
+
+        assert.equal((await published()).topic, "myspeed/result");
+    });
+
+    it("keeps a secondary failure off the primary's error topic", async () => {
+        await fire("testFailed", config(), {...FAILURE, targetId: 7, targetName: "LAN Box", primary: false});
+
+        assert.equal((await published()).topic, "myspeed/result/error/7");
+    });
+
+    it("announces a secondary member's sensors beside its first result", async () => {
+        await fire("testFinished", config({discovery: true, topic: "myspeed/multi"}), SECONDARY);
+        await settled();
+
+        assert.ok(configTopics().length > 0, "a secondary member's sensors were never announced");
+        for (const topic of configTopics()) assert.match(topic, /_t7\/config$/);
+    });
+
+    /**
+     * And announces them again when the member is renamed. The discovery
+     * payload embeds the member's name - "LAN Box Download" is what the entity
+     * is called - and the announcement is keyed by id alone, so a rename left
+     * the retained config carrying the old name until the process restarted:
+     * the in-memory set is deliberate, and a restart was the only thing that
+     * cleared it.
+     */
+    it("announces a renamed member again, under its new name", async () => {
+        await fire("testFinished", config({discovery: true, topic: "myspeed/renamed"}), SECONDARY);
+        await settled();
+        seen = [];
+
+        await fire("testFinished", config({discovery: true, topic: "myspeed/renamed"}),
+            {...SECONDARY, targetName: "Fibre"});
+        await settled();
+
+        assert.ok(configTopics().length > 0,
+            "Home Assistant keeps the old name until MySpeed restarts");
+
+        // The payload sits behind the topic in the PUBLISH body; reading the
+        // whole body is enough to see whose name the config now carries.
+        const bodies = seen.filter((packet) => packet.type === PUBLISH)
+            .map((packet) => packet.body.toString())
+            .filter((body) => body.includes("/config"));
+
+        for (const body of bodies)
+            assert.match(body, /Fibre/, "the re-announcement still carries the old name");
+    });
+
+    /**
+     * Renaming back is a rename like any other. Keyed as an ever-growing set
+     * of (id, name) pairs, "LAN Box" → "Office" → "LAN Box" found the first
+     * name already recorded and stayed quiet - so the broker kept serving
+     * "Office Download" for a member named "LAN Box" until the process
+     * restarted, the exact failure the name key was added to remove. What the
+     * set has to remember is the name the broker currently holds, one per
+     * member, not every name it has ever held.
+     */
+    it("announces a member renamed back to an earlier name", async () => {
+        const renamed = config({discovery: true, topic: "myspeed/back"});
+
+        await fire("testFinished", renamed, SECONDARY);
+        await settled();
+        await fire("testFinished", renamed, {...SECONDARY, targetName: "Office"});
+        await settled();
+        seen = [];
+
+        await fire("testFinished", renamed, SECONDARY);
+        await settled();
+
+        assert.ok(configTopics().length > 0,
+            "renaming back leaves the broker serving the intermediate name until a restart");
+    });
+
+    // The other way round it stays quiet: the same name arriving again is the
+    // retained config the broker already holds.
+    it("does not re-announce a member whose name has not changed", async () => {
+        await fire("testFinished", config({discovery: true, topic: "myspeed/samename"}), SECONDARY);
+        await settled();
+        seen = [];
+
+        await fire("testFinished", config({discovery: true, topic: "myspeed/samename"}), SECONDARY);
+        await settled();
+
+        assert.deepEqual(configTopics(), [],
+            "the announcement was repeated for a broker that already has it");
+    });
+
+    // The round is what says which member is primary - the payload is the one
+    // thing a broker-side module can read without a database of its own.
+    it("is told by the round which member the base topics speak for", () => {
+        const source = fs.readFileSync(
+            fileURLToPath(new URL("../../server/tasks/speedtest.js", import.meta.url)), "utf8");
+
+        assert.equal((source.match(/primary: await wasPrimaryMember\(target\)/g) ?? []).length, 2,
+            "one of the two notification payloads does not say whether its member is primary");
     });
 });
 

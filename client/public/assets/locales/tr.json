@@ -54,22 +54,23 @@
       "server_id": "Sunucu Kimliği",
       "server_id_placeholder": "Herhangi bir sunucu kimliği ya da boş bırakın",
       "custom_url": "Özel URL",
+      "iperf_host": "iperf3 sunucusu",
       "choose_automatically": "Otomatik olarak seçin",
       "ookla_license": "Ookla'nın <Eula>EULA</Eula>'sını, <GDPR>gizlilik politikasını</GDPR> ve <TOS>hizmet şartlarını</TOS> okudum ve kabul ediyorum.",
       "ookla_desc": "Küresel sunucu ağına sahip popüler sağlayıcı",
       "libre_desc": "Açık kaynaklı, kendi sunucunuzda barındırılabilir hız testi",
-      "cloudflare_desc": "CDN tabanlı hızlı test"
+      "cloudflare_desc": "CDN tabanlı hızlı test",
+      "iperf3_desc": "Kendi ağınızda çalışan iperf3 sunucunuz"
     }
   },
   "dropdown": {
     "settings": "Ayarlar",
     "changes_applied": "Değişiklikler kaydedildi.",
     "language_changed": "Dil değiştirilmiştir.",
-    "provider_changed": "Sağlayıcı değiştirildi.",
     "changes_unsaved": "Değişiklikleriniz uygulanamadı. Girişinizi kontrol edin.",
     "invalid": "Geçersiz giriş",
     "optimal_values": "Optimum değerler",
-    "change_provider": "Sağlayıcıyı değiştirin",
+    "targets": "Test noktaları",
     "password": "Şifre Değiştir",
     "cron": "Frekans ayarlama",
     "storage": "Depolamayı yönetin",
@@ -135,7 +136,6 @@
     "statistics": "İstatistikler"
   },
   "update": {
-    "provider_title": "Speedtest sağlayıcısını ayarla",
     "new_password": "Yeni bir şifre belirle",
     "password_placeholder": "Yeni şifre",
     "show_password": "Parolayı göster",
@@ -305,6 +305,7 @@
       "unchanged": "Son testten bu yana değişmedi",
       "measured_at": "Ölçüm zamanı",
       "measured_with": "Ölçüm aracı",
+      "target": "Test noktası",
       "seconds": "{{seconds}} sn",
       "data_used": "Kullanılan veri",
       "data_used_value": "{{down}} indirme / {{up}} yükleme",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "Ortalama",
     "compare": {
-      "note": "{{from}} – {{to}} ile karşılaştırıldığında değişimler"
+      "note": "{{from}} – {{to}} ile karşılaştırıldığında değişimler",
+      "note_partial": "{{from}} – {{to}} ile karşılaştırıldığında değişimler, günün aynı saatine kadar"
     },
     "downsampled": "Ortalaması alındı · {{total}} testin {{shown}} tanesi gösteriliyor",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "Bunu ölçen testlerin ortalaması",
       "peak_title": "Yoğun saat yavaşlaması",
       "peak_description": "En yavaş {{slowest}} civarında, en hızlı {{fastest}} civarında",
-      "ping_description": "Ortalama gecikme, {{min}} ile {{max}} arasında",
+      "peak_latency_title": "Yoğun saat gecikmesi",
+      "peak_latency_description": "{{bestHour}} civarındaki {{best}} değerinden {{worstHour}} civarında {{worst}} değerine yükselir",
+      "ping_description": "Ortalama gecikme, {{min}} ile {{max}} arasında, medyan {{median}}",
       "span_title": "Süre farkı",
       "span_description": "Bu aralıktaki en kısa ve en uzun test",
       "density_title": "Günlük test sayısı",
-      "density_description": "{{days}} gün boyunca"
+      "density_description": "{{days}} gün boyunca",
+      "density_description_partial": "{{days}} günün {{elapsed}} günü boyunca"
     },
     "values": {
       "min": "En küçük",
@@ -377,7 +382,8 @@
       "up": "Yükleme değerleri",
       "target": "Hedef: {{target}}",
       "consistency": "Düzenlilik",
-      "samples": "Ölçülen testler"
+      "samples": "Ölçülen testler",
+      "median": "Medyan"
     },
     "failed_test": "Başarısız test",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "Şu anda demo modundasınız. Bazı özellikler devre dışıdır ve bazı ayarlar değiştirilemez. Tüm özellikleri kullanmak istiyorsanız <Link>MySpeed'i</Link> kendi sunucunuza kurabilirsiniz."
   },
   "integrations": {
-    "none_active": "Bu entegrasyon etkin değil. <br/><Bold>Ekle</Bold>",
+    "none_added": "Henüz kurulmuş bir entegrasyon yok.",
     "preview_active": "Demo modundayken entegrasyonlar devre dışıdır.",
     "display_name": "Entegrasyon adı",
     "create": "Ekle",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "Son test az önce",
     "elapsed": "{{seconds}} sn geçti",
-    "next_test_approx": "Sonraki yaklaşık {{time}}"
+    "next_test_approx": "Sonraki yaklaşık {{time}}",
+    "target_of": "Test noktası {{index}}/{{count}}"
+  },
+  "targets": {
+    "title": "Test noktaları",
+    "description": "Planlanmış her test, plandaki her test noktasını sırayla birer kez ölçer. Planın dışındaki test noktaları yalnızca buradan çalıştırılır.",
+    "add": "Test noktası ekle",
+    "edit_title": "Test noktasını düzenle",
+    "name": "Ad",
+    "name_placeholder": "örn. İstanbul",
+    "scheduled": "Planlanmış",
+    "alerts": "Bildirimler ve öneriler",
+    "own_optimals": "Kendi optimum değerleri",
+    "all": "Tüm test noktaları",
+    "saved": "Test noktası kaydedildi.",
+    "removed": "Test noktası silindi.",
+    "run_now": "Testi şimdi çalıştır",
+    "move_up": "Yukarı taşı",
+    "move_down": "Aşağı taşı",
+    "delete_confirm": {
+      "title": "Bu test noktası silinsin mi?",
+      "description": "<Bold>{{name}}</Bold> silinecek. Şimdiye kadar ölçtüğü testler geçmişte kalır.",
+      "yes": "Sil"
+    }
   }
 }

@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/focus" as *
 @use "@/common/styles/layout" as *
 
 header
@@ -112,7 +113,10 @@ header
   display: flex
   align-items: center
   justify-content: center
-  transition: all 0.15s ease-in-out
+  // Named rather than `all`, which took the outline with it: the focus ring
+  // faded in over 150ms after a keypress, and where the keyboard is standing is
+  // the last thing that should arrive late.
+  transition: transform 0.15s ease-in-out, color 0.15s ease-in-out
   width: 30px
   height: 30px
   padding: 0
@@ -130,11 +134,19 @@ header
 
 // The whole point of these being buttons: a keyboard has to be able to see
 // where it is. Only :focus-visible, so a pointer click does not draw a ring.
-.header-about:focus-visible,
-.header-icon:focus-visible,
-.demo-info:focus-visible
-  outline: 2px solid $accent-primary
-  outline-offset: 2px
+//
+// The gear takes a corner of its own. It is the one control here with no
+// border-radius - a 30px square holding a round glyph - and an outline follows
+// the element's radius, so without this it drew a hard-cornered box while the
+// about button and the demo pill drew rings that fitted them.
+.header-about
+  +focus-ring
+
+.demo-info
+  +focus-ring
+
+.header-icon
+  +focus-ring($radius: 0.5rem)
 
 .test-running
   animation: pulse 2s infinite

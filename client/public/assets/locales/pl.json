@@ -54,22 +54,23 @@
       "server_id": "ID serwera",
       "server_id_placeholder": "Dowolne ID serwera lub pozostaw puste",
       "custom_url": "Niestandardowy adres URL",
+      "iperf_host": "Serwer iperf3",
       "choose_automatically": "Wybierz automatycznie",
       "ookla_license": "Przeczytałem i akceptuję <Eula>EULA</Eula>, <GDPR>politykę prywatności</GDPR> oraz <TOS>regulamin</TOS> Ookla.",
       "ookla_desc": "Popularny dostawca z globalną siecią serwerów",
       "libre_desc": "Open-source, samodzielny test prędkości",
-      "cloudflare_desc": "Szybkie testowanie oparte na CDN"
+      "cloudflare_desc": "Szybkie testowanie oparte na CDN",
+      "iperf3_desc": "Twój własny serwer iperf3, w Twojej sieci"
     }
   },
   "dropdown": {
     "settings": "Ustawienia",
     "changes_applied": "Twoje zmiany zostały zapisane.",
     "language_changed": "Język został zmieniony.",
-    "provider_changed": "Dostawca został zmieniony.",
     "changes_unsaved": "Twoje zmiany nie zostały zapisane. Sprawdź wprowadzone dane.",
     "invalid": "Nieprawidłowe dane",
     "optimal_values": "Optymalne wartości",
-    "change_provider": "Zmień dostawcę",
+    "targets": "Cele testów",
     "password": "Zmień hasło",
     "cron": "Ustaw częstotliwość",
     "storage": "Zarządzaj przechowywaniem",
@@ -135,7 +136,6 @@
     "statistics": "Statystyki"
   },
   "update": {
-    "provider_title": "Wybierz dostawcę testów prędkości",
     "new_password": "Ustaw nowe hasło",
     "password_placeholder": "Nowe hasło",
     "show_password": "Pokaż hasło",
@@ -305,6 +305,7 @@
       "unchanged": "Bez zmian od poprzedniego testu",
       "measured_at": "Zmierzono",
       "measured_with": "Zmierzono za pomocą",
+      "target": "Cel",
       "seconds": "{{seconds}} s",
       "data_used": "Zużyte dane",
       "data_used_value": "{{down}} pobrane / {{up}} wysłane",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "Średnia",
     "compare": {
-      "note": "Zmiany w porównaniu z {{from}} – {{to}}"
+      "note": "Zmiany w porównaniu z {{from}} – {{to}}",
+      "note_partial": "Zmiany w porównaniu z {{from}} – {{to}}, do tej samej pory dnia"
     },
     "downsampled": "Uśrednione · pokazano {{shown}} z {{total}} testów",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "Średnia z testów, które ją zmierzyły",
       "peak_title": "Spowolnienie w godzinach szczytu",
       "peak_description": "Najwolniej około {{slowest}}, najszybciej około {{fastest}}",
-      "ping_description": "Średnie opóźnienie, od {{min}} do {{max}}",
+      "peak_latency_title": "Opóźnienie w godzinach szczytu",
+      "peak_latency_description": "Rośnie z {{best}} około {{bestHour}} do {{worst}} około {{worstHour}}",
+      "ping_description": "Średnie opóźnienie, od {{min}} do {{max}}, mediana {{median}}",
       "span_title": "Rozrzut czasu trwania",
       "span_description": "Najkrótszy i najdłuższy test w tym zakresie",
       "density_title": "Testy dziennie",
-      "density_description": "Na przestrzeni {{days}} dni"
+      "density_description": "Na przestrzeni {{days}} dni",
+      "density_description_partial": "Na przestrzeni {{elapsed}} z {{days}} dni"
     },
     "values": {
       "min": "Minimum",
@@ -377,7 +382,8 @@
       "up": "Wartości wysyłania",
       "target": "Cel: {{target}}",
       "consistency": "Regularność",
-      "samples": "Zmierzone testy"
+      "samples": "Zmierzone testy",
+      "median": "Mediana"
     },
     "failed_test": "Test nieudany",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "Aktualnie jesteś w trybie demo. Niektóre funkcje są wyłączone, a niektóre ustawienia nie mogą być zmienione. Jeśli chcesz korzystać ze wszystkich funkcji, możesz <Link>zainstalować MySpeed</Link> na własnym serwerze."
   },
   "integrations": {
-    "none_active": "Ta integracja nie jest aktywna. <br/><Bold>Utwórz</Bold>",
+    "none_added": "Nie skonfigurowano jeszcze żadnych integracji.",
     "preview_active": "Integracje są wyłączone w trybie demo.",
     "display_name": "Nazwa integracji",
     "create": "Utwórz",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "Ostatni test przed chwilą",
     "elapsed": "upłynęło {{seconds}} s",
-    "next_test_approx": "Następny około {{time}}"
+    "next_test_approx": "Następny około {{time}}",
+    "target_of": "Cel {{index}} z {{count}}"
+  },
+  "targets": {
+    "title": "Cele testów",
+    "description": "Każdy zaplanowany test mierzy każdy zaplanowany cel raz, jeden po drugim. Cele spoza harmonogramu można uruchomić tylko stąd.",
+    "add": "Dodaj cel",
+    "edit_title": "Edytuj cel",
+    "name": "Nazwa",
+    "name_placeholder": "np. Warszawa",
+    "scheduled": "Zaplanowany",
+    "alerts": "Powiadomienia i rekomendacje",
+    "own_optimals": "Własne optymalne wartości",
+    "all": "Wszystkie cele",
+    "saved": "Cel został zapisany.",
+    "removed": "Cel został usunięty.",
+    "run_now": "Uruchom test teraz",
+    "move_up": "Przenieś w górę",
+    "move_down": "Przenieś w dół",
+    "delete_confirm": {
+      "title": "Usunąć ten cel?",
+      "description": "Cel <Bold>{{name}}</Bold> zostanie usunięty. Testy, które już zmierzył, pozostaną w historii.",
+      "yes": "Usuń"
+    }
   }
 }

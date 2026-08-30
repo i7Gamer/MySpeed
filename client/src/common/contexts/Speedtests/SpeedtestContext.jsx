@@ -5,6 +5,7 @@ import {runJustFinished} from "@/common/utils/StatusUtil";
 import {StatusContext} from "@/common/contexts/Status";
 import {NodeContext} from "@/common/contexts/Node";
 import {ConfigContext} from "@/common/contexts/Config";
+import {TargetsContext} from "@/common/contexts/Targets";
 import {
     formatDateParam, rangeKey, rangeToParams, selectionFromParams, timeframeFromRange, timezoneParams
 } from "@/common/utils/TimeframeUtil";
@@ -37,6 +38,12 @@ export const SpeedtestProvider = (props) => {
     // Bumped by every fresh query, so a response for one the user has moved on
     // from can tell that it is no longer wanted. See loadInitialTests.
     const requestGeneration = useRef(0);
+    // Moved when a refresh replaces the whole list rather than growing it (see
+    // refreshTests). A page load shares requestGeneration with the list it was
+    // fetched for - the refresh reads that counter without bumping it - so this
+    // second counter is what tells an in-flight page that the list beneath it is
+    // gone, without disturbing the loads' ownership of the loading flags.
+    const replaceGenerationRef = useRef(0);
     const lastLoadTimeRef = useRef(0);
     // The pending "try that page again" timer, so it can be cancelled when the
     // provider goes away rather than firing into an unmounted tree.
@@ -44,6 +51,7 @@ export const SpeedtestProvider = (props) => {
     const [status] = useContext(StatusContext);
     const [, , currentNode] = useContext(NodeContext);
     const [config] = useContext(ConfigContext);
+    const {selectedTarget} = useContext(TargetsContext);
     const wasRunningRef = useRef(status.running);
     // The permission the rows in hand were fetched under. See permission.js.
     const fetchedUnderRef = useRef(undefined);
@@ -73,6 +81,11 @@ export const SpeedtestProvider = (props) => {
         () => selection.from && selection.to ? {from: selection.from, to: selection.to} : null,
         [selection]);
 
+    // Which target the list is narrowed to, or null for all of them. Resolved
+    // by the targets context, which is the one place that decides whether a
+    // stored chip still means anything on the instance being looked at.
+    const targetFilter = selectedTarget;
+
     const listQuery = useCallback((extra = {}) => {
         const params = new URLSearchParams({limit: String(PAGE_SIZE), ...extra});
 
@@ -84,8 +97,10 @@ export const SpeedtestProvider = (props) => {
             for (const [key, value] of Object.entries(timezoneParams())) params.set(key, value);
         }
 
+        if (targetFilter != null) params.set("target", String(targetFilter));
+
         return params.toString();
-    }, [range]);
+    }, [range, targetFilter]);
 
     // Replaced rather than pushed: narrowing a range is refining one view, not
     // arriving at a new one, and stacking every adjustment would make Back walk
@@ -165,6 +180,10 @@ export const SpeedtestProvider = (props) => {
         // not a new one. If the range changes while it is in flight the page
         // belongs to a list that no longer exists and must not be merged in.
         const generation = requestGeneration.current;
+        // And the list it was fetched against: a refresh can replace the whole
+        // list while this page is in flight, sharing the generation above, so
+        // the guard below checks this too before folding the page in.
+        const replaceGeneration = replaceGenerationRef.current;
 
         lastLoadTimeRef.current = now;
         loadingRef.current = true;
@@ -172,7 +191,8 @@ export const SpeedtestProvider = (props) => {
         try {
             const fetched = await jsonRequest(
                 `/speedtests?${listQuery({after: cursor.created, afterId: cursor.id})}`);
-            if (generation !== requestGeneration.current) return;
+            if (generation !== requestGeneration.current
+                || replaceGeneration !== replaceGenerationRef.current) return;
 
             if (fetched.length > 0) {
                 setSpeedtests(prev => applyPage(prev, fetched, PAGE_SIZE).tests);
@@ -182,7 +202,14 @@ export const SpeedtestProvider = (props) => {
                 setHasMore(false);
             }
         } catch (error) {
-            if (generation !== requestGeneration.current) return;
+            // Both counters, like the success path above: a replacing refresh
+            // leaves requestGeneration alone on purpose, so checking it alone
+            // let a stale page's rejection fall through to the setHasMore
+            // below - disabling paging on the freshly swapped list, which the
+            // retry then rightly refused to undo. A page that belongs to a
+            // replaced list has nothing to say about the one that replaced it.
+            if (generation !== requestGeneration.current
+                || replaceGeneration !== replaceGenerationRef.current) return;
 
             console.error("Failed to load more tests:", error);
             setHasMore(false);
@@ -207,8 +234,14 @@ export const SpeedtestProvider = (props) => {
             // a refresh re-enabled paging without bumping it, firing early and
             // shortening the very backoff this is here to provide.
             clearTimeout(retryTimerRef.current);
+            // Both counters, not one: a replacing refresh deliberately leaves
+            // requestGeneration alone, so a timer armed before the swap still
+            // passed this check and told the finished new list it had more
+            // pages - the very re-enabling the paragraph above records closing,
+            // back through the other counter.
             retryTimerRef.current = setTimeout(() => {
-                if (generation === requestGeneration.current) setHasMore(true);
+                if (generation === requestGeneration.current
+                    && replaceGeneration === replaceGenerationRef.current) setHasMore(true);
             }, RETRY_AFTER_ERROR_MS);
         } finally {
             // A fresh query took the flags over while this page was in flight,
@@ -245,7 +278,13 @@ export const SpeedtestProvider = (props) => {
 
             // The list was swapped, not grown, so the cursor pointed into a
             // result set that no longer exists - paging from it would walk a
-            // history the list is not showing.
+            // history the list is not showing. And a loadMoreTests page already
+            // in flight shares this generation, so bump the replace counter it
+            // also checks, or it would fold the swapped-away history back in and
+            // rewind the cursor into it. The generation itself is left alone -
+            // the loads own their loading flags through it, and a refresh sets
+            // none of them.
+            replaceGenerationRef.current++;
             setSpeedtests(tests);
             setCursor(tests.length > 0 ? cursorOf(tests) : null);
             setHasMore(tests.length === PAGE_SIZE);
@@ -271,12 +310,31 @@ export const SpeedtestProvider = (props) => {
         refreshTests();
     }, [refreshTests]);
 
+    // The node the rows in hand belong to, so the effect below can tell a node
+    // switch apart from a range change riding in through loadInitialTests.
+    const lastNodeRef = useRef(currentNode);
+
     // Keyed on the node, and on the selected range through loadInitialTests:
     // both change what the endpoint answers with, and the list has to be
     // replaced rather than merged - the previous node's tests used to linger
     // under the new node's until the next full reload, and a narrowed range
     // would otherwise leave the tests outside it on screen.
+    //
+    // On a node switch the rows are dropped before the new ones are asked for,
+    // not merely replaced when they arrive. Test and target ids are both
+    // per-instance, and TargetsContext refills its byId map for the new node
+    // while the old rows are still up - so for the length of the fetch every
+    // visible row was labelled and graded against another instance's targets
+    // that happen to share its targetId numbers. A range change keeps its rows:
+    // they are the right instance's, merely wider than the new window.
     useEffect(() => {
+        if (lastNodeRef.current !== currentNode) {
+            lastNodeRef.current = currentNode;
+            setSpeedtests([]);
+            setCursor(null);
+            setHasMore(true);
+        }
+
         loadInitialTests();
     }, [currentNode, loadInitialTests]);
 

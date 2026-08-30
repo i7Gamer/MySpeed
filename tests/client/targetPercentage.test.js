@@ -29,9 +29,13 @@ describe("the target percentage on the value cards", () => {
     });
 
     it("is fed that optimum by the page, on both cards and in both modals", () => {
-        assert.equal((statistics.match(/target=\{config\?\.download}/g) ?? []).length, 2);
-        assert.equal((statistics.match(/target=\{config\?\.upload}/g) ?? []).length, 2);
+        // Through resolveLimits rather than the raw config: with a target
+        // chipped, the cards grade against that target's own optima, and the
+        // unfiltered view still falls back to the instance-wide settings.
+        assert.equal((statistics.match(/target=\{gradeLimits\.download}/g) ?? []).length, 2);
+        assert.equal((statistics.match(/target=\{gradeLimits\.upload}/g) ?? []).length, 2);
         assert.match(statistics, /import \{ConfigContext} from "@\/common\/contexts\/Config"/);
+        assert.match(statistics, /const gradeLimits = resolveLimits\(/);
     });
 
     // The min and max of a range are single tests. A percentage on the slowest
@@ -83,7 +87,10 @@ describe("the target percentage on the value cards", () => {
     it("keeps the delta out of the label column", () => {
         assert.match(average, /value=\{<>\s*\{speed\(props\.data\.avg\)}\s*<Delta current=\{props\.data\.avg}/,
             "the delta is not stacked with the figure it annotates");
-        assert.doesNotMatch(average, /description=\{<>[\s\S]*<Delta /,
+        // Tempered to the description's own fragment: rows after this one
+        // carry deltas of their own in their value columns, which a bare
+        // [\s\S]* reached across and misread as the label's.
+        assert.doesNotMatch(average, /description=\{<>(?:(?!<\/>)[\s\S])*<Delta /,
             "the delta is back in the label column, where the sentence needs the room");
     });
 });
@@ -169,8 +176,10 @@ describe("the expanded value panes", () => {
      * card, exact in this pane.
      */
     it("convert that optimum into the unit being read", () => {
-        assert.match(average, /const converted = convertSpeed\(mbps, preferences\)/);
-        assert.match(average, /props\.expanded \? converted : formatWhole\(converted\)/,
+        // Exact conversion when expanded, wholeSpeed's single rounding when
+        // collapsed - re-rounding the two-decimal conversion printed every
+        // [8n+3.96, 8n+4) band one megabyte high.
+        assert.match(average, /props\.expanded \? convertSpeed\(mbps, preferences\) : wholeSpeed\(mbps, preferences\)/,
             "the card and the pane it opens no longer state a speed to different precisions");
         assert.match(average, /target: speed\(Number\(props\.target\)\)/);
     });
@@ -182,9 +191,22 @@ describe("the expanded value panes", () => {
     });
 
     // Every aggregate is an explicit null for a range in which nothing
-    // succeeded, and "null%" is what interpolating one produces.
+    // succeeded, and "null%" is what interpolating one produces - and a
+    // proxied node's placeholder or junk is no score either. One shared rule
+    // for the whole class: the null-only gate this replaces printed "-1%"
+    // here while the stability card said N/A for the same payload.
     it("say N/A rather than null when nothing was measured", () => {
-        assert.match(average, /steadiness\.consistency === null \|\| steadiness\.consistency === undefined\s*\?\s*NOT_MEASURED/);
+        assert.match(average, /formatPercent\(steadiness\.consistency\)/,
+            "the score is glued to its % by hand again, which prints placeholders and junk as readings");
+        assert.doesNotMatch(average, /steadiness\.consistency ===/,
+            "the null-only gate is back beside the shared rule");
+    });
+
+    // The spread's ± must never dress a refused figure: readableFigure gates
+    // the line, so junk and placeholders hide it rather than printing "±N/A".
+    it("hide the spread line for a figure nothing can read", () => {
+        assert.match(average, /readableFigure\(steadiness\.stdDev\) !== null/,
+            "the spread renders ±N/A for a placeholder a proxied node can send");
     });
 
     // The figures are over the tests that succeeded; the failures are in the

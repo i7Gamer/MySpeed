@@ -1,13 +1,32 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, api, seedTests, setConfig } from "./helpers/boot.js";
+import * as targets from "../../server/controller/targets.js";
 import { CSV_COLUMNS } from "../../server/util/csv.js";
+import targetModel from "../../server/models/Targets.js";
 
 let server;
 let controller;
 
 const MS_PER_DAY = 86400000;
 const daysAgo = (days) => new Date(Date.now() - days * MS_PER_DAY).toISOString();
+
+/**
+ * A target written straight to the table so a test can pin its id.
+ *
+ * Several cases below need that, and none of them can be written with
+ * seedTargets: the sequence never reuses a value, so a target created after a
+ * wipe lands above every id the file carries and the collision the case is
+ * about never happens. A reinstall's welcome dialog does take the first id of a
+ * fresh database, which is the id the file's own first target has; a second
+ * instance numbers its targets from the same sequence as the first, so a
+ * foreign backup arrives with every id already spoken for; and a line renamed
+ * since the backup keeps the id it always had.
+ */
+const targetAt = async (id, name) => await targetModel.create({
+    id, name, provider: "ookla", enabled: true, alerts: true,
+    sortOrder: id, created: new Date().toISOString()
+});
 
 before(async () => {
     server = await bootServer();
@@ -20,7 +39,18 @@ after(async () => {
 
 beforeEach(async () => {
     await setConfig(server.config, "retentionDays", "365");
+    await targets.removeAll();
 });
+
+/** The stored targets, replaced by exactly these, in the order given. */
+const seedTargets = async (...names) => {
+    await targets.removeAll();
+
+    const created = [];
+    for (const name of names) created.push(await targets.create({name, provider: "ookla"}));
+
+    return created;
+};
 
 describe("retention sweep", () => {
     /**
@@ -90,6 +120,30 @@ describe("GET /api/storage/tests/history/csv", () => {
         const {text} = await api(server.baseUrl, "/storage/tests/history/csv");
         assert.match(text, /""fast""/);
         assert.doesNotMatch(text, /\\"/);
+    });
+
+    /**
+     * Regression: the backup CSV wrote an empty targetName cell on every row of
+     * every export.
+     *
+     * CSV_COLUMNS has named the column since the dashboard export gained it,
+     * but the backup route streams the rows as the model hands them over -
+     * carrying targetId and no name - so the writer, which reads each row by
+     * column name, found nothing there. targetId is not a CSV column either,
+     * which left the backup as the one export saying nothing whatsoever about
+     * which line a row measured.
+     */
+    it("names the target each row measured against", async () => {
+        const [wan] = await seedTargets("WAN");
+        await seedTests(server.tests, [{created: daysAgo(1), targetId: wan.id}, {created: daysAgo(2)}]);
+
+        const {text} = await api(server.baseUrl, "/storage/tests/history/csv");
+        const column = CSV_COLUMNS.indexOf("targetName");
+        const [, measured, orphan] = text.split("\n");
+
+        assert.equal(measured.split(",")[column], '"WAN"',
+            "the backup CSV still writes an empty targetName cell");
+        assert.equal(orphan.split(",")[column], '""', "a row with no target should name none");
     });
 
     it("serves a csv content type", async () => {
@@ -201,6 +255,164 @@ describe("PUT /api/storage/tests/history", () => {
 
         assert.equal(Number.isFinite(body.jitter.avg), true,
             `the jitter average came back as ${body.jitter.avg}`);
+    });
+
+    /**
+     * The other half of the backup round trip: which target a restored row
+     * belongs to.
+     *
+     * The ids in a file belong to the instance that wrote it. Written through,
+     * as they were, a backup restored onto an instance with targets of its own
+     * handed every row to whatever holds that number there - filtered under it,
+     * graded against its optimal values, counted into its statistics and
+     * exported under its name, with nothing in the interface or in these counts
+     * saying so.
+     *
+     * What the import reads instead is the target name the export writes beside
+     * each row, resolved against the targets this instance holds - and only
+     * that, whatever else is true of the instance. The cases below therefore
+     * come in pairs where it matters: the same file onto a table that already
+     * holds rows and onto one that does not, with the same answer both times.
+     */
+    describe("which target a restored row belongs to", () => {
+        const row = (extra) => ({ping: 10, download: 100, upload: 50, time: 30,
+            type: "auto", created: daysAgo(1), ...extra});
+
+        /**
+         * A live instance: the given targets, and one older measurement of its
+         * own, so a case is not silently testing an empty table.
+         */
+        const liveInstance = async (...names) => {
+            const created = await seedTargets(...names);
+            await seedTests(server.tests, [{created: daysAgo(30), targetId: created[0].id}]);
+
+            return created;
+        };
+
+        /** The newest row - the imported one, the instance's own being older. */
+        const restoredTargetId = async () =>
+            (await server.tests.findAll({order: [["created", "DESC"]]}))[0].targetId;
+
+        /** Every row oldest first, so the instance's own comes first. */
+        const attributions = async () =>
+            (await server.tests.findAll({order: [["created", "ASC"]]})).map((test) => test.targetId);
+
+        it("resolves the exported name against the local targets", async () => {
+            const [wan, lan] = await liveInstance("WAN", "LAN iperf3");
+
+            await importTests([row({targetId: wan.id, targetName: "LAN iperf3"})]);
+
+            assert.equal(await restoredTargetId(), lan.id,
+                "the file's id outvoted the name it was exported with");
+        });
+
+        it("does not hand a row to whichever target holds the id in the file", async () => {
+            const [wan] = await liveInstance("WAN");
+
+            const {status} = await importTests([row({targetId: wan.id, targetName: "Frankfurt"})]);
+
+            assert.equal(status, 200);
+            assert.equal(await restoredTargetId(), null,
+                "a row measured elsewhere was attributed to a local target that never ran it");
+        });
+
+        /**
+         * The whole of a foreign file, which is the shape the finding
+         * described: another operator's history, whose target names mean
+         * nothing here. Every row lands, the counts say so, and not one of them
+         * claims a local line.
+         */
+        it("orphans every row of a file whose names this instance does not know", async () => {
+            const [wan] = await liveInstance("WAN");
+
+            const {status, body} = await importTests([
+                row({targetId: wan.id, targetName: "Ookla Frankfurt", created: daysAgo(2)}),
+                row({targetId: wan.id + 1, targetName: "Ookla Berlin", created: daysAgo(1)})
+            ]);
+
+            assert.equal(status, 200);
+            assert.deepEqual({imported: body.imported, skipped: body.skipped}, {imported: 2, skipped: 0},
+                "an unattributable row is still a usable row");
+            assert.deepEqual(await attributions(), [wan.id, null, null]);
+        });
+
+        /**
+         * The reason the rule reads nothing but the name, at the route: the
+         * same file onto the same targets, once with an empty history and once
+         * with a scheduled round of its own already recorded. Every rule that
+         * read the destination's state told those two apart - and a reinstall
+         * crosses from one to the other at the next top of the hour, since
+         * DEFAULTS.cron is "0 * * * *" rather than an interval.
+         */
+        it("attributes a file the same way whether or not this instance holds a history", async () => {
+            const [wan] = await seedTargets("WAN");
+            const file = [row({targetId: wan.id + 5, targetName: "WAN"})];
+
+            await seedTests(server.tests, []);
+            await importTests(file);
+            const ontoAnEmptyTable = await attributions();
+
+            await seedTests(server.tests, [{created: daysAgo(30), targetId: wan.id}]);
+            await importTests(file);
+
+            assert.deepEqual(ontoAnEmptyTable, [wan.id]);
+            assert.deepEqual(await attributions(), [wan.id, wan.id],
+                "one file was attributed two ways depending on what the table already held");
+        });
+
+        /**
+         * A backup written by an instance older than the export's targetName
+         * column has nothing to resolve, so its rows are imported unattributed
+         * - deliberately, rather than falling back to ids that would each claim
+         * a local target here.
+         */
+        it("orphans a file that states no target names at all", async () => {
+            const [wan] = await liveInstance("WAN");
+
+            const {body} = await importTests([row({targetId: wan.id, created: daysAgo(2)}),
+                row({targetId: wan.id + 1, created: daysAgo(1)})]);
+
+            assert.deepEqual({imported: body.imported, skipped: body.skipped}, {imported: 2, skipped: 0},
+                "an unattributable row is still a usable row");
+            assert.deepEqual(await attributions(), [wan.id, null, null]);
+        });
+
+        // targetId is not in NUMERIC_COLUMNS, so a hand-edited backup used to
+        // park a string in an INTEGER column and sqlite kept it. Nothing from
+        // that column is written back now, whatever it holds.
+        it("cannot be handed a targetId that is not a target at all", async () => {
+            const [wan] = await liveInstance("WAN");
+
+            await importTests([row({targetId: "not-a-number", targetName: "WAN", created: daysAgo(2)}),
+                row({targetId: "12", targetName: "Frankfurt", created: daysAgo(1)})]);
+
+            assert.deepEqual(await attributions(), [wan.id, wan.id, null]);
+        });
+
+        /**
+         * The disclosed cost, pinned so nobody rediscovers it as a bug: a name
+         * given to a different target since the export takes the old line's
+         * restored rows with it. Here the original "WAN" was deleted and a new
+         * target called "WAN" created, so the file's rows join the namesake
+         * while the rows already stored keep the old target's id.
+         *
+         * The file says "WAN" and nothing else in it can be trusted to say more
+         * - its id is an id of the instance that wrote it, which may not be
+         * this one - so this is the same answer the rule gives everywhere,
+         * taken here rather than special-cased. What it refuses to do is answer
+         * differently depending on what this instance happens to hold.
+         */
+        it("gives a reused name's rows to the target that wears it now", async () => {
+            const [old] = await seedTargets("WAN");
+            await seedTests(server.tests, [{created: daysAgo(30), targetId: old.id, download: 941}]);
+            await targets.deleteTarget(old.id);
+            const namesake = await targetAt(old.id + 1, "WAN");
+
+            await importTests([row({targetId: old.id, targetName: "WAN", download: 940})]);
+
+            assert.deepEqual(await attributions(), [old.id, namesake.id]);
+            assert.notEqual(namesake.id, old.id, "the namesake has to be a different target");
+        });
     });
 
     it("accepts an empty list as a no-op", async () => {
@@ -449,11 +661,286 @@ describe("import validation", () => {
  * here as a deliberate omission. Adding a column then forces the choice
  * instead of silently skipping it.
  */
-// Every attribute is exported today. serverId used to be excluded as "an
-// internal reference", but it is the id the Ookla CLI is pointed at with
-// --server-id and the label the Prometheus exporter emits - and leaving it out
-// meant an export/import round trip reset every row to the column's 0 default.
-const NOT_EXPORTED = {};
+// serverId used to be excluded as "an internal reference", but it is the id
+// the Ookla CLI is pointed at with --server-id and the label the Prometheus
+// exporter emits - and leaving it out meant an export/import round trip reset
+// every row to the column's 0 default.
+const NOT_EXPORTED = {
+    // Exported as targetName instead: the raw id is meaningless outside this
+    // instance, while the name says which line the row measured - and the name
+    // is the only thing the import reads, so a restored history lands on the
+    // line it measured or on no line at all, never on whoever holds that
+    // number where it lands.
+    targetId: "exported as targetName"
+};
+
+/**
+ * The disaster restore: a disk dies, MySpeed is reinstalled, and the operator
+ * puts back the two files the storage dialog hands out - the raw history and
+ * the configuration.
+ *
+ * They are two independent imports with two independent buttons, in a dialog
+ * that opens on the history, and nothing anywhere prescribes an order. Nor does
+ * anything prescribe how many attempts it takes: the client aborts a request
+ * after REQUEST_TIMEOUT while the import commits chunk by chunk, and
+ * IMPORT_BODY_LIMIT caps one PUT at 50mb, so a large history reaches the server
+ * in pieces or twice over.
+ *
+ * Every one of those orders is driven here, because the rule is that none of
+ * them may change the answer: a row is attributed by the target name the export
+ * wrote beside it, resolved against the targets this instance holds, and by
+ * nothing else about the instance.
+ */
+describe("restoring a whole instance from its two backups", () => {
+    const put = (pathname, body) => api(server.baseUrl, pathname, {
+        method: "PUT",
+        headers: {"content-type": "application/json"},
+        body: JSON.stringify(body)
+    });
+
+    /**
+     * The two files an operator downloads. The history is taken from the backup
+     * route rather than from exportTests, because that is the file the dialog
+     * downloads and the one the targetName column had to be added to.
+     */
+    const backupOf = async (...names) => {
+        const [wan, lan] = await seedTargets(...names);
+        await seedTests(server.tests, [
+            {created: daysAgo(2), targetId: wan.id, download: 940},
+            {created: daysAgo(1), targetId: lan.id, download: 112}
+        ]);
+
+        const {body: history} = await api(server.baseUrl, "/storage/tests/history/json");
+        const {body: config} = await api(server.baseUrl, "/storage/config?includeSecrets=true");
+
+        return {history, config, wan, lan};
+    };
+
+    /** The reinstall: nothing left but the software. */
+    const wipe = async () => {
+        await seedTests(server.tests, []);
+        await targets.removeAll();
+    };
+
+    /** Which target each restored row is attributed to, slowest line first. */
+    const attribution = async () => {
+        const named = new Map((await targets.listAll()).map((target) => [target.id, target.name]));
+
+        return (await server.tests.findAll({order: [["download", "ASC"]]}))
+            .map((test) => named.get(test.targetId) ?? null);
+    };
+
+    /** The same rows as ids, for pinning that a restore lands on the originals. */
+    const restoredIds = async () =>
+        (await server.tests.findAll({order: [["download", "ASC"]]})).map((test) => test.targetId);
+
+    /**
+     * The ordinary restore: the instance is intact, its history was lost or
+     * cleared, and the operator puts the history file back. The targets never
+     * went anywhere, so every name resolves - and resolves to the id the row
+     * was exported with, because the export wrote the name that id answers to.
+     */
+    it("puts a history back on the same instance under the same ids", async () => {
+        const {history, wan, lan} = await backupOf("WAN", "LAN iperf3");
+        await seedTests(server.tests, []);
+
+        assert.equal((await put("/storage/tests/history", history)).status, 200);
+
+        assert.deepEqual(await attribution(), ["LAN iperf3", "WAN"]);
+        assert.deepEqual(await restoredIds(), [lan.id, wan.id],
+            "a same-instance restore moved rows off the ids they were exported with");
+    });
+
+    /**
+     * The rebuild in the order that works: the configuration first, which
+     * restores the targets under their own ids - "so the history's targetId
+     * column keeps pointing at the right rows" - and then the history, whose
+     * names now all resolve.
+     */
+    it("keeps the attribution when the configuration goes back first", async () => {
+        const {history, config, wan, lan} = await backupOf("WAN", "LAN iperf3");
+        await wipe();
+
+        assert.equal((await put("/storage/config", config)).status, 200);
+        assert.equal((await put("/storage/tests/history", history)).status, 200);
+
+        assert.deepEqual(await attribution(), ["LAN iperf3", "WAN"]);
+        assert.deepEqual(await restoredIds(), [lan.id, wan.id]);
+    });
+
+    /**
+     * The rebuild whose targets were made by hand rather than restored from the
+     * configuration file - the same names, new ids, because the sequence never
+     * reuses one - imported twice: once before this instance has measured
+     * anything of its own, and once after.
+     *
+     * Both have to answer the same, and that is the whole reason nothing but
+     * the name is read. The scheduled round is a cron expression, not an
+     * interval: DEFAULTS.cron in config.js is "0 * * * *", so a reinstall at
+     * :55 records a round of its own five minutes later, whether or not the
+     * operator has reached the storage dialog. A rule that kept the file's own
+     * ids while the history table was empty and resolved names once it was not
+     * therefore gave the same restore two different answers depending on which
+     * side of the hour the operator was on, behind two 200s and a green toast.
+     */
+    it("keeps the attribution whether or not a scheduled round has already run", async () => {
+        const {history} = await backupOf("WAN", "LAN iperf3");
+
+        const restoreOnto = async (ownRounds) => {
+            await wipe();
+            const [wan] = await seedTargets("WAN", "LAN iperf3");
+            await seedTests(server.tests, ownRounds ? [{created: daysAgo(0), targetId: wan.id, download: 1}] : []);
+
+            assert.equal((await put("/storage/tests/history", history)).status, 200);
+
+            return await attribution();
+        };
+
+        assert.deepEqual(await restoreOnto(false), ["LAN iperf3", "WAN"]);
+        assert.deepEqual(await restoreOnto(true), ["WAN", "LAN iperf3", "WAN"],
+            "a round the reinstall recorded of its own changed how the backup was read");
+    });
+
+    /**
+     * The retry, which the client makes routine: RequestUtil aborts after
+     * REQUEST_TIMEOUT while PUT /storage/tests/history does not answer until the
+     * whole file is written, and importTests commits chunk by chunk on purpose
+     * - so a large restore reports an error with part of the file already
+     * stored, and the operator's next move is to import the same file again.
+     *
+     * Regression this pins: under a rule that read the destination's state, the
+     * first attempt's own rows made the table non-empty, so the retry was
+     * judged by a different rule than the attempt it was repeating and
+     * attributed what it carried differently. The targets here were recreated
+     * by hand rather than restored from the configuration file - the same
+     * names, new ids, since the sequence never reuses one - which is what makes
+     * the two rules visibly disagree.
+     */
+    it("attributes a retried import exactly as the first attempt did", async () => {
+        const {history} = await backupOf("WAN", "LAN iperf3");
+        await wipe();
+        await seedTargets("WAN", "LAN iperf3");
+        await seedTests(server.tests, []);
+
+        // The attempt the client aborted, one row into the file.
+        assert.equal((await put("/storage/tests/history", history.slice(0, 1))).status, 200);
+        const afterTheAbortedAttempt = await attribution();
+
+        // The same file again, whole. The overlap duplicates rows, which is the
+        // operator's problem; what may not happen is that they arrive orphaned.
+        assert.equal((await put("/storage/tests/history", history)).status, 200);
+
+        assert.deepEqual(afterTheAbortedAttempt, ["LAN iperf3"]);
+        assert.deepEqual(await attribution(), ["LAN iperf3", "LAN iperf3", "WAN"],
+            "a retried import was attributed differently from the attempt it repeated");
+    });
+
+    /**
+     * The same shape without the error: IMPORT_BODY_LIMIT caps a PUT at 50mb,
+     * so a history above that has to be sent in pieces - and the pieces have to
+     * agree with each other.
+     */
+    it("attributes a split restore the same as one sent whole", async () => {
+        const {history} = await backupOf("WAN", "LAN iperf3");
+        await wipe();
+        await seedTargets("WAN", "LAN iperf3");
+        await seedTests(server.tests, []);
+
+        assert.equal((await put("/storage/tests/history", history.slice(0, 1))).status, 200);
+        assert.equal((await put("/storage/tests/history", history.slice(1))).status, 200);
+
+        assert.deepEqual(await attribution(), ["LAN iperf3", "WAN"],
+            "the second half of a split restore was attributed differently from the first");
+    });
+
+    /**
+     * The order the dialog invites, and the price of this rule stated as a
+     * test: the dialog opens on the history, so the history is routinely
+     * restored before the configuration that names its targets - and at that
+     * moment no name in the file resolves to anything, because the targets are
+     * not back yet.
+     *
+     * Those rows land unattributed rather than under whichever target the
+     * reinstall's welcome dialog created, and the configuration restore that
+     * follows cannot repair them. It is visible - they show with no target
+     * rather than under a wrong one - the file still holds the truth, and
+     * importing it again once the targets are back puts every row where it
+     * belongs, which is what the second half of this case does.
+     */
+    it("leaves the rows unattributed when the history goes back before the configuration", async () => {
+        const {history, config, wan, lan} = await backupOf("WAN", "LAN iperf3");
+        await wipe();
+        await targetAt(wan.id, "Home");
+
+        assert.equal((await put("/storage/tests/history", history)).status, 200);
+        assert.equal((await put("/storage/config", config)).status, 200);
+
+        assert.deepEqual(await attribution(), [null, null],
+            "rows restored before the targets were attributed to something anyway");
+
+        // The repair, without touching the database: clear the history and
+        // import the same file now that the configuration is back.
+        await seedTests(server.tests, []);
+        assert.equal((await put("/storage/tests/history", history)).status, 200);
+
+        assert.deepEqual(await attribution(), ["LAN iperf3", "WAN"]);
+        assert.deepEqual(await restoredIds(), [lan.id, wan.id]);
+    });
+
+    /**
+     * The reinstall an operator actually meets, and the reason the case above
+     * is worth stating: the welcome dialog is mounted `disableClose` and is the
+     * only dialog with no way back, so a fresh instance has a target before its
+     * storage dialog can be opened at all - taking the first id of an empty
+     * database, which is the id the file's own first target has.
+     *
+     * With the configuration restored first that target is gone, replaced by
+     * the file's own under the file's own ids, and the id collision it used to
+     * cause cannot arise: the import never reads an id from the file.
+     */
+    it("is unharmed by the target the welcome dialog could not be stopped from making", async () => {
+        const {history, config, wan, lan} = await backupOf("WAN", "LAN iperf3");
+        await wipe();
+        await targetAt(wan.id, "Home");
+
+        assert.equal((await put("/storage/config", config)).status, 200);
+        assert.equal((await put("/storage/tests/history", history)).status, 200);
+
+        assert.deepEqual(await attribution(), ["LAN iperf3", "WAN"]);
+        assert.deepEqual(await restoredIds(), [lan.id, wan.id],
+            "a placeholder target the operator could not decline moved the restored rows");
+    });
+
+    /**
+     * The disclosed cost at the route, in its sharpest form: the fibre line was
+     * replaced, so the old target was renamed "WAN (old ISP)" and the freed
+     * name "WAN" given to the line that took over. A backup taken before any of
+     * that is then restored.
+     *
+     * The name is all the file states, so the old fibre rows follow the name to
+     * the line that wears it now, and the rows of the line that was called
+     * "Backup LTE" resolve to nothing. A rename without the reuse simply
+     * orphans; the reuse moves rows.
+     *
+     * It is the price of a rule that cannot be flipped by a cron tick or a
+     * retry - and it is bounded by something an operator can see and undo:
+     * renaming the targets back to what the backup calls them, and importing
+     * the file again, attributes every row.
+     */
+    it("follows a name that moved between targets since the backup", async () => {
+        const {history, wan, lan} = await backupOf("WAN", "Backup LTE");
+        await wipe();
+        const renamed = await targetAt(wan.id, "WAN (old ISP)");
+        const tookTheName = await targetAt(lan.id, "WAN");
+
+        assert.equal((await put("/storage/tests/history", history)).status, 200);
+
+        assert.deepEqual(await attribution(), [null, "WAN"]);
+        assert.deepEqual(await restoredIds(), [null, tookTheName.id],
+            "a name that moved did not take the rows exported under it");
+        assert.notEqual(renamed.id, tookTheName.id, "the two lines have to be different targets");
+    });
+});
 
 describe("what the exporter carries", () => {
     const exportedFields = async () => {
@@ -508,6 +995,48 @@ describe("what the exporter carries", () => {
         assert.equal(status, 200);
         const [restored] = await server.tests.findAll();
         assert.equal(restored.serverId, 49631);
+    });
+
+    /**
+     * The whole point of the two halves together, which no single-endpoint case
+     * states: a history leaves one instance and lands on another that already
+     * measures lines of its own, whose targets carry the same names under
+     * different ids.
+     *
+     * Both instances number their targets from the same sequence - a second
+     * MySpeed install starts at the same place - so every id in the file is a
+     * live local target here, wearing the other line's name. Under the old
+     * import each row kept its file's id and came back attributed to the wrong
+     * line, and nothing about the restore reported it.
+     */
+    it("puts each merged row back on the target whose name it measured", async () => {
+        const [wan, lan] = await seedTargets("WAN", "LAN iperf3");
+        await seedTests(server.tests, [
+            {created: daysAgo(2), targetId: wan.id, download: 940},
+            {created: daysAgo(1), targetId: lan.id, download: 112}
+        ]);
+
+        const {body: exported} = await api(server.baseUrl, "/storage/tests/history/json");
+
+        // The destination: the same two names, swapped onto each other's ids,
+        // and a measurement of its own, so the file is not the only thing in
+        // the table.
+        await targets.removeAll();
+        const movedLan = await targetAt(wan.id, "LAN iperf3");
+        const movedWan = await targetAt(lan.id, "WAN");
+        await seedTests(server.tests, [{created: daysAgo(30), targetId: movedWan.id, download: 1}]);
+
+        const {status} = await api(server.baseUrl, "/storage/tests/history", {
+            method: "PUT",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify(exported)
+        });
+
+        assert.equal(status, 200);
+        const restored = await server.tests.findAll({order: [["download", "ASC"]]});
+        assert.deepEqual(restored.map((test) => test.targetId),
+            [movedWan.id, movedLan.id, movedWan.id],
+            "a merged history was attributed by the ids of the instance that wrote it");
     });
 
     // The guard is worthless if it cannot see the thing it exists to catch, so

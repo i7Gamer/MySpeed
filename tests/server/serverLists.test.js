@@ -100,3 +100,41 @@ describe("a server list that cannot be read", () => {
         assert.deepEqual(getOoklaServers(), []);
     });
 });
+
+/**
+ * JSON that parses to something that is not a list of servers.
+ *
+ * The read is guarded and the use is not: JSON.parse answers null, a number or
+ * a string without throwing, so those came back out of readServerList as the
+ * list. holdsServers then ran Object.keys(null) outside the try and threw out
+ * of a getter three request paths call - the metrics scrape, the provider
+ * dialog and librespeed's server selection - and a primitive was worse still,
+ * because Object.keys("abc") is non-empty, so "abc" was cached and served as
+ * the server list for the life of the process.
+ */
+describe("a server list file holding something that is not a list", () => {
+    /*
+     * Asked of ookla rather than libre. A getter caches the first list it reads
+     * that has anything in it, and the suite above deliberately caches a libre
+     * list and then proves the cache outlives the file - so every later
+     * getLibreServers() answers from memory whatever is on disk. Nothing is
+     * cached for ookla, which the neighbouring test relies on too.
+     *
+     * The valid shape goes last for the same reason: reading it is what fills
+     * the cache.
+     */
+    const shapes = {"null": "null", "a number": "42", "a string": '"abc"', "a boolean": "true"};
+
+    for (const [name, contents] of Object.entries(shapes))
+        it(`answers empty for ${name}`, () => {
+            write(OOKLA, contents);
+
+            assert.deepEqual(getOoklaServers(), []);
+        });
+
+    it("still accepts the object shape the lists really use", () => {
+        write(OOKLA, JSON.stringify({"1": {name: "one"}}));
+
+        assert.deepEqual(getOoklaServers(), {"1": {name: "one"}});
+    });
+});

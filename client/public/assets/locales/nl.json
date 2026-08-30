@@ -54,22 +54,23 @@
       "server_id": "Server-ID",
       "server_id_placeholder": "Een willekeurig server-ID, of laat leeg",
       "custom_url": "Aangepaste URL",
+      "iperf_host": "iperf3-server",
       "choose_automatically": "Automatisch kiezen",
       "ookla_license": "Ik heb de <Eula>EULA</Eula>, <GDPR>het privacybeleid</GDPR> en <TOS>de servicevoorwaarden</TOS> van Ookla gelezen en accepteer deze.",
       "ookla_desc": "Populaire provider met globaal servernetwerk",
       "libre_desc": "Open-source, zelf te hosten snelheidstest",
-      "cloudflare_desc": "Snel CDN-gebaseerd testen"
+      "cloudflare_desc": "Snel CDN-gebaseerd testen",
+      "iperf3_desc": "Je eigen iperf3-server, in je netwerk"
     }
   },
   "dropdown": {
     "settings": "Instellingen",
     "changes_applied": "De wijzigingen zijn opgeslagen.",
     "language_changed": "De taal is veranderd.",
-    "provider_changed": "De provider is gewijzigd.",
     "changes_unsaved": "Je wijzigingen zijn niet geaccepteerd. Controleer je invoer.",
     "invalid": "Invoer ongeldig",
     "optimal_values": "Optimale waarden",
-    "change_provider": "Verander van leverancier",
+    "targets": "Testdoelen",
     "password": "Wachtwoord wijzigen",
     "cron": "Frequentie instellen",
     "storage": "Opslag beheren",
@@ -135,7 +136,6 @@
     "statistics": "Statistieken"
   },
   "update": {
-    "provider_title": "Snelheidstest-provider instellen",
     "new_password": "Nieuw wachtwoord instellen",
     "password_placeholder": "Nieuw wachtwoord",
     "show_password": "Wachtwoord tonen",
@@ -305,6 +305,7 @@
       "unchanged": "Onveranderd sinds de vorige test",
       "measured_at": "Gemeten op",
       "measured_with": "Gemeten met",
+      "target": "Doel",
       "seconds": "{{seconds}} s",
       "data_used": "Gebruikte data",
       "data_used_value": "{{down}} omlaag / {{up}} omhoog",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "Gemiddeld",
     "compare": {
-      "note": "Wijzigingen ten opzichte van {{from}} – {{to}}"
+      "note": "Wijzigingen ten opzichte van {{from}} – {{to}}",
+      "note_partial": "Wijzigingen ten opzichte van {{from}} – {{to}}, tot hetzelfde tijdstip"
     },
     "downsampled": "Gemiddeld · {{shown}} van {{total}} tests getoond",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "Gemiddeld over de tests die het gemeten hebben",
       "peak_title": "Vertraging in de piekuren",
       "peak_description": "Traagst rond {{slowest}}, snelst rond {{fastest}}",
-      "ping_description": "Gemiddelde latentie, tussen {{min}} en {{max}}",
+      "peak_latency_title": "Latentie tijdens piekuren",
+      "peak_latency_description": "Stijgt van {{best}} rond {{bestHour}} naar {{worst}} rond {{worstHour}}",
+      "ping_description": "Gemiddelde latentie, tussen {{min}} en {{max}}, mediaan {{median}}",
       "span_title": "Spreiding in duur",
       "span_description": "De kortste en de langste test in dit bereik",
       "density_title": "Tests per dag",
-      "density_description": "Over {{days}} dagen"
+      "density_description": "Over {{days}} dagen",
+      "density_description_partial": "Over {{elapsed}} van {{days}} dagen"
     },
     "values": {
       "min": "Laagste",
@@ -377,7 +382,8 @@
       "up": "Uploadwaarden",
       "target": "Doel: {{target}}",
       "consistency": "Regelmaat",
-      "samples": "Gemeten tests"
+      "samples": "Gemeten tests",
+      "median": "Mediaan"
     },
     "failed_test": "Mislukte test",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "U bent momenteel in demo-modus. Sommige functies zijn uitgeschakeld en sommige instellingen kunnen niet worden gewijzigd. Als u alle functies wilt gebruiken, kunt u <Link>MySpeed</Link> installeren op uw eigen server."
   },
   "integrations": {
-    "none_active": "Deze integratie is niet actief. <br/><Bold>Voeg toe</Bold>",
+    "none_added": "Nog geen integraties ingesteld.",
     "preview_active": "Integraties zijn uitgeschakeld in demomodus.",
     "display_name": "Naam integratie",
     "create": "Voeg toe",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "Laatste test zojuist",
     "elapsed": "{{seconds}} s verstreken",
-    "next_test_approx": "Volgende om ~{{time}}"
+    "next_test_approx": "Volgende om ~{{time}}",
+    "target_of": "Doel {{index}} van {{count}}"
+  },
+  "targets": {
+    "title": "Testdoelen",
+    "description": "Elke geplande test meet elk ingepland doel één keer, achter elkaar. Doelen buiten het schema lopen alleen vanaf hier.",
+    "add": "Doel toevoegen",
+    "edit_title": "Doel bewerken",
+    "name": "Naam",
+    "name_placeholder": "bijv. Amsterdam",
+    "scheduled": "Ingepland",
+    "alerts": "Meldingen & aanbevelingen",
+    "own_optimals": "Eigen optimale waarden",
+    "all": "Alle doelen",
+    "saved": "Het doel is opgeslagen.",
+    "removed": "Het doel is verwijderd.",
+    "run_now": "Test nu starten",
+    "move_up": "Omhoog verplaatsen",
+    "move_down": "Omlaag verplaatsen",
+    "delete_confirm": {
+      "title": "Dit doel verwijderen?",
+      "description": "<Bold>{{name}}</Bold> wordt verwijderd. De tests die het al heeft gemeten, blijven in de geschiedenis.",
+      "yes": "Verwijderen"
+    }
   }
 }

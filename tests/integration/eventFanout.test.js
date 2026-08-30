@@ -115,4 +115,55 @@ describe("fanning one event out to several integrations", () => {
 
         assert.equal(sent.length, 2, "the first send's failure ended the whole fan-out");
     });
+
+    /**
+     * The alerts switch on a target quiets the notifiers through this same
+     * fan-out - the flag travels on the payload, so this is the whole path a
+     * stored integration row sees. The sink half is unit-tested against
+     * suppressesEvent, because the sinks either need a broker or listen to
+     * other events entirely.
+     */
+    it("tells no notifier about a member that opted out of alerting", async () => {
+        await createTelegram("first");
+
+        const sent = [];
+
+        globalThis.fetch = async (url, init = {}) => {
+            if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+
+            sent.push(String(url));
+            return new Response("{}", {status: 200, headers: {"content-type": "application/json"}});
+        };
+
+        await controller.triggerEvent("testFinished", {...RESULT, alerts: false});
+        assert.deepEqual(sent, [], "an unwatched member's result still paged the notifier");
+
+        await controller.triggerEvent("testFinished", {...RESULT, alerts: true});
+        assert.equal(sent.length, 1, "the watched member's result was withheld too");
+    });
+
+    /**
+     * And it does not stamp the notifier's activity for a member the target
+     * kept from it. The stamp exists for an integration doing what *its own
+     * settings* asked - staying quiet through healthy tests under a threshold
+     * - so the card does not read "Never executed" over a working setup. An
+     * alerts-off member is the target's decision: nothing about the
+     * integration was exercised, and stamping it painted "last run just now"
+     * on a notifier that has never delivered a single message - on the
+     * documented diagnostic-box instance, permanently.
+     */
+    it("does not stamp activity for a member that opted out of alerting", async () => {
+        const id = await createTelegram("first");
+
+        globalThis.fetch = async (url, init = {}) => {
+            if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+            return new Response("{}", {status: 200, headers: {"content-type": "application/json"}});
+        };
+
+        await controller.triggerEvent("testFinished", {...RESULT, alerts: false});
+
+        const row = await controller.getIntegrationById(id);
+        assert.equal(row.lastActivity, null,
+            "a notifier that has never sent anything reads 'last run just now'");
+    });
 });

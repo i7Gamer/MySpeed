@@ -69,7 +69,7 @@ describe("the overview pane", () => {
      * what it is rather than left as an incidental match.
      */
     it("trims that latency the way every other panel does", () => {
-        for (const figure of ["ping.avg", "ping.min", "ping.max"])
+        for (const figure of ["ping.avg", "ping.min", "ping.max", "ping.median"])
             assert.match(overview, new RegExp(`formatLatencyWithUnit\\(${figure.replace(".", "\\.")}, ms\\)`),
                 `${figure} is printed at the two decimals the server stores`);
 
@@ -78,7 +78,9 @@ describe("the overview pane", () => {
     });
 
     it("compares that latency with the previous window, the right way up", () => {
-        assert.match(overview, /previous: props\.previous\?\.ping\?\.avg, higherIsBetter: false/);
+        assert.match(overview,
+            /previous: readableFigure\(props\.previous\?\.ping\?\.avg\), higherIsBetter: false/,
+            "the delta reads the raw column, so a placeholder in the previous window claims a change");
     });
 
     it("states the duration spread the card summarises as an average", () => {
@@ -106,16 +108,147 @@ describe("the overview pane", () => {
     });
 
     it("adds none of this to the card", () => {
-        assert.match(overview, /if \(props\.expanded\) items\.push\(\.\.\.expandedItems\(props\)\)/);
+        assert.match(overview, /if \(props\.expanded\) items\.push\(\.\.\.expandedItems\(props, preferences\)\)/);
     });
 
     it("has every string it interpolates", () => {
         for (const key of ["ping_description", "span_title", "span_description",
-            "density_title", "density_description"])
+            "density_title", "density_description", "density_description_partial"])
             assert.equal(typeof english.statistics.overview[key], "string", `statistics.overview.${key}`);
 
         assert.match(english.statistics.overview.ping_description, /\{\{min}}[\s\S]*\{\{max}}/);
+        assert.match(english.statistics.overview.ping_description, /\{\{median}}/,
+            "the latency row interpolates a median its string does not name");
         assert.match(english.statistics.overview.density_description, /\{\{days}}/);
+        assert.match(english.statistics.overview.density_description_partial, /\{\{elapsed}}[\s\S]*\{\{days}}/);
+    });
+});
+
+/**
+ * What the testing itself cost in traffic. Stored per row since the transfer
+ * columns arrived, stated per test in the detail panel - and the range's total
+ * was nowhere.
+ */
+describe("the data the range's tests used", () => {
+    it("states the total in the detail panel's own words", () => {
+        assert.match(overview, /title: t\("test\.details\.data_used"\)/,
+            "the row invents a wording of its own for a fact the panel already names");
+        assert.match(overview, /value: formatBytes\(dataUsed\.total\)/);
+    });
+
+    it("is fed by the page, collapsed and expanded alike", () => {
+        const handed = statistics.match(/dataUsed=\{deferredStatistics\.dataUsed}/g) ?? [];
+
+        assert.equal(handed.length, 2,
+            "one of the two OverviewChart renders lost the prop - the trap props.ping already sits in");
+    });
+
+    it("renders no row rather than a total of nought when nothing measured it", () => {
+        assert.match(overview, /const dataTotal = readableFigure\(dataUsed\?\.total\);/);
+        assert.doesNotMatch(overview, /typeof dataUsed\?\.total === "number"/,
+            "the bare typeof gate is back, which renders the placeholder and hides the text spelling");
+    });
+
+    it("compares the total without colouring it", () => {
+        assert.match(overview,
+            /previous: readableFigure\(props\.previous\?\.dataUsed\?\.total\), higherIsBetter: null/);
+    });
+});
+
+/**
+ * The same parity for the ping. The expanded pane's rows describe the range's
+ * latency from props.ping, and the collapsed render was the only mount not
+ * handed it - latent while nothing collapsed reads it, and exactly the silent
+ * blank the dataUsed assertion above calls "the trap props.ping already sits
+ * in" the day something does.
+ */
+describe("the ping the overview describes", () => {
+    it("is fed by the page, collapsed and expanded alike", () => {
+        const handed = statistics.match(/ping=\{deferredStatistics\.ping}/g) ?? [];
+
+        assert.equal(handed.length, 2,
+            "one of the two OverviewChart renders lost the prop the detail rows read");
+    });
+});
+
+/**
+ * The median on the averages pane: the mean the card leads with moves with one
+ * bad afternoon, and the middle of the range does not.
+ */
+describe("the averages pane's median", () => {
+    const averages = read("pages/Statistics/charts/AverageChart/AverageChart.jsx");
+
+    it("shows the median only in the enlarged view", () => {
+        assert.match(averages,
+            /props\.expanded && \(\s*<PanelRow icon=\{faScaleBalanced} title=\{t\("statistics\.values\.median"\)/);
+    });
+
+    it("compares it against the previous window the way the average is", () => {
+        assert.match(averages, /current=\{props\.data\.median} previous=\{props\.previous\?\.median}/);
+    });
+
+    it("has its string", () => {
+        assert.equal(typeof english.statistics.values.median, "string");
+    });
+});
+
+/**
+ * The density divisor for a window that is still running.
+ *
+ * A seven-day range at Wednesday noon has been sampled for two and a half
+ * days, and dividing by seven understated the rate by the days that have not
+ * happened yet. Lifted out and run rather than pattern-matched: what matters
+ * is which figure a partial window divides by, and only handing the function
+ * a range can say.
+ */
+describe("tests per day on a still-running range", () => {
+    const lifted = () => {
+        const start = overview.indexOf("const MS_PER_DAY");
+        const end = overview.indexOf("const expandedItems");
+        assert.notEqual(start, -1, "the density helpers are no longer derived above the pane");
+        assert.notEqual(end, -1, "const expandedItems no longer follows them");
+
+        return new Function(`${overview.slice(start, end)}\nreturn {testsPerDay};`)();
+    };
+
+    it("divides by the elapsed fraction when the server sent one", () => {
+        assert.deepEqual(lifted().testsPerDay(25, {days: 7, elapsedDays: 2.5}),
+            {perDay: 10, days: 7, elapsed: 2.5});
+    });
+
+    it("divides by whole days when none was sent", () => {
+        assert.deepEqual(lifted().testsPerDay(70, {days: 7}),
+            {perDay: 10, days: 7, elapsed: null});
+    });
+
+    // Zero would divide, NaN would poison, and a string would concatenate.
+    it("falls back to whole days for a fraction that is not a positive number", () => {
+        for (const elapsedDays of [0, -1, NaN, "2"])
+            assert.equal(lifted().testsPerDay(70, {days: 7, elapsedDays}).perDay, 10,
+                `elapsedDays ${String(elapsedDays)}`);
+    });
+
+    it("names both figures when the window is partial", () => {
+        assert.match(overview, /density\.elapsed\s*\?\s*t\("statistics\.overview\.density_description_partial"/,
+            "a rate over part of the window reads as a claim about all of it");
+    });
+});
+
+/**
+ * The note every delta on the page is read against. A window cut at now's own
+ * wall clock - the range is still running - has to say so, or its dates would
+ * claim whole days it only partly covers.
+ */
+describe("the comparison note", () => {
+    it("says when the window it names was cut", () => {
+        assert.match(statistics,
+            /previous\.dateRange\.partial\s*\?\s*"statistics\.compare\.note_partial"\s*:\s*"statistics\.compare\.note"/);
+    });
+
+    it("has both wordings, each naming the window", () => {
+        for (const key of ["note", "note_partial"])
+            assert.match(english.statistics.compare[key], /\{\{from}}[\s\S]*\{\{to}}/,
+                `statistics.compare.${key}`);
     });
 });
 
@@ -135,9 +268,16 @@ describe("the stability pane", () => {
     });
 
     // A range in which nothing measured jitter returns explicit nulls, and
-    // "Between N/A and N/A" is worse than saying nothing.
-    it("renders no spread for a metric nothing measured", () => {
-        assert.match(consistency, /if \(range\.min === null \|\| range\.min === undefined\) return null/);
+    // "Between N/A and N/A" is worse than saying nothing - and a proxied
+    // node's placeholder pair is no range either: the null-only gate this
+    // replaces rendered exactly that sentence for {-1, -1}, one sub-line
+    // from a deviation refusing the same value. Both ends must read, or a
+    // half-readable pair prints "between 12 and N/A".
+    it("renders no spread for a range nothing can read", () => {
+        assert.match(consistency,
+            /if \(readableFigure\(range\.min\) === null \|\| readableFigure\(range\.max\) === null\) return null/);
+        assert.doesNotMatch(consistency, /range\.min === null/,
+            "the null-only gate is back, which lets the placeholder pair through as a sentence");
     });
 
     it("shows nothing extra on the card", () => {
@@ -163,11 +303,25 @@ describe("the stability pane", () => {
  * bare " Mbps" on screen before.
  */
 describe("an empty range", () => {
-    it("drops the latency row rather than describing it as N/A to N/A", () => {
-        assert.match(overview, /props\.ping\?\.avg === null \|\| props\.ping\?\.avg === undefined \? null : props\.ping/);
+    // Through the shared reader, like the loss row: the null-only gate
+    // rendered a proxied node's -1 as an N/A row whose delta was computed
+    // from the placeholder, and hid an older node's text average while it
+    // was a reading. Only the AVERAGE decides the row: a readable average
+    // keeps it even when the spread parts beside it refuse to N/A - the
+    // caption is the row's one statement that the figure is an average,
+    // and firstRowCards executes that trade as decided.
+    it("hides the latency row only for an average nothing can read", () => {
+        assert.match(overview, /const pingAverage = readableFigure\(props\.ping\?\.avg\);/);
+        assert.doesNotMatch(overview, /props\.ping\?\.avg === null \|\| props\.ping\?\.avg === undefined/,
+            "the null-only gate is back, which renders the placeholder as an N/A row with a live delta");
     });
 
+    // Both ends must read, the spread()'s own rule one card over: a one-end
+    // gate printed "2s – N/A", and a placeholder pair "-1s – -1s".
     it("drops the duration spread the same way", () => {
-        assert.match(overview, /props\.time\?\.min !== null && props\.time\?\.min !== undefined/);
+        assert.match(overview,
+            /readableFigure\(props\.time\?\.min\) !== null && readableFigure\(props\.time\?\.max\) !== null/);
+        assert.doesNotMatch(overview, /props\.time\?\.min !== null/,
+            "the one-end gate is back, which prints a spread with a refused end");
     });
 });

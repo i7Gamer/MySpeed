@@ -33,10 +33,25 @@ const FINISHED_KEYS = [
     // Where the provider's own report of this run can be read.
     "resultId",
     // What the run cost in traffic.
-    "bytesDownloaded", "bytesUploaded"
+    "bytesDownloaded", "bytesUploaded",
+    // Which round member measured it. Null on instances from before targets
+    // existed; templates naming %targetName% read as unmeasured there.
+    "targetId", "targetName",
+    // Whether that member is the one the instance-wide surfaces speak for -
+    // the first of the scheduled round. The MQTT module keeps the primary on
+    // the base topic and routes the rest to subtopics on exactly this, because
+    // the payload is the one thing a broker-side module can read without a
+    // database. Null from an older node, which every reader treats as primary.
+    "primary",
+    // Whether that member takes part in alerting. The events leave for every
+    // member - a data sink mirrors the stored history - and suppressesEvent
+    // quiets the notifiers on exactly this flag. Null from an older node,
+    // which the gate reads as alerting: how a single-target instance always
+    // behaved.
+    "alerts"
 ];
 
-const FAILED_KEYS = ["id", "created", "provider", "error"];
+const FAILED_KEYS = ["id", "created", "provider", "error", "targetId", "targetName", "primary", "alerts"];
 
 /**
  * A record reduced to exactly the advertised keys.

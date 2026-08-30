@@ -88,6 +88,36 @@ describe("finishedPayload", () => {
         assert.deepEqual(Object.keys(payload).sort(), expected.sort());
         for (const key of expected) assert.equal(payload[key], null, `${key} is not null`);
     });
+
+    /**
+     * Which member the base topics and unlabelled series speak for. The MQTT
+     * module routes secondary members to subtopics on exactly this flag - the
+     * payload is the one thing a broker-side module can read without a
+     * database - and a payload from an older node carries null, which every
+     * reader treats as the primary: the way the single-target instance always
+     * behaved.
+     */
+    it("says whether the member is the one the base topics speak for", () => {
+        assert.equal(finishedPayload({...RECORD, primary: true}).primary, true);
+        assert.equal(finishedPayload({...RECORD, primary: false}).primary, false);
+        assert.equal(failedPayload({error: "boom", primary: false}).primary, false);
+        assert.equal(finishedPayload(RECORD).primary, null);
+    });
+
+    /**
+     * And whether the member takes part in alerting, because that is what
+     * routes the fan-out: a member with alerts off still reaches every data
+     * sink - suppressesEvent quiets the notifiers on exactly this flag - so
+     * the payload has to carry the answer. Null from an older node, which the
+     * gate reads as alerting: the way the single-target instance always
+     * behaved.
+     */
+    it("says whether the member takes part in alerting", () => {
+        assert.equal(finishedPayload({...RECORD, alerts: false}).alerts, false);
+        assert.equal(finishedPayload({...RECORD, alerts: true}).alerts, true);
+        assert.equal(failedPayload({error: "boom", alerts: false}).alerts, false);
+        assert.equal(finishedPayload(RECORD).alerts, null);
+    });
 });
 
 describe("failedPayload", () => {

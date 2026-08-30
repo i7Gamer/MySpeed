@@ -5,6 +5,59 @@ import * as integrationTimer from "../../server/tasks/integrations.js";
 import { bodyIn } from "../helpers/source.js";
 
 /**
+ * The schedule offset delays a run by a random amount so a fleet does not
+ * stampede a shared server on the hour. That delay must stay well inside the
+ * interval, or the run lands on - or past - the next tick and create()'s
+ * overlap guard drops it: roughly half the ticks of a tight schedule, run at
+ * half the configured rate in silence.
+ *
+ * The minutely branch already capped its delay at half the interval; the
+ * next-tightest branch did not - it returned a flat two minutes for every
+ * interval up to thirty, so a two-minute cron could be delayed by its whole
+ * interval. The cap is now the interval-relative one on every branch.
+ */
+describe("the schedule offset stays inside the interval", () => {
+    const MINUTE = 60 * 1000;
+    const halfOf = (minutes) => (minutes * MINUTE) / 2;
+
+    it("never delays past half the interval, however tight the cron", () => {
+        for (const [cron, minutes] of [["*/2 * * * *", 2], ["*/3 * * * *", 3], ["*/5 * * * *", 5]])
+            assert.ok(timer.calculateMaxDelay(cron) <= halfOf(minutes),
+                `a ${minutes}-minute schedule can be delayed onto its own next tick`);
+    });
+
+    it("never drops the cap below the floor", () => {
+        // A run must still be offset by something, or the stampede the offset
+        // prevents is back - getRandomDelay's range also turns inside out
+        // below the floor.
+        assert.ok(timer.calculateMaxDelay("*/2 * * * *") >= timer.OFFSET_MIN_DELAY_MS);
+    });
+
+    it("leaves a generous interval's cap where it was", () => {
+        assert.equal(timer.calculateMaxDelay("0 */2 * * *"), 5 * MINUTE, "two-hourly");
+        assert.equal(timer.calculateMaxDelay("0 * * * *"), 3 * MINUTE, "hourly");
+        assert.equal(timer.calculateMaxDelay("*/30 * * * *"), 2 * MINUTE, "half-hourly");
+    });
+
+    it("still fixes the minutely offset at the floor", () => {
+        assert.equal(timer.calculateMaxDelay("* * * * *"), timer.OFFSET_MIN_DELAY_MS);
+    });
+
+    /**
+     * And so does anything tighter, which is the whole domain the sub-minute
+     * branch used to claim. That branch set a cap of its own, but the cap was
+     * never what decided the answer: half of an interval that short is already
+     * below the floor, so the floor is what comes back whatever the cap holds.
+     * Pinned from the outside, by the only thing that can tell the difference,
+     * so removing the branch is the simplification it looks like rather than a
+     * change of behaviour.
+     */
+    it("fixes a sub-minute offset at the floor as well", () => {
+        assert.equal(timer.calculateMaxDelay("*/10 * * * * *"), timer.OFFSET_MIN_DELAY_MS);
+    });
+});
+
+/**
  * The scheduler's teardown, which had nothing holding it to its own contract.
  *
  * Two things escaped stopTimer(). A second startTimer() overwrote the module's

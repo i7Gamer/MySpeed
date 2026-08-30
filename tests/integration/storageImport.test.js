@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, api, setConfig } from "./helpers/boot.js";
+import { bootServer, api, seedTarget, seedTests, setConfig } from "./helpers/boot.js";
 
 let server;
 let nodeModel;
@@ -78,7 +78,8 @@ describe("PUT /api/storage/config", () => {
 
     it("keeps existing rows when a config value is invalid", async () => {
         const {status} = await importConfig({
-            config: {cron: "every second tuesday"}, nodes: [], integrations: [], recommendations: []
+            config: {cron: "every second tuesday"}, nodes: [], integrations: [], recommendations: [],
+            targets: []
         });
 
         assert.equal(status, 500);
@@ -92,7 +93,8 @@ describe("PUT /api/storage/config", () => {
             config: {},
             nodes: [{name: "new", url: "http://10.0.0.2:5216"}],
             integrations: [],
-            recommendations: [{ping: null, download: null, upload: null}]
+            recommendations: [{ping: null, download: null, upload: null}],
+            targets: []
         });
 
         assert.equal(status, 500);
@@ -142,7 +144,8 @@ describe("PUT /api/storage/config", () => {
             nodes: [],
             integrations: [],
             recommendations: Array.from({length: 10_000},
-                () => ({ping: 1, download: 1, upload: 1}))
+                () => ({ping: 1, download: 1, upload: 1})),
+            targets: []
         });
 
         assert.equal(status, 200, "the ceiling is off by one and refuses a payload at the limit");
@@ -154,7 +157,8 @@ describe("PUT /api/storage/config", () => {
             config: {retentionDays: "30"},
             nodes: [{name: "office", url: "http://10.0.0.3:5216", password: null}],
             integrations: [],
-            recommendations: [{ping: 12, download: 500, upload: 250}]
+            recommendations: [{ping: 12, download: 500, upload: 250}],
+            targets: []
         });
 
         assert.equal(status, 200);
@@ -243,7 +247,8 @@ describe("PUT /api/storage/config", () => {
      * read-only left it locked.
      */
     describe("a backup value that sits at the shipped default", () => {
-        const restore = (config) => importConfig({config, nodes: [], integrations: [], recommendations: []});
+        const restore = (config) => importConfig({config, nodes: [], integrations: [], recommendations: [],
+            targets: []});
 
         it("restores the default retention over a changed one", async () => {
             await setConfig(server.config, "retentionDays", "7");
@@ -259,13 +264,6 @@ describe("PUT /api/storage/config", () => {
             assert.equal(await server.config.getValue("passwordLevel"), "none");
         });
 
-        it("restores an unpinned server over a pinned one", async () => {
-            await setConfig(server.config, "ooklaId", "49631");
-
-            assert.equal((await restore({ooklaId: "none"})).status, 200);
-            assert.equal(await server.config.getValue("ooklaId"), "none");
-        });
-
         it("restores the default schedule over a changed one", async () => {
             await setConfig(server.config, "cron", "*/15 * * * *");
 
@@ -273,17 +271,14 @@ describe("PUT /api/storage/config", () => {
             assert.equal(await server.config.getValue("cron"), "0 * * * *");
         });
 
-        /**
-         * Why the skip existed. `provider: "none"` is the stored sentinel for
-         * "not chosen yet" and validateInput refuses it as user input, so the
-         * default has to be written without being validated - not skipped.
+        /*
+         * The skip-validation-not-the-write branch used to be proven with
+         * `provider: "none"`, a sentinel validateInput refused as user input.
+         * The provider moved onto the target rows and no current default is
+         * refused any more, so the cron case above is the mechanism's whole
+         * observable surface; the branch itself stays as defence for the next
+         * sentinel default.
          */
-        it("restores a sentinel default validateInput refuses as user input", async () => {
-            await setConfig(server.config, "provider", "ookla");
-
-            assert.equal((await restore({provider: "none"})).status, 200);
-            assert.equal(await server.config.getValue("provider"), "none");
-        });
     });
 });
 
@@ -307,7 +302,8 @@ describe("PUT /api/storage/config", () => {
  */
 describe("PUT /api/storage/config with a threshold an older version accepted", () => {
     const restore = (config) => importConfig({
-        config, nodes: [{name: "new", url: "http://10.0.0.9:5216"}], integrations: [], recommendations: []
+        config, nodes: [{name: "new", url: "http://10.0.0.9:5216"}], integrations: [], recommendations: [],
+        targets: []
     });
 
     ["1.2.3", "..", ".", "1..2"].forEach((stored) => {
@@ -337,52 +333,55 @@ describe("PUT /api/storage/config with a threshold an older version accepted", (
 });
 
 /**
- * And the same for a librespeed URL an older version accepted.
+ * And the same for the provider keys of an older export.
  *
- * That value was checked with a bare `new URL()` until the scheme check was
- * added, and `new URL("localhost:8080")` does not throw - it reads "localhost:"
- * as the scheme. So a bare host and port, which is a natural thing to type for a
- * backend on the LAN, was stored behind a 200 and carried verbatim into every
- * backup taken since. Restoring one of those files now refused the whole import:
- * the nodes, the integrations and the recorded history were all left behind by a
- * URL the instance could never have fetched anyway.
- *
- * The default is written instead, which for this key means "choose a server
- * automatically" - the same trade the thresholds above make, and for the same
- * reason. A value the current validator cannot read is one this instance cannot
- * act on, so the restore completes without it and the setting is the one thing
- * that does not survive.
+ * An export from before targets carries provider/ooklaId/libreId/libreUrl in
+ * its config block; the import folds them into the one target they describe.
+ * The fold takes the thresholds' trade for a backend URL the current
+ * validator cannot read - `new URL("localhost:8080")` reads "localhost:" as
+ * the scheme, so an older version stored such values behind a 200 and every
+ * backup since carries them verbatim. The endpoint is dropped - "choose a
+ * server automatically" - rather than the whole restore refused over an
+ * address the CLI could never have fetched.
  */
-describe("PUT /api/storage/config with a librespeed URL an older version accepted", () => {
+describe("PUT /api/storage/config with the provider keys of an older export", () => {
     const restore = (config) => importConfig({
         config, nodes: [{name: "new", url: "http://10.0.0.9:5216"}], integrations: [], recommendations: []
     });
 
+    const storedTargets = async () =>
+        await (await import("../../server/controller/targets.js")).listAll();
+
     ["localhost:8080", "speed.lan:8080/backend", "nas:3000"].forEach((stored) => {
         it(`restores everything else when libreUrl is ${JSON.stringify(stored)}`, async () => {
-            await setConfig(server.config, "libreUrl", "none");
-
-            const {status} = await restore({libreUrl: stored});
+            const {status} = await restore({provider: "libre", libreUrl: stored});
 
             assert.equal(status, 200, "the whole backup is refused over one unusable backend URL");
-            assert.equal(await server.config.getValue("libreUrl"), "none",
-                "a URL the CLI cannot fetch was restored anyway");
+
+            const [target] = await storedTargets();
+            assert.equal(target.provider, "libre");
+            assert.equal(target.endpoint, null, "a URL the CLI cannot fetch was restored anyway");
             // Its identity rather than the count, for the reason given above.
             assert.equal((await nodeModel.findOne()).name, "new", "the nodes were not restored");
         });
     });
 
     it("keeps a URL it can still read", async () => {
-        assert.equal((await restore({libreUrl: "https://speed.example.net/backend"})).status, 200);
-        assert.equal(await server.config.getValue("libreUrl"), "https://speed.example.net/backend",
-            "a URL the check accepts was replaced by the default anyway");
+        assert.equal((await restore({provider: "libre", libreUrl: "https://speed.example.net/backend"})).status, 200);
+        assert.equal((await storedTargets())[0].endpoint, "https://speed.example.net/backend",
+            "a URL the check accepts was dropped anyway");
     });
 
-    // The sentinel is the default, so it takes the shipped-default path rather
-    // than the validator at all - but it still has to come back as itself.
-    it("keeps the unset sentinel", async () => {
-        assert.equal((await restore({libreUrl: "none"})).status, 200);
-        assert.equal(await server.config.getValue("libreUrl"), "none");
+    it("reads the unset sentinel as automatic selection", async () => {
+        assert.equal((await restore({provider: "libre", libreUrl: "none"})).status, 200);
+        assert.equal((await storedTargets())[0].endpoint, null);
+    });
+
+    it("restores an unpinned server over a pinned one", async () => {
+        await seedTarget({provider: "ookla", serverId: "49631"});
+
+        assert.equal((await restore({provider: "ookla", ooklaId: "none"})).status, 200);
+        assert.equal((await storedTargets())[0].serverId, null);
     });
 
     // Tolerating this one must not tolerate the next thing that cannot be read:
@@ -407,7 +406,11 @@ describe("PUT /api/storage/config with a librespeed URL an older version accepte
  * plainly.
  */
 describe("PUT /api/storage/config names what it refused", () => {
-    const restore = (config) => importConfig({config, nodes: [], integrations: [], recommendations: []});
+    // `targets: []` so the shape checks stay satisfied and the value under
+    // test is what gets named; the silent-about-targets shape has a describe
+    // of its own below.
+    const restore = (config) => importConfig({config, nodes: [], integrations: [], recommendations: [],
+        targets: []});
 
     it("names the key whose value was rejected", async () => {
         const {status, body} = await restore({cron: "every second tuesday"});
@@ -429,5 +432,365 @@ describe("PUT /api/storage/config names what it refused", () => {
 
         assert.equal(status, 500);
         assert.match(body.message, /Error importing config/);
+    });
+});
+
+/**
+ * The targets a restore carries - or fails to.
+ *
+ * A file that says nothing about targets at all is a truncated or hand-edited
+ * backup, not merely an older one: every current export writes the section,
+ * and every pre-target export carries `provider` in its config block, even as
+ * the "none" of an instance that never chose. Emptying the table for silence
+ * is the exact failure the import's own docstring recounts for the nodes key.
+ * And the ids a file does carry name the right rows only on the instance that
+ * assigned them - kept blindly, a cross-instance restore re-files the local
+ * history under whichever restored target inherits each number.
+ */
+describe("PUT /api/storage/config and the targets it carries", () => {
+    const listTargets = async () => await (await import("../../server/controller/targets.js")).listAll();
+
+    const fullBackup = (extra = {}) =>
+        ({config: {}, nodes: [], integrations: [], recommendations: [], ...extra});
+
+    it("refuses a backup that says nothing about targets, naming them", async () => {
+        await seedTarget({provider: "ookla", name: "keep-me"});
+
+        const {status, body} = await importConfig(fullBackup());
+
+        assert.equal(status, 500);
+        assert.match(String(body.message ?? ""), /target/i,
+            "the refusal does not say what the file is missing");
+        assert.equal((await listTargets()).length, 1, "the silent file emptied the table anyway");
+    });
+
+    it("refuses a targets section that is not a list", async () => {
+        await seedTarget({provider: "ookla"});
+
+        assert.equal((await importConfig(fullBackup({targets: "all of them"}))).status, 500);
+        assert.equal((await listTargets()).length, 1);
+    });
+
+    it("restores none for an old backup that affirmatively chose no provider", async () => {
+        await seedTarget({provider: "ookla"});
+
+        assert.equal((await importConfig(fullBackup({config: {provider: "none"}}))).status, 200);
+        assert.equal((await listTargets()).length, 0);
+    });
+
+    it("empties the table for an explicit empty section", async () => {
+        await seedTarget({provider: "ookla"});
+
+        assert.equal((await importConfig(fullBackup({targets: []}))).status, 200);
+        assert.equal((await listTargets()).length, 0);
+    });
+
+    it("keeps a same-instance id, and with it the history filed under it", async () => {
+        const mine = await seedTarget({provider: "ookla", name: "WAN"});
+        await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: mine.id}]);
+
+        const {status} = await importConfig(fullBackup({
+            targets: [{id: mine.id, name: "WAN", provider: "ookla"}]
+        }));
+
+        assert.equal(status, 200);
+        const [restored] = await listTargets();
+        assert.equal(restored.id, mine.id, "a same-instance restore detached the history");
+    });
+
+    /**
+     * And when nothing wears it at all, because the target that did was
+     * deleted here.
+     *
+     * A delete keeps the rows it measured - history is the history - so the
+     * number is free while the attribution filed under it is not. Judged by
+     * live targets alone, the file's row inherited every one of those rows:
+     * a foreign backup's "NAS iperf3" answering, grading and exporting the
+     * deleted WAN's years of measurements as its own, with nothing anywhere
+     * saying an attribution changed. It also gave one file two answers -
+     * importing it a second time found the number free again, because the
+     * first import's strip had moved the restored row above it - which is
+     * exactly what importedTargetId's docstring forbids.
+     *
+     * The orphans stay orphans, which is the honest half: the interface
+     * already shows a row whose target is gone for what it is, and no rule
+     * can tell a same-instance recovery from a stranger's file, because an
+     * orphaned row stores a number and no name.
+     */
+    it("hands out a fresh id when the file's one has orphaned history behind it", async () => {
+        const controller = await import("../../server/controller/targets.js");
+        const gone = await seedTarget({provider: "ookla", name: "WAN"});
+        await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: gone.id}]);
+
+        await controller.deleteTarget(gone.id);
+
+        const {status} = await importConfig(fullBackup({
+            targets: [{id: gone.id, name: "NAS iperf3", provider: "cloudflare"}]
+        }));
+
+        assert.equal(status, 200);
+
+        const [restored] = await listTargets();
+        assert.notEqual(restored.id, gone.id,
+            "a deleted target's history was handed to whatever the file calls that number");
+
+        const [row] = await server.tests.findAll();
+        assert.equal(row.targetId, gone.id, "the orphaned row itself was rewritten");
+    });
+
+    // The other side of that rule, and the ordinary case: a restore onto an
+    // instance with nothing filed under the file's numbers keeps them, so a
+    // history restored beside it lands on the targets it names.
+    it("keeps the file's ids where no history stands under them", async () => {
+        await (await import("../../server/controller/targets.js")).removeAll();
+        await seedTests(server.tests, []);
+
+        const {status} = await importConfig(fullBackup({
+            targets: [{id: 5, name: "A", provider: "ookla"}, {id: 6, name: "B", provider: "cloudflare"}]
+        }));
+
+        assert.equal(status, 200);
+        assert.deepEqual((await listTargets()).map((row) => row.id).sort(), [5, 6],
+            "a plain restore renumbered the targets its own history names");
+    });
+
+    it("hands out a fresh id when a different target wears the file's one", async () => {
+        const mine = await seedTarget({provider: "ookla", name: "WAN"});
+        await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: mine.id}]);
+
+        const {status} = await importConfig(fullBackup({
+            targets: [{id: mine.id, name: "NAS iperf3", provider: "cloudflare"}]
+        }));
+
+        assert.equal(status, 200);
+
+        const [restored] = await listTargets();
+        assert.equal(restored.name, "NAS iperf3");
+        assert.notEqual(restored.id, mine.id,
+            "the file's id was kept, so WAN's history now answers as another target's");
+
+        const [row] = await server.tests.findAll();
+        assert.equal(row.targetId, mine.id, "the history row itself was rewritten");
+    });
+
+    /**
+     * And the same file, restored twice, lands on the same row.
+     *
+     * The strip was judged by the file's id alone, so the row it had just moved
+     * to a fresh id was contested all over again on the next restore: the same
+     * backup applied three times marched one target through three ids, orphaning
+     * a fresh history at every step, and the operator retrying a restore that
+     * looked wrong made it worse each time. A restore now looks for the name
+     * first - which is the identity a history backup files its rows under
+     * anyway, importedTargetId's whole rule - and only contests an id no live
+     * target's name claims.
+     */
+    it("settles on the id it gave the row last time", async () => {
+        const controller = await import("../../server/controller/targets.js");
+        const gone = await seedTarget({provider: "ookla", name: "WAN"});
+        await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: gone.id}]);
+
+        await controller.deleteTarget(gone.id);
+
+        const file = fullBackup({targets: [{id: gone.id, name: "Fibre", provider: "ookla"}]});
+
+        assert.equal((await importConfig(file)).status, 200);
+        const first = (await listTargets())[0].id;
+        assert.notEqual(first, gone.id, "the orphaned history was handed to the restored row");
+
+        assert.equal((await importConfig(file)).status, 200);
+        assert.equal((await listTargets())[0].id, first,
+            "the same file restored twice moved the target onto a new id again");
+    });
+
+    /**
+     * What the restore says about the ids it changed - the one thing it does
+     * that the file does not describe. Two situations, two sentences, because
+     * they are different situations: an id withheld over local history leaves
+     * orphans behind, while an id re-fitted around the names this instance
+     * holds moves nothing - but the operator asked for one number and got
+     * another either way, and silence about that is how a restore comes to
+     * look wrong. Nothing in the suite asserted either warning, so the last
+     * change to this path shipped entirely unpinned.
+     */
+    describe("what the restore says about the ids it changed", () => {
+        const warningsWhile = async (body) => {
+            const warn = console.warn;
+            const said = [];
+            console.warn = (...parts) => said.push(parts.join(" "));
+
+            try {
+                await body();
+            } finally {
+                console.warn = warn;
+            }
+
+            return said;
+        };
+
+        it("says when local history kept an id from the file", async () => {
+            const controller = await import("../../server/controller/targets.js");
+            const gone = await seedTarget({provider: "ookla", name: "WAN"});
+            await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: gone.id}]);
+            await controller.deleteTarget(gone.id);
+
+            const said = await warningsWhile(async () => assert.equal((await importConfig(
+                fullBackup({targets: [{id: gone.id, name: "Fibre", provider: "ookla"}]}))).status, 200));
+
+            assert.ok(said.some((line) => /under new ids/.test(line)),
+                "an id withheld over standing history was withheld in silence");
+        });
+
+        /**
+         * The other renumber, which no history is involved in: a live target's
+         * name claims one file id, and the row that named that id is re-fitted
+         * around it. The probe that found this held a live "WAN" at id 1 while
+         * the file said WAN=71 and NAS=1 - WAN settled onto 1 by name, NAS took
+         * a fresh id, and nothing anywhere said a number moved.
+         */
+        it("says when the names re-fitted the file's numbers", async () => {
+            const mine = await seedTarget({provider: "ookla", name: "WAN"});
+            await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: mine.id}]);
+
+            const OTHER_ID = mine.id + 70;
+
+            let status;
+            const said = await warningsWhile(async () => ({status} = await importConfig(
+                fullBackup({targets: [
+                    {id: OTHER_ID, name: "WAN", provider: "ookla"},
+                    {id: mine.id, name: "NAS", provider: "cloudflare"}
+                ]}))));
+
+            assert.equal(status, 200);
+
+            const rows = await listTargets();
+            assert.equal(rows.find((row) => row.name === "WAN").id, mine.id,
+                "the name match no longer settles the row onto the id its name holds");
+            assert.notEqual(rows.find((row) => row.name === "NAS").id, mine.id,
+                "two restored rows share the one id the name match claimed");
+
+            assert.ok(said.some((line) => /different ids than the file names/.test(line)),
+                "the file's numbers were re-fitted in silence");
+            assert.ok(!said.some((line) => /under new ids/.test(line)),
+                "a re-fit with no history involved was reported as orphaning some");
+        });
+
+        // And a restore that changes nothing says nothing - the warnings are
+        // for surprises, not for every restore.
+        it("says nothing when the file's ids all land where they name", async () => {
+            const mine = await seedTarget({provider: "ookla", name: "WAN"});
+
+            const said = await warningsWhile(async () => assert.equal((await importConfig(
+                fullBackup({targets: [{id: mine.id, name: "WAN", provider: "ookla"}]}))).status, 200));
+
+            assert.deepEqual(said.filter((line) => /ids/.test(line)), [],
+                "an uneventful same-instance restore warns about nothing");
+        });
+
+        /**
+         * Said only about a restore that happened. Both counts are computed
+         * before the transaction, and warned there they described ids a
+         * refused restore never wrote - two log lines about a rollback that
+         * stored nothing.
+         */
+        it("says nothing about a restore that was refused", async () => {
+            const mine = await seedTarget({provider: "ookla", name: "WAN"});
+            await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: mine.id}]);
+
+            // The renumber shape from above, wrapped around a config value the
+            // validation refuses - so the target settling happens and the
+            // transaction is never reached. The duplicate pair makes the
+            // shared-name advice due as well, and due to the same rule: advice
+            // about targets a rollback never restored is advice about nothing.
+            const said = await warningsWhile(async () => assert.equal((await importConfig(
+                fullBackup({
+                    config: {cron: "not a cron"},
+                    targets: [
+                        {id: mine.id + 70, name: "WAN", provider: "ookla"},
+                        {id: mine.id + 71, name: "WAN", provider: "libre"},
+                        {id: mine.id, name: "NAS", provider: "cloudflare"}
+                    ]
+                }))).status, 500));
+
+            assert.deepEqual(said.filter((line) => /ids|share a name/.test(line)), [],
+                "the log describes a restore that stored nothing");
+        });
+    });
+
+    /**
+     * The case the name match is worth most for: a pre-1.4 backup.
+     *
+     * Its fold carries no id at all - there was no targets table to have one -
+     * and the name it derives from the old `provider` key is exactly the name
+     * migration 0013 gave the live row of an instance upgraded from that same
+     * install. Judged by the number alone there was nothing to judge, so the
+     * fold always took a fresh id and left every row the instance had ever
+     * measured behind as an orphan.
+     */
+    it("lands a legacy fold on the live row of the same name", async () => {
+        const mine = await seedTarget({provider: "ookla", name: "Ookla"});
+        await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: mine.id}]);
+
+        const {status} = await importConfig(fullBackup({config: {provider: "ookla"}}));
+
+        assert.equal(status, 200);
+
+        const [restored] = await listTargets();
+        assert.equal(restored.id, mine.id,
+            "restoring a pre-1.4 backup orphaned the history of the very line it names");
+    });
+
+    /**
+     * The name match is a preference, not an override: two file rows of one
+     * name cannot both land on the one live row that wears it, and a pair of
+     * identical ids aborts the whole restore as an unnamed refusal. The first
+     * takes it and the second takes a fresh id, which is the same answer
+     * importedTargetId gives a shared name.
+     */
+    it("gives two rows of one name two ids when the instance holds one", async () => {
+        await seedTarget({provider: "ookla", name: "WAN"});
+
+        const {status} = await importConfig(fullBackup({
+            targets: [{id: 41, name: "WAN", provider: "ookla"}, {id: 42, name: "WAN", provider: "libre"}]
+        }));
+
+        assert.equal(status, 200, "a file holding a duplicate pair was refused in full");
+
+        const ids = (await listTargets()).map((row) => row.id);
+        assert.equal(ids.length, 2);
+        assert.equal(new Set(ids).size, 2, "both rows were restored onto one id");
+    });
+
+    it("refuses two rows sharing an id", async () => {
+        const {status, body} = await importConfig(fullBackup({
+            targets: [{id: 1, name: "A", provider: "ookla"}, {id: 1, name: "B", provider: "ookla"}]
+        }));
+
+        assert.equal(status, 500);
+        assert.match(String(body.message ?? ""), /target/i);
+    });
+
+    /**
+     * A shared name is restored rather than refused, unlike a shared id.
+     *
+     * The door on the routes is what stops a pair being made; a file carrying
+     * one can only have come from an instance that already holds it - every
+     * install from before that door, and every instance the welcome wizard's
+     * double-Done built a twin on. Refusing the whole file there is refusing
+     * that operator their own backup, nodes, integrations and settings
+     * included, at the moment they most need it, over a shape the restore
+     * itself handles: importedTargetId keeps the first writer for a shared
+     * name, which importedTarget.test.js pins as the deliberate fallback.
+     *
+     * A shared id is still refused, because that one aborts the write itself.
+     */
+    it("restores two rows sharing a name, however it is padded", async () => {
+        const {status} = await importConfig(fullBackup({
+            targets: [{name: "Ookla", provider: "ookla"}, {name: " Ookla ", provider: "cloudflare"}]
+        }));
+
+        assert.equal(status, 200,
+            "an instance holding a duplicate pair cannot restore its own backup at all");
+        assert.equal((await listTargets()).length, 2);
     });
 });

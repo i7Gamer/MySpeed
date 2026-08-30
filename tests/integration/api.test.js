@@ -158,17 +158,61 @@ describe("GET /api/speedtests", () => {
         assert.equal(body[0].download, 2);
     });
 
+    /**
+     * The scroll cursor is a pair - the last row's created plus its id - and
+     * half a pair is not a smaller cursor, it is no cursor at all. `after`
+     * without `afterId` used to fall through to page one silently, so an
+     * infinite scroll paginating with it re-fetched the same rows forever with
+     * no error, while every other malformed parameter on this route earns a
+     * 400 that names itself.
+     */
+    it("refuses after without its afterId half", async () => {
+        const {status, body} = await api(server.baseUrl,
+            "/speedtests?after=2026-08-01T10:00:00.000Z");
+
+        assert.equal(status, 400);
+        assert.match(String(body.message ?? ""), /afterId/,
+            "the refusal does not say which half of the cursor is missing");
+    });
+
+    it("pages past the cursor when both halves arrive", async () => {
+        await seedTests(server.tests, [
+            {created: "2026-08-01T10:00:00.000Z", download: 1},
+            {created: "2026-08-05T10:00:00.000Z", download: 2}
+        ]);
+
+        const [newest] = (await api(server.baseUrl, "/speedtests?limit=1")).body;
+        const {body} = await api(server.baseUrl,
+            `/speedtests?after=${newest.created}&afterId=${newest.id}`);
+
+        assert.equal(body.length, 1, "the cursor returned page one again");
+        assert.equal(body[0].download, 1);
+    });
+
+    // The pre-cursor shape, which older callers still send.
+    it("still honours afterId alone", async () => {
+        await seedTests(server.tests, [
+            {created: "2026-08-01T10:00:00.000Z", download: 1},
+            {created: "2026-08-05T10:00:00.000Z", download: 2}
+        ]);
+
+        const [newest] = (await api(server.baseUrl, "/speedtests?limit=1")).body;
+        const {body} = await api(server.baseUrl, `/speedtests?afterId=${newest.id}`);
+
+        assert.equal(body.length, 1);
+    });
+
     it("404s an unknown test id", async () => {
         assert.equal((await api(server.baseUrl, "/speedtests/999999")).status, 404);
     });
 });
 
 describe("POST /api/speedtests/run", () => {
-    // provider defaults to "none", so this never starts a real speedtest.
-    it("refuses to start without a provider", async () => {
+    // A fresh instance has no targets, so this never starts a real speedtest.
+    it("refuses to start without a target", async () => {
         const {status, body} = await api(server.baseUrl, "/speedtests/run", {method: "POST"});
         assert.equal(status, 410);
-        assert.match(body.message, /provider/i);
+        assert.match(body.message, /target/i);
     });
 
     /*

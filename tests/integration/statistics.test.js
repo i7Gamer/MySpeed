@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, api, seedTests } from "./helpers/boot.js";
+import { bootServer, api, seedTarget, seedTests } from "./helpers/boot.js";
 
 let server;
 const at = (iso, overrides = {}) => ({created: iso, ...overrides});
@@ -127,6 +127,81 @@ describe("GET /api/speedtests/statistics", () => {
             assert.equal(body.tests.total, 1);
         });
 
+        // What the testing itself cost in traffic - stored per row since the
+        // transfer columns arrived, and summed for the range here.
+        it("reports the data the range's tests used", async () => {
+            await seedTests(server.tests, [
+                at("2026-08-05T10:00:00.000Z", {bytesDownloaded: 1000, bytesUploaded: 400}),
+                at("2026-08-06T10:00:00.000Z", {bytesDownloaded: 2500, bytesUploaded: 600})
+            ]);
+
+            const {body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
+            assert.deepEqual(body.dataUsed, {download: 3500, upload: 1000, total: 4500});
+        });
+
+        /**
+         * Which targets the figures were actually built from, which is the one
+         * thing the client cannot work out for itself: a single-target instance
+         * still holds every row of every target it has deleted, and every row an
+         * import brought back with no target at all, and nothing narrows its
+         * query. Without this field the page grades those rows against the
+         * surviving target's optima.
+         */
+        describe("the targets a page was built from", () => {
+            let wan;
+            let nas;
+
+            /**
+             * seedTarget clears the table before it writes, so these two do not
+             * accumulate and no teardown is registered for them: nothing else in
+             * this file asks about targets, the statistics read joins nothing to
+             * them, and each test file gets its own process and its own throwaway
+             * database. A hook that tore them down would only be one more thing
+             * that can fail after the suite it belongs to has finished.
+             */
+            beforeEach(async () => {
+                wan = await seedTarget({provider: "ookla", name: "WAN"});
+                const targets = await import("../../server/controller/targets.js");
+                nas = await targets.create({name: "NAS", provider: "cloudflare"});
+            });
+
+            it("names every target inside the window, an untargeted row included", async () => {
+                await seedTests(server.tests, [
+                    at("2026-08-05T10:00:00.000Z", {targetId: wan.id}),
+                    at("2026-08-05T11:00:00.000Z", {targetId: wan.id}),
+                    at("2026-08-05T12:00:00.000Z")
+                ]);
+
+                const {body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
+                assert.equal(body.targetIds.length, 2, "one entry per target, not per row");
+                assert.ok(body.targetIds.includes(wan.id));
+                assert.ok(body.targetIds.includes(null),
+                    "a restored export comes back carrying no target at all");
+            });
+
+            it("names one target where every row is that target's", async () => {
+                await seedTests(server.tests, [
+                    at("2026-08-05T10:00:00.000Z", {targetId: wan.id}),
+                    at("2026-08-05T11:00:00.000Z", {targetId: wan.id})
+                ]);
+
+                const {body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
+                assert.deepEqual(body.targetIds, [wan.id]);
+            });
+
+            it("names only the target a filtered request was narrowed to", async () => {
+                await seedTests(server.tests, [
+                    at("2026-08-05T10:00:00.000Z", {targetId: wan.id}),
+                    at("2026-08-05T11:00:00.000Z", {targetId: nas.id})
+                ]);
+
+                const {body} = await statistics(
+                    `from=2026-08-01&to=2026-08-07&tzOffset=0&target=${wan.id}`);
+                assert.deepEqual(body.targetIds, [wan.id],
+                    "the filter is the evidence - these figures really are one target's");
+            });
+        });
+
         it("separates failed tests from successful ones", async () => {
             await seedTests(server.tests, [
                 at("2026-08-05T10:00:00.000Z", {download: 100}),
@@ -148,7 +223,7 @@ describe("GET /api/speedtests/statistics", () => {
 
             const {text, body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
             assert.equal(body.tests.failed, 2);
-            assert.deepEqual(body.download, {min: null, max: null, avg: null});
+            assert.deepEqual(body.download, {min: null, max: null, avg: null, median: null});
             assert.ok(!text.includes("Infinity"), "raw payload must not contain Infinity");
             assert.ok(!text.includes("NaN"), "raw payload must not contain NaN");
         });
@@ -160,7 +235,7 @@ describe("GET /api/speedtests/statistics", () => {
             ]);
 
             const {body} = await statistics("from=2026-08-01&to=2026-08-07&tzOffset=0");
-            assert.deepEqual(body.jitter, {min: null, max: null, avg: null});
+            assert.deepEqual(body.jitter, {min: null, max: null, avg: null, median: null});
         });
 
         /**
@@ -423,6 +498,152 @@ describe("GET /api/speedtests/statistics", () => {
         it("still refuses a request that names no range at all", async () => {
             const {status} = await statistics("range=7d");
             assert.equal(status, 400);
+        });
+    });
+
+    /**
+     * The summary of the window immediately before the range, which every
+     * delta on the statistics page is read against. Until now the only
+     * assertion about it was the negative one above - all time never compares
+     * - so the payload's shape was held by nothing.
+     */
+    describe("the previous window", () => {
+        const MS_PER_DAY = 24 * 60 * 60 * 1000;
+        const MS_PER_HOUR = 60 * 60 * 1000;
+
+        // The UTC calendar day, which is the request's day because every test
+        // here pins tz=Etc/UTC - the one zone the wall-clock arithmetic is
+        // exact in whatever the host's own clock says.
+        const day = (date) => date.toISOString().slice(0, 10);
+
+        it("answers the full window before a range that is fully in the past", async () => {
+            await seedTests(server.tests, [
+                at("2025-08-05T10:00:00.000Z"),
+                at("2025-08-03T10:00:00.000Z"),
+                at("2025-07-29T10:00:00.000Z", {download: 50, bytesDownloaded: 700, bytesUploaded: 300})
+            ]);
+
+            const {status, body} = await statistics(
+                "from=2025-08-01&to=2025-08-07&tz=Etc/UTC&compare=previous");
+
+            assert.equal(status, 200);
+            assert.equal(body.previous.tests.total, 1);
+            assert.equal(body.previous.download.avg, 50);
+            assert.deepEqual(body.previous.dataUsed, {download: 700, upload: 300, total: 1000},
+                "the summary of the previous window no longer carries what its tests cost in traffic");
+            assert.equal(body.previous.dateRange.from, "2025-07-25T00:00:00.000Z");
+            assert.equal(body.previous.dateRange.to, "2025-07-31T23:59:59.999Z");
+            assert.equal(body.previous.dateRange.partial, undefined,
+                "a window compared whole must not claim it was cut");
+            assert.equal(body.dateRange.elapsedDays, undefined,
+                "a complete range divides by its whole days, not by an elapsed figure");
+        });
+
+        /**
+         * A range that ends today has only run until now, so the window before
+         * it is cut at the same position: a test seeded just before "a week
+         * before now" is counted, one seeded just after is not - it sits in
+         * the hours of the previous window's last day that the current window
+         * has not lived through yet. (When now is late enough in the day, that
+         * second seed rolls into the current window's first day instead, and
+         * is outside the previous window either way.)
+         */
+        it("cuts the window before a range that is still running", async () => {
+            const now = new Date();
+            const weekAgo = new Date(now.getTime() - 7 * MS_PER_DAY);
+            const counted = new Date(weekAgo.getTime() - MS_PER_HOUR);
+            const uncounted = new Date(weekAgo.getTime() + 1.5 * MS_PER_HOUR);
+
+            await seedTests(server.tests, [
+                at(counted.toISOString(), {download: 50}),
+                at(uncounted.toISOString()),
+                at(new Date(now.getTime() - 1000).toISOString())
+            ]);
+
+            const from = day(new Date(now.getTime() - 6 * MS_PER_DAY));
+            const {status, body} = await statistics(
+                `from=${from}&to=${day(now)}&tz=Etc/UTC&compare=previous`);
+
+            assert.equal(status, 200);
+            assert.equal(body.previous.tests.total, 1,
+                "the cut let a test through from hours the range has not lived yet");
+            assert.equal(body.previous.download.avg, 50);
+            assert.equal(body.previous.dateRange.partial, true);
+
+            // The cut is a week before the server's own reading of now, which
+            // is moments after ours - two minutes is far beyond any of it.
+            const cut = new Date(body.previous.dateRange.to);
+            assert.ok(Math.abs(cut.getTime() - weekAgo.getTime()) < 2 * 60 * 1000,
+                `the cut landed at ${cut.toISOString()}, not at the same time a week earlier`);
+
+            // And the density divisor says how much of the window has actually
+            // run: between six days (asked at midnight) and seven (at the end
+            // of the day).
+            assert.equal(typeof body.dateRange.elapsedDays, "number");
+            assert.ok(body.dateRange.elapsedDays >= 6 && body.dateRange.elapsedDays <= 7,
+                `elapsedDays says ${body.dateRange.elapsedDays} for a seven-day range on its last day`);
+        });
+
+        // The API accepts a window the picker cannot produce. Nothing of it
+        // has happened, so there is nothing a comparison could be about - and
+        // answering a zero-width window instead would colour every delta
+        // against a previous of nought.
+        it("answers no comparison at all for a range that has not begun", async () => {
+            const now = new Date();
+            const from = day(new Date(now.getTime() + 2 * MS_PER_DAY));
+            const to = day(new Date(now.getTime() + 3 * MS_PER_DAY));
+
+            const {status, body} = await statistics(
+                `from=${from}&to=${to}&tz=Etc/UTC&compare=previous`);
+
+            assert.equal(status, 200);
+            assert.equal(body.previous, null);
+            assert.equal(body.dateRange.elapsedDays, undefined);
+        });
+    });
+
+    /**
+     * The elapsed-share divisor at its edges, with the clock injected - the
+     * route reads its own clock, so the API cannot hold a request still at
+     * ninety minutes past midnight.
+     *
+     * Two edges, both about the same constant: the below-a-tenth promise used
+     * to be broken by the rounding itself (0.06 rounds UP to the 0.1 the gate
+     * then accepts), and one decimal made the divisor coarser than the rate it
+     * divides - 0.149 elapsed days went out as 0.1, and every per-day figure
+     * read half again its true rate.
+     */
+    describe("the elapsed share of a still-running range", () => {
+        const MS_PER_DAY = 24 * 60 * 60 * 1000;
+        let controller;
+        let parseDateRange;
+
+        before(async () => {
+            controller = await import("../../server/controller/speedtests.js");
+            ({parseDateRange} = await import("../../server/util/dateRange.js"));
+        });
+
+        const range = () => parseDateRange("2026-08-10", "2026-08-16", "Etc/UTC");
+        const afterStart = (days) => new Date(range().from.getTime() + days * MS_PER_DAY);
+
+        it("is withheld below a tenth of a day, not rounded up into one", async () => {
+            const {dateRange} = await controller.listStatistics(range(), {now: afterStart(0.06)});
+
+            assert.equal(dateRange.elapsedDays, undefined,
+                "six percent of a day was rounded up into the tenth the gate then accepts");
+        });
+
+        it("is no coarser than the rate it divides", async () => {
+            const {dateRange} = await controller.listStatistics(range(), {now: afterStart(0.149)});
+
+            assert.equal(dateRange.elapsedDays, 0.15,
+                "0.149 elapsed days went out as 0.1 - half again the true rate");
+        });
+
+        it("still reads naturally at the scale the description shows", async () => {
+            const {dateRange} = await controller.listStatistics(range(), {now: afterStart(6.5)});
+
+            assert.equal(dateRange.elapsedDays, 6.5);
         });
     });
 

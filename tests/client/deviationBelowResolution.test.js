@@ -29,6 +29,11 @@ describe("roundsToZeroLatency", () => {
     it("is true for a value that has a spread too small to show", () => {
         for (const ms of [0.001, 0.01, 0.04, 0.049])
             assert.equal(roundsToZeroLatency(ms), true, `${ms} prints as 0 and must say so`);
+
+        // The text spelling too: formatLatency prints "0.02" as 0, and the
+        // predicate that decides whether that 0 needs the ±<0.1 wording has
+        // to judge the same value the formatter prints.
+        assert.equal(roundsToZeroLatency("0.02"), true, "printed one way, judged another");
     });
 
     // Genuinely zero: every test within the range sat on the median. That is a
@@ -43,10 +48,11 @@ describe("roundsToZeroLatency", () => {
             assert.equal(roundsToZeroLatency(ms), false, `${ms} is printable at one decimal`);
     });
 
-    // The same non-numbers formatLatency passes through: null is "not measured"
-    // and -1 is the placeholder a failed test stores.
+    // What cannot be read at all is no spread: null is "not measured", -1 is
+    // the placeholder a failed test stores, and junk stays junk - only the
+    // readable text spelling above is a measurement.
     it("is false for anything that is not a measurement", () => {
-        for (const value of [null, undefined, NaN, Infinity, -1, "0.02", {}])
+        for (const value of [null, undefined, NaN, Infinity, -1, "-1", "auto", {}])
             assert.equal(roundsToZeroLatency(value), false, `${String(value)} is not a spread`);
     });
 

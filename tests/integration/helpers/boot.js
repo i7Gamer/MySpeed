@@ -150,6 +150,20 @@ export const setConfig = async (config, key, value) => {
     await config.updateValue(key, validated.value);
 };
 
+/**
+ * Replaces the stored targets with a single one for the given provider - the
+ * choice the old `provider` config key expressed, for tests that need a round
+ * to exist. Answers the created row so a test can filter by its id.
+ */
+export const seedTarget = async (overrides = {}) => {
+    const targets = await import("../../../server/controller/targets.js");
+
+    await targets.removeAll();
+
+    const provider = overrides.provider ?? "ookla";
+    return await targets.create({name: provider, provider, ...overrides});
+};
+
 /** Replaces the stored speedtests with the supplied rows. */
 export const seedTests = async (model, rows) => {
     await model.destroy({where: {}});

@@ -60,7 +60,8 @@ describe("an integration named after an Object.prototype member", () => {
                 config: {},
                 nodes: [],
                 recommendations: [],
-                integrations: [{id: "planted", name: "toString", displayName: "Nope", data: {url: "x"}}]
+                integrations: [{id: "planted", name: "toString", displayName: "Nope", data: {url: "x"}}],
+                targets: []
             })
         });
 

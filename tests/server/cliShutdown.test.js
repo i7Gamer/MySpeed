@@ -233,3 +233,37 @@ describe("untrackProcess", () => {
             "a handler still wipes the tracker outright, which can take a retry's child with it");
     });
 });
+
+/**
+ * The CLI's output is decoded across chunk boundaries, not per chunk.
+ *
+ * spawn is given no encoding, so each 'data' event is a raw Buffer. Decoding
+ * each with buffer.toString() split any multi-byte UTF-8 sequence that a read
+ * happened to cut in half into replacement characters - a server named
+ * "Telefónica" stored as "Telef\uFFFD\uFFFDnica", which still parses as JSON
+ * and rides into the detail pane, the CSV export and the Prometheus
+ * server_host label. A StringDecoder per stream holds an incomplete sequence
+ * back until its next byte arrives. Read rather than driven: forcing a chunk
+ * boundary inside a character through a real spawn is not something this
+ * harness can arrange.
+ */
+describe("the CLI output decoding", () => {
+    const source = read("util/speedtest.js");
+    // Comments stripped so the docstring above, which names the old call, does
+    // not satisfy the very pattern this asserts is gone.
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+
+    it("decodes each stream through a StringDecoder", () => {
+        assert.match(code, /const stdoutDecoder = new StringDecoder\("utf8"\)/);
+        assert.match(code, /const stderrDecoder = new StringDecoder\("utf8"\)/);
+        assert.match(code, /stdoutDecoder\.write\(buffer\)/,
+            "stdout is decoded chunk-by-chunk, splitting multi-byte characters");
+        assert.match(code, /stderrDecoder\.write\(buffer\)/,
+            "stderr is decoded chunk-by-chunk, splitting multi-byte characters");
+    });
+
+    it("no longer decodes a raw chunk in isolation", () => {
+        assert.doesNotMatch(code, /buffer\.toString\(\)/,
+            "a chunk decoded on its own corrupts a character split across two reads");
+    });
+});

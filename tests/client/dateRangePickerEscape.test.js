@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readSource } from "../helpers/source.js";
+import { readSource, blockEnd } from "../helpers/source.js";
 
 /**
  * The picker's Escape follows the protocol every other overlay speaks.
@@ -53,15 +53,6 @@ describe("the picker's Escape handler", () => {
 
 const bodyOfArrowAt = (src, start) =>
     src.slice(src.indexOf("{", src.indexOf("=>", start)));
-
-const blockEnd = (src, from) => {
-    let depth = 0;
-    for (let index = from; index < src.length; index++) {
-        if (src[index] === "{") depth++;
-        else if (src[index] === "}" && --depth === 0) return index;
-    }
-    assert.fail("a block is never closed");
-};
 
 const pickerHandler = (closure) => {
     const start = source.indexOf("const handleEscape");

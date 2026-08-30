@@ -26,7 +26,8 @@ MySpeed is a speed test analysis software that records your internet speed over 
 - 🩺 Configure health checks to notify you via email, Signal, WhatsApp, or Telegram in case of errors or downtime
 - 📆 Test results can be stored for any retention period you configure - from a few days to forever
 - 🔥 Support for Prometheus and Grafana
-- 🗳️ Choose between Ookla, LibreSpeed and Cloudflare speed test servers
+- 🗳️ Choose between Ookla, LibreSpeed, Cloudflare and your own iperf3 server
+- 🎯 Measure against several targets in one round - the internet and your own LAN, side by side
 ### ⬇️ Installation
 
 #### 🐳 Docker (recommended)

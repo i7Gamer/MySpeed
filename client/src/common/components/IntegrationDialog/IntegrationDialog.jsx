@@ -36,6 +36,7 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
         return initial;
     });
     const [unsavedChanges, setUnsavedChanges] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [saveConfirmed, setSaveConfirmed] = useState(false);
     const [deleteConfirmed, setDeleteConfirmed] = useState(false);
     const [error, setError] = useState(false);
@@ -90,6 +91,15 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
     };
 
     const handleSave = async () => {
+        // A second click before the first save answers used to take the create
+        // branch again - the id that sends a save down the PATCH path only
+        // arrives with the first response - and the server filed two
+        // integrations for one card. Same lock as every other dialog: a no-op
+        // while a run is live, cleared in the finally so a refused save does
+        // not wedge the card shut.
+        if (saving) return;
+        setSaving(true);
+
         const data = integrationPayload(integrationDef, fields, displayName);
         try {
             if (!integration.id) {
@@ -107,6 +117,8 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
             setTimeout(() => setSaveConfirmed(false), 1500);
         } catch {
             setError(true);
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -146,7 +158,8 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
         <ExpandableCard icon={integrationDef.icon} title={displayName} subtitle={getStatusText()} statusDot={getStatusClass()}
             actions={<>
                 {!config.previewMode && unsavedChanges && !saveConfirmed && (
-                    <button type="button" className="card-action-btn save-btn" onClick={(e) => {e.stopPropagation(); handleSave();}}>
+                    <button type="button" className="card-action-btn save-btn" disabled={saving}
+                            onClick={(e) => {e.stopPropagation(); handleSave();}}>
                         <FontAwesomeIcon icon={faFloppyDisk}/>
                     </button>
                 )}
@@ -222,15 +235,21 @@ export const IntegrationDialog = ({open, onClose}) => {
     const wrapperRef = useRef(null);
     const owedFocus = useRef(false);
 
+    // Functional updaters throughout: each of these runs after an await - the
+    // add alongside a save already in flight, the remove after deleteRequest,
+    // the update after putRequest resolves - so the `active` captured at render
+    // is a snapshot a second overlapping edit has already moved past. Reading it
+    // instead of the live list wrote one edit's stale copy back over another:
+    // deleting A then B before A returned brought A back, and adding a card
+    // while a save was in flight vanished when that save's updater landed. The
+    // `renderable.length` read stays render-time on purpose - see the effect.
     const addIntegration = (item) => {
-        // Only the first, which is the add that replaces the menu it was made
-        // in - see the effect below.
         owedFocus.current = renderable.length === 0;
-        setActive([...active, {uuid: uuid(), name: item.key, data: {}, isNew: true}]);
+        setActive(prev => [...prev, {uuid: uuid(), name: item.key, data: {}, isNew: true}]);
     };
 
-    const removeIntegration = (id) => setActive(active.filter(item => item.uuid !== id));
-    const updateIntegration = (id, updates) => setActive(active.map(item => item.uuid === id ? {...item, ...updates} : item));
+    const removeIntegration = (id) => setActive(prev => prev.filter(item => item.uuid !== id));
+    const updateIntegration = (id, updates) => setActive(prev => prev.map(item => item.uuid === id ? {...item, ...updates} : item));
 
     /*
      * Focus back on the create menu, when the choice replaced the one it was
@@ -289,7 +308,17 @@ export const IntegrationDialog = ({open, onClose}) => {
                                 {renderable.length === 0 ? (
                                     <div className="empty-state">
                                         <FontAwesomeIcon icon={faCircleNodes}/>
-                                        <p>{t("integrations.none_active").replace("<br/>", " ").replace("<Bold>", "").replace("</Bold>", "")}</p>
+                                        {/* Written plainly and rendered as
+                                            written. It said "This integration
+                                            is not active. Create" - singular,
+                                            on a panel that is drawn only when
+                                            there are none at all, and with a
+                                            bare noun after it that repeated the
+                                            button below. That noun was a bold
+                                            call to action in the string, which
+                                            this line used to strip along with
+                                            the line break in front of it. */}
+                                        <p>{t("integrations.none_added")}</p>
                                         <DropdownSelect items={dropdownItems} onSelect={addIntegration} buttonText={t("integrations.create")} disabled={config.previewMode}/>
                                     </div>
                                 ) : (

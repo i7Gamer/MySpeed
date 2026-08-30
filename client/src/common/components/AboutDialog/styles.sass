@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/typography" as *
 
 .about-dialog
   width: 28rem
@@ -32,14 +33,14 @@
   background-color: $darker-gray
   border: 1px solid $light-gray
   color: $subtext
-  font-size: 0.85rem
+  font-size: $dialog-hint
   font-weight: 600
   line-height: 1
   white-space: nowrap
 
 .about-description
   margin: 0
-  font-size: 1rem
+  font-size: $dialog-lead
   font-weight: 500
   color: $subtext
   line-height: 1.55
@@ -59,7 +60,7 @@
   border-radius: 0.7rem
   color: $subtext
   text-decoration: none
-  font-size: 1rem
+  font-size: $dialog-body
   font-weight: 500
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease
 

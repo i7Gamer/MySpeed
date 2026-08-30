@@ -25,13 +25,14 @@ export const listSources = (dir) =>
  * read at its flat, .js-only contract. Three suites grew a private copy of
  * this walk within one review, each starting with the same fifteen lines.
  */
-export const walkSources = (dir) => fs.readdirSync(path.join(root, dir), {withFileTypes: true})
-    .flatMap((entry) => {
-        const relative = `${dir}/${entry.name}`;
+export const walkSources = (dir, match = /\.jsx?$/) =>
+    fs.readdirSync(path.join(root, dir), {withFileTypes: true})
+        .flatMap((entry) => {
+            const relative = `${dir}/${entry.name}`;
 
-        if (entry.isDirectory()) return walkSources(relative);
-        return /\.jsx?$/.test(entry.name) ? [{path: relative, source: readSource(relative)}] : [];
-    });
+            if (entry.isDirectory()) return walkSources(relative, match);
+            return match.test(entry.name) ? [{path: relative, source: readSource(relative)}] : [];
+        });
 
 const LOCALES_DIR = "client/public/assets/locales";
 
@@ -292,6 +293,31 @@ export const tagHolding = (source, marker) => {
     return source.slice(source.lastIndexOf("<", at), source.indexOf(">", at) + 1);
 };
 
+/** A whole line that is nothing but a comment. */
+const HASH_COMMENT = /^\s*#/;
+
+/**
+ * The whole of a block scalar's header, which is more than `|` and `>`.
+ *
+ * YAML lets it carry an indentation indicator beside the chomping one, in either
+ * order - `|2`, `>2-`, `|-2`. A header carrying a digit matched nothing, so it
+ * was taken for a one-liner and the indicator came back as the body's own first
+ * line, with the real body appended underneath.
+ *
+ * And a comment after it, which YAML 1.2 §8.1.1 allows: `run: | # bump the
+ * version` opens a block like any other. Anchored at the end of the line, a
+ * header with one failed the same way and cost more, because a plain scalar's
+ * continuation lines have their comments stripped - so every `#` line of the
+ * body went with it, and an expression spliced into a shell comment became
+ * invisible to the scan written to find exactly that. A comment, though, and
+ * nothing else, and only one with whitespace in front of it: YAML needs a space
+ * before a `#` for a comment to begin there at all, so `|#x` is not a header
+ * carrying one - it is not a node any parser will load. `| 2` is not YAML's way
+ * of writing `|2` either, and a header followed by anything else is still not
+ * one.
+ */
+const BLOCK_INDICATOR = /^\s*[|>](?:[1-9][-+]?|[-+][1-9]?)?(?:\s+#.*)?\s*$/;
+
 /**
  * Shell-style sources with their comment lines removed, for the assertions
  * that must not be satisfied by prose. Whole lines only: a `#` mid-line is
@@ -299,14 +325,399 @@ export const tagHolding = (source, marker) => {
  */
 export const withoutHashComments = (source) => source
     .split("\n")
-    .filter((line) => !/^\s*#/.test(line))
+    .filter((line) => !HASH_COMMENT.test(line))
     .join("\n");
 
 /**
- * JS/JSX sources with their comments removed, for the same reason. Block
- * comments go whole; line comments only from `//` that does not follow a
- * colon, so a URL inside a string survives.
+ * Every `run:` body in a workflow, each as its own lines and as one text.
+ *
+ * For the assertions that hold a workflow to keeping values out of a shell: a
+ * `${{ }}` expression is substituted into the source before bash parses it, so
+ * one that reaches a run: body is code rather than data, and the way to pass it
+ * is to bind it through `env:` and read the shell variable.
+ *
+ * Which is exactly why the bound has to be the block scalar's own end, and not
+ * the next `- name:`. An `env:` block is what a body is supposed to read instead
+ * of splicing, so a walk that runs on into one reports every fix as the bug it
+ * fixes.
+ *
+ * Comments are stripped here rather than by the caller, because a caller that
+ * forgets is not visibly wrong: these workflows explain, in prose directly above
+ * the line, why a `${{` must not appear in a run body - and an assertion looking
+ * for one then finds the sentence saying it must not be there. Two copies of
+ * this walk stripped at different places, and only one of them here.
+ *
+ * Outside a block scalar only, which is where YAML's comments are. Inside one
+ * there is no YAML left to comment: the block is a single string, and a `${{ }}`
+ * on any line of it is substituted into that string long before bash - or the
+ * `#` standing in front of it - is anywhere near the value. Stripping those
+ * lines with the rest handed the scan that exists to find such a splice a body
+ * it had already been taken out of: a shell comment carrying
+ * `${{ github.event.pull_request.title }}` came back clean, which is the one
+ * carrier nobody would think to look for reported safe by the check written for
+ * it. Body lines come back verbatim now, and a caller that wants them without
+ * prose has withoutHashComments above.
+ *
+ * There were two copies, and they had drifted on every rule that matters: where
+ * a block ends, whether a `run:` with no `|` or `>` is followed at all, and what
+ * is handed back. Both are answered here the wider way - a plain one-liner is
+ * walked like any other body, and a body comes back as its lines and as one text
+ * - so neither caller loses anything it was reading before.
  */
-export const withoutJsComments = (source) => source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+export const runBodies = (source) => {
+    const lines = source.split("\n");
+    const bodies = [];
+
+    for (let index = 0; index < lines.length; index++) {
+        // Out here a `#` line is YAML's own, and it is the prose these
+        // assertions must not be satisfied by.
+        if (HASH_COMMENT.test(lines[index])) continue;
+
+        const opened = /^(\s*)(-\s+)?run:(.*)$/.exec(lines[index]);
+        if (!opened) continue;
+
+        // The column of the key, not of the dash in front of it. A block scalar
+        // ends where the indentation drops back to the key that opened it, and
+        // in `- run:` the dash sits two columns to the left of that key - so a
+        // bound taken from the dash keeps reading, and every sibling key of the
+        // step comes back as part of the shell body. `env:` is one of those, and
+        // binding a value through env: is the correct shape these bodies are
+        // read to insist on.
+        const column = opened[1].length + (opened[2] ?? "").length;
+
+        // The block indicator is not part of the body; anything else on the line
+        // is a one-liner and is.
+        const block = BLOCK_INDICATOR.test(opened[3]);
+        const opener = block ? "" : opened[3];
+        const body = opener.trim() === "" ? [] : [opener];
+
+        while (index + 1 < lines.length) {
+            const line = lines[index + 1];
+
+            // A blank line inside a block scalar is still part of it.
+            if (line.trim() !== "" && line.length - line.trimStart().length <= column) break;
+
+            index++;
+
+            // And a `#` line inside one is shell rather than YAML, so it stays.
+            // A plain scalar's continuation lines are still YAML, and a comment
+            // among those is one.
+            if (!block && HASH_COMMENT.test(line)) continue;
+
+            body.push(line);
+        }
+
+        bodies.push({lines: body, text: body.join("\n")});
+    }
+
+    return bodies;
+};
+
+/**
+ * What stands in front of a slash that makes it the start of a regex literal
+ * rather than a division.
+ *
+ * Not a parse - that question is genuinely ambiguous in JavaScript and is
+ * settled by the grammar, which this is not. It is the set of positions where a
+ * value cannot already have been produced, so a slash there cannot be dividing
+ * one. Line-start is in the set as well, and is spelled by `prev` being null.
+ */
+const REGEX_OPENERS = new Set(["(", ",", "=", ":", "[", "!", "&", "|", "?", ";", "{", "}", "+", "*", "%"]);
+
+/** And the words that leave the same position, where a character cannot. */
+const REGEX_WORDS = new Set(["return", "typeof", "case", "in", "of", "instanceof", "new", "do", "else"]);
+
+const IDENTIFIER = /[\w$]/;
+
+/** Whitespace that is not the end of a line, which is the thing being counted. */
+const INLINE_SPACE = /[ \t\r\v\f]/;
+
+/**
+ * The end of the regex literal opening at `from`, or -1 if there is none.
+ *
+ * A literal cannot span a line, so a scan that reaches one has misread a
+ * division and says so rather than running to the far end of the file looking
+ * for a closer. A slash inside a character class is not the closer either -
+ * `[/]` is one slash of data - so the classes are tracked alongside the escapes.
+ */
+const regexEnd = (source, from) => {
+    let inClass = false;
+
+    for (let index = from + 1; index < source.length; index++) {
+        const character = source[index];
+
+        if (character === "\n") return -1;
+        if (character === "\\") index++;
+        else if (character === "[") inClass = true;
+        else if (character === "]") inClass = false;
+        else if (character === "/" && !inClass) return index;
+    }
+
+    return -1;
+};
+
+/**
+ * JS/JSX sources with their comments removed, for the same reason the shell
+ * ones above have theirs: an assertion must not be satisfied by prose about the
+ * thing it is looking for.
+ *
+ * This was two regular expressions - one for the block form, one for the line
+ * form - and both were wrong in the one direction a source scan must not be
+ * wrong in. They dropped code, and a scan whose input has quietly lost the code
+ * it is scanning cannot fail at all.
+ *
+ * The block pattern opened on the two characters that spell an opener wherever
+ * they landed, a glob inside a string included, and then ran to the next closer
+ * anywhere in the file: i18n.js declares its flags with an eager glob whose path
+ * ends in one, and the sixteen languages between that line and the next closer
+ * thirty-seven lines below were gone from every scan that read this file. The
+ * line pattern opened on any two adjacent slashes not preceded by a colon, which
+ * a regex literal ending in an escaped slash is - NodeContainer strips a scheme
+ * with one - and which a template holding an address is, twice in server/util.
+ *
+ * So it is a walk now, with the state a stripper actually needs: strings in all
+ * three quotes with their escapes, a template's substitutions back in code state
+ * to whatever depth they nest, regex literals, and both comment forms. The state
+ * carries across lines, because a block comment does - FormatUtil names the -1
+ * placeholder in the middle of one, in a tree the placeholder tripwire scans.
+ *
+ * One newline comes back for each one removed, and the newline after a stripped
+ * line comment stays. That is not tidiness: half the consumers are anchored
+ * per-line, and the tripwire's allowlist exempts a line rather than a file, so a
+ * walk that closed the gaps would move every one of those readings.
+ *
+ * And it fails closed where the heuristic can be wrong. Whether a slash opens a
+ * literal or divides is decided by what stands in front of it; read as a
+ * division when it was a literal, the walk is inside that literal's text, and
+ * two slashes in there would be stripped as a comment - taking real code to the
+ * end of the line with it, which is the failure this replaced. So a line that
+ * has already divided keeps whatever follows. The cost is a comment surviving on
+ * such a line, which is the direction that is merely noisy.
+ *
+ * Fails loudly at the far end too. A misread that puts the walk into a
+ * template it never leaves drops nothing - the text comes back verbatim, only
+ * never stripped again - which is exactly the kind of quiet wrongness no
+ * suite notices. Valid JavaScript cannot end inside a template, a
+ * substitution or a block comment, so ending in one of those states throws,
+ * naming the state. A file may end in a line comment, and a stray apostrophe
+ * stays tolerated - the string states die at each newline by design. A
+ * caller handing this a SLICE rather than a file gets the same throw as a
+ * truncation detector: a slice cut inside one of those states is a slice no
+ * scan should trust either, and the message says both readings.
+ */
+export const withoutJsComments = (source) => {
+    let out = "";
+    let state = "code";
+
+    // The brace depth of each substitution the walk is currently inside, so a
+    // template nested in one of its own substitutions still closes correctly.
+    const templates = [];
+
+    let prev = null;    // the last significant code character on this line
+    let word = "";      // the identifier ending at it, when it is one
+    let last = null;    // the previous code character, whitespace included
+    let divided = false;
+    let arrow = false;  // whether that character closed a `=>`
+
+    const code = (character) => {
+        out += character;
+
+        if (character === "\n") {
+            prev = null;
+            word = "";
+            last = null;
+            divided = false;
+            arrow = false;
+            return;
+        }
+
+        if (INLINE_SPACE.test(character)) {
+            last = character;
+            return;
+        }
+
+        word = !IDENTIFIER.test(character) ? ""
+            : last !== null && IDENTIFIER.test(last) ? word + character
+                : character;
+        arrow = character === ">" && prev === "=";
+        prev = character;
+        last = character;
+    };
+
+    // A construct handed back whole - a string, a template, a literal - counts
+    // as its closing character and nothing else.
+    const closed = (character) => {
+        prev = character;
+        word = "";
+        last = character;
+        arrow = false;
+    };
+
+    const opensRegex = () => {
+        // The arrow leaves the same position a `(` does, and it is two
+        // characters, which is why the set of single ones below cannot hold
+        // it: read as a division instead, the walk is inside the literal's
+        // text, where a stray backtick opens a template that never closes -
+        // modelNullability's filter ended every scan of itself that way.
+        if (arrow) return true;
+        if (prev === null) return true;
+        if (IDENTIFIER.test(prev)) return REGEX_WORDS.has(word);
+
+        return REGEX_OPENERS.has(prev);
+    };
+
+    for (let index = 0; index < source.length; index++) {
+        const character = source[index];
+        const next = source[index + 1];
+
+        // The line ending is handed back rather than eaten, and a carriage
+        // return is part of it: `.*$` left one behind, and so does this.
+        if (state === "line") {
+            if (character === "\n" || character === "\r") {
+                state = "code";
+                code(character);
+            }
+            continue;
+        }
+
+        if (state === "block") {
+            if (character === "\n") {
+                out += "\n";
+                divided = false;
+            } else if (character === "\r") {
+                // The newline rule includes the carriage return: half the
+                // tree is CRLF, and a comment spanning lines there handed
+                // back bare \n on exactly the commented lines.
+                out += "\r";
+            } else if (character === "*" && next === "/") {
+                state = "code";
+                index++;
+            }
+            continue;
+        }
+
+        if (state === "single" || state === "double") {
+            out += character;
+
+            // Bounded at the line, because a quote that never closes is more
+            // likely a stray apostrophe than a string - and unbounded it would
+            // suppress every strip to the end of the file.
+            if (character === "\\" && next !== undefined) {
+                out += next;
+                index++;
+            } else if (character === "\n") {
+                state = "code";
+                prev = null;
+                word = "";
+                last = null;
+                divided = false;
+            } else if (character === (state === "single" ? "'" : '"')) {
+                state = "code";
+                closed(character);
+            }
+            continue;
+        }
+
+        if (state === "template") {
+            if (character === "\\" && next !== undefined) {
+                out += character + next;
+                index++;
+            } else if (character === "`") {
+                out += character;
+                state = "code";
+                closed(character);
+            } else if (character === "$" && next === "{") {
+                out += "${";
+                index++;
+                templates.push(0);
+                state = "code";
+                closed("{");
+            } else {
+                out += character;
+                if (character === "\n") divided = false;
+            }
+            continue;
+        }
+
+        if (character === "/") {
+            if (next === "/") {
+                if (divided) {
+                    let end = index;
+                    while (end < source.length && source[end] !== "\n" && source[end] !== "\r") end++;
+
+                    out += source.slice(index, end);
+                    index = end - 1;
+                    continue;
+                }
+
+                state = "line";
+                index++;
+                continue;
+            }
+
+            if (next === "*") {
+                state = "block";
+                index++;
+                continue;
+            }
+
+            if (opensRegex()) {
+                const end = regexEnd(source, index);
+
+                if (end !== -1) {
+                    out += source.slice(index, end + 1);
+                    index = end;
+                    closed("/");
+                    continue;
+                }
+            }
+
+            divided = true;
+            code(character);
+            continue;
+        }
+
+        // JSX's own slashes - `</div>`, `<br />` - go through here too and
+        // read as divisions, which costs nothing but the fail-closed noise
+        // above: nothing is dropped, and a trailing comment on such a line
+        // survives into the scan. Handling them specially was measured and
+        // vetoed - not setting `divided` there let a URL in JSX text open a
+        // line comment, which is the eating this walk exists to end.
+
+        if (character === "'" || character === '"' || character === "`") {
+            state = character === "'" ? "single" : character === '"' ? "double" : "template";
+            out += character;
+            continue;
+        }
+
+        if (templates.length > 0 && (character === "{" || character === "}")) {
+            const depth = templates.length - 1;
+
+            if (character === "{") templates[depth]++;
+            else if (templates[depth] === 0) {
+                templates.pop();
+                out += character;
+                state = "template";
+                continue;
+            } else templates[depth]--;
+        }
+
+        code(character);
+    }
+
+    // Fail loudly rather than quietly at the far end. Valid JavaScript cannot
+    // end inside a template, a substitution or a block comment, so arriving
+    // here in one of those states means a slash context was misread somewhere
+    // above - and the silent version of that survives every suite: nothing is
+    // dropped, the comments simply stop being stripped, and a scan whose
+    // input keeps its comments cannot be trusted in either direction. The two
+    // line-bounded states stay legal: a file may end in a line comment, and
+    // the string states already die at each newline by design.
+    if (state === "template" || state === "block" || templates.length > 0)
+        throw new Error("the input ends inside a "
+            + (templates.length > 0 ? "template substitution"
+                : state === "block" ? "block comment" : "template")
+            + ": a slash or backtick context was misread above, or a sliced input was cut inside one");
+
+    return out;
+};

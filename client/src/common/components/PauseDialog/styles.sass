@@ -1,5 +1,6 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/layout" as *
+@use "@/common/styles/typography" as *
 
 .pause-dialog
   width: $settings-dialog-width
@@ -23,7 +24,7 @@
   border: 1px solid $light-gray
   border-radius: 0.6rem
   color: $subtext
-  font-size: 0.95rem
+  font-size: $dialog-body
   font-weight: 500
   cursor: pointer
   transition: all 0.15s ease
@@ -61,7 +62,7 @@
 .pause-quiet-hint
   margin: 0 0 0.75rem
   color: $subtext
-  font-size: 0.85rem
+  font-size: $dialog-hint
   line-height: 1.5
 
 .pause-quiet-range
@@ -73,8 +74,14 @@
     flex-direction: column
     gap: 0.35rem
     flex: 1
+    // An equal half each, and it stays an equal half. `flex: 1` sets the share
+    // of what is left over, not the size an item may be reduced to - so a
+    // "from"/"until" phrase longer than the two English words would have set
+    // its own width and pushed the pair past the dialog. Nothing is cut here
+    // today; this is the guard, not the repair.
+    min-width: 0
     color: $subtext
-    font-size: 0.85rem
+    font-size: $dialog-hint
 
 // The zone the range above is read in, so it sits with them and is labelled the
 // same way. Full width rather than beside them: a zone name is long - the list
@@ -86,7 +93,7 @@
   gap: 0.35rem
   margin-top: 0.75rem
   color: $subtext
-  font-size: 0.85rem
+  font-size: $dialog-hint
 
   select
     width: 100%

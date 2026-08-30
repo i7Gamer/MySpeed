@@ -66,14 +66,16 @@ describe("healthChecks", () => {
     });
 
     it("strips however many slashes were pasted", async () => {
-        await fire(events, "testFailed", {url: "https://hc-ping.com/uuid///"}, "boom");
+        await fire(events, "roundFinished", {url: "https://hc-ping.com/uuid///"},
+            {failed: true, failures: 1, members: 1});
 
         assert.equal(sent[0].url, "https://hc-ping.com/uuid/fail");
     });
 
-    // The pathless events post to the url itself, and it has to stay usable.
-    it("still posts the bare url for an event with no path", async () => {
-        await fire(events, "testFinished", {url: "https://hc-ping.com/uuid/"}, RESULT);
+    // The pathless outcome posts to the url itself, and it has to stay usable.
+    it("still posts the bare url for an outcome with no path", async () => {
+        await fire(events, "roundFinished", {url: "https://hc-ping.com/uuid/"},
+            {failed: false, failures: 0, members: 1});
 
         assert.equal(sent[0].url, "https://hc-ping.com/uuid");
     });

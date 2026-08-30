@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+    formatBytes, formatDuration, formatHour, formatLatencyWithUnit, formatPercent, NOT_MEASURED
+} from "@/common/utils/FormatUtil.js";
+import { failureRate, readableFigure } from "@/common/utils/TestUtil.js";
+import { peakLatencyRise } from "@/pages/Statistics/charts/peakHours.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const CLIENT_SRC = path.join(ROOT, "client", "src");
@@ -24,7 +29,7 @@ const english = JSON.parse(fs.readFileSync(
  */
 describe("the peak-hour row on the overview card", () => {
     it("is computed rather than restated in the component", () => {
-        assert.match(overview, /import \{peakSlowdown} from "@\/pages\/Statistics\/charts\/peakHours"/);
+        assert.match(overview, /import \{peakLatencyRise, peakSlowdown} from "@\/pages\/Statistics\/charts\/peakHours"/);
         assert.match(overview, /const peak = peakSlowdown\(props\.hourlyAverages\)/);
     });
 
@@ -59,11 +64,322 @@ describe("the peak-hour row on the overview card", () => {
     });
 });
 
+describe("the packet-loss row on the overview card", () => {
+    /**
+     * The average over the range, read through readableFigure like every
+     * stored figure. The bare typeof gate it replaces knew neither the
+     * placeholder nor the text spelling: a proxied node's -1 printed "-1%"
+     * (and NaN printed "NaN%") beside a delta computed from the same
+     * non-reading, while an older node's text average was hidden as N/A.
+     */
+    it("prints the reading through the shared reader", () => {
+        assert.match(overview, /const packetLoss = readableFigure\(props\.packetLoss\);/);
+        assert.match(overview, /value: formatPercent\(packetLoss\)/,
+            "the score is glued to its % by hand again instead of the shared rule");
+        assert.doesNotMatch(overview, /typeof props\.packetLoss === "number"/,
+            "the bare typeof gate is back, which prints the placeholder and hides the text spelling");
+    });
+
+    // One reading for the row: an arrow computed from a value the printer
+    // beside it refuses would claim a change in a figure nobody measured.
+    it("feeds the delta the same reading", () => {
+        assert.match(overview, /delta: \{current: packetLoss, previous: readableFigure\(previous\?\.packetLoss\)/,
+            "the delta reads the raw column while the printer reads the coerced one");
+    });
+
+    /**
+     * One lift for every row of the card's items list, guards included: the
+     * loss and duration cases below build different props and find different
+     * titles, and a second copy of the slice bounds was a second thing to
+     * move in lockstep - the copy had already dropped the locator guards, so
+     * a moved region would have died as a bare SyntaxError from indexOf(-1)
+     * instead of the named message.
+     */
+    const overviewRow = (propsOverride, title) => {
+        const start = overview.indexOf("const rate = failureRate");
+        assert.notEqual(start, -1, "the card no longer derives its rows where this lift expects");
+
+        const end = overview.indexOf("];", start);
+        assert.notEqual(end, -1, "the items list no longer closes where this lift expects");
+
+        const stub = (key, values) => values === undefined ? key : {key, ...values};
+
+        // Only the names the region reads - a closure that also supplies the
+        // old shape's NOT_MEASURED would let a revert to the hand-glued
+        // ternary evaluate instead of throwing.
+        return new Function(
+            "props", "t", "formatDuration", "formatPercent", "readableFigure", "failureRate",
+            "faGaugeHigh", "faCircleExclamation", "faStopwatch", "faLinkSlash",
+            `${overview.slice(start, end + 2)}\nreturn items;`)(
+            {tests: {total: 10, failed: 1}, time: {avg: 6}, packetLoss: null, ...propsOverride}, stub,
+            formatDuration, formatPercent, readableFigure, failureRate,
+            null, null, null, null)
+            .find((item) => item.title === title);
+    };
+
+    const lossRow = (packetLoss, previous) =>
+        overviewRow({packetLoss, previous}, "statistics.overview.packet_loss_title");
+
+    const durationRow = (avg, previous) =>
+        overviewRow({time: {avg}, previous}, "statistics.overview.average_title");
+
+    /**
+     * The failed row's degradation, executed: failureRate is deliberately
+     * strict - counts are array lengths on the server, so a text count is
+     * a producer that changed shape - and what the row does then is print
+     * the bare count with no share beside it, not crash and not coerce.
+     */
+    it("prints the bare count when the rate refuses the payload", () => {
+        assert.equal(overviewRow({tests: {total: "100", failed: 3}},
+            "statistics.overview.failed_title").value, 3);
+    });
+
+    /**
+     * The row's wiring, executed off the card's own statements rather than
+     * pattern-matched: a revert that respells the reader - `const packetLoss
+     * = props.packetLoss;` - satisfies every source regex above while
+     * reintroducing the placeholder deltas. formatPercent hides such a
+     * revert from the printed VALUE (it re-reads idempotently), so the
+     * discriminator is delta.current: null for everything refused, the
+     * coerced number for everything read.
+     */
+    it("builds the row from the coerced reading, delta included", () => {
+        for (const [refused, label] of [[-1, "the placeholder"], ["-1", "its text spelling"],
+            ["auto", "junk"], [NaN, "NaN"]]) {
+            const item = lossRow(refused);
+
+            assert.equal(item.value, NOT_MEASURED, `${label} printed as a reading`);
+            assert.equal(item.delta.current, null,
+                `${label} reached the delta, so the arrow claims a change in a figure nobody measured`);
+        }
+
+        const zero = lossRow(0);
+        assert.equal(zero.value, "0%", "a measured zero is the best reading there is");
+        assert.equal(zero.delta.current, 0);
+
+        const text = lossRow("0.5", {packetLoss: "1.5"});
+        assert.equal(text.value, "0.5%", "a text reading prints the number it spells");
+        assert.equal(text.delta.current, 0.5);
+        assert.equal(text.delta.previous, 1.5, "the previous window's figure is not read the same way");
+    });
+
+    /**
+     * The duration row beside it, held to the same destinations: its
+     * formatter was the one that neither coerced nor refused, so a proxied
+     * node's -1 printed "-1s" with a green improvement arrow computed from
+     * the placeholder - one row above a loss row answering N/A for the
+     * identical payload.
+     */
+    it("builds the duration row from the coerced reading too", () => {
+        for (const [refused, label] of [[-1, "the placeholder"], ["-1", "its text spelling"],
+            ["auto", "junk"]]) {
+            const item = durationRow(refused, {time: {avg: 6}});
+
+            assert.equal(item.value, NOT_MEASURED, `${label} printed as a duration`);
+            assert.equal(item.delta.current, null,
+                `${label} reached the delta, so the arrow claims an improvement from a figure nobody measured`);
+        }
+
+        const text = durationRow("6", {time: {avg: "-1"}});
+        assert.equal(text.value, "6s", "a text duration prints the number it spells");
+        assert.equal(text.delta.current, 6);
+        assert.equal(text.delta.previous, null, "a refused previous window still feeds the arrow");
+    });
+});
+
+/**
+ * The enlarged view's rows, run off the card's own statements: the ping,
+ * duration-spread and data-used gates were the null-only shape the loss row
+ * dropped, so a proxied node's placeholder payload rendered "between N/A and
+ * N/A" rows whose deltas were computed from -1.
+ */
+describe("the enlarged overview's rows refuse what no reader can read", () => {
+    const lifted = (props, preferences) => {
+        const start = overview.indexOf("const expandedItems = (props, preferences) => {");
+        assert.notEqual(start, -1, "the enlarged rows are no longer derived where this lift expects");
+
+        const end = overview.indexOf("\n};", start);
+        assert.notEqual(end, -1, "expandedItems no longer closes where this lift expects");
+
+        const stub = (key, values) => values === undefined ? key : {key, ...values};
+
+        // peakLatencyRise and formatHour ride in as the real ones: the
+        // latency row's cases below execute the whole chain from buckets to
+        // caption, the way the loss row's execute failureRate.
+        return new Function(
+            "t", "formatLatencyWithUnit", "formatDuration", "formatBytes", "formatHour",
+            "readableFigure", "testsPerDay", "peakLatencyRise",
+            "faPingPongPaddleBall", "faHourglassHalf", "faCalendarDay", "faDatabase", "faArrowTrendUp",
+            `${overview.slice(start, end + 3)}\nreturn expandedItems;`)(
+            stub, formatLatencyWithUnit, formatDuration, formatBytes, formatHour,
+            readableFigure, () => null, peakLatencyRise,
+            null, null, null, null, null)(props, preferences);
+    };
+
+    // Every fixture carries tests: testsPerDay's argument is dereferenced
+    // before the stub can decline the row.
+    const BASE = {tests: {total: 10}};
+
+    const row = (props, title) => lifted({...BASE, ...props}).find((item) => item.title === title);
+
+    it("hides the latency row for an average nothing can read", () => {
+        for (const refused of [-1, "-1", "auto", NaN])
+            assert.equal(row({ping: {avg: refused, min: refused, max: refused, median: refused}},
+                "latest.ping"), undefined, `an average of ${JSON.stringify(refused)} still drew the row`);
+    });
+
+    it("keeps it for a readable average, delta included, in either spelling", () => {
+        const item = row({ping: {avg: "23.47", min: 8.91, max: 132.76, median: 22.05},
+            previous: {ping: {avg: -1}}}, "latest.ping");
+
+        assert.notEqual(item, undefined);
+        assert.equal(item.delta.current, 23.47, "the delta reads the raw column");
+        assert.equal(item.delta.previous, null, "a refused previous window still feeds the arrow");
+    });
+
+    /**
+     * The accepted trade, pinned as decided: the row's existence hangs on
+     * the AVERAGE alone, and the sentence's parts refuse individually - a
+     * readable average is not hidden because the spread beside it is junk,
+     * so a mixed payload renders the value with N/A parts in its caption.
+     * The caption is also the row's only statement that the figure is an
+     * average over the range, which is why it does not simply vanish.
+     */
+    it("keeps a readable average even when every spread part refuses", () => {
+        const item = row({ping: {avg: 23.47, min: -1, max: -1, median: -1}}, "latest.ping");
+
+        assert.notEqual(item, undefined, "junk beside a readable average hid the row");
+        assert.deepEqual(item.description,
+            {key: "statistics.overview.ping_description", min: "N/A", max: "N/A", median: "N/A"},
+            "a refused spread part printed as a reading inside the sentence");
+        assert.equal(item.delta.current, 23.47);
+    });
+
+    /**
+     * The delta compares the raw averages, not the printed ones -
+     * AverageChart's own stated convention: a percentage is the same in
+     * either unit, and rounding both sides first reports a change that is
+     * an artefact of the one decimal. The accepted edge, pinned: two
+     * windows that PRINT the same trimmed figure can still show a small
+     * arrow, because the measurement moved even though the display did not.
+     */
+    it("computes the delta from the measurement, not from its display", () => {
+        const item = row({ping: {avg: 23.44, min: 8.91, max: 132.76, median: 22.05},
+            previous: {ping: {avg: 23.41}}}, "latest.ping");
+
+        assert.deepEqual({current: item.delta.current, previous: item.delta.previous},
+            {current: 23.44, previous: 23.41},
+            "both windows print 23.4 ms, and the arrow between them reads the stored change by convention");
+    });
+
+    /**
+     * Position-sensitive, with three distinct figures: each caption part
+     * must carry ITS OWN figure. Presence pins and refusal cases both pass
+     * a min/max swap - the most common copy-paste regression - so the
+     * mapping itself is executed.
+     */
+    it("maps each caption part to its own figure", () => {
+        const item = row({ping: {avg: 23.47, min: 8.91, max: 132.76, median: 22.05}}, "latest.ping");
+
+        assert.deepEqual(item.description, {
+            key: "statistics.overview.ping_description",
+            min: formatLatencyWithUnit(8.91, "latest.ping_unit"),
+            max: formatLatencyWithUnit(132.76, "latest.ping_unit"),
+            median: formatLatencyWithUnit(22.05, "latest.ping_unit")
+        }, "a caption part reads a neighbour's figure - the swap no presence pin can see");
+
+        const data = row({dataUsed: {total: 3000, download: 2000, upload: 1000}}, "test.details.data_used");
+
+        assert.deepEqual(data.description, {
+            key: "test.details.data_used_value",
+            down: formatBytes(2000),
+            up: formatBytes(1000)
+        }, "the data caption swapped its directions");
+    });
+
+    it("hides the duration spread unless both ends read", () => {
+        assert.equal(row({time: {min: -1, max: -1}}, "statistics.overview.span_title"), undefined,
+            "a placeholder pair printed as a spread");
+        assert.equal(row({time: {min: 2, max: "auto"}}, "statistics.overview.span_title"), undefined,
+            "a spread with a refused end printed as \"2s – N/A\"");
+        assert.notEqual(row({time: {min: "2", max: "9"}}, "statistics.overview.span_title"), undefined,
+            "a readable text pair vanished");
+    });
+
+    it("hides the data row for a total nothing can read", () => {
+        assert.equal(row({dataUsed: {total: -1, download: -1, upload: -1}},
+            "test.details.data_used"), undefined, "a placeholder total drew the row");
+
+        const item = row({dataUsed: {total: 3000, download: 2000, upload: 1000},
+            previous: {dataUsed: {total: "-1"}}}, "test.details.data_used");
+        assert.equal(item.delta.current, 3000);
+        assert.equal(item.delta.previous, null);
+    });
+
+    /**
+     * The latency twin of the peak-hour row, executed from buckets to
+     * caption. Its guards live in peakLatencyRise and have their own matrix;
+     * what is pinned here is the row built on top: each caption part carries
+     * ITS OWN figure and ITS OWN hour - four distinct values, so a best/worst
+     * swap fails - and the rise goes out formatted, with no delta for the
+     * summary that carries no buckets.
+     */
+    const LATENCY_BUCKETS = [
+        {hour: 4, ping: 8, download: 100, count: 10},
+        {hour: 13, ping: 12, download: 100, count: 10},
+        {hour: 20, ping: 21, download: 100, count: 10}
+    ];
+
+    it("draws the peak-latency row from the buckets, each part its own figure", () => {
+        const item = row({hourlyAverages: LATENCY_BUCKETS}, "statistics.overview.peak_latency_title");
+
+        assert.notEqual(item, undefined, "three measured hours drew no latency row");
+        assert.equal(item.value, `+${formatLatencyWithUnit(13, "latest.ping_unit")}`);
+        assert.deepEqual(item.description, {
+            key: "statistics.overview.peak_latency_description",
+            best: formatLatencyWithUnit(8, "latest.ping_unit"),
+            bestHour: formatHour(4, undefined),
+            worst: formatLatencyWithUnit(21, "latest.ping_unit"),
+            worstHour: formatHour(20, undefined)
+        }, "a caption part reads a neighbour's figure or hour - the swap no presence pin can see");
+        assert.equal(item.delta, null, "the previous summary carries no buckets to compare against");
+    });
+
+    // The clock preference reaches the hours through the shared formatter.
+    it("names the latency hours on the clock the reader chose", () => {
+        const item = lifted({...BASE, hourlyAverages: LATENCY_BUCKETS}, {timeFormat: "12h"})
+            .find((entry) => entry.title === "statistics.overview.peak_latency_title");
+
+        assert.equal(item.description.bestHour, "4:00 AM");
+        assert.equal(item.description.worstHour, "8:00 PM");
+    });
+
+    it("renders no latency row when the range cannot support it", () => {
+        for (const absent of [undefined, {}, "n/a", [], LATENCY_BUCKETS.slice(0, 2)])
+            assert.equal(row({hourlyAverages: absent}, "statistics.overview.peak_latency_title"),
+                undefined, `buckets of ${JSON.stringify(absent)} drew the row`);
+    });
+});
+
+describe("the peak-latency row's strings", () => {
+    it("has both of them, each caption part named", () => {
+        assert.equal(typeof english.statistics.overview.peak_latency_title, "string");
+        for (const part of ["best", "bestHour", "worst", "worstHour"])
+            assert.match(english.statistics.overview.peak_latency_description,
+                new RegExp(`\\{\\{${part}}}`), `the description lost its {{${part}}} part`);
+    });
+});
+
 describe("the packet-loss row on the latest-test card", () => {
     // Zero is a measurement and the commonest one, so a truthiness check would
-    // hide the row on exactly the tests it has the best news for.
-    it("shows a loss of zero rather than hiding it", () => {
-        assert.match(latest, /typeof props\.test\.packetLoss === "number"/);
+    // hide the row on exactly the tests it has the best news for - and junk
+    // is not one, so the gate reads through readableFigure: the row's label
+    // prints the stored column raw, and a value the colour beside it grades
+    // as never-measured must not print at all. The detail pane gates the same
+    // column the same way - one rule, decided by what is CORRECT to show,
+    // then applied to both views.
+    it("shows a loss of zero rather than hiding it, and junk not at all", () => {
+        assert.match(latest, /hasPacketLoss = readableFigure\(props\.test\.packetLoss\) !== null/);
         assert.doesNotMatch(latest, /\{props\.test\.packetLoss && /);
     });
 

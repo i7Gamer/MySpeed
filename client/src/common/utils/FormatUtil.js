@@ -3,6 +3,13 @@ import i18n, {t} from "i18next";
 // React component, which would drag the whole component tree into anything that
 // only wanted to know what "mbps" is called.
 import {SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, TIME_FORMAT_12H, TIME_FORMAT_24H} from "@/common/contexts/Preferences/constants";
+// The one reading of a stored figure, shared with the graders: a formatter
+// that refused the text spelling a legacy-restored history holds printed
+// "N/A" beside a colour that graded the same row - and convertSpeed handing a
+// string back unconverted left changeFrom comparing Mbit/s against MB/s.
+// readableFigure for formatPercent below, the same layered reading the
+// graders use.
+import {readableFigure, storedFigure} from "@/common/utils/TestUtil";
 
 /**
  * The language the app is set to, for anything Intl formats.
@@ -181,14 +188,20 @@ const LATENCY_DECIMALS = 1;
  * screen are trimmed to one - and a whole millisecond stays whole rather than
  * gaining a pointless ".0".
  *
- * Anything that is not a number is handed back untouched, as convertSpeed does:
- * null is the server saying it could not compute one, and -1 is the placeholder
- * a failed test stores, which the interface recognises a failure by.
+ * A numeric string is read as the number it spells, like every other reader
+ * of a stored column - the colour beside the printed figure is graded through
+ * the same reading, and a chip was green beside an "N/A" label for exactly
+ * that row. What cannot be read at all is handed back untouched, as
+ * convertSpeed does: null is the server saying it could not compute one, and
+ * a negative is the placeholder a failed test stores - returned as the number,
+ * so the interface recognises the failure in either spelling.
  */
 export const formatLatency = (ms) => {
-    if (typeof ms !== "number" || isNaN(ms) || ms < 0) return ms;
+    const latency = storedFigure(ms);
+    if (latency === null) return ms;
+    if (latency < 0) return latency;
 
-    return parseFloat(ms.toFixed(LATENCY_DECIMALS));
+    return parseFloat(latency.toFixed(LATENCY_DECIMALS));
 };
 
 /** The smallest latency the one decimal above can express. */
@@ -210,18 +223,56 @@ export const LATENCY_STEP = 0.1;
  * the median; the same instance's newer rows, measured to two decimals, sit a
  * few hundredths apart instead.
  */
-export const roundsToZeroLatency = (ms) =>
-    typeof ms === "number" && Number.isFinite(ms) && ms > 0 && formatLatency(ms) === 0;
+export const roundsToZeroLatency = (ms) => {
+    // storedFigure, like the formatLatency this wraps: a spread spelt as text
+    // prints 0 through the formatter, and the predicate deciding whether that
+    // 0 needs the ±<0.1 wording has to judge the value the formatter prints.
+    const latency = storedFigure(ms);
+
+    return latency !== null && latency > 0 && formatLatency(latency) === 0;
+};
+
+const MBITS_PER_MBYTE = 8;
+
+/**
+ * The one reading a speed takes before any display: coerced through
+ * storedFigure - a numeric string reads as the number it spells, junk passes
+ * through untouched, a negative placeholder comes back as the number for the
+ * guards to recognise - and converted to the reader's unit as the RAW
+ * quotient. The two exported forms round it each to their own display: two
+ * decimals for the expanded views, a whole number for the list rows. Both
+ * speed readers carried this preamble in full before it lived here;
+ * formatLatency and formatWhole keep the guard triple as their own readings,
+ * because what they read is not a speed and has no unit to convert.
+ */
+const rawSpeed = (mbps, preferences) => {
+    const speed = storedFigure(mbps);
+    if (speed === null) return mbps;
+    if (speed < 0) return speed;
+
+    return preferences?.speedUnit === SPEED_UNIT_MBYTES ? speed / MBITS_PER_MBYTE : speed;
+};
+
+// Two decimals for a converted speed, as the factor a rounding multiplies
+// through - named beside MBITS_PER_MBYTE so neither is a bare number.
+const SPEED_ROUNDING = 100;
 
 export const convertSpeed = (mbps, preferences) => {
-    if (mbps === null || mbps === undefined) return mbps;
-    if (typeof mbps !== "number" || isNaN(mbps)) return mbps;
-    if (mbps < 0) return mbps;
+    // Reading before refusal, in rawSpeed: a numeric string handed back
+    // unconverted left changeFrom comparing one operand in Mbit/s against
+    // the other in MB/s - a wrong change with a confident direction, where
+    // the old refusal at least printed nothing.
+    const speed = rawSpeed(mbps, preferences);
 
-    if (preferences?.speedUnit === SPEED_UNIT_MBYTES) {
-        return Math.round((mbps / 8) * 100) / 100;
-    }
-    return mbps;
+    // Two decimals ONLY where a conversion happened. Mbit/s is the unit the
+    // column stores, so that figure passes through exact - and junk and the
+    // placeholders keep rawSpeed's passthrough contract in either unit. The
+    // number-and-sign checks knowingly restate rawSpeed's refusals: rawSpeed
+    // hands back one value that is either a quotient or a passthrough, and
+    // telling those apart here costs less than a tagged return would.
+    if (preferences?.speedUnit !== SPEED_UNIT_MBYTES || typeof speed !== "number" || speed < 0) return speed;
+
+    return Math.round(speed * SPEED_ROUNDING) / SPEED_ROUNDING;
 };
 
 /**
@@ -245,9 +296,14 @@ export const convertSpeed = (mbps, preferences) => {
  * which the interface recognises a failure by.
  */
 export const formatWhole = (value) => {
-    if (typeof value !== "number" || isNaN(value) || value < 0) return value;
+    // The same reading as its two siblings above: without it, a text row's
+    // speeds converted and printed while the ping on the same card stayed
+    // text and rendered "N/A".
+    const figure = storedFigure(value);
+    if (figure === null) return value;
+    if (figure < 0) return figure;
 
-    return Math.round(value);
+    return Math.round(figure);
 };
 
 // What a value the server could not compute is shown as. The statistics return
@@ -315,8 +371,36 @@ export function formatLastTest(created) {
     return t("status.last_test", {time: generateRelativeTime(created)});
 }
 
-export const formatDuration = (seconds) =>
-    typeof seconds === "number" && Number.isFinite(seconds) ? `${seconds}s` : NOT_MEASURED;
+/**
+ * A test's duration with its unit, or the statement that there is none.
+ *
+ * Through the shared reader, like every formatter beside it - it was the one
+ * that neither coerced nor refused, so the overview's duration row printed a
+ * proxied node's -1 placeholder as "-1s" with an improvement arrow computed
+ * from it, one row above a loss row answering N/A for the identical payload,
+ * while an older node's text average was hidden as N/A while being a reading.
+ */
+export const formatDuration = (seconds) => {
+    const duration = readableFigure(seconds);
+
+    return duration === null ? NOT_MEASURED : `${duration}s`;
+};
+
+/**
+ * Whether a value is a figure the printers below would print.
+ *
+ * The judgement under formatWithUnit, exported on its own for the printers
+ * that carry no unit of their own - the overview row's jitter chip, and
+ * FigureWithUnit, whose unit lives in a styled span. Both spelled the
+ * refusal around this missing export before, one through readableFigure and
+ * one by formatting a string only to compare it against N/A.
+ *
+ * It judges what a FORMATTER produced, so text spellings are false on
+ * purpose: coercion is the formatters' job, and a printer handed a raw
+ * column should refuse it loudly rather than print what nothing coerced.
+ */
+export const printableFigure = (value) =>
+    typeof value === "number" && Number.isFinite(value) && value >= 0;
 
 /**
  * A measurement with its unit, or a statement that there is none.
@@ -324,9 +408,31 @@ export const formatDuration = (seconds) =>
  * The statistics return an explicit null for anything they could not compute -
  * every aggregate over a range in which no test succeeded - and rendering
  * `{value} {unit}` around that leaves a bare unit standing on its own.
+ *
+ * A negative is refused too: the formatters above hand the failure
+ * placeholder back as a number so the graders can recognise it, and this is
+ * where that number must stop - "-1 ms" beside a blue never-measured chip
+ * asserts a latency nobody took. Signed values that ARE readings - the change
+ * row's difference - deliberately never come through here; they render their
+ * own sign (TestDetails' change line), so nothing legitimate is lost.
  */
-export const formatWithUnit = (value, unit) =>
-    typeof value === "number" && Number.isFinite(value) ? `${value} ${unit}` : NOT_MEASURED;
+export const formatWithUnit = (value, unit) => printableFigure(value) ? `${value} ${unit}` : NOT_MEASURED;
+
+/**
+ * A score with its %, or a statement that there is none.
+ *
+ * The percent rule was written twice in one review round - a chart-local
+ * helper and an inline ternary - while a third variant with a null-only gate
+ * survived on the sibling card, printing a proxied node's -1 placeholder as
+ * "-1%". One home: text spellings coerce and print the number they spell,
+ * junk and the placeholders say N/A. "%" binds to its number without a
+ * space, unlike the spaced units above.
+ */
+export const formatPercent = (value) => {
+    const figure = readableFigure(value);
+
+    return figure === null ? NOT_MEASURED : `${figure}%`;
+};
 
 /**
  * A latency with its unit, at the one decimal every latency is shown at.
@@ -350,15 +456,36 @@ const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"];
 const BYTE_DECIMALS = 1;
 
 /**
+ * A speed as the whole number a list row prints, rounded ONCE.
+ *
+ * formatWhole(convertSpeed(x)) rounded twice in MB/s mode - to two decimals,
+ * then to a whole - so every band [8n+3.96, 8n+4) printed one megabyte high:
+ * 3.96 Mbit/s showed "1 MB/s" where the measurement is 0, and 99.97 showed
+ * "13" where it is 12. The bands recur at every multiple of eight; rounding
+ * once from the raw quotient is the correct figure at all of them. The
+ * expanded views keep convertSpeed, whose two decimals are their display.
+ *
+ * formatWhole over the RAW quotient, which is the whole definition: the
+ * rounding is formatWhole's, the reading and the refusals are rawSpeed's -
+ * text spellings read, junk passes through untouched, and a negative comes
+ * back as the number for the guards to recognise.
+ */
+export const wholeSpeed = (mbps, preferences) => formatWhole(rawSpeed(mbps, preferences));
+
+/**
  * A quantity of data in the largest unit that leaves it readable.
  *
  * Whole bytes stay whole - "512 B" rather than "512.0 B" - because under a
  * kilobyte the decimal is noise.
  */
 export const formatBytes = (bytes) => {
-    if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) return NOT_MEASURED;
+    // storedFigure, like the formatters above: the traffic row is gated on
+    // isMeasured, so a legacy text column rendered the row with "N/A / N/A" -
+    // shown and denied at once.
+    const count = storedFigure(bytes);
+    if (count === null || count < 0) return NOT_MEASURED;
 
-    let value = bytes;
+    let value = count;
     let step = 0;
 
     // The figure as it will actually be printed. The ladder is climbed against

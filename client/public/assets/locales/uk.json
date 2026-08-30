@@ -54,22 +54,23 @@
       "server_id": "ID сервера",
       "server_id_placeholder": "Будь-який ID сервера або залиште порожнім",
       "custom_url": "Власний URL",
+      "iperf_host": "Сервер iperf3",
       "choose_automatically": "Вибрати автоматично",
       "ookla_license": "Я прочитав та приймаю <Eula>EULA</Eula>, <GDPR>політику конфіденційності</GDPR> та <TOS>умови надання послуг</TOS> Ookla.",
       "ookla_desc": "Популярний провайдер із глобальною мережею серверів",
       "libre_desc": "Тест швидкості з відкритим кодом, який можна розгорнути самостійно",
-      "cloudflare_desc": "Швидке тестування на базі CDN"
+      "cloudflare_desc": "Швидке тестування на базі CDN",
+      "iperf3_desc": "Ваш власний сервер iperf3, у вашій мережі"
     }
   },
   "dropdown": {
     "settings": "Налаштування",
     "changes_applied": "Ваші зміни збережено.",
     "language_changed": "Мову змінено.",
-    "provider_changed": "Провайдера змінено.",
     "changes_unsaved": "Ваші зміни не були застосовані. Перевірте свій ввід.",
     "invalid": "Недійсний ввід",
     "optimal_values": "Оптимальні значення",
-    "change_provider": "Змінити провайдера",
+    "targets": "Цілі тестів",
     "password": "Змінити пароль",
     "cron": "Встановити частоту",
     "storage": "Керування сховищем",
@@ -135,7 +136,6 @@
     "statistics": "Статистика"
   },
   "update": {
-    "provider_title": "Задати постачальника тесту швидкості",
     "new_password": "Задати новий пароль",
     "password_placeholder": "Новий пароль",
     "show_password": "Показати пароль",
@@ -305,6 +305,7 @@
       "unchanged": "Без змін від минулого тесту",
       "measured_at": "Виміряно",
       "measured_with": "Виміряно за допомогою",
+      "target": "Ціль",
       "seconds": "{{seconds}} с",
       "data_used": "Витрачено даних",
       "data_used_value": "{{down}} на завантаження / {{up}} на вивантаження",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "Середнє",
     "compare": {
-      "note": "Зміни порівняно з {{from}} – {{to}}"
+      "note": "Зміни порівняно з {{from}} – {{to}}",
+      "note_partial": "Зміни порівняно з {{from}} – {{to}}, до того ж часу доби"
     },
     "downsampled": "Усереднено · показано {{shown}} із {{total}}",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "Середнє за тестами, які її виміряли",
       "peak_title": "Уповільнення в години пік",
       "peak_description": "Найповільніше близько {{slowest}}, найшвидше близько {{fastest}}",
-      "ping_description": "Середня затримка, від {{min}} до {{max}}",
+      "peak_latency_title": "Затримка в години пік",
+      "peak_latency_description": "Зростає з {{best}} близько {{bestHour}} до {{worst}} близько {{worstHour}}",
+      "ping_description": "Середня затримка, від {{min}} до {{max}}, медіана {{median}}",
       "span_title": "Розкид тривалості",
       "span_description": "Найкоротший і найдовший тест у цьому діапазоні",
       "density_title": "Тестів на день",
-      "density_description": "За {{days}} днів"
+      "density_description": "За {{days}} днів",
+      "density_description_partial": "За {{elapsed}} із {{days}} днів"
     },
     "values": {
       "min": "Мінімум",
@@ -377,7 +382,8 @@
       "up": "Значення вивантаження",
       "target": "Ціль: {{target}}",
       "consistency": "Стабільність",
-      "samples": "Виміряні тести"
+      "samples": "Виміряні тести",
+      "median": "Медіана"
     },
     "failed_test": "Невдалий тест",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "Зараз ви знаходитесь в демонстраційному режимі. Деякі функції вимкнено, а деякі налаштування неможливо змінити. Якщо ви хочете використовувати всі функції, ви можете <Link>встановити MySpeed</Link> на власному сервері."
   },
   "integrations": {
-    "none_active": "Ця інтеграція не активна. <br/><Bold>Створити</Bold>",
+    "none_added": "Інтеграції ще не налаштовано.",
     "preview_active": "Інтеграції вимкнено в режимі демонстрації.",
     "display_name": "Назва інтеграції",
     "create": "Створити",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "Останній тест щойно",
     "elapsed": "минуло {{seconds}} с",
-    "next_test_approx": "Наступний приблизно о {{time}}"
+    "next_test_approx": "Наступний приблизно о {{time}}",
+    "target_of": "Ціль {{index}} з {{count}}"
+  },
+  "targets": {
+    "title": "Цілі тестів",
+    "description": "Кожен запланований тест вимірює кожну заплановану ціль один раз, одну за одною. Цілі поза розкладом запускаються лише звідси.",
+    "add": "Додати ціль",
+    "edit_title": "Редагувати ціль",
+    "name": "Назва",
+    "name_placeholder": "напр. Київ",
+    "scheduled": "За розкладом",
+    "alerts": "Сповіщення та рекомендації",
+    "own_optimals": "Власні оптимальні значення",
+    "all": "Усі цілі",
+    "saved": "Ціль збережено.",
+    "removed": "Ціль видалено.",
+    "run_now": "Запустити тест зараз",
+    "move_up": "Перемістити вгору",
+    "move_down": "Перемістити вниз",
+    "delete_confirm": {
+      "title": "Видалити цю ціль?",
+      "description": "Ціль <Bold>{{name}}</Bold> буде видалено. Тести, які вона вже виміряла, залишаться в історії.",
+      "yes": "Видалити"
+    }
   }
 }

@@ -15,6 +15,7 @@ import {StatusProvider} from "./common/contexts/Status";
 import {AlertProvider} from "@/common/contexts/Alert";
 import {ThemeProvider} from "@/common/contexts/Theme";
 import {PreferencesProvider} from "@/common/contexts/Preferences";
+import {TargetsProvider} from "@/common/contexts/Targets";
 import i18n, {FALLBACK_LANGUAGE} from './i18n';
 import {basePath} from "@/common/utils/BasePath";
 import Loading from "@/pages/Loading";
@@ -57,15 +58,22 @@ const Providers = ({children}) => {
                     <ToastNotificationProvider>
                         <ConfigProvider>
                             <NodeProvider>
-                                {/* Status wraps Speedtests: the tests list
-                                    refreshes on the falling edge of the polled
-                                    running flag, so it consumes the status
-                                    context. */}
-                                <StatusProvider>
-                                    <SpeedtestProvider>
-                                        {children}
-                                    </SpeedtestProvider>
-                                </StatusProvider>
+                                {/* Targets sit under Node: the list is
+                                    per-instance, so it re-fetches when the
+                                    requests are re-aimed. It renders the
+                                    welcome wizard, which opens on an empty
+                                    list. */}
+                                <TargetsProvider>
+                                    {/* Status wraps Speedtests: the tests list
+                                        refreshes on the falling edge of the
+                                        polled running flag, so it consumes the
+                                        status context. */}
+                                    <StatusProvider>
+                                        <SpeedtestProvider>
+                                            {children}
+                                        </SpeedtestProvider>
+                                    </StatusProvider>
+                                </TargetsProvider>
                             </NodeProvider>
                         </ConfigProvider>
                     </ToastNotificationProvider>

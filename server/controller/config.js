@@ -1,5 +1,8 @@
 import config from '../models/Config.js';
 import node from '../models/Node.js';
+import targetsModel from '../models/Targets.js';
+import { listAll as listAllTargets, targetProblem } from './targets.js';
+import { legacyTarget } from '../migrations/0013-add-targets.js';
 import test from '../models/Speedtests.js';
 import recommendations from '../models/Recommendations.js';
 import integration from '../models/IntegrationData.js';
@@ -16,7 +19,6 @@ import { destroyAllSessions } from '../util/session.js';
 import { QUIET_HOURS_OFF, isValidTimeOfDay } from '../util/quietHours.js';
 import { isKnownTimeZone } from '../util/timezone.js';
 import { withoutUrlCredentials } from '../util/urlCredentials.js';
-import { ALLOWED_PROTOCOLS } from '../util/safeUrl.js';
 
 // Exported for the scheduler's fallback: an invalid stored cron at boot is
 // replaced by this default rather than by a silence with no schedule in it.
@@ -26,10 +28,6 @@ export const configDefaults = {
     upload: "50",
     cron: "0 * * * *",
     scheduleOffset: "true",
-    provider: "none",
-    ooklaId: "none",
-    libreId: "none",
-    libreUrl: "none",
     password: "none",
     passwordLevel: "none",
     interface: "none",
@@ -102,32 +100,24 @@ const THRESHOLD_KEYS = ["ping", "download", "upload"];
  * Keys a restore may write the default for rather than refusing the whole file.
  *
  * The thresholds are here because a stored "1.2.3" was legal when it was saved
- * and cannot be kept now. libreUrl joined them for the same reason and by the
- * same route: it was checked with a bare `new URL()` until the scheme check was
- * added, and `new URL("localhost:8080")` does not throw - it reads "localhost:"
- * as the scheme - so a bare host and port was stored behind a 200 and carried
- * verbatim into every backup taken since. Restoring one refused the entire
- * import, nodes and integrations and history included, over an address the CLI
- * could never have fetched.
- *
- * Its default is "none", which means "choose a server automatically", so the
- * instance comes back working with one setting to re-enter. That is the whole
- * test for membership here: a value this instance cannot act on, whose default
- * is a working state rather than a guess. A cron it cannot parse is not on the
- * list and must not be - the default schedule is a different schedule, and
- * restoring one would be restoring a different instance.
+ * and cannot be kept now. The test for membership: a value this instance
+ * cannot act on, whose default is a working state rather than a guess. A cron
+ * it cannot parse is not on the list and must not be - the default schedule is
+ * a different schedule, and restoring one would be restoring a different
+ * instance. (libreUrl once sat here for the same reason; it lives on the
+ * target rows now, which the import judges separately.)
  */
-const RESTORABLE_AS_DEFAULT = [...THRESHOLD_KEYS, "libreUrl"];
+const RESTORABLE_AS_DEFAULT = [...THRESHOLD_KEYS];
 
 /**
  * Stored values that are URLs an operator may have put a credential in.
  *
- * libreUrl is the librespeed backend, and it is already withheld from an
- * untrusted reader by GET /api/config - so shipping it verbatim in a redacted
- * backup handed that same caller a value the live API refuses them. A URL is
- * allowed userinfo, so the credential travels in the address itself.
+ * Empty since the libre backend URL moved onto its target row - the same
+ * stripping now happens in exportConfig's targets section and the targets
+ * routes. Kept, with its two readers below, because the next credential-shaped
+ * config value belongs here and the machinery should not need rebuilding.
  */
-const CREDENTIAL_BEARING_KEYS = ["libreUrl"];
+const CREDENTIAL_BEARING_KEYS = [];
 
 // What the announcement says instead of a password. A sentinel for the
 // consumer, not a value: nothing is meant to read it back.
@@ -336,35 +326,8 @@ export const validateInput = async (key, value) => {
     if (THRESHOLD_KEYS.includes(key) && !THRESHOLD_NUMBER.test(value.toString()))
         return "You need to provide a number in order to change this";
 
-    if ((key === "ooklaId" || key === "libreId") && (/[^0-9]/.test(value) && value !== "none"))
-        return "You need to provide a number in order to change this";
-
-    /*
-     * The scheme as well as the shape.
-     *
-     * `new URL()` parses `javascript:`, `data:` and `file:` perfectly happily,
-     * so this accepted, stored and displayed values that are not addresses of
-     * anything the server can fetch - and the only sign of it was a speedtest
-     * failing later for a reason that named none of it.
-     *
-     * Judged by the set safeUrl already holds a node URL and a webhook target
-     * to, rather than by a list of its own. Two lists drift, and this is the
-     * third value of the same kind.
-     */
-    if (key === "libreUrl" && value !== "none") {
-        try {
-            if (!ALLOWED_PROTOCOLS.has(new URL(value).protocol))
-                return "You need to provide a valid URL";
-        } catch {
-            return "You need to provide a valid URL";
-        }
-    }
-
     if (key === "passwordLevel" && !["none", "read"].includes(value))
         return "You need to provide either none or read-access";
-
-    if (key === "provider" && !["ookla", "libre", "cloudflare"].includes(value))
-        return "You need to provide a valid provider";
 
     // "none" is the stored sentinel for "no password configured". Letting it
     // through as a chosen password stored the literal string, which
@@ -513,6 +476,14 @@ export const exportConfig = async ({includeSecrets = false} = {}) => {
 
     obj.recommendations = await recommendations.findAll();
 
+    // The targets, with the one credential-shaped column treated the way a
+    // node URL is: a libre endpoint is a URL and a URL is allowed userinfo,
+    // so a redacted export strips it rather than shipping it verbatim.
+    const targetRows = await listAllTargets();
+    obj.targets = includeSecrets ? targetRows
+        : targetRows.map((row) => ({...row,
+            endpoint: row.endpoint === null ? null : withoutUrlCredentials(row.endpoint)}));
+
     const integrationRows = await integration.findAll();
     obj.integrations = includeSecrets ? integrationRows : withoutSecrets(integrationRows);
 
@@ -602,6 +573,238 @@ export const importConfig = async (obj) => {
         return REFUSED;
     }
 
+    /*
+     * The targets: from the file's own section, or folded out of the four
+     * legacy keys an export from before targets existed carries in its
+     * config block. Every row is judged before anything is touched, the way
+     * the config values are, and by the same judgement the API applies - a
+     * backup must not be a way past targetProblem.
+     *
+     * What must not restore is silence. A file that carries neither the
+     * section nor the legacy `provider` key says nothing about targets at
+     * all - a truncated or hand-edited backup, not an older one, because
+     * every pre-target export carries the key even as the "none" of an
+     * instance that never chose - and emptying the table on its behalf is
+     * the exact failure the docstring above recounts for the nodes key. The
+     * "none" file restores none, faithfully; the silent file is refused by
+     * name.
+     */
+    let targetRows;
+
+    if (obj.targets === undefined) {
+        if (!Object.hasOwn(obj.config ?? {}, "provider")) return {ok: false, key: "targets"};
+
+        // A backend URL an older version accepted but the current validator
+        // cannot read takes the thresholds' trade: the endpoint is dropped -
+        // "choose a server automatically" - rather than the whole restore
+        // refused over an address the CLI could never have fetched. A fold
+        // that still cannot be read restores no target at all; the file's own
+        // targets section gets no such grace, because its rows were validated
+        // when they were written.
+        const folded = legacyTarget(obj.config ?? {});
+
+        targetRows = [];
+        if (folded !== null) {
+            if (targetProblem(folded) !== null) folded.endpoint = null;
+            if (targetProblem(folded) === null) targetRows.push(folded);
+        }
+    } else {
+        // Present but unreadable is a malformed file, not an older one - the
+        // same refusal the nodes key earns for the same shape.
+        targetRows = asRows(obj.targets);
+        if (targetRows === null) return {ok: false, key: "targets"};
+    }
+
+    if (targetRows.length > MAX_IMPORTED_ROWS) return {ok: false, key: "targets"};
+    if (targetRows.some((row) => targetProblem(row) !== null)) return {ok: false, key: "targets"};
+
+    /*
+     * Which file ids may survive. An id names the right rows only on the
+     * instance that assigned it: kept blindly, a cross-instance restore hands
+     * the local history to whichever restored target inherits each number -
+     * every row the old target measured is then returned, graded and exported
+     * as the new one's, with nothing anywhere saying an attribution changed.
+     *
+     * An id is this row's own only when a live target already wears it under
+     * the same name; anything else is contested, and stripped when local
+     * history actually stands under it. Both halves matter: the placeholder
+     * the welcome dialog forces onto a fresh reinstall wears the file's first
+     * id with not one row to its name, and replacing it - id and all - is the
+     * recovery this flow exists for; while an id with years of local rows
+     * filed under it is an attribution, and handing it to a different name
+     * re-files them silently.
+     *
+     * "Anything else" includes an id no live target holds at all, which is
+     * not the same as an id nothing was ever filed under: a delete keeps the
+     * rows it measured, so the number goes free while the attribution stays
+     * behind. Judged by the live targets alone, a foreign row carrying that
+     * number inherited every one of those rows. No rule can tell a
+     * same-instance recovery from a stranger's file there, because an orphaned
+     * row stores a number and no name, so the strip is the safe half: an
+     * honest orphan rather than a silent re-attribution.
+     *
+     * But the name is asked first, at whatever id it is worn. Judged by the
+     * file's number alone, the row a strip had just moved to a fresh id was
+     * contested all over again on the next restore: the same backup applied
+     * three times marched one target through three ids, orphaning a fresh
+     * history at every step - and an operator retrying a restore that looked
+     * wrong made it worse each time. The name is the identity a history backup
+     * files its rows under anyway (importedTargetId), so a live target already
+     * wearing this row's name is this row, and restoring onto it is what makes
+     * a repeated restore land where the last one did.
+     *
+     * Two things follow from that, and both are meant. A pre-1.4 backup, whose
+     * fold carries no id and the same "Ookla" or "LibreSpeed" name migration
+     * 0013 gave the live row, lands on that row and keeps its history instead
+     * of orphaning all of it. And a *stranger's* file naming a line "WAN"
+     * lands on the local "WAN" and its rows - which is the same trade this
+     * flow already made whenever the ids happened to line up, and the same
+     * answer a history restored beside it would reach through byName. The
+     * strip's honest-orphan rule stands where it was written to: for an id no
+     * live name claims at all.
+     *
+     * The stripped case takes a fresh id, and the rows that pointed at the old
+     * number keep pointing at a target that no longer exists - which the
+     * interface already shows honestly as an orphan. A hand-edited id that is
+     * not a number takes a fresh one too, rather than aborting the transaction
+     * as an unnamed refusal.
+     */
+
+    /*
+     * No two rows may name the same id, which would abort the transaction as
+     * an unnamed refusal.
+     *
+     * Judged on the file as it was written, ahead of everything below: a file
+     * whose own rows collide is hand-edited, and the settling below would
+     * quietly renumber one of them and hide that. A shared *name* is a
+     * different matter and is restored - see the merge warning further down.
+     */
+    const fileIds = targetRows.map((row) => row.id).filter((id) => Number.isInteger(id));
+    if (new Set(fileIds).size !== fileIds.length) return {ok: false, key: "targets"};
+
+    const live = await listAllTargets();
+    const liveNames = new Map(live.map((row) => [row.id, String(row.name).trim()]));
+
+    // Where this instance already files each name. The first writer wins a
+    // shared one, which is the answer importedTargetId gives it too.
+    const liveIdsByName = new Map();
+    for (const row of live) {
+        const name = String(row.name).trim();
+        if (!liveIdsByName.has(name)) liveIdsByName.set(name, row.id);
+    }
+
+    // Which id a row is restored onto, or undefined for a fresh one. Ids
+    // already handed out in this pass are not offered twice: two file rows of
+    // one name would otherwise both land on the one live row wearing it, and a
+    // pair of identical ids aborts the whole restore as an unnamed refusal.
+    const taken = new Set();
+
+    // Only the ids a row lost to standing local history, because that is what
+    // the first warning below describes. A row renumbered for any other
+    // reason - its name settled it onto a different id, or an earlier row's
+    // name claimed the id it names - moved no history and gets the second
+    // warning, which says so.
+    const stripped = new Set();
+
+    const restoredId = async (row) => {
+        const name = String(row.name).trim();
+        const own = Number.isInteger(row.id) ? row.id : undefined;
+
+        const settled = liveNames.get(own) === name ? own : liveIdsByName.get(name);
+        if (settled !== undefined && !taken.has(settled)) return settled;
+
+        if (own === undefined || taken.has(own)) return undefined;
+
+        // No live name claims it, so the id is this file's word against the
+        // local history filed under it.
+        if (await test.count({where: {targetId: own}}) === 0) return own;
+
+        stripped.add(own);
+
+        return undefined;
+    };
+
+    const restoredIds = [];
+    for (const row of targetRows) {
+        const id = await restoredId(row);
+        if (id !== undefined) taken.add(id);
+        restoredIds.push(id);
+    }
+
+    // The other renumber beside the strip, counted apart because it is a
+    // different situation: no history is involved, the name simply decides
+    // the id here and the file's numbers were re-fitted around the names this
+    // instance already holds. Both are counted now and *said* after the
+    // transaction commits - see reportIdChanges - because warned here they
+    // described ids a refused restore never wrote.
+    const renumbered = targetRows.filter((row, index) => Number.isInteger(row.id)
+        && restoredIds[index] !== row.id && !stripped.has(row.id)).length;
+
+    // Said out loud, because it is the one thing a restore changes that the
+    // file does not describe: the operator asked for these numbers and is
+    // getting others - and in the stripped case the rows under the old ones
+    // stay where they are.
+    const reportIdChanges = () => {
+        if (stripped.size > 0)
+            console.warn(`Restored ${stripped.size} target(s) under new ids: the history already filed `
+                + "under the ids the file names belongs to targets this instance measured with. "
+                + "Those rows keep their old attribution and are shown as having no target.");
+
+        if (renumbered > 0)
+            console.warn(`Restored ${renumbered} target(s) under different ids than the file names: `
+                + "a target's name decides its id here, and the file's numbers were re-fitted "
+                + "around the names this instance already holds. The history keeps its attribution.");
+
+        // Initialised between here and the call, which is after the commit -
+        // the shared-name paragraph below the settling says why it is said at
+        // all.
+        if (sharesName)
+            console.warn("Restored targets share a name. A history restored onto them files every row "
+                + "of a shared name under the first of them - rename one before restoring the history "
+                + "to keep the two apart.");
+    };
+
+    targetRows = targetRows.map((row, index) => ({
+        // The id survives a same-instance restore so the history's targetId
+        // column keeps pointing at the right rows; a legacy fold has none and
+        // takes the next free one.
+        id: restoredIds[index],
+        name: row.name.trim(),
+        provider: row.provider,
+        serverId: row.serverId ?? null,
+        endpoint: row.endpoint ?? null,
+        enabled: Boolean(row.enabled ?? true),
+        alerts: Boolean(row.alerts ?? true),
+        optimalPing: row.optimalPing ?? null,
+        optimalDownload: row.optimalDownload ?? null,
+        optimalUpload: row.optimalUpload ?? null,
+        sortOrder: Number.isInteger(row.sortOrder) ? row.sortOrder : index,
+        created: typeof row.created === "string" ? row.created : new Date().toISOString()
+    }));
+
+    /*
+     * A shared *name* is restored rather than refused, unlike a shared id. The
+     * door on the routes is what stops a pair being made; a file carrying one
+     * can only have come from an instance that already holds it - every
+     * install from before that door, and every instance the welcome wizard's
+     * second Done built a twin on - and refusing the file there refuses that
+     * operator their own backup, nodes, integrations and settings included,
+     * at the moment they most need it. The restore already has an answer for
+     * the shape: importedTargetId keeps the first writer for a shared name,
+     * which importedTarget.test.js pins as the deliberate fallback. Said out
+     * loud, because the merge is lossy and silence about it is what made it
+     * worth refusing in the first place.
+     */
+    // Noted here, said with the id warnings once the restore commits: advice
+    // about targets a rollback never restored is advice about nothing.
+    const trimmedNames = targetRows.map((row) => row.name);
+    const sharesName = new Set(trimmedNames).size !== trimmedNames.length;
+
+    // Rows keeping an id go first: an auto-assigned id is always past the
+    // highest one already written, so it cannot collide with an explicit id
+    // still to come - the other order can.
+    targetRows = [...targetRows].sort((a, b) => (a.id === undefined) - (b.id === undefined));
+
     const updates = [];
     for (const key in obj.config ?? {}) {
         // hasOwn for the same reason as validateInput: a hand-edited backup
@@ -688,10 +891,18 @@ export const importConfig = async (obj) => {
 
             for (const {key, model} of IMPORTED_TABLES)
                 await model.bulkCreate(rows[key], {transaction});
+
+            await targetsModel.destroy({where: {}, transaction});
+            if (targetRows.length > 0) await targetsModel.bulkCreate(targetRows, {transaction});
         });
     } catch {
         return REFUSED;
     }
+
+    // Only about a restore that happened: computed above, said here, so a
+    // refused transaction does not leave two log lines about ids it never
+    // wrote.
+    reportIdChanges();
 
     // Restoring a backup is usually the remediation, so a session issued
     // against the password it replaced must not outlive it. password.js honours
@@ -742,6 +953,7 @@ export const factoryReset = async () => {
         await node.destroy({where: {}, transaction});
         await recommendations.destroy({where: {}, transaction});
         await integration.destroy({where: {}, transaction});
+        await targetsModel.destroy({where: {}, transaction});
     });
 
     // The reset put the password back to the unprotected sentinel without going
@@ -754,7 +966,14 @@ export const factoryReset = async () => {
     timer.stopTimer();
     timer.startTimer(configDefaults.cron, configDefaults.timezone);
 
-    interfaces.requestInterfaces();
+    // Caught, like every other fire-and-forget in this file: requestInterfaces
+    // awaits config reads and writes, and the reset has just emptied and
+    // re-seeded the config table in a transaction - a locked sqlite file or a
+    // dropped connection is exactly the moment. Uncaught it reached the
+    // process-level unhandledRejection hook and was logged as a bare server
+    // fault, after DELETE /storage/config had already answered 200.
+    interfaces.requestInterfaces().catch((error) =>
+        console.error(`Could not refresh the interfaces after a reset: ${toErrorMessage(error)}`));
 
     return true;
 }

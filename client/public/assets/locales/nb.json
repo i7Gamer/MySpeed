@@ -54,22 +54,23 @@
       "server_id": "Server-ID",
       "server_id_placeholder": "En vilkårlig server-ID, eller la feltet stå tomt",
       "custom_url": "Egendefinert URL",
+      "iperf_host": "iperf3-server",
       "choose_automatically": "Velg automatisk",
       "ookla_license": "Jeg har lest og godtar <Eula>EULA</Eula>, <GDPR>personvernerklæringen</GDPR> og <TOS>vilkårene for bruk</TOS> til Ookla.",
       "ookla_desc": "Populær leverandør med globalt servernettverk",
       "libre_desc": "Hastighetstest med åpen kildekode, kan driftes selv",
-      "cloudflare_desc": "Rask CDN-basert testing"
+      "cloudflare_desc": "Rask CDN-basert testing",
+      "iperf3_desc": "Din egen iperf3-server, på ditt nettverk"
     }
   },
   "dropdown": {
     "settings": "Innstillinger",
     "changes_applied": "Endringene dine er lagret.",
     "language_changed": "Språket er endret.",
-    "provider_changed": "Leverandøren er endret.",
     "changes_unsaved": "Endringene dine ble ikke lagret. Kontroller det du skrev inn.",
     "invalid": "Ugyldig inndata",
     "optimal_values": "Optimale verdier",
-    "change_provider": "Bytt leverandør",
+    "targets": "Testmål",
     "password": "Endre passord",
     "cron": "Angi frekvens",
     "storage": "Administrer lagring",
@@ -135,7 +136,6 @@
     "statistics": "Statistikk"
   },
   "update": {
-    "provider_title": "Velg hastighetstest-leverandør",
     "new_password": "Angi et nytt passord",
     "password_placeholder": "Nytt passord",
     "show_password": "Vis passordet",
@@ -305,6 +305,7 @@
       "unchanged": "Uendret siden forrige test",
       "measured_at": "Målt den",
       "measured_with": "Målt med",
+      "target": "Mål",
       "seconds": "{{seconds}} s",
       "data_used": "Dataforbruk",
       "data_used_value": "{{down}} ned / {{up}} opp",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "Gjennomsnitt",
     "compare": {
-      "note": "Endringer sammenlignet med {{from}} – {{to}}"
+      "note": "Endringer sammenlignet med {{from}} – {{to}}",
+      "note_partial": "Endringer sammenlignet med {{from}} – {{to}}, frem til samme tid på dagen"
     },
     "downsampled": "Gjennomsnitt · viser {{shown}} av {{total}} tester",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "Gjennomsnitt av testene som målte det",
       "peak_title": "Nedbremsing i rushtiden",
       "peak_description": "Tregest rundt {{slowest}}, raskest rundt {{fastest}}",
-      "ping_description": "Gjennomsnittlig forsinkelse, mellom {{min}} og {{max}}",
+      "peak_latency_title": "Latens i rushtiden",
+      "peak_latency_description": "Stiger fra {{best}} rundt {{bestHour}} til {{worst}} rundt {{worstHour}}",
+      "ping_description": "Gjennomsnittlig forsinkelse, mellom {{min}} og {{max}}, median {{median}}",
       "span_title": "Spredning i varighet",
       "span_description": "Den korteste og lengste testen i dette intervallet",
       "density_title": "Tester per dag",
-      "density_description": "Over {{days}} dager"
+      "density_description": "Over {{days}} dager",
+      "density_description_partial": "Over {{elapsed}} av {{days}} dager"
     },
     "values": {
       "min": "Minimum",
@@ -377,7 +382,8 @@
       "up": "Opplastingsverdier",
       "target": "Mål: {{target}}",
       "consistency": "Jevnhet",
-      "samples": "Målte tester"
+      "samples": "Målte tester",
+      "median": "Median"
     },
     "failed_test": "Mislykket test",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "Du er for øyeblikket i demomodus. Noen funksjoner er deaktivert, og enkelte innstillinger kan ikke endres. Hvis du vil bruke alle funksjonene, kan du <Link>installere MySpeed</Link> på din egen server."
   },
   "integrations": {
-    "none_active": "Denne integrasjonen er ikke aktiv. <br/><Bold>Opprett</Bold>",
+    "none_added": "Ingen integrasjoner er satt opp ennå.",
     "preview_active": "Integrasjoner er deaktivert i demomodus.",
     "display_name": "Integrasjonsnavn",
     "create": "Opprett",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "Siste test akkurat nå",
     "elapsed": "{{seconds}}s har gått",
-    "next_test_approx": "Neste kl. ~{{time}}"
+    "next_test_approx": "Neste kl. ~{{time}}",
+    "target_of": "Mål {{index}} av {{count}}"
+  },
+  "targets": {
+    "title": "Testmål",
+    "description": "Hver planlagt test måler hvert planlagt mål én gang, ett etter ett. Mål utenfor tidsplanen kjører bare herfra.",
+    "add": "Legg til mål",
+    "edit_title": "Rediger mål",
+    "name": "Navn",
+    "name_placeholder": "f.eks. Oslo",
+    "scheduled": "Planlagt",
+    "alerts": "Varsler & anbefalinger",
+    "own_optimals": "Egne optimale verdier",
+    "all": "Alle mål",
+    "saved": "Målet er lagret.",
+    "removed": "Målet er fjernet.",
+    "run_now": "Kjør test nå",
+    "move_up": "Flytt opp",
+    "move_down": "Flytt ned",
+    "delete_confirm": {
+      "title": "Slette dette målet?",
+      "description": "<Bold>{{name}}</Bold> blir slettet. Testene det allerede har målt, beholdes i historikken.",
+      "yes": "Slett"
+    }
   }
 }

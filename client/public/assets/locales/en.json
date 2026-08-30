@@ -54,22 +54,23 @@
       "server_id": "Server ID",
       "server_id_placeholder": "Any server ID, or leave empty",
       "custom_url": "Custom URL",
+      "iperf_host": "iperf3 server",
       "choose_automatically": "Choose automatically",
       "ookla_license": "I have read and accept the <Eula>EULA</Eula>, <GDPR>privacy policy</GDPR> and <TOS>terms of service</TOS> of Ookla.",
       "ookla_desc": "Popular provider with global server network",
       "libre_desc": "Open-source, self-hostable speedtest",
-      "cloudflare_desc": "Fast CDN-based testing"
+      "cloudflare_desc": "Fast CDN-based testing",
+      "iperf3_desc": "Your own iperf3 server, on your network"
     }
   },
   "dropdown": {
     "settings": "Settings",
     "changes_applied": "Your changes have been saved.",
     "language_changed": "The language has been changed.",
-    "provider_changed": "The provider has been changed.",
     "changes_unsaved": "Your changes were not applied. Check your input.",
     "invalid": "Input invalid",
     "optimal_values": "Optimal values",
-    "change_provider": "Change provider",
+    "targets": "Test targets",
     "password": "Change password",
     "cron": "Set frequency",
     "storage": "Manage storage",
@@ -135,7 +136,6 @@
     "statistics": "Statistics"
   },
   "update": {
-    "provider_title": "Set speedtest provider",
     "new_password": "Set a new password",
     "password_placeholder": "New password",
     "show_password": "Show password",
@@ -305,6 +305,7 @@
       "unchanged": "Unchanged since the last test",
       "measured_at": "Measured at",
       "measured_with": "Measured with",
+      "target": "Target",
       "seconds": "{{seconds}} s",
       "data_used": "Data used",
       "data_used_value": "{{down}} down / {{up}} up",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "Average",
     "compare": {
-      "note": "Changes compared with {{from}} – {{to}}"
+      "note": "Changes compared with {{from}} – {{to}}",
+      "note_partial": "Changes compared with {{from}} – {{to}}, up to the same time of day"
     },
     "downsampled": "Averaged · showing {{shown}} of {{total}} tests",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "Average across the tests that measured it",
       "peak_title": "Peak-hour slowdown",
       "peak_description": "Slowest around {{slowest}}, fastest around {{fastest}}",
-      "ping_description": "Average latency, between {{min}} and {{max}}",
+      "peak_latency_title": "Peak-hour latency",
+      "peak_latency_description": "Climbs from {{best}} around {{bestHour}} to {{worst}} around {{worstHour}}",
+      "ping_description": "Average latency, between {{min}} and {{max}}, median {{median}}",
       "span_title": "Duration spread",
       "span_description": "The shortest and longest test in this range",
       "density_title": "Tests per day",
-      "density_description": "Across {{days}} days"
+      "density_description": "Across {{days}} days",
+      "density_description_partial": "Across {{elapsed}} of {{days}} days"
     },
     "values": {
       "min": "Minimum",
@@ -377,7 +382,8 @@
       "up": "Upload values",
       "target": "Target: {{target}}",
       "consistency": "Consistency",
-      "samples": "Measured tests"
+      "samples": "Measured tests",
+      "median": "Median"
     },
     "failed_test": "Failed test",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "You are currently in demo mode. Some features are disabled and some settings cannot be changed. If you want to use all features, you can <Link>install MySpeed</Link> on your own server."
   },
   "integrations": {
-    "none_active": "This integration is not active. <br/><Bold>Create</Bold>",
+    "none_added": "No integrations set up yet.",
     "preview_active": "Integrations are disabled during demo mode.",
     "display_name": "Integration name",
     "create": "Create",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "Last test just now",
     "elapsed": "{{seconds}}s elapsed",
-    "next_test_approx": "Next at ~{{time}}"
+    "next_test_approx": "Next at ~{{time}}",
+    "target_of": "Target {{index}} of {{count}}"
+  },
+  "targets": {
+    "title": "Test targets",
+    "description": "Each scheduled test measures every scheduled target once, one after another. Targets outside the schedule only run from here.",
+    "add": "Add target",
+    "edit_title": "Edit target",
+    "name": "Name",
+    "name_placeholder": "e.g. Frankfurt",
+    "scheduled": "Scheduled",
+    "alerts": "Alerts & recommendations",
+    "own_optimals": "Own optimal values",
+    "all": "All targets",
+    "saved": "The target has been saved.",
+    "removed": "The target has been removed.",
+    "run_now": "Run test now",
+    "move_up": "Move up",
+    "move_down": "Move down",
+    "delete_confirm": {
+      "title": "Delete this target?",
+      "description": "<Bold>{{name}}</Bold> will be deleted. The tests it has already measured stay in the history.",
+      "yes": "Delete"
+    }
   }
 }

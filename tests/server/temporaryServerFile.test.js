@@ -69,18 +69,42 @@ describe("a run that wrote one", () => {
             "the custom server file is written and never taken away");
     });
 
-    it("removes it on the path where the CLI could not start, too", () => {
-        const finish = run.slice(run.indexOf("const finish"), run.indexOf("await new Promise"));
+    /**
+     * However the test ended, which is now more ways than it used to be: a
+     * test can be several invocations of the CLI - iperf3 measures one
+     * direction per invocation - so the file has to outlive each of them and
+     * be taken away once, after the last.
+     *
+     * A `finally` around the whole test rather than the per-invocation
+     * handler, which is where this lived while there was only ever one
+     * invocation. It covers strictly more: both ways a single run ends, and
+     * also a throw between two of them, which the handler could not see.
+     */
+    it("removes it however the test ended, including between runs", () => {
+        const cleanup = run.slice(run.indexOf("} finally {"));
 
-        assert.match(finish, /removeTemporaryServer\(/,
-            "only one of the two ways a run ends cleans up after it");
+        assert.match(cleanup, /removeTemporaryServer\(temporaryServer\)/,
+            "a run that threw leaves a file naming a backend, credentials included");
+        assert.equal((run.match(/removeTemporaryServer\(/g) ?? []).length, 1,
+            "the file is taken away in more than one place, so one of them will drift");
+    });
+
+    // The per-invocation handler is still shared by the two ways one
+    // invocation can end - a spawn that failed and a CLI that closed - which
+    // is what stops the tracker entry and the timers leaking on either path.
+    it("ends each invocation through the one handler", () => {
         assert.equal((run.match(/finish\(\);/g) ?? []).length, 2,
             "the two handlers no longer share the one thing that ends a run");
     });
 
     it("writes it under the name it later removes", () => {
-        assert.match(run, /temporaryServer = path\.join/, "the file is written under some other name");
+        // The name is chosen in the registry's buildArgs and handed over as
+        // {path, content}; the run writes and later removes that same path.
+        assert.match(run, /temporaryServer = built\.temporaryServer\.path/,
+            "the file is written under some other name");
         assert.match(run, /removeTemporaryServer\(temporaryServer\)/,
             "the file removed is not the file written");
+        assert.match(readSource("server/util/providers/registry.js"), /libre_custom\.json/,
+            "the registry no longer names the custom-server file");
     });
 });

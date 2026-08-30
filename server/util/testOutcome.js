@@ -1,5 +1,11 @@
 import { Op } from 'sequelize';
-import { metricValue } from './metricValue.js';
+import { metricValue, usableFigure } from './metricValue.js';
+
+// Re-exported from its historical home: every reader of the failure
+// predicates found usableFigure here, and the move to metricValue.js (made so
+// helpers.js could read it without dragging sequelize into the integrations)
+// must not break a single import.
+export { usableFigure };
 
 /**
  * Whether a stored test is the record of a failure rather than a measurement.
@@ -59,8 +65,12 @@ export const isSuccessfulTest = (test) => !isFailedTest(test);
 /**
  * The three columns a row cannot be without. They are NOT NULL, so a value that
  * cannot be read has nowhere honest to go and the run has to fail instead.
+ *
+ * Exported for the parseData dispatcher, which normalises exactly these three
+ * at the door - one list, so a fourth required column cannot be judged here
+ * and left unnormalised there, or the other way round.
  */
-const REQUIRED_MEASUREMENTS = ["ping", "download", "upload"];
+export const REQUIRED_MEASUREMENTS = ["ping", "download", "upload"];
 
 /**
  * Which required measurement came back below zero, or null.
@@ -99,24 +109,6 @@ export const impossibleMeasurement = (test) => {
 };
 
 /**
- * An optional figure, or null when it is not one.
- *
- * The nullable columns - jitter, packet loss, the two loaded latencies - ask a
- * different question from the three above and get a different answer. Null
- * already means "nobody measured this", so a negative one has an honest home to
- * go to, and failing a whole run over a jitter of -0.2 would throw away a
- * perfectly good throughput measurement - the opposite of what #875 is about.
- *
- * A measured zero is kept, for the same reason zero is kept above: a line that
- * lost no packets is a fact, not an absence.
- */
-export const usableFigure = (value) => {
-    const figure = metricValue(value);
-
-    return figure === null || figure < 0 ? null : figure;
-};
-
-/**
  * The latency a run records when it measured none.
  *
  * A successful test can still carry a latency nobody took: parseCloudflare
@@ -144,6 +136,30 @@ export const isMeasuredLatency = (value) =>
     typeof value === "number" && Number.isFinite(value) && value !== UNMEASURED_LATENCY;
 
 /**
+ * A stored ping that was measured, as the figure - or null.
+ *
+ * The whole question in one place, because it was being assembled twice: the
+ * statistics coerced with usableFigure and then asked isMeasuredLatency, the
+ * recommendation sample asked isMeasuredLatency of an already-coerced value
+ * and refused the placeholder with a comparison of its own. The spellings
+ * agreed - the comments on each even said so - but agreement held by prose is
+ * how the alert gate and the statistics came to disagree about the fabricated
+ * zero in the first place.
+ *
+ * usableFigure and not bare metricValue for the coercion: metricValue keeps -1
+ * for its Prometheus caller to judge, and no caller of this reader judges it -
+ * fed into a min, a chart or an hourly bucket, the placeholder is a reading of
+ * minus one millisecond. isMeasuredLatency then refuses the fabricated zero,
+ * in both spellings, since usableFigure reads "0" as the number it is. Null
+ * for everything refused, which every caller treats as the gap it is.
+ */
+export const measuredPing = (value) => {
+    const ping = usableFigure(value);
+
+    return isMeasuredLatency(ping) ? ping : null;
+};
+
+/**
  * The same two answers as where clauses, for the queries that ask the database
  * rather than a row.
  *
@@ -155,6 +171,17 @@ export const isMeasuredLatency = (value) =>
  *
  * Both spellings live here, next to the predicate they have to agree with, and
  * both are built from the sentinel rather than a literal -1.
+ *
+ * Deliberately numeric, though isFailedTest above reads the text spelling: the
+ * filters ask storage, and storage holds numbers for every row the backends
+ * wrote (both coerce well-formed numeric text at write; MySQL's DOUBLE cannot
+ * hold text at all). The one place text survives is a hand-edited sqlite file,
+ * and there a TEXT cell compared to the integer -1 is simply never equal -
+ * sqlite orders text above every number - so such a row passes the
+ * successful-filter and is then refused a layer later by the row readers
+ * (measuredPing, usableFigure), which is where the judgement belongs. Widening
+ * the SQL to string arms would buy nothing on MySQL and add cross-backend
+ * comparison semantics on sqlite for a shape the readers already handle.
  */
 const ALL_THREE_PLACEHOLDERS = {
     [Op.and]: [{ping: FAILED_TEST}, {download: FAILED_TEST}, {upload: FAILED_TEST}]

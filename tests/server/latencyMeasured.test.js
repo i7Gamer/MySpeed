@@ -2,7 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { buildStatistics, TARGET_CHART_POINTS } from "../../server/util/statistics.js";
 import { resolveTimezone } from "../../server/util/timezone.js";
-import { isMeasuredLatency, UNMEASURED_LATENCY } from "../../server/util/testOutcome.js";
+import { isMeasuredLatency, measuredPing, UNMEASURED_LATENCY } from "../../server/util/testOutcome.js";
+import { readSource } from "../helpers/source.js";
 
 /**
  * A latency of exactly zero is a fabrication, not a reading.
@@ -38,6 +39,52 @@ describe("isMeasuredLatency", () => {
     it("refuses what is not a reading at all", () => {
         for (const value of [null, undefined, NaN, "23", {}])
             assert.equal(isMeasuredLatency(value), false, `${JSON.stringify(value)} was read as a latency`);
+    });
+});
+
+/**
+ * The whole question - "was this ping measured?" - as one exported reader.
+ *
+ * It was being assembled twice: the statistics coerced with usableFigure and
+ * then asked isMeasuredLatency, the recommendation sample asked
+ * isMeasuredLatency of an already-coerced value and refused the placeholder
+ * with a comparison of its own. The two spellings agreed, and the comments on
+ * each even said so - but agreement held by prose is exactly how the alert
+ * gate and the statistics came to disagree about the fabricated zero in the
+ * first place. One home, both readers.
+ */
+describe("measuredPing", () => {
+    it("hands back a real reading, coerced the way every column is", () => {
+        assert.equal(measuredPing(23.4), 23.4);
+        assert.equal(measuredPing(0.24), 0.24, "a real sub-millisecond line");
+        assert.equal(measuredPing("23.4"), 23.4, "the defensive numeric-string spelling");
+    });
+
+    it("refuses everything that is not a measured ping", () => {
+        assert.equal(measuredPing(UNMEASURED_LATENCY), null, "the fabricated zero");
+        assert.equal(measuredPing("0"), null, "the fabricated zero, spelt as text");
+        assert.equal(measuredPing(-1), null, "the failure placeholder");
+        assert.equal(measuredPing("-1"), null, "the placeholder, spelt as text");
+        for (const value of [null, undefined, NaN, Infinity, "auto", "", {}])
+            assert.equal(measuredPing(value), null, `${JSON.stringify(value)} was read as a ping`);
+    });
+
+    // The single home, held at the source: both consumers read through the
+    // export, and neither keeps a spelling of its own to drift on.
+    it("is the judgement the statistics read", () => {
+        const statistics = readSource("server/util/statistics.js");
+
+        assert.match(statistics, /import \{[^}]*\bmeasuredPing\b[^}]*\} from ["']\.\/testOutcome\.js["']/,
+            "the statistics no longer read the shared judgement");
+        assert.doesNotMatch(statistics, /const measuredPing\s*=/,
+            "the statistics keep a spelling of their own beside the shared one");
+    });
+
+    it("is the judgement the recommendation sample reads", () => {
+        const speedtest = readSource("server/tasks/speedtest.js");
+
+        assert.match(speedtest, /const ping = measuredPing\(entry\.ping\)/,
+            "the sample's ping is judged by a spelling of its own again");
     });
 });
 

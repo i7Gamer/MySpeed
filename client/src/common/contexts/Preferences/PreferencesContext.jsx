@@ -1,4 +1,4 @@
-import React, {createContext, useCallback, useEffect, useState} from "react";
+import React, {createContext, useCallback, useEffect, useMemo, useState} from "react";
 import {DEFAULT_TIMEFRAME} from "@/common/utils/TimeframeUtil";
 import {
     GRADE_VALUES_ATTRIBUTE, GRADE_VALUES_OFF, GRADE_VALUES_ON, TIME_FORMAT_24H, SPEED_UNIT_MBPS
@@ -75,8 +75,14 @@ export const PreferencesProvider = (props) => {
         });
     }, []);
 
+    // One identity per change, the way AlertContext hands its value out: the
+    // providers nest, and an inline array re-rendered every consumer whenever
+    // a parent re-rendered, to show what was already on screen.
+    const contextValue = useMemo(() => [preferences, updatePreferences],
+        [preferences, updatePreferences]);
+
     return (
-        <PreferencesContext.Provider value={[preferences, updatePreferences]}>
+        <PreferencesContext.Provider value={contextValue}>
             {props.children}
         </PreferencesContext.Provider>
     );

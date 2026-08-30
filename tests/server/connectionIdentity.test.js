@@ -68,3 +68,59 @@ describe("stripConnectionIdentity", () => {
         assert.equal(stripConnectionIdentity(undefined), undefined);
     });
 });
+
+/**
+ * The address of a server the operator runs, which reaches a viewer by the row
+ * rather than by the target.
+ *
+ * GET /api/targets already withholds `endpoint` and `serverId` from an
+ * untrusted reader, for the reason its own comment gives: the endpoint can
+ * carry a credential in its userinfo, and a server id says where the line is.
+ * But an iperf3 run copies that same host:port into the row's `serverHost`, and
+ * a custom librespeed run copies its backend URL there - so the address the
+ * targets route refuses to give a viewer was handed to the same viewer by
+ * /api/speedtests, by the CSV export, and by the dashboard's own status
+ * payload.
+ *
+ * Only the two providers whose "server" is a machine the operator runs. An
+ * ookla or cloudflare host is a public endpoint out of a published list, and
+ * masking it would withhold something a viewer can read off the provider's own
+ * website while telling them a measurement was hidden.
+ */
+describe("the server address a viewer may know", () => {
+    const withHost = (provider, serverHost) =>
+        stripConnectionIdentity({id: 1, ping: 10, provider, serverHost});
+
+    it("withholds an iperf3 host, which is always a machine the operator runs", () => {
+        assert.equal(withHost("iperf3", "10.0.0.4:5201").serverHost, null);
+    });
+
+    it("withholds a librespeed backend, which can carry a credential", () => {
+        assert.equal(withHost("libre", "https://user:pass@speed.internal").serverHost, null);
+    });
+
+    it("leaves a public provider's server alone", () => {
+        assert.equal(withHost("ookla", "speedtest.arcade.ch").serverHost, "speedtest.arcade.ch");
+        assert.equal(withHost("cloudflare", "speed.cloudflare.com").serverHost, "speed.cloudflare.com");
+    });
+
+    /**
+     * Nulled rather than deleted, for the reason the two above it are: a masked
+     * row must look exactly like one whose provider reported no host, or the
+     * shape of the response says something was withheld.
+     */
+    it("nulls the host rather than removing it", () => {
+        const stripped = withHost("iperf3", "10.0.0.4:5201");
+
+        assert.equal("serverHost" in stripped, true);
+        assert.equal(stripped.serverHost, null);
+    });
+
+    // Rows from before targets existed carry no provider at all, and a row that
+    // measured nothing carries no host. Neither may throw.
+    it("passes a row with no provider or no host through", () => {
+        assert.equal(stripConnectionIdentity({id: 1, serverHost: "speedtest.arcade.ch"}).serverHost,
+            "speedtest.arcade.ch");
+        assert.equal(stripConnectionIdentity({id: 1, provider: "iperf3"}).serverHost, null);
+    });
+});

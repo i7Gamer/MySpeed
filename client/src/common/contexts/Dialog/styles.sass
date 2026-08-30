@@ -1,4 +1,6 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/focus" as *
+@use "@/common/styles/typography" as *
 
 .dialog-area
   position: fixed
@@ -35,17 +37,19 @@
   animation: fadeIn 0.3s
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3)
   min-width: 320px
-  max-width: min(500px, 90vw)
+  // Only what keeps a dialog on the screen. This was min(500px, 90vw), which
+  // is a width policy rather than a bound, and it outranked every stylesheet
+  // that asked for more: the targets manager declared 34rem, wrote down why it
+  // needed to be wider than the rest, and was drawn at 500px. Three dialogs
+  // were let past by name and it was the fourth that needed it - a list that
+  // has to be remembered, kept in neither the file that declares a width nor
+  // the test that checks them.
+  max-width: 90vw
   max-height: calc(100vh - 2rem)
   box-sizing: border-box
   display: flex
   flex-direction: column
   flex-shrink: 0
-
-  &.storage-dialog-wrapper,
-  &.integration-dialog,
-  &.welcome-dialog
-    max-width: 90vw
 
 .dialog-hidden
   visibility: hidden
@@ -101,13 +105,13 @@
   flex-shrink: 0
 
 .dialog-text
-  font-size: 1.25rem
+  font-size: $dialog-title
   font-weight: 700
   color: $white
   margin: 0
 
 .dialog-description
-  font-size: 1.05rem
+  font-size: $dialog-lead
   font-weight: 600
   margin: 14px 2px 2px
   color: $subtext
@@ -144,6 +148,10 @@
   cursor: pointer
   flex-shrink: 0
 
+  // A corner of its own: this one is a bare glyph with no radius, so the
+  // ring would be a hard-cornered box around a cross. See _focus.sass.
+  +focus-ring($radius: 0.5rem)
+
 .dialog-icon
   cursor: pointer
   color: $subtext
@@ -164,10 +172,12 @@
   border: 1px solid $light-gray
   border-radius: 0.6rem
   color: $white
-  font-size: 1rem
+  font-size: $dialog-body
   font-weight: 500
   cursor: pointer
-  transition: all 0.15s ease
+  // The two things hover changes, named - `all` took the focus ring with it and
+  // eased it in after the keypress that put focus here.
+  transition: border-color 0.15s ease, color 0.15s ease
 
   &:hover
     border-color: $accent-primary
@@ -184,6 +194,10 @@
   svg
     font-size: 1rem
 
+  // Every dialog's buttons drew the browser's own ring - white on this
+  // theme - where the toolbar and the cards behind them drew the app's.
+  +focus-ring
+
 .dialog-btn-danger
   &:hover
     border-color: $accent-danger
@@ -195,7 +209,7 @@
     color: $accent-danger
 
 .dialog-input
-  font-size: 1rem
+  font-size: $dialog-body
   padding: 0.7rem 1rem
   font-weight: 500
   margin-top: 15px
@@ -235,12 +249,17 @@
     max-width: 95vw
     padding: 1rem
   
+  // Left off the scale on purpose. These are one shared step-down that every
+  // dialog takes together on a narrow screen, so they cannot make two dialogs
+  // disagree - which is what the scale exists to prevent - and pulling them
+  // onto it would either shrink the title further than it already shrinks or
+  // grow it back to its desktop size on a 320px header.
   .dialog-text
     font-size: 1.15rem
-  
+
   .dialog-description
     font-size: 1rem
-  
+
   .dialog-btn
     font-size: 0.95rem
     padding: 0.6rem 1rem

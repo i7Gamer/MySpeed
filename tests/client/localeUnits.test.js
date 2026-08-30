@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { localeCodes, readLocale } from "../helpers/source.js";
+import { localeCodes, readLocale, walkSources } from "../helpers/source.js";
 import { flatten } from "../../scripts/localeGaps.js";
 
 const read = (code) => flatten(readLocale(code));
@@ -107,5 +107,58 @@ describe("every unit MySpeed prints", () => {
 
         assert.deepEqual(mauled, [],
             "these read as the English unit damaged rather than as a translation of it");
+    });
+});
+
+/**
+ * The two units that arrive already inside brackets.
+ *
+ * `welcome.ms` and `welcome.mbps` are not "ms" and "Mbps" - they are "(in ms)"
+ * and "(in Mbps)", a parenthetical the locale writes whole, because where the
+ * bracket goes is part of the translation: Japanese writes （ms 単位）with
+ * full-width brackets and the unit before the word, Turkish writes
+ * "(ms cinsinden)" with it after.
+ *
+ * So a component that renders one has nothing to add. The target editor added
+ * a pair of its own - `({unit})` around a value that opens and closes itself -
+ * and every optimal value in the dialog was labelled "Ping ((in ms))", in all
+ * twenty-three languages, including the two that would have been doubled with
+ * mismatched bracket widths.
+ */
+describe("the units that come already bracketed", () => {
+    const BRACKETED = ["welcome.ms", "welcome.mbps"];
+
+    // The ASCII pair and the CJK full-width pair, which is what ja and zh-tw use.
+    const OPENS = /^\s*[(（]/;
+    const CLOSES = /[)）]\s*$/;
+
+    it("is how every locale writes them", () => {
+        const bare = [];
+
+        for (const code of codes) {
+            const locale = read(code);
+
+            for (const key of BRACKETED) {
+                const value = String(locale[key]);
+                if (!OPENS.test(value) || !CLOSES.test(value))
+                    bare.push(`[${code}] ${key} = ${JSON.stringify(value)}`);
+            }
+        }
+
+        assert.deepEqual(bare, [],
+            "these carry no brackets of their own, so whatever renders them has to supply a pair");
+    });
+
+    /**
+     * Read off the JSX rather than off a render: what went wrong is a literal
+     * pair of parentheses in the markup, and that is visible in the source.
+     */
+    it("so nothing wraps them in a second pair", () => {
+        const doubled = walkSources("client/src")
+            .filter(({source}) => /className="[^"]*unit[^"]*"\s*>\s*\(\s*\{/.test(source))
+            .map(({path}) => path);
+
+        assert.deepEqual(doubled, [],
+            "these print a bracket around a unit that already opens and closes itself");
     });
 });

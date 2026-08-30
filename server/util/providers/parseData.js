@@ -1,13 +1,29 @@
 // The placeholder a failed run stores in every measurement column, taken from
 // the module that owns the judgement rather than written out as -1 here: what
 // this file produces has to be what isFailedTest recognises.
-import { FAILED_TEST } from '../testOutcome.js';
+import { FAILED_TEST, REQUIRED_MEASUREMENTS } from '../testOutcome.js';
+import { metricValue } from '../metricValue.js';
+
+// The inverse of the split the runner already made, taken from the module that
+// owns both halves rather than spelled out here as `${host}:${port}` - which is
+// how an IPv6 target's address came to be stored as a different IPv6 address.
+import { joinEndpoint } from './registry.js';
 
 // Exported so the live progress readout reports a transfer in the same unit,
 // rounded the same way, as the figure eventually stored for it.
 export const roundSpeed = (bandwidth) => {
     return Math.round(bandwidth / 1250) / 100;
 };
+
+/**
+ * What separates a rate stated in bits from the bytes roundSpeed takes.
+ *
+ * roundSpeed is written for the Ookla CLI, whose `bandwidth` is bytes per
+ * second. iperf3 states bits per second, and passing one to the other reports
+ * eight times the line's actual speed - in the right column, as a plausible
+ * number, where nothing downstream can tell.
+ */
+export const BITS_PER_BYTE = 8;
 
 /**
  * What each parser records as its rows' provenance.
@@ -21,6 +37,7 @@ export const roundSpeed = (bandwidth) => {
 export const OOKLA = "ookla";
 export const LIBRE = "libre";
 export const CLOUDFLARE = "cloudflare";
+export const IPERF3 = "iperf3";
 
 // Only ookla measures these, and a provider that did not measure something must
 // say so: left undefined they would store as NULL and read as a flawless line
@@ -75,6 +92,23 @@ const calculateJitter = (latencyMeasurements) => {
 };
 
 export const parseOokla = (test) => {
+    /*
+     * The three blocks every reading below comes out of, checked once.
+     *
+     * The top of this function read them straight - `test.ping.latency`,
+     * `test.download.bandwidth` - while everything from the server name down
+     * was optional-chained, so the two halves disagreed about whether the CLI's
+     * output could be trusted. A result missing any of them threw a TypeError
+     * naming a JavaScript property, and that string is what gets stored in the
+     * failed test's error column, where an operator reads it.
+     *
+     * Refused rather than parsed around. Letting the figures come back null
+     * instead would store a row isFailedTest does not recognise as a failure,
+     * so a test that measured nothing would be averaged in as though it had.
+     */
+    if (!test?.ping || !test?.download || !test?.upload)
+        throw new Error("the ookla result reported no ping, download or upload block");
+
     // round() to two decimals, not Math.round() to whole milliseconds: the
     // column holds a double now, and on a fibre or local line the whole reading
     // lives below the millisecond. Same treatment as the jitter beside it.
@@ -135,7 +169,7 @@ const ispName = (org) => {
     return name === null ? null : text(name.replace(AS_PREFIX, ""));
 };
 
-export const parseLibre = (test) => ({...test, ...NO_QUALITY_FIGURES, provider: LIBRE,
+const libreFigures = (test) => ({...test, ...NO_QUALITY_FIGURES, provider: LIBRE,
     ping: round(test.ping),
     // round() also normalises the string jitter this CLI reports, and keeps a
     // measured zero rather than nulling it as falsy.
@@ -151,6 +185,16 @@ export const parseLibre = (test) => ({...test, ...NO_QUALITY_FIGURES, provider: 
     externalIp: text(test.client?.ip),
     bytesDownloaded: byteCount(test.bytes_received),
     bytesUploaded: byteCount(test.bytes_sent)});
+
+export const parseLibre = (test) => {
+    // The spread above tolerates null and the very next read does not, so an
+    // empty result failed as a TypeError one line further on. Named here for
+    // the reason parseOokla names its own: this message is what gets stored in
+    // the failed test's error column, where an operator reads it.
+    if (!test) throw new Error("the librespeed result was empty");
+
+    return libreFigures(test);
+};
 
 /**
  * How many bytes a direction's runs moved.
@@ -340,7 +384,10 @@ export const parseCloudflare = (test) => {
         isp: null
     };
 
-    if (test && test.latency_measurement && test.speed_measurements) {
+    // Array.isArray rather than truthiness: the next three lines call .filter on
+    // it, so an object there would throw where a missing block returns the
+    // unmeasured shape below. This asks what the code actually needs.
+    if (test?.latency_measurement && Array.isArray(test.speed_measurements)) {
         const downloadTests = test.speed_measurements.filter(t => t.test_type === "Download");
         const uploadTests = test.speed_measurements.filter(t => t.test_type === "Upload");
 
@@ -379,15 +426,174 @@ export const parseCloudflare = (test) => {
     return unmeasurableRun(identity);
 };
 
+/**
+ * The bits-per-second one direction of an iperf3 run actually carried.
+ *
+ * `sum_received` rather than `sum_sent`, and the difference is not cosmetic:
+ * the sender's figure counts what it handed to the kernel, retransmissions
+ * included, while the receiver's counts what arrived. On a lossy path the two
+ * disagree by exactly the loss, and the number a speed history is for is the
+ * one that arrived.
+ *
+ * Falls back to the sender's when a run reports no receiver total, which is
+ * what a run cut short mid-transfer looks like.
+ */
+const directionRate = (end) => {
+    const received = end?.sum_received?.bits_per_second;
+    const sent = end?.sum_sent?.bits_per_second;
+
+    const rate = Number.isFinite(received) ? received : sent;
+
+    /*
+     * Handed back in bytes per second, because that is what roundSpeed takes.
+     *
+     * Not a detail: roundSpeed is written for the Ookla CLI, whose `bandwidth`
+     * is bytes per second, and iperf3 states bits. Passed through as they
+     * arrive, every iperf3 reading was eight times the line's actual speed -
+     * a 94 Mbit/s connection stored as 752 - and nothing downstream could tell,
+     * because the figure is a plausible number in the right column.
+     */
+    return Number.isFinite(rate) ? rate / BITS_PER_BYTE : null;
+};
+
+const directionBytes = (end) => {
+    const received = end?.sum_received?.bytes;
+    const sent = end?.sum_sent?.bytes;
+
+    return byteCount(Number.isFinite(received) ? received : sent);
+};
+
+/**
+ * One iperf3 test, which is two invocations of the CLI.
+ *
+ * iperf3 measures a single direction at a time, so the runner performs one run
+ * with -R for the download and one without for the upload and hands both over
+ * keyed by direction - see runsOf. Each run's `data` is the end event of its
+ * own --json-stream output.
+ *
+ * The latency is not iperf3's: it reports none at all, so the runner measures
+ * the handshake to the same host and port and passes it in. See iperfLatency
+ * for why that is the honest figure to take and what it is not comparable to.
+ *
+ * Nothing here reports a server's identity beyond the address that was dialled
+ * - an iperf3 server is a host the operator runs, not one of a provider's
+ * fleet - and none of the quality figures exist: this tool measures throughput,
+ * and a column left null says "not measured" where a zero would claim a
+ * flawless line.
+ */
+export const parseIperf3 = (test) => {
+    const runs = test?.runs ?? {};
+    const download = runs.download?.data;
+    const upload = runs.upload?.data;
+
+    const downloadRate = directionRate(download);
+    const uploadRate = directionRate(upload);
+
+    /*
+     * The address dialled, as the runner resolved it from the target.
+     *
+     * Not read back out of the output, which was the first attempt and does
+     * not work: under --json-stream `connecting_to` is part of the *start*
+     * event, and what reaches a parser is the end event alone - so every row
+     * named no server at all. The runner has already split host from port to
+     * aim its latency samples, and one reading of that string is one chance to
+     * disagree with itself.
+     */
+    const host = text(test?.endpoint?.host);
+    const port = Number.isInteger(test?.endpoint?.port) ? test.endpoint.port : null;
+
+    const identity = {
+        provider: IPERF3,
+        /*
+         * No name, deliberately.
+         *
+         * An iperf3 server is a host the operator runs and the CLI has no name
+         * for one - only the address that was dialled. The target's own name
+         * was the obvious thing to put here and would have said it twice: the
+         * detail pane draws that name in its Target fact already, and its
+         * server line falls back to the host when there is no name, which is
+         * exactly the address below.
+         */
+        serverName: null,
+        serverHost: joinEndpoint({host, port}),
+        serverLocation: null,
+        resultId: null,
+        // An iperf3 server is the operator's own machine, and nothing in the
+        // output names the network the client is on or the address it came
+        // from.
+        isp: null,
+        externalIp: null,
+        ...NO_QUALITY_FIGURES
+    };
+
+    /*
+     * A run that measured neither direction is not a result.
+     *
+     * Both throughput columns are NOT NULL with no sentinel for "unmeasured",
+     * so half a result has nowhere honest to be stored - the same judgement
+     * parseCloudflare makes, and for the same reason.
+     */
+    if (downloadRate === null || uploadRate === null)
+        return {ping: FAILED_TEST, jitter: null, download: FAILED_TEST, upload: FAILED_TEST,
+            time: null, ...identity, bytesDownloaded: null, bytesUploaded: null};
+
+    // The latency the runner measured, or the placeholder when every handshake
+    // failed. Zero already means "nobody measured this" for the ping column -
+    // testOutcome.js owns that convention - so a transfer that succeeded
+    // without a latency is still a result.
+    const ping = round(test?.latency?.ping) ?? 0;
+
+    return {
+        ping,
+        jitter: round(test?.latency?.jitter),
+        download: roundSpeed(downloadRate),
+        upload: roundSpeed(uploadRate),
+        // Both transfers, in seconds, as the other providers report their own
+        // total. Taken from the runs' own clocks rather than the wall time,
+        // which would include the latency sampling and the process starts.
+        time: Math.round((Number(download?.sum_received?.seconds ?? download?.sum_sent?.seconds ?? 0)
+            + Number(upload?.sum_sent?.seconds ?? upload?.sum_received?.seconds ?? 0))),
+        ...identity,
+        bytesDownloaded: directionBytes(download),
+        bytesUploaded: directionBytes(upload)
+    };
+};
+
 export const parseData = (provider, data) => {
-    switch (provider) {
-        case OOKLA:
-            return parseOokla(data);
-        case LIBRE:
-            return parseLibre(data);
-        case CLOUDFLARE:
-            return parseCloudflare(data);
-        default:
-            throw {message: "Invalid provider"};
+    const parsed = (() => {
+        switch (provider) {
+            case OOKLA:
+                return parseOokla(data);
+            case LIBRE:
+                return parseLibre(data);
+            case CLOUDFLARE:
+                return parseCloudflare(data);
+            case IPERF3:
+                return parseIperf3(data);
+            default:
+                throw {message: "Invalid provider"};
+        }
+    })();
+
+    // A required measurement the parser could not read is the failure
+    // placeholder, not NaN. roundSpeed answers NaN for an Ookla result whose
+    // bandwidth block was empty, and cfspeedtest can do the same - and NaN
+    // passed both write-path guards (isFailedTest wants all three placeholders;
+    // impossibleMeasurement asks `< 0`), so the row was stored as a success
+    // with the literal "NaN" in a NOT NULL DOUBLE, poisoning every average
+    // over it. As the placeholder it takes the failed path executeTarget
+    // already has: all three unreadable read as a failed run, one unreadable
+    // beside good figures as an impossible measurement, retried once.
+    //
+    // Judged by metricValue, not a bare finite check: a numeric *string* is a
+    // measurement - this very CLI family reports jitter as one - and rewriting
+    // it into the placeholder would record a failed run and retry a line that
+    // was fine. metricValue reads it as the number it spells, which is also
+    // what gets stored; only what it refuses becomes the placeholder.
+    for (const key of REQUIRED_MEASUREMENTS) {
+        const reading = metricValue(parsed[key]);
+        parsed[key] = reading === null ? FAILED_TEST : reading;
     }
+
+    return parsed;
 };

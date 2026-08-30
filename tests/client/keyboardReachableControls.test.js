@@ -1275,11 +1275,15 @@ describe("the first integration added", () => {
     const adding = (holding) => {
         const owedFocus = {current: false};
         const state = {active: null};
+        // addIntegration folds into the live list through a functional updater
+        // now, so setActive is handed `prev => …` rather than the finished array;
+        // resolve it against the list it edits, which here starts empty.
+        const active = [];
         const add = handlerIn(integrationDialog, "const addIntegration", {
             owedFocus,
             renderable: new Array(holding).fill({}),
-            active: [],
-            setActive: (value) => state.active = value,
+            active,
+            setActive: (update) => state.active = typeof update === "function" ? update(active) : update,
             uuid: () => "an-id"
         });
 

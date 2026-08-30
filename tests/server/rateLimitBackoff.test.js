@@ -1,6 +1,7 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { bodyIn } from "../helpers/source.js";
+import { memberHeld, roundFullyHeld } from "../../server/tasks/speedtest.js";
 import { parseCliOutput, RATE_LIMIT_MESSAGE, isRateLimitMessage } from "../../server/util/providers/cliOutput.js";
 import {
     FIRST_BACKOFF_MS,
@@ -169,6 +170,15 @@ describe("the backoff", () => {
     });
 
     it("starts over once a test gets through", () => {
+        // Three refusals for one escalation. The first two are a whole wait
+        // apart, which is what earns the doubling this case exists to see
+        // cleared: back to back they are one refusal reaching two callers -
+        // three Ookla targets in a round all being told the same no - and the
+        // module now answers those with the standing hold rather than a longer
+        // one, so there would be nothing left for clearBackoff to undo and the
+        // assertion below would pass on a module that never doubled at all.
+        // The third call is exactly that repeat, and must change nothing.
+        recordRateLimit(PROVIDER, NOW - FIRST_BACKOFF_MS);
         recordRateLimit(PROVIDER, NOW);
         recordRateLimit(PROVIDER, NOW);
 
@@ -193,6 +203,44 @@ describe("the backoff", () => {
         assert.equal(isBackingOff("cloudflare", NOW), false);
     });
 
+    /**
+     * The escalation is about waits, not about callers.
+     *
+     * Several targets can share a provider - two Ookla targets pinned to
+     * different servers is the point of the feature - and a round started by
+     * hand consults no hold at all, deliberately. So one press of "Run test" on
+     * an instance with three Ookla targets recorded three refusals within
+     * seconds and doubled the wait three times: a quarter of an hour became an
+     * hour, and the automatic schedule went quiet for it, from one click.
+     */
+    it("does not escalate for a refusal that arrives inside a standing hold", () => {
+        recordRateLimit(PROVIDER, NOW);
+        const inside = NOW + FIRST_BACKOFF_MS / 3;
+
+        assert.equal(recordRateLimit(PROVIDER, inside), FIRST_BACKOFF_MS * 2 / 3,
+            "the repeat was answered with a fresh wait rather than what is left of the standing one");
+        assert.equal(backoffRemainingMs(PROVIDER, inside), FIRST_BACKOFF_MS * 2 / 3);
+        assert.equal(isBackingOff(PROVIDER, NOW + FIRST_BACKOFF_MS), false,
+            "a repeat pushed out the moment the schedule is next allowed to try");
+    });
+
+    it("is not escalated by a whole round of targets sharing one provider", () => {
+        for (let target = 0; target < 3; target++) recordRateLimit(PROVIDER, NOW);
+
+        assert.equal(backoffRemainingMs(PROVIDER, NOW), FIRST_BACKOFF_MS,
+            "one click on an instance with three Ookla targets silenced the schedule for an hour");
+    });
+
+    /**
+     * The control. Without it the two cases above would pass just as happily on
+     * a module that had stopped escalating altogether.
+     */
+    it("still doubles once the wait it set has run out", () => {
+        recordRateLimit(PROVIDER, NOW);
+
+        assert.equal(recordRateLimit(PROVIDER, NOW + FIRST_BACKOFF_MS), FIRST_BACKOFF_MS * 2);
+    });
+
     it("holds nothing when it is asked about no provider at all", () => {
         recordRateLimit("ookla", NOW);
 
@@ -208,6 +256,93 @@ describe("the backoff", () => {
  * same line: reaching it needs a spawned CLI and a provider that refuses, and
  * the assertion is about the shape of the guard.
  */
+/**
+ * The round that has nothing left to run.
+ *
+ * The hold used to be consulted in timer.js, above the call that started the
+ * round. On this branch it is consulted inside the round, per member, so that
+ * an Ookla refusal does not skip the iperf3 box standing next to it - but the
+ * announcement stayed above it: executeRound called setRunning(true) for a
+ * round whose every member it was about to skip, and setRunning(true) fires
+ * testStarted at every notifier. On a minutely cron a held provider then sent
+ * healthchecks.io a /start a minute that nothing ever completed, and every
+ * webhook a TEST_STARTED a minute, for up to two hours - the storm this module
+ * exists to end, moved rather than stopped.
+ *
+ * The judgement is read here rather than through a booted round: this suite has
+ * no module mocking, so the predicate is a parameter and both helpers are pure.
+ * What no unit assertion can see - that the question is asked *before* the
+ * announcement, and still asked *again* per member - is read from the source,
+ * the way previewProgress.test.js reads the same function.
+ */
+describe("a round with nothing it may run", () => {
+    const ookla = {provider: "ookla"};
+    const iperf = {provider: "iperf3"};
+    const everythingHeld = () => true;
+
+    it("holds a scheduled member whose provider is refusing", () => {
+        assert.equal(memberHeld(ookla, "auto", everythingHeld), true);
+    });
+
+    it("holds nothing on a round somebody started by hand", () => {
+        assert.equal(memberHeld(ookla, "custom", everythingHeld), false,
+            "the run button was taken away from somebody asking for a test now");
+    });
+
+    it("is fully held only when every member is", () => {
+        assert.equal(roundFullyHeld([ookla, ookla], "auto", everythingHeld), true);
+        assert.equal(roundFullyHeld([ookla, iperf], "auto", (provider) => provider === "ookla"), false,
+            "one provider's limiter took the round away from a target on another");
+    });
+
+    it("is not fully held when somebody started it by hand", () => {
+        assert.equal(roundFullyHeld([ookla, ookla], "custom", everythingHeld), false);
+    });
+
+    // "every" is true of nothing, and executeRound answers 400 for an empty
+    // round long before it asks this - but a helper that called an empty round
+    // held would be a trap for whoever asks it next.
+    it("does not call an empty round held", () => {
+        assert.equal(roundFullyHeld([], "auto", everythingHeld), false);
+    });
+
+    describe("and the round that reads it", () => {
+        const round = bodyIn("server/tasks/speedtest.js", "const executeRound =");
+
+        /**
+         * Both positions are checked against -1 before they are compared.
+         * indexOf answers -1 for something that is not there at all, and -1 is
+         * below every real index - so an ordering assertion on its own is
+         * satisfied by a round that asks the question nowhere, which is the
+         * unfixed code. helpers/source.js says the same thing at length in
+         * blockEnd's docstring.
+         */
+        it("asks before it announces the run", () => {
+            const asked = round.indexOf("roundFullyHeld(");
+            const announced = round.indexOf("setRunning(true");
+
+            assert.notEqual(asked, -1, "the round never asks whether every one of its members is held");
+            assert.notEqual(announced, -1, "the round no longer announces itself at all");
+            assert.ok(asked < announced,
+                "the round tells every notifier a test started and only then finds it has nobody to run");
+        });
+
+        it("asks again as it reaches each member", () => {
+            const loop = round.indexOf("for (const");
+            // Asked of the fresh re-read, not the round-start snapshot: the
+            // hold is per provider, and the provider is one of the fields a
+            // mid-round edit can change.
+            const perMember = round.indexOf("memberHeld(fresh");
+
+            assert.notEqual(loop, -1, "the round no longer walks its members");
+            assert.notEqual(perMember, -1,
+                "the round decides once up front, so a hold its first member earns no longer skips the rest");
+            assert.ok(loop < perMember,
+                "the per-member skip was hoisted out of the loop it has to be re-asked in");
+        });
+    });
+});
+
 describe("the immediate retry", () => {
     const catchBlock = bodyIn("server/tasks/speedtest.js", "} catch (e) {");
 

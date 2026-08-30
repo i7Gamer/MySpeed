@@ -1,4 +1,5 @@
 import { truncate } from '../helpers.js';
+import { descriptor } from './registry.js';
 
 /**
  * The one wording a refusal is stored under, whichever provider refused and
@@ -74,15 +75,31 @@ const capError = (message) => truncate(message, MAX_ERROR_LENGTH);
  * `{...result, elapsed}`, and spreading an array gives an object keyed by index
  * that parseCloudflare quietly reads as a measurement of zero.
  */
-const isResult = (mode, data) => {
-    if (mode === "ookla") return data.type === "result";
-    if (mode === "cloudflare") return !Array.isArray(data);
-    return true;
+const isResult = (mode, data) => descriptor(mode).isResult(data);
+
+/**
+ * The failure a parsed line reports, or undefined when it reports none.
+ *
+ * Three of the CLIs say so in an `error` member, which is the default. iperf3
+ * under --json-stream says it as an event instead -
+ * {"event":"error","data":"unable to connect to server ..."} - where `data` is
+ * the message and there is no `error` member anywhere. Read only as `data.error`
+ * that line carried no failure at all, and the empty {"event":"end","data":{}}
+ * that follows it would have been taken for the result: a run that could not
+ * reach its target would have been stored as a test that produced nothing, with
+ * the timeout blamed for it.
+ *
+ * A provider states its own reader; the three that do not keep the member.
+ */
+const errorOf = (mode, data) => {
+    const provider = descriptor(mode);
+
+    return provider.errorOf ? provider.errorOf(data) : data.error;
 };
 
 // Whatever a CLI wrote that was not one of its own JSON records, i.e. the part
 // a human wrote for a human.
-const plainTextLines = (text) => text.trim().split('\n')
+const plainTextLines = (text) => text.split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("{") && !line.startsWith("["))
     .join('\n');
@@ -102,7 +119,17 @@ export const parseCliOutput = (mode, stdout, stderr) => {
     let hasResult = false;
 
     if (stdout.trim()) {
-        for (const line of stdout.trim().split('\n')) {
+        // Trimmed per line rather than once over the whole stream, which only
+        // ever reached the first and last lines: a result record arriving with
+        // a leading space - pipe buffering, a CLI that indents - failed the
+        // startsWith below and was skipped, and the run reported no result
+        // despite having measured the line. Splitting on \r?\n is the same
+        // point from the Windows side, where the CLIs write CRLF and every line
+        // but the last would otherwise keep a trailing carriage return. The
+        // helper above and the progress reader both already read lines this way.
+        for (const rawLine of stdout.split(/\r?\n/)) {
+            const line = rawLine.trim();
+
             if (!(line.startsWith("{") || line.startsWith("["))) continue;
 
             let data;
@@ -131,10 +158,12 @@ export const parseCliOutput = (mode, stdout, stderr) => {
              * be stored as "[object Object]", and walk past isRateLimitMessage
              * carrying the one wording the backoff exists to recognise.
              */
-            if (data.error) {
-                const message = typeof data.error === "string" ? data.error
-                    : typeof data.error?.message === "string" ? data.error.message
-                        : JSON.stringify(data.error);
+            const reported = errorOf(mode, data);
+
+            if (reported) {
+                const message = typeof reported === "string" ? reported
+                    : typeof reported?.message === "string" ? reported.message
+                        : JSON.stringify(reported);
 
                 result.error = normaliseError(message);
             }

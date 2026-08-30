@@ -1,0 +1,84 @@
+@use "@/common/styles/colors" as *
+@use "@/common/styles/focus" as *
+
+// The provider card's radio, squared. Its size, border weight, accent fill and
+// transition are the same values .selectable-option-radio uses, and
+// checkbox.test.js reads them off that stylesheet so the two cannot drift -
+// square where the radio is round, which is the distinction a reader already
+// expects: one of several against yes or no.
+.checkbox
+  position: relative
+  display: inline-grid
+  place-items: center
+  flex-shrink: 0
+  cursor: pointer
+
+  input
+    grid-area: 1 / 1
+    width: 100%
+    height: 100%
+    margin: 0
+    // Transparent rather than hidden: this is still the element the click
+    // lands on, the keyboard reaches and the screen reader reads.
+    opacity: 0
+    cursor: pointer
+
+.checkbox-box
+  grid-area: 1 / 1
+  box-sizing: border-box
+  width: 1.15rem
+  height: 1.15rem
+  border: 2px solid $subtext
+  border-radius: 0.3rem
+  display: grid
+  place-items: center
+  pointer-events: none
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease
+
+  svg
+    width: 100%
+    height: 100%
+    display: block
+
+.checkbox-tick
+  fill: none
+  // The tick is drawn on the accent once the box is filled, so it has to be
+  // the surface colour rather than white - light mode fills with a dark green.
+  stroke: $dark-gray
+  stroke-width: 2.6
+  stroke-linecap: round
+  stroke-linejoin: round
+  // Drawn on rather than appearing: the length of the path, offset by its own
+  // length, then wound back to zero.
+  stroke-dasharray: 20
+  stroke-dashoffset: 20
+  transition: stroke-dashoffset 0.18s ease 0.04s
+
+.checkbox input:checked ~ .checkbox-box
+  background-color: $accent-primary
+  border-color: $accent-primary
+
+.checkbox input:checked ~ .checkbox-box .checkbox-tick
+  stroke-dashoffset: 0
+
+.checkbox:hover input:not(:disabled) ~ .checkbox-box
+  border-color: $white
+
+// The browser drew a ring on the box it owned and draws none on this one. The
+// ring is the app's, not this component's: it was a soft box-shadow here and a
+// solid outline everywhere else, which made one control's focus look like a
+// different kind of state. Written out rather than taken from the mixin because
+// what wears the ring is the drawn box, and what has the focus is the input
+// beside it.
+.checkbox input:focus-visible ~ .checkbox-box
+  outline: $focus-ring-width solid $accent-primary
+  outline-offset: $focus-ring-offset
+
+.checkbox-disabled
+  opacity: 0.5
+  pointer-events: none
+
+@media (prefers-reduced-motion: reduce)
+  .checkbox-box,
+  .checkbox-tick
+    transition: none

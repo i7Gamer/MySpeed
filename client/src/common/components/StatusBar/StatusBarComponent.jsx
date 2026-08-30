@@ -117,9 +117,15 @@ const StatusBarComponent = () => {
         return t(`status.phase.${status.phase}`);
     };
 
+    // Which target the round is on, when that is worth a word: two or more
+    // members. A single-target round says nothing it always said, and the
+    // demo's simulated run carries no name at all.
+    const roundTarget = status.running && status.target?.count >= 2 ? status.target : null;
+
     const stateText = () => {
         if (status.paused) return t("status.paused");
-        if (status.running) return phaseLabel();
+        if (status.running)
+            return roundTarget?.name ? `${roundTarget.name} · ${phaseLabel()}` : phaseLabel();
 
         return lastTestText;
     };
@@ -160,6 +166,14 @@ const StatusBarComponent = () => {
                     <h2>{stateText()}</h2>
                     <div className="status-detail">
                         {nextText() && <span>{nextText()}</span>}
+
+                        {/* Where the round is: measured targets behind it,
+                            unmeasured ahead. Only on a round with more than
+                            one - see roundTarget. */}
+                        {roundTarget && (
+                            <span>{t("status.target_of",
+                                {index: roundTarget.index, count: roundTarget.count})}</span>
+                        )}
 
                         {status.running && typeof status.speed === "number" && Number.isFinite(status.speed) && status.speed >= 0 && (
                             <span className="status-speed">

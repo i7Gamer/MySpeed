@@ -22,11 +22,14 @@ import { OUTBOUND_TIMEOUT, noteActivity } from "../util/integrationActivity.js";
  * apply here.
  */
 
+// Both body templates name the target: on a multi-target instance every
+// message otherwise reads identically whether it describes the WAN or the LAN
+// box.
 const defaults = {
     finished_subject: "MySpeed: speedtest finished",
-    finished: "A speedtest is finished:\nPing: %ping% ms (±%jitter% ms)\nDownload: %download% Mbps\nUpload: %upload% Mbps",
+    finished: "A speedtest is finished:\nTarget: %targetName%\nPing: %ping% ms (±%jitter% ms)\nDownload: %download% Mbps\nUpload: %upload% Mbps",
     error_subject: "MySpeed: speedtest failed",
-    failed: "A speedtest has failed.\nReason: %error%"
+    failed: "A speedtest has failed.\nTarget: %targetName%\nReason: %error%"
 };
 
 /**

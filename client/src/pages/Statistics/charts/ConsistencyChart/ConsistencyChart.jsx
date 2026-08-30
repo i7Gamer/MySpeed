@@ -4,15 +4,15 @@ import {
     faArrowDown, faArrowUp, faGaugeHigh, faPingPongPaddleBall, faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
 import {
-    bufferbloatColour, consistencyColour, gradeForIncrease, jitterColour, pingDeviationColour
+    bufferbloatColour, consistencyColour, gradeForIncrease, jitterColour, pingDeviationColour, readableFigure
 } from "@/common/utils/TestUtil";
 import { formatDateTime } from "@/common/utils/FormatUtil";
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import PanelRow from "@/pages/Statistics/components/PanelRow";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import {
-    convertSpeed, formatLatency, formatLatencyWithUnit, formatWhole, formatWithUnit, getSpeedUnit,
-    LATENCY_STEP, NOT_MEASURED, roundsToZeroLatency
+    convertSpeed, formatLatency, formatLatencyWithUnit, formatPercent, formatWithUnit, getSpeedUnit,
+    LATENCY_STEP, NOT_MEASURED, roundsToZeroLatency, wholeSpeed
 } from "@/common/utils/FormatUtil";
 import "./styles.sass";
 
@@ -30,14 +30,47 @@ export const ConsistencyChart = (props) => {
     // Every figure in this panel is taken over the selected range, this one
     // included: it used to be the grade of the single newest test, from a
     // request that carried no range at all.
+    //
+    // loaded.tests is a count, not a column: the server answers it with the
+    // length of the array it averaged (loadedLatencyOver in
+    // server/util/statistics.js), so it needs none of the coercion the
+    // increase below gets - the same computed-operand split the grade's
+    // strict gate is kept for, one line further out.
     const loaded = data.loadedLatency;
-    const loadedGrade = gradeForIncrease(loaded?.increase);
-    const trend = loaded?.trend ?? [];
+    // Coerced once at the card's boundary, for the grade and the tooltip
+    // alike - gradeForIncrease keeps its strict gate because its operands
+    // are computed, so the card reads the server-fed spelling first: a
+    // proxied older node can spell the increase as text, and the strict
+    // gate behind a raw read dropped the whole row - grade, dots and count -
+    // for a payload the deviation beside it reads fine. Junk still drops
+    // the row: null from the reader is null to the gate.
+    const loadedIncrease = loaded ? readableFigure(loaded.increase) : null;
+    const loadedGrade = gradeForIncrease(loadedIncrease);
+    // And each dot's increase through the same reader: a dot nothing can
+    // read is no dot, rather than a blue dot titled "null". Array-gated,
+    // with the entry optional, because these derivations run on every
+    // render BEFORE the row's own gate: the payload can mangle the block
+    // itself, and a crashed page is worse than a missing strip.
+    const trendDots = (Array.isArray(loaded?.trend) ? loaded.trend : []).flatMap((entry) => {
+        const increase = readableFigure(entry?.increase);
+        return increase === null ? [] : [{...entry, increase}];
+    });
 
-    const percentage = (value) => value === null || value === undefined ? NOT_MEASURED : `${value}%`;
+    // Through the shared reader, like every stored figure. The payload is
+    // server-fed and a proxied older node's statistics can hold anything: the
+    // null-only gates these replace printed "auto%" and "±auto ms" for junk,
+    // and the -1 placeholder as a reading, beside colours already grading the
+    // same values as never measured. The interpolation takes the COERCED
+    // figure, so a text "85.50" prints 85.5% here, as the formatters read it.
+    // (The scores print through the shared formatPercent below; the test
+    // rows' loss chips deliberately differ - they print their own stored
+    // column raw behind the same readableFigure gate, and the row and the
+    // pane it opens show that one figure identically.)
+    const deviation = (value, unit) => {
+        const figure = readableFigure(value);
 
-    const deviation = (value, unit) =>
-        value === null || value === undefined ? NOT_MEASURED : `±${value} ${unit}`;
+        return figure === null ? NOT_MEASURED : `±${figure} ${unit}`;
+    };
 
     /**
      * The two ends the deviation above is a summary of, for the enlarged view.
@@ -47,9 +80,13 @@ export const ConsistencyChart = (props) => {
      * 260". Null for anything not measured, which renders as no line at all
      * rather than as a range ending in "N/A".
      */
-    const spread = (range, format = (value) => value) => {
+    const spread = (range, format) => {
         if (!props.expanded || !range) return null;
-        if (range.min === null || range.min === undefined) return null;
+        // Both ends through the shared reader: the null-only gate here was
+        // the last sibling of the ones this card's other lines dropped, and
+        // it rendered "between N/A and N/A" for a proxied node's placeholder
+        // pair - one sub-line from a deviation refusing the same value.
+        if (readableFigure(range.min) === null || readableFigure(range.max) === null) return null;
 
         return t("statistics.consistency.range", {min: format(range.min), max: format(range.max)});
     };
@@ -68,9 +105,12 @@ export const ConsistencyChart = (props) => {
      * render there.
      */
     const stdDev = (value) => {
-        const converted = convertSpeed(value, preferences);
+        // wholeSpeed when collapsed, for the same single rounding the speed
+        // beside it gets - re-rounding the two-decimal conversion printed the
+        // [8n+3.96, 8n+4) bands one high.
+        const converted = props.expanded ? convertSpeed(value, preferences) : wholeSpeed(value, preferences);
 
-        return deviation(props.expanded ? converted : formatWhole(converted), speedUnit);
+        return deviation(converted, speedUnit);
     };
     // Trimmed to the one decimal a card prints a latency at: the server sends
     // the two it stores, and this card read "5.23 ms" one panel away from a
@@ -118,7 +158,7 @@ export const ConsistencyChart = (props) => {
             <div className="consistency-container">
                 <PanelRow icon={faArrowDown} title={t("latest.down")}
                           level={consistencyColour(data.download.consistency)}
-                          value={percentage(data.download.consistency)}
+                          value={formatPercent(data.download.consistency)}
                           description={<>
                               <span>{stdDev(data.download.stdDev)}</span>
                               {spreads.download && <span>{spreads.download}</span>}
@@ -126,7 +166,7 @@ export const ConsistencyChart = (props) => {
 
                 <PanelRow icon={faArrowUp} title={t("latest.up")}
                           level={consistencyColour(data.upload.consistency)}
-                          value={percentage(data.upload.consistency)}
+                          value={formatPercent(data.upload.consistency)}
                           description={<>
                               <span>{stdDev(data.upload.stdDev)}</span>
                               {spreads.upload && <span>{spreads.upload}</span>}
@@ -159,7 +199,7 @@ export const ConsistencyChart = (props) => {
                     <PanelRow icon={faGaugeHigh} title={t("latest.quality")}
                               level={bufferbloatColour(loadedGrade)}
                               value={<span title={t("statistics.consistency.loaded_latency_average",
-                                  {increase: loaded.increase, tests: loaded.tests})}>{loadedGrade}</span>}
+                                  {increase: loadedIncrease, tests: loaded.tests})}>{loadedGrade}</span>}
                               description={<>
                                   {/* One dot per recent test rather than the
                                       letters. Grades run together as text -
@@ -167,23 +207,28 @@ export const ConsistencyChart = (props) => {
                                       a history at a glance. role="img" with the
                                       grades spelled out in the label, because
                                       colour alone is not a reading a screen
-                                      reader can take. */}
-                                  <span className="bufferbloat-trend"
-                                        role="img"
-                                        title={t("latest.bufferbloat_trend")}
-                                        aria-label={t("latest.bufferbloat_trend") + ": " +
-                                            trend.map((entry) => gradeForIncrease(entry.increase)).join(", ")}>
-                                      {trend.map((entry) => (
-                                          <span key={entry.created}
-                                                className={"bufferbloat-trend-dot icon-"
-                                                    + bufferbloatColour(gradeForIncrease(entry.increase))}
-                                                // The grade leads: it is no longer
-                                                // written anywhere the pointer is.
-                                                title={gradeForIncrease(entry.increase) + " · " +
-                                                    formatDateTime(entry.created, preferences) + " · " +
-                                                    t("latest.bufferbloat", {increase: entry.increase})}/>
-                                      ))}
-                                  </span>
+                                      reader can take. Only while a dot
+                                      survived the reader: an empty strip
+                                      announced as "trend:" is not a reading
+                                      either. */}
+                                  {trendDots.length > 0 && (
+                                      <span className="bufferbloat-trend"
+                                            role="img"
+                                            title={t("latest.bufferbloat_trend")}
+                                            aria-label={t("latest.bufferbloat_trend") + ": " +
+                                                trendDots.map((entry) => gradeForIncrease(entry.increase)).join(", ")}>
+                                          {trendDots.map((entry) => (
+                                              <span key={entry.created}
+                                                    className={"bufferbloat-trend-dot icon-"
+                                                        + bufferbloatColour(gradeForIncrease(entry.increase))}
+                                                    // The grade leads: it is no longer
+                                                    // written anywhere the pointer is.
+                                                    title={gradeForIncrease(entry.increase) + " · " +
+                                                        formatDateTime(entry.created, preferences) + " · " +
+                                                        t("latest.bufferbloat", {increase: entry.increase})}/>
+                                          ))}
+                                      </span>
+                                  )}
                                   {/* How many tests the average is over. It has
                                       only ever been in the title above, where a
                                       grade of "A" from three tests and one from

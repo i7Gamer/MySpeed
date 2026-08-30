@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, api, seedTests, setConfig } from "./helpers/boot.js";
+import { bootServer, api, seedTarget, seedTests, setConfig } from "./helpers/boot.js";
 
 let server;
 let resetFailedAttempts;
@@ -400,5 +400,129 @@ describe("concurrent scrapes", () => {
 
         assert.equal(scrapes.length, CONCURRENT);
         for (const {text} of scrapes) assert.match(text, /myspeed_/);
+    });
+});
+
+/**
+ * The label plan that makes multi-target additive rather than breaking: the
+ * primary target's series carry target="" - which is, to Prometheus, the same
+ * series identity as no target label at all - while every further target
+ * exports the same metric names under its own name. A dashboard built before
+ * targets existed keeps following exactly the series it always followed.
+ */
+describe("what a second target exports", () => {
+    let primary;
+    let second;
+
+    beforeEach(async () => {
+        primary = await seedTarget({provider: "ookla", name: "WAN"});
+        const targets = await import("../../server/controller/targets.js");
+        second = await targets.create({name: "NAS", provider: "cloudflare"});
+
+        await seedTests(server.tests, [
+            {created: "2026-08-26T10:00:00.000Z", ping: 9, download: 250, upload: 50, targetId: primary.id},
+            {created: "2026-08-26T10:01:00.000Z", ping: 0.4, download: 941, upload: 938, targetId: second.id}
+        ]);
+    });
+
+    it("keeps the primary's series identity unlabeled", async () => {
+        const {text} = await metrics();
+        const line = text.split("\n").find((row) =>
+            row.startsWith("myspeed_ping{") && row.includes('target=""'));
+
+        assert.ok(line, "the primary target's series carries a non-empty target label");
+        assert.equal(parseFloat(line.slice(line.lastIndexOf(" ") + 1)), 9);
+
+        // Empty here too, which is what keeps the identity: to Prometheus an
+        // empty label value is the same as an absent one, so the id that
+        // disambiguates the named series below costs the pre-1.4 dashboards
+        // nothing. The alias row is where the primary's id is written down.
+        assert.match(line, /target_id=""/,
+            "the unlabelled series took an id, so every dashboard built before targets lost its history");
+    });
+
+    /**
+     * Two targets of one name, which this instance can hold and the restore
+     * deliberately accepts: duplicates were legal until the door on the routes,
+     * the welcome wizard's second Done made exact pairs, and a backup carrying
+     * one is restored rather than refused, because refusing it refuses that
+     * operator their own nodes, integrations and settings.
+     *
+     * A series is its label set, so two lines exporting the same one are not
+     * two series: the second overwrote the first and one of the two vanished
+     * from the scrape entirely - no gap, no stale marker, nothing to see. The
+     * id is what tells them apart, and it is the same id myspeed_target_info
+     * has always carried.
+     */
+    it("keeps two targets of one name apart", async () => {
+        const targets = await import("../../server/controller/targets.js");
+
+        // Both behind the primary, whose series are the unlabelled ones: it is
+        // the pair *below* it that would share a label set.
+        const twin = await targets.create({name: "NAS", provider: "cloudflare"});
+
+        await seedTests(server.tests, [
+            {created: "2026-08-26T10:00:00.000Z", ping: 9, targetId: primary.id},
+            {created: "2026-08-26T10:01:00.000Z", ping: 0.4, targetId: second.id},
+            {created: "2026-08-26T10:02:00.000Z", ping: 44, targetId: twin.id}
+        ]);
+
+        const {text} = await metrics();
+        const named = text.split("\n").filter((row) =>
+            row.startsWith("myspeed_ping{") && row.includes('target="NAS"'));
+
+        assert.equal(named.length, 2, "one of the two lines vanished from the scrape entirely");
+        assert.deepEqual(named
+            .map((row) => parseFloat(row.slice(row.lastIndexOf(" ") + 1)))
+            .sort((a, b) => a - b), [0.4, 44]);
+    });
+
+    it("exports the second target on the same family, under its own name", async () => {
+        const {text} = await metrics();
+        const line = text.split("\n").find((row) =>
+            row.startsWith("myspeed_ping{") && row.includes('target="NAS"'));
+
+        assert.ok(line, "the second target exports no series of its own");
+        assert.match(line, /provider="cloudflare"/);
+        assert.equal(parseFloat(line.slice(line.lastIndexOf(" ") + 1)), 0.4);
+    });
+
+    it("maps every configured target in myspeed_target_info", async () => {
+        const {text} = await metrics();
+
+        assert.match(text, /myspeed_target_info\{[^}]*target="WAN"[^}]*provider="ookla"[^}]*\} 1/);
+        assert.match(text, /myspeed_target_info\{[^}]*target="NAS"[^}]*provider="cloudflare"[^}]*\} 1/);
+    });
+
+    /**
+     * The alias row the join actually needs. The help text says "join here
+     * for its name", and a group_left join matches by the series' own labels -
+     * which for the primary are target="" provider="". Every named row above
+     * misses those, so the one set of series the convention exists for was the
+     * one set the join could never match.
+     */
+    it("carries an alias row the unlabelled series can join on", async () => {
+        const {text} = await metrics();
+
+        const alias = text.split("\n").find((row) =>
+            row.startsWith("myspeed_target_info{") && row.includes('target=""'));
+
+        assert.ok(alias, "the empty-labelled series has no target_info row to join");
+        assert.match(alias, new RegExp(`target_id="${primary.id}"`));
+        assert.match(alias, /provider=""/);
+    });
+
+    // The instance-wide server gauge keeps meaning what it meant: the primary
+    // target's latest, not whichever member happened to run last.
+    it("keeps myspeed_server on the primary target", async () => {
+        await seedTests(server.tests, [
+            {created: "2026-08-26T10:00:00.000Z", ping: 9, serverId: 49631, targetId: primary.id},
+            {created: "2026-08-26T10:01:00.000Z", ping: 0.4, serverId: 7, targetId: second.id}
+        ]);
+
+        const {text} = await metrics();
+        const line = text.split("\n").find((row) => row.startsWith("myspeed_server "));
+
+        assert.equal(parseFloat(line.slice(line.lastIndexOf(" ") + 1)), 49631);
     });
 });

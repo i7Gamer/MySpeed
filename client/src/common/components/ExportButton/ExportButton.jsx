@@ -10,7 +10,15 @@ import { exportFilename } from "./filename";
 import "./styles.sass";
 import {EXPORT_FORMATS} from "@/common/utils/InvariantText";
 
-export const ExportButton = ({ dateRange, allTime = false }) => {
+/**
+ * @param target the target the pages are narrowed to, or null for all of them.
+ *               The export is the third control in this toolbar and has to
+ *               mean the same thing as the two beside it: it already honours
+ *               the date range, and a file that quietly holds every target's
+ *               rows while the chip row above says one target is the same
+ *               mismatch a range-wide export under a narrowed range would be.
+ */
+export const ExportButton = ({ dateRange, allTime = false, target = null }) => {
     const alert = useAlert();
     const [isOpen, setIsOpen] = useState(false);
     const [exporting, setExporting] = useState(false);
@@ -98,6 +106,8 @@ export const ExportButton = ({ dateRange, allTime = false }) => {
             const query = new URLSearchParams({
                 from: fromParam, to: toParam, format, ...timezoneParams()
             });
+
+            if (target != null) query.set("target", String(target));
 
             // Goes through RequestUtil rather than a bare fetch so the export
             // carries the password header and honours the selected node - a raw

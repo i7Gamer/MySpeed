@@ -78,19 +78,40 @@ export default ({close}) => {
     return (
         <>
             <div className="storage-row">
-                <div className="storage-row-label">
+                {/* Marked as hinted: the sentence below is part of this
+                    label's content, so without a basis holding it back the
+                    label asks for the width of the whole sentence and the row
+                    wraps in every language. The rows that carry only a heading
+                    ask for their own words and stay on one line where they
+                    fit. */}
+                <div className="storage-row-label storage-row-label-hinted">
                     <FontAwesomeIcon icon={faFileExport}/>
                     <h3>{t("storage.export_settings")}</h3>
-                    <p className="storage-row-hint">
-                        {t(includeSecrets ? "storage.export_with_secrets_desc" : "storage.export_redacted_desc")}
+                    {/* Both sentences at once, stacked in one cell with the
+                        inactive one hidden in place: the paragraph stays as
+                        tall as the longer sentence, so ticking the toggle
+                        cannot grow the hint and push the toggle out from
+                        under the pointer that just clicked it. The aria-hidden
+                        that mutes the inactive sentence is also what the
+                        stylesheet keys the hiding on. */}
+                    <p className="storage-row-hint storage-row-hint-swap">
+                        <span aria-hidden={includeSecrets}>{t("storage.export_redacted_desc")}</span>
+                        <span aria-hidden={!includeSecrets}>{t("storage.export_with_secrets_desc")}</span>
                     </p>
-                </div>
-                <div className="storage-row-actions">
+                    {/* Under the words rather than beside the button: this
+                        chooses what the export contains, so it belongs to the
+                        row's description and not to its actions. Sitting in
+                        the button cluster, it also took the button out of line
+                        with Import and Reset on any language long enough to
+                        wrap the row - and its own text ended up stranded in
+                        the middle of it. */}
                     <label className="storage-row-toggle">
                         <span>{t("storage.include_secrets")}</span>
                         <ToggleSwitch checked={includeSecrets} onChange={setIncludeSecrets}
                                       label={t("storage.include_secrets")}/>
                     </label>
+                </div>
+                <div className="storage-row-actions">
                     <button className="dialog-btn" onClick={exportConfig}>{t("storage.export")}</button>
                 </div>
             </div>

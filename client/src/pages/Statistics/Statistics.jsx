@@ -17,6 +17,8 @@ import {jsonRequest} from "@/common/utils/RequestUtil";
 import {FULL_DETAIL_POINTS, PreferencesContext} from "@/common/contexts/Preferences";
 import {ConfigContext} from "@/common/contexts/Config";
 import {NodeContext} from "@/common/contexts/Node";
+import {TargetsContext} from "@/common/contexts/Targets";
+import {previousOfTarget, resolveLimits} from "@/common/utils/TargetUtil";
 import {
     DEFAULT_TIMEFRAME,
     TIMEFRAME_ALL,
@@ -163,6 +165,12 @@ export const Statistics = () => {
     // against. Absent until the config has loaded, and unset on an instance
     // nobody has told what it pays for - both render as no percentage.
     const [config] = useContext(ConfigContext);
+    const {selectedTarget, pageTargetFor} = useContext(TargetsContext);
+
+    // Which target the page is narrowed to, or null for all of them - the
+    // same resolved chip selection the overview reads, so the two pages cannot
+    // show different slices under one chip row.
+    const targetFilter = selectedTarget;
 
     /*
      * The active node, read by position the way SpeedtestContext reads it.
@@ -195,6 +203,23 @@ export const Statistics = () => {
     const deferredStatistics = useDeferredValue(statistics);
     const isStale = deferredStatistics !== statistics;
 
+    /*
+     * What the cards and charts grade against: the optima of the target the
+     * page is showing where it is showing one - the chip's, or the sole target
+     * of an instance that draws no chips - and the instance-wide settings for a
+     * genuine mixture, whose averages only the global values can judge. See
+     * pageTarget for why this is not simply the chip selection.
+     *
+     * Asked of the payload the cards are drawn from rather than of the newest
+     * one in flight, and below it rather than beside the context read, because
+     * the payload is half the question: a single-target instance still holds
+     * the rows of every target it deleted, and only the answer that carried
+     * these figures knows whether they are in them. Taking the grade from one
+     * payload and the numbers from another is how a stale range would be judged
+     * by the target composition of the range replacing it.
+     */
+    const gradeLimits = resolveLimits(pageTargetFor(deferredStatistics?.targetIds), config ?? {});
+
     useEffect(() => {
         const timer = setTimeout(() => setMountPhase(1), 50);
         return () => clearTimeout(timer);
@@ -213,6 +238,8 @@ export const Statistics = () => {
         // The summary of the window immediately before, for the deltas. Nothing
         // precedes all time, so it is asked for only when the range is bounded.
         if (dateRange) query.set("compare", "previous");
+
+        if (targetFilter != null) query.set("target", String(targetFilter));
 
         /**
          * Only the newest request may write to the page.
@@ -247,7 +274,10 @@ export const Statistics = () => {
          */
         Promise.allSettled([
             jsonRequest(`/speedtests/statistics/?${query}`),
-            jsonRequest(`/speedtests?limit=${RECENT_TESTS}`)
+            // The latest-test card follows the chip too - "the latest test"
+            // on a filtered page means the filtered target's latest.
+            jsonRequest(`/speedtests?limit=${RECENT_TESTS}`
+                + (targetFilter != null ? `&target=${targetFilter}` : ""))
         ]).then(([stats, tests]) => {
             if (!isCurrent()) return;
 
@@ -284,7 +314,7 @@ export const Statistics = () => {
         });
         // currentNode: see its destructure above - a page whose requests have
         // been re-aimed under it has to re-ask.
-    }, [dateRange, currentNode]);
+    }, [dateRange, currentNode, targetFilter]);
 
     const handleTimeframeChange = useCallback((timeframe) => {
         setSearchParams(serializeRange(timeframe), { replace: true });
@@ -309,9 +339,12 @@ export const Statistics = () => {
     }, [updateStats]);
 
     // The list is newest first, so the entry after the latest test is the
-    // chronologically earlier one.
+    // chronologically earlier one - but only rows of the same target are
+    // comparable, and with no chip selected this list interleaves them all.
+    // See previousOfTarget; previousConnection walks the same way for the
+    // same kind of reason.
     const latestTest = recentTests[0] ?? null;
-    const previousTest = recentTests[1] ?? null;
+    const previousTest = previousOfTarget(recentTests, 0) ?? null;
     const latestConnection = previousConnection(recentTests, 0);
 
     const isDownsampled = deferredStatistics?.downsampled === true;
@@ -338,6 +371,7 @@ export const Statistics = () => {
 
         const query = rangeQuery(dateRange);
         query.set("points", String(FULL_DETAIL_POINTS));
+        if (targetFilter != null) query.set("target", String(targetFilter));
 
         let cancelled = false;
         setDetailLoading(true);
@@ -348,7 +382,12 @@ export const Statistics = () => {
             .finally(() => { if (!cancelled) setDetailLoading(false); });
 
         return () => { cancelled = true; };
-    }, [wantsDetail, isDownsampled, dateRange]);
+        // currentNode for the reason updateStats lists it: a page whose
+        // requests have been re-aimed under it has to re-ask, or the previous
+        // node's thousand-point series renders under the new node's heading.
+        // Today the layout happens to make that unreachable - switching nodes
+        // unmounts this page - but the dependency is what guards it on purpose.
+    }, [wantsDetail, isDownsampled, dateRange, targetFilter, currentNode]);
 
     if (mountPhase === 0) return null;
 
@@ -439,7 +478,7 @@ export const Statistics = () => {
     const renderChart = (chartType, source) => {
         switch (chartType) {
             case 'overview':
-                return <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} hourlyAverages={deferredStatistics.hourlyAverages} ping={deferredStatistics.ping} dateRange={chartRange} previous={previous} expanded/>;
+                return <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} hourlyAverages={deferredStatistics.hourlyAverages} ping={deferredStatistics.ping} dataUsed={deferredStatistics.dataUsed} dateRange={chartRange} previous={previous} expanded/>;
             case 'latest':
                 return <LatestTestChart test={latestTest} previous={previousTest}
                                         previousConnection={latestConnection} expanded/>;
@@ -459,10 +498,10 @@ export const Statistics = () => {
             case 'hourly':
                 return <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages}/>;
             case 'avgDownload':
-                return <AverageChart title={t(CHART_MODAL_LABELS.avgDownload)} data={deferredStatistics.download} previous={previous?.download} target={config?.download}
+                return <AverageChart title={t(CHART_MODAL_LABELS.avgDownload)} data={deferredStatistics.download} previous={previous?.download} target={gradeLimits.download}
                                     consistency={deferredStatistics.consistency?.download} tests={deferredStatistics.tests} expanded/>;
             case 'avgUpload':
-                return <AverageChart title={t(CHART_MODAL_LABELS.avgUpload)} data={deferredStatistics.upload} previous={previous?.upload} target={config?.upload}
+                return <AverageChart title={t(CHART_MODAL_LABELS.avgUpload)} data={deferredStatistics.upload} previous={previous?.upload} target={gradeLimits.upload}
                                     consistency={deferredStatistics.consistency?.upload} tests={deferredStatistics.tests} expanded/>;
             default:
                 return null;
@@ -494,17 +533,22 @@ export const Statistics = () => {
             {toolbar}
 
             {/* Stated once for the whole page, so every delta below can be a
-                bare arrow and number instead of each repeating the window. */}
+                bare arrow and number instead of each repeating the window. A
+                window cut at now's own wall clock - the range is still running
+                - says so, or its dates would claim whole days it only partly
+                covers. */}
             {previous && (
                 <p className="statistics-compare-note">
-                    {t("statistics.compare.note", {
+                    {t(previous.dateRange.partial
+                        ? "statistics.compare.note_partial"
+                        : "statistics.compare.note", {
                         from: formatDay(previous.dateRange.from),
                         to: formatDay(previous.dateRange.to)
                     })}
                 </p>
             )}
 
-            <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} hourlyAverages={deferredStatistics.hourlyAverages} dateRange={chartRange} previous={previous} onClick={() => setExpandedChart('overview')}/>
+            <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} hourlyAverages={deferredStatistics.hourlyAverages} ping={deferredStatistics.ping} dataUsed={deferredStatistics.dataUsed} dateRange={chartRange} previous={previous} onClick={() => setExpandedChart('overview')}/>
             <LatestTestChart test={latestTest} onClick={() => setExpandedChart('latest')}/>
             <ConsistencyChart consistency={deferredStatistics.consistency} onClick={() => setExpandedChart('consistency')}/>
 
@@ -523,8 +567,8 @@ export const Statistics = () => {
 
             <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages} onClick={() => setExpandedChart('hourly')}/>
 
-            <AverageChart title={t(CHART_MODAL_LABELS.avgDownload)} data={deferredStatistics.download} previous={previous?.download} target={config?.download} onClick={() => setExpandedChart('avgDownload')}/>
-            <AverageChart title={t(CHART_MODAL_LABELS.avgUpload)} data={deferredStatistics.upload} previous={previous?.upload} target={config?.upload} onClick={() => setExpandedChart('avgUpload')}/>
+            <AverageChart title={t(CHART_MODAL_LABELS.avgDownload)} data={deferredStatistics.download} previous={previous?.download} target={gradeLimits.download} onClick={() => setExpandedChart('avgDownload')}/>
+            <AverageChart title={t(CHART_MODAL_LABELS.avgUpload)} data={deferredStatistics.upload} previous={previous?.upload} target={gradeLimits.upload} onClick={() => setExpandedChart('avgUpload')}/>
 
             <ChartModal
                 isOpen={!!expandedChart}

@@ -4,12 +4,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-    convertSpeed, formatLatency, formatLatencyWithUnit, formatWithUnit
+    convertSpeed, formatLatency, formatLatencyWithUnit, formatWithUnit, roundsToZeroLatency
 } from "@/common/utils/FormatUtil.js";
-import { getIconBySpeed, isMeasured, jitterColour, packetLossColour } from "@/common/utils/TestUtil.js";
+import { getIconBySpeed, isMeasured, jitterColour, packetLossColour, readableFigure } from "@/common/utils/TestUtil.js";
 import {
     changeFrom, differenceFromTarget, percentOfTarget
 } from "../../client/src/common/components/TestDetails/utils/details.js";
+import { escapeRegExp, withoutJsComments } from "../helpers/source.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -41,7 +42,9 @@ const between = (source, from, to) => {
 };
 
 const DERIVATIONS_START = "const ping = formatLatency";
-const QUALITY_START = "const qualityFigures";
+// The region opens at the loss chip's hoisted glue site: the chip's text and
+// label both read it, so the executed strip below needs it in the slice.
+const QUALITY_START = "const lossText";
 const QUALITY_END = "const quality =";
 const METRICS_START = "const metrics = [";
 const METRICS_END = "\n    ];";
@@ -79,10 +82,10 @@ const t = (key, values) => values === undefined ? key : {key, ...values};
  * quality and loadedLatency are rendered markup the slices skip; the figures
  * the quality strip carries are built from their own region below.
  */
-const buildMetrics = ({test, targets = {}, earlier = {}}) => evaluate(
+const buildMetrics = ({test, limits = {}, earlier = {}}) => evaluate(
     `${derivations()}\n${metricsLiteral()}\nreturn metrics;`, {
-        test, targets, earlier, t,
-        formatLatency, formatWithUnit, changeFrom, differenceFromTarget, percentOfTarget,
+        test, limits, earlier, t,
+        formatLatency, formatWithUnit, roundsToZeroLatency, changeFrom, differenceFromTarget, percentOfTarget,
         getIconBySpeed, convertSpeed,
         preferences: {}, speedUnit: "Mbit/s",
         quality: null, loadedLatency: () => null,
@@ -99,14 +102,14 @@ const pingCard = (fixture) => {
 const qualityEntries = (test) => evaluate(
     `${qualityRegion()}\nreturn qualityFigures;`, {
         test, t,
-        isMeasured, jitterColour, packetLossColour,
+        isMeasured, jitterColour, packetLossColour, readableFigure,
         formatLatencyWithUnit, formatWithUnit, formatLatency,
         faWaveSquare: null, jitterInfo: null, faLinkSlash: null, packetLossInfo: null
     });
 
 // The pair from the bug report: 25.44 after 25.36, against a target typed into
 // the settings dialog - which stores what was typed, a string.
-const BUG_REPORT = {test: {ping: 25.44}, targets: {ping: "25"}, earlier: {ping: 25.36}};
+const BUG_REPORT = {test: {ping: 25.44}, limits: {ping: "25"}, earlier: {ping: 25.36}};
 
 /**
  * A latency is shown at one decimal, and everything read off it used to be
@@ -169,13 +172,60 @@ describe("the arithmetic: helpers fed the printed figure agree to the decimal", 
         }
     });
 
-    // The target is what the config holds, which is whatever was typed into the
-    // settings dialog - a string. Formatting it has to leave that alone, or the
-    // bar and the label lose the target altogether.
-    it("leaves a target stored as a string usable", () => {
-        assert.equal(percentOfTarget(formatLatency(25.44), formatLatency("25"), {higherIsBetter: false}), 98);
-        assert.deepEqual(differenceFromTarget(formatLatency(25.44), formatLatency("25")),
+    // The target is what the config holds, which is whatever was typed into
+    // the settings dialog - a string, handed over RAW. The pane used to trim
+    // its copy through formatLatency, and once the formatter learned to read
+    // strings that trim made the pane the odd view out: every other view
+    // grades against the exact typed target, so a boundary ping wore one
+    // colour on the row and another on the pane it opens - for every target
+    // with more than one decimal.
+    //
+    // Two targets, because the colour and the sentence answer two different
+    // questions. The COLOUR answers "is this line meeting the target every
+    // view grades against" - raw, or the pane disagrees with the row it
+    // opened from. The SENTENCE answers "how far from the target is the
+    // figure I just printed" - printed against printed, or a numeric
+    // per-target optimum of 25.44 beside a ping printed 25.4 reads "0.04 ms
+    // under" when the line is exactly on target.
+    it("hands the colour the target as typed, and the sentence the target as printed", () => {
+        assert.match(pane, /const pingTarget = limits\.ping;/,
+            "the pane's colour grades a different target than the three views beside it");
+        // The sentence's operands travel as a PAIR - one destructure picks
+        // both, so a branch cannot mix a printed ping with a raw target:
+        // like-against-unlike is the exact pairing the printed-vs-printed
+        // rule exists to forbid.
+        assert.match(pane, /\{sentenceTarget: formatLatency\(limits\.ping\), sentenceFigure: ping\}/,
+            "the sentence has no printed target to compare its printed ping against");
+        assert.match(pane, /\{sentenceTarget: limits\.ping, sentenceFigure: test\.ping\}/,
+            "the sub-resolution branch lost its stored-against-stored pair - a sub-0.05 target prints "
+            + "as 0, which asTarget refuses, and the sentence silently vanishes");
+        assert.match(pane, /differenceFromTarget\(sentenceFigure, sentenceTarget\)/,
+            "the sentence no longer reads the paired operands");
+        assert.match(pane, /getIconBySpeed\(ping, pingTarget, false\)/,
+            "the colour no longer grades against the typed target");
+    });
+
+    it("keeps a target stored as a string usable", () => {
+        assert.equal(percentOfTarget(formatLatency(25.44), "25", {higherIsBetter: false}), 98);
+        assert.deepEqual(differenceFromTarget(formatLatency(25.44), "25"),
             {difference: 0.4, direction: "over"});
+        assert.deepEqual(differenceFromTarget(formatLatency(25.44), formatLatency("25.44")),
+            {difference: 0, direction: "same"},
+            "a ping exactly on a fractional target reads as beating it by the decimal the screen never shows");
+    });
+
+    // The fractional-target cases that separate the two wirings - whole-number
+    // fixtures cannot, because formatLatency returns them unchanged.
+    it("colours a boundary ping the same as the row, for a fractional target", () => {
+        assert.equal(getIconBySpeed(formatLatency(25.96), "20.01", false), "green",
+            "the pane grades 26.0/20 where every other view grades 26.0/20.01");
+        assert.equal(getIconBySpeed(25.96, "20.01", false), "green");
+    });
+
+    // The percent bar stays on the raw target: whole-percent rounding absorbs
+    // the trim at this magnitude, and the destination is what is asserted.
+    it("fills the bar to one hundred for a ping exactly on its fractional target", () => {
+        assert.equal(percentOfTarget(formatLatency(25.44), "25.44", {higherIsBetter: false}), 100);
     });
 });
 
@@ -211,13 +261,13 @@ describe("the ping card computes every figure from the one it prints", () => {
     // 2.04 prints as 2 against a target of 2: the bar has to say the target is
     // met, not that the reader is 2% short of a figure they cannot see.
     it("fills the bar from the printed figure", () => {
-        assert.equal(pingCard({test: {ping: 2.04}, targets: {ping: "2"}}).percent, 100);
+        assert.equal(pingCard({test: {ping: 2.04}, limits: {ping: "2"}}).percent, 100);
     });
 
     // 12.96 prints as 13, and 13 against a target of 10 is exactly the 130%
     // where the colour turns - the card is graded on the figure it shows.
     it("colours the card from the printed figure", () => {
-        assert.equal(pingCard({test: {ping: 12.96}, targets: {ping: "10"}}).level, "orange");
+        assert.equal(pingCard({test: {ping: 12.96}, limits: {ping: "10"}}).level, "orange");
     });
 
     // The -1 a failed run stores reaches the guards untouched, so everything
@@ -238,6 +288,64 @@ describe("the ping card computes every figure from the one it prints", () => {
         assert.equal(card.percent, null);
         assert.equal(card.targetLabel, null);
         assert.equal(card.level, "blue");
+    });
+
+    /**
+     * A target below the display's resolution must not lose its sentence.
+     * formatLatency("0.04") prints 0, and asTarget refuses a zero target, so
+     * the label silently vanished while the bar and the colour - raw-target
+     * readers - stayed. roundsToZeroLatency exists for exactly this reading:
+     * real but too small to print. The sentence gets the raw target then; it
+     * prints only the difference, never the target itself, so nothing
+     * unprintable reaches the screen.
+     */
+    it("keeps the sentence for a target below the printable resolution", () => {
+        // Stored against stored in this branch: the target cannot print, so
+        // the printed ping is no like operand either - 5.24 minus 0.04, not
+        // the trimmed 5.2 minus the raw 0.04.
+        assert.deepEqual(pingCard({test: {ping: 5.24}, limits: {ping: "0.04"}}).targetLabel,
+            {key: "test.details.over_target", amount: 5.2, unit: "latest.ping_unit"},
+            "the one target that cannot be printed loses its sentence entirely");
+    });
+
+    // The distance the branch states is the TRUE stored distance: printed
+    // 0.1 against raw 0.04 read "0.06 ms over" where the line sits 0.02 from
+    // its target - three times the real figure, in a pane whose thesis is
+    // that both sides of a comparison come from one domain.
+    it("states the stored distance when the target is below resolution", () => {
+        assert.deepEqual(pingCard({test: {ping: 0.06}, limits: {ping: "0.04"}}).targetLabel,
+            {key: "test.details.over_target", amount: 0.02, unit: "latest.ping_unit"});
+    });
+
+    it("calls a ping exactly on a sub-resolution target on target", () => {
+        assert.equal(pingCard({test: {ping: 0.04}, limits: {ping: "0.04"}}).targetLabel,
+            "test.details.on_target");
+    });
+
+    /**
+     * The whole card for the awkwardest pair: a ping that prints 0 against a
+     * target too small to print. The sentence is the one informative element
+     * - stored against stored, 0.02 over - while the bar refuses the printed
+     * zero (a zero figure is no divisor) and the icon grades 0-over-target as
+     * the best ratio there is, green. Coherent, if lopsided: no element
+     * claims a different distance, and the one that can state a figure states
+     * the true one.
+     */
+    it("keeps the sentence informative for a printed-zero ping on a sub-resolution target", () => {
+        const card = pingCard({test: {ping: 0.03}, limits: {ping: "0.01"}});
+
+        assert.deepEqual(card.targetLabel,
+            {key: "test.details.over_target", amount: 0.02, unit: "latest.ping_unit"});
+        assert.equal(card.value, 0, "formatLatency prints a 0.03 ping as 0");
+        assert.equal(card.percent, null, "the bar divides by a printed zero");
+        assert.equal(card.level, "green");
+    });
+
+    // A target of exactly zero stays unset - asTarget refuses it on every
+    // path, and the percent bar refuses the same value, so the pane keeps
+    // saying nothing rather than "on target" against a target nobody set.
+    it("still treats a zero target as no target", () => {
+        assert.equal(pingCard({test: {ping: 5.24}, limits: {ping: "0"}}).targetLabel, null);
     });
 
     // The speeds have their own conversion and their own precision, and a
@@ -277,6 +385,30 @@ describe("the quality strip beside the ping", () => {
     });
 
     /**
+     * A packet loss readableFigure refuses is no measurement, and this row
+     * prints the stored column RAW - so junk that showed rendered "auto%" or
+     * a bare "%" beside the blue never-measured colour the grader gives it.
+     * The row does not render at all then; decided by what is correct to
+     * show, and applied to the card view the same way. (The jitter chip
+     * differs on purpose: its label prints through formatLatencyWithUnit,
+     * which says N/A for what it cannot read, so showing-with-N/A is that
+     * chip's honest form - this row's raw label has no such word.)
+     */
+    it("drops the packet-loss row for a value nothing can read", () => {
+        for (const junk of ["auto", "", "0,5", -1, "-1", NaN])
+            assert.equal(qualityEntries({jitter: null, packetLoss: junk})
+                .find((figure) => figure.key === "packetLoss"), undefined,
+                `a packet loss of ${JSON.stringify(junk)} rendered as a reading`);
+    });
+
+    it("keeps the packet-loss row for a real reading in either spelling", () => {
+        for (const measured of [0, 1.25, "0.5"])
+            assert.notEqual(qualityEntries({jitter: null, packetLoss: measured})
+                .find((figure) => figure.key === "packetLoss"), undefined,
+                `a packet loss of ${JSON.stringify(measured)} vanished`);
+    });
+
+    /**
      * The colour grades the printed figure, exactly as the ping's does. A
      * stored 19.96 prints "20", and a green icon beside a printed 20 - the very
      * number the scale calls orange - reads as the interface disagreeing with
@@ -296,8 +428,18 @@ describe("the quality strip beside the ping", () => {
     it("grades it from the figure the row that expands to this pane grades it from", () => {
         const argument = (source) => source.match(/jitterColour\(([^)]*\)?)\)/)?.[1];
 
+        // The row grades a hoisted const now; what the belt compares is the
+        // expression behind the name, so a hoist cannot satisfy it with a
+        // different reading under the same label.
+        const resolved = (source, expression) => {
+            const declaration = expression && source.match(
+                new RegExp(`const ${escapeRegExp(expression)} = ([^;]+);`))?.[1];
+
+            return declaration ?? expression;
+        };
+
         const inPane = argument(qualityRegion());
-        const inRow = argument(row);
+        const inRow = resolved(row, argument(row));
 
         assert.notEqual(inPane, undefined, "the pane no longer grades the jitter");
         assert.notEqual(inRow, undefined, "the row no longer grades the jitter");
@@ -330,21 +472,119 @@ describe("what the extraction cannot run, read from the source", () => {
     });
 
     /**
-     * The one assertion that catches a figure added later and wired to the raw
-     * column: nowhere in the pane is a ping read without being trimmed first.
+     * The reads the tripwire below excepts, one construct per line - and one
+     * LINE per construct, because the guard blanks them by literal
+     * replacement and a multi-line entry silently stops matching the CRLF
+     * source, which reads as the construct having gone away.
      *
-     * With one exception, and it is not a displayed figure. The grade on the
-     * loaded latency's glyph is worked out from what that direction added over
-     * the idle ping, and that arithmetic is shared three ways - with
-     * bufferbloat(), which the facts row's grade comes from, and with the
-     * server's average of the same quantity across a range. All three read the
-     * stored value; trimming it here alone would let this icon disagree with the
-     * grade printed under it.
+     * None is a displayed figure. The grade on the loaded latency's glyph is
+     * worked out from what that direction added over the idle ping, and that
+     * arithmetic is shared three ways - with bufferbloat(), which the facts
+     * row's grade comes from, and with the server's average of the same
+     * quantity across a range; all three read the stored value, and trimming
+     * it here alone would let this icon disagree with the grade printed
+     * under it. The TARGET is handed over raw because it is config, not a
+     * measurement: every view grades against the typed value, and the pane
+     * trimming its copy alone made a boundary ping wear two colours between
+     * the row and the pane it opens. And the sub-resolution machinery reads
+     * raw on purpose - the predicate deciding whether the printed form
+     * survives, and the stored-against-stored pair for the target the trim
+     * would erase - all handed to the sentence's guards, never to the screen.
+     */
+    const RAW_TARGET_READS = [
+        ["latencyIncrease(value, test.ping)", 1],
+        ["const pingTarget = limits.ping;", 1],
+        ["roundsToZeroLatency(limits.ping)", 1],
+        ["{sentenceTarget: limits.ping, sentenceFigure: test.ping}", 1]
+    ];
+
+    // The counts and the guard read the pane's CODE, comments stripped: the
+    // pane's own prose already names its constructs, and counted raw, an
+    // ordinary comment quoting a granted read broke the build - while a
+    // construct surviving only in a comment satisfied the facts test with
+    // the code gone.
+    const paneCode = withoutJsComments(pane);
+
+    // Each entry is a fact about the pane before it is an exception to the
+    // tripwire - one that stops appearing exempts nothing and must go - and
+    // an EXACT count: the guard below blanks every occurrence, so a second
+    // copy of a granted construct would be a second, never-reviewed raw
+    // read riding a one-time grant.
+    it("keeps the excepted reads a list of facts, each granted exactly once", () => {
+        for (const [read, count] of RAW_TARGET_READS) {
+            const seen = paneCode.split(read).length - 1;
+
+            assert.equal(seen, count, seen === 0
+                ? `"${read}" is no longer in the pane; drop it from RAW_TARGET_READS`
+                : `"${read}" appears ${seen} times in the pane where ${count} was granted; a second copy is `
+                + "a second construct, and the blanking exempts both");
+        }
+    });
+
+    /**
+     * A raw read in either chaining spelling, however a refactor writes it.
+     * The lookbehind exempts the one formatted read - with or without the
+     * unit half - and the optional `?` matters: the hardened siblings two
+     * files over write house-style optional chaining, so the next defensive
+     * pass over this pane will too, and a guard that only knows the bare
+     * dot lets exactly that edit walk out of it. The names are the pane's
+     * whole row-holding scope: test, limits, earlier - and previous and
+     * previousConnection, the props earlier aliases and the guard only ever
+     * watched through the alias.
+     */
+    const RAW_LATENCY_READ =
+        /(?<!formatLatency(?:WithUnit)?\()\b(test|limits|earlier|previousConnection|previous)\??\.ping\b/;
+
+    it("reads a raw ping in either chaining spelling, and only a raw one", () => {
+        for (const raw of ["const x = test.ping;", "const x = test?.ping;", "limits?.ping", "earlier?.ping;",
+            "previous.ping", "previous?.ping", "previousConnection.ping"])
+            assert.match(raw, RAW_LATENCY_READ, `"${raw}" no longer reads as a raw latency`);
+
+        for (const guarded of ["formatLatency(test.ping)", "formatLatency(test?.ping)",
+            "formatLatencyWithUnit(test.ping, ms)", "other?.ping", "latest.ping_unit", "test.pinged"])
+            assert.doesNotMatch(guarded, RAW_LATENCY_READ, `"${guarded}" is formatted or no latency read at all`);
+    });
+
+    /**
+     * The dot is not the only spelling of a read: `const {ping} = test;` -
+     * this codebase's own house form, bufferbloat() writes it - takes the
+     * raw column without ever writing "test.ping". One prefix level is
+     * admitted, in either chaining (props.test, props?.test); two levels, a
+     * parameter destructure (`({ping}) => ...`) and a nested one
+     * (`{test: {ping}}`) are the stated bounds.
+     */
+    const RAW_LATENCY_DESTRUCTURE =
+        /[{,]\s*ping\b[^}]*\}\s*=\s*(?:[\w$]+\??\.)?(?:test|limits|earlier|previousConnection|previous)\b/;
+
+    it("reads a destructured ping, and only from a test-shaped object", () => {
+        for (const raw of ["const {ping} = test;", "const {ping: raw} = test;", "const {download, ping} = test;",
+            "const {ping} = limits;", "const {ping} = earlier;", "let {ping, jitter} = test;",
+            "const { ping } = test;", "const {ping} = props.test;", "const {ping} = props?.test;",
+            "const {ping: previousPing} = previous;", "const {ping} = previousConnection;"])
+            assert.match(raw, RAW_LATENCY_DESTRUCTURE, `"${raw}" no longer reads as a raw latency`);
+
+        for (const clean of ["const {pingTarget} = config;", "({ping: 25.44})", "const {ping} = other;",
+            "const {pinged} = test;", "const {jitter} = test;", "const {ping} = testUtil;",
+            "formatLatency(test.ping)",
+            // The stated bounds, pinned as bounds: a parameter destructure
+            // and a nested one stay out of this pattern's reach.
+            "const row = ({ping}) => formatLatency(ping);",
+            "const {test: {ping}} = props;"])
+            assert.doesNotMatch(clean, RAW_LATENCY_DESTRUCTURE, `"${clean}" is no raw latency read`);
+    });
+
+    /**
+     * The one assertion that catches a figure added later and wired to the
+     * raw column: nowhere in the pane is a ping read without being trimmed
+     * first, the listed constructs aside.
      */
     it("lets no raw latency reach anything the reader sees", () => {
-        const displayed = pane.replaceAll("latencyIncrease(value, test.ping)", "");
+        const displayed = RAW_TARGET_READS.reduce(
+            (source, [read]) => source.replaceAll(read, ""), paneCode);
 
-        assert.doesNotMatch(displayed, /(?<!formatLatency\()\b(test|targets|earlier)\.ping\b/,
+        assert.doesNotMatch(displayed, RAW_LATENCY_READ,
             "a ping is still read at the two decimals the column stores");
+        assert.doesNotMatch(displayed, RAW_LATENCY_DESTRUCTURE,
+            "a ping is destructured out of its row at the two decimals the column stores");
     });
 });

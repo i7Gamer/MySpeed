@@ -48,6 +48,7 @@ describe("statistics answers only the range still being asked about", () => {
         const updateStats = functionAt(statistics, "const updateStats", {
             rangeQuery: () => new URLSearchParams(),
             dateRange: null,
+            targetFilter: null,
             startTransition: (run) => run(),
             setLoading: () => undefined,
             setLoadError: (error) => error !== null && wrote.push("error"),

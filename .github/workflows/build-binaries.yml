@@ -46,7 +46,7 @@ jobs:
 
       - name: Install client dependencies
         working-directory: client
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Build client
         working-directory: client
@@ -56,7 +56,7 @@ jobs:
         run: Move-Item -Path client/build -Destination .
 
       - name: Install server dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Generate migrations
         run: bun run generate-migrations
@@ -193,7 +193,7 @@ jobs:
 
       - name: Install client dependencies
         working-directory: client
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Build client
         working-directory: client
@@ -203,7 +203,7 @@ jobs:
         run: mv client/build .
 
       - name: Install server dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Generate migrations
         run: bun run generate-migrations
@@ -294,7 +294,7 @@ jobs:
 
       - name: Install client dependencies
         working-directory: client
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Build client
         working-directory: client
@@ -304,7 +304,7 @@ jobs:
         run: mv client/build .
 
       - name: Install server dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Generate migrations
         run: bun run generate-migrations
@@ -362,7 +362,7 @@ jobs:
 
       - name: Install client dependencies
         working-directory: client
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Build client
         working-directory: client
@@ -372,7 +372,7 @@ jobs:
         run: mv client/build .
 
       - name: Install server dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Generate migrations
         run: bun run generate-migrations

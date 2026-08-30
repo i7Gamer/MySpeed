@@ -54,22 +54,23 @@
       "server_id": "ID an fhreastalaí",
       "server_id_placeholder": "ID freastalaí ar bith, nó fág folamh é",
       "custom_url": "URL Saincheaptha",
+      "iperf_host": "Freastalaí iperf3",
       "choose_automatically": "Roghnaigh go huathoibríoch",
       "ookla_license": "Léigh mé agus glacaim le <Eula>EULA</Eula>, <GDPR>polasaí príobháideachta</GDPR> agus <TOS>téarmaí seirbhíse</TOS> Ookla.",
       "ookla_desc": "Soláthraí coitianta le líonra freastalaí domhanda",
       "libre_desc": "Tástáil luais foinse oscailte, féin-óstála",
-      "cloudflare_desc": "Tástáil thapa bunaithe ar CDN"
+      "cloudflare_desc": "Tástáil thapa bunaithe ar CDN",
+      "iperf3_desc": "Do fhreastalaí iperf3 féin, ar do líonra"
     }
   },
   "dropdown": {
     "settings": "Socruithe",
     "changes_applied": "Tá do chuid athruithe sábháilte.",
     "language_changed": "Tá an teanga athraithe.",
-    "provider_changed": "Tá an soláthraí athraithe.",
     "changes_unsaved": "Níor cuireadh do chuid athruithe i bhfeidhm. Seiceáil do ionchur.",
     "invalid": "Ionchur neamhbhailí",
     "optimal_values": "Luachanna is fearr",
-    "change_provider": "Athraigh soláthraí",
+    "targets": "Spriocanna tástála",
     "password": "Athraigh an focal faire",
     "cron": "Socraigh minicíocht",
     "storage": "Bainistigh stóráil",
@@ -135,7 +136,6 @@
     "statistics": "Staitisticí"
   },
   "update": {
-    "provider_title": "Socraigh soláthraí tástála luais",
     "new_password": "Socraigh pasfhocal nua",
     "password_placeholder": "Pasfhocal nua",
     "show_password": "Taispeáin an pasfhocal",
@@ -305,6 +305,7 @@
       "unchanged": "Gan athrú ón tástáil dheireanach",
       "measured_at": "Tomhaiste ag",
       "measured_with": "Tomhaiste le",
+      "target": "Sprioc",
       "seconds": "{{seconds}} s",
       "data_used": "Sonraí úsáidte",
       "data_used_value": "{{down}} síos / {{up}} suas",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "Meán",
     "compare": {
-      "note": "Athruithe i gcomparáid le {{from}} – {{to}}"
+      "note": "Athruithe i gcomparáid le {{from}} – {{to}}",
+      "note_partial": "Athruithe i gcomparáid le {{from}} – {{to}}, suas go dtí an t-am céanna den lá"
     },
     "downsampled": "Meánaithe · {{shown}} as {{total}} tástáil ar taispeáint",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "Meán thar na tástálacha a thomhais é",
       "peak_title": "Moilliú buaicuaire",
       "peak_description": "Is moille é thart ar {{slowest}}, is tapúla é thart ar {{fastest}}",
-      "ping_description": "Meán-aga folaigh, idir {{min}} agus {{max}}",
+      "peak_latency_title": "Aga folaigh buaicuaire",
+      "peak_latency_description": "Ardaíonn ó {{best}} timpeall {{bestHour}} go {{worst}} timpeall {{worstHour}}",
+      "ping_description": "Meán-aga folaigh, idir {{min}} agus {{max}}, airmheán {{median}}",
       "span_title": "Réimse faid",
       "span_description": "An tástáil is giorra agus an ceann is faide sa raon seo",
       "density_title": "Tástálacha in aghaidh an lae",
-      "density_description": "Thar {{days}} lá"
+      "density_description": "Thar {{days}} lá",
+      "density_description_partial": "Thar {{elapsed}} as {{days}} lá"
     },
     "values": {
       "min": "Íosmhéid",
@@ -377,7 +382,8 @@
       "up": "Luachanna uaslódála",
       "target": "Sprioc: {{target}}",
       "consistency": "Comhsheasmhacht",
-      "samples": "Tástálacha tomhaiste"
+      "samples": "Tástálacha tomhaiste",
+      "median": "Airmheán"
     },
     "failed_test": "Theip ar an tástáil",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "Tá tú i mód taispeána faoi láthair. Tá roinnt gnéithe díchumasaithe agus ní féidir roinnt socruithe a athrú. Más mian leat gach gné a úsáid, is féidir leat <Link>MySpeed</Link> a shuiteáil ar do fhreastalaí féin."
   },
   "integrations": {
-    "none_active": "Níl an comhtháthú seo gníomhach. <br/><Bold>Cruthaigh</Bold>",
+    "none_added": "Níl aon chomhtháthú socraithe fós.",
     "preview_active": "Tá comhtháthú díchumasaithe le linn mód taispeána.",
     "display_name": "Ainm an chomhtháthaithe",
     "create": "Cruthaigh",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "An tástáil dheireanach díreach anois",
     "elapsed": "{{seconds}}s caite",
-    "next_test_approx": "An chéad cheann eile ag ~{{time}}"
+    "next_test_approx": "An chéad cheann eile ag ~{{time}}",
+    "target_of": "Sprioc {{index}} as {{count}}"
+  },
+  "targets": {
+    "title": "Spriocanna tástála",
+    "description": "Tomhaiseann gach tástáil sceidealta gach sprioc sceidealta uair amháin, ceann i ndiaidh a chéile. Ní ritheann spriocanna lasmuigh den sceideal ach ón áit seo.",
+    "add": "Cuir sprioc leis",
+    "edit_title": "Cuir sprioc in eagar",
+    "name": "Ainm",
+    "name_placeholder": "m.sh. Baile Átha Cliath",
+    "scheduled": "Sceidealta",
+    "alerts": "Foláirimh & moltaí",
+    "own_optimals": "A luachanna is fearr féin",
+    "all": "Gach sprioc",
+    "saved": "Tá an sprioc sábháilte.",
+    "removed": "Tá an sprioc bainte.",
+    "run_now": "Rith tástáil anois",
+    "move_up": "Bog suas",
+    "move_down": "Bog síos",
+    "delete_confirm": {
+      "title": "An sprioc seo a scriosadh?",
+      "description": "Scriosfar <Bold>{{name}}</Bold>. Fanann na tástálacha a thomhais sí cheana féin sa stair.",
+      "yes": "Scrios"
+    }
   }
 }

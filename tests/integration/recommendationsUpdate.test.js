@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer } from "./helpers/boot.js";
+import { bootServer, seedTarget, seedTests } from "./helpers/boot.js";
 
 let server;
 let controller;
@@ -77,6 +77,27 @@ describe("updating the recommendations", () => {
         assert.equal((await controller.getCurrent()).download, 900);
     });
 
+    /**
+     * And if two rows ever exist - importConfig restores this table wholesale
+     * and bounds it only by a row cap, so a backup can carry more than one -
+     * every read names the same one. An unordered findOne is free to return
+     * either, so getCurrent could answer one row while update() wrote the
+     * other, and the recommendation the card shows and the one the round
+     * refreshes would drift apart.
+     */
+    it("reads the same row every time when the table holds more than one", async () => {
+        await model.create({ping: 5, download: 111, upload: 11});
+        await model.create({ping: 6, download: 222, upload: 22});
+
+        const first = await controller.getCurrent();
+        const second = await controller.getCurrent();
+        assert.equal(first.id, second.id, "getCurrent answers with whichever row the driver felt like");
+
+        const written = await controller.update(9, 333, 33);
+        assert.equal(written.id, first.id, "update wrote a different row than getCurrent reads");
+        assert.equal((await controller.getCurrent()).download, 333);
+    });
+
     it("hands back the row it wrote", async () => {
         const created = await controller.update(12, 500, 100);
         assert.equal(created.download, 500);
@@ -106,5 +127,120 @@ describe("updating the recommendations", () => {
         }
 
         assert.equal(await model.count(), 0, "a set that could not be stored is on record anyway");
+    });
+});
+
+/**
+ * Which target createRecommendations samples.
+ *
+ * It prefers the first scheduled target that takes part in alerting - a
+ * diagnostic box may lead the round with alerts off, and recommendations must
+ * describe a line someone watches. But "prefers" must not mean "or nothing":
+ * an instance whose targets all have alerts off - or all run by hand - used to
+ * return before sampling anything, so the recommendation card sat frozen at
+ * whatever the line looked like before the flags changed, for the life of the
+ * database.
+ */
+describe("the target the sample describes", () => {
+    let task;
+    let targets;
+
+    before(async () => {
+        task = await import("../../server/tasks/speedtest.js");
+        targets = await import("../../server/controller/targets.js");
+    });
+
+    after(async () => {
+        await targets.removeAll();
+        await seedTests(server.tests, []);
+    });
+
+    const MS_PER_HOUR = 3600000;
+
+    const sampleRows = (targetId, download = 100) =>
+        Array.from({length: task.RECOMMENDATION_SAMPLE}, (unused, index) => ({
+            created: new Date(Date.now() - (index + 1) * MS_PER_HOUR).toISOString(),
+            targetId, download
+        }));
+
+    it("prefers the alerting target over a faster one leading the round", async () => {
+        const lan = await seedTarget({name: "lan", alerts: false});
+        const wan = await targets.create({name: "wan", provider: "ookla"});
+
+        await seedTests(server.tests, [...sampleRows(lan.id, 940), ...sampleRows(wan.id, 100)]);
+
+        await task.createRecommendations();
+
+        assert.equal((await controller.getCurrent()).download, 100,
+            "the sample mixed in a line nobody is alerted about");
+    });
+
+    /**
+     * A watched line that runs by hand still describes a line somebody
+     * watches; the scheduled box beside it with alerts switched off does not.
+     * Reaching for the round's leader first recommended the LAN box's gigabit
+     * figures on an instance whose watched line is a WAN - the very mixture
+     * the sampling rule exists to prevent, arrived at by its own fallback.
+     */
+    it("prefers a watched line that runs by hand over an unwatched scheduled one", async () => {
+        const lan = await seedTarget({name: "lan", alerts: false});
+        const wan = await targets.create({name: "wan", provider: "ookla", enabled: false});
+
+        await seedTests(server.tests, [...sampleRows(lan.id, 940), ...sampleRows(wan.id, 100)]);
+
+        await task.createRecommendations();
+
+        assert.equal((await controller.getCurrent()).download, 100,
+            "the sample described the line nobody asked to be told about");
+    });
+
+    /**
+     * "Prefers" still must not mean "or nothing".
+     *
+     * A watched line that runs by hand leads the preference, and a hand-run line
+     * may never reach a full sample - nobody is running it hourly. Sampling the
+     * preferred line and giving up when it has too few tests left the card
+     * frozen at whatever it held before, for the life of the database, while a
+     * scheduled line beside it measured every hour. So the preference is walked
+     * rather than resolved: the first line that can actually describe itself
+     * wins, in the order the instance ranks them.
+     */
+    it("samples the line behind it when the preferred one has too few tests", async () => {
+        const watched = await seedTarget({name: "watched", enabled: false});
+        const scheduled = await targets.create({name: "scheduled", provider: "ookla", alerts: false});
+
+        const TOO_FEW = 3;
+
+        await seedTests(server.tests, [
+            ...sampleRows(watched.id, 940).slice(0, TOO_FEW),
+            ...sampleRows(scheduled.id, 100)
+        ]);
+
+        await task.createRecommendations();
+
+        const stored = await controller.getCurrent();
+        assert.ok(stored, "the card stayed frozen while a scheduled line measured every hour");
+        assert.equal(stored.download, 100);
+    });
+
+    it("falls back to the round's first member when no target alerts", async () => {
+        const quiet = await seedTarget({name: "quiet", alerts: false});
+        await seedTests(server.tests, sampleRows(quiet.id));
+
+        await task.createRecommendations();
+
+        const stored = await controller.getCurrent();
+        assert.ok(stored, "no target alerts, so the recommendations never learn anything again");
+        assert.equal(stored.download, 100);
+    });
+
+    it("falls back to the first target on record when none is scheduled", async () => {
+        const manual = await seedTarget({name: "manual", alerts: false, enabled: false});
+        await seedTests(server.tests, sampleRows(manual.id));
+
+        await task.createRecommendations();
+
+        assert.ok(await controller.getCurrent(),
+            "an instance run entirely by hand never updates its recommendations");
     });
 });

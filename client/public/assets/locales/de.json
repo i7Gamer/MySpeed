@@ -54,22 +54,23 @@
       "server_id": "Server-ID",
       "server_id_placeholder": "Beliebige Server-ID, oder leer lassen",
       "custom_url": "Benutzerdefinierte URL",
+      "iperf_host": "iperf3-Server",
       "choose_automatically": "Automatisch wählen",
       "ookla_license": "Ich habe die <Eula>EULA</Eula>, die <GDPR>Datenschutzrichtlinie</GDPR> und die <TOS>Nutzungsbedingungen</TOS> von Ookla gelesen und akzeptiere sie.",
       "ookla_desc": "Beliebter Anbieter mit globalem Servernetzwerk",
       "libre_desc": "Open-Source, selbst-hostbarer Speedtest",
-      "cloudflare_desc": "Schnelle CDN-basierte Tests"
+      "cloudflare_desc": "Schnelle CDN-basierte Tests",
+      "iperf3_desc": "Dein eigener iperf3-Server, in deinem Netzwerk"
     }
   },
   "dropdown": {
     "settings": "Einstellungen",
     "changes_applied": "Die Änderungen wurden gespeichert.",
     "language_changed": "Die Sprache wurde geändert.",
-    "provider_changed": "Der Anbieter wurde gewechselt.",
     "changes_unsaved": "Deine Änderungen wurden nicht übernommen. Überprüfe deine Eingabe.",
     "invalid": "Eingabe ungültig",
     "optimal_values": "Optimale Werte",
-    "change_provider": "Anbieter wechseln",
+    "targets": "Test-Ziele",
     "password": "Passwort ändern",
     "cron": "Häufigkeit einstellen",
     "storage": "Speicher verwalten",
@@ -135,7 +136,6 @@
     "statistics": "Statistik"
   },
   "update": {
-    "provider_title": "Speedtest-Anbieter einstellen",
     "new_password": "Neues Passwort festlegen",
     "password_placeholder": "Neues Passwort",
     "show_password": "Passwort anzeigen",
@@ -305,6 +305,7 @@
       "unchanged": "Unverändert zum letzten Test",
       "measured_at": "Gemessen am",
       "measured_with": "Gemessen mit",
+      "target": "Ziel",
       "seconds": "{{seconds}} s",
       "data_used": "Verbrauchte Daten",
       "data_used_value": "{{down}} runter / {{up}} hoch",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "Durchschnitt",
     "compare": {
-      "note": "Veränderung gegenüber {{from}} – {{to}}"
+      "note": "Veränderung gegenüber {{from}} – {{to}}",
+      "note_partial": "Veränderung gegenüber {{from}} – {{to}}, bis zur gleichen Uhrzeit"
     },
     "downsampled": "Gemittelt · {{shown}} von {{total}} Tests",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "Durchschnitt über die Tests, die ihn gemessen haben",
       "peak_title": "Verlangsamung zur Stoßzeit",
       "peak_description": "Am langsamsten gegen {{slowest}}, am schnellsten gegen {{fastest}}",
-      "ping_description": "Durchschnittliche Latenz, zwischen {{min}} und {{max}}",
+      "peak_latency_title": "Latenz zur Stoßzeit",
+      "peak_latency_description": "Steigt von {{best}} gegen {{bestHour}} auf {{worst}} gegen {{worstHour}}",
+      "ping_description": "Durchschnittliche Latenz, zwischen {{min}} und {{max}}, Median {{median}}",
       "span_title": "Dauer-Spanne",
       "span_description": "Der kürzeste und der längste Test in diesem Zeitraum",
       "density_title": "Tests pro Tag",
-      "density_description": "Über {{days}} Tage"
+      "density_description": "Über {{days}} Tage",
+      "density_description_partial": "Über {{elapsed}} von {{days}} Tagen"
     },
     "values": {
       "min": "Niedrigster",
@@ -377,7 +382,8 @@
       "up": "Upload-Werte",
       "target": "Ziel: {{target}}",
       "consistency": "Konstanz",
-      "samples": "Gemessene Tests"
+      "samples": "Gemessene Tests",
+      "median": "Median"
     },
     "failed_test": "Fehlgeschlagener Test",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "Du befindest dich derzeit im Demo-Modus. Einige Funktionen sind deaktiviert und einige Einstellungen können nicht geändert werden. Wenn du alle Funktionen nutzen möchtest, kannst du <Link>MySpeed</Link> auf deinem eigenen Server installieren."
   },
   "integrations": {
-    "none_active": "Diese Integration ist nicht aktiv. <br/><Bold>Hinzufügen</Bold>",
+    "none_added": "Noch keine Integrationen eingerichtet.",
     "preview_active": "Im Demomodus sind die Integrationen deaktiviert.",
     "display_name": "Integrations-Name",
     "create": "Hinzufügen",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "Letzter Test gerade eben",
     "elapsed": "{{seconds}}s vergangen",
-    "next_test_approx": "Nächster gegen {{time}}"
+    "next_test_approx": "Nächster gegen {{time}}",
+    "target_of": "Ziel {{index}} von {{count}}"
+  },
+  "targets": {
+    "title": "Test-Ziele",
+    "description": "Jeder geplante Test misst jedes eingeplante Ziel einmal, eines nach dem anderen. Ziele außerhalb des Zeitplans laufen nur von hier aus.",
+    "add": "Ziel hinzufügen",
+    "edit_title": "Ziel bearbeiten",
+    "name": "Name",
+    "name_placeholder": "z. B. Frankfurt",
+    "scheduled": "Eingeplant",
+    "alerts": "Benachrichtigungen & Empfehlungen",
+    "own_optimals": "Eigene optimale Werte",
+    "all": "Alle Ziele",
+    "saved": "Das Ziel wurde gespeichert.",
+    "removed": "Das Ziel wurde entfernt.",
+    "run_now": "Test jetzt starten",
+    "move_up": "Nach oben verschieben",
+    "move_down": "Nach unten verschieben",
+    "delete_confirm": {
+      "title": "Dieses Ziel löschen?",
+      "description": "<Bold>{{name}}</Bold> wird gelöscht. Die Tests, die es bereits gemessen hat, bleiben im Verlauf erhalten.",
+      "yes": "Löschen"
+    }
   }
 }

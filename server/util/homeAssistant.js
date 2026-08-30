@@ -75,8 +75,15 @@ const NAME = "MySpeed";
  * The device block is repeated on each rather than sent once: Home Assistant
  * groups entities by it, and a message that omits it is a loose entity rather
  * than part of the device.
+ *
+ * `target` names a secondary round member. Its sensors stay on the base
+ * topic's device - a second device would split one instance into several tiles
+ * - but read the member's own subtopic and wear ids of their own, suffixed by
+ * the target's id rather than its name so a rename does not orphan the
+ * entities. The primary's announcement takes no target and is exactly what the
+ * single-target instance has always published.
  */
-export const discoveryMessages = ({stateTopic, prefix = DEFAULT_DISCOVERY_PREFIX, version}) => {
+export const discoveryMessages = ({stateTopic, prefix = DEFAULT_DISCOVERY_PREFIX, version, target = null}) => {
     const deviceId = deviceIdFrom(stateTopic);
 
     const device = {
@@ -89,20 +96,24 @@ export const discoveryMessages = ({stateTopic, prefix = DEFAULT_DISCOVERY_PREFIX
         ...(version ? {sw_version: version} : {})
     };
 
+    const suffix = target ? `_t${target.id}` : "";
+
     return SENSORS.map((sensor) => {
-        const objectId = `${deviceId}_${sensor.key.toLowerCase()}`;
+        const objectId = `${deviceId}${suffix}_${sensor.key.toLowerCase()}`;
 
         return {
-            topic: `${prefix}/sensor/${deviceId}/${sensor.key.toLowerCase()}/config`,
+            topic: `${prefix}/sensor/${deviceId}/${sensor.key.toLowerCase()}${suffix}/config`,
             retain: true,
             payload: JSON.stringify({
-                name: sensor.name,
+                // Prefixed with the member's name where there is one, so the
+                // two download sensors on the device read apart at a glance.
+                name: target?.name ? `${target.name} ${sensor.name}` : sensor.name,
                 // Unique to the entity and to the instance. Two instances share
                 // the discovery prefix, so an id unique only within one would
                 // have the second adopt the first one's entities.
                 unique_id: objectId,
                 object_id: objectId,
-                state_topic: stateTopic,
+                state_topic: target ? `${stateTopic}/${target.id}` : stateTopic,
                 value_template: `{{ value_json.${sensor.key} }}`,
                 unit_of_measurement: sensor.unit,
                 // Omitted rather than nulled where there is none: a percentage

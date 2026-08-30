@@ -54,22 +54,23 @@
       "server_id": "サーバー ID",
       "server_id_placeholder": "任意のサーバー ID、または空欄",
       "custom_url": "カスタム URL",
+      "iperf_host": "iperf3 サーバー",
       "choose_automatically": "自動で選択",
       "ookla_license": "Ookla の<Eula>EULA</Eula>、<GDPR>プライバシーポリシー</GDPR>、<TOS>利用規約</TOS>を読み、同意します。",
       "ookla_desc": "世界中にサーバー網を持つ定番のプロバイダー",
       "libre_desc": "オープンソースでセルフホスト可能なスピードテスト",
-      "cloudflare_desc": "CDN ベースの高速なテスト"
+      "cloudflare_desc": "CDN ベースの高速なテスト",
+      "iperf3_desc": "自分のネットワーク上にある自前の iperf3 サーバー"
     }
   },
   "dropdown": {
     "settings": "設定",
     "changes_applied": "変更を保存しました。",
     "language_changed": "言語を変更しました。",
-    "provider_changed": "プロバイダーを変更しました。",
     "changes_unsaved": "変更は適用されませんでした。入力内容を確認してください。",
     "invalid": "入力が無効です",
     "optimal_values": "最適値",
-    "change_provider": "プロバイダーを変更",
+    "targets": "測定先",
     "password": "パスワードを変更",
     "cron": "頻度を設定",
     "storage": "ストレージを管理",
@@ -135,7 +136,6 @@
     "statistics": "統計"
   },
   "update": {
-    "provider_title": "スピードテストのプロバイダーを設定",
     "new_password": "新しいパスワードを設定",
     "password_placeholder": "新しいパスワード",
     "show_password": "パスワードを表示",
@@ -305,6 +305,7 @@
       "unchanged": "前回のテストから変化なし",
       "measured_at": "測定日時",
       "measured_with": "測定方法",
+      "target": "測定先",
       "seconds": "{{seconds}} 秒",
       "data_used": "使用データ量",
       "data_used_value": "下り {{down}} / 上り {{up}}",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "平均",
     "compare": {
-      "note": "{{from}} – {{to}} と比較した変化"
+      "note": "{{from}} – {{to}} と比較した変化",
+      "note_partial": "{{from}} – {{to}} と比較した変化（同時刻まで）"
     },
     "downsampled": "平均化 · {{total}} 件中 {{shown}} 件のテストを表示",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "測定できたテストの平均",
       "peak_title": "ピーク時間帯の速度低下",
       "peak_description": "最も遅いのは {{slowest}} 頃、最も速いのは {{fastest}} 頃",
-      "ping_description": "平均レイテンシー（{{min}} 〜 {{max}}）",
+      "peak_latency_title": "ピーク時の遅延",
+      "peak_latency_description": "{{bestHour}}頃の{{best}}から{{worstHour}}頃の{{worst}}に上昇します",
+      "ping_description": "平均レイテンシー（{{min}} 〜 {{max}}、中央値 {{median}}）",
       "span_title": "所要時間のばらつき",
       "span_description": "この範囲で最も短いテストと最も長いテスト",
       "density_title": "1 日あたりのテスト数",
-      "density_description": "{{days}} 日間の集計"
+      "density_description": "{{days}} 日間の集計",
+      "density_description_partial": "{{days}} 日中 {{elapsed}} 日間の集計"
     },
     "values": {
       "min": "最小",
@@ -377,7 +382,8 @@
       "up": "アップロード値",
       "target": "目標: {{target}}",
       "consistency": "一貫性",
-      "samples": "測定されたテスト"
+      "samples": "測定されたテスト",
+      "median": "中央値"
     },
     "failed_test": "失敗したテスト",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "現在デモモードです。一部の機能は無効になっており、一部の設定は変更できません。すべての機能を使いたい場合は、自分のサーバーに <Link>MySpeed をインストール</Link>できます。"
   },
   "integrations": {
-    "none_active": "この連携は有効になっていません。<br/><Bold>作成</Bold>",
+    "none_added": "連携はまだ設定されていません。",
     "preview_active": "デモモード中は連携が無効になっています。",
     "display_name": "連携名",
     "create": "作成",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "前回のテストはたった今",
     "elapsed": "{{seconds}} 秒経過",
-    "next_test_approx": "次回はおよそ {{time}}"
+    "next_test_approx": "次回はおよそ {{time}}",
+    "target_of": "測定先 {{index}} / {{count}}"
+  },
+  "targets": {
+    "title": "測定先",
+    "description": "スケジュールされたテストでは、スケジュールに含まれる測定先が順番に 1 回ずつ測定されます。スケジュール外の測定先は、ここからのみ実行できます。",
+    "add": "測定先を追加",
+    "edit_title": "測定先を編集",
+    "name": "名前",
+    "name_placeholder": "例: 東京",
+    "scheduled": "スケジュールに含める",
+    "alerts": "通知と推奨値",
+    "own_optimals": "独自の最適値",
+    "all": "すべての測定先",
+    "saved": "測定先を保存しました。",
+    "removed": "測定先を削除しました。",
+    "run_now": "今すぐテストを実行",
+    "move_up": "上へ移動",
+    "move_down": "下へ移動",
+    "delete_confirm": {
+      "title": "この測定先を削除しますか？",
+      "description": "<Bold>{{name}}</Bold> を削除します。この測定先で測定済みのテストは履歴に残ります。",
+      "yes": "削除"
+    }
   }
 }

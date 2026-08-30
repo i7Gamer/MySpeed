@@ -54,22 +54,23 @@
       "server_id": "ID Server",
       "server_id_placeholder": "ID server mana pun, atau biarkan kosong",
       "custom_url": "URL khusus",
+      "iperf_host": "Server iperf3",
       "choose_automatically": "Pilih secara otomatis",
       "ookla_license": "Saya telah membaca dan menerima <Eula>EULA</Eula>, <GDPR>kebijakan privasi</GDPR> dan <TOS>ketentuan layanan</TOS> dari Ookla.",
       "ookla_desc": "Penyedia populer dengan jaringan server global",
       "libre_desc": "Speedtest sumber terbuka yang bisa di-hosting sendiri",
-      "cloudflare_desc": "Pengujian cepat berbasis CDN"
+      "cloudflare_desc": "Pengujian cepat berbasis CDN",
+      "iperf3_desc": "Server iperf3 milik Anda sendiri, di jaringan Anda"
     }
   },
   "dropdown": {
     "settings": "Pengaturan",
     "changes_applied": "Perubahan Anda telah disimpan.",
     "language_changed": "Bahasa telah diubah.",
-    "provider_changed": "Penyedia telah diubah.",
     "changes_unsaved": "Perubahan Anda tidak diterapkan. Periksa masukan Anda.",
     "invalid": "Masukan tidak valid",
     "optimal_values": "Nilai optimal",
-    "change_provider": "Ubah penyedia",
+    "targets": "Tujuan pengujian",
     "password": "Ubah kata sandi",
     "cron": "Atur frekuensi",
     "storage": "Kelola penyimpanan",
@@ -135,7 +136,6 @@
     "statistics": "Statistik"
   },
   "update": {
-    "provider_title": "Atur penyedia speedtest",
     "new_password": "Atur kata sandi baru",
     "password_placeholder": "Kata sandi baru",
     "show_password": "Tampilkan kata sandi",
@@ -305,6 +305,7 @@
       "unchanged": "Tidak berubah sejak pengujian terakhir",
       "measured_at": "Diukur pada",
       "measured_with": "Diukur dengan",
+      "target": "Tujuan",
       "seconds": "{{seconds}} dtk",
       "data_used": "Data terpakai",
       "data_used_value": "{{down}} unduh / {{up}} unggah",
@@ -336,7 +337,8 @@
   "statistics": {
     "average": "Rata-rata",
     "compare": {
-      "note": "Perubahan dibandingkan dengan {{from}} – {{to}}"
+      "note": "Perubahan dibandingkan dengan {{from}} – {{to}}",
+      "note_partial": "Perubahan dibandingkan dengan {{from}} – {{to}}, hingga waktu yang sama"
     },
     "downsampled": "Dirata-ratakan · menampilkan {{shown}} dari {{total}} pengujian",
     "detail": {
@@ -363,11 +365,14 @@
       "packet_loss_description": "Rata-rata dari pengujian yang mengukurnya",
       "peak_title": "Perlambatan saat jam sibuk",
       "peak_description": "Paling lambat sekitar {{slowest}}, paling cepat sekitar {{fastest}}",
-      "ping_description": "Latensi rata-rata, antara {{min}} dan {{max}}",
+      "peak_latency_title": "Latensi jam sibuk",
+      "peak_latency_description": "Naik dari {{best}} sekitar pukul {{bestHour}} menjadi {{worst}} sekitar pukul {{worstHour}}",
+      "ping_description": "Latensi rata-rata, antara {{min}} dan {{max}}, median {{median}}",
       "span_title": "Rentang durasi",
       "span_description": "Pengujian terpendek dan terpanjang dalam rentang ini",
       "density_title": "Pengujian per hari",
-      "density_description": "Selama {{days}} hari"
+      "density_description": "Selama {{days}} hari",
+      "density_description_partial": "Selama {{elapsed}} dari {{days}} hari"
     },
     "values": {
       "min": "Minimum",
@@ -377,7 +382,8 @@
       "up": "Nilai unggah",
       "target": "Target: {{target}}",
       "consistency": "Konsistensi",
-      "samples": "Pengujian terukur"
+      "samples": "Pengujian terukur",
+      "median": "Median"
     },
     "failed_test": "Pengujian gagal",
     "hourly": {
@@ -456,7 +462,7 @@
     "description": "Anda saat ini dalam mode demo. Beberapa fitur dinonaktifkan dan beberapa pengaturan tidak dapat diubah. Jika Anda ingin menggunakan semua fitur, Anda dapat <Link>menginstal MySpeed</Link> di server Anda sendiri."
   },
   "integrations": {
-    "none_active": "Integrasi ini tidak aktif. <br/><Bold>Buat</Bold>",
+    "none_added": "Belum ada integrasi yang disiapkan.",
     "preview_active": "Integrasi dinonaktifkan selama mode demo.",
     "display_name": "Nama integrasi",
     "create": "Buat",
@@ -701,6 +707,29 @@
     },
     "last_test_now": "Pengujian terakhir baru saja",
     "elapsed": "{{seconds}} dtk berlalu",
-    "next_test_approx": "Berikutnya sekitar pukul {{time}}"
+    "next_test_approx": "Berikutnya sekitar pukul {{time}}",
+    "target_of": "Tujuan {{index}} dari {{count}}"
+  },
+  "targets": {
+    "title": "Tujuan pengujian",
+    "description": "Setiap pengujian terjadwal mengukur setiap tujuan terjadwal satu kali, satu per satu. Tujuan di luar jadwal hanya dijalankan dari sini.",
+    "add": "Tambah tujuan",
+    "edit_title": "Sunting tujuan",
+    "name": "Nama",
+    "name_placeholder": "mis. Jakarta",
+    "scheduled": "Terjadwal",
+    "alerts": "Peringatan & rekomendasi",
+    "own_optimals": "Nilai optimal sendiri",
+    "all": "Semua tujuan",
+    "saved": "Tujuan telah disimpan.",
+    "removed": "Tujuan telah dihapus.",
+    "run_now": "Jalankan pengujian sekarang",
+    "move_up": "Pindahkan ke atas",
+    "move_down": "Pindahkan ke bawah",
+    "delete_confirm": {
+      "title": "Hapus tujuan ini?",
+      "description": "<Bold>{{name}}</Bold> akan dihapus. Pengujian yang sudah diukurnya tetap tersimpan di riwayat.",
+      "yes": "Hapus"
+    }
   }
 }

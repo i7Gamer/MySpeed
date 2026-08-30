@@ -231,17 +231,25 @@ export const shownRange = (dateRange, statistics, now = new Date()) => {
     // Absent from a node running a version that did not send it.
     const days = typeof echoed?.days === "number" && Number.isFinite(echoed.days) ? {days: echoed.days} : {};
 
+    // How much of a still-running window has actually elapsed, for the per-day
+    // figures: a seven-day range on Wednesday afternoon has not been sampled
+    // for seven days. Sent only for such a window - a complete one, and any
+    // answer from an older node, stays on the whole-day count above.
+    const elapsed = typeof echoed?.elapsedDays === "number"
+        && Number.isFinite(echoed.elapsedDays) && echoed.elapsedDays > 0
+        ? {elapsedDays: echoed.elapsedDays} : {};
+
     // A bounded selection knows its own length, so it does not need the echo.
     // Its bounds are two local midnights and the range covers the whole of both
     // days, which is one more day than the span between them - the consumer's
     // fallback took Math.ceil of that span and reported a seven-day selection
     // as six, overstating tests-per-day by 16.7% under a heading naming seven.
     // Rounded, so a day that is 23 or 25 hours long still counts as one.
-    if (dateRange) return {...dateRange, days: inclusiveDays(dateRange), ...days};
+    if (dateRange) return {...dateRange, days: inclusiveDays(dateRange), ...days, ...elapsed};
 
     if (!echoed?.from || !echoed?.to) return resolveAllTime(now);
 
-    return {from: new Date(echoed.from), to: new Date(echoed.to), ...days};
+    return {from: new Date(echoed.from), to: new Date(echoed.to), ...days, ...elapsed};
 };
 
 /**

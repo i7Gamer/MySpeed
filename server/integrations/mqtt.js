@@ -33,6 +33,29 @@ import packageJson from "../../package.json" with { type: 'json' };
 const errorTopicFor = (topic) => `${topic}/error`;
 
 /**
+ * The secondary round member a payload describes, or null for the primary.
+ *
+ * Every member used to publish to the one configured topic, so a Home
+ * Assistant sensor read the WAN's figure and the LAN box's in turn and flapped
+ * between lines - a graph describing no line at all. The primary member keeps
+ * the topic the single-target instance always had, so nothing moves for
+ * anyone; a secondary member gets a subtopic of its own.
+ *
+ * Read off the payload's own `primary` flag rather than resolved here: the
+ * round is what knows which member leads it, and the payload is the one thing
+ * a broker-side module can read without a database. A payload from an older
+ * node carries no flag and is treated as the primary - the way the
+ * single-target instance always behaved.
+ */
+const secondaryTargetOf = (data) =>
+    data?.primary === false && data?.targetId != null
+        ? {id: data.targetId, name: data.targetName}
+        : null;
+
+/** Where a member's payload goes: the base topic, or the member's subtopic. */
+const topicFor = (base, target) => target ? `${base}/${target.id}` : base;
+
+/**
  * Which announcements this process has already made.
  *
  * The configs are retained, so the broker keeps them for Home Assistant to read
@@ -45,7 +68,7 @@ const errorTopicFor = (topic) => `${topic}/error`;
  * simply replaces a retained message with an identical one - and a stored flag
  * would be a migration and a decision about what a stale one means.
  */
-const announced = new Set();
+const announced = new Map();
 
 /**
  * The retained configs to send in front of this result, if any.
@@ -54,15 +77,26 @@ const announced = new Set();
  * no use for config topics under a prefix they do not run, and leaving them
  * there is litter on somebody else's broker.
  */
-const announcementsFor = (c) => {
+const announcementsFor = (c, target = null) => {
     if (c.discovery !== true) return null;
 
     const prefix = c.discovery_prefix || DEFAULT_DISCOVERY_PREFIX;
-    const key = `${prefix}|${c.topic}`;
+    // A secondary member's sensors are announced beside its own first result,
+    // keyed apart from the base set so each is made exactly once. What the
+    // map remembers under the key is the name the broker currently holds -
+    // the name is part of the payload, "LAN Box Download" is what the entity
+    // is called - so any result whose member wears a different one
+    // re-announces. Keyed by id alone a rename never re-announced at all;
+    // remembered as an ever-growing set of (id, name) pairs, renaming *back*
+    // found the old pair still recorded and left the broker serving the
+    // intermediate name until the process restarted.
+    const key = `${prefix}|${c.topic}|${target ? target.id : "base"}`;
+    const name = target?.name ?? "";
 
-    if (announced.has(key)) return null;
+    if (announced.get(key) === name) return null;
 
-    return {key, messages: discoveryMessages({stateTopic: c.topic, prefix, version: packageJson.version})};
+    return {key, name, messages: discoveryMessages({
+        stateTopic: c.topic, prefix, version: packageJson.version, target})};
 };
 
 /** For the tests, which need each case to start from nothing announced. */
@@ -108,7 +142,7 @@ const send = async (c, messages, activity, announcement) => {
             timeout: OUTBOUND_TIMEOUT
         });
 
-        if (announcement) announced.add(announcement.key);
+        if (announcement) announced.set(announcement.key, announcement.name);
 
         noteActivity(activity, false);
     } catch (error) {
@@ -124,14 +158,15 @@ export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {
         if (!c.send_finished) return;
 
-        const announcement = announcementsFor(c);
+        const target = secondaryTargetOf(data);
+        const announcement = announcementsFor(c, target);
 
         // The announcement travels in front of the result, on the one
         // connection: seven configs and a result down eight separate handshakes
         // is a noticeable thing to do to a broker on every restart.
         await send(c, [
             ...(announcement?.messages ?? []),
-            {topic: c.topic, payload: body(data), retain: c.retain === true}
+            {topic: topicFor(c.topic, target), payload: body(data), retain: c.retain === true}
         ], activity, announcement);
     });
 
@@ -142,7 +177,7 @@ export default (registerEvent) => {
         // describing sensors off the back of one would create entities that have
         // never had a value.
         await send(c, [{
-            topic: c.error_topic || errorTopicFor(c.topic),
+            topic: topicFor(c.error_topic || errorTopicFor(c.topic), secondaryTargetOf(failure)),
             payload: body(failure),
             retain: c.retain === true
         }], activity);
