@@ -34,7 +34,11 @@ import { FAILED_TEST, UNMEASURED_LATENCY } from './testOutcome.js';
 export const ALERT_ONLY = "alert_only";
 
 /**
- * The two payload keys a target's own baseline verdict arrives on.
+ * The two payload keys a target's own baseline verdict is decided on.
+ *
+ * The verdict carries four more - the two medians, and which direction crossed
+ * by how far - but those are for a message to print rather than for this gate
+ * to read, and notificationPayload.js names them where it lists them.
  *
  * Named here rather than at the module that computes them, because this is the
  * only place they are read as a decision - and notificationPayload.js takes the

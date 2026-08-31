@@ -153,7 +153,16 @@ const usablePercent = (value) => {
         : null;
 };
 
-/** Nothing to judge: the shape every unarmed answer takes. */
+/**
+ * Nothing to report: the shape of every answer that names no median and no
+ * crossing.
+ *
+ * Spread by the warming-up branch below rather than written out a second time
+ * there, since the two differ in `armed` alone. Written twice they drift the
+ * first time a key is added to one of them, and what that produces is a payload
+ * carrying a key on one path and not the other - a template reading as
+ * unmeasured for a reason nothing on the screen explains.
+ */
 const quiet = () => ({armed: false, breached: false, baselineBelow: null,
     baselineShortfall: null, baselineDownload: null, baselineUpload: null});
 
@@ -298,9 +307,7 @@ export const baselineVerdict = (row, previous, baseline, percent) => {
      * rather than a zero a message template would print as this line's usual
      * speed.
      */
-    if (baseline === null || baseline === undefined)
-        return {armed: true, breached: false, baselineBelow: null, baselineShortfall: null,
-            baselineDownload: null, baselineUpload: null};
+    if (baseline === null || baseline === undefined) return {...quiet(), armed: true};
 
     const below = newlyBelow(row, previous, baseline, share);
 

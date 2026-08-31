@@ -70,7 +70,7 @@ const FINISHED_KEYS = [
     "baselineBelow", "baselineShortfall",
     // And the yardstick itself, so a message can say what this line usually
     // delivers beside what it just did. The percentage is not here: it is the
-    // operator's own setting, on the screen they set it from, where these four
+    // operator's own setting, on the screen they set it from, where these six
     // are facts about the run.
     "baselineDownload", "baselineUpload"
 ];
