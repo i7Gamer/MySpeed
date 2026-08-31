@@ -17,7 +17,13 @@ const WRITABLE = ["name", "provider", "serverId", "endpoint", "enabled", "alerts
 const writableFields = (body) =>
     Object.fromEntries(WRITABLE.filter((key) => key in (body ?? {})).map((key) => [key, body[key]]));
 
-const ID = /^\d+$/;
+const DIGITS = /^\d+$/;
+
+// Digits, and a number the database can actually be asked about. The digit test
+// alone accepts an id past 2^53, where Number() lands on a neighbouring float
+// and the row looked up is not the row named. speedtests.js already asks both
+// questions of its own :id; this is the same question asked the same way.
+const ID = {test: (raw) => DIGITS.test(raw) && Number.isSafeInteger(Number(raw))};
 
 app.get("/", password(true), async (req, res) => {
     const rows = await targets.listAll();

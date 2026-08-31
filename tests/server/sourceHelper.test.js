@@ -55,6 +55,26 @@ describe("bodyOf", () => {
         assert.equal(bodyOf(source, "const a"), "{ if (x) { deep(); } done(); }");
     });
 
+    /**
+     * A brace that is not a brace: one inside a string, a template or a comment
+     * is text, and counting it closed the body early - handing back a slice that
+     * ends mid-function, which an assertion against it then passes or fails for
+     * reasons that have nothing to do with the code. bodyBrace already read the
+     * source through the lexer; this walk did not.
+     */
+    it("is not closed by a brace inside a string, a template or a comment", () => {
+        for (const [what, body] of [
+            ["a string", `{ const s = "closing }"; return s; }`],
+            ["a template", "{ const s = `closing }`; return s; }"],
+            ["a line comment", "{ // closing }\n return 1; }"],
+            ["a block comment", "{ /* closing } */ return 1; }"]
+        ]) {
+            const source = `const a = () => ${body};\nconst b = () => { two(); };`;
+
+            assert.equal(bodyOf(source, "const a"), body, `a brace in ${what} closed the body`);
+        }
+    });
+
     // The failure the two copies existed to prevent: a slice that runs on into
     // the next function passes assertions that belong to neither.
     it("stops before the declaration that follows", () => {

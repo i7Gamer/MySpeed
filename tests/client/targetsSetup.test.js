@@ -265,8 +265,27 @@ describe("typing an endpoint that begins with the sentinel", () => {
         const field = editor.match(/<input type="text"(?:(?!\/>)[^])*?handleEndpointChange(?:(?!\/>)[^])*?\/>/)?.[0];
 
         assert.ok(field, "the endpoint input is no longer recognisable by its handler");
-        assert.match(field, /sentinelTyped \? " input-error" : ""/,
+        assert.match(field, /sentinelTyped(?:[^?]*)\? " input-error" : ""/,
             "a typed sentinel greys the button with nothing on screen naming the field");
+    });
+
+    /**
+     * And the other value the button refuses.
+     *
+     * hasEndpoint deadens Update for a host iperf3 cannot dial, but only the
+     * sentinel ever coloured the field - so "bad host!" was a greyed button
+     * with every field looking fine, which is the puzzle the rule above exists
+     * to prevent. Marked on a *typed* value rather than on hasEndpoint itself:
+     * iperfHostAccepted refuses an empty host too, and a fresh iperf3 target
+     * would otherwise open with its host already red.
+     */
+    it("marks a host the door would refuse, once one has been typed", () => {
+        assert.match(editor, /badEndpoint = requiresEndpoint\(provider\) && endpoint\.trim\(\) !== "" && !hasEndpoint/,
+            "an untouched empty host is marked as an error, or a bad one is not marked at all");
+
+        const field = editor.match(/<input type="text"(?:(?!\/>)[^])*?handleEndpointChange(?:(?!\/>)[^])*?\/>/)?.[0];
+
+        assert.match(field, /badEndpoint/, "the endpoint field does not wear it");
     });
 });
 
@@ -693,5 +712,39 @@ describe("the editor opens on a name that already works", () => {
     it("marks the name field while it is what blocks the save", () => {
         assert.match(editor, /className=\{`dialog-input provider-input\$\{name\.trim\(\) === "" \? " input-error" : ""\}`\}/,
             "an empty name leaves the field looking fine beside a button that will not press");
+    });
+});
+
+/**
+ * A pinned server id the door would refuse.
+ *
+ * The free-text field takes anything, and the door takes digits: "abc" left the
+ * Update button green, went out, and came back a 400 naming a value the operator
+ * was looking at. Every other refusal in this editor is said as a button that
+ * will not press, so this one is too.
+ *
+ * Empty and the automatic sentinel both pass, because targetBody sends null for
+ * either - it is only something actually typed that has to be digits.
+ */
+describe("a typed server id", () => {
+    const editor = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+
+    it("is held to the rule the door states", () => {
+        assert.ok(editor.includes(String.raw`const SERVER_ID_DIGITS = /^\d+$/`),
+            "the editor no longer states the digits rule the server enforces");
+        assert.match(editor, /serverIdAccepted = !takesServerId\(provider\) \|\| !serverId \|\| serverId === "none"/,
+            "an empty or automatic id is refused, or a provider without a list is asked for one");
+    });
+
+    it("greys the button rather than letting the save fail", () => {
+        assert.match(editor, /canSave = [^;]*&& serverIdAccepted/,
+            "a non-digit id still leaves the button pressable");
+    });
+
+    it("marks the field, so the dead button names itself", () => {
+        const field = editor.match(/<input type="text"(?:(?!\/>)[^])*?handleServerIdChange(?:(?!\/>)[^])*?\/>/)?.[0];
+
+        assert.ok(field, "the server id input is no longer recognisable by its handler");
+        assert.match(field, /serverIdAccepted \? "" : " input-error"/);
     });
 });

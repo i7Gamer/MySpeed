@@ -90,6 +90,18 @@ export const retiredByPatch = (current, fields) => {
     // longer reach.
     if (!takesEndpoint(provider)) set("endpoint", null);
 
+    // And the pinned server on the same terms, which it did not have: the door
+    // refuses an id under a provider with no list to pin from, so a target
+    // moving off ookla failed with "This provider has no servers to pin" unless
+    // the caller happened to send `serverId: null` alongside - a requirement the
+    // API states nowhere. A caller moving to cloudflare is no more asking to
+    // keep a server it can no longer pick than it is asking to keep a host.
+    // `!= null` rather than a bare call to set(): set() writes whenever the
+    // stored value differs from the new one, and `undefined !== null` - so a row
+    // that simply does not carry the column at all would be "retired" from a
+    // server it never had, putting an unasked-for key in every iperf3 patch.
+    if (!takesServerId(provider) && current.serverId != null) set("serverId", null);
+
     // A rate is inert on a run that sends no datagrams, which is the whole of
     // why the door refuses the pair.
     if (Object.hasOwn(fields, "iperfUdp") && !fields.iperfUdp && current.iperfUdp)

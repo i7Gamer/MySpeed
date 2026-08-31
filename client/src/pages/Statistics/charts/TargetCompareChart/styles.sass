@@ -54,15 +54,31 @@
     tbody th
       font-weight: 500
       color: $white
-      display: flex
-      align-items: center
-      gap: 0.5rem
+
+      // The flex lives on a span inside the cell, not on the cell.
+      //
+      // `display: flex` on a <th> replaces `table-cell`, which takes the
+      // element out of the table's own layout - the engine then wraps it in an
+      // anonymous cell to put it back. Chromium's answer is identical either
+      // way, measured; it is the standards-strict engines the row and its
+      // fixed columns are being trusted to on faith. A wrapper costs one span
+      // and asks nothing of them.
+      .target-compare-name
+        display: flex
+        align-items: center
+        gap: 0.5rem
 
     tbody td
       color: $subtext
 
     tbody tr
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04)
+      // Through the palette's own light-gray, not a literal white: at
+      // rgba(255,255,255,0.04) this separator was drawn for the dark themes and
+      // simply was not there on the light ones, which is the fault _colors.sass
+      // records twenty-three rules having had. The -rgb triplet is what makes an
+      // alpha possible at all here - $light-gray is a custom property, and
+      // rgba() cannot take one.
+      border-bottom: 1px solid rgba(var(--light-gray-rgb), 0.4)
 
       // A separator between rows, and the last row has nothing under it to be
       // separated from: the line there reads as a second edge drawn a few

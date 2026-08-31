@@ -53,8 +53,13 @@ export const TargetCompareTable = ({targets, statsById, fresh, expanded, onClick
                 {rows.map((row) => (
                     <tr key={row.id}>
                         <th scope="row">
-                            <span className="target-dot" style={{background: targetColour(row.colourIndex)}}/>
-                            {row.name}
+                            {/* The dot and the name are laid out by this span
+                                rather than by the cell: a <th> flexed directly
+                                stops being a table-cell. */}
+                            <span className="target-compare-name">
+                                <span className="target-dot" style={{background: targetColour(row.colourIndex)}}/>
+                                {row.name}
+                            </span>
                         </th>
                         {row.unavailable ? (
                             // A failed fetch is not a line that answered with

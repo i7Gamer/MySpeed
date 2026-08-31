@@ -111,3 +111,40 @@ describe("the patches that were dead ends", () => {
             "run tuning on a provider that has no run shape was allowed through");
     });
 });
+
+/**
+ * A pinned server is retired the same way an endpoint is.
+ *
+ * The endpoint had this and the server id did not, so moving an ookla target
+ * with a pinned server to a provider that has no server list was a dead end:
+ * the merged row still carried the id, and the door refuses one on a provider
+ * that cannot pin - "This provider has no servers to pin", 400. The only way
+ * through was to know to send `serverId: null` alongside, which the API says
+ * nowhere.
+ */
+describe("a server id under a provider that has none", () => {
+    const pinned = {id: 3, name: "Ookla US", provider: "ookla", serverId: "1234",
+        endpoint: null, iperfUdp: false, alerts: true, enabled: true};
+
+    it("is retired when the provider moves to one with no server list", () => {
+        assert.equal(retiredByPatch(pinned, {provider: "cloudflare"}).serverId, null,
+            "the id survived a move to a provider that cannot pin one");
+    });
+
+    it("is left alone when both providers carry server lists", () => {
+        assert.equal(Object.hasOwn(retiredByPatch(pinned, {provider: "libre"}), "serverId"), false,
+            "the id was cleared moving between two providers that both pin");
+    });
+
+    it("is left alone when the caller names one itself", () => {
+        // The retirement only fills in what the request did not say.
+        assert.equal(Object.hasOwn(retiredByPatch(pinned, {provider: "cloudflare", serverId: "9"}),
+            "serverId"), false);
+    });
+
+    it("lets the move through the door it used to fail at", () => {
+        const merged = (fields) => ({...pinned, ...fields, ...retiredByPatch(pinned, fields)});
+
+        assert.equal(targetProblem(merged({provider: "cloudflare"})), null);
+    });
+});

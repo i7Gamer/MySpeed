@@ -1,4 +1,5 @@
 @use "colors" as *
+@use "focus" as *
 
 // The look of a menu that drops from a control in the page's chrome, and of
 // one row inside it.
@@ -37,7 +38,10 @@
   border-radius: 6px
   color: $subtext
   cursor: pointer
-  transition: all 0.15s ease
+  // Named rather than `all`, which takes the focus ring with it: the same line
+  // on the header's icons made the ring fade in after a keypress, and
+  // .storage-tab already carries this note for the same reason.
+  transition: background-color 0.15s ease, color 0.15s ease
   background: none
   border: none
   font-family: inherit
@@ -51,6 +55,13 @@
 
     svg
       color: $white
+
+  // Where the keyboard is. These rows are real buttons and every one of them is
+  // tab-reachable, but the mixin drew only a hover - so a reader arriving by
+  // keyboard had nothing at all telling them which row they were on. Through
+  // the shared ring rather than a treatment of its own, for the reason
+  // _focus.sass exists: one home, and the four callers get it by existing.
+  +focus-ring
 
   svg
     width: 14px

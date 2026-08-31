@@ -421,9 +421,14 @@ export const bodyOf = (source, declaration) => {
 
     let depth = 0;
 
-    for (let index = from; index < source.length; index++) {
-        if (source[index] === "{") depth++;
-        else if (source[index] === "}" && --depth === 0) return source.slice(from, index + 1);
+    // Through the lexer, not a raw scan of every character: a brace inside a
+    // string, a template or a comment is not a brace this body is counting, and
+    // one of those closes the walk early - handing back a slice that ends
+    // mid-function, which an assert.match against it then passes or fails for
+    // the wrong reason. bodyBrace above already reads the source this way.
+    for (const {index, character} of codeCharacters(source, from)) {
+        if (character === "{") depth++;
+        else if (character === "}" && --depth === 0) return source.slice(from, index + 1);
     }
 
     throw new Error(`"${declaration}" is never closed`);

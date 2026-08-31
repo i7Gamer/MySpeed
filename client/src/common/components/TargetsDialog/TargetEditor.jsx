@@ -23,6 +23,10 @@ import {
 } from "./providers";
 import {optimalAccepted, optimalsAccepted, targetBody, uniqueTargetName} from "./targetBody";
 
+// The rule the door states for a pinned server, kept in step with
+// server/controller/targets.js: an id is digits and nothing else.
+const SERVER_ID_DIGITS = /^\d+$/;
+
 /**
  * One target's whole shape: its name, its provider, where it measures, whether
  * it alerts, and what it is graded against. The successor of the provider
@@ -208,9 +212,26 @@ export const TargetEditor = ({open, onClose, target}) => {
     // rule it applies is asked here. Said as a button that will not press,
     // rather than as a red toast after the fact.
     const hasEndpoint = !requiresEndpoint(provider) || iperfHostAccepted(endpoint);
+    // Typed and wrong, which is not the same as not typed yet: iperfHostAccepted
+    // refuses an empty host too, so marking on hasEndpoint alone would paint a
+    // fresh iperf3 target red before its operator had touched the field. The
+    // dead Update button already says a host is needed; red says this one is
+    // not a host.
+    const badEndpoint = requiresEndpoint(provider) && endpoint.trim() !== "" && !hasEndpoint;
+    /*
+     * The same rule the door states, asked here.
+     *
+     * The id goes out as null when it is empty or the automatic sentinel - see
+     * targetBody - so only something actually typed has to be digits. It was
+     * not asked at all: "abc" left the button green, went out, and came back a
+     * 400 naming a value the operator was looking at, which is the shape this
+     * editor answers everywhere else with a button that will not press.
+     */
+    const serverIdAccepted = !takesServerId(provider) || !serverId || serverId === "none"
+        || SERVER_ID_DIGITS.test(serverId);
     // What makes the row saveable at all; the in-flight lock is its own term
     // on the button, so the two reasons for a dead button stay legible apart.
-    const canSave = name.trim() !== "" && hasEndpoint && !sentinelTyped
+    const canSave = name.trim() !== "" && hasEndpoint && !sentinelTyped && serverIdAccepted
         && (provider !== "ookla" || acceptedOokla)
         && optimalsAccepted({ownOptimals, optimalPing, optimalDownload, optimalUpload})
         // Said as a button that will not press rather than as a red toast
@@ -330,7 +351,11 @@ export const TargetEditor = ({open, onClose, target}) => {
                                             <FontAwesomeIcon icon={faHashtag}/>
                                             <h3>{t("dialog.provider.server_id")}</h3>
                                         </div>
-                                        <input type="text" className="dialog-input provider-input"
+                                        {/* Red beside the dead button, the way the
+                                            endpoint and the optimals mark themselves:
+                                            the door takes digits and nothing else. */}
+                                        <input type="text"
+                                               className={`dialog-input provider-input${serverIdAccepted ? "" : " input-error"}`}
                                                placeholder={t("dialog.provider.server_id_placeholder")}
                                                value={serverId === "none" ? "" : serverId}
                                                onChange={(e) => handleServerIdChange(e.target.value)}/>
@@ -353,7 +378,7 @@ export const TargetEditor = ({open, onClose, target}) => {
                                             would silently drop, and a greyed Update with every
                                             field looking fine names nothing. */}
                                         <input type="text"
-                                               className={`dialog-input provider-input${sentinelTyped ? " input-error" : ""}`}
+                                               className={`dialog-input provider-input${sentinelTyped || badEndpoint ? " input-error" : ""}`}
                                                placeholder={isIperf ? IPERF_HOST_PLACEHOLDER
                                                    : CUSTOM_BACKEND_PLACEHOLDER}
                                                value={endpoint}
