@@ -304,24 +304,41 @@ const closingParen = (source, from) => {
  * and the object literal is answered, which is what the callers pointed at an
  * arrow whose body is a single call are asking for.
  */
-const closesParameterList = (source, close) => {
-    const after = [];
+/** The first `count` significant code characters at or after `from`. */
+const codeAhead = (source, from, count) => {
+    const found = [];
 
-    for (const {index, character} of codeCharacters(source, close + 1)) {
+    for (const {index, character} of codeCharacters(source, from)) {
         if (/\s/.test(character)) continue;
 
-        after.push({index, character});
-        if (after.length === 2) break;
+        found.push({index, character});
+        if (found.length === count) break;
     }
 
-    if (after.length === 0) return false;
-    if (after[0].character === "{") return true;
+    return found;
+};
 
-    // The arrow, as two adjacent characters rather than as a substring: read
-    // out of the raw source, a `=` and a `>` with a comment between them would
-    // pass, and read as `after[0] + after[1]` so would `= >`.
-    return after.length === 2 && after[0].character === "=" && after[1].character === ">"
+/**
+ * What kind of paren group closes at `close`, decided by what follows it.
+ *
+ * A parameter list is followed by `=>` or by the body brace; a call's argument
+ * list is followed by whatever the expression around it wants next - `;`, `,`,
+ * `)`, `.`. That distinction is the whole rule.
+ *
+ * The arrow is read as two adjacent characters rather than as a substring: out
+ * of the raw source, a `=` and a `>` with a comment between them would pass,
+ * and so would `= >`.
+ */
+const parameterListAfter = (source, close) => {
+    const after = codeAhead(source, close + 1, 3);
+
+    if (after.length === 0) return null;
+    if (after[0].character === "{") return {arrow: false};
+
+    const arrow = after.length >= 2 && after[0].character === "=" && after[1].character === ">"
         && after[1].index === after[0].index + 1;
+
+    return arrow ? {arrow: true, body: after[2] ?? null} : null;
 };
 
 /**
@@ -355,11 +372,37 @@ const bodyBrace = (source, start) => {
                 const close = closingParen(source, index);
                 if (close === -1) return -1;
 
-                if (closesParameterList(source, close)) {
-                    at = close + 1;
-                    jumped = true;
-                    break;
+                const list = parameterListAfter(source, close);
+                if (list === null) continue;
+
+                /*
+                 * An arrow whose body is a parenthesised expression, which is
+                 * two different things and only one of them has an answer.
+                 *
+                 * `=> ({...})` wraps an object literal, and that literal IS
+                 * what the callers pointed at such a declaration are asking
+                 * for - config.js's restored-target rebuild and the round's
+                 * own outcome are both this shape. So the walk goes on and
+                 * finds it.
+                 *
+                 * `=> (<div data-grade={level}/>)` wraps JSX, and there is no
+                 * body in it at all. The walk used to step over the parameters
+                 * correctly, go into the body paren because a `;` follows it,
+                 * and answer the twenty characters of an attribute as the
+                 * component's body - the commonest declaration shape in this
+                 * client, answered with something no doesNotMatch scan could
+                 * ever fail against. Refused, which is what this walk promises
+                 * for a declaration with no braced body.
+                 */
+                if (list.arrow && list.body?.character === "(") {
+                    const inner = codeAhead(source, list.body.index + 1, 1);
+
+                    if (inner.length === 0 || inner[0].character !== "{") return -1;
                 }
+
+                at = close + 1;
+                jumped = true;
+                break;
             }
         }
 

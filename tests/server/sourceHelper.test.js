@@ -219,6 +219,55 @@ describe("bodyOf and the braces that are not the body", () => {
         assert.throws(() => bodyOf("const a = (tuning = {}", "const a"), /no braced body/);
     });
 
+    /**
+     * An arrow whose body is a parenthesised expression has no block to find,
+     * and the braces inside it are not one.
+     *
+     * This is the commonest declaration shape in the client, and it was the
+     * remaining way to get a body of unknown meaning out of this walk: the
+     * parameters were stepped over correctly, the body paren was walked into
+     * because a `;` follows it, and a JSX attribute came back as the
+     * component's body. Twenty characters that no doesNotMatch scan could ever
+     * fail against.
+     */
+    it("refuses an arrow whose body is a parenthesised expression", () => {
+        const source = [
+            "export const Row = ({level, title}) => (",
+            "    <div data-grade={level || undefined}>{title}</div>",
+            ");"
+        ].join("\n");
+
+        assert.throws(() => bodyOf(source, "export const Row"), /no braced body/,
+            "a JSX attribute was answered as the component's body");
+    });
+
+    /**
+     * But a parenthesised OBJECT literal is answered, because that literal is
+     * what the callers pointed at this shape are asking for - the restored
+     * target rebuild and the round's own outcome are both `=> ({...})`.
+     *
+     * So the parenthesis alone does not decide it; what is inside it does.
+     */
+    it("answers the object literal an arrow returns in parentheses", () => {
+        const source = [
+            "const outcome = async (failures, members) => ({",
+            "    failed: failures > 0,",
+            "    members",
+            "});"
+        ].join("\n");
+
+        assert.match(bodyOf(source, "const outcome"), /failed: failures > 0/);
+    });
+
+    // And the arrow shapes either side of it are untouched: a block body is
+    // still a body, and an expression body that calls something still answers
+    // the literal that caller is pointed at.
+    it("keeps both arrow bodies that do have something to answer", () => {
+        assert.equal(bodyOf("const a = (x) => { real(x); };", "const a"), "{ real(x); }");
+        assert.equal(bodyOf("const a = (x) => rows.create({name: x});", "const a"),
+            "{name: x}");
+    });
+
     // Strings and comments inside the signature are not structure. A default
     // carrying a bracket in a string closed the list early, and the brace that
     // followed was read as the body.
