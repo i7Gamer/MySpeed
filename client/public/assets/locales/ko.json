@@ -374,6 +374,14 @@
       "density_description": "{{days}}일 동안",
       "density_description_partial": "{{days}}일 중 {{elapsed}}일 동안"
     },
+    "targets": {
+      "title": "대상 비교",
+      "failure_rate": "실패율",
+      "metric": "지표",
+      "empty": "이 기간에 측정한 대상이 없습니다",
+      "open_hint": "열어서 이 기간의 대상을 비교하세요",
+      "unavailable": "불러올 수 없음"
+    },
     "values": {
       "min": "최소",
       "max": "최대",

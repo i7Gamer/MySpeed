@@ -374,6 +374,14 @@
       "density_description": "Ao longo de {{days}} dias",
       "density_description_partial": "Ao longo de {{elapsed}} de {{days}} dias"
     },
+    "targets": {
+      "title": "Comparação de alvos",
+      "failure_rate": "Taxa de falhas",
+      "metric": "Métrica",
+      "empty": "Nenhum alvo mediu nada neste período",
+      "open_hint": "Abra para comparar os alvos neste período",
+      "unavailable": "Não foi possível carregar"
+    },
     "values": {
       "min": "Mínimo",
       "max": "Máximo",

@@ -374,6 +374,14 @@
       "density_description": "Na przestrzeni {{days}} dni",
       "density_description_partial": "Na przestrzeni {{elapsed}} z {{days}} dni"
     },
+    "targets": {
+      "title": "Porównanie celów",
+      "failure_rate": "Wskaźnik niepowodzeń",
+      "metric": "Metryka",
+      "empty": "Żaden cel niczego nie zmierzył w tym okresie",
+      "open_hint": "Otwórz, aby porównać cele w tym okresie",
+      "unavailable": "Nie udało się wczytać"
+    },
     "values": {
       "min": "Minimum",
       "max": "Maksimum",

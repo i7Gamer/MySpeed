@@ -374,6 +374,14 @@
       "density_description": "Över {{days}} dagar",
       "density_description_partial": "Över {{elapsed}} av {{days}} dagar"
     },
+    "targets": {
+      "title": "Jämförelse av mål",
+      "failure_rate": "Felfrekvens",
+      "metric": "Mätvärde",
+      "empty": "Inget mål har mätt något under denna period",
+      "open_hint": "Öppna för att jämföra målen under denna period",
+      "unavailable": "Kunde inte läsas in"
+    },
     "values": {
       "min": "Lägsta",
       "max": "Högsta",

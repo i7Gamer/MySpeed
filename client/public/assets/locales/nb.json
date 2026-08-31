@@ -374,6 +374,14 @@
       "density_description": "Over {{days}} dager",
       "density_description_partial": "Over {{elapsed}} av {{days}} dager"
     },
+    "targets": {
+      "title": "Sammenligning av mål",
+      "failure_rate": "Feilrate",
+      "metric": "Måleverdi",
+      "empty": "Ingen mål har målt noe i denne perioden",
+      "open_hint": "Åpne for å sammenligne målene i denne perioden",
+      "unavailable": "Kunne ikke lastes"
+    },
     "values": {
       "min": "Minimum",
       "max": "Maksimum",

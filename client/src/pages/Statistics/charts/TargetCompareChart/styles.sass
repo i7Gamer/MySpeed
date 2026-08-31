@@ -1,0 +1,105 @@
+@use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
+@use "@/common/styles/typography" as *
+
+// ChartModal's own $modal-breakpoint-tall, restated because the variable is
+// private to that stylesheet - the tier that gives a desktop reader the tall
+// plot, and the one an N-series overlay needs most. The four height tiers
+// below mirror .modal-body-chart's .chart-body values line for line.
+$compare-modal-tall: 900px
+
+.target-compare-chart
+  display: flex
+  flex-direction: column
+  gap: 0.75rem
+
+  .target-compare-table
+    width: 100%
+    border-collapse: collapse
+    font-size: $dialog-body
+
+    th, td
+      text-align: left
+      padding: 0.45rem 0.75rem
+      white-space: nowrap
+
+    thead th
+      color: $subtext
+      font-weight: 500
+      font-size: $dialog-hint
+      border-bottom: 1px solid $light-gray
+
+    tbody th
+      font-weight: 500
+      color: $white
+      display: flex
+      align-items: center
+      gap: 0.5rem
+
+    tbody td
+      color: $subtext
+
+    // The columns after the name share the row evenly; the name takes what
+    // is left, so a long operator name squeezes figures before it wraps.
+    // Numbers may overflow-scroll on the narrowest card rather than wrap
+    // mid-figure.
+    tbody tr
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04)
+
+  .target-compare-unavailable
+    font-style: italic
+
+  .target-compare-teaser
+    display: flex
+    flex-wrap: wrap
+    align-items: center
+    gap: 0.5rem 1.25rem
+
+  .target-compare-name
+    display: inline-flex
+    align-items: center
+    gap: 0.5rem
+    color: $white
+    font-size: $dialog-body
+
+  .target-compare-hint
+    margin: 0
+    color: $subtext
+    font-size: $dialog-hint
+    // The teaser line explains the click; it must not swallow it. The whole
+    // card is the control (StatisticContainer's clickable), so the hint is
+    // plain text, not a second button inside one.
+    flex-basis: 100%
+
+  .target-compare-metric
+    align-self: flex-start
+
+  // On the narrow card the table scrolls in place rather than wrapping its
+  // figures - the page body must never scroll sideways for it.
+  overflow-x: auto
+
+/*
+ * The plot exists only in the modal, and the modal resets every height above
+ * it (.stats-container and .stats-content both go auto there), so the height
+ * lives on this one wrapper - stated on .chart-modal-body's side, never on
+ * .stats-content itself, whose reset wins by import order.
+ */
+.chart-modal-body
+  .target-compare-plot
+    position: relative
+    min-height: min(60vh, 400px)
+    max-height: 65vh
+
+    @media screen and (min-height: $compare-modal-tall)
+      min-height: min(64vh, 620px)
+      max-height: 72vh
+
+  @media screen and (max-width: 768px)
+    .target-compare-plot
+      min-height: min(40vh, 250px)
+      max-height: 50vh
+
+  @media screen and (max-width: 500px)
+    .target-compare-plot
+      min-height: min(35vh, 220px)
+      max-height: 45vh

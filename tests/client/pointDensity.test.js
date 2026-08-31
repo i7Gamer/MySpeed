@@ -71,7 +71,8 @@ describe("what the line does at a gap", () => {
         "utf8");
 
     it("breaks rather than bridging it", () => {
-        for (const file of ["SpeedChart/SpeedChart.jsx", "PingChart.jsx"])
+        for (const file of ["SpeedChart/SpeedChart.jsx", "PingChart.jsx",
+            "TargetCompareChart/TargetCompareChart.jsx"])
             assert.doesNotMatch(read(file), /spanGaps: true/,
                 `${file} draws a line across the very nulls the server emits for an outage`);
     });
@@ -82,7 +83,8 @@ describe("what the line does at a gap", () => {
      * successful test in a bad hour, gone from the chart. It gets a dot.
      */
     it("gives a reading with no drawn neighbour a visible dot", () => {
-        for (const file of ["SpeedChart/SpeedChart.jsx", "PingChart.jsx"]) {
+        for (const file of ["SpeedChart/SpeedChart.jsx", "PingChart.jsx",
+            "TargetCompareChart/TargetCompareChart.jsx"]) {
             assert.match(read(file), /pointRadius: lonePointRadius\(pointStyle\)/,
                 `${file} hides a lone reading at the densities that draw no points`);
             assert.match(read(file), /pointHoverRadius: lonePointHoverRadius\(pointStyle\)/,

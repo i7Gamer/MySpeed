@@ -374,6 +374,14 @@
       "density_description": "За {{days}} днів",
       "density_description_partial": "За {{elapsed}} із {{days}} днів"
     },
+    "targets": {
+      "title": "Порівняння цілей",
+      "failure_rate": "Частка збоїв",
+      "metric": "Метрика",
+      "empty": "Жодна ціль нічого не виміряла за цей період",
+      "open_hint": "Відкрийте, щоб порівняти цілі за цей період",
+      "unavailable": "Не вдалося завантажити"
+    },
     "values": {
       "min": "Мінімум",
       "max": "Максимум",

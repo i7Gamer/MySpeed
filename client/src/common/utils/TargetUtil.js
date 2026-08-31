@@ -30,8 +30,20 @@ export const resolveLimits = (target, config = {}) => ({
  */
 const TARGET_SERIES = ["download", "upload", "ping", "average", "jitter", "loaded"];
 
-export const targetColour = (index) =>
-    `var(--chart-${TARGET_SERIES[((index % TARGET_SERIES.length) + TARGET_SERIES.length) % TARGET_SERIES.length]})`;
+/**
+ * The cycle's token for a position - the shared fact behind a target's colour.
+ *
+ * Exported beside the var() form because a canvas cannot read a custom
+ * property: the comparison overlay resolves this token through the chart
+ * theme, and deriving both from one lookup is what keeps a target's dot and
+ * its line the same colour. The double modulo is load-bearing - roundIndexById
+ * answers -1 for a target no longer in the list, and a bare modulo would send
+ * that to var(--chart-undefined).
+ */
+export const targetSeriesToken = (index) =>
+    TARGET_SERIES[((index % TARGET_SERIES.length) + TARGET_SERIES.length) % TARGET_SERIES.length];
+
+export const targetColour = (index) => `var(--chart-${targetSeriesToken(index)})`;
 
 /**
  * A target's position in the round order, which is what its colour is keyed

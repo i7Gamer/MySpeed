@@ -35,9 +35,12 @@ describe("the statistics ask for all time by name", () => {
         assert.match(statistics, /if \(dateRange\)\s*query\.set\("compare", "previous"\)/);
     });
 
-    // The page request and the high-resolution one a reader opens a chart for.
-    it("builds both of its requests the same way", () => {
-        assert.equal((statistics.match(/rangeQuery\(dateRange\)/g) ?? []).length, 2);
+    // The page request, the high-resolution one a reader opens a chart for,
+    // and the comparison card's pair - its cache key and its per-target
+    // fetch, which must spell the window exactly as the requests they answer
+    // for or a cached answer never matches its own key.
+    it("builds every request the same way", () => {
+        assert.equal((statistics.match(/rangeQuery\(dateRange\)/g) ?? []).length, 4);
     });
 });
 

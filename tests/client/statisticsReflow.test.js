@@ -95,7 +95,7 @@ describe("the statistics page's shape", () => {
      */
     it("reflows the page's own cards and not the modal's", () => {
         const staged = rules(page).filter(({selector}) =>
-            /\.stats-container|\.chart-container|\.ping-chart|\.hourly-chart/.test(selector));
+            /\.stats-container|\.chart-container|\.ping-chart|\.hourly-chart|\.container-wide/.test(selector));
 
         assert.ok(staged.length > 0, "the page no longer sizes the cards at all");
 
@@ -129,7 +129,7 @@ describe("what a card asks for while three share a row", () => {
     // editable apart from the first: the base changes and the page still
     // renders from the copy.
     it("gives a size class no width of its own", () => {
-        for (const size of [".container-small", ".container-normal", ".container-large"]) {
+        for (const size of [".container-small", ".container-normal", ".container-large", ".container-wide"]) {
             const sized = rules(statContainer).filter(({selector, body}) =>
                 selector.split(",").some((part) => part.trim() === size) && /flex:/.test(body));
 
@@ -411,7 +411,7 @@ describe("the columns the second and third rows fall into", () => {
     const cards = () => {
         const body = statisticsSource.slice(statisticsSource.lastIndexOf("statistic-area${isStale"));
         const named = [...body.slice(0, body.indexOf("<ChartModal"))
-            .matchAll(/<(OverviewChart|LatestTestChart|ConsistencyChart|PingChart|SpeedChart|HourlyChart|AverageChart)\b([^>]*)>/g)];
+            .matchAll(/<(OverviewChart|LatestTestChart|ConsistencyChart|PingChart|SpeedChart|HourlyChart|AverageChart|TargetCompareChart)\b([^>]*)>/g)];
 
         return named.map(([, name, props]) => {
             if (name === "SpeedChart") return `speed:${props.match(/dataKey="(\w+)"/)?.[1]}`;
@@ -422,8 +422,8 @@ describe("the columns the second and third rows fall into", () => {
         });
     };
 
-    it("renders the nine the page is made of", () => {
-        assert.equal(cards().length, 9, `the page renders ${cards().length} cards, so the rows are not three deep`);
+    it("renders the ten the page is made of", () => {
+        assert.equal(cards().length, 10, `the page renders ${cards().length} cards, so the rows are not three deep`);
     });
 
     // avgDownload/avgUpload on the value cards, download/upload on the charts
@@ -462,7 +462,12 @@ describe("the columns the second and third rows fall into", () => {
      * takes the row it starts, whatever is left of it, and everything else
      * fills two at a time.
      */
-    const SPANNING = ["OverviewChart", "PingChart", "HourlyChart"];
+    // The comparison card spans at EVERY stage, not only this one - a
+    // five-column table has nothing to do with a third of a row - and it is
+    // rendered last, so it takes the final row alone without disturbing a
+    // pair. Conditional on the target count, which the model need not know:
+    // dropping the last card removes a whole row and re-pairs nothing.
+    const SPANNING = ["OverviewChart", "PingChart", "HourlyChart", "TargetCompareChart"];
 
     const twoColumnRows = () => {
         const rows = [];

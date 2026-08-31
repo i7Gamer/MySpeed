@@ -374,6 +374,14 @@
       "density_description": "共 {{days}} 天",
       "density_description_partial": "共 {{days}} 天中的 {{elapsed}} 天"
     },
+    "targets": {
+      "title": "目標比較",
+      "failure_rate": "失敗率",
+      "metric": "指標",
+      "empty": "此期間內沒有任何目標進行過測量",
+      "open_hint": "開啟以比較此期間內的各個目標",
+      "unavailable": "無法載入"
+    },
     "values": {
       "min": "最小值",
       "max": "最大值",
