@@ -361,4 +361,39 @@ describe("the comparison row beside the target chips", () => {
         assert.equal(value(choice, "flex"), "0 0 auto",
             "the offset control grows or shrinks, so it no longer sits beside the note");
     });
+
+    /**
+     * And the menu measures itself against the button it drops from, not
+     * against the button and its label together.
+     *
+     * The menu asks for `min-width: 100%`, which means the width of its
+     * positioning ancestor. That was the element holding the label as well, so
+     * "Compare with" was silently added to the menu's floor: 305px of menu
+     * hanging off a 207px button, a hundred pixels of empty gutter beside six
+     * short options. Nothing about the translations - the widest option is half
+     * that.
+     *
+     * Read as two halves because either alone is satisfiable while still
+     * wrong: an anchor that exists but is not the positioning context measures
+     * nothing, and a positioned pair with an anchor inside it is the bug again
+     * one level down.
+     */
+    it("hangs the menu off the button rather than off the labelled pair", () => {
+        const sheet = compile("pages/Statistics/components/CompareSelect/styles.sass");
+        const source = readSource(
+            "client/src/pages/Statistics/components/CompareSelect/CompareSelect.jsx");
+
+        assert.equal(value(ruleFor(sheet, ".compare-select-anchor"), "position"), "relative",
+            "nothing between the button and the pair is positioned, so 100% is the pair's width");
+        assert.equal(value(ruleFor(sheet, ".compare-select"), "position"), null,
+            "the labelled pair is positioned too, and it is the nearer ancestor of the two");
+
+        const at = (marker) => source.indexOf(`"compare-select${marker}"`);
+
+        assert.notEqual(at("-anchor"), -1, "the anchor is styled but never drawn");
+        assert.ok(at("-label") < at("-anchor"),
+            "the label is inside the box the menu takes its width from");
+        assert.ok(at("-anchor") < at("-trigger") && at("-anchor") < at("-menu"),
+            "the button and its menu are not both inside the anchor");
+    });
 });

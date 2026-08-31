@@ -63,38 +63,46 @@ export const CompareSelect = ({value, onChange}) => {
                 {t("statistics.compare.label")}
             </span>
 
-            <button
-                type="button"
-                className="compare-select-trigger"
-                ref={buttonRef}
-                onClick={() => setIsOpen(!isOpen)}
-                aria-expanded={isOpen}
-                aria-labelledby="compare-select-label compare-select-value"
-            >
-                <FontAwesomeIcon icon={faClockRotateLeft} className="compare-select-icon"/>
-                <span id="compare-select-value">{t(`statistics.compare.choice.${value}`)}</span>
-                <FontAwesomeIcon icon={faChevronDown}
-                                 className={`compare-select-chevron${isOpen ? " open" : ""}`}/>
-            </button>
+            {/* The button and its menu, boxed together and alone.
+                The menu asks for the width of whatever it hangs from, and with
+                the label inside that box it was asking for the label too - a
+                hundred pixels of empty gutter beside six short options, from a
+                floor nothing in the menu had set. Same shape as
+                .export-button-container, for the same reason. */}
+            <div className="compare-select-anchor">
+                <button
+                    type="button"
+                    className="compare-select-trigger"
+                    ref={buttonRef}
+                    onClick={() => setIsOpen(!isOpen)}
+                    aria-expanded={isOpen}
+                    aria-labelledby="compare-select-label compare-select-value"
+                >
+                    <FontAwesomeIcon icon={faClockRotateLeft} className="compare-select-icon"/>
+                    <span id="compare-select-value">{t(`statistics.compare.choice.${value}`)}</span>
+                    <FontAwesomeIcon icon={faChevronDown}
+                                     className={`compare-select-chevron${isOpen ? " open" : ""}`}/>
+                </button>
 
-            {/* Buttons, like the one that opens them - a keyboard that can
-                reach the menu has to have something to press once it is
-                there. The chosen one is marked rather than merely styled: a
-                colour alone is not a statement anything but an eye can read. */}
-            {isOpen && (
-                <div className="compare-select-menu" ref={menuRef} role="listbox">
-                    {COMPARE_CHOICES.map((choice) => (
-                        <button type="button" key={choice} role="option"
-                                aria-selected={choice === value}
-                                className={`compare-select-option${choice === value ? " chosen" : ""}`}
-                                onClick={() => choose(choice)}>
-                            <FontAwesomeIcon icon={faCheck}
-                                             className={choice === value ? "" : "compare-select-unchosen"}/>
-                            <span>{t(`statistics.compare.choice.${choice}`)}</span>
-                        </button>
-                    ))}
-                </div>
-            )}
+                {/* Buttons, like the one that opens them - a keyboard that can
+                    reach the menu has to have something to press once it is
+                    there. The chosen one is marked rather than merely styled: a
+                    colour alone is not a statement anything but an eye can read. */}
+                {isOpen && (
+                    <div className="compare-select-menu" ref={menuRef} role="listbox">
+                        {COMPARE_CHOICES.map((choice) => (
+                            <button type="button" key={choice} role="option"
+                                    aria-selected={choice === value}
+                                    className={`compare-select-option${choice === value ? " chosen" : ""}`}
+                                    onClick={() => choose(choice)}>
+                                <FontAwesomeIcon icon={faCheck}
+                                                 className={choice === value ? "" : "compare-select-unchosen"}/>
+                                <span>{t(`statistics.compare.choice.${choice}`)}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
