@@ -4,6 +4,7 @@ import * as sass from "sass";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { withoutJsComments } from "../helpers/source.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -92,10 +93,17 @@ describe("the page toolbar", () => {
      * time to the extent of the tests themselves, so both pages offer the same
      * presets and the prop that told them apart is gone.
      */
+    /*
+     * Comment-blind, because the claim is about a prop rather than about the
+     * word: a comment elsewhere in the statistics page that happened to mention
+     * the timeframe presets in prose failed this, which is a true sentence
+     * reported as a returned prop.
+     */
     it("hands the picker no presets of its own", () => {
         for (const [name, source] of [["the toolbar", toolbar], ["the overview", home],
             ["the statistics", statistics]])
-            assert.doesNotMatch(source, /presets/, `${name} still carries a preset list`);
+            assert.doesNotMatch(withoutJsComments(source), /presets/,
+                `${name} still carries a preset list`);
     });
 
     /**

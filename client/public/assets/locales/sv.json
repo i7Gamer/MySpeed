@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "Jämförelse av mål",
+      "chart": {
+        "ping": "Ping per testmål",
+        "download": "Nedladdning per testmål",
+        "upload": "Uppladdning per testmål"
+      },
       "failure_rate": "Felfrekvens",
-      "metric": "Mätvärde",
       "empty": "Inget mål har mätt något under denna period",
-      "open_hint": "Öppna för att jämföra målen under denna period",
       "unavailable": "Kunde inte läsas in"
     },
     "values": {

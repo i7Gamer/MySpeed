@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "Comparação de alvos",
+      "chart": {
+        "ping": "Ping por destino",
+        "download": "Download por destino",
+        "upload": "Upload por destino"
+      },
       "failure_rate": "Taxa de falhas",
-      "metric": "Métrica",
       "empty": "Nenhum alvo mediu nada neste período",
-      "open_hint": "Abra para comparar os alvos neste período",
       "unavailable": "Não foi possível carregar"
     },
     "values": {

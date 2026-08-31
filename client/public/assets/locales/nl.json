@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "Vergelijking van doelen",
+      "chart": {
+        "ping": "Ping per doel",
+        "download": "Download per doel",
+        "upload": "Upload per doel"
+      },
       "failure_rate": "Foutpercentage",
-      "metric": "Meetwaarde",
       "empty": "Geen enkel doel heeft iets gemeten in deze periode",
-      "open_hint": "Open om de doelen over deze periode te vergelijken",
       "unavailable": "Kon niet laden"
     },
     "values": {

@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "目标对比",
+      "chart": {
+        "ping": "各测速点 ping 延迟",
+        "download": "各测速点下载",
+        "upload": "各测速点上传"
+      },
       "failure_rate": "失败率",
-      "metric": "指标",
       "empty": "此时间段内没有任何目标进行过测量",
-      "open_hint": "打开以对比此时间段内的各个目标",
       "unavailable": "无法加载"
     },
     "values": {

@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "Comparaison des cibles",
+      "chart": {
+        "ping": "Ping par cible",
+        "download": "Téléchargement par cible",
+        "upload": "Téléversement par cible"
+      },
       "failure_rate": "Taux d'échec",
-      "metric": "Métrique",
       "empty": "Aucune cible n'a rien mesuré sur cette période",
-      "open_hint": "Ouvrir pour comparer les cibles sur cette période",
       "unavailable": "Chargement impossible"
     },
     "values": {

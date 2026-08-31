@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "Comparació d'objectius",
+      "chart": {
+        "ping": "Ping per destinació",
+        "download": "Baixada per destinació",
+        "upload": "Pujada per destinació"
+      },
       "failure_rate": "Taxa d'errors",
-      "metric": "Mètrica",
       "empty": "Cap objectiu no ha mesurat res en aquest període",
-      "open_hint": "Obriu per comparar els objectius en aquest període",
       "unavailable": "No s'ha pogut carregar"
     },
     "values": {

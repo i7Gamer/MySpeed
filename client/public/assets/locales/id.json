@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "Perbandingan target",
+      "chart": {
+        "ping": "Ping per tujuan",
+        "download": "Unduh per tujuan",
+        "upload": "Unggah per tujuan"
+      },
       "failure_rate": "Tingkat kegagalan",
-      "metric": "Metrik",
       "empty": "Tidak ada target yang mengukur apa pun dalam rentang ini",
-      "open_hint": "Buka untuk membandingkan target dalam rentang ini",
       "unavailable": "Gagal memuat"
     },
     "values": {

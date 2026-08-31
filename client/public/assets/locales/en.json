@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "Target comparison",
+      "chart": {
+        "ping": "Ping by target",
+        "download": "Download by target",
+        "upload": "Upload by target"
+      },
       "failure_rate": "Failure rate",
-      "metric": "Metric",
       "empty": "No target measured anything in this range",
-      "open_hint": "Open to compare the targets over this range",
       "unavailable": "Couldn't load"
     },
     "values": {

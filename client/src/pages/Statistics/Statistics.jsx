@@ -47,7 +47,7 @@ import OverviewChart from "@/pages/Statistics/charts/OverviewChart";
 import AverageChart from "@/pages/Statistics/charts/AverageChart";
 import HourlyChart from "@/pages/Statistics/charts/HourlyChart.jsx";
 import ConsistencyChart from "@/pages/Statistics/charts/ConsistencyChart";
-import TargetCompareChart from "@/pages/Statistics/charts/TargetCompareChart";
+import TargetCompareChart, {TargetCompareTable} from "@/pages/Statistics/charts/TargetCompareChart";
 import ToggleSwitch from "@/common/components/ToggleSwitch";
 import {crosshairPlugin} from "@/pages/Statistics/crosshairPlugin";
 import i18n, {t} from "i18next";
@@ -73,10 +73,27 @@ const CHART_MODAL_LABELS = {
     hourly: "statistics.hourly.title",
     avgDownload: "statistics.values.down",
     avgUpload: "statistics.values.up",
-    targets: "statistics.targets.title"
+    targets: "statistics.targets.title",
+    targetsPing: "statistics.targets.chart.ping",
+    targetsDownload: "statistics.targets.chart.download",
+    targetsUpload: "statistics.targets.chart.upload"
 };
 
-const FULL_HEIGHT_CHARTS = [...LINE_CHARTS, 'hourly'];
+/*
+ * The comparison's four panels - three overlay charts and the table of figures
+ * beside them - named together because they share both of their gates: two
+ * targets to compare, and no chip narrowing the page. The modal is plain state
+ * and has to be closed when either gate shuts under an open one.
+ */
+const TARGET_COMPARE_CHARTS = ['targetsPing', 'targetsDownload', 'targetsUpload'];
+const TARGET_PANELS = ['targets', ...TARGET_COMPARE_CHARTS];
+
+// Which metric a comparison panel draws, taken from the panel's own name so the
+// two cannot drift: 'targetsUpload' is the upload chart by construction rather
+// than by a second table somebody has to keep in step with this one.
+const metricOf = (panel) => panel.slice("targets".length).toLowerCase();
+
+const FULL_HEIGHT_CHARTS = [...LINE_CHARTS, 'hourly', ...TARGET_COMPARE_CHARTS];
 
 // Panels that are a responsive grid rather than a plot: they need the dialog to
 // have a width before they can lay out at all, but not a chart's height. Without
@@ -497,55 +514,89 @@ export const Statistics = () => {
     const compareFresh = compareStats?.key === compareKey;
 
     /*
-     * The card's fetch, lazy on purpose: N statistics requests per range
-     * change would spend the same fixed-window rate budget the page's own
-     * request lives on, and a 429 there blanks the whole page. Nothing is
-     * asked for until the card is opened; the answer is cached against its
-     * key, so re-opening costs nothing and the collapsed card shows the table
-     * for as long as the key still matches. A key that goes stale UNDER the
-     * open panel - the Back button changes the range without closing it -
-     * re-fires this and the panel shows its loading line rather than the
-     * previous range's series.
+     * What the four comparison panels read, resolved once. A stale byId is the
+     * previous range's series wearing this range's heading - the fault the
+     * page's own stale guard exists for, which the Back button reaches with a
+     * panel open - and four render sites each spelling the gate for themselves
+     * is four places for one of them to forget it.
+     */
+    const compareStatsById = compareFresh ? compareStats.byId : null;
+
+    /*
+     * The comparison's fetch: eager now, and one request rather than N.
+     *
+     * It used to wait for a click, because asking per target spent the
+     * statistics family's own fixed-window budget - 60 a minute for a
+     * question that costs a full range scan - and a 429 there blanks the whole
+     * page. At three targets a reader stepping through the timeframe presets
+     * reached that ceiling on its own. So the panels showed an invitation
+     * instead of figures, which is the wrong trade: the comparison is a
+     * reading, and a reading nobody can see without asking twice is not one.
+     *
+     * `targets=` is what makes the eager fetch affordable. The server scans
+     * the range once and partitions by target in memory, so this costs one
+     * request whatever the target count - the same one the page itself spends
+     * - and the ceiling stops scaling with how many targets an operator keeps.
+     *
+     * Not asked at all while a chip narrows the page: every other panel is
+     * then about that one target, and a comparison of all of them beside them
+     * contradicts the filter the reader just set. The panels are hidden in
+     * that state, so this would be buying a payload nothing renders.
+     *
+     * The answer is cached against its key, so a re-render costs nothing. A
+     * key that goes stale under an open panel - the Back button changes the
+     * range without closing it - re-fires this and the panel shows its loading
+     * line rather than the previous range's series.
      *
      * No languageChanged re-fetch, unlike the page's: the labels are ISO
      * instants and every rendered string re-resolves on its own.
      */
     useEffect(() => {
-        if (expandedChart !== "targets" || targets.length < 2 || compareFresh) return;
+        if (targetFilter != null || targets.length < 2 || compareFresh) return;
 
         const generation = ++compareGeneration.current;
 
-        Promise.allSettled(targets.map(({id}) => {
-            const query = rangeQuery(dateRange);
-            query.set("target", String(id));
-            // The same question the page asks, through the same applier -
-            // each target narrowed to its own line, so a row compares
-            // against ITS week rather than the page's mixture.
-            applyCompare(query, dateRange, compare);
+        const query = rangeQuery(dateRange);
+        query.set("targets", targets.map(({id}) => id).join(","));
+        // The same question the page asks, through the same applier - each
+        // target narrowed to its own line, so a row compares against ITS week
+        // rather than the page's mixture.
+        applyCompare(query, dateRange, compare);
 
-            return jsonRequest(`/speedtests/statistics/?${query}`);
-        })).then((results) => {
+        jsonRequest(`/speedtests/statistics/?${query}`).then((answer) => {
             if (generation !== compareGeneration.current) return;
 
-            results.forEach((result, index) => {
-                if (result.status === "rejected")
-                    console.error(`Failed to load the comparison for target ${targets[index].id}:`,
-                        result.reason);
-            });
+            /*
+             * Every requested target gets an entry, and a target the server
+             * left out becomes the null the table names "couldn't load" -
+             * not the clean N/A of a line that answered honestly with
+             * nothing. The whole request failing is the same finding for
+             * every target at once, which the catch below states the same
+             * way rather than leaving the panels spinning forever.
+             */
+            const byTarget = answer?.byTarget ?? {};
+            setCompareStats({key: compareKey, byId: Object.fromEntries(targets.map(({id}) =>
+                [id, byTarget[id] ?? byTarget[String(id)] ?? null]))});
+        }).catch((error) => {
+            if (generation !== compareGeneration.current) return;
 
-            // A rejected half becomes the null the table names "couldn't
-            // load" - not the clean N/A of a target that measured nothing.
-            setCompareStats({key: compareKey, byId: Object.fromEntries(results.map((result, index) =>
-                [targets[index].id, result.status === "fulfilled" ? result.value : null]))});
+            console.error("Failed to load the target comparison:", error);
+            setCompareStats({key: compareKey,
+                byId: Object.fromEntries(targets.map(({id}) => [id, null]))});
         });
-    }, [expandedChart, targets, dateRange, compare, compareKey, compareFresh]);
+    }, [targetFilter, targets, dateRange, compare, compareKey, compareFresh]);
 
-    // The card and its fetch are gated on two targets; the modal is plain
-    // state and would outlive the gate - deleting targets down to one with
-    // the panel open left it standing over nothing.
+    /*
+     * The panels and their fetch are gated on two targets and on nothing
+     * narrowing the page; the modal is plain state and would outlive either
+     * gate. Deleting targets down to one with a panel open left it standing
+     * over nothing, and pressing a chip under an open one left a comparison of
+     * every target on screen while the page behind it showed exactly one.
+     */
     useEffect(() => {
-        if (targets.length < 2 && expandedChart === "targets") setExpandedChart(null);
-    }, [targets, expandedChart]);
+        if ((targets.length < 2 || targetFilter != null) && TARGET_PANELS.includes(expandedChart))
+            setExpandedChart(null);
+    }, [targets, targetFilter, expandedChart]);
 
     if (mountPhase === 0) return null;
 
@@ -704,8 +755,17 @@ export const Statistics = () => {
                 // statsById only while the cache answers for the shown key:
                 // a stale byId is the previous range's series wearing this
                 // range's heading, the fault the page's own guard exists for.
-                return <TargetCompareChart targets={targets} statsById={compareFresh ? compareStats.byId : null}
+                return <TargetCompareTable targets={targets} statsById={compareStatsById}
                                            fresh={compareFresh} expanded/>;
+            case 'targetsPing':
+            case 'targetsDownload':
+            case 'targetsUpload':
+                // The metric is the panel's own identity, read back off the key
+                // rather than passed separately: three cases naming their own
+                // metric a second time is three chances for a case to draw the
+                // chart beside it.
+                return <TargetCompareChart targets={targets} statsById={compareStatsById}
+                                           fresh={compareFresh} metric={metricOf(chartType)}/>;
             default:
                 return null;
         }
@@ -757,12 +817,30 @@ export const Statistics = () => {
             <AverageChart title={t(CHART_MODAL_LABELS.avgDownload)} data={deferredStatistics.download} previous={previous?.download} target={gradeLimits.download} onClick={() => setExpandedChart('avgDownload')}/>
             <AverageChart title={t(CHART_MODAL_LABELS.avgUpload)} data={deferredStatistics.upload} previous={previous?.upload} target={gradeLimits.upload} onClick={() => setExpandedChart('avgUpload')}/>
 
-            {/* The chips' own gate: one target has nothing to compare. Every
-                target whatever chip is active - the chip narrows the page,
-                and a comparison narrowed to one target compares nothing. */}
-            {targets.length >= 2 && (
-                <TargetCompareChart targets={targets} statsById={compareFresh ? compareStats.byId : null}
-                                    fresh={compareFresh} onClick={() => setExpandedChart('targets')}/>
+            {/* Two gates, both about whether there is a comparison to make.
+                One target has nothing to compare - the chips' own gate. And a
+                chip narrows the page to a single target, at which point every
+                panel above is about that one and a comparison of all of them
+                here would be the only thing on screen contradicting the filter
+                the reader just set. Hidden rather than filtered: a comparison
+                narrowed to one target compares nothing. */}
+            {targets.length >= 2 && targetFilter == null && (
+                <>
+                    {/* One per metric, in the order of the row above - ping
+                        leading, then the two speed charts - so the six charts
+                        read down the page in matching columns. */}
+                    <TargetCompareChart targets={targets} statsById={compareStatsById} fresh={compareFresh}
+                                        metric="ping" compact onClick={() => setExpandedChart('targetsPing')}/>
+                    <TargetCompareChart targets={targets} statsById={compareStatsById} fresh={compareFresh}
+                                        metric="download" compact onClick={() => setExpandedChart('targetsDownload')}/>
+                    <TargetCompareChart targets={targets} statsById={compareStatsById} fresh={compareFresh}
+                                        metric="upload" compact onClick={() => setExpandedChart('targetsUpload')}/>
+
+                    {/* And the figures no line can draw: the averages as
+                        numbers, their deltas, and the failure rate. */}
+                    <TargetCompareTable targets={targets} statsById={compareStatsById}
+                                        fresh={compareFresh} onClick={() => setExpandedChart('targets')}/>
+                </>
             )}
 
             <ChartModal

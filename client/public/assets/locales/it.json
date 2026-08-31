@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "Confronto degli obiettivi",
+      "chart": {
+        "ping": "Ping per destinazione",
+        "download": "Scaricare per destinazione",
+        "upload": "Caricare per destinazione"
+      },
       "failure_rate": "Tasso di errore",
-      "metric": "Metrica",
       "empty": "Nessun obiettivo ha misurato nulla in questo periodo",
-      "open_hint": "Apri per confrontare gli obiettivi in questo periodo",
       "unavailable": "Impossibile caricare"
     },
     "values": {

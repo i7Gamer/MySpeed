@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "ターゲットの比較",
+      "chart": {
+        "ping": "測定先ごとのPing",
+        "download": "測定先ごとのダウンロード",
+        "upload": "測定先ごとのアップロード"
+      },
       "failure_rate": "失敗率",
-      "metric": "指標",
       "empty": "この期間に測定したターゲットはありません",
-      "open_hint": "開くとこの期間のターゲットを比較できます",
       "unavailable": "読み込めませんでした"
     },
     "values": {

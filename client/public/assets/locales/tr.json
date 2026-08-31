@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "Hedef karşılaştırması",
+      "chart": {
+        "ping": "Noktaya göre ping",
+        "download": "Noktaya göre indirme",
+        "upload": "Noktaya göre yükleme"
+      },
       "failure_rate": "Hata oranı",
-      "metric": "Metrik",
       "empty": "Bu aralıkta hiçbir hedef bir şey ölçmedi",
-      "open_hint": "Bu aralıktaki hedefleri karşılaştırmak için açın",
       "unavailable": "Yüklenemedi"
     },
     "values": {

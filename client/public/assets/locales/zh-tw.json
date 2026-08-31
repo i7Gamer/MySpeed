@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "目標比較",
+      "chart": {
+        "ping": "各測速點 Ping",
+        "download": "各測速點下載",
+        "upload": "各測速點上傳"
+      },
       "failure_rate": "失敗率",
-      "metric": "指標",
       "empty": "此期間內沒有任何目標進行過測量",
-      "open_hint": "開啟以比較此期間內的各個目標",
       "unavailable": "無法載入"
     },
     "values": {

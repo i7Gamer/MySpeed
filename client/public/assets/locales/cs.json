@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "Porovnání cílů",
+      "chart": {
+        "ping": "Ping podle cíle",
+        "download": "Stahování podle cíle",
+        "upload": "Nahrávání podle cíle"
+      },
       "failure_rate": "Míra selhání",
-      "metric": "Metrika",
       "empty": "Žádný cíl v tomto období nic nenaměřil",
-      "open_hint": "Otevřete pro porovnání cílů v tomto období",
       "unavailable": "Nepodařilo se načíst"
     },
     "values": {

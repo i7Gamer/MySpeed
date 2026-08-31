@@ -1,52 +1,62 @@
-import {useContext, useMemo, useState} from "react";
+import {useContext, useMemo} from "react";
 import {t} from "i18next";
-import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
-import SegmentedControl from "@/common/components/SegmentedControl";
 import ChartWrapper from "@/common/components/ChartWrapper";
-import Delta from "@/common/components/Delta";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {
-    appLocale, convertSpeed, formatLatencyWithUnit, formatPercent, formatWithUnit, getSpeedUnit,
-    wholeSpeed, TIME_FORMAT_12H
+    appLocale, convertSpeed, getSpeedUnit, TIME_FORMAT_12H
 } from "@/common/utils/FormatUtil";
-import {targetColour, targetSeriesToken} from "@/common/utils/TargetUtil";
+import {targetSeriesToken} from "@/common/utils/TargetUtil";
+import {clickable} from "@/common/utils/Clickable";
 import {useChartTheme} from "@/pages/Statistics/charts/useChartTheme";
 import {isSingleDaySeries, lineChartOptions, timePoints} from "@/pages/Statistics/charts/lineChartConfig";
 import {lineTensionFor, lonePointHoverRadius, lonePointRadius, pointStyleFor} from "@/pages/Statistics/charts/pointDensity";
-import {mergedTimeline, overlaySeries, targetSummaries} from "./targetCompare";
+import {mergedTimeline, overlaySeries} from "./targetCompare";
+// .chart-container and its header/body, borrowed the way PingChart borrows
+// them: these three are that row's siblings, and the shared stylesheet is what
+// makes them size and expand identically rather than nearly so.
+import "@/pages/Statistics/charts/SpeedChart/styles.sass";
 import "./styles.sass";
 
-// The overlay's metrics, each named by the key its own chart already wears.
-const METRICS = [
-    {id: "download", labelKey: "latest.down"},
-    {id: "upload", labelKey: "latest.up"},
-    {id: "ping", labelKey: "latest.ping"}
-];
+/**
+ * One title per metric, each naming the metric first - "Download by target"
+ * rather than "Target comparison: download", so the three read as siblings of
+ * the Download and Upload charts a row above rather than as three copies of one
+ * card. The keys are listed here as literals so the locale scanner can see them
+ * even though the lookup itself is by metric.
+ */
+const METRIC_TITLES = {
+    download: "statistics.targets.chart.download",
+    upload: "statistics.targets.chart.upload",
+    ping: "statistics.targets.chart.ping"
+};
 
 // The stock options close over a per-point error list; this chart draws no
 // failure markers, so there is nothing for the callback to find.
 const NO_ERRORS = [];
 
 /**
- * The card that puts the targets side by side - the payoff the chips only
- * filter towards.
+ * One metric's targets, overlaid - the payoff the chips only filter towards.
  *
- * Deliberately every target in list order whatever chip is active: the chip
- * narrows the page, and a comparison narrowed to one target compares nothing.
- * Collapsed it is the summary table once the figures for the shown range have
- * been fetched, and an invitation until then - the fetch is lazy, because N
- * statistics requests per range change would spend the rate budget the page's
- * own request lives on. Expanded it adds the overlaid series, one line per
- * target in the colour its chip dot already wears.
+ * Three of these are drawn rather than one card with a metric switcher, and the
+ * shape is the point: they take the same .chart-container the ping and speed
+ * charts a row above take, so the page shows six lines of the same kind rather
+ * than five charts and one panel that behaves differently from all of them. The
+ * switcher it replaced hid two thirds of the comparison behind a click, inside a
+ * card that had to be opened before it drew anything at all.
+ *
+ * Deliberately every target in list order: the chip narrows the page, and a
+ * comparison narrowed to one target compares nothing - which is why the page
+ * draws these only while nothing is narrowing it, and why there is no filtering
+ * to do here.
+ *
+ * @param metric which of download, upload or ping this instance draws
+ * @param fresh  whether statsById answers for the range on screen
  */
-export const TargetCompareChart = ({targets, statsById, fresh, expanded, onClick}) => {
+export const TargetCompareChart = ({targets, statsById, fresh, metric, compact = false, onClick}) => {
     const [preferences] = useContext(PreferencesContext);
-    const [metric, setMetric] = useState(METRICS[0].id);
     const themeColors = useChartTheme();
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
     const speedUnit = getSpeedUnit(preferences);
-
-    const rows = useMemo(() => targetSummaries(targets, statsById), [targets, statsById]);
 
     const series = useMemo(() => overlaySeries(targets, statsById, metric), [targets, statsById, metric]);
 
@@ -69,7 +79,7 @@ export const TargetCompareChart = ({targets, statsById, fresh, expanded, onClick
     const longestSeries = useMemo(() =>
         series.reduce((longest, one) => Math.max(longest, one.labels.length), 0), [series]);
 
-    const pointStyle = useMemo(() => pointStyleFor(drawnPoints, {}), [drawnPoints]);
+    const pointStyle = useMemo(() => pointStyleFor(drawnPoints, {compact}), [drawnPoints, compact]);
     const lineTension = useMemo(() => lineTensionFor(longestSeries), [longestSeries]);
 
     const valueUnit = metric === "ping" ? t("latest.ping_unit") : speedUnit;
@@ -141,118 +151,28 @@ export const TargetCompareChart = ({targets, statsById, fresh, expanded, onClick
         })
     }), [series, metric, preferences, themeColors, pointStyle]);
 
-    // Whole numbers on the card, the conversion's decimals in the enlarged
-    // view - the value cards' own precision rule, kept so the two surfaces
-    // cannot state different figures for one payload.
-    const speed = (mbps) => formatWithUnit(
-        expanded ? convertSpeed(mbps, preferences) : wholeSpeed(mbps, preferences), speedUnit);
-
-    const table = (
-        <table className="target-compare-table">
-            <thead>
-                <tr>
-                    <th scope="col">{t("targets.title")}</th>
-                    <th scope="col">{t("latest.down")}</th>
-                    <th scope="col">{t("latest.up")}</th>
-                    <th scope="col">{t("latest.ping")}</th>
-                    <th scope="col">{t("statistics.targets.failure_rate")}</th>
-                </tr>
-            </thead>
-            <tbody>
-                {rows.map((row) => (
-                    <tr key={row.id}>
-                        <th scope="row">
-                            <span className="target-dot" style={{background: targetColour(row.colourIndex)}}/>
-                            {row.name}
-                        </th>
-                        {row.unavailable ? (
-                            // A failed fetch is not a line that answered with
-                            // nothing - it must not wear the honest N/A.
-                            <td colSpan={METRICS.length + 1} className="target-compare-unavailable">
-                                {t("statistics.targets.unavailable")}
-                            </td>
-                        ) : (
-                            /*
-                             * The deltas compare the measurements, never the
-                             * printed figures: a delta taken from speed()
-                             * would move with the reader's unit preference
-                             * and differ between this card and its modal,
-                             * which is what the shared printer exists to
-                             * prevent. The edge that buys, stated: the
-                             * collapsed card rounds to whole units, so 899.6
-                             * and 904.4 both print "900" with an arrow
-                             * between them - wider than the one decimal the
-                             * overview already accepts, and wider again in
-                             * MB/s, where a whole unit is eight Mbit/s.
-                             */
-                            <>
-                                <td>{speed(row.download)}
-                                    <Delta current={row.download} previous={row.previous?.download}
-                                           higherIsBetter={true}/></td>
-                                <td>{speed(row.upload)}
-                                    <Delta current={row.upload} previous={row.previous?.upload}
-                                           higherIsBetter={true}/></td>
-                                <td>{formatLatencyWithUnit(row.ping, t("latest.ping_unit"))}
-                                    <Delta current={row.ping} previous={row.previous?.ping}
-                                           higherIsBetter={false}/></td>
-                                {/* Points of the percentage it already is,
-                                    like the overview's loss row: 5% to 7% is
-                                    two points, not forty per cent. */}
-                                <td>{formatPercent(row.failureRate)}
-                                    <Delta current={row.failureRate} previous={row.previous?.failureRate}
-                                           higherIsBetter={false} mode="absolute" unit="%"/></td>
-                            </>
-                        )}
-                    </tr>
-                ))}
-            </tbody>
-        </table>
-    );
-
-    // The teaser costs no request: the names and their chip colours, and the
-    // one line saying what opening the card does.
-    const teaser = (
-        <div className="target-compare-teaser">
-            {targets.map((target, index) => (
-                <span key={target.id} className="target-compare-name">
-                    <span className="target-dot" style={{background: targetColour(index)}}/>
-                    {target.name}
-                </span>
-            ))}
-            <p className="target-compare-hint">{t("statistics.targets.open_hint")}</p>
-        </div>
-    );
-
+    /*
+     * The two states that are not a chart, said in the plot's own place rather
+     * than in place of the whole card: the heading names the metric either way,
+     * so a reader looking for "Upload by target" finds it while it is still
+     * loading instead of finding a card that has not decided what it is yet.
+     */
     const body = () => {
-        if (!fresh) return expanded
-            ? <p className="target-compare-hint">{t("statistics.detail.loading")}</p>
-            : teaser;
+        if (!fresh) return <p className="target-compare-hint">{t("statistics.detail.loading")}</p>;
+        if (series.length === 0) return <p className="target-compare-hint">{t("statistics.targets.empty")}</p>;
 
-        if (!expanded) return table;
-
-        return (
-            <>
-                <SegmentedControl className="target-compare-metric" label={t("statistics.targets.metric")}
-                                  options={METRICS.map(({id, labelKey}) => ({id, label: t(labelKey)}))}
-                                  value={metric} onChange={setMetric}/>
-                {series.length > 0 ? (
-                    <div className="target-compare-plot">
-                        <ChartWrapper type="line" data={chartData} options={chartOptions}/>
-                    </div>
-                ) : (
-                    <p className="target-compare-hint">{t("statistics.targets.empty")}</p>
-                )}
-                {table}
-            </>
-        );
+        return <ChartWrapper type="line" data={chartData} options={chartOptions}/>;
     };
 
     return (
-        <StatisticContainer title={t("statistics.targets.title")} size="wide" onClick={onClick}>
-            <div className="target-compare-chart">
+        <div className="chart-container target-compare-chart" {...clickable(onClick)}>
+            <div className="chart-header">
+                <h3 className="chart-title">{t(METRIC_TITLES[metric])} ({valueUnit})</h3>
+            </div>
+            <div className="chart-body">
                 {body()}
             </div>
-        </StatisticContainer>
+        </div>
     );
 };
 

@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "Sammenligning af mål",
+      "chart": {
+        "ping": "Ping pr. mål",
+        "download": "Download pr. mål",
+        "upload": "Upload pr. mål"
+      },
       "failure_rate": "Fejlrate",
-      "metric": "Måleværdi",
       "empty": "Intet mål har målt noget i denne periode",
-      "open_hint": "Åbn for at sammenligne målene i denne periode",
       "unavailable": "Kunne ikke indlæses"
     },
     "values": {

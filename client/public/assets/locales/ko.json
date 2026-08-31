@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "대상 비교",
+      "chart": {
+        "ping": "측정 대상별 핑",
+        "download": "측정 대상별 다운로드",
+        "upload": "측정 대상별 업로드"
+      },
       "failure_rate": "실패율",
-      "metric": "지표",
       "empty": "이 기간에 측정한 대상이 없습니다",
-      "open_hint": "열어서 이 기간의 대상을 비교하세요",
       "unavailable": "불러올 수 없음"
     },
     "values": {

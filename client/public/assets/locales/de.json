@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "Ziele im Vergleich",
+      "chart": {
+        "ping": "Ping pro Ziel",
+        "download": "Download pro Ziel",
+        "upload": "Upload pro Ziel"
+      },
       "failure_rate": "Fehlerquote",
-      "metric": "Messwert",
       "empty": "Kein Ziel hat in diesem Zeitraum etwas gemessen",
-      "open_hint": "Öffnen, um die Ziele über diesen Zeitraum zu vergleichen",
       "unavailable": "Konnte nicht geladen werden"
     },
     "values": {

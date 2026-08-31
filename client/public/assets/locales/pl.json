@@ -394,10 +394,13 @@
     },
     "targets": {
       "title": "Porównanie celów",
+      "chart": {
+        "ping": "Ping wg celu",
+        "download": "Pobieranie wg celu",
+        "upload": "Wysyłanie wg celu"
+      },
       "failure_rate": "Wskaźnik niepowodzeń",
-      "metric": "Metryka",
       "empty": "Żaden cel niczego nie zmierzył w tym okresie",
-      "open_hint": "Otwórz, aby porównać cele w tym okresie",
       "unavailable": "Nie udało się wczytać"
     },
     "values": {
