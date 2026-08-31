@@ -117,6 +117,8 @@ const MIN_DURATION_SECONDS = 5;
 const MAX_DURATION_SECONDS = 60;
 const MIN_STREAMS = 1;
 const MAX_STREAMS = 32;
+const MIN_BITRATE_MBPS = 1;
+const MAX_BITRATE_MBPS = 10000;
 
 // Blank is not a bad value - it is the field left alone, which stores null and
 // runs the registry's own default. Everything else must be a whole number
@@ -134,10 +136,28 @@ export const durationAccepted = (value) => withinBounds(value, MIN_DURATION_SECO
 
 export const streamsAccepted = (value) => withinBounds(value, MIN_STREAMS, MAX_STREAMS);
 
+/**
+ * The rate a UDP run sends at - the one field here where blank is not a valid
+ * answer.
+ *
+ * iperf3's own default is 1 Mbit/s and nothing in its output says it was a
+ * default: a capture measured 1.04 Mbit/s on the same loopback that measured
+ * 99.2 when asked for 100. So an unnamed rate is not "inherit something
+ * sensible", it is a gigabit line recorded as a megabit forever, and the door
+ * refuses it - which means the button must too.
+ *
+ * Asked with the mode, because off it is not a field at all: the editor does
+ * not draw it and the body drops whatever was left in it.
+ */
+export const bitrateAccepted = (value, udp) =>
+    !udp || (value !== "" && value !== null && value !== undefined
+        && withinBounds(value, MIN_BITRATE_MBPS, MAX_BITRATE_MBPS));
+
 // The bounds themselves, for the inputs that state them to the operator: a
 // spinner that steps past what the door takes is a control that offers a
 // refusal.
 export const TUNING_BOUNDS = {
     duration: {min: MIN_DURATION_SECONDS, max: MAX_DURATION_SECONDS},
-    streams: {min: MIN_STREAMS, max: MAX_STREAMS}
+    streams: {min: MIN_STREAMS, max: MAX_STREAMS},
+    bitrate: {min: MIN_BITRATE_MBPS, max: MAX_BITRATE_MBPS}
 };

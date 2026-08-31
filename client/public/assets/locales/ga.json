@@ -63,7 +63,9 @@
       "iperf3_desc": "Do fhreastalaí iperf3 féin, ar do líonra",
       "iperf_advanced": "Socruithe an rite",
       "iperf_duration": "Soicindí sa treo",
-      "iperf_streams": "Sruthanna comhthreomhara"
+      "iperf_streams": "Sruthanna comhthreomhara",
+      "iperf_udp": "Tomhais le UDP",
+      "iperf_bitrate": "Ráta giotán (Mbit/s)"
     }
   },
   "dropdown": {

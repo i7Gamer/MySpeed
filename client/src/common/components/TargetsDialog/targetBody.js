@@ -71,7 +71,11 @@ export const optimalsAccepted = ({ownOptimals, optimalPing, optimalDownload, opt
  */
 export const targetBody = ({name, provider, serverId, endpoint, alerts, ownOptimals,
                                optimalPing, optimalDownload, optimalUpload,
-                               iperfDuration, iperfStreams}) => {
+                               iperfDuration, iperfStreams, iperfUdp, iperfBitrate}) => {
+    // Datagrams, for the one provider that offers them. Stated either way
+    // rather than left out: the column is NOT NULL and false is what every
+    // target is, so there is no "unset" for this one to mean.
+    const udp = takesTuning(provider) && Boolean(iperfUdp);
     // Judged exactly as it is sent. Compared raw and sent trimmed, " none"
     // walked past the sentinel check here and went to the server as the
     // literal host "none" - a row whose editor reopens with a dead button,
@@ -99,6 +103,15 @@ export const targetBody = ({name, provider, serverId, endpoint, alerts, ownOptim
         // target say - null everywhere else, which is what the door takes
         // and what the runner reads as its own default.
         iperfDuration: tuningOrNull(provider, iperfDuration),
-        iperfStreams: tuningOrNull(provider, iperfStreams)
+        // Null under UDP, because the shipped build cannot carry a datagram
+        // run over more than one stream and the door refuses the pair. A
+        // target that had eight and then turned UDP on would otherwise be
+        // unsaveable with nothing in the dialog saying which field to fix.
+        iperfStreams: udp ? null : tuningOrNull(provider, iperfStreams),
+        iperfUdp: udp,
+        // And the rate belongs to the mode: sent only when datagrams are, so a
+        // value left behind by switching the toggle back off does not travel
+        // with the save into a refusal.
+        iperfBitrate: udp ? tuningOrNull(provider, iperfBitrate) : null
     };
 };

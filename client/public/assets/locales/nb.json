@@ -63,7 +63,9 @@
       "iperf3_desc": "Din egen iperf3-server, på ditt nettverk",
       "iperf_advanced": "Kjøreinnstillinger",
       "iperf_duration": "Sekunder per retning",
-      "iperf_streams": "Parallelle strømmer"
+      "iperf_streams": "Parallelle strømmer",
+      "iperf_udp": "Mål med UDP",
+      "iperf_bitrate": "Bitrate (Mbit/s)"
     }
   },
   "dropdown": {

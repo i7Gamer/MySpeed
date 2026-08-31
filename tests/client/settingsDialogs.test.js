@@ -278,7 +278,22 @@ describe("a setting row in the target editor", () => {
         const switches = rows.filter((row) => row.includes("provider-setting-switch"));
 
         assert.equal(switches.length, 2,
-            `${switches.length} rows are marked as switch rows; the editor has two toggles`);
+            `${switches.length} rows are marked as switch rows; the editor has two toggle rows`);
+    });
+
+    /**
+     * And the third toggle is deliberately not one of them. The UDP switch
+     * sits inside the run-settings row rather than beside it, so borrowing
+     * this class would draw a second border within the first - the row style
+     * carries its own padding and edge, which is the whole of what it is for.
+     */
+    it("keeps the toggle nested in a row out of the row style", () => {
+        const jsx = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+
+        assert.match(jsx, /className="target-tuning-switch"/,
+            "the run-settings toggle no longer names itself");
+        assert.doesNotMatch(jsx, /className="provider-setting-switch target-tuning-switch"/,
+            "the nested toggle took the bordered row style");
     });
 });
 

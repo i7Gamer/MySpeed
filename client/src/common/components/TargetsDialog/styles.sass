@@ -324,3 +324,14 @@
     span
       font-size: $dialog-hint
       color: $subtext
+
+// The mode sits under the fields it governs rather than beside them: turning
+// it on swaps one of those fields for another, and a toggle below the thing it
+// changes reads as a footnote to it instead of a fourth column.
+.target-tuning-switch
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 0.75rem
+  width: 100%
+  margin-top: 0.75rem

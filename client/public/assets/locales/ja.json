@@ -63,7 +63,9 @@
       "iperf3_desc": "自分のネットワーク上にある自前の iperf3 サーバー",
       "iperf_advanced": "実行設定",
       "iperf_duration": "方向ごとの秒数",
-      "iperf_streams": "並列ストリーム数"
+      "iperf_streams": "並列ストリーム数",
+      "iperf_udp": "UDP で測定",
+      "iperf_bitrate": "ビットレート (Mbit/s)"
     }
   },
   "dropdown": {

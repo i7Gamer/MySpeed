@@ -63,7 +63,9 @@
       "iperf3_desc": "Your own iperf3 server, on your network",
       "iperf_advanced": "Run settings",
       "iperf_duration": "Seconds per direction",
-      "iperf_streams": "Parallel streams"
+      "iperf_streams": "Parallel streams",
+      "iperf_udp": "Measure with UDP",
+      "iperf_bitrate": "Bitrate (Mbit/s)"
     }
   },
   "dropdown": {

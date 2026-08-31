@@ -17,8 +17,8 @@ import Checkbox from "@/common/components/Checkbox";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import {CUSTOM_BACKEND_PLACEHOLDER, IPERF_HOST_PLACEHOLDER} from "@/common/utils/InvariantText";
 import {
-    durationAccepted, iperfHostAccepted, providers, requiresEndpoint, streamsAccepted,
-    takesEndpoint, takesServerId, takesTuning, TUNING_BOUNDS
+    bitrateAccepted, durationAccepted, iperfHostAccepted, providers, requiresEndpoint,
+    streamsAccepted, takesEndpoint, takesServerId, takesTuning, TUNING_BOUNDS
 } from "./providers";
 import {optimalAccepted, optimalsAccepted, targetBody} from "./targetBody";
 
@@ -52,6 +52,12 @@ export const TargetEditor = ({open, onClose, target}) => {
     // runner reads as "the registry's own default".
     const [iperfDuration, setIperfDuration] = useState("");
     const [iperfStreams, setIperfStreams] = useState("");
+    // Datagrams instead of a stream, which is a different measurement rather
+    // than a louder one - and the only run that reports the jitter and packet
+    // loss the row has columns for. The rate is not optional beside it: the
+    // CLI's own default is 1 Mbit/s and says nothing about being one.
+    const [iperfUdp, setIperfUdp] = useState(false);
+    const [iperfBitrate, setIperfBitrate] = useState("");
     const [ownOptimals, setOwnOptimals] = useState(false);
     const [optimalPing, setOptimalPing] = useState("");
     const [optimalDownload, setOptimalDownload] = useState("");
@@ -71,6 +77,9 @@ export const TargetEditor = ({open, onClose, target}) => {
         setAlerts(target ? Boolean(target.alerts) : true);
         setIperfDuration(target?.iperfDuration != null ? String(target.iperfDuration) : "");
         setIperfStreams(target?.iperfStreams != null ? String(target.iperfStreams) : "");
+        // sqlite hands this one back as 0/1 too, under the same raw:true.
+        setIperfUdp(Boolean(target?.iperfUdp));
+        setIperfBitrate(target?.iperfBitrate != null ? String(target.iperfBitrate) : "");
 
         const hasOwn = target != null
             && (target.optimalPing ?? target.optimalDownload ?? target.optimalUpload) != null;
@@ -129,7 +138,8 @@ export const TargetEditor = ({open, onClose, target}) => {
 
         // Built by targetBody, which owns the three sentinels the fields carry.
         const body = targetBody({name, provider, serverId, endpoint, alerts, ownOptimals,
-            optimalPing, optimalDownload, optimalUpload, iperfDuration, iperfStreams});
+            optimalPing, optimalDownload, optimalUpload, iperfDuration, iperfStreams,
+            iperfUdp, iperfBitrate});
 
         try {
             if (target) await assertOk(await patchRequest(`/targets/${target.id}`, body), "target");
@@ -174,7 +184,8 @@ export const TargetEditor = ({open, onClose, target}) => {
         // after the fact, the rule this file already keeps for the host and
         // the optimals: the door refuses these bounds, and the field that
         // breaks them marks itself below.
-        && durationAccepted(iperfDuration) && streamsAccepted(iperfStreams);
+        && durationAccepted(iperfDuration) && streamsAccepted(iperfStreams)
+        && bitrateAccepted(iperfBitrate, iperfUdp);
 
     const formatServerLabel = (entry) => {
         if (!entry) return "";
@@ -330,16 +341,44 @@ export const TargetEditor = ({open, onClose, target}) => {
                                                        value={iperfDuration}
                                                        onChange={(e) => setIperfDuration(e.target.value)}/>
                                             </label>
-                                            <label className="target-tuning-field">
-                                                <span>{t("dialog.provider.iperf_streams")}</span>
-                                                <input type="number"
-                                                       className={`dialog-input${streamsAccepted(iperfStreams) ? "" : " input-error"}`}
-                                                       min={TUNING_BOUNDS.streams.min}
-                                                       max={TUNING_BOUNDS.streams.max}
-                                                       placeholder={String(TUNING_BOUNDS.streams.min)}
-                                                       value={iperfStreams}
-                                                       onChange={(e) => setIperfStreams(e.target.value)}/>
-                                            </label>
+                                            {/* One field or the other, never both.
+                                                A UDP run carries a single stream on
+                                                the build this downloads, so a stream
+                                                count under it is a control that does
+                                                nothing - and the rate takes its place
+                                                because a UDP run must name one. */}
+                                            {iperfUdp ? (
+                                                <label className="target-tuning-field">
+                                                    <span>{t("dialog.provider.iperf_bitrate")}</span>
+                                                    <input type="number"
+                                                           className={`dialog-input${bitrateAccepted(iperfBitrate, iperfUdp) ? "" : " input-error"}`}
+                                                           min={TUNING_BOUNDS.bitrate.min}
+                                                           max={TUNING_BOUNDS.bitrate.max}
+                                                           placeholder={String(TUNING_BOUNDS.bitrate.min)}
+                                                           value={iperfBitrate}
+                                                           onChange={(e) => setIperfBitrate(e.target.value)}/>
+                                                </label>
+                                            ) : (
+                                                <label className="target-tuning-field">
+                                                    <span>{t("dialog.provider.iperf_streams")}</span>
+                                                    <input type="number"
+                                                           className={`dialog-input${streamsAccepted(iperfStreams) ? "" : " input-error"}`}
+                                                           min={TUNING_BOUNDS.streams.min}
+                                                           max={TUNING_BOUNDS.streams.max}
+                                                           placeholder={String(TUNING_BOUNDS.streams.min)}
+                                                           value={iperfStreams}
+                                                           onChange={(e) => setIperfStreams(e.target.value)}/>
+                                                </label>
+                                            )}
+                                        </div>
+                                        {/* Not a provider-setting-switch: those are
+                                            whole rows and draw their own border, and
+                                            this one lives inside the bordered row above
+                                            rather than beside it. */}
+                                        <div className="target-tuning-switch">
+                                            <h3>{t("dialog.provider.iperf_udp")}</h3>
+                                            <ToggleSwitch checked={iperfUdp} onChange={setIperfUdp}
+                                                          label={t("dialog.provider.iperf_udp")}/>
                                         </div>
                                     </div>
                                 )}

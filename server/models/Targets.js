@@ -75,6 +75,23 @@ export default db.define("targets", {
         allowNull: true,
         defaultValue: null
     },
+    // Datagrams instead of a stream, and the rate they are sent at. Not the
+    // "null inherits the default" spelling the two above use, because there is
+    // no default to inherit: a run is either UDP or it is not, and every target
+    // that exists is not. The rate belongs to the flag - null means this target
+    // sends no datagrams - and targetProblem refuses the two rows that
+    // disagree, because iperf3's own default rate is 1 Mbit/s and a line
+    // measured at that is a plausible number in the right column.
+    iperfUdp: {
+        type: Sequelize.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
+    iperfBitrate: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+        defaultValue: null
+    },
     sortOrder: {
         type: Sequelize.INTEGER,
         allowNull: false,

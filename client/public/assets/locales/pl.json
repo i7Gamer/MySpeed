@@ -63,7 +63,9 @@
       "iperf3_desc": "Twój własny serwer iperf3, w Twojej sieci",
       "iperf_advanced": "Ustawienia testu",
       "iperf_duration": "Sekundy na kierunek",
-      "iperf_streams": "Równoległe strumienie"
+      "iperf_streams": "Równoległe strumienie",
+      "iperf_udp": "Pomiar przez UDP",
+      "iperf_bitrate": "Przepływność (Mbit/s)"
     }
   },
   "dropdown": {

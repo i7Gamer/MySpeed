@@ -64,6 +64,23 @@ export const IPERF_MIN_STREAMS = 1;
 export const IPERF_MAX_STREAMS = 32;
 
 /**
+ * What a UDP run is asked for in, and between what bounds.
+ *
+ * iperf3 takes the rate with a unit suffix and MySpeed asks in megabits, which
+ * is the unit the rest of the app already states speeds in - so the number in
+ * the dialog is the number in the chart. The floor is the lowest rate that
+ * says anything about a modern link; the ceiling is past 10-gigabit, which is
+ * the fastest path anyone is measuring with a CLI a speedtest downloads.
+ *
+ * The stream count is fixed at one rather than bounded: the shipped Cygwin
+ * build cannot carry a UDP run over more than that. See buildArgs.
+ */
+export const IPERF_BITRATE_UNIT = "M";
+export const IPERF_MIN_BITRATE_MBPS = 1;
+export const IPERF_MAX_BITRATE_MBPS = 10000;
+export const IPERF_UDP_STREAMS = 1;
+
+/**
  * How long one direction of a target's test measures for - its own where it
  * names one, the shipped default everywhere else.
  *
@@ -320,6 +337,15 @@ export const REGISTRY = {
         buildArgs(target, iface) {
             const {host, port} = splitEndpoint(target.endpoint);
 
+            /*
+             * Datagrams instead of a stream, which is a different measurement
+             * rather than a louder one: TCP answers what a file transfer would
+             * achieve, UDP answers what the path does to packets at a rate the
+             * operator names - and only a UDP run reports the jitter and loss
+             * the row has columns for.
+             */
+            const udp = Boolean(target.iperfUdp);
+
             const args = [
                 '--client', host,
                 '--port', String(port),
@@ -337,10 +363,27 @@ export const REGISTRY = {
                 // its window over a long fat path and will under-report a fast
                 // line badly. Four is what a speedtest does; a target on a
                 // faster path than a speedtest measures may say otherwise.
-                '--parallel', String(target.iperfStreams ?? IPERF_STREAMS),
+                //
+                // One when the run is UDP, and not as a preference: `-u -P 2`
+                // fails on the Cygwin build this downloads - twice out of two
+                // attempts, at two different rates, with "unable to read from
+                // stream socket". The door refuses the pair so nobody
+                // configures a target that can only fail; this keeps the argv
+                // honest for a row that reaches it anyway.
+                '--parallel', String(udp ? IPERF_UDP_STREAMS : target.iperfStreams ?? IPERF_STREAMS),
+                // Datagrams at a named rate. Both halves matter: UDP without
+                // an explicit rate falls to the CLI's own 1 Mbit/s default and
+                // stores a gigabit line as a megabit, in the right column,
+                // with nothing in the payload saying which it was.
+                ...(udp ? ['--udp', '--bitrate', `${target.iperfBitrate}${IPERF_BITRATE_UNIT}`] : []),
                 // The first seconds are TCP working out how fast it may go,
                 // and averaging them in reports less than the line carries.
-                '--omit', String(IPERF_OMIT_SECONDS),
+                //
+                // A fixed-rate sender has no such ramp, so a UDP run measures
+                // its whole window - and the first second is where a filling
+                // buffer drops its first packets, which is the reading that
+                // mode exists for.
+                ...(udp ? [] : ['--omit', String(IPERF_OMIT_SECONDS)]),
                 // Bounds the one thing that would otherwise hang until the
                 // run's own three-minute timeout: a host that accepts nothing.
                 '--connect-timeout', String(IPERF_CONNECT_TIMEOUT_MS),

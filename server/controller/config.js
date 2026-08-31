@@ -784,6 +784,10 @@ export const importConfig = async (obj) => {
         // the same counts and the target quietly measures at the defaults.
         iperfDuration: row.iperfDuration ?? null,
         iperfStreams: row.iperfStreams ?? null,
+        // The mode is a flag rather than an inheritance, so a file written
+        // before it existed restores as TCP - which is what it was measuring.
+        iperfUdp: Boolean(row.iperfUdp),
+        iperfBitrate: row.iperfBitrate ?? null,
         sortOrder: Number.isInteger(row.sortOrder) ? row.sortOrder : index,
         created: typeof row.created === "string" ? row.created : new Date().toISOString()
     }));

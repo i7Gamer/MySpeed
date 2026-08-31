@@ -63,7 +63,9 @@
       "iperf3_desc": "Tu propio servidor iperf3, en tu red",
       "iperf_advanced": "Ajustes de la prueba",
       "iperf_duration": "Segundos por dirección",
-      "iperf_streams": "Flujos paralelos"
+      "iperf_streams": "Flujos paralelos",
+      "iperf_udp": "Medir con UDP",
+      "iperf_bitrate": "Tasa de bits (Mbit/s)"
     }
   },
   "dropdown": {

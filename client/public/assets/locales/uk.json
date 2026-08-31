@@ -63,7 +63,9 @@
       "iperf3_desc": "Ваш власний сервер iperf3, у вашій мережі",
       "iperf_advanced": "Параметри запуску",
       "iperf_duration": "Секунд на напрямок",
-      "iperf_streams": "Паралельні потоки"
+      "iperf_streams": "Паралельні потоки",
+      "iperf_udp": "Вимірювати через UDP",
+      "iperf_bitrate": "Бітрейт (Mbit/s)"
     }
   },
   "dropdown": {

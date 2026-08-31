@@ -63,7 +63,9 @@
       "iperf3_desc": "Váš vlastní server iperf3, ve vaší síti",
       "iperf_advanced": "Nastavení běhu",
       "iperf_duration": "Sekund na směr",
-      "iperf_streams": "Paralelní toky"
+      "iperf_streams": "Paralelní toky",
+      "iperf_udp": "Měřit přes UDP",
+      "iperf_bitrate": "Datový tok (Mbit/s)"
     }
   },
   "dropdown": {

@@ -63,7 +63,9 @@
       "iperf3_desc": "El teu propi servidor iperf3, a la teva xarxa",
       "iperf_advanced": "Configuració de l'execució",
       "iperf_duration": "Segons per direcció",
-      "iperf_streams": "Fluxos paral·lels"
+      "iperf_streams": "Fluxos paral·lels",
+      "iperf_udp": "Mesura amb UDP",
+      "iperf_bitrate": "Taxa de bits (Mbit/s)"
     }
   },
   "dropdown": {

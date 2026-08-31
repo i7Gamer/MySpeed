@@ -183,6 +183,139 @@ describe("parsing an iperf3 test", () => {
 });
 
 /**
+ * What a UDP run says that a TCP one does not.
+ *
+ * The numbers below are real, captured from iperf 3.21 - the shipped Windows
+ * build, over loopback - and they refute what this feature was planned
+ * against. The plan expected UDP to answer a single `end.sum` in place of the
+ * `sum_received`/`sum_sent` pair, which would have meant a fallback branch
+ * through every read in the parser. 3.21 emits `sum` *as well as* both, so the
+ * throughput, byte and duration reads work on a UDP run untouched and no such
+ * branch exists to be written.
+ *
+ * What UDP genuinely adds is jitter and loss, and only the receiver measures
+ * them. `sum_sent.jitter_ms` is 0 in every capture and `sum_sent.lost_percent`
+ * is 0 even in the run that lost 16% of its packets - so a parser that read
+ * the sender, or that preferred `sum` without knowing why, would report a
+ * perfect line for a badly lossy one and look entirely plausible doing it.
+ * That is the read these fixtures exist to pin.
+ */
+describe("the quality figures a UDP run adds", () => {
+    // iperf3 3.21, `-t 2 -u -b 100M -R`: the download direction, clean.
+    const CLEAN_DOWNLOAD = {
+        sum_received: {bytes: 25019090, seconds: 2.00032, bits_per_second: 100060350.343945,
+            jitter_ms: 0.025099466039137517, lost_packets: 0, packets: 382, lost_percent: 0},
+        sum_sent: {bytes: 25019090, seconds: 2.001113, bits_per_second: 100020698.48129515,
+            jitter_ms: 0, lost_packets: 0, packets: 382, lost_percent: 0}
+    };
+
+    // `-t 2 -u -b 100M`: the upload direction, clean.
+    const CLEAN_UPLOAD = {
+        sum_received: {bytes: 24822605, seconds: 2.002028, bits_per_second: 99189841.50071827,
+            jitter_ms: 0.021108777418758, lost_packets: 0, packets: 379, lost_percent: 0},
+        sum_sent: {bytes: 24822605, seconds: 2.001173, bits_per_second: 99232220.3027924,
+            jitter_ms: 0, lost_packets: 0, packets: 379, lost_percent: 0}
+    };
+
+    /*
+     * `-t 3 -u -b 3000M`: 2789 of 17260 packets lost over loopback, which is
+     * the whole point of it. The three clean captures cannot tell a right read
+     * from a wrong one - every loss figure in them is zero on both objects.
+     * This one can: the receiver says 16.16% and the sender says none.
+     */
+    const LOSSY = {
+        sum_received: {bytes: 939151580, seconds: 3.000242, bits_per_second: 2504404595.6540523,
+            jitter_ms: 0.0010486311671119137, lost_packets: 2789, packets: 17260,
+            lost_percent: 16.15874855156431},
+        sum_sent: {bytes: 939151580, seconds: 3.000101, bits_per_second: 2989628869.537391,
+            jitter_ms: 0, lost_packets: 0, packets: 17260, lost_percent: 0}
+    };
+
+    const udpTest = (download, upload, over = {}) => ({
+        runs: {download: {event: "end", data: download}, upload: {event: "end", data: upload}},
+        latency: {ping: 3.4, jitter: 0.8},
+        endpoint: {host: "10.0.0.5", port: 5201},
+        ...over
+    });
+
+    it("reads jitter the receiver measured, not the zero the sender reports", () => {
+        const row = parseIperf3(udpTest(CLEAN_DOWNLOAD, CLEAN_UPLOAD));
+
+        // 0.0251 and 0.0211, both rounded to the column's two places: the
+        // larger of the two directions, because a test where one way was
+        // steady and the other was not is not a steady test.
+        assert.equal(row.jitter, 0.03);
+    });
+
+    /**
+     * And it displaces the handshake sample rather than sitting beside it.
+     *
+     * The runner measures its own jitter by timing TCP handshakes, because
+     * that is all a TCP run leaves to measure. When the transfer itself
+     * reports jitter, that reading is of the thing the test was actually for -
+     * and storing the handshake's instead would answer a question nobody asked
+     * while the real figure went in no column at all.
+     */
+    it("prefers the transfer's own jitter to the runner's handshake sample", () => {
+        const row = parseIperf3(udpTest(CLEAN_DOWNLOAD, CLEAN_UPLOAD, {latency: {ping: 3.4, jitter: 9.9}}));
+
+        assert.notEqual(row.jitter, 9.9, "the handshake sample won over the transfer's own");
+        assert.equal(row.jitter, 0.03);
+    });
+
+    it("fills the packet-loss column a TCP run leaves empty", () => {
+        assert.equal(parseIperf3(udpTest(LOSSY, CLEAN_UPLOAD)).packetLoss, 16.16);
+    });
+
+    // The one that matters: the sender saw none of it.
+    it("does not take the sender's word that nothing was lost", () => {
+        const row = parseIperf3(udpTest(LOSSY, CLEAN_UPLOAD));
+
+        assert.notEqual(row.packetLoss, 0,
+            "a run that lost 2789 of 17260 packets was stored as a clean one");
+    });
+
+    it("reports the worse direction when only one of them lost packets", () => {
+        assert.equal(parseIperf3(udpTest(CLEAN_DOWNLOAD, LOSSY)).packetLoss, 16.16,
+            "loss on the upload alone was reported as none");
+    });
+
+    // A measured zero is a reading, not a missing one. The clean captures are
+    // exactly that, and nulling them would lose the distinction between "no
+    // packets were lost" and "nothing counted them".
+    it("keeps a measured zero rather than nulling it as falsy", () => {
+        assert.equal(parseIperf3(udpTest(CLEAN_DOWNLOAD, CLEAN_UPLOAD)).packetLoss, 0);
+    });
+
+    /**
+     * And the reads the plan expected to break do not: a UDP end object
+     * carries the same `sum_received`/`sum_sent` pair a TCP one does, so
+     * throughput, bytes and duration come through the existing code.
+     */
+    it("reads throughput, bytes and duration from a UDP run unchanged", () => {
+        const row = parseIperf3(udpTest(CLEAN_DOWNLOAD, CLEAN_UPLOAD));
+
+        // 100060350 bits/s is 100.06 Mbit/s down, 99189841 is 99.19 up.
+        assert.equal(row.download, 100.06);
+        assert.equal(row.upload, 99.19);
+        assert.equal(row.bytesDownloaded, 25019090);
+        assert.equal(row.bytesUploaded, 24822605);
+        // 2.00032 received plus 2.001173 sent, to the nearest second.
+        assert.equal(row.time, 4);
+    });
+
+    // TCP runs carry none of these keys, so their absence is the whole branch:
+    // nothing about the invocation has to be threaded into the parser for it
+    // to know which kind of run it is reading.
+    it("leaves a TCP run exactly as it was", () => {
+        const row = parseIperf3(bothWays());
+
+        assert.equal(row.packetLoss, null);
+        assert.equal(row.jitter, 0.8, "a TCP run lost the runner's handshake sample");
+    });
+});
+
+/**
  * How a failure reaches the row. iperf3 says it as an event whose `data` is
  * the message, and then writes an *empty* end event - so the shared parser had
  * to be taught both halves, or the failure vanished and that empty event was
@@ -347,9 +480,73 @@ describe("an iperf3 target's own tuning", () => {
     // args.slice(-2) - so nothing may be appended after it, at any tuning.
     it("keeps the interface binding last however the target is tuned", () => {
         for (const tuning of [{}, {iperfDuration: 60}, {iperfStreams: 32},
-            {iperfDuration: 5, iperfStreams: 1}])
+            {iperfDuration: 5, iperfStreams: 1},
+            {iperfUdp: true, iperfBitrate: 100}])
             assert.deepEqual(tunedArgs({endpoint: "10.0.0.5", ...tuning}).slice(-2),
                 ["--bind", "192.168.1.9"], `the bind moved for ${JSON.stringify(tuning)}`);
+    });
+
+    /**
+     * And the datagram mode, which is a different measurement rather than a
+     * louder one: TCP answers what a file transfer would achieve, UDP answers
+     * what the path does to packets at a rate the operator names.
+     */
+    describe("asked for over UDP", () => {
+        const udpArgs = (over = {}) =>
+            tunedArgs({endpoint: "10.0.0.5", iperfUdp: true, iperfBitrate: 100, ...over});
+
+        it("asks for datagrams at the bitrate the target names", () => {
+            const args = udpArgs();
+
+            assert.ok(args.includes("--udp"), "the run was still TCP");
+            assert.equal(valueOf(args, "--bitrate"), "100M");
+        });
+
+        /**
+         * The bitrate is the whole reason UDP has to be configured rather than
+         * merely enabled. iperf3's own default is 1 Mbit/s, and a real capture
+         * of it measured 1.04 Mbit/s on the same loopback that measured 99.2
+         * when asked for 100 - a gigabit line stored as a megabit, in the right
+         * column, with nothing in the payload saying it was the tool's default
+         * rather than the line's speed.
+         */
+        it("never leaves the bitrate to the CLI's own default", () => {
+            assert.ok(udpArgs().includes("--bitrate"),
+                "a UDP run was built without naming a bitrate");
+        });
+
+        /**
+         * `--omit` is TCP slow-start compensation and buys a UDP run nothing:
+         * a fixed-rate sender has no ramp to discard. Worse than nothing, in
+         * fact - the first second is where a filling buffer first drops
+         * packets, which is the measurement this mode is for.
+         */
+        it("measures the whole window instead of omitting a warm-up", () => {
+            assert.ok(!udpArgs().includes("--omit"), "a UDP run discarded its first second");
+        });
+
+        /**
+         * Not a preference: `-u -P 2` fails on the Cygwin build MySpeed
+         * downloads, twice out of two attempts and at two different rates,
+         * with "unable to read from stream socket". The door refuses the pair
+         * so nobody configures a target that can only ever fail; this keeps
+         * the argv honest if one reaches it anyway.
+         */
+        it("carries a UDP run over a single stream", () => {
+            assert.equal(valueOf(udpArgs({iperfStreams: 8}), "--parallel"), "1");
+        });
+
+        it("still takes the duration the target names", () => {
+            assert.equal(valueOf(udpArgs({iperfDuration: 30}), "--time"), "30");
+        });
+
+        // A target that never asked for UDP must be built exactly as before,
+        // bitrate column or no bitrate column.
+        it("leaves a TCP target alone", () => {
+            for (const tcp of [{}, {iperfUdp: false}, {iperfUdp: null}, {iperfUdp: false, iperfBitrate: null}])
+                assert.deepEqual(tunedArgs({endpoint: "10.0.0.5", ...tcp}), UNTUNED_ARGV,
+                    `the argv moved for ${JSON.stringify(tcp)}`);
+        });
     });
 });
 

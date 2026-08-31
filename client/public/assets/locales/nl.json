@@ -63,7 +63,9 @@
       "iperf3_desc": "Je eigen iperf3-server, in je netwerk",
       "iperf_advanced": "Testinstellingen",
       "iperf_duration": "Seconden per richting",
-      "iperf_streams": "Parallelle streams"
+      "iperf_streams": "Parallelle streams",
+      "iperf_udp": "Meten met UDP",
+      "iperf_bitrate": "Bitrate (Mbit/s)"
     }
   },
   "dropdown": {

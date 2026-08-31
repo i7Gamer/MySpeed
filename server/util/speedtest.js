@@ -463,7 +463,8 @@ export default async (mode, serverId, serverUrl, onProgress, tuning = undefined)
 
     const built = provider.buildArgs(
         {serverId, endpoint: serverUrl,
-            iperfDuration: tuning?.iperfDuration, iperfStreams: tuning?.iperfStreams},
+            iperfDuration: tuning?.iperfDuration, iperfStreams: tuning?.iperfStreams,
+            iperfUdp: tuning?.iperfUdp, iperfBitrate: tuning?.iperfBitrate},
         {name: currentInterface, address: interfaceIp});
     const args = built.args;
 

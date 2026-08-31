@@ -555,4 +555,50 @@ describe("the run's own shape on the body", () => {
         assert.equal(body.iperfDuration, null);
         assert.equal(body.iperfStreams, null);
     });
+
+    /**
+     * And the datagram mode, which is a flag rather than an inheritance: the
+     * body always states it, because false is what every target is and the
+     * column is NOT NULL.
+     */
+    describe("asked for over UDP", () => {
+        it("states the mode either way", () => {
+            assert.equal(targetBody({...IPERF, iperfUdp: true, iperfBitrate: "100"}).iperfUdp, true);
+            assert.equal(targetBody({...IPERF, iperfUdp: false}).iperfUdp, false);
+            assert.equal(targetBody(IPERF).iperfUdp, false, "an untouched target was not TCP");
+        });
+
+        it("sends the bitrate a UDP target names", () => {
+            assert.equal(targetBody({...IPERF, iperfUdp: true, iperfBitrate: "100"}).iperfBitrate, 100);
+        });
+
+        /**
+         * The door refuses a rate on a run that sends no datagrams, so a value
+         * left behind by switching the toggle back off must not travel with
+         * the save - the same reasoning that drops a duration on ookla.
+         */
+        it("drops a bitrate left behind by a target that went back to TCP", () => {
+            assert.equal(targetBody({...IPERF, iperfUdp: false, iperfBitrate: "100"}).iperfBitrate, null);
+        });
+
+        /**
+         * And the stream count goes with it. The shipped build cannot carry a
+         * UDP run over more than one stream and the door refuses the pair, so
+         * a target that had eight and then turned UDP on would otherwise be
+         * unsaveable with nothing in the dialog saying which field to fix.
+         */
+        it("drops a stream count a UDP run could never use", () => {
+            assert.equal(targetBody({...IPERF, iperfUdp: true, iperfBitrate: "100",
+                iperfStreams: "8"}).iperfStreams, null);
+        });
+
+        // Every one of them is inert on a provider that shapes its own run.
+        it("sends nothing at all for a provider that shapes its own run", () => {
+            const body = targetBody({...IPERF, provider: "ookla", endpoint: "",
+                iperfUdp: true, iperfBitrate: "100"});
+
+            assert.equal(body.iperfUdp, false, "ookla carried the datagram mode");
+            assert.equal(body.iperfBitrate, null, "ookla carried a bitrate");
+        });
+    });
 });

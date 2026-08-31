@@ -63,7 +63,9 @@
       "iperf3_desc": "Вашият собствен сървър iperf3, във вашата мрежа",
       "iperf_advanced": "Настройки на теста",
       "iperf_duration": "Секунди за посока",
-      "iperf_streams": "Паралелни потоци"
+      "iperf_streams": "Паралелни потоци",
+      "iperf_udp": "Измерване с UDP",
+      "iperf_bitrate": "Скорост (Mbit/s)"
     }
   },
   "dropdown": {

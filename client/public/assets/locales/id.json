@@ -63,7 +63,9 @@
       "iperf3_desc": "Server iperf3 milik Anda sendiri, di jaringan Anda",
       "iperf_advanced": "Pengaturan pengujian",
       "iperf_duration": "Detik per arah",
-      "iperf_streams": "Aliran paralel"
+      "iperf_streams": "Aliran paralel",
+      "iperf_udp": "Ukur dengan UDP",
+      "iperf_bitrate": "Laju bit (Mbit/s)"
     }
   },
   "dropdown": {

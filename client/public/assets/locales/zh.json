@@ -63,7 +63,9 @@
       "iperf3_desc": "你自己的 iperf3 服务器，就在你的网络中",
       "iperf_advanced": "运行设置",
       "iperf_duration": "每个方向的秒数",
-      "iperf_streams": "并行流数"
+      "iperf_streams": "并行流数",
+      "iperf_udp": "使用 UDP 测量",
+      "iperf_bitrate": "比特率 (Mbit/s)"
     }
   },
   "dropdown": {

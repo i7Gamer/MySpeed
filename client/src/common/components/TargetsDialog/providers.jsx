@@ -32,5 +32,5 @@ export const providerById = (id) => providers.find((provider) => provider.id ===
  */
 export {
     takesServerId, takesEndpoint, requiresEndpoint, iperfHostAccepted,
-    takesTuning, durationAccepted, streamsAccepted, TUNING_BOUNDS
+    takesTuning, durationAccepted, streamsAccepted, bitrateAccepted, TUNING_BOUNDS
 } from "./providerFields.js";

@@ -1,7 +1,8 @@
 import targets from '../models/Targets.js';
 import db from '../config/database.js';
-import { REGISTRY, IPERF_MAX_DURATION_SECONDS, IPERF_MAX_STREAMS, IPERF_MIN_DURATION_SECONDS,
-    IPERF_MIN_STREAMS } from '../util/providers/registry.js';
+import { REGISTRY, IPERF_MAX_BITRATE_MBPS, IPERF_MAX_DURATION_SECONDS, IPERF_MAX_STREAMS,
+    IPERF_MIN_BITRATE_MBPS, IPERF_MIN_DURATION_SECONDS, IPERF_MIN_STREAMS, IPERF_UDP_STREAMS }
+    from '../util/providers/registry.js';
 import { ALLOWED_PROTOCOLS } from '../util/safeUrl.js';
 
 /**
@@ -114,7 +115,9 @@ const TUNING_COLUMNS = [
     {key: "iperfDuration", label: "duration in seconds",
         min: IPERF_MIN_DURATION_SECONDS, max: IPERF_MAX_DURATION_SECONDS},
     {key: "iperfStreams", label: "stream count",
-        min: IPERF_MIN_STREAMS, max: IPERF_MAX_STREAMS}
+        min: IPERF_MIN_STREAMS, max: IPERF_MAX_STREAMS},
+    {key: "iperfBitrate", label: "bitrate in Mbit/s",
+        min: IPERF_MIN_BITRATE_MBPS, max: IPERF_MAX_BITRATE_MBPS}
 ];
 
 /**
@@ -143,7 +146,16 @@ export const iperfTuningProblem = (target) => {
     const named = TUNING_COLUMNS.filter((column) =>
         target[column.key] !== undefined && target[column.key] !== null);
 
-    if (named.length === 0) return null;
+    /*
+     * The mode is named only when it is on.
+     *
+     * false is not a setting, it is every target on every provider once the
+     * column exists - so reading it as "named" the way the numbers above are
+     * would refuse every ookla target the moment a backup was restored.
+     */
+    const udp = Boolean(target.iperfUdp);
+
+    if (named.length === 0 && !udp) return null;
 
     if (target.provider !== "iperf3") return "This provider takes no iperf3 tuning";
 
@@ -154,6 +166,34 @@ export const iperfTuningProblem = (target) => {
             return `The iperf3 ${column.label} must be a whole number `
                 + `between ${column.min} and ${column.max}, or unset`;
     }
+
+    /*
+     * A UDP run must name its rate, because the CLI's own default is 1 Mbit/s
+     * and it does not say so. A capture of it measured 1.04 Mbit/s on the same
+     * loopback that measured 99.2 when asked for 100 - a gigabit line stored
+     * as a megabit, a plausible number in the right column, and the payload
+     * echoes a target_bitrate that reads the same as an explicit `-b 1M`. So
+     * nothing after the fact can tell the two apart, and the rate has to be
+     * required here.
+     */
+    if (udp && (target.iperfBitrate === undefined || target.iperfBitrate === null))
+        return "A UDP run must name the bitrate it sends at";
+
+    // And a rate on a run that sends no datagrams is inert, refused for the
+    // same reason a duration on an ookla target is: nothing on the row or in
+    // the dialog would say the number does nothing.
+    if (!udp && target.iperfBitrate !== undefined && target.iperfBitrate !== null)
+        return "A bitrate applies only to a UDP run";
+
+    /*
+     * Not a preference: `-u -P 2` fails on the Cygwin build this downloads,
+     * twice out of two attempts and at two different rates, with "unable to
+     * read from stream socket: Resource temporarily unavailable". Refusing the
+     * pair here is the difference between a configuration error the operator
+     * sees once and a target that fails every scheduled run forever.
+     */
+    if (udp && Number.isInteger(target.iperfStreams) && target.iperfStreams !== IPERF_UDP_STREAMS)
+        return `A UDP run measures over ${IPERF_UDP_STREAMS} stream`;
 
     return null;
 };
@@ -546,6 +586,8 @@ export const create = async (target) => await targets.create({
     optimalUpload: target.optimalUpload ?? null,
     iperfDuration: target.iperfDuration ?? null,
     iperfStreams: target.iperfStreams ?? null,
+    iperfUdp: target.iperfUdp ?? false,
+    iperfBitrate: target.iperfBitrate ?? null,
     sortOrder: target.sortOrder ?? await nextSortOrder(),
     created: new Date().toISOString()
 });

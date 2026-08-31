@@ -63,7 +63,9 @@
       "iperf3_desc": "네트워크 안에서 직접 운영하는 iperf3 서버",
       "iperf_advanced": "실행 설정",
       "iperf_duration": "방향당 초",
-      "iperf_streams": "병렬 스트림"
+      "iperf_streams": "병렬 스트림",
+      "iperf_udp": "UDP로 측정",
+      "iperf_bitrate": "비트레이트 (Mbit/s)"
     }
   },
   "dropdown": {

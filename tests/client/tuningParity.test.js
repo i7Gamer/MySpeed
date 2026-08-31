@@ -1,9 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    durationAccepted, streamsAccepted, TUNING_BOUNDS
+    bitrateAccepted, durationAccepted, streamsAccepted, TUNING_BOUNDS
 } from "@/common/components/TargetsDialog/providerFields.js";
-import { tuningOrNull } from "@/common/components/TargetsDialog/targetBody.js";
+import { targetBody, tuningOrNull } from "@/common/components/TargetsDialog/targetBody.js";
 import { iperfTuningProblem } from "../../server/controller/targets.js";
 
 /**
@@ -102,5 +102,90 @@ describe("the editor and the door judge a run's shape the same way", () => {
             assert.notEqual(iperfTuningProblem({provider, iperfDuration: 10}), null,
                 `the door took a duration on ${provider}`);
         }
+    });
+});
+
+/**
+ * The same discipline over the datagram mode, where the two sides have more to
+ * disagree about: the rate is required rather than optional, and the stream
+ * count the editor may be holding is one the door refuses outright.
+ *
+ * Asserted through the whole body rather than field by field, because that is
+ * where those interactions live - targetBody is what turns "the toggle is on"
+ * into a row, and a rule the editor keeps that the body then undoes would pass
+ * every per-field check and still fail the save.
+ */
+describe("the editor and the door judge a UDP run the same way", () => {
+    const editorState = (over) => ({name: "LAN", provider: "iperf3", endpoint: "nas.lan",
+        serverId: "none", alerts: true, ownOptimals: false,
+        optimalPing: "", optimalDownload: "", optimalUpload: "",
+        iperfDuration: "", iperfStreams: "", iperfUdp: false, iperfBitrate: "", ...over});
+
+    // What the editor would let the operator press Save on, for the tuning
+    // fields alone - the same terms canSave carries, in one place a test can
+    // ask without rendering the dialog.
+    const buttonLives = (state) => durationAccepted(state.iperfDuration)
+        && streamsAccepted(state.iperfStreams)
+        && bitrateAccepted(state.iperfBitrate, state.iperfUdp);
+
+    const doorTakesBody = (state) => iperfTuningProblem(targetBody(state)) === null;
+
+    const STATES = [
+        {iperfUdp: false},
+        {iperfUdp: true, iperfBitrate: "100"},
+        {iperfUdp: true, iperfBitrate: "1"},
+        {iperfUdp: true, iperfBitrate: "10000"},
+        {iperfUdp: true, iperfBitrate: "10001"},
+        {iperfUdp: true, iperfBitrate: "0"},
+        {iperfUdp: true, iperfBitrate: ""},
+        {iperfUdp: true, iperfBitrate: null},
+        {iperfUdp: true, iperfBitrate: "100", iperfDuration: "30"},
+        {iperfUdp: true, iperfBitrate: "100", iperfStreams: "8"},
+        {iperfUdp: true, iperfBitrate: "100", iperfStreams: "1"},
+        {iperfUdp: false, iperfBitrate: "100"},
+        {iperfUdp: false, iperfStreams: "8"}
+    ];
+
+    it("agrees on every state the toggle and its rate can be in", () => {
+        for (const over of STATES) {
+            const state = editorState(over);
+
+            assert.equal(buttonLives(state), doorTakesBody(state),
+                `the two sides disagree about ${JSON.stringify(over)}`);
+        }
+    });
+
+    /**
+     * And the pair that cannot work is resolved rather than merely refused.
+     *
+     * The door refuses UDP over more than one stream, so an editor that only
+     * greyed its button would strand a target that had eight streams and then
+     * turned the toggle on - with the offending field not even drawn, because
+     * a UDP run has no stream count to show. The body drops it instead, which
+     * is why the state above is saveable at all.
+     */
+    it("resolves a stream count a UDP run cannot use rather than stranding it", () => {
+        const state = editorState({iperfUdp: true, iperfBitrate: "100", iperfStreams: "8"});
+
+        assert.equal(buttonLives(state), true, "the button died on a field the dialog does not draw");
+        assert.equal(targetBody(state).iperfStreams, null, "the stream count travelled with the save");
+        assert.equal(iperfTuningProblem(targetBody(state)), null);
+    });
+
+    // The rate is the one field here with no valid blank, and both sides say so.
+    it("requires a rate on both sides once datagrams are asked for", () => {
+        for (const blank of ["", null, undefined]) {
+            assert.equal(bitrateAccepted(blank, true), false,
+                `the editor took a UDP run with a bitrate of ${JSON.stringify(blank)}`);
+            assert.notEqual(iperfTuningProblem(targetBody(editorState({iperfUdp: true, iperfBitrate: blank}))),
+                null, `the door took a UDP run with a bitrate of ${JSON.stringify(blank)}`);
+        }
+    });
+
+    // And off, it is not a field: no value in it may keep the button down.
+    it("ignores whatever a TCP target left in the rate", () => {
+        for (const left of ["", "100", "0", "abc", "99999999"])
+            assert.equal(bitrateAccepted(left, false), true,
+                `a TCP target was held to a bitrate of ${JSON.stringify(left)}`);
     });
 });

@@ -63,7 +63,9 @@
       "iperf3_desc": "Kendi ağınızda çalışan iperf3 sunucunuz",
       "iperf_advanced": "Çalıştırma ayarları",
       "iperf_duration": "Yön başına saniye",
-      "iperf_streams": "Paralel akışlar"
+      "iperf_streams": "Paralel akışlar",
+      "iperf_udp": "UDP ile ölç",
+      "iperf_bitrate": "Bit hızı (Mbit/s)"
     }
   },
   "dropdown": {
