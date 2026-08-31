@@ -53,11 +53,11 @@ describe("parseTargetsParam", () => {
      * column against - the request comes back a 500 saying only that it could
      * not be processed.
      *
-     * The single `target` filter has the same hole and answers 500 for the same
-     * input, which is a bug of its own and left alone here. A batch is the worse
-     * place for it: one unusable id in a list of fifty loses the figures of the
-     * other forty-nine, so this refusal is worth making whether or not the
-     * single filter ever catches up.
+     * Refused by parseTargetParam now rather than by a second check here, which
+     * is why this test stays where it is: what it pins is the answer a list
+     * gives, not where the rule happens to be written. One unusable id in a
+     * list of fifty took the figures of the other forty-nine down with it, so
+     * a list is the last place that rule should be able to go missing.
      */
     it("refuses an id too large to be an id", () => {
         const parsed = parseTargetsParam(`1,${"9".repeat(400)}`);

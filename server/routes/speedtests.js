@@ -32,10 +32,20 @@ const CREATED_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
  * The ?target= filter, three-valued: undefined when absent (no filter), a
  * number when usable, null when malformed - the caller answers the 400, so
  * the message lives beside the route the way the other parameter guards do.
+ *
+ * Digits are not quite enough on their own to make a number the database can
+ * be asked about, which is what the safe-integer half is for. `Number` of four
+ * hundred nines is Infinity, and Infinity reached the driver as a bind
+ * parameter no dialect can compare an INTEGER column against: the whole
+ * request came back a 500 that named no parameter at all, on a URL anybody
+ * could type, where every other malformed filter on these three routes earns
+ * a 400 that says which one was wrong.
  */
 const parseTargetParam = (value) => {
     if (value === undefined) return undefined;
-    return /^\d+$/.test(value) ? Number(value) : null;
+
+    const id = Number(value);
+    return /^\d+$/.test(value) && Number.isSafeInteger(id) ? id : null;
 };
 
 /**
@@ -101,19 +111,18 @@ export const parseTargetsParam = (value) => {
     const ids = value.split(TARGETS_SEPARATOR).map((id) => parseTargetParam(id));
 
     /*
-     * Digits are not quite enough on their own, which is why this asks for a
-     * safe integer rather than only reusing the guard above. `Number` of four
-     * hundred nines is Infinity, and Infinity reaches the driver as a bind
-     * parameter no dialect can compare an INTEGER column against - the whole
-     * request comes back a 500 saying only that it could not be processed.
+     * One check rather than two, because an id is an id: parseTargetParam
+     * refuses everything a list refuses, down to the shapes that are all
+     * digits and still not a number the database can be asked about.
      *
-     * The single `target` filter has the same hole and answers 500 for the
-     * same input; that is its own bug and not fixed from here. A batch is the
-     * worse place for it, though: one unusable id in a list of fifty loses the
-     * figures of the other forty-nine, so the list refuses it whether or not
-     * the single filter ever catches up.
+     * The safe-integer half of that rule used to be written out a second time
+     * here, while the single filter still answered 500 for four hundred nines
+     * and this was the worse place to leave it - one unusable id in a list of
+     * fifty took the figures of the other forty-nine down with it. The single
+     * filter has caught up, so the rule lives once, above, where every target
+     * id in this file is read.
      */
-    if (ids.some((id) => id === null || !Number.isSafeInteger(id)))
+    if (ids.some((id) => id === null))
         return {valid: false, message: "You need to provide correct numbers in the targets parameter"};
 
     /*
@@ -137,19 +146,6 @@ export const parseTargetsParam = (value) => {
 };
 
 /**
- * The window the range is compared against, when the caller names one instead
- * of taking the period immediately before.
- *
- * Three-valued like the target filter above: undefined when nothing was
- * asked for, a parsed range when one was named, and an invalid range carrying
- * its own message when the pair cannot be read - the caller answers the 400,
- * so the message lives beside the route the way the other guards do.
- *
- * Half a pair is not a smaller request, it is no request at all: the same
- * ruling the scroll cursor's after/afterId pair earns below, and for the same
- * reason - a window with one end is a window nobody named.
- */
-/**
  * How far back a comparison looks, as whole calendar months - or 0 for the
  * period immediately before the range, which is its own length back.
  *
@@ -165,6 +161,13 @@ export const parseTargetsParam = (value) => {
  */
 export const COMPARE_OFFSETS = {previous: 0, "1m": 1, "3m": 3, "6m": 6, "1y": 12, "2y": 24};
 
+/**
+ * Three-valued like the target filter above: undefined when nothing was asked
+ * for, a verdict carrying the offset when one was named, and a verdict
+ * carrying its own message when the name is not one of them - the caller
+ * answers the 400, so the message lives beside the route the way the other
+ * guards do.
+ */
 const parseCompare = (value) => {
     if (value === undefined) return undefined;
 

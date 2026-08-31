@@ -70,6 +70,26 @@ describe("GET /api/speedtests/statistics", () => {
             assert.equal(status, 200);
             assert.equal(body.maxDataPoints, 300);
         });
+
+        /*
+         * Digits alone are not a number the database can be asked about, which
+         * is what the last of these is here for. `Number` of four hundred nines
+         * is Infinity, and Infinity reached the driver as a bind parameter no
+         * dialect can compare an INTEGER column against - so a URL anybody
+         * could type came back a 500 that named no parameter at all, where
+         * every other malformed filter on this route earns a 400 that says
+         * which one it was. The batch `targets` guard has refused the same
+         * input since it was written; the single filter had the hole to itself.
+         */
+        it("refuses a target that is not a plain readable number", async () => {
+            for (const value of ["abc", "-2", "1.5", "1e3", " 1", "9".repeat(400)]) {
+                const {status, body} = await statistics(
+                    `from=2026-08-01&to=2026-08-07&target=${encodeURIComponent(value)}`);
+
+                assert.equal(status, 400, `target=${JSON.stringify(value)} was accepted`);
+                assert.match(body.message, /target parameter/);
+            }
+        });
     });
 
     describe("chart resolution", () => {
