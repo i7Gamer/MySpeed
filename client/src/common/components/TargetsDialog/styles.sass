@@ -303,3 +303,24 @@
 
     &-actions
       margin-left: auto
+
+// The run's own shape: two short number fields side by side under one label,
+// because they are one decision - how long and how wide - and stacking them
+// gave the dialog two more full-width rows for figures that want four
+// characters each.
+.target-tuning-fields
+  display: flex
+  flex-wrap: wrap
+  gap: 0.75rem
+  width: 100%
+
+  .target-tuning-field
+    display: flex
+    flex-direction: column
+    gap: 0.35rem
+    flex: 1 1 8rem
+    min-width: 0
+
+    span
+      font-size: $dialog-hint
+      color: $subtext

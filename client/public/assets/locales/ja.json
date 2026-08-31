@@ -60,7 +60,10 @@
       "ookla_desc": "世界中にサーバー網を持つ定番のプロバイダー",
       "libre_desc": "オープンソースでセルフホスト可能なスピードテスト",
       "cloudflare_desc": "CDN ベースの高速なテスト",
-      "iperf3_desc": "自分のネットワーク上にある自前の iperf3 サーバー"
+      "iperf3_desc": "自分のネットワーク上にある自前の iperf3 サーバー",
+      "iperf_advanced": "実行設定",
+      "iperf_duration": "方向ごとの秒数",
+      "iperf_streams": "並列ストリーム数"
     }
   },
   "dropdown": {

@@ -34,6 +34,47 @@ export const IPERF_STREAMS = 4;
 export const IPERF_OMIT_SECONDS = 1;
 
 /**
+ * How far a single target may move the first two of those.
+ *
+ * The defaults above describe what a speedtest does, which is the right answer
+ * for a target measuring an internet line and the wrong one for the case this
+ * provider exists for: a ten-second four-stream run says very little about a
+ * 10-gigabit LAN path, and nothing at all about one that only misbehaves after
+ * a minute of sustained transfer.
+ *
+ * The ceiling is the run's own timeout. CLI_TIMEOUT in server/util/speedtest.js
+ * is armed per invocation and an iperf3 test is two of them, so sixty seconds of
+ * transfer plus the omitted warm-up plus the connect timeout leaves that timer
+ * roughly three times the headroom it needs - while a whole test still finishes
+ * well inside the default hourly round.
+ *
+ * The floor is the shortest window that measures anything: below about five
+ * seconds a TCP transfer is mostly the slow start `--omit` exists to discard.
+ * One stream is the floor of the other because it is a legitimate measurement -
+ * it is what a single-connection transfer will actually achieve - and 32 is
+ * past the point where more connections describe the line rather than the two
+ * machines' ability to schedule them.
+ *
+ * Mirrored by the target dialog, which greys its Save button rather than
+ * earning a red toast, so these are a copy the client suite pins by parity.
+ */
+export const IPERF_MIN_DURATION_SECONDS = 5;
+export const IPERF_MAX_DURATION_SECONDS = 60;
+export const IPERF_MIN_STREAMS = 1;
+export const IPERF_MAX_STREAMS = 32;
+
+/**
+ * How long one direction of a target's test measures for - its own where it
+ * names one, the shipped default everywhere else.
+ *
+ * Exported because two places have to reach the same answer: the arguments, and
+ * the progress bar's denominator. Those are built in different files from
+ * different objects, and a bar dividing by ten while the run measures for sixty
+ * fills in the first sixth and then sits still, which reads as a hung test.
+ */
+export const iperfRunSeconds = (target) => target?.iperfDuration ?? IPERF_DURATION_SECONDS;
+
+/**
  * How long the control connection may take to come up.
  *
  * Without it a host that accepts nothing - the usual case for a LAN target
@@ -287,11 +328,16 @@ export const REGISTRY = {
                 // Plain --json pretty-prints one object across many lines, and
                 // none of them parse on their own.
                 '--json-stream',
-                '--time', String(IPERF_DURATION_SECONDS),
+                // The target's own length where it names one - see
+                // iperfRunSeconds. Null and absent both mean "the default",
+                // which is what every target created before this column
+                // carries, so the argv of an untuned target is unchanged.
+                '--time', String(iperfRunSeconds(target)),
                 // Several streams, because one TCP connection is limited by
                 // its window over a long fat path and will under-report a fast
-                // line badly. Four is what a speedtest does.
-                '--parallel', String(IPERF_STREAMS),
+                // line badly. Four is what a speedtest does; a target on a
+                // faster path than a speedtest measures may say otherwise.
+                '--parallel', String(target.iperfStreams ?? IPERF_STREAMS),
                 // The first seconds are TCP working out how fast it may go,
                 // and averaging them in reports less than the line carries.
                 '--omit', String(IPERF_OMIT_SECONDS),

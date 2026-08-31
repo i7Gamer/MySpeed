@@ -1,6 +1,7 @@
 import targets from '../models/Targets.js';
 import db from '../config/database.js';
-import { REGISTRY } from '../util/providers/registry.js';
+import { REGISTRY, IPERF_MAX_DURATION_SECONDS, IPERF_MAX_STREAMS, IPERF_MIN_DURATION_SECONDS,
+    IPERF_MIN_STREAMS } from '../util/providers/registry.js';
 import { ALLOWED_PROTOCOLS } from '../util/safeUrl.js';
 
 /**
@@ -101,6 +102,62 @@ export const iperfEndpointProblem = (endpoint) => {
     return null;
 };
 
+/**
+ * The tuning columns an iperf3 target may carry, with the bounds each is held
+ * to and the word the refusal names it by.
+ *
+ * A table rather than two hand-written branches because the rule is the same
+ * for both and the messages have to differ only in the field they name - which
+ * is what the operator needs and what the dialog highlights on.
+ */
+const TUNING_COLUMNS = [
+    {key: "iperfDuration", label: "duration in seconds",
+        min: IPERF_MIN_DURATION_SECONDS, max: IPERF_MAX_DURATION_SECONDS},
+    {key: "iperfStreams", label: "stream count",
+        min: IPERF_MIN_STREAMS, max: IPERF_MAX_STREAMS}
+];
+
+/**
+ * What is wrong with a target's iperf3 run tuning, or null when nothing is.
+ *
+ * Null and absent both mean "inherit the shipped default", the same spelling
+ * the three optimal columns use - so a target that names neither is the
+ * ordinary case and has nothing to answer for. That is also every target on
+ * every instance that upgrades into these columns.
+ *
+ * A value on a provider that does not run iperf3 is refused rather than
+ * ignored, the way an endpoint on a provider that takes none already is: the
+ * dialog would otherwise show a duration the run can never honour, and nothing
+ * on the row or in the interface would say the number is inert.
+ *
+ * Whole numbers only, and refused rather than rounded or coerced - the
+ * reasoning flagProblem states verbatim. iperf3 takes integers, and a target
+ * quietly measuring for something other than the figure that was typed is a
+ * worse surprise than a 400 naming the field.
+ *
+ * Exported and pure over a row, because the API route and the import path both
+ * have to make the same call and a test should be able to ask it without a
+ * database.
+ */
+export const iperfTuningProblem = (target) => {
+    const named = TUNING_COLUMNS.filter((column) =>
+        target[column.key] !== undefined && target[column.key] !== null);
+
+    if (named.length === 0) return null;
+
+    if (target.provider !== "iperf3") return "This provider takes no iperf3 tuning";
+
+    for (const column of named) {
+        const value = target[column.key];
+
+        if (!Number.isInteger(value) || value < column.min || value > column.max)
+            return `The iperf3 ${column.label} must be a whole number `
+                + `between ${column.min} and ${column.max}, or unset`;
+    }
+
+    return null;
+};
+
 const optimalProblem = (value, name) => {
     if (value === undefined || value === null) return null;
     if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
@@ -189,7 +246,8 @@ export const targetProblem = (target) => {
         ?? flagProblem(target.alerts, "alerts")
         ?? optimalProblem(target.optimalPing, "ping")
         ?? optimalProblem(target.optimalDownload, "download")
-        ?? optimalProblem(target.optimalUpload, "upload");
+        ?? optimalProblem(target.optimalUpload, "upload")
+        ?? iperfTuningProblem(target);
 };
 
 /**
@@ -211,6 +269,11 @@ export const resolveLimits = (target, global) => ({
  * the interface (name, provider, the optimal values the grading needs), and
  * nothing that describes the operator's network - the endpoint can carry a
  * credential, and a server id narrows down where the instance lives.
+ *
+ * Deliberately not the iperf3 tuning. How long a target's test runs and over
+ * how many streams is needed to label, order or grade nothing, which is the
+ * whole of what this answers - and it is one more detail of how the operator's
+ * own machines are being measured.
  */
 export const viewerFacing = ({id, name, provider, enabled, sortOrder,
     optimalPing, optimalDownload, optimalUpload}) =>
@@ -481,6 +544,8 @@ export const create = async (target) => await targets.create({
     optimalPing: target.optimalPing ?? null,
     optimalDownload: target.optimalDownload ?? null,
     optimalUpload: target.optimalUpload ?? null,
+    iperfDuration: target.iperfDuration ?? null,
+    iperfStreams: target.iperfStreams ?? null,
     sortOrder: target.sortOrder ?? await nextSortOrder(),
     created: new Date().toISOString()
 });

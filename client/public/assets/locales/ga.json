@@ -60,7 +60,10 @@
       "ookla_desc": "Soláthraí coitianta le líonra freastalaí domhanda",
       "libre_desc": "Tástáil luais foinse oscailte, féin-óstála",
       "cloudflare_desc": "Tástáil thapa bunaithe ar CDN",
-      "iperf3_desc": "Do fhreastalaí iperf3 féin, ar do líonra"
+      "iperf3_desc": "Do fhreastalaí iperf3 féin, ar do líonra",
+      "iperf_advanced": "Socruithe an rite",
+      "iperf_duration": "Soicindí sa treo",
+      "iperf_streams": "Sruthanna comhthreomhara"
     }
   },
   "dropdown": {

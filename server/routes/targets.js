@@ -11,7 +11,7 @@ const app = express.Router();
 // created are the server's to assign, and anything else in the body is a
 // typo to ignore rather than a column to invent.
 const WRITABLE = ["name", "provider", "serverId", "endpoint", "enabled", "alerts",
-    "optimalPing", "optimalDownload", "optimalUpload"];
+    "optimalPing", "optimalDownload", "optimalUpload", "iperfDuration", "iperfStreams"];
 
 const writableFields = (body) =>
     Object.fromEntries(WRITABLE.filter((key) => key in (body ?? {})).map((key) => [key, body[key]]));

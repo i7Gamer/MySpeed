@@ -2,7 +2,7 @@ import {Dialog, DialogHeader, DialogBody, DialogFooter} from "@/common/contexts/
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
-    faCheck, faServer, faLink, faHashtag, faExclamationTriangle, faTag
+    faCheck, faServer, faLink, faHashtag, faExclamationTriangle, faStopwatch, faTag
 } from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
 import React, {useContext, useEffect, useState} from "react";
@@ -17,7 +17,8 @@ import Checkbox from "@/common/components/Checkbox";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import {CUSTOM_BACKEND_PLACEHOLDER, IPERF_HOST_PLACEHOLDER} from "@/common/utils/InvariantText";
 import {
-    iperfHostAccepted, providers, requiresEndpoint, takesEndpoint, takesServerId
+    durationAccepted, iperfHostAccepted, providers, requiresEndpoint, streamsAccepted,
+    takesEndpoint, takesServerId, takesTuning, TUNING_BOUNDS
 } from "./providers";
 import {optimalAccepted, optimalsAccepted, targetBody} from "./targetBody";
 
@@ -46,6 +47,11 @@ export const TargetEditor = ({open, onClose, target}) => {
     // targetBody maps "" to null on the way out.
     const [endpoint, setEndpoint] = useState("");
     const [alerts, setAlerts] = useState(true);
+    // How the run itself is shaped, for the one provider that lets a target
+    // say. Blank is not a value: the column is nullable and null is what the
+    // runner reads as "the registry's own default".
+    const [iperfDuration, setIperfDuration] = useState("");
+    const [iperfStreams, setIperfStreams] = useState("");
     const [ownOptimals, setOwnOptimals] = useState(false);
     const [optimalPing, setOptimalPing] = useState("");
     const [optimalDownload, setOptimalDownload] = useState("");
@@ -63,6 +69,8 @@ export const TargetEditor = ({open, onClose, target}) => {
         setEndpoint(target?.endpoint ?? "");
         // sqlite hands the flag back as 0/1 under the global raw:true.
         setAlerts(target ? Boolean(target.alerts) : true);
+        setIperfDuration(target?.iperfDuration != null ? String(target.iperfDuration) : "");
+        setIperfStreams(target?.iperfStreams != null ? String(target.iperfStreams) : "");
 
         const hasOwn = target != null
             && (target.optimalPing ?? target.optimalDownload ?? target.optimalUpload) != null;
@@ -121,7 +129,7 @@ export const TargetEditor = ({open, onClose, target}) => {
 
         // Built by targetBody, which owns the three sentinels the fields carry.
         const body = targetBody({name, provider, serverId, endpoint, alerts, ownOptimals,
-            optimalPing, optimalDownload, optimalUpload});
+            optimalPing, optimalDownload, optimalUpload, iperfDuration, iperfStreams});
 
         try {
             if (target) await assertOk(await patchRequest(`/targets/${target.id}`, body), "target");
@@ -161,7 +169,12 @@ export const TargetEditor = ({open, onClose, target}) => {
     // on the button, so the two reasons for a dead button stay legible apart.
     const canSave = name.trim() !== "" && hasEndpoint && !sentinelTyped
         && (provider !== "ookla" || acceptedOokla)
-        && optimalsAccepted({ownOptimals, optimalPing, optimalDownload, optimalUpload});
+        && optimalsAccepted({ownOptimals, optimalPing, optimalDownload, optimalUpload})
+        // Said as a button that will not press rather than as a red toast
+        // after the fact, the rule this file already keeps for the host and
+        // the optimals: the door refuses these bounds, and the field that
+        // breaks them marks itself below.
+        && durationAccepted(iperfDuration) && streamsAccepted(iperfStreams);
 
     const formatServerLabel = (entry) => {
         if (!entry) return "";
@@ -284,6 +297,50 @@ export const TargetEditor = ({open, onClose, target}) => {
                                                    : CUSTOM_BACKEND_PLACEHOLDER}
                                                value={endpoint}
                                                onChange={(e) => handleEndpointChange(e.target.value)}/>
+                                    </div>
+                                )}
+
+                                {/* How long the run lasts and how many streams
+                                    it opens - the two knobs a self-hosted
+                                    server's operator actually turns. Left
+                                    blank they store null, which is the
+                                    runner's own default: a target nobody
+                                    tuned runs exactly as it did before these
+                                    existed. Only for the provider that lets a
+                                    target say; the other three decide their
+                                    own run. */}
+                                {takesTuning(provider) && (
+                                    <div className="provider-setting target-tuning-setting">
+                                        <div className="provider-setting-label">
+                                            <FontAwesomeIcon icon={faStopwatch}/>
+                                            <h3>{t("dialog.provider.iperf_advanced")}</h3>
+                                        </div>
+                                        <div className="target-tuning-fields">
+                                            {/* input-error beside the dead button, like the
+                                                optimals: a spinner steps past the bounds the
+                                                door holds these to, and a greyed Add with
+                                                every field looking fine names nothing. */}
+                                            <label className="target-tuning-field">
+                                                <span>{t("dialog.provider.iperf_duration")}</span>
+                                                <input type="number"
+                                                       className={`dialog-input${durationAccepted(iperfDuration) ? "" : " input-error"}`}
+                                                       min={TUNING_BOUNDS.duration.min}
+                                                       max={TUNING_BOUNDS.duration.max}
+                                                       placeholder={String(TUNING_BOUNDS.duration.min)}
+                                                       value={iperfDuration}
+                                                       onChange={(e) => setIperfDuration(e.target.value)}/>
+                                            </label>
+                                            <label className="target-tuning-field">
+                                                <span>{t("dialog.provider.iperf_streams")}</span>
+                                                <input type="number"
+                                                       className={`dialog-input${streamsAccepted(iperfStreams) ? "" : " input-error"}`}
+                                                       min={TUNING_BOUNDS.streams.min}
+                                                       max={TUNING_BOUNDS.streams.max}
+                                                       placeholder={String(TUNING_BOUNDS.streams.min)}
+                                                       value={iperfStreams}
+                                                       onChange={(e) => setIperfStreams(e.target.value)}/>
+                                            </label>
+                                        </div>
                                     </div>
                                 )}
 

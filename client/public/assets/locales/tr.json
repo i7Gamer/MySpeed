@@ -60,7 +60,10 @@
       "ookla_desc": "Küresel sunucu ağına sahip popüler sağlayıcı",
       "libre_desc": "Açık kaynaklı, kendi sunucunuzda barındırılabilir hız testi",
       "cloudflare_desc": "CDN tabanlı hızlı test",
-      "iperf3_desc": "Kendi ağınızda çalışan iperf3 sunucunuz"
+      "iperf3_desc": "Kendi ağınızda çalışan iperf3 sunucunuz",
+      "iperf_advanced": "Çalıştırma ayarları",
+      "iperf_duration": "Yön başına saniye",
+      "iperf_streams": "Paralel akışlar"
     }
   },
   "dropdown": {

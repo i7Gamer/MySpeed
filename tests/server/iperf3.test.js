@@ -274,6 +274,85 @@ describe("the arguments an iperf3 run is given", () => {
     });
 });
 
+/**
+ * A target's own measurement length and stream count, replacing the registry
+ * defaults for that target alone.
+ *
+ * The untuned argv is written out literally here rather than assembled from the
+ * constants it holds still, which is deliberate and is the whole value of it: a
+ * pin built out of the values it pins moves with them and asserts nothing. Every
+ * target that exists today carries no tuning, so this is the assertion that says
+ * the feature changed nothing about what they measure - and the numbers in it
+ * are the shipped defaults spelled as the CLI receives them.
+ */
+describe("an iperf3 target's own tuning", () => {
+    const TUNED_IFACE = {name: "eth0", address: "192.168.1.9"};
+
+    const tunedArgs = (target) => REGISTRY.iperf3.buildArgs(target, TUNED_IFACE).args;
+
+    const UNTUNED_ARGV = ["--client", "10.0.0.5", "--port", "5201", "--json-stream",
+        "--time", "10", "--parallel", "4", "--omit", "1", "--connect-timeout", "5000",
+        "-4", "--bind", "192.168.1.9"];
+
+    // The value that follows a flag, so a moved argument is reported as the
+    // wrong value rather than as a whole array nobody can diff by eye.
+    const valueOf = (args, flag) => args[args.indexOf(flag) + 1];
+
+    it("gives a target that tunes nothing the argv it has always been given", () => {
+        assert.deepEqual(tunedArgs({endpoint: "10.0.0.5"}), UNTUNED_ARGV);
+    });
+
+    /**
+     * A stored row spells "inherit the default" as NULL, where the fragment a
+     * PUT carried spells it by leaving the field out. Both describe the same
+     * run, and `?? default` is what makes them agree - `|| default` would too,
+     * right up to a target that legitimately tunes something to zero.
+     */
+    it("reads a stored null the same way as a field that is absent", () => {
+        assert.deepEqual(tunedArgs({endpoint: "10.0.0.5", iperfDuration: null, iperfStreams: null}),
+            UNTUNED_ARGV);
+    });
+
+    it("measures for the duration the target names", () => {
+        const args = tunedArgs({endpoint: "10.0.0.5", iperfDuration: 30});
+
+        assert.equal(valueOf(args, "--time"), "30");
+        assert.equal(valueOf(args, "--parallel"), "4", "tuning the duration moved the stream count");
+    });
+
+    it("carries the transfer over the number of streams the target names", () => {
+        const args = tunedArgs({endpoint: "10.0.0.5", iperfStreams: 8});
+
+        assert.equal(valueOf(args, "--parallel"), "8");
+        assert.equal(valueOf(args, "--time"), "10", "tuning the streams moved the duration");
+    });
+
+    it("takes both at once", () => {
+        const args = tunedArgs({endpoint: "10.0.0.5", iperfDuration: 30, iperfStreams: 8});
+
+        assert.equal(valueOf(args, "--time"), "30");
+        assert.equal(valueOf(args, "--parallel"), "8");
+    });
+
+    /**
+     * The omitted warm-up is not per-target and must not become so by accident:
+     * it is TCP slow-start compensation, the same at every duration, and a
+     * fourth number in the dialog buys nothing.
+     */
+    it("leaves the omitted warm-up where it is", () => {
+        assert.equal(valueOf(tunedArgs({endpoint: "10.0.0.5", iperfDuration: 60}), "--omit"), "1");
+    });
+
+    // The interface binding is the last pair, and the pin above reads it as
+    // args.slice(-2) - so nothing may be appended after it, at any tuning.
+    it("keeps the interface binding last however the target is tuned", () => {
+        for (const tuning of [{}, {iperfDuration: 60}, {iperfStreams: 32},
+            {iperfDuration: 5, iperfStreams: 1}])
+            assert.deepEqual(tunedArgs({endpoint: "10.0.0.5", ...tuning}).slice(-2),
+                ["--bind", "192.168.1.9"], `the bind moved for ${JSON.stringify(tuning)}`);
+    });
+});
+
 describe("reading a target's host and port", () => {
     it("takes iperf3's own port when the target names none", () => {
         assert.deepEqual(splitEndpoint("10.0.0.5"), {host: "10.0.0.5", port: IPERF_DEFAULT_PORT});

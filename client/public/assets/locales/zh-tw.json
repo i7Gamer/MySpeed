@@ -60,7 +60,10 @@
       "ookla_desc": "熱門供應商，擁有遍布全球的伺服器網路",
       "libre_desc": "開放原始碼、可自行架設的速度測試",
       "cloudflare_desc": "以 CDN 為基礎的快速測試",
-      "iperf3_desc": "您自己的 iperf3 伺服器，就在您的網路上"
+      "iperf3_desc": "您自己的 iperf3 伺服器，就在您的網路上",
+      "iperf_advanced": "執行設定",
+      "iperf_duration": "每個方向的秒數",
+      "iperf_streams": "平行串流數"
     }
   },
   "dropdown": {

@@ -60,7 +60,10 @@
       "ookla_desc": "拥有全球服务器网络的流行提供商",
       "libre_desc": "开源、可自托管的测速工具",
       "cloudflare_desc": "基于 CDN 的快速测试",
-      "iperf3_desc": "你自己的 iperf3 服务器，就在你的网络中"
+      "iperf3_desc": "你自己的 iperf3 服务器，就在你的网络中",
+      "iperf_advanced": "运行设置",
+      "iperf_duration": "每个方向的秒数",
+      "iperf_streams": "并行流数"
     }
   },
   "dropdown": {

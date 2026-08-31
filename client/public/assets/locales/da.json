@@ -60,7 +60,10 @@
       "ookla_desc": "Populær udbyder med globalt servernetværk",
       "libre_desc": "Open-source, selv-hostable speedtest",
       "cloudflare_desc": "Hurtig CDN-baseret test",
-      "iperf3_desc": "Din egen iperf3-server, på dit netværk"
+      "iperf3_desc": "Din egen iperf3-server, på dit netværk",
+      "iperf_advanced": "Kørselsindstillinger",
+      "iperf_duration": "Sekunder pr. retning",
+      "iperf_streams": "Parallelle strømme"
     }
   },
   "dropdown": {

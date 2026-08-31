@@ -9,7 +9,7 @@
  * that goes wrong.
  */
 
-import {takesEndpoint, takesServerId} from "./providerFields.js";
+import {takesEndpoint, takesServerId, takesTuning} from "./providerFields.js";
 
 // The select and the free-text id share a stored value, and "none" is what
 // both use for "let the provider choose" - it is not a server id.
@@ -27,6 +27,22 @@ export const optimalOrNull = (enabled, value) => {
 
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
+};
+
+/**
+ * One tuning value, or null to run the registry's own default.
+ *
+ * Blank is the field left alone, not a value of zero - the same sentinel
+ * optimalOrNull keeps, and for the same reason: the column is nullable and
+ * null is what the runner reads as "no opinion". Held to the provider as
+ * well, because the server judges the row this would become and refuses a
+ * run's shape on a provider that decides its own.
+ */
+export const tuningOrNull = (provider, value) => {
+    if (!takesTuning(provider) || value === "" || value === null || value === undefined) return null;
+
+    const parsed = Number(value);
+    return Number.isInteger(parsed) ? parsed : null;
 };
 
 /**
@@ -54,7 +70,8 @@ export const optimalsAccepted = ({ownOptimals, optimalPing, optimalDownload, opt
  * @returns the JSON body for PUT /targets or PATCH /targets/:id
  */
 export const targetBody = ({name, provider, serverId, endpoint, alerts, ownOptimals,
-                               optimalPing, optimalDownload, optimalUpload}) => {
+                               optimalPing, optimalDownload, optimalUpload,
+                               iperfDuration, iperfStreams}) => {
     // Judged exactly as it is sent. Compared raw and sent trimmed, " none"
     // walked past the sentinel check here and went to the server as the
     // literal host "none" - a row whose editor reopens with a dead button,
@@ -77,6 +94,11 @@ export const targetBody = ({name, provider, serverId, endpoint, alerts, ownOptim
         alerts,
         optimalPing: optimalOrNull(ownOptimals, optimalPing),
         optimalDownload: optimalOrNull(ownOptimals, optimalDownload),
-        optimalUpload: optimalOrNull(ownOptimals, optimalUpload)
+        optimalUpload: optimalOrNull(ownOptimals, optimalUpload),
+        // How the run itself is shaped, for the one provider that lets a
+        // target say - null everywhere else, which is what the door takes
+        // and what the runner reads as its own default.
+        iperfDuration: tuningOrNull(provider, iperfDuration),
+        iperfStreams: tuningOrNull(provider, iperfStreams)
     };
 };

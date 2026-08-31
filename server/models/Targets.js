@@ -10,6 +10,10 @@ import db from '../config/database.js';
  * and the three optimal columns override the global optimal values when set -
  * null means "inherit", resolved in one place (controller/targets.js
  * resolveLimits) so the alert gate and the client's grading cannot drift.
+ *
+ * The two iperf3 columns read the same way: null is "inherit the shipped
+ * default", not "unmeasured", so an instance that upgrades into these columns
+ * goes on measuring exactly as it did.
  */
 export default db.define("targets", {
     name: {
@@ -52,6 +56,22 @@ export default db.define("targets", {
     },
     optimalUpload: {
         type: Sequelize.DOUBLE,
+        allowNull: true,
+        defaultValue: null
+    },
+    // How long one direction of an iperf3 target's test measures for, and over
+    // how many parallel streams - null on either meaning "the registry
+    // default", resolved where the arguments are built (util/providers/registry
+    // iperfRunSeconds). Whole numbers, which is all iperf3 takes, and inert on
+    // every other provider - targetProblem refuses them there by name rather
+    // than storing something no run will read.
+    iperfDuration: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+        defaultValue: null
+    },
+    iperfStreams: {
+        type: Sequelize.INTEGER,
         allowNull: true,
         defaultValue: null
     },

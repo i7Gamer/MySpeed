@@ -507,3 +507,52 @@ describe("the interface select", () => {
             "the fallback option is missing, or silently re-pickable");
     });
 });
+
+/**
+ * How a run is shaped, for the one provider that lets a target say.
+ *
+ * Nullable on purpose: the column's null is what the runner reads as "use the
+ * registry's own default", so a field left alone must go out as null rather
+ * than as a zero the CLI would be handed.
+ */
+describe("the run's own shape on the body", () => {
+    const IPERF = {name: "LAN", provider: "iperf3", endpoint: "nas.lan", serverId: "none",
+        alerts: true, ownOptimals: false, optimalPing: "", optimalDownload: "", optimalUpload: ""};
+
+    it("sends what was typed", () => {
+        const body = targetBody({...IPERF, iperfDuration: "30", iperfStreams: "8"});
+
+        assert.equal(body.iperfDuration, 30);
+        assert.equal(body.iperfStreams, 8);
+    });
+
+    it("sends null for a field nobody touched", () => {
+        for (const blank of ["", null, undefined]) {
+            const body = targetBody({...IPERF, iperfDuration: blank, iperfStreams: blank});
+
+            assert.equal(body.iperfDuration, null, `${JSON.stringify(blank)} went out as a value`);
+            assert.equal(body.iperfStreams, null);
+        }
+    });
+
+    // The server judges the row this would become, and refuses a run's shape
+    // on a provider that decides its own - so a value left behind by a
+    // provider switch must not travel with the save.
+    it("sends nothing at all for a provider that shapes its own run", () => {
+        for (const provider of ["ookla", "libre", "cloudflare"]) {
+            const body = targetBody({...IPERF, provider, endpoint: "", iperfDuration: "30", iperfStreams: "8"});
+
+            assert.equal(body.iperfDuration, null, `${provider} carried a duration`);
+            assert.equal(body.iperfStreams, null, `${provider} carried a stream count`);
+        }
+    });
+
+    // A fraction is not a whole number of seconds or streams, and the CLI
+    // takes both as integers - so it is dropped rather than silently floored.
+    it("drops what is not a whole number", () => {
+        const body = targetBody({...IPERF, iperfDuration: "7.5", iperfStreams: "abc"});
+
+        assert.equal(body.iperfDuration, null);
+        assert.equal(body.iperfStreams, null);
+    });
+});

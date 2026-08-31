@@ -60,7 +60,10 @@
       "ookla_desc": "Populär leverantör med globalt servernätverk",
       "libre_desc": "Hastighetstest med öppen källkod som du kan hosta själv",
       "cloudflare_desc": "Snabb CDN-baserad testning",
-      "iperf3_desc": "Din egen iperf3-server, i ditt nätverk"
+      "iperf3_desc": "Din egen iperf3-server, i ditt nätverk",
+      "iperf_advanced": "Körinställningar",
+      "iperf_duration": "Sekunder per riktning",
+      "iperf_streams": "Parallella strömmar"
     }
   },
   "dropdown": {

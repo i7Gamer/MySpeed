@@ -60,7 +60,10 @@
       "ookla_desc": "Penyedia populer dengan jaringan server global",
       "libre_desc": "Speedtest sumber terbuka yang bisa di-hosting sendiri",
       "cloudflare_desc": "Pengujian cepat berbasis CDN",
-      "iperf3_desc": "Server iperf3 milik Anda sendiri, di jaringan Anda"
+      "iperf3_desc": "Server iperf3 milik Anda sendiri, di jaringan Anda",
+      "iperf_advanced": "Pengaturan pengujian",
+      "iperf_duration": "Detik per arah",
+      "iperf_streams": "Aliran paralel"
     }
   },
   "dropdown": {

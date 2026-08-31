@@ -1,6 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { PHASE_ORDER, overallProgress, parseProgressLine } from "../../server/util/providers/progress.js";
+import { PHASE_ORDER, iperf3Progress, overallProgress, parseProgressLine }
+    from "../../server/util/providers/progress.js";
+import { IPERF_DURATION_SECONDS, IPERF_MAX_DURATION_SECONDS }
+    from "../../server/util/providers/registry.js";
 
 // Verbatim lines from a real `speedtest --format=jsonl` run.
 const TEST_START = '{"type":"testStart","timestamp":"2026-08-08T19:34:05Z","isp":"Salt Mobile"}';
@@ -107,5 +110,69 @@ describe("overallProgress", () => {
 
     it("orders the phases the way a run runs them", () => {
         assert.deepEqual(PHASE_ORDER, ["ping", "download", "upload"]);
+    });
+});
+
+/**
+ * How far through an iperf3 transfer is, measured against the length this
+ * particular run was asked for.
+ *
+ * iperf3 states no fraction of its own, so the bar divides the interval's clock
+ * by the duration the arguments named. That denominator was a module constant
+ * equal to the registry default: a target measuring for a minute filled its bar
+ * in the first ten seconds and then sat at 100% for fifty, which reads as a run
+ * that has hung - the one thing the bar exists to distinguish from a slow line.
+ */
+describe("an iperf3 transfer's own length", () => {
+    const interval = (end) => ({event: "interval", data: {sum: {end, bits_per_second: 0}}});
+
+    const HALF = 0.5;
+
+    // Every caller that names no duration - which is every one of them until a
+    // target tunes it - has to behave exactly as it did before the parameter
+    // existed.
+    it("is the registry default when the caller names none", () => {
+        assert.equal(iperf3Progress(interval(IPERF_DURATION_SECONDS), "download").progress, 1);
+        assert.equal(iperf3Progress(interval(IPERF_DURATION_SECONDS * HALF), "download").progress,
+            HALF);
+    });
+
+    it("fills exactly at the end of the run, whatever length that is", () => {
+        for (const duration of [IPERF_DURATION_SECONDS, 30, IPERF_MAX_DURATION_SECONDS])
+            assert.equal(iperf3Progress(interval(duration), "download", duration).progress, 1,
+                `a ${duration}s run did not fill its bar`);
+    });
+
+    /**
+     * One elapsed reading, read against two runs. Ten seconds into a minute is
+     * a sixth of the way through it and not the whole of it, which is the
+     * entire bug.
+     */
+    it("reads one elapsed reading differently for two durations", () => {
+        const short = iperf3Progress(interval(IPERF_DURATION_SECONDS), "download",
+            IPERF_DURATION_SECONDS).progress;
+        const long = iperf3Progress(interval(IPERF_DURATION_SECONDS), "download",
+            IPERF_MAX_DURATION_SECONDS).progress;
+
+        assert.equal(short, 1);
+        assert.equal(long, IPERF_DURATION_SECONDS / IPERF_MAX_DURATION_SECONDS);
+        assert.ok(long < short, "the longer run was reported as far along as the short one");
+    });
+
+    // The runner reads lines, not events, so the duration has to survive the
+    // whole way through the reader or the bar divides by the default anyway.
+    it("carries the duration through the line reader", () => {
+        const line = JSON.stringify(interval(IPERF_DURATION_SECONDS));
+
+        assert.equal(parseProgressLine("iperf3", line, "download").progress, 1);
+        assert.equal(parseProgressLine("iperf3", line, "download", IPERF_MAX_DURATION_SECONDS)
+            .progress, IPERF_DURATION_SECONDS / IPERF_MAX_DURATION_SECONDS);
+    });
+
+    // A duration handed to the ookla reader is not one of its arguments and
+    // must not become one: its records state their own fraction.
+    it("leaves the provider that states its own fraction alone", () => {
+        assert.equal(parseProgressLine("ookla", DOWNLOAD, undefined, IPERF_MAX_DURATION_SECONDS)
+            .progress, 0.25);
     });
 });

@@ -5,7 +5,8 @@ import { parseProgressLine } from './providers/progress.js';
 import { isMuslLinux, MUSL_CLOUDFLARE_REASON } from './providers/libc.js';
 import * as interfacesModule from '../util/loadInterfaces.js';
 import * as config from '../controller/config.js';
-import { REGISTRY, descriptor, splitEndpoint, binaryPath as providerBinaryPath } from './providers/registry.js';
+import { REGISTRY, descriptor, iperfRunSeconds, splitEndpoint, binaryPath as providerBinaryPath }
+    from './providers/registry.js';
 import { measureLatency } from './providers/iperfLatency.js';
 import { toErrorMessage } from './helpers.js';
 import fs from 'node:fs';
@@ -423,7 +424,21 @@ export const SINGLE_RUN = [{key: null, args: []}];
 
 export const runsOf = (provider) => provider.runs ?? SINGLE_RUN;
 
-export default async (mode, serverId, serverUrl, onProgress) => {
+/**
+ * One test, start to finish.
+ *
+ * `tuning` is the target's own run tuning - today the two iperf3 columns - and
+ * the row itself is what the round hands over, because it carries them and
+ * nothing else on it is read here. Which columns those are is therefore named
+ * once, in this file, rather than once here and once at the call: the two lists
+ * would be free to drift, and a column left out of one of them is silent, with
+ * the run simply measuring at the shipped default.
+ *
+ * Read through `?.` and with no default object, so a caller that has no target
+ * to hand over - and every caller that predates this argument - is unchanged,
+ * and an explicit null is as harmless as an omission.
+ */
+export default async (mode, serverId, serverUrl, onProgress, tuning = undefined) => {
     // Throws for a mode the registry does not know - the old ternary's else
     // branch handed anything unrecognised cfspeedtest's path instead, and the
     // run then failed naming a binary that had nothing to do with it.
@@ -446,9 +461,16 @@ export default async (mode, serverId, serverUrl, onProgress) => {
 
     const startTime = new Date().getTime();
 
-    const built = provider.buildArgs({serverId, endpoint: serverUrl},
+    const built = provider.buildArgs(
+        {serverId, endpoint: serverUrl,
+            iperfDuration: tuning?.iperfDuration, iperfStreams: tuning?.iperfStreams},
         {name: currentInterface, address: interfaceIp});
     const args = built.args;
+
+    // The same reading the arguments were built from, and not a second one: the
+    // bar divides the interval clock by this, so a denominator that disagreed
+    // with --time would fill early or never fill at all.
+    const progressSeconds = iperfRunSeconds(tuning);
 
     // The custom-server file, when this run writes one. buildArgs answers it
     // as {path, content} rather than writing it, so the side effect lives
@@ -539,7 +561,7 @@ export default async (mode, serverId, serverUrl, onProgress) => {
                 // name one: iperf3's interval records describe whichever
                 // direction this invocation was started for, and only the
                 // caller knows which that is.
-                const update = parseProgressLine(mode, line.trim(), phase);
+                const update = parseProgressLine(mode, line.trim(), phase, progressSeconds);
                 if (update) onProgress(update);
             }
         });

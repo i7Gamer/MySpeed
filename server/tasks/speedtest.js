@@ -252,7 +252,9 @@ export const run = async (target, retryAuto = false) => {
     // The callback is carried whichever server was chosen: the retry is the
     // same logical run, and a bar that stopped moving the moment a test fell
     // back to automatic server selection would read as the run having hung.
-    let speedtest = await speedTest(mode, serverId, serverUrl, updateProgress);
+    // The row is handed over whole for its tuning columns - which of them are
+    // the tuning is the runner's own reading, so the two cannot drift.
+    let speedtest = await speedTest(mode, serverId, serverUrl, updateProgress, target);
 
     // Recorded on the row, not written back into the configuration. Persisting
     // it turned "choose automatically" into a pin the moment the first test

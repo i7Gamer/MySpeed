@@ -60,7 +60,10 @@
       "ookla_desc": "Fournisseur populaire avec un réseau de serveurs globaux",
       "libre_desc": "Speedtest open source et auto-hébergeable",
       "cloudflare_desc": "Test rapide basé sur CDN",
-      "iperf3_desc": "Votre propre serveur iperf3, sur votre réseau"
+      "iperf3_desc": "Votre propre serveur iperf3, sur votre réseau",
+      "iperf_advanced": "Paramètres du test",
+      "iperf_duration": "Secondes par direction",
+      "iperf_streams": "Flux parallèles"
     }
   },
   "dropdown": {
