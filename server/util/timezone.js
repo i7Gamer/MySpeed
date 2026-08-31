@@ -161,7 +161,38 @@ export const utcFromLocal = (zone, parts, {prefer = "earliest"} = {}) => {
     const real = candidates.filter((candidate) =>
         zone.offsetAt(new Date(candidate)) * MS_PER_MINUTE === candidate - local);
 
-    if (real.length === 0) return new Date(Math.max(...candidates));
+    /*
+     * The hour the zone skips has no answer, so the caller gets the nearest
+     * real instant - forward, which is the first one that did happen and what
+     * every date library answers for a time that never was.
+     *
+     * With one exception, and it is a narrow one: a request for the LAST
+     * instant of a day whose last hour is the skipped one. Greenland
+     * transitions at 23:00, so 23:59:59.999 falls inside the gap, and rounding
+     * it forward put the day's end an hour into the NEXT local day.
+     * previousRange then overlapped the range it is compared against by that
+     * hour - every test in it counted in both windows - and shiftedRange came
+     * out a day longer than the window it promises to match.
+     *
+     * So `latest` rounds back instead, but only while that keeps the answer
+     * inside the day that was asked for. It does at a day's end and it does not
+     * at a day's start: Chile skips midnight, where rounding back would answer
+     * with the previous day and every caller - both preferences - wants the
+     * first instant the day actually had. Two zones and thirteen days between
+     * 2023 and 2030 reach the exception at all; everywhere else transitions in
+     * the small hours, where a range's end is a time that existed and none of
+     * this is reached.
+     */
+    if (real.length === 0) {
+        const earlier = new Date(Math.min(...candidates));
+        const wall = prefer === "latest" ? localWallClock(zone, earlier) : null;
+
+        if (wall !== null && wall.getUTCFullYear() === parts.year
+            && wall.getUTCMonth() + 1 === parts.month && wall.getUTCDate() === parts.day)
+            return earlier;
+
+        return new Date(Math.max(...candidates));
+    }
 
     return new Date(prefer === "latest" ? Math.max(...real) : Math.min(...real));
 };
