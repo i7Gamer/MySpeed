@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readSource, withoutJsComments } from "../helpers/source.js";
+import { compile, rules } from "../helpers/sass.mjs";
 import {
     compareToParams, formatDateParam, parseCompareParams, rangeKey
 } from "@/common/utils/TimeframeUtil.js";
@@ -125,7 +126,26 @@ describe("the statistics page and its comparison window", () => {
     // The control that CHOOSES the window lives in the row, so gating the row
     // on there being something to compare would lock a young instance out.
     it("draws the row for any bounded range", () => {
-        assert.match(statistics, /\{dateRange && \(\s*<div className="statistics-compare-row">/);
+        assert.match(statistics,
+            /const compareRow = dateRange \? \(\s*<div className="statistics-compare-row">/);
+    });
+
+    /**
+     * And the row reaches the page by being handed to the toolbar, not by
+     * being drawn under it.
+     *
+     * Two assertions rather than one, because the failure is silent in both
+     * directions: a row built and never passed renders nothing at all, and a
+     * row passed while also drawn below would render twice - two comparison
+     * pickers on one page, both live, disagreeing about the window.
+     */
+    it("hands the row to the toolbar rather than drawing it below", () => {
+        const body = withoutJsComments(statistics);
+
+        assert.match(body, /aside=\{compareRow}/,
+            "the comparison row is built and never given to anything");
+        assert.equal(body.match(/<div className="statistics-compare-row">/g)?.length, 1,
+            "the comparison row is rendered from more than one place");
     });
 
     /**
@@ -145,5 +165,65 @@ describe("the statistics page and its comparison window", () => {
             "the comparison picker offers presets, which name a window that moves");
         assert.match(row, /label=\{t\("statistics\.compare\.picker_label"\)\}/,
             "two pickers on one page, and this one answers to a pair of dates like the other");
+    });
+});
+
+/**
+ * The row shares the chip line where there is room for it.
+ *
+ * The comparison row was a full-width block of its own under the chips: two
+ * lines spent on a handful of target names and one sentence, on every ordinary
+ * width. They share a line now, and separate on their own where they do not
+ * fit - which is what flex-wrap means and why nothing here is measured.
+ *
+ * Read out of the compiled stylesheets rather than a rendered page, the way
+ * every layout assertion in this suite's neighbours is: the rule is what
+ * decides this, and a jsdom with no layout engine could not tell either way.
+ */
+describe("the comparison row beside the target chips", () => {
+    const toolbar = compile("common/components/PageToolbar/styles.sass");
+    const page = compile("pages/Statistics/styles.sass");
+    const chips = compile("common/components/TargetChips/styles.sass");
+
+    // The last block written for a selector, which is what the cascade leaves
+    // standing at equal specificity.
+    const ruleFor = (css, selector) => rules(css)
+        .filter((rule) => rule.selector.trim() === selector)
+        .map((rule) => rule.body)
+        .at(-1) ?? null;
+
+    const value = (rule, property) => {
+        const match = new RegExp(`(?:^|;)\\s*${property}:\\s*([^;]+)`).exec(rule ?? "");
+        return match === null ? null : match[1].trim();
+    };
+
+    it("gives the pair a wrapping row of their own", () => {
+        const row = ruleFor(toolbar, ".toolbar-second-row");
+
+        assert.notEqual(row, null, ".toolbar-second-row is not declared");
+        assert.equal(value(row, "display"), "flex");
+        assert.equal(value(row, "flex-wrap"), "wrap",
+            "the aside cannot drop below the chips, so a long one overflows the page");
+        assert.equal(value(row, "width"), "100%",
+            "the row is content-sized, so the page summary is drawn up beside it");
+    });
+
+    /**
+     * Both of them have to give up the full width they claim when they stand
+     * alone, or the one that keeps it takes the whole line and the other is
+     * pushed onto the row this change exists to save.
+     */
+    it("takes the full width off both of them inside it", () => {
+        assert.equal(value(ruleFor(toolbar, ".toolbar-second-row > .target-chips"), "width"), "auto",
+            "the chips still claim the whole line, so the aside can never sit beside them");
+        assert.notEqual(value(ruleFor(page, ".statistics-compare-row"), "width"), "100%",
+            "the comparison row still claims the whole line");
+    });
+
+    // And the chips keep their standalone rule, which the overview and every
+    // instance with no aside still renders.
+    it("leaves the chips their own width where they stand alone", () => {
+        assert.equal(value(ruleFor(chips, ".target-chips"), "width"), "100%",
+            "the chip row is content-sized on the page that draws it without an aside");
     });
 });

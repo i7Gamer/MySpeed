@@ -207,3 +207,32 @@
 
     span
       display: none
+
+// The chip row with something beside it, for a page that has one more thing to
+// say and a short row to say it in.
+//
+// Wrapping rather than measured, unlike the toolbar above: what sits here is
+// one page's own content at whatever length its language makes it, where the
+// row above is four controls whose widths this file knows. `flex-wrap` is the
+// whole of "as long as there is enough room" - the aside takes the line below
+// the moment the two no longer fit on one, and nothing has to be measured for
+// that to be true.
+.toolbar-second-row
+  // The width the chips state for themselves when they stand alone: the
+  // statistics page is a wrapping flex container of cards, and a content-sized
+  // row here would become one more card with the page summary drawn up beside
+  // it.
+  width: 100%
+  display: flex
+  flex-wrap: wrap
+  align-items: center
+  gap: $card-gap
+
+  // Inside this row the chips are one item of two rather than the row itself,
+  // so the full width they otherwise claim would push the aside off every
+  // line. min-width lets the chip list's own scrollport do the shrinking.
+  > .target-chips
+    width: auto
+    flex: 1 1 auto
+    min-width: 0
+    margin-bottom: 0

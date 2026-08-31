@@ -235,11 +235,17 @@
 // One sentence naming the window every delta on the page compares against,
 // so each delta can be a bare arrow and number. Full width so the cards below
 // wrap beneath it rather than beside it.
-// The sentence, the picker that chooses the window it names, and the way
-// back to the default - one row, full width so the cards below wrap beneath
-// it rather than beside it. Wraps on its own when the three no longer fit.
+// The sentence, the picker that chooses the window it names, and the way back
+// to the default - one row. Wraps on its own when the three no longer fit.
+//
+// Content-sized rather than full width, because it is drawn beside the target
+// chips as the toolbar's aside: a width of 100% here would take the whole line
+// and put the chips back on one of their own, which is the row this exists to
+// save. .toolbar-second-row is the flex parent that decides whether the two
+// share a line, and it is full width for both of them.
 .statistics-compare-row
-  width: 100%
+  flex: 0 1 auto
+  min-width: 0
   display: flex
   flex-wrap: wrap
   align-items: center

@@ -523,6 +523,48 @@ export const Statistics = () => {
     // The toolbar is real here rather than a shimmer: it needs nothing from the
     // statistics being fetched, and its controls - the range being loaded, and
     // starting a test - are exactly what someone waiting might want to reach.
+    /* Stated once for the whole page, so every delta below can be a bare arrow
+       and number instead of each repeating the window. A window cut at now's own
+       wall clock - the range is still running - says so, or its dates would
+       claim whole days it only partly covers.
+
+       Built for any bounded range, not only when there is something to compare
+       against: the control that CHOOSES the window lives in it, and gating that
+       on a previous window having data would lock a young instance out of
+       naming one.
+
+       Handed to the toolbar as its aside rather than drawn under it. The chip
+       row is a handful of names and this is one sentence and a picker, so on
+       any ordinary width the two share a line and the page keeps a row it was
+       spending on whitespace. They separate on their own where they no longer
+       fit - see .toolbar-second-row. */
+    const compareRow = dateRange ? (
+        <div className="statistics-compare-row">
+            {previous && (
+                <p className="statistics-compare-note">
+                    {t(previous.dateRange.partial
+                        ? "statistics.compare.note_partial"
+                        : "statistics.compare.note", {
+                        from: formatDay(previous.dateRange.from),
+                        to: formatDay(previous.dateRange.to)
+                    })}
+                </p>
+            )}
+            {/* No onTimeframeChange, which is what suppresses the
+                preset list: "last 7 days" as a COMPARISON window is a
+                window that moves under the bookmark naming it. */}
+            <DateRangePicker from={compareWindow?.from ?? null} to={compareWindow?.to ?? null}
+                             onChange={handleCompareChange}
+                             label={t("statistics.compare.picker_label")}/>
+            {compareWindow && (
+                <button type="button" className="statistics-compare-reset"
+                        onClick={() => handleCompareChange(null, null)}>
+                    {t("statistics.compare.reset")}
+                </button>
+            )}
+        </div>
+    ) : null;
+
     const toolbar = (
         <PageToolbar
             from={dateRange?.from ?? null}
@@ -533,6 +575,7 @@ export const Statistics = () => {
             // All-time carries no range, but the export endpoint takes one -
             // resolveAllTime is that window.
             exportRange={dateRange ?? resolveAllTime()}
+            aside={compareRow}
         />
     );
 
@@ -666,42 +709,6 @@ export const Statistics = () => {
     return (
         <div className={`statistic-area${isStale ? ' statistic-stale' : ''}`}>
             {toolbar}
-
-            {/* Stated once for the whole page, so every delta below can be a
-                bare arrow and number instead of each repeating the window. A
-                window cut at now's own wall clock - the range is still running
-                - says so, or its dates would claim whole days it only partly
-                covers. */}
-            {/* The row renders for any bounded range, not only when there is
-                something to compare against: the control that CHOOSES the
-                window lives in it, and gating that on a previous window
-                having data would lock a young instance out of naming one. */}
-            {dateRange && (
-                <div className="statistics-compare-row">
-                    {previous && (
-                        <p className="statistics-compare-note">
-                            {t(previous.dateRange.partial
-                                ? "statistics.compare.note_partial"
-                                : "statistics.compare.note", {
-                                from: formatDay(previous.dateRange.from),
-                                to: formatDay(previous.dateRange.to)
-                            })}
-                        </p>
-                    )}
-                    {/* No onTimeframeChange, which is what suppresses the
-                        preset list: "last 7 days" as a COMPARISON window is a
-                        window that moves under the bookmark naming it. */}
-                    <DateRangePicker from={compareWindow?.from ?? null} to={compareWindow?.to ?? null}
-                                     onChange={handleCompareChange}
-                                     label={t("statistics.compare.picker_label")}/>
-                    {compareWindow && (
-                        <button type="button" className="statistics-compare-reset"
-                                onClick={() => handleCompareChange(null, null)}>
-                            {t("statistics.compare.reset")}
-                        </button>
-                    )}
-                </div>
-            )}
 
             <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} hourlyAverages={deferredStatistics.hourlyAverages} ping={deferredStatistics.ping} dataUsed={deferredStatistics.dataUsed} reliability={deferredStatistics.reliability} dateRange={chartRange} previous={previous} onClick={() => setExpandedChart('overview')}/>
             <LatestTestChart test={latestTest} onClick={() => setExpandedChart('latest')}/>

@@ -20,8 +20,16 @@ import "./styles.sass";
  * speedtest context and defaults to every test it has; the statistics keep
  * theirs in the URL so a view stays bookmarkable and shareable. Unifying them
  * here would have to break one of those.
+ *
+ * `aside` is anything the page wants beside the chips rather than under them.
+ * The chip row is short - a handful of operator-named targets - so a page that
+ * has one more thing to say can say it in the room already there, and a whole
+ * line is saved wherever the two fit. It is a slot rather than a prop of its
+ * own because what goes there belongs to the page: the statistics put their
+ * comparison row in it, and the overview has nothing to put.
  */
-export const PageToolbar = ({from, to, timeframe, onRangeChange, onTimeframeChange, exportRange}) => {
+export const PageToolbar = ({from, to, timeframe, onRangeChange, onTimeframeChange, exportRange,
+                                aside = null}) => {
     const rowRef = useRef(null);
     const {confirmedTarget} = useContext(TargetsContext);
 
@@ -75,8 +83,20 @@ export const PageToolbar = ({from, to, timeframe, onRangeChange, onTimeframeChan
             {/* Its own row, outside the measured one: the fit stages above are
                 sized to the four fixed controls, and a row of operator-named
                 chips would make every measurement a function of the data. It
-                renders nothing until the instance has two targets. */}
-            <TargetChips/>
+                renders nothing until the instance has two targets.
+
+                Wrapped only when there is something to put beside it, so a page
+                that passes no aside renders exactly the DOM it did before -
+                including the `.statistic-area > .target-chips` margin rule,
+                which reads it as a direct child. The wrapper is still outside
+                rowRef, so an aside carrying a second date picker stays invisible
+                to the fit ladder's first-match query. */}
+            {aside === null ? <TargetChips/> : (
+                <div className="toolbar-second-row">
+                    <TargetChips/>
+                    {aside}
+                </div>
+            )}
         </>
     );
 };
