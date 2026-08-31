@@ -154,7 +154,8 @@ const usablePercent = (value) => {
 };
 
 /** Nothing to judge: the shape every unarmed answer takes. */
-const quiet = () => ({armed: false, breached: false, baselineDownload: null, baselineUpload: null});
+const quiet = () => ({armed: false, breached: false, baselineBelow: null,
+    baselineShortfall: null, baselineDownload: null, baselineUpload: null});
 
 /**
  * Whether one metric's reading sits under its share of that metric's median.
@@ -182,7 +183,7 @@ const metricBelow = (row, baseline, percent, metric) => {
 };
 
 /**
- * Whether any metric has just gone under, counting each on its own.
+ * The metrics that have just gone under, counting each on its own.
  *
  * The transition used to be read off a single `.some()` over both metrics, so
  * it fired on "is this target in breach at all". While download sat under its
@@ -194,14 +195,53 @@ const metricBelow = (row, baseline, percent, metric) => {
  * upload has collapsed is worth hearing about. A second metric going down is a
  * new thing happening to the line, not a continuation of the first.
  *
+ * The list rather than a bare yes, because what the message says is read off
+ * the same edge the decision is. A metric already under its median announced
+ * itself on the round it crossed, and naming it again would report two
+ * directions collapsing where one did.
+ *
  * The storm rule is untouched where it matters: a metric that stays under its
  * median is not newly under it, so it announces itself once however many rounds
  * it lasts. Recovery stays silent on both, which is consistent - nothing in
  * this codebase sends a "back to normal".
  */
-const anyNewlyBelow = (row, previous, baseline, percent) => BASELINE_METRICS.some((metric) =>
+const newlyBelow = (row, previous, baseline, percent) => BASELINE_METRICS.filter((metric) =>
     metricBelow(row, baseline, percent, metric)
         && !metricBelow(previous, baseline, percent, metric));
+
+/**
+ * What separates the metric names when one round puts both under.
+ *
+ * Joined here rather than carried as an array, because every key of the verdict
+ * becomes a %variable% a message template may name, and an array substitutes
+ * into a message as "download,upload" - the same reason notificationPayload.js
+ * says its keys are flat on purpose.
+ */
+const METRIC_SEPARATOR = ", ";
+
+/**
+ * How far under its own median a reading landed, as a whole percentage of that
+ * median.
+ *
+ * The share below rather than the share of: "40 per cent below what this line
+ * usually does" is the sentence somebody reads at breakfast, where "60 per cent
+ * of the usual" is the same fact left as the arithmetic. The share the operator
+ * set is not in it at all - that is a setting, and it is on the screen they set
+ * it from.
+ *
+ * Whole, because the figure goes into a sentence rather than into further
+ * arithmetic, and thirty-point-oh-two per cent under is a number nobody says.
+ *
+ * Asked only of a metric newlyBelow has already returned, which is what makes
+ * the division safe without a guard of its own: that metric's reading came in
+ * under `yardstick * share`, and usableFigure lets no negative reading through,
+ * so the yardstick it was compared against is above zero.
+ */
+const shortfallOf = (row, baseline, metric) => {
+    const yardstick = baseline[metric];
+
+    return Math.round((yardstick - usableFigure(row?.[metric])) / yardstick * PERCENT_WHOLE);
+};
 
 /**
  * What to tell the integrations about this test's own line.
@@ -259,14 +299,38 @@ export const baselineVerdict = (row, previous, baseline, percent) => {
      * speed.
      */
     if (baseline === null || baseline === undefined)
-        return {armed: true, breached: false, baselineDownload: null, baselineUpload: null};
+        return {armed: true, breached: false, baselineBelow: null, baselineShortfall: null,
+            baselineDownload: null, baselineUpload: null};
+
+    const below = newlyBelow(row, previous, baseline, share);
 
     return {
         armed: true,
         // Per metric, so a second one collapsing while the first is still down
         // is announced rather than swallowed by the breach already in progress
-        // - see anyNewlyBelow.
-        breached: anyNewlyBelow(row, previous, baseline, share),
+        // - see newlyBelow.
+        breached: below.length > 0,
+        /*
+         * And what the message is allowed to say about it, since a template has
+         * neither arithmetic nor a conditional and can only say what this
+         * decided. Without the pair, download collapsing and upload collapsing
+         * an hour later arrived as two alerts that read identically.
+         *
+         * Null rather than an empty string or a zero on a round that crossed
+         * nothing: replaceVariables prints a null as its not-measured mark, so
+         * a template naming these on every finished test reads as having
+         * nothing to report - where "0% under" reads as a line sitting exactly
+         * on its median, which is a different statement and an untrue one.
+         *
+         * One shortfall, the deepest, and the pair is meant to be read together
+         * as "down by at least this much" - the figure worth being woken for.
+         * Two numbers positionally matched to two names is a shape a sentence
+         * cannot hold.
+         */
+        baselineBelow: below.length > 0 ? below.join(METRIC_SEPARATOR) : null,
+        baselineShortfall: below.length > 0
+            ? Math.max(...below.map((metric) => shortfallOf(row, baseline, metric)))
+            : null,
         // The medians themselves rather than the lines they imply, so a message
         // template can say what this target usually delivers beside what it
         // just did. The percentage is the operator's own setting and is on the

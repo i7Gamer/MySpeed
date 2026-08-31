@@ -115,6 +115,9 @@ describe("the verdict a stored history produces", () => {
 
         assert.deepEqual(await baselineKeys(target, SLOW), {
             baselineArmed: true, baselineBreached: true,
+            // 300 against the 500 median the history above produces, with
+            // upload holding, so the round names one direction.
+            baselineBelow: "download", baselineShortfall: 40,
             baselineDownload: 500, baselineUpload: 200
         });
     });
@@ -268,6 +271,29 @@ describe("what the notifier is actually told", () => {
             await announce(target, NORMAL);
 
             assert.deepEqual(sent, [], "every healthy test would have been announced");
+        } finally {
+            await remove(id);
+        }
+    });
+
+    /**
+     * And what that announcement is able to say. The verdict is decided over
+     * the rows, the two keys ride the payload, and the template is where they
+     * become a sentence - so this is the only place the whole chain is visible
+     * at once.
+     */
+    it("can say which direction crossed and by how much", async () => {
+        const target = await seedTarget({name: "WAN", baselinePercent: PERCENT});
+        await seedHistory(history(target.id));
+
+        const id = await createTelegram({alert_only: true,
+            finished_message: "%targetName%: %baselineBelow% %baselineShortfall%% under"});
+        try {
+            await announce(target, SLOW);
+
+            assert.equal(sent.length, 1, "the drop below the line went unreported");
+            assert.match(String(sent[0].body), /WAN: download 40% under/,
+                "the message could not name what crossed");
         } finally {
             await remove(id);
         }

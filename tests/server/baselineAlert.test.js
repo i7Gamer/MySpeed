@@ -211,8 +211,81 @@ describe("baselineVerdict", () => {
         assert.equal(verdict(below, {download: null, upload: null}).breached, true);
     });
 
+    /**
+     * Which direction went under, and how far under it landed.
+     *
+     * The verdict carried the two medians and nothing about the crossing
+     * itself, so the messages it produced could not name one. Download
+     * collapsing and upload collapsing an hour later arrived as two alerts
+     * that read identically, and telling them apart meant comparing a figure
+     * in the message against a median the message did not carry.
+     *
+     * It has to be decided here because a template is the only place it can be
+     * said, and a template has neither arithmetic nor a conditional: a message
+     * can say exactly what the payload already knows.
+     */
+    describe("what crossed, and by how much", () => {
+        /*
+         * The share below the median rather than the share of it. "40% below
+         * what this line usually does" is the sentence somebody reads at
+         * breakfast; the share they set is a setting, and it is on the screen
+         * they set it from.
+         */
+        it("names the direction that went under and how far under", () => {
+            const {baselineBelow, baselineShortfall} = verdict(below, above);
+
+            assert.equal(baselineBelow, "download");
+            assert.equal(baselineShortfall, 40, "300 against a 500 median is 40 per cent under");
+        });
+
+        // Download 300 of 500 is 40 under, upload 100 of 200 is 50.
+        it("names both when one round puts both under, and the deeper shortfall", () => {
+            const {baselineBelow, baselineShortfall} = verdict({download: 300, upload: 100}, above);
+
+            assert.equal(baselineBelow, "download, upload");
+            assert.equal(baselineShortfall, 50, "the shallower of the two was reported");
+        });
+
+        /**
+         * Only what this round newly put under, which is the same edge
+         * `breached` is read off. A metric that was already below its median
+         * announced itself when it crossed, and naming it again would report
+         * two directions collapsing where one did.
+         */
+        it("names only the direction this round crossed", () => {
+            const {baselineBelow, baselineShortfall} =
+                verdict({download: 300, upload: 100}, {download: 300, upload: 200});
+
+            assert.equal(baselineBelow, "upload");
+            assert.equal(baselineShortfall, 50);
+        });
+
+        // A whole percentage: the figure goes into a sentence, not into
+        // arithmetic, and 30.02 per cent under is a number nobody says.
+        it("rounds the shortfall to a whole percentage", () => {
+            assert.equal(verdict({download: 349.9, upload: 200}, above).baselineShortfall, 30);
+        });
+
+        /**
+         * Null rather than an empty string or a zero on a round that crossed
+         * nothing. replaceVariables prints a null as its not-measured mark, and
+         * a template naming these on every finished test should read as having
+         * nothing to report - where "0% under" reads as a line exactly on its
+         * median, which is a different and untrue statement.
+         */
+        it("names nothing on a round that crossed nothing", () => {
+            for (const [row, previous] of [[above, above], [below, below], [above, below]]) {
+                const {baselineBelow, baselineShortfall} = verdict(row, previous);
+
+                assert.equal(baselineBelow, null);
+                assert.equal(baselineShortfall, null);
+            }
+        });
+    });
+
     describe("when there is nothing to judge against", () => {
-        const quiet = {armed: false, breached: false, baselineDownload: null, baselineUpload: null};
+        const quiet = {armed: false, breached: false, baselineBelow: null,
+            baselineShortfall: null, baselineDownload: null, baselineUpload: null};
 
         /**
          * A share the operator set, with no median to judge it against yet, is
@@ -228,7 +301,8 @@ describe("baselineVerdict", () => {
          */
         it("is armed but silent while it has no baseline to judge against", () => {
             assert.deepEqual(baselineVerdict(below, above, null, PERCENT),
-                {armed: true, breached: false, baselineDownload: null, baselineUpload: null});
+                {armed: true, breached: false, baselineBelow: null, baselineShortfall: null,
+                    baselineDownload: null, baselineUpload: null});
         });
 
         /**

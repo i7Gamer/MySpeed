@@ -60,6 +60,14 @@ const FINISHED_KEYS = [
     // target that set no baseline and from any older node, which the gate reads
     // as "no baseline", the way `alerts` reads absent as alerting.
     BASELINE_ARMED, BASELINE_BREACHED,
+    // What that breach was, in the two facts a sentence needs: which direction
+    // crossed, and how far under its own median it landed. A template has
+    // neither arithmetic nor a conditional, so a message can say only what the
+    // verdict already worked out - and without these, download collapsing and
+    // upload collapsing an hour later arrived as two alerts that read
+    // identically. Null on a test that crossed nothing, which every template
+    // naming them renders as the not-measured mark.
+    "baselineBelow", "baselineShortfall",
     // And the yardstick itself, so a message can say what this line usually
     // delivers beside what it just did. The percentage is not here: it is the
     // operator's own setting, on the screen they set it from, where these four
