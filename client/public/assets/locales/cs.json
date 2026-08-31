@@ -338,7 +338,9 @@
     "average": "Průměr",
     "compare": {
       "note": "Změny v porovnání s {{from}} – {{to}}",
-      "note_partial": "Změny v porovnání s {{from}} – {{to}}, do stejné denní doby"
+      "note_partial": "Změny v porovnání s {{from}} – {{to}}, do stejné denní doby",
+      "picker_label": "Období pro porovnání",
+      "reset": "Porovnat s předchozím obdobím"
     },
     "downsampled": "Zprůměrováno · zobrazeno {{shown}} z {{total}} testů",
     "detail": {

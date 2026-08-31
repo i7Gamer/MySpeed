@@ -130,8 +130,17 @@ export const truncateToElapsed = (range, previous, now = new Date()) => {
     });
 
     // The clamp is for a cut the skipped hour pushed past the window's own end
-    // on its last day; everywhere else the cut is inside by construction.
-    return {...previous, to: new Date(Math.min(cut.getTime(), previous.to.getTime())), partial: true};
+    // on its last day - and, since a caller may name a comparison window of
+    // its own length, for one that simply ends before the elapsed offset.
+    const to = new Date(Math.min(cut.getTime(), previous.to.getTime()));
+
+    // Only a cut that actually moved the end is a partial window. A window
+    // shorter than the elapsed offset is answered with the whole of itself,
+    // which it is - and calling that "up to the same time of day" puts the
+    // partial sentence under a comparison that covers all of its own window.
+    return to.getTime() === previous.to.getTime()
+        ? previous
+        : {...previous, to, partial: true};
 };
 
 export const parseDateRange = (from, to, {offsetMinutes, zone} = {}) => {

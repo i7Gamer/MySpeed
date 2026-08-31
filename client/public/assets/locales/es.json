@@ -338,7 +338,9 @@
     "average": "Promedio",
     "compare": {
       "note": "Cambios respecto a {{from}} – {{to}}",
-      "note_partial": "Cambios respecto a {{from}} – {{to}}, hasta la misma hora del día"
+      "note_partial": "Cambios respecto a {{from}} – {{to}}, hasta la misma hora del día",
+      "picker_label": "Periodo de comparación",
+      "reset": "Comparar con el periodo anterior"
     },
     "downsampled": "Promediado · se muestran {{shown}} de {{total}} tests",
     "detail": {

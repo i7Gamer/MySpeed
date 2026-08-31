@@ -338,7 +338,9 @@
     "average": "Genomsnitt",
     "compare": {
       "note": "Förändringar jämfört med {{from}} – {{to}}",
-      "note_partial": "Förändringar jämfört med {{from}} – {{to}}, fram till samma tid på dagen"
+      "note_partial": "Förändringar jämfört med {{from}} – {{to}}, fram till samma tid på dagen",
+      "picker_label": "Jämförelseperiod",
+      "reset": "Jämför med föregående period"
     },
     "downsampled": "Genomsnitt · visar {{shown}} av {{total}} tester",
     "detail": {

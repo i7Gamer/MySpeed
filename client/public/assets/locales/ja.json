@@ -338,7 +338,9 @@
     "average": "平均",
     "compare": {
       "note": "{{from}} – {{to}} と比較した変化",
-      "note_partial": "{{from}} – {{to}} と比較した変化（同時刻まで）"
+      "note_partial": "{{from}} – {{to}} と比較した変化（同時刻まで）",
+      "picker_label": "比較する期間",
+      "reset": "直前の期間と比較"
     },
     "downsampled": "平均化 · {{total}} 件中 {{shown}} 件のテストを表示",
     "detail": {

@@ -603,6 +603,195 @@ describe("GET /api/speedtests/statistics", () => {
     });
 
     /**
+     * A window the caller named instead of the period immediately before -
+     * "this August against last August". It arrives in the same `previous`
+     * every delta already reads, so what needs holding is which window the
+     * figures were built from, and that half a named window is refused rather
+     * than quietly ignored.
+     */
+    describe("an explicit comparison window", () => {
+        const MS_PER_DAY = 24 * 60 * 60 * 1000;
+        const MS_PER_HOUR = 60 * 60 * 1000;
+
+        // The server reads its own clock moments after we read ours, so a cut
+        // is held to a tolerance rather than to an instant - the same
+        // allowance the previous window's cut is given above.
+        const CLOCK_TOLERANCE_MS = 2 * 60 * 1000;
+
+        // The UTC calendar day, which is the request's day because every test
+        // here pins tz=Etc/UTC.
+        const day = (date) => date.toISOString().slice(0, 10);
+
+        // A range fully in the past, and the same week a year before it as the
+        // window to compare against. The period the range would take on its
+        // own is the week of 25 July 2025, which every assertion that the named
+        // window won is measured against.
+        const RANGE = "from=2025-08-01&to=2025-08-07&tz=Etc/UTC";
+        const COMPARE_FROM = "2024-08-01";
+        const COMPARE_TO = "2024-08-07";
+        const NAMED = `compareFrom=${COMPARE_FROM}&compareTo=${COMPARE_TO}`;
+        const NAMED_START = `${COMPARE_FROM}T00:00:00.000Z`;
+        const NAMED_END = `${COMPARE_TO}T23:59:59.999Z`;
+        const IMPLICIT_START = "2025-07-25T00:00:00.000Z";
+
+        const PAIR_MESSAGE =
+            "The compareFrom and compareTo parameters are a pair - send both or neither";
+
+        it("answers the named window's summary and echoes the bounds it used", async () => {
+            await seedTests(server.tests, [
+                at("2024-08-03T10:00:00.000Z", {download: 50}),
+                at("2025-07-29T10:00:00.000Z", {download: 90}),
+                at("2025-08-05T10:00:00.000Z")
+            ]);
+
+            // The pair is the whole request: a named window is asked for on its
+            // own, without `compare=previous` beside it.
+            const {status, body} = await statistics(`${RANGE}&${NAMED}`);
+
+            assert.equal(status, 200);
+            assert.equal(body.previous.tests.total, 1);
+            assert.equal(body.previous.download.avg, 50,
+                "the figures came from a window other than the one that was named");
+            assert.equal(body.previous.dateRange.from, NAMED_START);
+            assert.equal(body.previous.dateRange.to, NAMED_END);
+        });
+
+        // Naming a window is a request for that window, not a refinement of the
+        // default one: the period before is what a range is compared against
+        // when nobody says otherwise, and here somebody has.
+        it("prefers the named window to the period before when asked for both", async () => {
+            await seedTests(server.tests, [
+                at("2024-08-03T10:00:00.000Z", {download: 50}),
+                at("2025-07-29T10:00:00.000Z", {download: 90})
+            ]);
+
+            const {body} = await statistics(`${RANGE}&compare=previous&${NAMED}`);
+
+            assert.equal(body.previous.dateRange.from, NAMED_START,
+                `the comparison fell back to the period before, ${IMPLICIT_START}`);
+            assert.equal(body.previous.tests.total, 1);
+            assert.equal(body.previous.download.avg, 50);
+        });
+
+        // The comparison answers for the same slice the range does, or the
+        // delta is a difference between two different questions.
+        it("narrows the named window to the target the range was narrowed to", async () => {
+            const wan = await seedTarget({provider: "ookla", name: "WAN"});
+            const targets = await import("../../server/controller/targets.js");
+            const nas = await targets.create({name: "NAS", provider: "cloudflare"});
+
+            await seedTests(server.tests, [
+                at("2024-08-03T10:00:00.000Z", {targetId: wan.id, download: 50}),
+                at("2024-08-04T10:00:00.000Z", {targetId: nas.id, download: 900}),
+                at("2025-08-05T10:00:00.000Z", {targetId: wan.id})
+            ]);
+
+            const {body} = await statistics(`${RANGE}&${NAMED}&target=${wan.id}`);
+
+            assert.equal(body.previous.tests.total, 1,
+                "the comparison counted a target the range itself excludes");
+            assert.equal(body.previous.download.avg, 50);
+        });
+
+        it("compares a finished range against the whole of the named window", async () => {
+            await seedTests(server.tests, [at(`${COMPARE_TO}T22:30:00.000Z`)]);
+
+            const {body} = await statistics(`${RANGE}&${NAMED}`);
+
+            assert.equal(body.previous.tests.total, 1,
+                "the last hours of the named window were cut off a range that has finished");
+            assert.equal(body.previous.dateRange.to, NAMED_END);
+            assert.equal(body.previous.dateRange.partial, undefined,
+                "a window compared whole must not claim it was cut");
+        });
+
+        /**
+         * A range still running is cut at the same calendar position in the
+         * window it is compared against: six whole days in, the cut lands on
+         * the named window's seventh day at now's own wall clock. A test seeded
+         * an hour before it is counted and one seeded past it is not - those
+         * are hours the range has not lived through yet.
+         */
+        it("cuts a named window longer than the range has run", async () => {
+            const now = new Date();
+            const msIntoDay = now.getTime()
+                - Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+            const expectedCut = new Date(Date.parse(`${COMPARE_TO}T00:00:00.000Z`) + msIntoDay);
+
+            await seedTests(server.tests, [
+                at(new Date(expectedCut.getTime() - MS_PER_HOUR).toISOString(), {download: 50}),
+                at(new Date(expectedCut.getTime() + 1.5 * MS_PER_HOUR).toISOString())
+            ]);
+
+            const from = day(new Date(now.getTime() - 6 * MS_PER_DAY));
+            const {status, body} = await statistics(`from=${from}&to=${day(now)}&tz=Etc/UTC&${NAMED}`);
+
+            assert.equal(status, 200);
+            assert.equal(body.previous.tests.total, 1,
+                "the cut let a test through from hours the range has not lived yet");
+            assert.equal(body.previous.download.avg, 50);
+            assert.equal(body.previous.dateRange.partial, true);
+
+            const cut = new Date(body.previous.dateRange.to);
+            assert.ok(Math.abs(cut.getTime() - expectedCut.getTime()) < CLOCK_TOLERANCE_MS,
+                `the cut landed at ${cut.toISOString()}, not at ${expectedCut.toISOString()}`);
+        });
+
+        // The twin of the all-time pin above. All time's own window is the
+        // extent of the tests, which the caller cannot know when it builds the
+        // URL, so there is no elapsed share to cut a named window against.
+        it("ignores a named window once all time is asked for", async () => {
+            await seedTests(server.tests, [
+                at("2024-08-03T10:00:00.000Z"),
+                at("2025-08-05T10:00:00.000Z")
+            ]);
+
+            const {status, body} = await statistics(`range=all&tz=Etc/UTC&${NAMED}`);
+
+            assert.equal(status, 200);
+            assert.equal(body.previous, undefined);
+        });
+
+        // Half a window is not a smaller request, it is no request at all - the
+        // same ruling the list's after/afterId cursor earns.
+        it("refuses compareFrom without its half", async () => {
+            const {status, body} = await statistics(`${RANGE}&compareFrom=${COMPARE_FROM}`);
+
+            assert.equal(status, 400);
+            assert.equal(body.message, PAIR_MESSAGE);
+        });
+
+        it("refuses compareTo without its half", async () => {
+            const {status, body} = await statistics(`${RANGE}&compareTo=${COMPARE_TO}`);
+
+            assert.equal(status, 400);
+            assert.equal(body.message, PAIR_MESSAGE);
+        });
+
+        it("refuses a compare date that is not a real one", async () => {
+            const {status, body} = await statistics(
+                `${RANGE}&compareFrom=2026-13-01&compareTo=2026-13-02`);
+
+            assert.equal(status, 400);
+            assert.match(body.message, /real calendar date/i);
+        });
+
+        /**
+         * Read by the same parser as the range itself - but the refusal names
+         * the parameters that were actually sent. The parser's own message
+         * says 'from' and 'to', which is the one message a caller gets, and
+         * it pointed at the half of the request that was fine.
+         */
+        it("refuses an inverted compare pair, naming the pair it refused", async () => {
+            const {status, body} = await statistics(
+                `${RANGE}&compareFrom=${COMPARE_TO}&compareTo=${COMPARE_FROM}`);
+
+            assert.equal(status, 400);
+            assert.equal(body.message, "The 'compareFrom' date must be before the 'compareTo' date");
+        });
+    });
+
+    /**
      * The elapsed-share divisor at its edges, with the clock injected - the
      * route reads its own clock, so the API cannot hold a request still at
      * ninety minutes past midnight.

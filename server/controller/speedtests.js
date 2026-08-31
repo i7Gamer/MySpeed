@@ -565,7 +565,11 @@ const SUMMARY_KEYS = ["tests", "packetLoss", "ping", "jitter", "download", "uplo
  * the range arithmetic instead of in a component.
  */
 const previousSummary = async (range, options) => {
-    const previous = previousRange(range, options);
+    // A window the caller named wins over the implicit one: "the period
+    // before" is the DEFAULT answer to what a range is compared against, not
+    // the only one. Both shapes are a parsed range, so everything below -
+    // the elapsed cut, the target filter, the summary - reads one thing.
+    const previous = options.compareWindow ?? previousRange(range, options);
     if (!previous.valid) return null;
 
     // Cut to what the range has actually lived through: a range ending today
@@ -687,7 +691,8 @@ export const listStatistics = async (range, options = {}) => {
         // by. A filtered request answers the one target it was narrowed to,
         // which is the same statement about the same rows.
         targetIds: targetsPresent(entries),
-        ...(range && options.comparePrevious ? {previous: await previousSummary(range, {...options, now})} : {}),
+        ...(range && (options.comparePrevious || options.compareWindow)
+            ? {previous: await previousSummary(range, {...options, now})} : {}),
         // The window actually answered for, which the client names its headings
         // after and measures its per-day figures against. Whole days rather than
         // the exact span: an all-time range on a young instance is the extent of

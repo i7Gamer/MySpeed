@@ -338,7 +338,9 @@
     "average": "Gemiddeld",
     "compare": {
       "note": "Wijzigingen ten opzichte van {{from}} – {{to}}",
-      "note_partial": "Wijzigingen ten opzichte van {{from}} – {{to}}, tot hetzelfde tijdstip"
+      "note_partial": "Wijzigingen ten opzichte van {{from}} – {{to}}, tot hetzelfde tijdstip",
+      "picker_label": "Vergelijkingsperiode",
+      "reset": "Vergelijk met de vorige periode"
     },
     "downsampled": "Gemiddeld · {{shown}} van {{total}} tests getoond",
     "detail": {

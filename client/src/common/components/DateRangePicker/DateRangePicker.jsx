@@ -13,7 +13,7 @@ import "./styles.sass";
 // One list of presets, wherever the picker is: each page it sits on can show
 // every test it has, so each of them leads with "All time". The list used to be
 // handed in by the page, back when the statistics could not draw one.
-export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timeframe, onTimeframeChange }) => {
+export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timeframe, onTimeframeChange, label }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [selecting, setSelecting] = useState("from");
     const [tempFrom, setTempFrom] = useState(from);
@@ -305,8 +305,14 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                 so a keyboard-only reader was left with whatever range the page
                 loaded with, on both toolbars that draw one.
 
-                It needs no aria-label: its own text is its name, and that text
-                is the current range, which is what a reader wants to hear.
+                It needs no aria-label where it is the only picker on the page:
+                its own text is its name, and that text is the current range,
+                which is what a reader wants to hear. `label` is for the page
+                that draws a second one - two triggers whose names are both a
+                pair of dates name neither - and it REPLACES that text for a
+                reader, so it has to say which window this is rather than
+                "Calendar". Absent everywhere else, which renders no attribute
+                at all.
 
                 aria-expanded and nothing more. A trigger that announces a
                 pop-up dialog promises one behind it, and what is behind this one
@@ -323,6 +329,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                 ref={triggerRef}
                 onClick={() => isOpen ? closePicker() : setIsOpen(true)}
                 aria-expanded={isOpen}
+                aria-label={label}
             >
                 <FontAwesomeIcon icon={faCalendar} className="calendar-icon" />
                 {/* A chosen preset names itself: "Last 7 days" says more than

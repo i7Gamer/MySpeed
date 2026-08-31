@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { parseDateRange, previousRange, truncateToElapsed } from "../../server/util/dateRange.js";
-import { resolveTimezone } from "../../server/util/timezone.js";
+import { resolveTimezone, zoneFromName } from "../../server/util/timezone.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -138,5 +138,64 @@ describe("truncateToElapsed", () => {
         const window = truncateToElapsed(current, previous, now);
 
         assert.equal(window.to.getTime(), now.getTime() - 7 * MS_PER_DAY);
+    });
+});
+
+/**
+ * A window the caller named rather than the period immediately before.
+ *
+ * The cut reads only the two windows' own bounds, so an arbitrary comparison
+ * window needs no branch - "1-31 August so far against all of last August"
+ * cuts last August at the same calendar position, which is the whole point:
+ * fifteen days of tests compared against thirty-one reports every count
+ * halved under a heading claiming two comparable months.
+ */
+describe("truncateToElapsed over a window of another length", () => {
+    const BERLIN = {zone: zoneFromName("Europe/Berlin")};
+
+    it("cuts a longer comparison window at the same calendar offset", () => {
+        const august = parseDateRange("2026-08-01", "2026-08-31", BERLIN);
+        const lastAugust = parseDateRange("2025-08-01", "2025-08-31", BERLIN);
+        // Halfway through 15 August, Berlin summer time.
+        const now = new Date("2026-08-15T10:20:00.000Z");
+
+        const window = truncateToElapsed(august, lastAugust, now);
+
+        assert.equal(window.partial, true, "a genuinely cut window stopped saying so");
+        // Fourteen whole days elapsed, so the cut lands on 15 August 2025 at
+        // now's own wall clock - the same position, a year earlier.
+        assert.equal(window.to.toISOString(), "2025-08-15T10:20:00.000Z");
+    });
+
+    /**
+     * And the refinement the arbitrary window makes live: a comparison window
+     * that ENDS before the elapsed offset is returned whole, and a whole
+     * window is not a partial one. Labelled partial, the page puts "up to the
+     * same time of day" under a comparison that covers all of itself.
+     */
+    it("calls a window it did not actually cut complete", () => {
+        const august = parseDateRange("2026-08-01", "2026-08-31", BERLIN);
+        // Three days in February, long finished, against a range 14 days in.
+        const february = parseDateRange("2026-02-01", "2026-02-03", BERLIN);
+        const now = new Date("2026-08-15T10:20:00.000Z");
+
+        const window = truncateToElapsed(august, february, now);
+
+        assert.equal(window.to.getTime(), february.to.getTime(),
+            "the whole window was not returned whole");
+        assert.notEqual(window.partial, true,
+            "a window the cut never reached was labelled as cut, which puts the partial note under a complete comparison");
+    });
+
+    // The two rules that do not change: a finished range compares whole, and
+    // a range that has not begun has nothing to compare at all.
+    it("keeps its answers for a finished and an unstarted range", () => {
+        const past = parseDateRange("2026-07-01", "2026-07-31", BERLIN);
+        const lastYear = parseDateRange("2025-07-01", "2025-07-31", BERLIN);
+        const now = new Date("2026-08-15T10:20:00.000Z");
+
+        assert.equal(truncateToElapsed(past, lastYear, now), lastYear);
+        assert.equal(truncateToElapsed(parseDateRange("2026-09-01", "2026-09-30", BERLIN),
+            lastYear, now), null);
     });
 });

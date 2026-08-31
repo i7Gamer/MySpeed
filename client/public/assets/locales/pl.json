@@ -338,7 +338,9 @@
     "average": "Średnia",
     "compare": {
       "note": "Zmiany w porównaniu z {{from}} – {{to}}",
-      "note_partial": "Zmiany w porównaniu z {{from}} – {{to}}, do tej samej pory dnia"
+      "note_partial": "Zmiany w porównaniu z {{from}} – {{to}}, do tej samej pory dnia",
+      "picker_label": "Okres porównawczy",
+      "reset": "Porównaj z poprzednim okresem"
     },
     "downsampled": "Uśrednione · pokazano {{shown}} z {{total}} testów",
     "detail": {

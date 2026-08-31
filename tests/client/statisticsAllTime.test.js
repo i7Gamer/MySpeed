@@ -30,9 +30,14 @@ describe("the statistics ask for all time by name", () => {
     });
 
     // Nothing precedes everything, and asking anyway costs a second table scan
-    // for a window that cannot contain a test.
+    // for a window that cannot contain a test. Both request sites ask through
+    // one applier now - the page's and the comparison card's - so the refusal
+    // is stated once, where they share it.
     it("only asks for the previous window when the range is bounded", () => {
-        assert.match(statistics, /if \(dateRange\)\s*query\.set\("compare", "previous"\)/);
+        assert.match(statistics, /const applyCompare = \(query, dateRange, compareWindow\) => \{\s*if \(!dateRange\) return query;/,
+            "the applier stopped refusing a rangeless request");
+        assert.match(statistics, /\} else query\.set\("compare", "previous"\);/,
+            "the default comparison - the period immediately before - is gone");
     });
 
     // The page request, the high-resolution one a reader opens a chart for,

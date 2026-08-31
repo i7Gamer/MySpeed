@@ -338,7 +338,9 @@
     "average": "Durchschnitt",
     "compare": {
       "note": "Veränderung gegenüber {{from}} – {{to}}",
-      "note_partial": "Veränderung gegenüber {{from}} – {{to}}, bis zur gleichen Uhrzeit"
+      "note_partial": "Veränderung gegenüber {{from}} – {{to}}, bis zur gleichen Uhrzeit",
+      "picker_label": "Vergleichszeitraum",
+      "reset": "Mit dem vorherigen Zeitraum vergleichen"
     },
     "downsampled": "Gemittelt · {{shown}} von {{total}} Tests",
     "detail": {

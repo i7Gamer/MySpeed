@@ -178,6 +178,34 @@ export const parseRangeParams = (searchParams, now = new Date()) => {
  * The URL parameters a selection is made of. Nothing else in the address bar
  * changes which tests are being asked for.
  */
+/**
+ * The window the statistics compare against, or null for the period
+ * immediately before the range - which is what every page means by default.
+ *
+ * Deliberately NOT a member of RANGE_PARAMS below. That list is what rangeKey
+ * answers for, and SpeedtestProvider - mounted above the router outlet, so
+ * alive on every page - rebuilds its query and fetches a page of rows
+ * whenever it changes. A comparison window changes which deltas the
+ * statistics draw and nothing at all about which tests any list holds; in
+ * that list, every compare change would buy a page of rows nobody shows,
+ * which is the exact fault rangeKey's own note records.
+ *
+ * An inverted pair is swapped rather than refused, like parseRangeParams'
+ * own: a bookmark somebody hand-edited names a window either way round.
+ */
+export const parseCompareParams = (searchParams) => {
+    const from = parseDay(searchParams.get("compareFrom"));
+    const to = parseDay(searchParams.get("compareTo"));
+    if (!from || !to) return null;
+
+    return from > to ? {from: to, to: from} : {from, to};
+};
+
+/** The other end of that round trip. Absent, not empty, for the default. */
+export const compareToParams = (window) => window
+    ? {compareFrom: formatDateParam(window.from), compareTo: formatDateParam(window.to)}
+    : {};
+
 const RANGE_PARAMS = ["range", "from", "to"];
 
 /**

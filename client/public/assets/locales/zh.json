@@ -338,7 +338,9 @@
     "average": "平均",
     "compare": {
       "note": "与 {{from}} – {{to}} 相比的变化",
-      "note_partial": "与 {{from}} – {{to}} 相比的变化（截至同一时刻）"
+      "note_partial": "与 {{from}} – {{to}} 相比的变化（截至同一时刻）",
+      "picker_label": "对比时间段",
+      "reset": "与上一时间段对比"
     },
     "downsampled": "已取平均 · 显示 {{total}} 次测速中的 {{shown}} 次",
     "detail": {

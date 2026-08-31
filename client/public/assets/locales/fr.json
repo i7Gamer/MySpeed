@@ -338,7 +338,9 @@
     "average": "Moyenne",
     "compare": {
       "note": "Évolution par rapport à {{from}} – {{to}}",
-      "note_partial": "Évolution par rapport à {{from}} – {{to}}, jusqu'à la même heure"
+      "note_partial": "Évolution par rapport à {{from}} – {{to}}, jusqu'à la même heure",
+      "picker_label": "Période de comparaison",
+      "reset": "Comparer avec la période précédente"
     },
     "downsampled": "Moyenné · {{shown}} tests affichés sur {{total}}",
     "detail": {

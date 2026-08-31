@@ -338,7 +338,9 @@
     "average": "平均",
     "compare": {
       "note": "與 {{from}} – {{to}} 相比的變化",
-      "note_partial": "與 {{from}} – {{to}} 相比的變化（截至同一時刻）"
+      "note_partial": "與 {{from}} – {{to}} 相比的變化（截至同一時刻）",
+      "picker_label": "比較期間",
+      "reset": "與上一期間比較"
     },
     "downsampled": "已平均 · 顯示 {{total}} 次測試中的 {{shown}} 次",
     "detail": {

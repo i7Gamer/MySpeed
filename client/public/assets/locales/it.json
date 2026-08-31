@@ -338,7 +338,9 @@
     "average": "Media",
     "compare": {
       "note": "Variazioni rispetto a {{from}} – {{to}}",
-      "note_partial": "Variazioni rispetto a {{from}} – {{to}}, fino alla stessa ora del giorno"
+      "note_partial": "Variazioni rispetto a {{from}} – {{to}}, fino alla stessa ora del giorno",
+      "picker_label": "Periodo di confronto",
+      "reset": "Confronta con il periodo precedente"
     },
     "downsampled": "Mediato · mostrati {{shown}} test su {{total}}",
     "detail": {

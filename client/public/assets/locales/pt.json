@@ -338,7 +338,9 @@
     "average": "Média",
     "compare": {
       "note": "Mudanças em relação a {{from}} – {{to}}",
-      "note_partial": "Mudanças em relação a {{from}} – {{to}}, até o mesmo horário do dia"
+      "note_partial": "Mudanças em relação a {{from}} – {{to}}, até o mesmo horário do dia",
+      "picker_label": "Período de comparação",
+      "reset": "Comparar com o período anterior"
     },
     "downsampled": "Média · mostrando {{shown}} de {{total}} testes",
     "detail": {

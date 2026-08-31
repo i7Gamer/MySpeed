@@ -338,7 +338,9 @@
     "average": "Meán",
     "compare": {
       "note": "Athruithe i gcomparáid le {{from}} – {{to}}",
-      "note_partial": "Athruithe i gcomparáid le {{from}} – {{to}}, suas go dtí an t-am céanna den lá"
+      "note_partial": "Athruithe i gcomparáid le {{from}} – {{to}}, suas go dtí an t-am céanna den lá",
+      "picker_label": "Tréimhse chomparáide",
+      "reset": "Cuir i gcomparáid leis an tréimhse roimhe seo"
     },
     "downsampled": "Meánaithe · {{shown}} as {{total}} tástáil ar taispeáint",
     "detail": {

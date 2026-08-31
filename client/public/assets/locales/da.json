@@ -338,7 +338,9 @@
     "average": "Gennemsnit",
     "compare": {
       "note": "Ændringer sammenlignet med {{from}} – {{to}}",
-      "note_partial": "Ændringer sammenlignet med {{from}} – {{to}}, frem til samme tidspunkt på dagen"
+      "note_partial": "Ændringer sammenlignet med {{from}} – {{to}}, frem til samme tidspunkt på dagen",
+      "picker_label": "Sammenligningsperiode",
+      "reset": "Sammenlign med den forrige periode"
     },
     "downsampled": "Gennemsnit · viser {{shown}} af {{total}} tests",
     "detail": {

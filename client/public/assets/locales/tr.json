@@ -338,7 +338,9 @@
     "average": "Ortalama",
     "compare": {
       "note": "{{from}} – {{to}} ile karşılaştırıldığında değişimler",
-      "note_partial": "{{from}} – {{to}} ile karşılaştırıldığında değişimler, günün aynı saatine kadar"
+      "note_partial": "{{from}} – {{to}} ile karşılaştırıldığında değişimler, günün aynı saatine kadar",
+      "picker_label": "Karşılaştırma aralığı",
+      "reset": "Önceki dönemle karşılaştırın"
     },
     "downsampled": "Ortalaması alındı · {{total}} testin {{shown}} tanesi gösteriliyor",
     "detail": {

@@ -338,7 +338,9 @@
     "average": "Mitjana",
     "compare": {
       "note": "Canvis respecte a {{from}} – {{to}}",
-      "note_partial": "Canvis respecte a {{from}} – {{to}}, fins a la mateixa hora del dia"
+      "note_partial": "Canvis respecte a {{from}} – {{to}}, fins a la mateixa hora del dia",
+      "picker_label": "Període de comparació",
+      "reset": "Compara amb el període anterior"
     },
     "downsampled": "Amb mitjanes · es mostren {{shown}} de {{total}} proves",
     "detail": {

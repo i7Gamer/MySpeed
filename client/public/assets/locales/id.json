@@ -338,7 +338,9 @@
     "average": "Rata-rata",
     "compare": {
       "note": "Perubahan dibandingkan dengan {{from}} – {{to}}",
-      "note_partial": "Perubahan dibandingkan dengan {{from}} – {{to}}, hingga waktu yang sama"
+      "note_partial": "Perubahan dibandingkan dengan {{from}} – {{to}}, hingga waktu yang sama",
+      "picker_label": "Periode perbandingan",
+      "reset": "Bandingkan dengan periode sebelumnya"
     },
     "downsampled": "Dirata-ratakan · menampilkan {{shown}} dari {{total}} pengujian",
     "detail": {

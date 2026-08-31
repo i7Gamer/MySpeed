@@ -23,8 +23,10 @@ import {
     DEFAULT_TIMEFRAME,
     TIMEFRAME_ALL,
     TIMEFRAME_CUSTOM,
+    compareToParams,
     formatDateParam,
     isAllTime,
+    parseCompareParams,
     parseRangeParams,
     resolveAllTime,
     selectionOf,
@@ -33,6 +35,7 @@ import {
     timezoneParams
 } from "@/common/utils/TimeframeUtil";
 import PageToolbar from "@/common/components/PageToolbar";
+import DateRangePicker from "@/common/components/DateRangePicker";
 import ChartModal from "@/common/components/ChartModal";
 import {formatDay} from "@/common/utils/FormatUtil";
 import {hasPreviousData} from "@/common/components/Delta/deltas";
@@ -125,6 +128,26 @@ const rangeQuery = (dateRange) => {
     return query;
 };
 
+/**
+ * How a request says what to compare the range against.
+ *
+ * One helper for both request sites, so the page and the comparison card
+ * cannot ask different questions of the same window. Nothing precedes all
+ * time, so a rangeless request asks for no comparison at all - the route
+ * refuses it anyway, and asking buys a second table scan over a window that
+ * cannot hold a test.
+ */
+const applyCompare = (query, dateRange, compareWindow) => {
+    if (!dateRange) return query;
+
+    if (compareWindow) {
+        query.set("compareFrom", formatDateParam(compareWindow.from));
+        query.set("compareTo", formatDateParam(compareWindow.to));
+    } else query.set("compare", "previous");
+
+    return query;
+};
+
 if (!ChartJS.registry.plugins.get('crosshair')) ChartJS.register(crosshairPlugin);
 
 // No default text colour: it was a grey picked for a dark page and set once at
@@ -204,6 +227,11 @@ export const Statistics = () => {
         return selectionOf(preferences.defaultTimeframe ?? DEFAULT_TIMEFRAME);
     }, [searchParams, preferences.defaultTimeframe]);
 
+    // The window the deltas are read against, or null for the period before
+    // the range - which is what the server does when nothing names one. Read
+    // from the URL like the range, so a comparison is a link somebody keeps.
+    const compareWindow = useMemo(() => parseCompareParams(searchParams), [searchParams]);
+
     // Null for all time, which is the absence of a bound rather than a very wide
     // one: every caller below that needs a window says so for itself.
     const dateRange = useMemo(() => isAllTime(selection.timeframe)
@@ -245,9 +273,10 @@ export const Statistics = () => {
     const updateStats = useCallback(() => {
         const query = rangeQuery(dateRange);
 
-        // The summary of the window immediately before, for the deltas. Nothing
-        // precedes all time, so it is asked for only when the range is bounded.
-        if (dateRange) query.set("compare", "previous");
+        // The summary of the window the deltas are read against - the period
+        // before by default, or the one the URL names. Nothing precedes all
+        // time, so it is asked for only when the range is bounded.
+        applyCompare(query, dateRange, compareWindow);
 
         if (targetFilter != null) query.set("target", String(targetFilter));
 
@@ -324,7 +353,7 @@ export const Statistics = () => {
         });
         // currentNode: see its destructure above - a page whose requests have
         // been re-aimed under it has to re-ask.
-    }, [dateRange, currentNode, targetFilter]);
+    }, [dateRange, currentNode, targetFilter, compareWindow]);
 
     const handleTimeframeChange = useCallback((timeframe) => {
         setSearchParams(serializeRange(timeframe), { replace: true });
@@ -334,6 +363,26 @@ export const Statistics = () => {
     const handleDateRangeChange = useCallback((from, to) => {
         setSearchParams(serializeRange(TIMEFRAME_CUSTOM, from, to), { replace: true });
     }, [setSearchParams]);
+
+    /**
+     * The window the page compares against, chosen rather than implied.
+     *
+     * The whole selection is rewritten, because setSearchParams replaces the
+     * query string: the range has to be re-stated or naming a comparison
+     * window would silently drop the page back to its default range.
+     *
+     * A range change drops the comparison window on purpose, and for free -
+     * the two callbacks above replace the query string without it. "This
+     * August against last August" narrowed to "last 7 days" would otherwise
+     * compare a week against a month, which is the mismatch the elapsed cut
+     * exists to prevent.
+     */
+    const handleCompareChange = useCallback((from, to) => {
+        setSearchParams({
+            ...serializeRange(selection.timeframe, selection.from, selection.to),
+            ...compareToParams(from && to ? {from, to} : null)
+        }, { replace: true });
+    }, [setSearchParams, selection]);
 
     useEffect(() => {
         if (mountPhase >= 2) updateStats();
@@ -409,7 +458,13 @@ export const Statistics = () => {
      * hold.
      */
     const compareKey = useMemo(() => [String(rangeQuery(dateRange)), String(currentNode ?? ""),
-        targets.map(({id}) => id).join(",")].join("|"), [dateRange, currentNode, targets]);
+        targets.map(({id}) => id).join(","),
+        // The comparison window too: the rows' deltas are read against it, so
+        // a cached answer taken under one window is the wrong answer under
+        // the next - and the card can be open while the row below it changes
+        // the window.
+        compareWindow ? `${formatDateParam(compareWindow.from)}..${formatDateParam(compareWindow.to)}` : ""
+    ].join("|"), [dateRange, currentNode, targets, compareWindow]);
     const compareFresh = compareStats?.key === compareKey;
 
     /*
@@ -434,12 +489,10 @@ export const Statistics = () => {
         Promise.allSettled(targets.map(({id}) => {
             const query = rangeQuery(dateRange);
             query.set("target", String(id));
-            // The window before, for the row's own deltas - each target
-            // narrowed to its own line, so a row compares against ITS week
-            // rather than against the page's mixture. Gated like the page's
-            // own line above: nothing precedes all time, and the route
-            // refuses to compare it.
-            if (dateRange) query.set("compare", "previous");
+            // The same question the page asks, through the same applier -
+            // each target narrowed to its own line, so a row compares
+            // against ITS week rather than the page's mixture.
+            applyCompare(query, dateRange, compareWindow);
 
             return jsonRequest(`/speedtests/statistics/?${query}`);
         })).then((results) => {
@@ -456,7 +509,7 @@ export const Statistics = () => {
             setCompareStats({key: compareKey, byId: Object.fromEntries(results.map((result, index) =>
                 [targets[index].id, result.status === "fulfilled" ? result.value : null]))});
         });
-    }, [expandedChart, targets, dateRange, compareKey, compareFresh]);
+    }, [expandedChart, targets, dateRange, compareWindow, compareKey, compareFresh]);
 
     // The card and its fetch are gated on two targets; the modal is plain
     // state and would outlive the gate - deleting targets down to one with
@@ -619,15 +672,35 @@ export const Statistics = () => {
                 window cut at now's own wall clock - the range is still running
                 - says so, or its dates would claim whole days it only partly
                 covers. */}
-            {previous && (
-                <p className="statistics-compare-note">
-                    {t(previous.dateRange.partial
-                        ? "statistics.compare.note_partial"
-                        : "statistics.compare.note", {
-                        from: formatDay(previous.dateRange.from),
-                        to: formatDay(previous.dateRange.to)
-                    })}
-                </p>
+            {/* The row renders for any bounded range, not only when there is
+                something to compare against: the control that CHOOSES the
+                window lives in it, and gating that on a previous window
+                having data would lock a young instance out of naming one. */}
+            {dateRange && (
+                <div className="statistics-compare-row">
+                    {previous && (
+                        <p className="statistics-compare-note">
+                            {t(previous.dateRange.partial
+                                ? "statistics.compare.note_partial"
+                                : "statistics.compare.note", {
+                                from: formatDay(previous.dateRange.from),
+                                to: formatDay(previous.dateRange.to)
+                            })}
+                        </p>
+                    )}
+                    {/* No onTimeframeChange, which is what suppresses the
+                        preset list: "last 7 days" as a COMPARISON window is a
+                        window that moves under the bookmark naming it. */}
+                    <DateRangePicker from={compareWindow?.from ?? null} to={compareWindow?.to ?? null}
+                                     onChange={handleCompareChange}
+                                     label={t("statistics.compare.picker_label")}/>
+                    {compareWindow && (
+                        <button type="button" className="statistics-compare-reset"
+                                onClick={() => handleCompareChange(null, null)}>
+                            {t("statistics.compare.reset")}
+                        </button>
+                    )}
+                </div>
             )}
 
             <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} hourlyAverages={deferredStatistics.hourlyAverages} ping={deferredStatistics.ping} dataUsed={deferredStatistics.dataUsed} reliability={deferredStatistics.reliability} dateRange={chartRange} previous={previous} onClick={() => setExpandedChart('overview')}/>

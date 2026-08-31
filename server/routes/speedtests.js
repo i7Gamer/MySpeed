@@ -38,6 +38,35 @@ const parseTargetParam = (value) => {
     return /^\d+$/.test(value) ? Number(value) : null;
 };
 
+/**
+ * The window the range is compared against, when the caller names one instead
+ * of taking the period immediately before.
+ *
+ * Three-valued like the target filter above: undefined when nothing was
+ * asked for, a parsed range when one was named, and an invalid range carrying
+ * its own message when the pair cannot be read - the caller answers the 400,
+ * so the message lives beside the route the way the other guards do.
+ *
+ * Half a pair is not a smaller request, it is no request at all: the same
+ * ruling the scroll cursor's after/afterId pair earns below, and for the same
+ * reason - a window with one end is a window nobody named.
+ */
+const parseCompareWindow = ({compareFrom, compareTo}, zone) => {
+    if (compareFrom === undefined && compareTo === undefined) return undefined;
+    if (compareFrom === undefined || compareTo === undefined)
+        return {valid: false,
+            message: "The compareFrom and compareTo parameters are a pair - send both or neither"};
+
+    const parsed = parseDateRange(compareFrom, compareTo, {zone});
+
+    // parseDateRange names the pair it was written for, so a bad compareFrom
+    // came back as "The 'from' value is not a real calendar date" - the one
+    // message the caller gets, pointing at the half of the request that was
+    // fine. The window's own parameter names are put back.
+    return parsed.valid ? parsed : {...parsed,
+        message: parsed.message.replaceAll("'from'", "'compareFrom'").replaceAll("'to'", "'compareTo'")};
+};
+
 
 app.get("/", password(true), async (req, res) => {
     if (req.query.limit && /[^0-9]/.test(req.query.limit))
@@ -128,6 +157,14 @@ app.get("/statistics", password(true), async (req, res) => {
     if (target !== undefined && target === null)
         return res.status(400).json({message: "You need to provide a correct number in the target parameter"});
 
+    // Not parsed at all for all time, which drops the window anyway: refusing
+    // a malformed pair the request was never going to use answers 400 for a
+    // parameter that has no meaning here - the same "the name wins" rule the
+    // all-time branch keeps everywhere else.
+    const compareWindow = allTime ? undefined : parseCompareWindow(req.query, timezone.zone);
+    if (compareWindow && !compareWindow.valid)
+        return res.status(400).json({message: compareWindow.message});
+
     res.json(await tests.listStatistics(range, {
         zone: timezone.zone,
         maxPoints: points,
@@ -135,7 +172,12 @@ app.get("/statistics", password(true), async (req, res) => {
         // The summary of the window immediately before the range, for the
         // period-over-period deltas. Opt-in: it costs a second table scan.
         // Nothing precedes all time, so it is never compared.
-        comparePrevious: !allTime && req.query.compare === "previous"
+        comparePrevious: !allTime && req.query.compare === "previous",
+        // Or a window the caller named instead - "this August against last
+        // August". The same cost, and never for all time: its own window is
+        // the extent of the tests, which the caller cannot know when it
+        // builds the URL, so there is no elapsed share to cut against.
+        compareWindow
     }));
 });
 

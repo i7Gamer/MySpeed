@@ -338,7 +338,9 @@
     "average": "평균",
     "compare": {
       "note": "{{from}} – {{to}} 대비 변화",
-      "note_partial": "{{from}} – {{to}} 대비 변화 (같은 시각까지)"
+      "note_partial": "{{from}} – {{to}} 대비 변화 (같은 시각까지)",
+      "picker_label": "비교 기간",
+      "reset": "이전 기간과 비교"
     },
     "downsampled": "평균 처리됨 · 전체 {{total}}개 중 {{shown}}개 테스트 표시",
     "detail": {

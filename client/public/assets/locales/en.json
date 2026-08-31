@@ -338,7 +338,9 @@
     "average": "Average",
     "compare": {
       "note": "Changes compared with {{from}} – {{to}}",
-      "note_partial": "Changes compared with {{from}} – {{to}}, up to the same time of day"
+      "note_partial": "Changes compared with {{from}} – {{to}}, up to the same time of day",
+      "picker_label": "Comparison window",
+      "reset": "Compare with the previous period"
     },
     "downsampled": "Averaged · showing {{shown}} of {{total}} tests",
     "detail": {
