@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { compile, rules } from "../helpers/sass.mjs";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const CLIENT_SRC = path.join(ROOT, "client", "src");
@@ -78,4 +79,35 @@ describe("the way back from an empty range", () => {
             assert.doesNotMatch(plainBranch, /show_all_time/);
         });
     }
+});
+
+/**
+ * The empty statistics page, whose sentence and button were touching.
+ *
+ * `.statistics-empty` is a centred flex row holding a `<p>` and a `.dialog-btn`
+ * as siblings, and it declared no gap - so "No tests between Aug 25 and Aug 31"
+ * ran straight into "Show all time" with nothing between them. Measured in the
+ * browser rather than guessed: the paragraph's right edge and the button's left
+ * edge were both at 658.06px.
+ *
+ * The row is what the block was drawn as - centred, with 6rem of vertical
+ * padding - so this gives it the gap it was missing rather than restacking it.
+ * The wrap is the other half of the same fault: the sentence carries two
+ * formatted dates and is the longest string on the page, and a row that cannot
+ * wrap puts it and the button through the same squeeze on a narrow screen.
+ */
+describe("the empty statistics page", () => {
+    const css = compile("pages/Statistics/styles.sass");
+    const empty = rules(css).find((rule) => rule.selector === ".statistics-empty");
+
+    it("keeps its sentence off its button", () => {
+        assert.ok(empty, ".statistics-empty has no rule");
+        assert.match(empty.body, /gap:\s*[^;0]/,
+            "the sentence and the button are touching, which is how they shipped");
+    });
+
+    it("lets the two wrap rather than squeezing them", () => {
+        assert.match(empty.body, /flex-wrap:\s*wrap/,
+            "a long translated sentence and the button share one unwrappable row");
+    });
 });

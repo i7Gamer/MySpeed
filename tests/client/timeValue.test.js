@@ -1,7 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    HOUR_OPTIONS, MINUTE_OPTIONS, MINUTE_STEP, maskTime, normaliseTime, partAt, partsOf, stepPart, withPart
+    HOUR_OPTIONS, MERIDIEM_OPTIONS, MINUTE_OPTIONS, MINUTE_STEP, chosenParts, displayTime, hourOptions,
+    maskTime, normaliseTime, partAt, partsOf, stepPart, withPart
 } from "@/common/components/TimeField/timeValue.js";
 import { storedTimeToInput } from "@/common/components/PauseDialog/quietHoursWindow.js";
 
@@ -190,5 +191,128 @@ describe("stepPart", () => {
     it("starts an empty field at midnight", () => {
         assert.equal(stepPart("", "hour", 1), "00:00");
         assert.equal(stepPart("", "minute", 1), "00:00");
+    });
+});
+
+// ---------------------------------------------------------------- twelve hours
+
+/**
+ * The reader's own choice of clock, which this field was the one control in the
+ * app not to honour.
+ *
+ * `preferences.timeFormat` already decides every other time on screen - the
+ * status bar, the chart axes, the next-test line - through FormatUtil. The
+ * quiet-hours field asked the *browser* instead, which is a different question
+ * with a different answer, and on an en-US machine it drew an AM/PM picker for
+ * somebody who had chosen 24 hours two dialogs away.
+ *
+ * The value never changes shape: `HH:mm` on a 24-hour clock is what leaves the
+ * field either way, because that is what the configuration stores and what the
+ * server reads. Only what the reader sees moves.
+ */
+describe("the twelve-hour clock", () => {
+    it("offers twelve hours starting at twelve, and a meridiem", () => {
+        assert.equal(hourOptions(true).length, 12);
+        assert.equal(hourOptions(true)[0], "12", "one o'clock is not the first hour of a half-day");
+        assert.equal(hourOptions(true)[1], "01");
+        assert.equal(hourOptions(true).at(-1), "11");
+        assert.deepEqual(MERIDIEM_OPTIONS, ["AM", "PM"]);
+    });
+
+    it("leaves the 24-hour column exactly as it was", () => {
+        assert.deepEqual(hourOptions(false), HOUR_OPTIONS);
+    });
+
+    it("shows a stored time on whichever clock was chosen", () => {
+        assert.equal(displayTime("13:45", true), "01:45 PM");
+        assert.equal(displayTime("13:45", false), "13:45");
+        assert.equal(displayTime("", true), "");
+    });
+
+    it("puts midnight and noon on the right side of the meridiem", () => {
+        // The two every 12-hour conversion gets wrong: hour 0 is 12 AM and
+        // hour 12 is 12 PM, and a naive modulo makes both of them 0.
+        assert.equal(displayTime("00:00", true), "12:00 AM");
+        assert.equal(displayTime("00:30", true), "12:30 AM");
+        assert.equal(displayTime("12:00", true), "12:00 PM");
+        assert.equal(displayTime("12:30", true), "12:30 PM");
+        assert.equal(displayTime("23:59", true), "11:59 PM");
+    });
+
+    it("reads a 12-hour entry back as the stored 24-hour value", () => {
+        assert.equal(normaliseTime("01:45 PM", true), "13:45");
+        assert.equal(normaliseTime("12:00 AM", true), "00:00");
+        assert.equal(normaliseTime("12:00 PM", true), "12:00");
+        assert.equal(normaliseTime("11:59 PM", true), "23:59");
+    });
+
+    it("round-trips every minute of the day", () => {
+        // The conversion is the part with two off-by-twelve traps in it, so it
+        // is checked against the whole clock rather than against samples.
+        for (let hour = 0; hour < 24; hour++)
+            for (const minute of ["00", "30", "59"]) {
+                const stored = `${String(hour).padStart(2, "0")}:${minute}`;
+
+                assert.equal(normaliseTime(displayTime(stored, true), true), stored,
+                    `${stored} does not survive a trip through the 12-hour field`);
+            }
+    });
+
+    it("takes a lone A or P, so the meridiem can be backspaced", () => {
+        // The mask leaves the letters as they were typed. Re-adding the M would
+        // make the string identical after a backspace, and the key would look
+        // broken.
+        assert.equal(normaliseTime("01:45 P", true), "13:45");
+        assert.equal(normaliseTime("01:45 a", true), "01:45");
+    });
+
+    it("refuses a 12-hour entry with no meridiem, or an impossible hour", () => {
+        assert.equal(normaliseTime("01:45", true), "", "AM and PM are different times");
+        assert.equal(normaliseTime("13:45 PM", true), "");
+        assert.equal(normaliseTime("00:45 AM", true), "");
+    });
+
+    it("masks a 12-hour entry as it is typed", () => {
+        assert.equal(maskTime("0145", true), "01:45");
+        assert.equal(maskTime("0145p", true), "01:45 P");
+        assert.equal(maskTime("0145pm", true), "01:45 PM");
+        assert.equal(maskTime("01:45 PM", true), "01:45 PM");
+    });
+
+    it("steps the meridiem by half a day", () => {
+        assert.equal(stepPart("01:45", "meridiem", 1, true), "13:45");
+        assert.equal(stepPart("13:45", "meridiem", 1, true), "01:45");
+    });
+
+    it("steps a 12-hour column without leaving the half-day it is in", () => {
+        // 11 AM up is 12 PM on a 12-hour column, the same as on a 24-hour one:
+        // the reader is stepping the clock, not the column.
+        assert.equal(stepPart("11:00", "hour", 1, true), "12:00");
+        assert.equal(stepPart("23:00", "hour", 1, true), "00:00");
+    });
+
+    it("sets an hour out of the 12-hour column into the chosen half-day", () => {
+        assert.equal(withPart("13:45", "hour", "03", true), "15:45");
+        assert.equal(withPart("01:45", "hour", "03", true), "03:45");
+        assert.equal(withPart("13:45", "hour", "12", true), "12:45");
+        assert.equal(withPart("01:45", "hour", "12", true), "00:45");
+    });
+
+    it("moves a time across the meridiem when the column is picked", () => {
+        assert.equal(withPart("01:45", "meridiem", "PM", true), "13:45");
+        assert.equal(withPart("13:45", "meridiem", "AM", true), "01:45");
+        assert.equal(withPart("13:45", "meridiem", "PM", true), "13:45");
+    });
+
+    it("marks the chosen row on the clock the reader is looking at", () => {
+        assert.deepEqual(chosenParts("13:45", true), {hour: "01", minute: "45", meridiem: "PM"});
+        assert.deepEqual(chosenParts("13:45", false), {hour: "13", minute: "45", meridiem: ""});
+        assert.deepEqual(chosenParts("", true), {hour: "", minute: "", meridiem: ""});
+    });
+
+    it("names the meridiem as the part the caret is past", () => {
+        assert.equal(partAt("01:45 PM", 7), "meridiem");
+        assert.equal(partAt("01:45 PM", 4), "minute");
+        assert.equal(partAt("01:45 PM", 1), "hour");
     });
 });

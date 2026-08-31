@@ -13,6 +13,26 @@
     width: 100%
     padding-right: 2.25rem
 
+// The touch fallback: two or three native selects sharing the width the one
+// field had. They keep .select-field's caret and .dialog-input's surface, so
+// they read as the same control the drawn field is.
+.time-field-native
+  display: flex
+  gap: 0.35rem
+  width: 100%
+
+  .select-wrap
+    flex: 1 1 0
+    min-width: 0
+
+  .dialog-input
+    width: 100%
+    // The caret needs less room here than on a full-width select, and the
+    // columns are two characters wide.
+    padding-left: 0.5rem
+    padding-right: 1.5rem
+    text-align: center
+
 .time-field-trigger
   position: absolute
   right: 0
@@ -52,6 +72,10 @@
   // default.sass states for the whole app - a component that draws its own is
   // how the colour came to be fixed everywhere except in a few dialogs.
   overflow-y: auto
+  // A column that has hit its end must not hand the rest of the wheel to
+  // whatever is behind it - the picker is portalled to the body, so that is the
+  // page itself scrolling away underneath an open menu.
+  overscroll-behavior: contain
   // Wide enough for two digits beside that scrollbar.
   min-width: 3.75rem
 

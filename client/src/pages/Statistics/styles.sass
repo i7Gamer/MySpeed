@@ -283,7 +283,15 @@
   align-items: center
   justify-content: center
   padding: 6rem 2rem
-  
+  // The sentence and the button are siblings in a centred row, and there was
+  // nothing between them: "No tests between Aug 25 and Aug 31" ran straight
+  // into "Show all time", both edges measuring at the same pixel.
+  gap: 1rem
+  // The other half of the same fault. This sentence carries two formatted dates
+  // and is the longest string on the page, so on a narrow screen an unwrappable
+  // row squeezes it and the button together instead.
+  flex-wrap: wrap
+
   p
     font-size: 1.1rem
     font-weight: 500

@@ -2,15 +2,20 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readSource, withoutJsComments } from "../helpers/source.js";
 import { compile, rules } from "../helpers/sass.mjs";
+import { browserUses12h } from "@/common/components/TimeField/timeValue.js";
 
 /**
  * The time field, and the two pickers behind it.
  *
  * A native `<input type="time">` hands its popup to the browser: on a desktop
- * that is a panel in the operating system's voice, laid over a dark dialog, in
- * a 12-hour clock the rest of this app does not use - and no stylesheet can
- * reach any of it. On touch it is the OS wheel, which is better than anything a
- * page can draw. So the pointer decides, and only the mouse gets the drawn one.
+ * that is a panel in the operating system's voice, laid over a dark dialog, and
+ * no stylesheet can reach any of it. On touch it is the OS wheel, which is
+ * better than anything a page can draw.
+ *
+ * So it is kept where it is the better control and can show the clock the
+ * reader chose, and replaced everywhere else - which is a narrower rule than
+ * "native on touch", because the format of a native time control cannot be set
+ * at all. See "choosing the picker" at the foot of this file.
  *
  * What must not change is the value: `windowProblem` and the two config writes
  * behind it are mirrored against server/util/quietHours.js and pinned by
@@ -157,5 +162,102 @@ describe("the TimeField stylesheet", () => {
     it("keeps the clock button inside the field", () => {
         assert.match(ruleFor(".time-field").body, /position:\s*relative/);
         assert.match(ruleFor(".time-field-trigger").body, /position:\s*absolute/);
+    });
+});
+
+// ------------------------------------------------------- which picker, and why
+
+/**
+ * The rule that decides between the two pickers.
+ *
+ * A native `<input type="time">` cannot be told which clock to draw. Measured,
+ * not assumed: `lang` on the element, on an ancestor and on the document all
+ * render 01:45 PM on an en-US browser. So the choice is not "native on touch"
+ * but "native where it already agrees" - and where it does not, the drawn
+ * picker is used even under a finger, because a picker in the wrong clock is
+ * worse than one that is merely not the OS's.
+ */
+describe("choosing the picker", () => {
+    it("reads the reader's own clock, not the browser's", () => {
+        assert.match(source, /TIME_FORMAT_12H/);
+        assert.match(source, /PreferencesContext/,
+            "the field decides its own format again, ignoring the one preference that governs every other time");
+    });
+
+    it("uses the native control only where it shows that clock", () => {
+        assert.match(source, /browserUses12h\(\) === use12h/);
+        assert.match(source, /coarse && nativeAgrees/,
+            "touch gets the OS wheel even when it contradicts the reader's preference");
+    });
+
+    it("offers a meridiem column only on a 12-hour clock", () => {
+        assert.match(source, /use12h \? \[\{part: "meridiem"/);
+    });
+});
+
+describe("browserUses12h", () => {
+    const engine = (resolved) => function () { return {resolvedOptions: () => resolved}; };
+
+    it("believes hour12 where the engine states it", () => {
+        assert.equal(browserUses12h(engine({hour12: true})), true);
+        assert.equal(browserUses12h(engine({hour12: false})), false);
+    });
+
+    it("reads the hour cycle where that is all there is", () => {
+        // h11 and h12 are the two 12-hour cycles; h23 and h24 the 24-hour ones.
+        for (const hourCycle of ["h11", "h12"])
+            assert.equal(browserUses12h(engine({hourCycle})), true, hourCycle);
+
+        for (const hourCycle of ["h23", "h24"])
+            assert.equal(browserUses12h(engine({hourCycle})), false, hourCycle);
+    });
+
+    it("reads an engine that answers neither as 24-hour", () => {
+        // The app's default, and the clock the configuration is written in.
+        assert.equal(browserUses12h(engine({})), false);
+        assert.equal(browserUses12h(null), false);
+    });
+});
+
+/**
+ * The touch fallback, where the native time input shows the wrong clock.
+ *
+ * Still native controls: a <select> opens the platform's own picker - the wheel
+ * on iOS, the modal list on Android - which is the part of the native input
+ * worth keeping on a phone. What it does not inherit is the format, because
+ * these options are ours. That is the whole trick, and it is the only way to a
+ * native 24-hour picker: the browser decides the clock of an
+ * `<input type="time">` and nothing on the page can overrule it - `lang` on the
+ * element, on an ancestor and on the document were all measured and all ignored
+ * - but nobody decides the contents of a <select> except us.
+ */
+describe("TimeField on touch, where the native clock disagrees", () => {
+    it("falls back to native selects rather than to the drawn picker", () => {
+        assert.match(source, /if \(coarse\) \{/,
+            "there is no touch branch between the OS wheel and the drawn picker");
+        assert.match(source, /<select/, "the fallback is not a native control");
+    });
+
+    it("dresses them as the app's other selects", () => {
+        // The caret and the appearance reset that every native select here
+        // wears, so the fallback is not the one control with the OS arrow.
+        assert.match(source, /className="select-wrap"/);
+        assert.match(source, /select-field/);
+    });
+
+    it("names each one by the part it holds", () => {
+        // Three comboboxes all called "From" would be one name for three
+        // different questions, and HH/MM need no translating.
+        assert.match(source, /aria-label=\{`\$\{ariaLabel\} \$\{head\}`\}/);
+    });
+
+    it("offers the same columns the drawn picker does", () => {
+        // One answer to "what can I pick", rather than one per device.
+        assert.match(source, /columns\.map\(\(\{part, head, options\}\)/);
+    });
+
+    it("clears the whole value when a column is emptied", () => {
+        assert.match(source, /next === "" \? "" :/,
+            "emptying one column leaves half a time, which is not a window");
     });
 });
