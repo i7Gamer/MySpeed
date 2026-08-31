@@ -73,7 +73,15 @@ app.patch("/:id", password(false), previewReadOnly, async (req, res) => {
     // Judged as the row it would become, not as the fragment that arrived:
     // a PATCH carrying only {endpoint} has to be held against the provider
     // it will run under.
-    const fields = writableFields(req.body);
+    /*
+     * Plus the columns this request retires without naming them - see
+     * retiredByPatch. Folded into the fields themselves rather than only into
+     * the judged row, so the write clears them too: a row left carrying a run
+     * shape for a run it no longer makes is one buildArgs would read and the
+     * next patch would trip over again.
+     */
+    const named = writableFields(req.body);
+    const fields = {...named, ...targets.retiredByPatch(current, named)};
     const merged = {...current, ...fields};
 
     const problem = targets.targetProblem(merged);

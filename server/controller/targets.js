@@ -41,6 +41,63 @@ const takesEndpoint = (provider) => provider === "libre" || provider === "iperf3
 // measure against at all.
 const requiresEndpoint = (provider) => provider === "iperf3";
 
+/**
+ * The columns a PATCH retires without naming them.
+ *
+ * The door judges the row a request would LEAVE BEHIND, which is right: a
+ * fragment carrying only `{endpoint}` has to be held against the provider it
+ * will run under. But update() writes only the columns the request named, so a
+ * fragment was being judged against fields it never sent, and refused for them:
+ *
+ *   PATCH {provider: "ookla"}  ->  "This provider takes no iperf3 tuning"
+ *   PATCH {iperfUdp: false}    ->  "A bitrate applies only to a UDP run"
+ *
+ * Both name a field the request did not carry, and getting past them meant
+ * nulling four columns the caller was not editing. The dialog never met it,
+ * sending the whole tuning block every time, so it was an API-only dead end -
+ * and a trap for the next caller that sends a minimal patch.
+ *
+ * The same shape as the `renames` door in the route, fixed for the same reason:
+ * a check about what a request DOES must not be asked of values the request is
+ * implicitly retiring. So the retirement is computed here and merged into both
+ * the judged row and the written one - written too, or the stored row keeps a
+ * run shape describing a run it no longer makes, which buildArgs would read and
+ * the next patch would trip over again.
+ *
+ * Only columns the request did not name itself: a caller stating a
+ * contradiction on purpose - datagrams off and a bitrate in one breath - still
+ * earns the refusal that names it rather than having half of it dropped.
+ */
+export const retiredByPatch = (current, fields) => {
+    const retired = {};
+
+    const set = (key, value) => {
+        if (!Object.hasOwn(fields, key) && current[key] !== value) retired[key] = value;
+    };
+
+    const provider = Object.hasOwn(fields, "provider") ? fields.provider : current.provider;
+
+    // The run shape describes a run this target no longer makes.
+    if (current.provider === "iperf3" && provider !== "iperf3") {
+        set("iperfDuration", null);
+        set("iperfStreams", null);
+        set("iperfBitrate", null);
+        set("iperfUdp", false);
+    }
+
+    // And the endpoint is refused on its own terms under a provider that takes
+    // none - a caller moving to ookla is not asking to keep a host it can no
+    // longer reach.
+    if (!takesEndpoint(provider)) set("endpoint", null);
+
+    // A rate is inert on a run that sends no datagrams, which is the whole of
+    // why the door refuses the pair.
+    if (Object.hasOwn(fields, "iperfUdp") && !fields.iperfUdp && current.iperfUdp)
+        set("iperfBitrate", null);
+
+    return retired;
+};
+
 const PORT_DIGITS = /^\d+$/;
 const MAX_PORT = 65535;
 

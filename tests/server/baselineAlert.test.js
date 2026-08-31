@@ -395,3 +395,74 @@ describe("a baseline that has not gathered enough rows yet", () => {
                 `${junk} armed the gate`);
     });
 });
+
+/**
+ * The edge is per metric, not per target.
+ *
+ * The judgement used to be a single `.some()` over download and upload, and
+ * the transition was read off that one answer - so it fired on "is this target in
+ * breach at all". While download sat under its median, upload could collapse
+ * to a fraction of its own and nobody was told: the round was already in
+ * breach, so there was no edge to see.
+ *
+ * That silences precisely the case the any-metric rule exists for, and
+ * metricBelow's own comment says so in as many words - "a line delivering
+ * its download while its upload has collapsed is worth hearing about". A
+ * second metric going down is a new thing happening to the line, not a
+ * continuation of the first.
+ *
+ * The storm rule is unchanged where it matters: a metric that stays under its
+ * median announces itself once and then goes quiet, however many rounds it
+ * lasts.
+ */
+describe("a second metric collapsing while the first is already down", () => {
+    const baseline = {download: 1000, upload: 500};
+    const PERCENT = 70;
+
+    // Well under seventy per cent on the named metric, comfortably over on the
+    // other, so each row breaches exactly what it says it does.
+    const rows = {
+        healthy: {download: 900, upload: 450},
+        downOnly: {download: 100, upload: 450},
+        both: {download: 100, upload: 10},
+        upOnly: {download: 900, upload: 10}
+    };
+
+    const verdict = (row, previous) => baselineVerdict(row, previous, baseline, PERCENT);
+
+    it("announces the second collapse", () => {
+        assert.equal(verdict(rows.both, rows.downOnly).breached, true,
+            "upload fell to a fiftieth of its median while download was already under, "
+            + "and the round said nothing");
+    });
+
+    // The first one still announces itself once, and only once.
+    it("still announces the first, and stays quiet while it lasts", () => {
+        assert.equal(verdict(rows.downOnly, rows.healthy).breached, true);
+        assert.equal(verdict(rows.downOnly, rows.downOnly).breached, false,
+            "a sustained breach announced itself twice");
+        assert.equal(verdict(rows.both, rows.both).breached, false,
+            "two sustained breaches announced themselves again");
+    });
+
+    /**
+     * And a metric recovering while the other stays down is not an
+     * announcement either - nothing in this codebase sends a "back to normal",
+     * and half a recovery is not a new breach.
+     */
+    it("says nothing when one metric recovers and the other does not", () => {
+        assert.equal(verdict(rows.downOnly, rows.both).breached, false,
+            "upload coming back announced itself as a breach");
+    });
+
+    // A breach that moves from one metric to the other is a new metric going
+    // down, so it is announced - the download recovering is incidental.
+    it("announces a breach that moves to the other metric", () => {
+        assert.equal(verdict(rows.upOnly, rows.downOnly).breached, true);
+    });
+
+    it("says nothing at all while the line is well", () => {
+        assert.equal(verdict(rows.healthy, rows.healthy).breached, false);
+        assert.equal(verdict(rows.healthy, rows.both).breached, false);
+    });
+});

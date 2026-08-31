@@ -157,11 +157,12 @@ const usablePercent = (value) => {
 const quiet = () => ({armed: false, breached: false, baselineDownload: null, baselineUpload: null});
 
 /**
- * Whether a reading sits under its share of the median, on either metric.
+ * Whether one metric's reading sits under its share of that metric's median.
  *
- * Any single one is enough, mirroring the any-armed-metric rule breachesThreshold
- * follows (alertThreshold.js:118-122): a line delivering its download while its
- * upload has collapsed is worth hearing about.
+ * One metric at a time, and the caller decides what to make of the pair. Any
+ * single one being enough to alert mirrors the any-armed-metric rule
+ * breachesThreshold follows (alertThreshold.js:118-122): a line delivering its
+ * download while its upload has collapsed is worth hearing about.
  *
  * A metric with no median, and a reading that is not a reading, are both simply
  * not judged. The fixed thresholds fail open on an unusable measurement,
@@ -170,7 +171,7 @@ const quiet = () => ({armed: false, breached: false, baselineDownload: null, bas
  * would let one unreadable row in the history mute the transition the storm
  * rule below is built on.
  */
-const belowBaseline = (row, baseline, percent) => BASELINE_METRICS.some((metric) => {
+const metricBelow = (row, baseline, percent, metric) => {
     const yardstick = baseline?.[metric];
     if (typeof yardstick !== "number") return false;
 
@@ -178,7 +179,29 @@ const belowBaseline = (row, baseline, percent) => BASELINE_METRICS.some((metric)
     if (reading === null) return false;
 
     return reading < yardstick * percent / PERCENT_WHOLE;
-});
+};
+
+/**
+ * Whether any metric has just gone under, counting each on its own.
+ *
+ * The transition used to be read off a single `.some()` over both metrics, so
+ * it fired on "is this target in breach at all". While download sat under its
+ * median, upload could collapse to a fraction of its own and nobody was told:
+ * the round was already in breach, so there was no edge left to see.
+ *
+ * That silenced exactly the case the any-metric rule exists for, and
+ * metricBelow's own comment names it - a line delivering its download while its
+ * upload has collapsed is worth hearing about. A second metric going down is a
+ * new thing happening to the line, not a continuation of the first.
+ *
+ * The storm rule is untouched where it matters: a metric that stays under its
+ * median is not newly under it, so it announces itself once however many rounds
+ * it lasts. Recovery stays silent on both, which is consistent - nothing in
+ * this codebase sends a "back to normal".
+ */
+const anyNewlyBelow = (row, previous, baseline, percent) => BASELINE_METRICS.some((metric) =>
+    metricBelow(row, baseline, percent, metric)
+        && !metricBelow(previous, baseline, percent, metric));
 
 /**
  * What to tell the integrations about this test's own line.
@@ -238,11 +261,12 @@ export const baselineVerdict = (row, previous, baseline, percent) => {
     if (baseline === null || baseline === undefined)
         return {armed: true, breached: false, baselineDownload: null, baselineUpload: null};
 
-    const below = belowBaseline(row, baseline, share);
-
     return {
         armed: true,
-        breached: below && !belowBaseline(previous, baseline, share),
+        // Per metric, so a second one collapsing while the first is still down
+        // is announced rather than swallowed by the breach already in progress
+        // - see anyNewlyBelow.
+        breached: anyNewlyBelow(row, previous, baseline, share),
         // The medians themselves rather than the lines they imply, so a message
         // template can say what this target usually delivers beside what it
         // just did. The percentage is the operator's own setting and is on the
