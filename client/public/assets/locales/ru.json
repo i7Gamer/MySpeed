@@ -626,7 +626,9 @@
       "alert_download_below": "Уведомлять, когда приём ниже (Мбит/с)",
       "alert_download_below_placeholder": "напр. 100",
       "alert_upload_below": "Уведомлять, когда отдача ниже (Мбит/с)",
-      "alert_upload_below_placeholder": "напр. 20"
+      "alert_upload_below_placeholder": "напр. 20",
+      "digest_weekly": "Отправлять еженедельную сводку",
+      "digest_monthly": "Отправлять ежемесячную сводку"
     },
     "variables": "Доступные переменные",
     "variables_hint": "Нажмите, чтобы добавить её в сообщение"

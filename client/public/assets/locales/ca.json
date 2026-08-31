@@ -626,7 +626,9 @@
       "alert_download_below": "Notifica quan la baixada sigui inferior a (Mbps)",
       "alert_download_below_placeholder": "p. ex. 100",
       "alert_upload_below": "Notifica quan la pujada sigui inferior a (Mbps)",
-      "alert_upload_below_placeholder": "p. ex. 20"
+      "alert_upload_below_placeholder": "p. ex. 20",
+      "digest_weekly": "Envia un resum setmanal",
+      "digest_monthly": "Envia un resum mensual"
     },
     "variables": "Variables disponibles",
     "variables_hint": "Fes-hi clic per afegir-la al missatge"

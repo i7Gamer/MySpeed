@@ -1,7 +1,8 @@
 import nodemailer from "nodemailer";
 import { replaceVariables, truncate } from "../util/helpers.js";
 import { checkOutboundHost } from "../util/safeUrl.js";
-import { OUTBOUND_TIMEOUT, noteActivity } from "../util/integrationActivity.js";
+import { OUTBOUND_TIMEOUT, noteActivity } from "../util/integrationActivity.js";
+import { wantsDigest } from "../util/digestOptIn.js";
 
 /**
  * Email, which is upstream #1259.
@@ -107,6 +108,17 @@ const recipientList = (value) => String(value ?? "").split(",").map((address) =>
 const headerSafe = (value) => truncate(String(value).replace(/[\r\n]+/g, " ").trim(), SUBJECT_LIMIT);
 
 /**
+ * A digest's own first line, which is what its subject says.
+ *
+ * The line names the cadence and the window it covers, so the subject is taken
+ * from the body rather than worded a second time - two wordings of one thing
+ * are two things to keep in step. Well inside SUBJECT_LIMIT, and headerSafe
+ * holds it there in any case.
+ */
+const firstLine = (text) => String(text).split("\n", 1)[0];
+
+
+/**
  * An address the module is willing to dial.
  *
  * The guard util/http.js applies to every other integration, reached here
@@ -202,6 +214,14 @@ export default (registerEvent, createTransport = nodemailer.createTransport) => 
         if (c.send_failed) await send(c,
             replaceVariables(c.error_subject || defaults.error_subject, failure),
             replaceVariables(c.error_message || defaults.failed, failure), activity);
+    });
+
+    registerEvent('digestReady', async ({data: c}, payload, activity) => {
+        // No template of its own on either half. The other two events are
+        // worded per instance because they describe one test; a digest is the
+        // same report for everybody, and the body already reads as prose.
+        if (wantsDigest(c, payload.kind))
+            await send(c, firstLine(payload.text), payload.text, activity);
     });
 
     return {

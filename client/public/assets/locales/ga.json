@@ -626,7 +626,9 @@
       "alert_download_below": "Cuir in iúl nuair atá an íoslódáil faoi bhun (Mbps)",
       "alert_download_below_placeholder": "m.sh. 100",
       "alert_upload_below": "Cuir in iúl nuair atá an uaslódáil faoi bhun (Mbps)",
-      "alert_upload_below_placeholder": "m.sh. 20"
+      "alert_upload_below_placeholder": "m.sh. 20",
+      "digest_weekly": "Seol achoimre sheachtainiúil",
+      "digest_monthly": "Seol achoimre mhíosúil"
     },
     "variables": "Athróga ar fáil",
     "variables_hint": "Cliceáil chun é a chur leis an teachtaireacht"

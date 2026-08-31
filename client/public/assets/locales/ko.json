@@ -626,7 +626,9 @@
       "alert_download_below": "다운로드가 다음보다 낮을 때 알림 (Mbps)",
       "alert_download_below_placeholder": "예: 100",
       "alert_upload_below": "업로드가 다음보다 낮을 때 알림 (Mbps)",
-      "alert_upload_below_placeholder": "예: 20"
+      "alert_upload_below_placeholder": "예: 20",
+      "digest_weekly": "주간 요약 보내기",
+      "digest_monthly": "월간 요약 보내기"
     },
     "variables": "사용 가능한 변수",
     "variables_hint": "클릭하면 메시지에 추가됩니다"

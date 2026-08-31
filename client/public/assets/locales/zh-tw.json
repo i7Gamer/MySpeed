@@ -626,7 +626,9 @@
       "alert_download_below": "當下載低於此值時通知（Mbps）",
       "alert_download_below_placeholder": "例如 100",
       "alert_upload_below": "當上傳低於此值時通知（Mbps）",
-      "alert_upload_below_placeholder": "例如 20"
+      "alert_upload_below_placeholder": "例如 20",
+      "digest_weekly": "傳送每週摘要",
+      "digest_monthly": "傳送每月摘要"
     },
     "variables": "可用變數",
     "variables_hint": "點一下即可加入訊息中"

@@ -626,7 +626,9 @@
       "alert_download_below": "İndirme şu değerin altına düşünce bildir (Mbps)",
       "alert_download_below_placeholder": "örn. 100",
       "alert_upload_below": "Yükleme şu değerin altına düşünce bildir (Mbps)",
-      "alert_upload_below_placeholder": "örn. 20"
+      "alert_upload_below_placeholder": "örn. 20",
+      "digest_weekly": "Haftalık özet gönder",
+      "digest_monthly": "Aylık özet gönder"
     },
     "variables": "Kullanılabilir değişkenler",
     "variables_hint": "Mesaja eklemek için tıklayın"

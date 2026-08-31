@@ -626,7 +626,9 @@
       "alert_download_below": "Известяване, когато изтеглянето е под (Mbit/s)",
       "alert_download_below_placeholder": "напр. 100",
       "alert_upload_below": "Известяване, когато качването е под (Mbit/s)",
-      "alert_upload_below_placeholder": "напр. 20"
+      "alert_upload_below_placeholder": "напр. 20",
+      "digest_weekly": "Изпращане на седмично резюме",
+      "digest_monthly": "Изпращане на месечно резюме"
     },
     "variables": "Налични променливи",
     "variables_hint": "Щракнете, за да я добавите към съобщението"

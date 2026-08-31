@@ -1,6 +1,7 @@
 import { postJson } from "../util/http.js";
 import { replaceVariables, truncate } from "../util/helpers.js";
-import { TELEGRAM_MARKDOWN, stripMarkdown as strip, balancedForTelegram } from "../util/markdown.js";
+import { TELEGRAM_MARKDOWN, stripMarkdown as strip, balancedForTelegram } from "../util/markdown.js";
+import { wantsDigest } from "../util/digestOptIn.js";
 
 /**
  * What sendMessage will accept as text.
@@ -96,6 +97,7 @@ const send = (token, chat_id, text, activity, message_thread_id) => {
         {activity});
 };
 
+
 export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {
         if (c.send_finished) await send(c.token, c.chat_id,
@@ -107,6 +109,17 @@ export default (registerEvent) => {
         if (c.send_failed) await send(c.token, c.chat_id,
             replaceVariables(c.error_message || defaults.failed, stripMarkdown(failure)), activity,
             c.message_thread_id);
+    });
+
+    registerEvent('digestReady', async ({data: c}, payload, activity) => {
+        // With the stored topic, exactly as the alerts go: a digest sent
+        // without it lands in General rather than where the operator put
+        // MySpeed. Nothing is stripped on the way - the composed digest
+        // carries none of the three characters balancedForTelegram counts and
+        // no brackets, so it stays balanced and parse_mode renders it as
+        // written.
+        if (wantsDigest(c, payload.kind))
+            await send(c.token, c.chat_id, payload.text, activity, c.message_thread_id);
     });
 
     return {

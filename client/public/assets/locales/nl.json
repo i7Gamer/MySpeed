@@ -626,7 +626,9 @@
       "alert_download_below": "Melden wanneer de download onder (Mbit/s) zakt",
       "alert_download_below_placeholder": "bijv. 100",
       "alert_upload_below": "Melden wanneer de upload onder (Mbit/s) zakt",
-      "alert_upload_below_placeholder": "bijv. 20"
+      "alert_upload_below_placeholder": "bijv. 20",
+      "digest_weekly": "Wekelijkse samenvatting versturen",
+      "digest_monthly": "Maandelijkse samenvatting versturen"
     },
     "variables": "Beschikbare variabelen",
     "variables_hint": "Klik om hem aan het bericht toe te voegen"

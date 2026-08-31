@@ -626,7 +626,9 @@
       "alert_download_below": "Upozornit, když je stahování pod (Mbps)",
       "alert_download_below_placeholder": "např. 100",
       "alert_upload_below": "Upozornit, když je nahrávání pod (Mbps)",
-      "alert_upload_below_placeholder": "např. 20"
+      "alert_upload_below_placeholder": "např. 20",
+      "digest_weekly": "Posílat týdenní přehled",
+      "digest_monthly": "Posílat měsíční přehled"
     },
     "variables": "Dostupné proměnné",
     "variables_hint": "Kliknutím ji přidáte do zprávy"

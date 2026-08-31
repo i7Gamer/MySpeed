@@ -626,7 +626,9 @@
       "alert_download_below": "Varsle når nedlasting er under (Mbps)",
       "alert_download_below_placeholder": "f.eks. 100",
       "alert_upload_below": "Varsle når opplasting er under (Mbps)",
-      "alert_upload_below_placeholder": "f.eks. 20"
+      "alert_upload_below_placeholder": "f.eks. 20",
+      "digest_weekly": "Send et ukentlig sammendrag",
+      "digest_monthly": "Send et månedlig sammendrag"
     },
     "variables": "Tilgjengelige variabler",
     "variables_hint": "Klikk for å legge den til i meldingen"

@@ -626,7 +626,9 @@
       "alert_download_below": "Giv besked, når download er under (Mbps)",
       "alert_download_below_placeholder": "f.eks. 100",
       "alert_upload_below": "Giv besked, når upload er under (Mbps)",
-      "alert_upload_below_placeholder": "f.eks. 20"
+      "alert_upload_below_placeholder": "f.eks. 20",
+      "digest_weekly": "Send et ugentligt sammendrag",
+      "digest_monthly": "Send et månedligt sammendrag"
     },
     "variables": "Tilgængelige variabler",
     "variables_hint": "Klik for at føje den til beskeden"

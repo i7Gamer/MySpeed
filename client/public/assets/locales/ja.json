@@ -626,7 +626,9 @@
       "alert_download_below": "ダウンロードが次の値を下回ったら通知（Mbps）",
       "alert_download_below_placeholder": "例: 100",
       "alert_upload_below": "アップロードが次の値を下回ったら通知（Mbps）",
-      "alert_upload_below_placeholder": "例: 20"
+      "alert_upload_below_placeholder": "例: 20",
+      "digest_weekly": "週次ダイジェストを送信",
+      "digest_monthly": "月次ダイジェストを送信"
     },
     "variables": "使用できる変数",
     "variables_hint": "クリックするとメッセージに追加されます"

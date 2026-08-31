@@ -626,7 +626,9 @@
       "alert_download_below": "Beri tahu bila unduh di bawah (Mbps)",
       "alert_download_below_placeholder": "mis. 100",
       "alert_upload_below": "Beri tahu bila unggah di bawah (Mbps)",
-      "alert_upload_below_placeholder": "mis. 20"
+      "alert_upload_below_placeholder": "mis. 20",
+      "digest_weekly": "Kirim ringkasan mingguan",
+      "digest_monthly": "Kirim ringkasan bulanan"
     },
     "variables": "Variabel yang tersedia",
     "variables_hint": "Klik untuk menambahkannya ke pesan"

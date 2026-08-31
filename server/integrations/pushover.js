@@ -1,5 +1,6 @@
 import { postJson } from "../util/http.js";
-import { replaceVariables, truncate } from "../util/helpers.js";
+import { replaceVariables, truncate } from "../util/helpers.js";
+import { wantsDigest } from "../util/digestOptIn.js";
 
 const URL = "https://api.pushover.net/1/messages.json";
 
@@ -40,6 +41,7 @@ const send = ({token, user_key}, message, activity) =>
  */
 const CREDENTIAL = /^[A-Za-z0-9]{30}$/;
 
+
 export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {
         if (c.send_finished) await send(c,
@@ -49,6 +51,14 @@ export default (registerEvent) => {
     registerEvent('testFailed', async ({data: c}, failure, activity) => {
         if (c.send_failed) await send(c,
             replaceVariables(c.error_message || defaults.failed, failure), activity);
+    });
+
+    registerEvent('digestReady', async ({data: c}, payload, activity) => {
+        // Through the same send, so the trim at PUSHOVER_MESSAGE_LIMIT stands
+        // over this too - though a composed digest cannot reach it: the text
+        // is a fixed set of lines with no operator template in it, pinned
+        // under 900 characters in tests/server/digestReport.test.js.
+        if (wantsDigest(c, payload.kind)) await send(c, payload.text, activity);
     });
 
     return {

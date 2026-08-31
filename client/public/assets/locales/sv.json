@@ -626,7 +626,9 @@
       "alert_download_below": "Avisera när nedladdning är under (Mbit/s)",
       "alert_download_below_placeholder": "t.ex. 100",
       "alert_upload_below": "Avisera när uppladdning är under (Mbit/s)",
-      "alert_upload_below_placeholder": "t.ex. 20"
+      "alert_upload_below_placeholder": "t.ex. 20",
+      "digest_weekly": "Skicka en veckosammanfattning",
+      "digest_monthly": "Skicka en månadssammanfattning"
     },
     "variables": "Tillgängliga variabler",
     "variables_hint": "Klicka för att lägga till den i meddelandet"

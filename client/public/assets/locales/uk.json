@@ -626,7 +626,9 @@
       "alert_download_below": "Сповіщати, коли завантаження нижче за (Мбіт/с)",
       "alert_download_below_placeholder": "напр. 100",
       "alert_upload_below": "Сповіщати, коли вивантаження нижче за (Мбіт/с)",
-      "alert_upload_below_placeholder": "напр. 20"
+      "alert_upload_below_placeholder": "напр. 20",
+      "digest_weekly": "Надсилати щотижневе зведення",
+      "digest_monthly": "Надсилати щомісячне зведення"
     },
     "variables": "Доступні змінні",
     "variables_hint": "Натисніть, щоб додати її до повідомлення"

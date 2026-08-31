@@ -626,7 +626,9 @@
       "alert_download_below": "Notify when download is below (Mbps)",
       "alert_download_below_placeholder": "e.g. 100",
       "alert_upload_below": "Notify when upload is below (Mbps)",
-      "alert_upload_below_placeholder": "e.g. 20"
+      "alert_upload_below_placeholder": "e.g. 20",
+      "digest_weekly": "Send a weekly digest",
+      "digest_monthly": "Send a monthly digest"
     },
     "variables": "Available variables",
     "variables_hint": "Click to add it to the message"
