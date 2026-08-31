@@ -372,7 +372,11 @@
       "span_description": "此範圍內最短與最長的測試",
       "density_title": "每日測試次數",
       "density_description": "共 {{days}} 天",
-      "density_description_partial": "共 {{days}} 天中的 {{elapsed}} 天"
+      "density_description_partial": "共 {{days}} 天中的 {{elapsed}} 天",
+      "streak_title": "最長連續失敗",
+      "streak_description": "{{from}} 至 {{to}}",
+      "gap_title": "測試之間的最大空檔",
+      "gap_description": "{{from}} 至 {{to}} 期間未執行任何測試"
     },
     "targets": {
       "title": "目標比較",
@@ -630,7 +634,9 @@
       "alert_download_below": "當下載低於此值時通知（Mbps）",
       "alert_download_below_placeholder": "例如 100",
       "alert_upload_below": "當上傳低於此值時通知（Mbps）",
-      "alert_upload_below_placeholder": "例如 20"
+      "alert_upload_below_placeholder": "例如 20",
+      "digest_weekly": "傳送每週摘要",
+      "digest_monthly": "傳送每月摘要"
     },
     "variables": "可用變數",
     "variables_hint": "點一下即可加入訊息中"

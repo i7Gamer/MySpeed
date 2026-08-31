@@ -372,7 +372,11 @@
       "span_description": "Le test le plus court et le plus long de cette plage",
       "density_title": "Tests par jour",
       "density_description": "Sur {{days}} jours",
-      "density_description_partial": "Sur {{elapsed}} des {{days}} jours"
+      "density_description_partial": "Sur {{elapsed}} des {{days}} jours",
+      "streak_title": "Plus longue série d'échecs",
+      "streak_description": "Entre {{from}} et {{to}}",
+      "gap_title": "Plus grand écart entre les tests",
+      "gap_description": "Rien n'a tourné entre {{from}} et {{to}}"
     },
     "targets": {
       "title": "Comparaison des cibles",
@@ -630,7 +634,9 @@
       "alert_download_below": "Notifier lorsque le téléchargement est inférieur à (Mbps)",
       "alert_download_below_placeholder": "p. ex. 100",
       "alert_upload_below": "Notifier lorsque le téléversement est inférieur à (Mbps)",
-      "alert_upload_below_placeholder": "p. ex. 20"
+      "alert_upload_below_placeholder": "p. ex. 20",
+      "digest_weekly": "Envoyer un résumé hebdomadaire",
+      "digest_monthly": "Envoyer un résumé mensuel"
     },
     "variables": "Variables disponibles",
     "variables_hint": "Cliquez pour l'ajouter au message"

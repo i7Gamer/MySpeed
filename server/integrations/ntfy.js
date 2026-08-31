@@ -1,5 +1,6 @@
 import { postText } from "../util/http.js";
-import { replaceVariables, stripTrailingSlashes } from "../util/helpers.js";
+import { replaceVariables, stripTrailingSlashes } from "../util/helpers.js";
+import { wantsDigest } from "../util/digestOptIn.js";
 
 // Both templates name the target: on a multi-target instance every message
 // otherwise reads identically whether it describes the WAN or the LAN box.
@@ -65,6 +66,14 @@ const send = (config, message, priority, activity) => {
         {headers: buildHeaders(config, priority), activity});
 };
 
+/**
+ * The band a digest arrives in - ntfy's own default, fixed rather than read
+ * from the stored priority: that setting says how loudly a measurement
+ * arrives, and a summary of a period already past is not one.
+ */
+const DIGEST_PRIORITY = 3;
+
+
 export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {
         if (c.send_finished) await send(c,
@@ -76,6 +85,14 @@ export default (registerEvent) => {
         if (c.send_failed) await send(c,
             replaceVariables(c.error_message || defaults.failed, failure),
             c.error_priority || 5, activity);
+    });
+
+    registerEvent('digestReady', async ({data: c}, payload, activity) => {
+        // No title of its own beyond the one the operator configured:
+        // headerSafe drops everything above U+00FF, and the digest names the
+        // period it covers on its first line - in the body, where every
+        // character of it survives.
+        if (wantsDigest(c, payload.kind)) await send(c, payload.text, DIGEST_PRIORITY, activity);
     });
 
     return {

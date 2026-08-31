@@ -1,5 +1,6 @@
 import { postJson } from "../util/http.js";
-import { replaceVariables, stripTrailingSlashes } from "../util/helpers.js";
+import { replaceVariables, stripTrailingSlashes } from "../util/helpers.js";
+import { wantsDigest } from "../util/digestOptIn.js";
 
 // Both templates name the target: on a multi-target instance every message
 // otherwise reads identically whether it describes the WAN or the LAN box.
@@ -14,8 +15,12 @@ const defaults = {
  * Gotify's scale runs 0-10 and pops a notification up from 8, which is where a
  * failure sits. A finished test is information rather than an alarm, so this
  * falls in the ordinary band beneath it.
+ *
+ * The digest carries it too, and outright rather than as a fallback: the same
+ * judgement about the same scale. Exported so the test that pins that can name
+ * it instead of repeating the number.
  */
-const FINISHED_PRIORITY = 5;
+export const FINISHED_PRIORITY = 5;
 
 // A failure pops up, which is what the top of the scale is for.
 const FAILED_PRIORITY = 8;
@@ -48,6 +53,7 @@ const send = ({url, key}, message, priority, activity) =>
     postJson(`${stripTrailingSlashes(url)}/message`, {message, priority},
         {headers: {"Authorization": "Bearer " + key}, activity});
 
+
 export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {
         if (c.send_finished) await send(c,
@@ -58,6 +64,13 @@ export default (registerEvent) => {
     registerEvent('testFailed', async ({data: c}, failure, activity) => {
         if (c.send_failed) await send(c,
             replaceVariables(c.error_message || defaults.failed, failure), FAILED_PRIORITY, activity);
+    });
+
+    registerEvent('digestReady', async ({data: c}, payload, activity) => {
+        // At the finished band rather than the stored priority: that setting
+        // says how loudly a measurement arrives, and a summary of a period
+        // already past is information nobody needs popped up for.
+        if (wantsDigest(c, payload.kind)) await send(c, payload.text, FINISHED_PRIORITY, activity);
     });
 
     return {

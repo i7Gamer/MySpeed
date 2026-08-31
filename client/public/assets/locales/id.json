@@ -372,7 +372,11 @@
       "span_description": "Pengujian terpendek dan terpanjang dalam rentang ini",
       "density_title": "Pengujian per hari",
       "density_description": "Selama {{days}} hari",
-      "density_description_partial": "Selama {{elapsed}} dari {{days}} hari"
+      "density_description_partial": "Selama {{elapsed}} dari {{days}} hari",
+      "streak_title": "Rentetan kegagalan terpanjang",
+      "streak_description": "Antara {{from}} dan {{to}}",
+      "gap_title": "Jeda terbesar antar pengujian",
+      "gap_description": "Tidak ada yang berjalan antara {{from}} dan {{to}}"
     },
     "targets": {
       "title": "Perbandingan target",
@@ -630,7 +634,9 @@
       "alert_download_below": "Beri tahu bila unduh di bawah (Mbps)",
       "alert_download_below_placeholder": "mis. 100",
       "alert_upload_below": "Beri tahu bila unggah di bawah (Mbps)",
-      "alert_upload_below_placeholder": "mis. 20"
+      "alert_upload_below_placeholder": "mis. 20",
+      "digest_weekly": "Kirim ringkasan mingguan",
+      "digest_monthly": "Kirim ringkasan bulanan"
     },
     "variables": "Variabel yang tersedia",
     "variables_hint": "Klik untuk menambahkannya ke pesan"

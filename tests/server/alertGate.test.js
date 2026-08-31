@@ -166,8 +166,11 @@ describe("suppressesEvent", () => {
      * and the rest carry no measurement to judge.
      */
     it("never suppresses any other event", () => {
+        // digestReady in the list on purpose: the digest's opt-in is its two
+        // per-integration booleans, and the alerts switch quiets per-test
+        // noise, not a summary somebody asked for by name.
         for (const event of ["testFailed", "testStarted", "minutePassed",
-            "recommendationsUpdated", "configUpdated"])
+            "recommendationsUpdated", "configUpdated", "digestReady"])
             assert.equal(suppressesEvent(event, "telegram", row(armed), good), false,
                 `${event} was suppressed`);
     });

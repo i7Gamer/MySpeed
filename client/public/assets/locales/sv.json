@@ -372,7 +372,11 @@
       "span_description": "Det kortaste och det längsta testet i den här perioden",
       "density_title": "Tester per dag",
       "density_description": "Över {{days}} dagar",
-      "density_description_partial": "Över {{elapsed}} av {{days}} dagar"
+      "density_description_partial": "Över {{elapsed}} av {{days}} dagar",
+      "streak_title": "Längsta raden av fel",
+      "streak_description": "Mellan {{from}} och {{to}}",
+      "gap_title": "Största luckan mellan tester",
+      "gap_description": "Inget kördes mellan {{from}} och {{to}}"
     },
     "targets": {
       "title": "Jämförelse av mål",
@@ -630,7 +634,9 @@
       "alert_download_below": "Avisera när nedladdning är under (Mbit/s)",
       "alert_download_below_placeholder": "t.ex. 100",
       "alert_upload_below": "Avisera när uppladdning är under (Mbit/s)",
-      "alert_upload_below_placeholder": "t.ex. 20"
+      "alert_upload_below_placeholder": "t.ex. 20",
+      "digest_weekly": "Skicka en veckosammanfattning",
+      "digest_monthly": "Skicka en månadssammanfattning"
     },
     "variables": "Tillgängliga variabler",
     "variables_hint": "Klicka för att lägga till den i meddelandet"

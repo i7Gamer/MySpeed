@@ -372,7 +372,11 @@
       "span_description": "Най-краткият и най-дългият тест в този период",
       "density_title": "Тестове на ден",
       "density_description": "За {{days}} дни",
-      "density_description_partial": "За {{elapsed}} от {{days}} дни"
+      "density_description_partial": "За {{elapsed}} от {{days}} дни",
+      "streak_title": "Най-дълга поредица от неуспехи",
+      "streak_description": "Между {{from}} и {{to}}",
+      "gap_title": "Най-голяма пауза между тестовете",
+      "gap_description": "Нищо не е измервано между {{from}} и {{to}}"
     },
     "targets": {
       "title": "Сравнение на целите",
@@ -630,7 +634,9 @@
       "alert_download_below": "Известяване, когато изтеглянето е под (Mbit/s)",
       "alert_download_below_placeholder": "напр. 100",
       "alert_upload_below": "Известяване, когато качването е под (Mbit/s)",
-      "alert_upload_below_placeholder": "напр. 20"
+      "alert_upload_below_placeholder": "напр. 20",
+      "digest_weekly": "Изпращане на седмично резюме",
+      "digest_monthly": "Изпращане на месечно резюме"
     },
     "variables": "Налични променливи",
     "variables_hint": "Щракнете, за да я добавите към съобщението"

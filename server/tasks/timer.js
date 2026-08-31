@@ -4,6 +4,7 @@ import schedule from 'node-schedule';
 import { isValidCron } from "cron-validator";
 import { CronExpressionParser } from "cron-parser";
 import { create as createSpeedtest } from './speedtest.js';
+import { runDigest } from './digestReport.js';
 import { isQuietHour } from '../util/quietHours.js';
 import { serverZone, zoneFromName } from '../util/timezone.js';
 import errorHandler from "../util/errorHandler.js";
@@ -153,6 +154,41 @@ const getRandomDelay = (cron) => {
     return Math.floor(Math.random() * (maxDelay - OFFSET_MIN_DELAY_MS + 1)) + OFFSET_MIN_DELAY_MS;
 };
 
+/**
+ * The digests' fixed schedules: Monday and the first of the month, at eight
+ * on the configured zone's clock. Constants rather than settings for v1 -
+ * the opt-in lives per integration - and exported for the suite that holds
+ * them to being valid crons.
+ */
+export const DIGEST_WEEKLY_CRON = "0 8 * * 1";
+export const DIGEST_MONTHLY_CRON = "0 8 1 * *";
+
+const DIGEST_KINDS = [["weekly", DIGEST_WEEKLY_CRON], ["monthly", DIGEST_MONTHLY_CRON]];
+
+let digestJobs = [];
+
+const stopDigests = () => {
+    for (const digest of digestJobs) digest.cancel();
+    digestJobs = [];
+};
+
+/**
+ * Armed and cancelled from inside startTimer/stopTimer on purpose: the six
+ * places that must manage this lifecycle - boot, the timezone PATCH, a
+ * config import, a factory reset, the shutdown's onStop, and every test
+ * teardown that already calls stopTimer - all reach these two functions
+ * today, so the digest cannot be the job one of them forgets. The zone is
+ * the digests' only input, and it rides in with the cron they ignore.
+ */
+const startDigests = (timezone) => {
+    stopDigests();
+
+    digestJobs = DIGEST_KINDS.map(([kind, cron]) => schedule.scheduleJob(
+        isValidTimezone(timezone) ? {rule: cron, tz: timezone} : cron,
+        () => runDigest(kind, {timezone}).catch(err =>
+            errorHandler(err, {fatal: false, context: `The scheduled ${kind} digest failed`}))));
+};
+
 export const startTimer = (cron, timezone) => {
     /*
      * An invalid cron means different things depending on what is running.
@@ -167,6 +203,10 @@ export const startTimer = (cron, timezone) => {
     if (!isValidCron(cron)) {
         if (job !== undefined) {
             console.warn(`The cron "${cron}" is not valid; keeping the running schedule.`);
+            // The digests still re-arm: they run on their own fixed rules,
+            // and the refused cron must neither take the weekly summary down
+            // nor keep it on the old timezone.
+            startDigests(timezone);
             return;
         }
 
@@ -181,6 +221,11 @@ export const startTimer = (cron, timezone) => {
     // node-schedule keeps firing it, so a changed cron would have run both
     // schedules for the rest of the process.
     stopTimer();
+
+    // After the stop, which cancels the previous pair along with the job -
+    // and on every path that leaves a schedule running, so a timezone change
+    // moves the digests with it.
+    startDigests(timezone);
 
     currentCron = cron;
     currentTimezone = timezone;
@@ -361,6 +406,8 @@ export const stopTimer = () => {
         job.cancel();
         job = undefined;
     }
+
+    stopDigests();
 };
 
 export { job };

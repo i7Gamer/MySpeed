@@ -372,7 +372,11 @@
       "span_description": "La prova més curta i la més llarga d'aquest interval",
       "density_title": "Proves per dia",
       "density_description": "Al llarg de {{days}} dies",
-      "density_description_partial": "Al llarg de {{elapsed}} de {{days}} dies"
+      "density_description_partial": "Al llarg de {{elapsed}} de {{days}} dies",
+      "streak_title": "Ratxa més llarga d'errors",
+      "streak_description": "Entre {{from}} i {{to}}",
+      "gap_title": "Interval més llarg entre proves",
+      "gap_description": "No es va executar res entre {{from}} i {{to}}"
     },
     "targets": {
       "title": "Comparació d'objectius",
@@ -630,7 +634,9 @@
       "alert_download_below": "Notifica quan la baixada sigui inferior a (Mbps)",
       "alert_download_below_placeholder": "p. ex. 100",
       "alert_upload_below": "Notifica quan la pujada sigui inferior a (Mbps)",
-      "alert_upload_below_placeholder": "p. ex. 20"
+      "alert_upload_below_placeholder": "p. ex. 20",
+      "digest_weekly": "Envia un resum setmanal",
+      "digest_monthly": "Envia un resum mensual"
     },
     "variables": "Variables disponibles",
     "variables_hint": "Fes-hi clic per afegir-la al missatge"

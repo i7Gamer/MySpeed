@@ -4,7 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-    formatBytes, formatDuration, formatHour, formatLatencyWithUnit, formatPercent, NOT_MEASURED
+    formatBytes, formatDateTime, formatDuration, formatHour, formatLatencyWithUnit, formatPercent,
+    NOT_MEASURED, spanInWords
 } from "@/common/utils/FormatUtil.js";
 import { failureRate, readableFigure } from "@/common/utils/TestUtil.js";
 import { peakLatencyRise } from "@/pages/Statistics/charts/peakHours.js";
@@ -208,12 +209,14 @@ describe("the enlarged overview's rows refuse what no reader can read", () => {
         // caption, the way the loss row's execute failureRate.
         return new Function(
             "t", "formatLatencyWithUnit", "formatDuration", "formatBytes", "formatHour",
-            "readableFigure", "testsPerDay", "peakLatencyRise",
+            "formatDateTime", "spanInWords", "readableFigure", "testsPerDay", "peakLatencyRise",
             "faPingPongPaddleBall", "faHourglassHalf", "faCalendarDay", "faDatabase", "faArrowTrendUp",
+            "faTriangleExclamation", "faCalendarXmark",
             `${overview.slice(start, end + 3)}\nreturn expandedItems;`)(
             stub, formatLatencyWithUnit, formatDuration, formatBytes, formatHour,
-            readableFigure, () => null, peakLatencyRise,
-            null, null, null, null, null)(props, preferences);
+            formatDateTime, spanInWords, readableFigure, () => null, peakLatencyRise,
+            null, null, null, null, null,
+            null, null)(props, preferences);
     };
 
     // Every fixture carries tests: testsPerDay's argument is dereferenced
@@ -358,6 +361,72 @@ describe("the enlarged overview's rows refuse what no reader can read", () => {
         for (const absent of [undefined, {}, "n/a", [], LATENCY_BUCKETS.slice(0, 2)])
             assert.equal(row({hourlyAverages: absent}, "statistics.overview.peak_latency_title"),
                 undefined, `buckets of ${JSON.stringify(absent)} drew the row`);
+    });
+
+    /**
+     * The reliability rows, executed from the payload's block to the caption.
+     * Both gate through the shared reader - the block is server-fed, and an
+     * older proxied node does not carry it at all - and neither has a delta:
+     * the previous window's summary does not carry reliability.
+     */
+    const RELIABILITY = {
+        longestFailureStreak: {count: 3, from: "2026-08-07T04:00:00.000Z", to: "2026-08-07T06:00:00.000Z"},
+        lastFailureAt: "2026-08-07T06:00:00.000Z",
+        largestGap: {seconds: 10800, from: "2026-08-07T01:00:00.000Z", to: "2026-08-07T04:00:00.000Z"}
+    };
+
+    it("draws the streak row from the block, span in the caption", () => {
+        const item = row({reliability: RELIABILITY}, "statistics.overview.streak_title");
+
+        assert.notEqual(item, undefined, "a streak of three drew no row");
+        assert.equal(item.value, 3);
+        assert.deepEqual(item.description, {
+            key: "statistics.overview.streak_description",
+            from: formatDateTime("2026-08-07T04:00:00.000Z", undefined),
+            to: formatDateTime("2026-08-07T06:00:00.000Z", undefined)
+        });
+        assert.equal(item.delta, null);
+    });
+
+    it("draws the gap row with the span in words", () => {
+        const item = row({reliability: RELIABILITY}, "statistics.overview.gap_title");
+
+        assert.notEqual(item, undefined, "a three-hour hole drew no row");
+        assert.equal(item.value, spanInWords(10800), "the gap prints raw seconds instead of words");
+        assert.deepEqual(item.description, {
+            key: "statistics.overview.gap_description",
+            from: formatDateTime("2026-08-07T01:00:00.000Z", undefined),
+            to: formatDateTime("2026-08-07T04:00:00.000Z", undefined)
+        });
+        assert.equal(item.delta, null);
+    });
+
+    it("reads the block's figures in either spelling and refuses junk", () => {
+        const text = row({reliability: {...RELIABILITY,
+            longestFailureStreak: {...RELIABILITY.longestFailureStreak, count: "3"}}},
+        "statistics.overview.streak_title");
+        assert.equal(text.value, 3, "a text-spelled count dropped the row or went out unread");
+
+        for (const junk of [-1, "auto", null, undefined])
+            assert.equal(row({reliability: {...RELIABILITY,
+                largestGap: {...RELIABILITY.largestGap, seconds: junk}}},
+            "statistics.overview.gap_title"), undefined,
+            `a gap of ${JSON.stringify(junk)} seconds drew the row`);
+    });
+
+    it("draws neither row for a payload without the block", () => {
+        for (const title of ["statistics.overview.streak_title", "statistics.overview.gap_title"])
+            assert.equal(row({}, title), undefined,
+                "an older node's payload without reliability drew the row");
+    });
+
+    it("has the four strings, both captions naming their ends", () => {
+        assert.equal(typeof english.statistics.overview.streak_title, "string");
+        assert.equal(typeof english.statistics.overview.gap_title, "string");
+        for (const key of ["streak_description", "gap_description"])
+            for (const part of ["from", "to"])
+                assert.match(english.statistics.overview[key], new RegExp(`\\{\\{${part}}}`),
+                    `${key} lost its {{${part}}} part`);
     });
 });
 

@@ -372,7 +372,11 @@
       "span_description": "An tástáil is giorra agus an ceann is faide sa raon seo",
       "density_title": "Tástálacha in aghaidh an lae",
       "density_description": "Thar {{days}} lá",
-      "density_description_partial": "Thar {{elapsed}} as {{days}} lá"
+      "density_description_partial": "Thar {{elapsed}} as {{days}} lá",
+      "streak_title": "An tsraith teipeanna is faide",
+      "streak_description": "Idir {{from}} agus {{to}}",
+      "gap_title": "An bhearna is mó idir tástálacha",
+      "gap_description": "Níor rith aon rud idir {{from}} agus {{to}}"
     },
     "targets": {
       "title": "Comparáid spriocanna",
@@ -630,7 +634,9 @@
       "alert_download_below": "Cuir in iúl nuair atá an íoslódáil faoi bhun (Mbps)",
       "alert_download_below_placeholder": "m.sh. 100",
       "alert_upload_below": "Cuir in iúl nuair atá an uaslódáil faoi bhun (Mbps)",
-      "alert_upload_below_placeholder": "m.sh. 20"
+      "alert_upload_below_placeholder": "m.sh. 20",
+      "digest_weekly": "Seol achoimre sheachtainiúil",
+      "digest_monthly": "Seol achoimre mhíosúil"
     },
     "variables": "Athróga ar fáil",
     "variables_hint": "Cliceáil chun é a chur leis an teachtaireacht"

@@ -372,7 +372,11 @@
       "span_description": "Den korteste og lengste testen i dette intervallet",
       "density_title": "Tester per dag",
       "density_description": "Over {{days}} dager",
-      "density_description_partial": "Over {{elapsed}} av {{days}} dager"
+      "density_description_partial": "Over {{elapsed}} av {{days}} dager",
+      "streak_title": "Lengste rekke med feil",
+      "streak_description": "Mellom {{from}} og {{to}}",
+      "gap_title": "Største gap mellom tester",
+      "gap_description": "Ingenting kjørte mellom {{from}} og {{to}}"
     },
     "targets": {
       "title": "Sammenligning av mål",
@@ -630,7 +634,9 @@
       "alert_download_below": "Varsle når nedlasting er under (Mbps)",
       "alert_download_below_placeholder": "f.eks. 100",
       "alert_upload_below": "Varsle når opplasting er under (Mbps)",
-      "alert_upload_below_placeholder": "f.eks. 20"
+      "alert_upload_below_placeholder": "f.eks. 20",
+      "digest_weekly": "Send et ukentlig sammendrag",
+      "digest_monthly": "Send et månedlig sammendrag"
     },
     "variables": "Tilgjengelige variabler",
     "variables_hint": "Klikk for å legge den til i meldingen"

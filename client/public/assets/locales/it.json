@@ -372,7 +372,11 @@
       "span_description": "Il test più breve e quello più lungo di questo intervallo",
       "density_title": "Test al giorno",
       "density_description": "Su {{days}} giorni",
-      "density_description_partial": "Su {{elapsed}} di {{days}} giorni"
+      "density_description_partial": "Su {{elapsed}} di {{days}} giorni",
+      "streak_title": "Serie di errori più lunga",
+      "streak_description": "Tra {{from}} e {{to}}",
+      "gap_title": "Intervallo più lungo tra i test",
+      "gap_description": "Non è stato eseguito nulla tra {{from}} e {{to}}"
     },
     "targets": {
       "title": "Confronto degli obiettivi",
@@ -630,7 +634,9 @@
       "alert_download_below": "Avvisa quando il download scende sotto (Mbps)",
       "alert_download_below_placeholder": "es. 100",
       "alert_upload_below": "Avvisa quando l'upload scende sotto (Mbps)",
-      "alert_upload_below_placeholder": "es. 20"
+      "alert_upload_below_placeholder": "es. 20",
+      "digest_weekly": "Invia un riepilogo settimanale",
+      "digest_monthly": "Invia un riepilogo mensile"
     },
     "variables": "Variabili disponibili",
     "variables_hint": "Clicca per aggiungerla al messaggio"

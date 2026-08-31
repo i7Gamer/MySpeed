@@ -372,7 +372,11 @@
       "span_description": "此区间内最短和最长的测速",
       "density_title": "每天测速次数",
       "density_description": "共 {{days}} 天",
-      "density_description_partial": "共 {{days}} 天中的 {{elapsed}} 天"
+      "density_description_partial": "共 {{days}} 天中的 {{elapsed}} 天",
+      "streak_title": "最长连续失败",
+      "streak_description": "{{from}} 至 {{to}}",
+      "gap_title": "测试之间的最大空档",
+      "gap_description": "{{from}} 至 {{to}} 期间未运行任何测试"
     },
     "targets": {
       "title": "目标对比",
@@ -630,7 +634,9 @@
       "alert_download_below": "当下载低于以下值时通知（Mbps）",
       "alert_download_below_placeholder": "例如 100",
       "alert_upload_below": "当上传低于以下值时通知（Mbps）",
-      "alert_upload_below_placeholder": "例如 20"
+      "alert_upload_below_placeholder": "例如 20",
+      "digest_weekly": "发送每周摘要",
+      "digest_monthly": "发送每月摘要"
     },
     "variables": "可用变量",
     "variables_hint": "点击即可将其加入消息"

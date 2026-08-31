@@ -372,7 +372,11 @@
       "span_description": "Der kürzeste und der längste Test in diesem Zeitraum",
       "density_title": "Tests pro Tag",
       "density_description": "Über {{days}} Tage",
-      "density_description_partial": "Über {{elapsed}} von {{days}} Tagen"
+      "density_description_partial": "Über {{elapsed}} von {{days}} Tagen",
+      "streak_title": "Längste Fehlerserie",
+      "streak_description": "Zwischen {{from}} und {{to}}",
+      "gap_title": "Größte Lücke zwischen Tests",
+      "gap_description": "Zwischen {{from}} und {{to}} lief nichts"
     },
     "targets": {
       "title": "Ziele im Vergleich",
@@ -630,7 +634,9 @@
       "alert_download_below": "Benachrichtigen, wenn Download unter (Mbps)",
       "alert_download_below_placeholder": "z. B. 100",
       "alert_upload_below": "Benachrichtigen, wenn Upload unter (Mbps)",
-      "alert_upload_below_placeholder": "z. B. 20"
+      "alert_upload_below_placeholder": "z. B. 20",
+      "digest_weekly": "Wöchentliche Zusammenfassung senden",
+      "digest_monthly": "Monatliche Zusammenfassung senden"
     },
     "variables": "Verfügbare Variablen",
     "variables_hint": "Zum Einfügen in die Nachricht anklicken"

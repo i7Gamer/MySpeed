@@ -4,9 +4,41 @@ import i18n from "i18next";
 import {
     convertSpeed, formatBytes, formatDateTime, formatDuration, formatLastTest, formatLatency,
     formatLatencyWithUnit, formatPercent, formatShortDay, formatShortTime, formatTime, formatHour, formatWhole,
-    formatWithUnit, generateRelativeTime, getSpeedUnit, NOT_MEASURED, printableFigure,
+    formatWithUnit, generateRelativeTime, getSpeedUnit, NOT_MEASURED, printableFigure, spanInWords,
     SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, wholeSpeed, TIME_FORMAT_12H, TIME_FORMAT_24H
 } from "@/common/utils/FormatUtil.js";
+
+/**
+ * A span of seconds in words - the unit ladder generateRelativeTime climbs,
+ * extracted so a duration BETWEEN two instants (the largest-gap row) can wear
+ * the same localized words as a duration ending now. No "Just now" tier: a
+ * span is not measured from the clock, and a three-second gap is three
+ * seconds.
+ */
+describe("spanInWords", () => {
+    it("climbs seconds, minutes, hours, days", () => {
+        assert.equal(spanInWords(30), "30 seconds");
+        assert.equal(spanInWords(20 * 60), "20 minutes");
+        assert.equal(spanInWords(5 * 3600), "5 hours");
+        assert.equal(spanInWords(3 * 86400), "3 days");
+    });
+
+    it("uses the singular on the boundary", () => {
+        assert.equal(spanInWords(60), "1 minute");
+        assert.equal(spanInWords(3600), "1 hour");
+        assert.equal(spanInWords(86400), "1 day");
+    });
+
+    it("floors rather than promising precision the words cannot carry", () => {
+        assert.equal(spanInWords(10800 + 59 * 60), "3 hours");
+    });
+
+    // The one caller measuring from the clock keeps its own "Just now" tier;
+    // a span has no such moment, and a tiny one still names its seconds.
+    it("names even a tiny span in seconds", () => {
+        assert.equal(spanInWords(2), "2 seconds");
+    });
+});
 
 // Moved here from the latest-test panel when the status bar replaced it, and
 // covered on the way: the status bar and the integration dialog both read it.

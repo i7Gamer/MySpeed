@@ -372,7 +372,11 @@
       "span_description": "Nejkratší a nejdelší test v tomto rozsahu",
       "density_title": "Testů za den",
       "density_description": "Za období {{days}} dní",
-      "density_description_partial": "Za {{elapsed}} z {{days}} dní"
+      "density_description_partial": "Za {{elapsed}} z {{days}} dní",
+      "streak_title": "Nejdelší série selhání",
+      "streak_description": "Mezi {{from}} a {{to}}",
+      "gap_title": "Největší mezera mezi testy",
+      "gap_description": "Mezi {{from}} a {{to}} nic neběželo"
     },
     "targets": {
       "title": "Porovnání cílů",
@@ -630,7 +634,9 @@
       "alert_download_below": "Upozornit, když je stahování pod (Mbps)",
       "alert_download_below_placeholder": "např. 100",
       "alert_upload_below": "Upozornit, když je nahrávání pod (Mbps)",
-      "alert_upload_below_placeholder": "např. 20"
+      "alert_upload_below_placeholder": "např. 20",
+      "digest_weekly": "Posílat týdenní přehled",
+      "digest_monthly": "Posílat měsíční přehled"
     },
     "variables": "Dostupné proměnné",
     "variables_hint": "Kliknutím ji přidáte do zprávy"

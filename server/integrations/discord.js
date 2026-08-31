@@ -1,6 +1,7 @@
 import { postJson } from "../util/http.js";
 import { replaceVariables, truncate } from "../util/helpers.js";
-import { DISCORD_MARKDOWN, stripMarkdown } from "../util/markdown.js";
+import { DISCORD_MARKDOWN, stripMarkdown } from "../util/markdown.js";
+import { wantsDigest } from "../util/digestOptIn.js";
 
 /**
  * What discord will accept as an embed description.
@@ -111,6 +112,16 @@ const WEBHOOK_URL = /^https:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api(?:\
  */
 const clean = (variables) => stripMarkdown(variables, DISCORD_MARKDOWN);
 
+/**
+ * The stripe a digest carries.
+ *
+ * Neither of the two the per-test messages wear: the green of a finished test
+ * would read as "the period was fine" and the red of a failure as an alarm,
+ * and a summary is neither - it reports the period whatever was in it.
+ */
+const DIGEST_COLOR = 4543686;
+
+
 export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {
         if (c.send_finished) await send(c.url, c.display_name, 4572762,
@@ -120,6 +131,14 @@ export default (registerEvent) => {
     registerEvent('testFailed', async ({data: c}, failure, activity) => {
         if (c.send_failed) await send(c.url, c.display_name, 12993861,
             replaceVariables(c.error_message || defaults.failed, clean(failure)), activity);
+    });
+
+    registerEvent('digestReady', async ({data: c}, payload, activity) => {
+        // Through the same embed the per-test messages use, so the digest
+        // inherits the trim at DISCORD_DESCRIPTION_LIMIT. A bare `content`
+        // field is capped at 2000 instead, and nothing here enforces that one.
+        if (wantsDigest(c, payload.kind))
+            await send(c.url, c.display_name, DIGEST_COLOR, payload.text, activity);
     });
 
     return {

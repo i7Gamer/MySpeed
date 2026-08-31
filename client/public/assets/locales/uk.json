@@ -372,7 +372,11 @@
       "span_description": "Найкоротший і найдовший тест у цьому діапазоні",
       "density_title": "Тестів на день",
       "density_description": "За {{days}} днів",
-      "density_description_partial": "За {{elapsed}} із {{days}} днів"
+      "density_description_partial": "За {{elapsed}} із {{days}} днів",
+      "streak_title": "Найдовша серія збоїв",
+      "streak_description": "Між {{from}} і {{to}}",
+      "gap_title": "Найбільша перерва між тестами",
+      "gap_description": "Між {{from}} і {{to}} нічого не виконувалося"
     },
     "targets": {
       "title": "Порівняння цілей",
@@ -630,7 +634,9 @@
       "alert_download_below": "Сповіщати, коли завантаження нижче за (Мбіт/с)",
       "alert_download_below_placeholder": "напр. 100",
       "alert_upload_below": "Сповіщати, коли вивантаження нижче за (Мбіт/с)",
-      "alert_upload_below_placeholder": "напр. 20"
+      "alert_upload_below_placeholder": "напр. 20",
+      "digest_weekly": "Надсилати щотижневе зведення",
+      "digest_monthly": "Надсилати щомісячне зведення"
     },
     "variables": "Доступні змінні",
     "variables_hint": "Натисніть, щоб додати її до повідомлення"

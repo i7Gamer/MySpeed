@@ -372,7 +372,11 @@
       "span_description": "El test más corto y el más largo de este rango",
       "density_title": "Tests por día",
       "density_description": "A lo largo de {{days}} días",
-      "density_description_partial": "A lo largo de {{elapsed}} de {{days}} días"
+      "density_description_partial": "A lo largo de {{elapsed}} de {{days}} días",
+      "streak_title": "Racha más larga de fallos",
+      "streak_description": "Entre {{from}} y {{to}}",
+      "gap_title": "Mayor intervalo entre pruebas",
+      "gap_description": "No se ejecutó nada entre {{from}} y {{to}}"
     },
     "targets": {
       "title": "Comparación de objetivos",
@@ -630,7 +634,9 @@
       "alert_download_below": "Avisar cuando la descarga baje de (Mbps)",
       "alert_download_below_placeholder": "p. ej. 100",
       "alert_upload_below": "Avisar cuando la subida baje de (Mbps)",
-      "alert_upload_below_placeholder": "p. ej. 20"
+      "alert_upload_below_placeholder": "p. ej. 20",
+      "digest_weekly": "Enviar un resumen semanal",
+      "digest_monthly": "Enviar un resumen mensual"
     },
     "variables": "Variables disponibles",
     "variables_hint": "Haz clic para añadirla al mensaje"

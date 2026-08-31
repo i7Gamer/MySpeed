@@ -372,7 +372,11 @@
       "span_description": "De kortste en de langste test in dit bereik",
       "density_title": "Tests per dag",
       "density_description": "Over {{days}} dagen",
-      "density_description_partial": "Over {{elapsed}} van {{days}} dagen"
+      "density_description_partial": "Over {{elapsed}} van {{days}} dagen",
+      "streak_title": "Langste reeks mislukkingen",
+      "streak_description": "Tussen {{from}} en {{to}}",
+      "gap_title": "Grootste gat tussen tests",
+      "gap_description": "Er draaide niets tussen {{from}} en {{to}}"
     },
     "targets": {
       "title": "Vergelijking van doelen",
@@ -630,7 +634,9 @@
       "alert_download_below": "Melden wanneer de download onder (Mbit/s) zakt",
       "alert_download_below_placeholder": "bijv. 100",
       "alert_upload_below": "Melden wanneer de upload onder (Mbit/s) zakt",
-      "alert_upload_below_placeholder": "bijv. 20"
+      "alert_upload_below_placeholder": "bijv. 20",
+      "digest_weekly": "Wekelijkse samenvatting versturen",
+      "digest_monthly": "Maandelijkse samenvatting versturen"
     },
     "variables": "Beschikbare variabelen",
     "variables_hint": "Klik om hem aan het bericht toe te voegen"

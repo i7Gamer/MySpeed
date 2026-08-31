@@ -1,6 +1,8 @@
 import IntegrationData from '../models/IntegrationData.js';
 import integrationModules from '../integrations/index.js';
 import { ALERT_METRICS, ALERT_ONLY, breachesThreshold, wantsOnlyBreaches } from '../util/alertThreshold.js';
+import { DIGEST_MONTHLY_FIELD, DIGEST_WEEKLY_FIELD } from '../util/digestOptIn.js';
+export { wantsDigest } from '../util/digestOptIn.js';
 import { FAILED_VARIABLES, FINISHED_VARIABLES } from '../util/notificationPayload.js';
 import { withoutUrlCredentials } from '../util/urlCredentials.js';
 
@@ -160,6 +162,24 @@ const ALERT_FIELDS = [
 ];
 
 /**
+ * The digest opt-ins, one boolean per cadence, declared once for the same
+ * reason ALERT_FIELDS is: identical fields on every notifier is one place for
+ * the next change, not seven. Booleans rather than an off/weekly/monthly
+ * choice because the form knows four field types and a digest is sensibly
+ * both. A row from before the fields existed has no key, which reads falsy -
+ * nobody is opted in by an upgrade.
+ *
+ * The read itself lives in util/digestOptIn.js, not here: this controller
+ * imports the generated index that imports every module, so a module cannot
+ * import it back - the leaf module is the home all readers can reach, and
+ * the re-export keeps this side's callers on one name.
+ */
+const DIGEST_FIELDS = [
+    {name: DIGEST_WEEKLY_FIELD, type: "boolean", required: false},
+    {name: DIGEST_MONTHLY_FIELD, type: "boolean", required: false}
+];
+
+/**
  * Whether a module asked to be offered the threshold settings.
  *
  * `notifier: true` is a module's own opt-in: it exists to tell a person
@@ -224,7 +244,7 @@ export const initialize = async () => {
         // integration test harness, and the definition is handed out by
         // reference, so appending in place stacks another copy on every pass.
         const fields = (isNotifier(definition)
-            ? [...definition.fields, ...ALERT_FIELDS]
+            ? [...definition.fields, ...ALERT_FIELDS, ...DIGEST_FIELDS]
             : definition.fields).map(withVariables);
 
         integrations[name] = {...definition, fields};

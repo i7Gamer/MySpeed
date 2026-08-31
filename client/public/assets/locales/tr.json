@@ -372,7 +372,11 @@
       "span_description": "Bu aralıktaki en kısa ve en uzun test",
       "density_title": "Günlük test sayısı",
       "density_description": "{{days}} gün boyunca",
-      "density_description_partial": "{{days}} günün {{elapsed}} günü boyunca"
+      "density_description_partial": "{{days}} günün {{elapsed}} günü boyunca",
+      "streak_title": "En uzun art arda hata serisi",
+      "streak_description": "{{from}} ile {{to}} arasında",
+      "gap_title": "Testler arasındaki en büyük boşluk",
+      "gap_description": "{{from}} ile {{to}} arasında hiçbir şey çalışmadı"
     },
     "targets": {
       "title": "Hedef karşılaştırması",
@@ -630,7 +634,9 @@
       "alert_download_below": "İndirme şu değerin altına düşünce bildir (Mbps)",
       "alert_download_below_placeholder": "örn. 100",
       "alert_upload_below": "Yükleme şu değerin altına düşünce bildir (Mbps)",
-      "alert_upload_below_placeholder": "örn. 20"
+      "alert_upload_below_placeholder": "örn. 20",
+      "digest_weekly": "Haftalık özet gönder",
+      "digest_monthly": "Aylık özet gönder"
     },
     "variables": "Kullanılabilir değişkenler",
     "variables_hint": "Mesaja eklemek için tıklayın"
