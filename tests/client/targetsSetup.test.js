@@ -2,7 +2,9 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readSource } from "../helpers/source.js";
 import { welcomeOpens } from "@/common/contexts/Targets/welcomeOutcome.js";
-import { optimalAccepted, optimalOrNull, optimalsAccepted, targetBody } from "@/common/components/TargetsDialog/targetBody.js";
+import {
+    optimalAccepted, optimalOrNull, optimalsAccepted, targetBody, uniqueTargetName
+} from "@/common/components/TargetsDialog/targetBody.js";
 import {
     requiresEndpoint, takesEndpoint, takesServerId
 } from "@/common/components/TargetsDialog/providerFields.js";
@@ -600,5 +602,96 @@ describe("the run's own shape on the body", () => {
             assert.equal(body.iperfUdp, false, "ookla carried the datagram mode");
             assert.equal(body.iperfBitrate, null, "ookla carried a bitrate");
         });
+    });
+});
+
+/**
+ * The name a new target opens with.
+ *
+ * The editor asked for a name and offered none, so the button that adds the
+ * target was dead the moment the dialog opened - with nothing on screen
+ * saying which of its fields was the reason. The provider's own name is the
+ * obvious one, and the one nearly every operator types anyway; it just has to
+ * be free, because the server refuses a name another target already wears.
+ */
+describe("uniqueTargetName", () => {
+    const rows = (...names) => names.map((name, index) => ({id: index + 1, name}));
+
+    it("takes the provider's own name where nothing wears it", () => {
+        assert.equal(uniqueTargetName("Ookla", []), "Ookla");
+        assert.equal(uniqueTargetName("Ookla", rows("WAN", "LAN")), "Ookla");
+    });
+
+    it("numbers past the ones already taken", () => {
+        assert.equal(uniqueTargetName("Ookla", rows("Ookla")), "Ookla 2");
+        assert.equal(uniqueTargetName("Ookla", rows("Ookla", "Ookla 2")), "Ookla 3");
+    });
+
+    it("fills a gap rather than counting past it", () => {
+        assert.equal(uniqueTargetName("Ookla", rows("Ookla", "Ookla 3")), "Ookla 2");
+    });
+
+    /**
+     * Judged exactly as the server judges it - trimmed, and case-sensitively
+     * (see nameTaken). A looser rule here would be the harmful direction: a
+     * name this thinks is free and the door refuses is a dialog that opens
+     * pre-filled with a value that cannot be saved.
+     */
+    it("reads a stored name the way the door reads it", () => {
+        assert.equal(uniqueTargetName("Ookla", rows("  Ookla  ")), "Ookla 2",
+            "the padded row did not occupy the name the server says it occupies");
+        assert.equal(uniqueTargetName("Ookla", rows("ookla")), "Ookla",
+            "a different case was treated as taken, where the server would accept it");
+    });
+
+    it("survives a list that names nothing readable", () => {
+        assert.equal(uniqueTargetName("Ookla", [{id: 1}, {id: 2, name: null}, null]), "Ookla");
+        assert.equal(uniqueTargetName("Ookla", undefined), "Ookla");
+    });
+
+    // Nothing to build a name from is no name: the field stays empty, the
+    // button stays dead, and the marked field says so.
+    it("offers nothing when there is no name to number", () => {
+        for (const base of [null, undefined, "", "   "])
+            assert.equal(uniqueTargetName(base, []), "",
+                `${JSON.stringify(base)} produced a name out of nothing`);
+    });
+});
+
+describe("the editor opens on a name that already works", () => {
+    const editor = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+
+    it("seeds a new target from its provider, past the names in use", () => {
+        assert.match(editor, /uniqueTargetName\(providerById\([^)]*\)\?\.name, targetList\)/,
+            "the seeded name no longer comes from the provider and the list it must be free of");
+    });
+
+    // A row being edited already has a name, and it is the operator's.
+    it("never seeds over the row it is editing", () => {
+        assert.match(editor, /setName\(target\?\.name \?\? uniqueTargetName\(/,
+            "the stored name lost its precedence over the seed");
+        assert.match(editor, /if \(!target && !nameTouched\)/,
+            "the provider switch reseeds the name of a row being edited");
+    });
+
+    /**
+     * And it stops seeding for good once the operator types: a provider
+     * switch after that would otherwise throw away the name they chose.
+     */
+    it("stops seeding once the field has been touched", () => {
+        assert.match(editor, /setNameTouched\(true\)/,
+            "nothing marks the field as the operator's");
+        assert.match(editor, /onChange=\{\(e\) => \{\s*setNameTouched\(true\);/,
+            "typing in the name field does not mark it touched");
+    });
+
+    /**
+     * The reason the button is dead, on the field that is the reason - the
+     * rule the optimal fields beside it already follow, because a greyed
+     * button with every field looking fine names nothing.
+     */
+    it("marks the name field while it is what blocks the save", () => {
+        assert.match(editor, /className=\{`dialog-input provider-input\$\{name\.trim\(\) === "" \? " input-error" : ""\}`\}/,
+            "an empty name leaves the field looking fine beside a button that will not press");
     });
 });

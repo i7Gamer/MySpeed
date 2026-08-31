@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    changeFrom, differenceFromTarget, percentOfTarget, providerName
+    changeFrom, differenceFromTarget, percentOfTarget, providerBeside, providerName
 } from "../../client/src/common/components/TestDetails/utils/details.js";
 import { convertSpeed, SPEED_UNIT_MBYTES } from "../../client/src/common/utils/FormatUtil.js";
 
@@ -223,5 +223,52 @@ describe("changeFrom", () => {
                 {difference: -37.5, direction: "down"},
                 "a halved line must not read as an improvement");
         });
+    });
+});
+
+/**
+ * The provider line beside a target's own name.
+ *
+ * The Target fact names the target and demotes the provider to its sub-line -
+ * which on the instance the wizard sets up says the same word twice, because
+ * the first target is named after the provider it runs. "Ookla" over "Ookla"
+ * is not a second fact; it is the same one, taking a line and inviting the
+ * reader to look for a difference that is not there.
+ */
+describe("providerBeside", () => {
+    it("says nothing when the target already says it", () => {
+        assert.equal(providerBeside("Ookla", "ookla"), null);
+        assert.equal(providerBeside("LibreSpeed", "libre"), null);
+        assert.equal(providerBeside("iperf3", "iperf3"), null);
+    });
+
+    // The operator types the name; the provider spells itself. Neither case nor
+    // the spaces around it is a difference worth a second line.
+    it("reads the two names as one whatever the operator typed", () => {
+        for (const name of ["ookla", "OOKLA", "  Ookla  ", "oOkLa"])
+            assert.equal(providerBeside(name, "ookla"), null,
+                `"${name}" printed Ookla twice`);
+    });
+
+    it("names the provider when the target is called something else", () => {
+        assert.equal(providerBeside("WAN", "ookla"), "Ookla");
+        assert.equal(providerBeside("Ookla backup", "ookla"), "Ookla",
+            "a name that merely contains the provider is a different name");
+        assert.equal(providerBeside("Fibre", "libre"), "LibreSpeed");
+    });
+
+    // A row from before the column, or one whose provider this build does not
+    // know: there is nothing to print and nothing to compare against.
+    it("names nothing for a row that cannot say which provider ran it", () => {
+        assert.equal(providerBeside("WAN", undefined), null);
+        assert.equal(providerBeside("WAN", "constructor"), null);
+    });
+
+    // The target's own name is the operator's free text, and a target with no
+    // name is not a reason to lose the provider.
+    it("keeps the provider when the target names nothing readable", () => {
+        for (const absent of [null, undefined, "", "   "])
+            assert.equal(providerBeside(absent, "ookla"), "Ookla",
+                `a target named ${JSON.stringify(absent)} swallowed the provider`);
     });
 });

@@ -175,3 +175,40 @@ describe("the detail pane explains its measurements too", () => {
             "a control you can tab to but cannot see is no better than one you cannot reach");
     });
 });
+
+/**
+ * The "changed" marker beside the value it marks.
+ *
+ * It was given a line of its own so that a screen reader would not run the
+ * two together as "Salt MobileCHANGED" - which the block display did solve,
+ * at the price of a badge sitting under its value like a second fact. The
+ * space in the markup is what actually separates the reading, so the badge
+ * can sit beside the value and still be read apart from it.
+ */
+describe("the changed marker", () => {
+    it("sits beside its value rather than under it", () => {
+        const bodies = bodiesFor(details, ".detail-changed");
+
+        assert.notEqual(bodies.length, 0, "the marker has no styling at all");
+        const declared = bodies.join("\n");
+
+        assert.match(declared, /display:\s*inline-block/,
+            "the marker is not inline, so it takes a line under the value it marks");
+        assert.doesNotMatch(declared, /display:\s*block/,
+            "the marker is back on a line of its own");
+    });
+
+    /**
+     * And the space that keeps the reading apart, in the markup rather than
+     * in the stylesheet: a margin separates the boxes on screen and nothing
+     * at all in the accessibility tree, which is the reading the block
+     * display was standing in for.
+     */
+    it("keeps a real space between the value and the marker", () => {
+        const markers = [...pane.matchAll(/\{" "}\s*<span className="detail-changed">/g)];
+
+        assert.equal(markers.length, 2,
+            "the ISP and the address each need their own spaced marker - "
+            + `found ${markers.length} of the two`);
+    });
+});

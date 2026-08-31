@@ -17,10 +17,11 @@ import Checkbox from "@/common/components/Checkbox";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import {CUSTOM_BACKEND_PLACEHOLDER, IPERF_HOST_PLACEHOLDER} from "@/common/utils/InvariantText";
 import {
-    bitrateAccepted, durationAccepted, iperfHostAccepted, providers, requiresEndpoint,
-    streamsAccepted, takesEndpoint, takesServerId, takesTuning, tuningAccepted, TUNING_BOUNDS
+    bitrateAccepted, durationAccepted, iperfHostAccepted, providerById, providers,
+    requiresEndpoint, streamsAccepted, takesEndpoint, takesServerId, takesTuning,
+    tuningAccepted, TUNING_BOUNDS
 } from "./providers";
-import {optimalAccepted, optimalsAccepted, targetBody} from "./targetBody";
+import {optimalAccepted, optimalsAccepted, targetBody, uniqueTargetName} from "./targetBody";
 
 /**
  * One target's whole shape: its name, its provider, where it measures, whether
@@ -32,12 +33,25 @@ import {optimalAccepted, optimalsAccepted, targetBody} from "./targetBody";
  */
 export const TargetEditor = ({open, onClose, target}) => {
     const [config] = useContext(ConfigContext);
-    const {reloadTargets} = useContext(TargetsContext);
+    // The list as well as the reload: a new target's seeded name has to be one
+    // no other target already wears, which is what the server refuses on.
+    const {targets: targetList, reloadTargets} = useContext(TargetsContext);
     const updateToast = useContext(ToastNotificationContext);
     // Read when the dialog opens, not at mount - see useSyncOnOpen. The server
     // id and endpoint keep their own effect below: they also follow provider
     // switches while the dialog is in use.
     const [name, setName] = useState("");
+    /**
+     * Whether the name is the operator's rather than the editor's.
+     *
+     * The seed follows the provider while nobody has said otherwise, so
+     * switching from Ookla to iperf3 before typing renames the target with it.
+     * The moment the field is typed in it stops following - a name somebody
+     * chose must survive a change of mind about the provider - and a row being
+     * edited counts as touched from the start, since its name is already
+     * theirs.
+     */
+    const [nameTouched, setNameTouched] = useState(false);
     const [provider, setProvider] = useState("ookla");
     const [serverId, setServerId] = useState("none");
     // Plain text with "" for untyped, unlike the server select above: the
@@ -69,7 +83,11 @@ export const TargetEditor = ({open, onClose, target}) => {
     const [saving, setSaving] = useState(false);
 
     useSyncOnOpen(open, () => {
-        setName(target?.name ?? "");
+        // A new target opens on a name that already works: the provider's own,
+        // numbered past the ones in use. The row being edited keeps its own,
+        // and counts as touched so nothing below seeds over it.
+        setName(target?.name ?? uniqueTargetName(providerById("ookla")?.name, targetList));
+        setNameTouched(target != null);
         setProvider(target?.provider ?? "ookla");
         setServerId(target?.serverId ?? "none");
         setEndpoint(target?.endpoint ?? "");
@@ -113,6 +131,12 @@ export const TargetEditor = ({open, onClose, target}) => {
         // address, not silently clear a host the operator never edited.
         setEndpoint(takesEndpoint(provider) && provider === target?.provider
             ? (target?.endpoint ?? "") : "");
+        // And the seeded name follows the provider it was seeded from, until
+        // the operator types one of their own - switching provider before
+        // that is still choosing what this target is, and "Ookla" left over
+        // on an iperf3 target is a name nobody picked.
+        if (!target && !nameTouched)
+            setName(uniqueTargetName(providerById(provider)?.name, targetList));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [provider]);
 
@@ -229,10 +253,20 @@ export const TargetEditor = ({open, onClose, target}) => {
                                     <FontAwesomeIcon icon={faTag}/>
                                     <h3>{t("targets.name")}</h3>
                                 </div>
-                                <input type="text" className="dialog-input provider-input"
+                                {/* input-error while the name is what holds the
+                                    button down, the rule the optimal fields
+                                    below already follow: a greyed Add with
+                                    every field looking fine names nothing, and
+                                    the name is the one field somebody can
+                                    empty by hand. */}
+                                <input type="text"
+                                       className={`dialog-input provider-input${name.trim() === "" ? " input-error" : ""}`}
                                        placeholder={t("targets.name_placeholder")}
                                        value={name} maxLength={64}
-                                       onChange={(e) => setName(e.target.value)}/>
+                                       onChange={(e) => {
+                                           setNameTouched(true);
+                                           setName(e.target.value);
+                                       }}/>
                             </div>
 
                             <SelectableList className="provider-list">

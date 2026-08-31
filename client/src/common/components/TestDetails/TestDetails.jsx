@@ -18,7 +18,7 @@ import {
     bufferbloat, bufferbloatColour, connectionChange, getIconBySpeed, gradeForIncrease, isMeasured,
     jitterColour, latencyIncrease, packetLossColour, readableFigure
 } from "@/common/utils/TestUtil";
-import {changeFrom, differenceFromTarget, percentOfTarget, providerName} from "./utils/details";
+import {changeFrom, differenceFromTarget, percentOfTarget, providerBeside, providerName} from "./utils/details";
 import {describeError} from "./utils/errors";
 import HelpButton from "@/common/components/HelpButton";
 import {useMetricInfo} from "@/common/hooks/useMetricInfo";
@@ -498,8 +498,15 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                                           style={{background: targetColour(roundIndexById(targetList, test.targetId))}}/>
                                     {targetRow.name}
                                 </span>
-                                {providerName(test.provider) && (
-                                    <span className="detail-secondary">{providerName(test.provider)}</span>
+                                {/* Only where it says something the name above
+                                    it does not: the wizard names the first
+                                    target after its provider, so the instance
+                                    most people run printed "Ookla" over
+                                    "Ookla" - one fact wearing two lines. */}
+                                {providerBeside(targetRow.name, test.provider) && (
+                                    <span className="detail-secondary">
+                                        {providerBeside(targetRow.name, test.provider)}
+                                    </span>
                                 )}
                                 {/* The provider's own result page keeps its
                                     sub-line home whichever state the slot is
@@ -581,14 +588,15 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                                 {test.isp && (
                                     <>
                                         {test.isp}
-                                        {/* Below the value, not trailing it -
-                                            see .detail-changed. A block element
-                                            breaks the reading too, so the space
-                                            that used to keep this from being
-                                            read as "Salt MobileCHANGED" is no
-                                            longer carrying anything. */}
-                                        {change?.isp &&
-                                            <span className="detail-changed">{t("test.details.changed")}</span>}
+                                        {/* Beside the value it marks, not
+                                            under it - see .detail-changed. The
+                                            space is what keeps this from being
+                                            read as "Salt MobileCHANGED", so it
+                                            is in the markup rather than left to
+                                            a margin the reading cannot hear. */}
+                                        {change?.isp && <>{" "}
+                                            <span className="detail-changed">{t("test.details.changed")}</span>
+                                        </>}
                                     </>
                                 )}
                                 {/* A marker each: one for the pair would report
@@ -596,8 +604,9 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                                 {test.externalIp && (
                                     <span className="detail-address detail-secondary">
                                         {test.externalIp}
-                                        {change?.externalIp &&
-                                            <span className="detail-changed">{t("test.details.changed")}</span>}
+                                        {change?.externalIp && <>{" "}
+                                            <span className="detail-changed">{t("test.details.changed")}</span>
+                                        </>}
                                     </span>
                                 )}
                             </DetailFact>
