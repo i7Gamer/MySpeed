@@ -282,45 +282,18 @@ $storage-row-band: 2.375rem
   &.input-error:focus
     border-color: $accent-danger
 
+// The spinner suppression that used to be written out here is on
+// input[type="number"] in default.sass now - this field was the only one of
+// fourteen that had it, which is what made it worth saying once.
 .storage-input
   cursor: text
   text-align: left
-  appearance: textfield
-  -moz-appearance: textfield
 
-  &::-webkit-outer-spin-button,
-  &::-webkit-inner-spin-button
-    -webkit-appearance: none
-    margin: 0
-
-.storage-retention-select-wrap
-  position: relative
-  display: inline-flex
-
-  &::after
-    content: ""
-    position: absolute
-    right: 0.85rem
-    top: 50%
-    width: 0.5rem
-    height: 0.5rem
-    border-right: 2px solid $subtext
-    border-bottom: 2px solid $subtext
-    transform: translateY(-70%) rotate(45deg)
-    pointer-events: none
-    transition: border-color 0.15s ease
-
-  &:hover::after
-    border-color: $accent-primary
-
-.storage-select
-  appearance: none
-  -webkit-appearance: none
-  -moz-appearance: none
-  padding-right: 2.25rem
-
-  &::-ms-expand
-    display: none
+// The caret and the appearance reset that used to be written out here are
+// .select-wrap and .select-field in the dialog stylesheet now. This control was
+// the only styled select in the client, and the copy living here is what let
+// the other four keep the browser's arrow. What remains below is the layout
+// role this wrapper plays in its own row, which is site-specific and stays.
 
 .storage-retention-controls
   align-items: center
@@ -328,6 +301,10 @@ $storage-row-band: 2.375rem
 
   .storage-retention-select-wrap
     flex: 0 1 auto
+    // The one select that is not full-width: it shares its row with the save
+    // button, so it takes the width of the preset it is showing rather than
+    // the 100% .select-wrap hands the other four.
+    width: auto
 
   .storage-input-wrap
     position: relative

@@ -215,28 +215,30 @@ export const TargetsDialog = ({open, onClose}) => {
                                             <FontAwesomeIcon icon={faNetworkWired}/>
                                             <h3>{t("dialog.provider.interface")}</h3>
                                         </div>
-                                        <select className="dialog-input provider-input"
-                                                value={selectedInterface}
-                                                onChange={(e) => changeInterface(e.target.value)}>
-                                            {/* The stored choice, kept visible when the list does
-                                                not carry it: a controlled select with no matching
-                                                option paints blank, which reads as "nothing
-                                                configured" while something very much is. "none"
-                                                survives a boot that found no usable adapter, an
-                                                adapter can be renamed, and the fetch can fail.
-                                                Disabled, because it is a fact rather than a choice
-                                                - any real pick PATCHes instantly. */}
-                                            {!Object.hasOwn(interfaces ?? {}, selectedInterface) && (
-                                                <option value={selectedInterface} disabled>
-                                                    {selectedInterface}
-                                                </option>
-                                            )}
-                                            {interfaces && Object.keys(interfaces).map((current, index) => (
-                                                <option key={index} value={current}>
-                                                    {current} ({interfaces[current]})
-                                                </option>
-                                            ))}
-                                        </select>
+                                        <span className="select-wrap provider-input-wrap">
+                                            <select className="dialog-input select-field provider-input"
+                                                    value={selectedInterface}
+                                                    onChange={(e) => changeInterface(e.target.value)}>
+                                                {/* The stored choice, kept visible when the list does
+                                                    not carry it: a controlled select with no matching
+                                                    option paints blank, which reads as "nothing
+                                                    configured" while something very much is. "none"
+                                                    survives a boot that found no usable adapter, an
+                                                    adapter can be renamed, and the fetch can fail.
+                                                    Disabled, because it is a fact rather than a choice
+                                                    - any real pick PATCHes instantly. */}
+                                                {!Object.hasOwn(interfaces ?? {}, selectedInterface) && (
+                                                    <option value={selectedInterface} disabled>
+                                                        {selectedInterface}
+                                                    </option>
+                                                )}
+                                                {interfaces && Object.keys(interfaces).map((current, index) => (
+                                                    <option key={index} value={current}>
+                                                        {current} ({interfaces[current]})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </span>
                                     </div>
                                 </div>
                             </div>

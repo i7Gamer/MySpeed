@@ -1,0 +1,57 @@
+@use "@/common/styles/colors" as *
+
+// The stepper sits inside the field, not beside it.
+//
+// Beside it, the two buttons would add their width to whatever row the field is
+// in - and the first row this was wanted in has none to give: the optimal
+// values dialog already divides its width three ways and spills in eight of the
+// fourteen shipping languages. Inside, the field's outer width is exactly what
+// it was, and the value stays centred because the two buttons are symmetric.
+.number-field
+  position: relative
+  display: flex
+  width: 100%
+
+  // The field fills the wrapper, and its text clears both buttons. Two
+  // selectors deep, so this beats the `padding` shorthand .dialog-input writes
+  // rather than depending on which order the bundle puts the sheets in.
+  .dialog-input,
+  .form-field-input
+    width: 100%
+    padding-left: 2.25rem
+    padding-right: 2.25rem
+
+.number-field-step
+  position: absolute
+  top: 0
+  bottom: 0
+  width: 2.25rem
+  display: flex
+  align-items: center
+  justify-content: center
+  background: none
+  border: none
+  padding: 0
+  color: $subtext
+  cursor: pointer
+  // Above the field, which is the whole width of the wrapper and would
+  // otherwise take the press.
+  z-index: 1
+  transition: color 0.15s ease
+
+  svg
+    font-size: 0.8rem
+
+  &:hover:not(:disabled)
+    color: $accent-primary
+
+  // A press that would change nothing should not look like one that would.
+  &:disabled
+    opacity: 0.35
+    cursor: default
+
+.number-field-step-down
+  left: 0
+
+.number-field-step-up
+  right: 0

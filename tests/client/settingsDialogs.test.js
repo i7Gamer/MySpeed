@@ -161,16 +161,30 @@ describe("the targets manager and its editor", () => {
      * the dialog was widened to give them - the interface select showed 224px
      * of a value needing 311, and of options needing 415.
      */
+    /*
+     * Found by the selector it contains rather than by an exact string, and
+     * asked of the wrapper as well.
+     *
+     * A <select> is a replaced element with no ::after to hang the shared caret
+     * on, so the two selects on these rows sit inside a .select-wrap - which
+     * makes the wrapper the flex item the row is dividing, and leaves the field
+     * dividing nothing. Whatever share the field is given, the wrapper has to be
+     * given too, or the interface select is back to the 224px this rule exists
+     * to have fixed.
+     */
+    const sharedRow = (prefix) => rules(css)
+        .filter(({selector}) => selector.split(",").map((one) => one.trim())
+            .some((one) => one === `${prefix}.provider-input`))
+        .map(({selector, body}) => ({parts: selector.split(",").map((one) => one.trim()), body}));
+
     it("lets a field use the width the dialog has", () => {
-        const at = css.indexOf(".provider-input {");
-        assert.notEqual(at, -1, "the shared field rule is gone");
+        const [rule] = sharedRow("").filter(({body}) => /flex:/.test(body));
 
-        const rule = css.slice(at, css.indexOf("}", at));
-
-        assert.doesNotMatch(rule, /max-width:\s*\d+(?:\.\d+)?(?:rem|px)/,
+        assert.ok(rule, "the field takes no share of the row, so it cannot grow into it");
+        assert.doesNotMatch(rule.body, /max-width:\s*\d+(?:\.\d+)?(?:rem|px)/,
             "the field is pinned to a fixed width, so a wider dialog cannot help it");
-        assert.match(rule, /flex:/,
-            "the field takes no share of the row, so it cannot grow into it");
+        assert.ok(rule.parts.includes(".provider-input-wrap"),
+            "the wrapper a select sits in takes no share of the row, so the select cannot grow into it");
     });
 
     /**
@@ -185,16 +199,18 @@ describe("the targets manager and its editor", () => {
      * width of its dialog, which is what the commit before this one gave it.
      */
     it("draws every field in the editor at one width", () => {
-        const at = css.indexOf(".provider-dialog-wrapper .provider-input {");
-        assert.notEqual(at, -1, "the editor no longer sizes its fields together");
+        const [rule] = sharedRow(".provider-dialog-wrapper ");
 
-        const rule = css.slice(at, css.indexOf("}", at));
-        const [, grow] = /flex:\s*(\d+)/.exec(rule) ?? [];
+        assert.ok(rule, "the editor no longer sizes its fields together");
+
+        const [, grow] = /flex:\s*(\d+)/.exec(rule.body) ?? [];
 
         assert.equal(grow, "0",
             "a field that grows takes what its row leaves it, which is a different width per row");
-        assert.match(rule, /flex:\s*0\s+0\s+\d/,
+        assert.match(rule.body, /flex:\s*0\s+0\s+\d/,
             "the fields need a shared basis, not a share of each row");
+        assert.ok(rule.parts.includes(".provider-dialog-wrapper .provider-input-wrap"),
+            "the wrapped select is the one field in the column drawn at another width");
     });
 });
 

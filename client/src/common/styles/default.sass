@@ -43,6 +43,30 @@ select,
 textarea
   font-family: inherit
 
+// The browser's own spinner on a number field, taken off everywhere.
+//
+// `color-scheme` recolours it so it is no longer a pale chrome widget on a dark
+// field, and that is as far as a colour can take it: it stays a cramped pair of
+// arrows drawn outside the palette, with a hit area sized for a mouse and
+// nothing else. NumberField draws the app's own stepper where stepping is worth
+// offering, and the arrow keys still step every field this hides it on.
+//
+// On the type rather than on a field class, for the reason the typeface above
+// is: there are three independent field classes - .dialog-input,
+// .form-field-input and .storage-input - dressing fourteen number inputs across
+// six components, and only StorageDialog had thought to write this. The other
+// thirteen were a miss nobody could see they were making.
+input[type="number"]
+  appearance: textfield
+  -moz-appearance: textfield
+
+// Both buttons: the inner one is what shows, and the outer one goes on
+// reserving the room it would have sat in.
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button
+  -webkit-appearance: none
+  margin: 0
+
 body::before
   content: ""
   position: fixed

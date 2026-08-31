@@ -27,7 +27,8 @@
    * its interface select is alone on its row and holds a value needing 311px,
    * so it keeps the full width of the dialog it is in.
    */
-  .provider-input
+  .provider-input,
+  .provider-input-wrap
     flex: 0 0 18rem
     max-width: 100%
 
@@ -118,7 +119,13 @@
   border: 1px solid $light-gray
   border-radius: 0.75rem
 
-.provider-input
+// The row share, taken by the field itself where the field is an input, and by
+// the wrapper where it is a select: a <select> is a replaced element with no
+// ::after to hang the shared caret on, so .select-wrap sits in between and
+// becomes the flex item the row is dividing. Both spellings, because both are
+// on this row - three text fields and two selects.
+.provider-input,
+.provider-input-wrap
   // A share of the row rather than a fixed width. Pinned to 14rem it could not
   // use the room the dialog has: the interface select showed 224px of a value
   // needing 311, and of options needing 415. 14rem stays as the basis, so a
@@ -127,6 +134,8 @@
   // Without this the basis is a floor and the field pushes the label off the
   // row instead of sharing it - flex items refuse to shrink past their content.
   min-width: 0
+
+.provider-input
   height: 2.5rem
 
   /*
@@ -306,7 +315,8 @@
     align-items: flex-start
     gap: 0.5rem
 
-  .provider-input
+  .provider-input,
+  .provider-input-wrap
     // The row stacks here, so the main axis is vertical and the basis above
     // would be read as a height - a 14rem-tall select, stretched by the grow.
     // The field takes the full width of the column instead.

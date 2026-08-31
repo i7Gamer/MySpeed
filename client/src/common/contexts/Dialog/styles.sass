@@ -230,6 +230,65 @@
 .dialog-input:focus
   border-color: $accent-primary
 
+// The arrow on a native <select>, drawn by the app rather than by the browser.
+//
+// `color-scheme` recolours the browser's own arrow but it stays the operating
+// system's glyph, sitting beside controls drawn in the app's. StorageDialog had
+// already answered that for its retention picker and written the answer into
+// its own stylesheet, so one select was styled and the other four - the
+// quiet-hours timezone among them - kept the native arrow.
+//
+// Here rather than in a component, and as classes rather than the mixins
+// _menu.sass uses: a menu's two callers name their rows for themselves and only
+// the appearance has to agree, where these five are the same control in the
+// same dialog and there is nothing for a caller to name differently.
+//
+// The pair is a wrapper and a field because a <select> is a replaced element:
+// it has no ::after of its own to hang a caret on.
+.select-wrap
+  position: relative
+  display: flex
+  // The width the field had before it was wrapped, which the wrapper now has to
+  // carry: four of the five selects are full-width, and .dialog-input's own
+  // `width: 100%` resolves against this element rather than against the dialog
+  // once there is an element in between. A shrink-to-fit wrapper would have
+  // made that circular and collapsed the field onto its longest option.
+  //
+  // The fifth - the retention picker, which sits in a row beside a button -
+  // says `width: auto` on its own class.
+  width: 100%
+
+  &::after
+    content: ""
+    position: absolute
+    right: 0.85rem
+    top: 50%
+    width: 0.5rem
+    height: 0.5rem
+    border-right: 2px solid $subtext
+    border-bottom: 2px solid $subtext
+    // Turned into a caret, and lifted slightly past centre: a rotated square is
+    // anchored by its corner, so a true 50% sits visibly low.
+    transform: translateY(-70%) rotate(45deg)
+    // The caret sits over the control it points at, and a click on it has to
+    // reach the list rather than stop here.
+    pointer-events: none
+    transition: border-color 0.15s ease
+
+  &:hover::after
+    border-color: $accent-primary
+
+.select-field
+  appearance: none
+  -webkit-appearance: none
+  -moz-appearance: none
+  // Room for the caret, so a long option does not run underneath it.
+  padding-right: 2.25rem
+
+// Edge's own arrow, which the appearance reset above does not reach.
+.select-field::-ms-expand
+  display: none
+
 .input-error
   border-color: $accent-danger
   

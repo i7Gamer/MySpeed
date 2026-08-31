@@ -7,6 +7,8 @@ import {assertOk, patchRequest, postRequest, RequestError} from "@/common/utils/
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {ConfigContext} from "@/common/contexts/Config";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
+import NumberField from "@/common/components/NumberField";
+import TimeField from "@/common/components/TimeField";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import {
     carriesWindow, storedTimeToInput, windowProblem, writeQuietHours
@@ -177,16 +179,19 @@ export const PauseDialog = ({open, onClose, onPause}) => {
                             
                             {showCustom && (
                                 <div className="pause-custom">
-                                    <input type="number"
-                                           className={`dialog-input pause-input${selected === "custom" && !isCustomValid ? " input-error" : ""}`}
-                                           value={customHours}
-                                           onChange={(e) => {
-                                               setCustomHours(e.target.value);
-                                               setSelected("custom");
-                                           }}
-                                           placeholder={t("update.hours")}
-                                           min="0.1"
-                                           step="0.5"/>
+                                    {/* The one field here where a step is worth
+                                        drawing: half an hour at a time is how
+                                        this is actually set. */}
+                                    <NumberField stepper
+                                                 className={`dialog-input pause-input${selected === "custom" && !isCustomValid ? " input-error" : ""}`}
+                                                 value={customHours}
+                                                 onChange={(hours) => {
+                                                     setCustomHours(hours);
+                                                     setSelected("custom");
+                                                 }}
+                                                 placeholder={t("update.hours")}
+                                                 min={0.1}
+                                                 step={0.5}/>
                                 </div>
                             )}
 
@@ -205,31 +210,37 @@ export const PauseDialog = ({open, onClose, onPause}) => {
                                 <div className="pause-custom">
                                     <p className="pause-quiet-hint">{t("pause.quiet_hours_desc")}</p>
                                     <div className="pause-quiet-range">
+                                        {/* The label names the field, so TimeField
+                                            is handed that name rather than
+                                            translating one of its own - see the
+                                            note on its ariaLabel. */}
                                         <label>
                                             <span>{t("pause.quiet_from")}</span>
-                                            <input type="time" value={quietStart}
-                                                   className={`dialog-input pause-input${quietProblem === "start" ? " input-error" : ""}`}
-                                                   onChange={(e) => setQuietStart(e.target.value)}/>
+                                            <TimeField value={quietStart} ariaLabel={t("pause.quiet_from")}
+                                                       className={`dialog-input pause-input${quietProblem === "start" ? " input-error" : ""}`}
+                                                       onChange={setQuietStart}/>
                                         </label>
                                         <label>
                                             <span>{t("pause.quiet_until")}</span>
-                                            <input type="time" value={quietEnd}
-                                                   className={`dialog-input pause-input${["end", "same"].includes(quietProblem) ? " input-error" : ""}`}
-                                                   onChange={(e) => setQuietEnd(e.target.value)}/>
+                                            <TimeField value={quietEnd} ariaLabel={t("pause.quiet_until")}
+                                                       className={`dialog-input pause-input${["end", "same"].includes(quietProblem) ? " input-error" : ""}`}
+                                                       onChange={setQuietEnd}/>
                                         </label>
                                     </div>
                                     <label className="pause-quiet-timezone">
                                         <span>{t("pause.timezone")}</span>
-                                        <select className="dialog-input timezone-select"
-                                                aria-label={t("pause.timezone")}
-                                                value={timezone}
-                                                onChange={(e) => setTimezone(e.target.value)}>
-                                            {/* The sentinel is offered by what it
-                                                means, not by its stored spelling:
-                                                "none" names nothing to a reader. */}
-                                            <option value={TIMEZONE_OFF}>{t("pause.timezone_server")}</option>
-                                            {zones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
-                                        </select>
+                                        <span className="select-wrap">
+                                            <select className="dialog-input select-field timezone-select"
+                                                    aria-label={t("pause.timezone")}
+                                                    value={timezone}
+                                                    onChange={(e) => setTimezone(e.target.value)}>
+                                                {/* The sentinel is offered by what it
+                                                    means, not by its stored spelling:
+                                                    "none" names nothing to a reader. */}
+                                                <option value={TIMEZONE_OFF}>{t("pause.timezone_server")}</option>
+                                                {zones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+                                            </select>
+                                        </span>
                                     </label>
                                     <p className="pause-quiet-hint">{t("pause.timezone_desc")}</p>
                                     <button type="button" className="dialog-btn pause-quiet-save"

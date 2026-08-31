@@ -299,16 +299,18 @@ export const TargetEditor = ({open, onClose, target}) => {
                                             <FontAwesomeIcon icon={faServer}/>
                                             <h3>{t("dialog.provider.server")}</h3>
                                         </div>
-                                        <select className="dialog-input provider-input" value={serverId}
-                                                onChange={(e) => handleServerIdChange(e.target.value)}>
-                                            <option value="none">{t("dialog.provider.choose_automatically")}</option>
-                                            {provider === "ookla" && Object.keys(ooklaServers).map((current, index) => (
-                                                <option key={index} value={current}>{formatServerLabel(ooklaServers[current])}</option>
-                                            ))}
-                                            {provider === "libre" && Object.keys(libreServers).map((current, index) => (
-                                                <option key={index} value={current}>{formatServerLabel(libreServers[current])}</option>
-                                            ))}
-                                        </select>
+                                        <span className="select-wrap provider-input-wrap">
+                                            <select className="dialog-input select-field provider-input" value={serverId}
+                                                    onChange={(e) => handleServerIdChange(e.target.value)}>
+                                                <option value="none">{t("dialog.provider.choose_automatically")}</option>
+                                                {provider === "ookla" && Object.keys(ooklaServers).map((current, index) => (
+                                                    <option key={index} value={current}>{formatServerLabel(ooklaServers[current])}</option>
+                                                ))}
+                                                {provider === "libre" && Object.keys(libreServers).map((current, index) => (
+                                                    <option key={index} value={current}>{formatServerLabel(libreServers[current])}</option>
+                                                ))}
+                                            </select>
+                                        </span>
                                     </div>
                                 )}
 

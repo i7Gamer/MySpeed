@@ -1,0 +1,86 @@
+@use "@/common/styles/colors" as *
+@use "@/common/styles/menu" as *
+
+// The field, with its clock button sitting inside the right edge rather than
+// beside it: the two quiet-hours fields share a row, and a button of their own
+// would take width from a pair that is already halving it.
+.time-field
+  position: relative
+  display: flex
+  width: 100%
+
+  .dialog-input
+    width: 100%
+    padding-right: 2.25rem
+
+.time-field-trigger
+  position: absolute
+  right: 0
+  top: 0
+  bottom: 0
+  width: 2.25rem
+  display: flex
+  align-items: center
+  justify-content: center
+  background: none
+  border: none
+  padding: 0
+  color: $subtext
+  cursor: pointer
+  transition: color 0.15s ease
+
+  svg
+    font-size: 0.85rem
+
+  &:hover
+    color: $accent-primary
+
+// Fixed, because it is portalled to the body and placed against the viewport -
+// the dialog's own body scrolls, and a menu inside it would be clipped by it.
+.time-field-menu
+  +dropdown-menu
+  position: fixed
+  display: flex
+  gap: 0.25rem
+
+.time-field-column
+  display: flex
+  flex-direction: column
+  gap: 2px
+  // 24 hours is taller than any dialog has room for, so the column scrolls
+  // rather than the menu growing to hold it. The scrollbar it gets is the one
+  // default.sass states for the whole app - a component that draws its own is
+  // how the colour came to be fixed everywhere except in a few dialogs.
+  overflow-y: auto
+  // Wide enough for two digits beside that scrollbar.
+  min-width: 3.75rem
+
+.time-field-head
+  position: sticky
+  top: 0
+  z-index: 1
+  padding: 2px 0 4px
+  text-align: center
+  color: $subtext
+  font-size: 0.7rem
+  font-weight: 600
+  letter-spacing: 0.05em
+  // The rows scroll under it, so it needs a ground of its own.
+  background-color: $dark-gray
+
+.time-field-option
+  +dropdown-option
+  justify-content: center
+  padding: 5px 10px
+  font-variant-numeric: tabular-nums
+
+// Both classes, so this beats the row's own colour on specificity rather than
+// on which of two single-class rules the bundle happens to emit last.
+.time-field-option.time-field-chosen
+  color: $accent-primary
+  background-color: rgba(var(--accent-primary-rgb), 0.12)
+
+  &:hover
+    color: $accent-primary
+
++dropdown-fade-in
