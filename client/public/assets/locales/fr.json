@@ -752,7 +752,7 @@
     "alerts": "Alertes et recommandations",
     "own_optimals": "Valeurs optimales propres",
     "baseline_alerts": "Alerter sous la vitesse habituelle",
-    "baseline_percent": "Part de la médiane sur 30 jours (%)",
+    "baseline_percent": "Part (%)",
     "baseline_desc": "Alerte lorsqu'un test passe sous cette part de la médiane sur 30 jours de la cible.",
     "all": "Toutes les cibles",
     "saved": "La cible a été enregistrée.",

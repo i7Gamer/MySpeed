@@ -752,7 +752,7 @@
     "alerts": "Bildirimler ve öneriler",
     "own_optimals": "Kendi optimum değerleri",
     "baseline_alerts": "Olağan hızın altında uyar",
-    "baseline_percent": "30 günlük ortancanın payı (%)",
+    "baseline_percent": "Oran (%)",
     "baseline_desc": "Bir test, hedefin kendi 30 günlük ortancasının bu payının altına düştüğünde uyarır.",
     "all": "Tüm test noktaları",
     "saved": "Test noktası kaydedildi.",

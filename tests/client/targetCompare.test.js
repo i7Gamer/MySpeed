@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { targetColour, targetSeriesToken } from "@/common/utils/TargetUtil.js";
-import { mergedTimeline, nearestPerDataset, overlaySeries, targetSummaries } from "@/pages/Statistics/charts/TargetCompareChart/targetCompare.js";
+import { mergedTimeline, nearestPerDataset, overlayOutcome, overlaySeries, targetSummaries } from "@/pages/Statistics/charts/TargetCompareChart/targetCompare.js";
 
 /**
  * The comparison card's figures, computed where node can execute them.
@@ -315,5 +315,56 @@ describe("the colour cycle", () => {
         assert.equal(targetSeriesToken(6), targetSeriesToken(0), "the cycle no longer wraps");
         assert.equal(targetSeriesToken(-1), targetSeriesToken(5),
             "roundIndexById's -1 stopped resolving to the cycle's last token, so a missing target draws var(--chart-undefined)");
+    });
+});
+
+/**
+ * A fetch that failed and a range nobody measured in are different findings,
+ * and the overlay charts could not tell them apart.
+ *
+ * `overlaySeries` drops a target with no payload, so when the batched request
+ * rejects - a 429 from the statistics limiter the page's own request now shares,
+ * a proxied node timing out, any 500 - every target is dropped, the series list
+ * comes back empty, and all three charts print "No target measured anything in
+ * this range". Beside them the table correctly says "Couldn't load", because it
+ * keeps the distinction the charts had thrown away.
+ *
+ * The separation is the repo's rule everywhere else: unmeasured is a reading,
+ * unreadable is a fault, and a chart must not report the second as the first.
+ */
+describe("overlayOutcome", () => {
+    const targets = [{id: 3, name: "Ookla"}, {id: 7, name: "LAN"}];
+    const measured = {labels: ["2026-08-30T04:00:00.000Z"], data: {download: [900]}};
+
+    it("says nothing has been asked for while the payloads are absent", () => {
+        assert.equal(overlayOutcome(targets, null, "download").state, "loading");
+    });
+
+    // Null is the fetch's own sentinel for "asked and failed". Every target
+    // carrying it means the one request they share did not answer.
+    it("says the request failed when no target could be loaded", () => {
+        assert.equal(overlayOutcome(targets, {3: null, 7: null}, "download").state, "unavailable");
+    });
+
+    /**
+     * A target that answered honestly with nothing keeps the charts on their
+     * measured-nothing wording - the range really is empty for it, and one
+     * failed neighbour must not relabel the whole panel.
+     */
+    it("says nothing was measured when the targets answered with nothing", () => {
+        const empty = {labels: [], data: {download: []}};
+
+        assert.equal(overlayOutcome(targets, {3: empty, 7: empty}, "download").state, "empty");
+    });
+
+    it("draws what it has when a target failed beside one that answered", () => {
+        const outcome = overlayOutcome(targets, {3: measured, 7: null}, "download");
+
+        assert.equal(outcome.state, "series");
+        assert.equal(outcome.series.length, 1, "the readable target was dropped with the failed one");
+    });
+
+    it("draws the series whenever any target has points", () => {
+        assert.equal(overlayOutcome(targets, {3: measured, 7: measured}, "download").state, "series");
     });
 });

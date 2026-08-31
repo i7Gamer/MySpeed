@@ -192,12 +192,14 @@ describe("the overlay chart", () => {
      * plot is for - a tooltip naming one line makes the reader hover three
      * times and hold two numbers in their head.
      *
-     * The same mode the single-target charts use, which works here for the
-     * same reason it works there: alignedValues lays every dataset onto one
-     * timeline, so an index is one moment across all of them.
+     * A mode of this chart's own, because none of chart.js's three fits - see
+     * nearestPerDataset, which records each attempt against the real page.
      *
-     * Both alternatives were tried against the real page. `nearest` answers
-     * with a single point, by construction. `x` collects the points within a
+     * All three were tried. `nearest` answers with a single point, by
+     * construction. `index` needs every dataset to share a label array, and
+     * laying them onto one timeline still failed: a round tests its targets
+     * seconds apart, so they land on adjacent entries and the tooltip named one
+     * target per entry. `x` collects the points within a
      * few pixels of the cursor - the point's radius plus its hit radius, under
      * two pixels on a week of five-minute tests - and hovering produced no
      * tooltip at all, which is why the shared timeline is not optional here.
@@ -295,7 +297,7 @@ describe("the overlay chart", () => {
 
         assert.match(heading, /t\(METRIC_TITLES\[metric]\)/,
             "the heading no longer names the metric this instance draws");
-        assert.match(card, /if \(!fresh\) return <p className="target-compare-hint">/,
+        assert.match(card, /if \(!fresh \|\| outcome\.state === "loading"\)/,
             "the loading line replaces the whole chart, heading and all");
     });
 });

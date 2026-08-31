@@ -678,10 +678,24 @@ const SETTLE_SLICE_MS = 250;
 export const settleLine = async (ms = TARGET_SETTLE_MS,
     {stopped = isShuttingDown, slice = SETTLE_SLICE_MS} = {}) => {
 
-    const deadline = Date.now() + ms;
+    /*
+     * A monotonic clock, not the wall one.
+     *
+     * `Date.now()` steps - an NTP correction, a VM resuming from suspend, an
+     * operator fixing the timezone - and a deadline computed from it recedes
+     * when the step is backwards. The loop then goes on sleeping for the
+     * length of the step ON TOP of the ten seconds it was asked for, holding
+     * the round's latch the whole time: every scheduled tick in that span logs
+     * "still running - skipping", and every manual run answers 409. Measured
+     * at three seconds of skew turning a 300ms settle into 3301ms.
+     *
+     * The sleeps below always ran on libuv's monotonic timer. It was only the
+     * deadline they were measured against that could move.
+     */
+    const deadline = performance.now() + ms;
 
     while (!stopped()) {
-        const left = deadline - Date.now();
+        const left = deadline - performance.now();
         if (left <= 0) return;
 
         /*
@@ -875,17 +889,31 @@ const executeRound = async (type, targetId) => {
                 escapes = 0;
 
                 /*
-                 * The line has just been saturated; the next member measures it
-                 * once it has drained - see TARGET_SETTLE_MS.
+                 * The line has just been used; the next member measures it once
+                 * it has drained - see TARGET_SETTLE_MS.
                  *
                  * Here rather than at the top of the loop, so that only a
-                 * member which actually MEASURED buys the next one its quiet:
+                 * member the round actually RAN buys the next one its quiet:
                  * every guard above reaches the next member by `continue` and
                  * steps over this, and a target that was held, unscheduled or
-                 * paused never touched the line. Not after the last member
-                 * either - that would delay the round's own completion event,
-                 * its healthchecks ping and the latch release, to leave a line
-                 * quiet that nothing is about to measure.
+                 * paused never touched the line at all.
+                 *
+                 * "Ran" and not "measured", deliberately. executeTarget answers
+                 * a failure rather than throwing one, so a member whose run
+                 * failed settles too - and that is the honest side to err on,
+                 * because most failures are a transfer that timed out or was
+                 * cut off partway, which saturated the line exactly as a
+                 * success would. The ones that touched nothing - a missing
+                 * binary, a hostname that would not resolve - cost ten seconds
+                 * of quiet the round did not need, on a round already failing.
+                 *
+                 * Not after the last member either: that would delay the
+                 * round's own completion event, its healthchecks ping and the
+                 * latch release, to leave a line quiet that nothing is about to
+                 * measure. The guard is positional, so a member whose every
+                 * successor is then skipped by a guard still pays for one
+                 * settle - the round cannot know in advance that it will skip
+                 * them.
                  */
                 if (index < members.length - 1) await settleLine();
             } catch (error) {

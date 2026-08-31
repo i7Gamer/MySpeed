@@ -752,7 +752,7 @@
     "alerts": "Avisos y recomendaciones",
     "own_optimals": "Valores óptimos propios",
     "baseline_alerts": "Avisar por debajo de la velocidad habitual",
-    "baseline_percent": "Porcentaje de la mediana de 30 días (%)",
+    "baseline_percent": "Cuota (%)",
     "baseline_desc": "Avisa cuando una prueba cae por debajo de esta parte de la mediana de 30 días del destino.",
     "all": "Todos los destinos",
     "saved": "Se ha guardado el destino.",

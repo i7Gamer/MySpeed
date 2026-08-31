@@ -208,7 +208,35 @@ const belowBaseline = (row, baseline, percent) => BASELINE_METRICS.some((metric)
 export const baselineVerdict = (row, previous, baseline, percent) => {
     const share = usablePercent(percent);
 
-    if (baseline === null || baseline === undefined || share === null) return quiet();
+    // Nobody asked for this alert - no share stored, or one nothing can read,
+    // which baselineOrNull already treats as no baseline at all. The ordinary
+    // case on every instance and every target.
+    if (share === null) return quiet();
+
+    /*
+     * Asked for, but the window does not hold enough successful rows to take a
+     * median over yet - see BASELINE_MIN_SAMPLES.
+     *
+     * ARMED all the same, and that distinction is the whole of this branch.
+     * `armed` answers "did the operator ask for this alert", and it is what
+     * keeps breachesThreshold off its `return !armed` tail - the branch that
+     * fires when a gate is switched on with no usable limit anywhere, so that
+     * a half-finished setup is a nuisance rather than an integration which has
+     * silently stopped working.
+     *
+     * Reported as unarmed, a warming-up target put the exact setup that block
+     * names in its own comment - baseline on, the three fixed limits blank -
+     * into the storm it says it prevents: every healthy test notified, once
+     * per test, until the twentieth successful row landed. Twenty spurious
+     * messages on the hourly default, and on a target run by hand it does not
+     * end, because twenty successes inside thirty days may never arrive.
+     *
+     * It cannot breach, having nothing to compare against, and names no median
+     * rather than a zero a message template would print as this line's usual
+     * speed.
+     */
+    if (baseline === null || baseline === undefined)
+        return {armed: true, breached: false, baselineDownload: null, baselineUpload: null};
 
     const below = belowBaseline(row, baseline, share);
 

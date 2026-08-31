@@ -752,7 +752,7 @@
     "alerts": "Alerts & recommendations",
     "own_optimals": "Own optimal values",
     "baseline_alerts": "Alert below the usual speed",
-    "baseline_percent": "Share of the 30-day median (%)",
+    "baseline_percent": "Share (%)",
     "baseline_desc": "Warns when a test drops below this share of the target's own 30-day median.",
     "all": "All targets",
     "saved": "The target has been saved.",

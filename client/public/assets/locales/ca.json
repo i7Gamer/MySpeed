@@ -752,7 +752,7 @@
     "alerts": "Avisos i recomanacions",
     "own_optimals": "Valors òptims propis",
     "baseline_alerts": "Avisa per sota de la velocitat habitual",
-    "baseline_percent": "Percentatge de la mediana de 30 dies (%)",
+    "baseline_percent": "Part (%)",
     "baseline_desc": "Avisa quan una prova baixa d'aquesta part de la mediana de 30 dies de l'objectiu.",
     "all": "Totes les destinacions",
     "saved": "S'ha desat la destinació.",

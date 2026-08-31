@@ -214,8 +214,21 @@ describe("baselineVerdict", () => {
     describe("when there is nothing to judge against", () => {
         const quiet = {armed: false, breached: false, baselineDownload: null, baselineUpload: null};
 
-        it("is not armed without a baseline", () => {
-            assert.deepEqual(baselineVerdict(below, above, null, PERCENT), quiet);
+        /**
+         * A share the operator set, with no median to judge it against yet, is
+         * ARMED and not breaching - not quiet.
+         *
+         * This asserted the opposite, and the opposite is what put an
+         * integration with the baseline on and the three fixed limits blank
+         * into breachesThreshold's `return !armed` tail: every healthy test
+         * notified, once per test, for the twenty successful rows it takes to
+         * reach a median - indefinitely on a target run by hand. `armed`
+         * answers "did the operator ask for this alert", and the answer during
+         * warm-up is yes.
+         */
+        it("is armed but silent while it has no baseline to judge against", () => {
+            assert.deepEqual(baselineVerdict(below, above, null, PERCENT),
+                {armed: true, breached: false, baselineDownload: null, baselineUpload: null});
         });
 
         /**
@@ -316,5 +329,69 @@ describe("BASELINE_METRICS", () => {
      */
     it("leaves latency out of it", () => {
         assert.equal(BASELINE_METRICS.includes("ping"), false);
+    });
+});
+
+/**
+ * A target still gathering its first twenty rows is ARMED, not silent.
+ *
+ * `armed` answers "did the operator ask for this alert", and it is what stops
+ * breachesThreshold falling through to its `return !armed` tail - the branch
+ * that fires on a gate switched on with no usable limit anywhere, so that a
+ * half-finished setup is a nuisance rather than an integration that has
+ * quietly stopped working.
+ *
+ * Reporting a warming-up target as unarmed put the one setup that block names
+ * in its own comment - baseline on, the three fixed limits blank - into
+ * exactly the storm it says it prevents: every healthy test notified, once per
+ * test, until the twentieth successful row landed. On the hourly default that
+ * is twenty spurious messages; on a target run by hand it is indefinite,
+ * because twenty successes inside a thirty-day window may never arrive.
+ *
+ * So warming up is armed-and-not-breaching. It is a target that cannot yet
+ * judge itself, which is a different statement from a target nobody asked to.
+ */
+describe("a baseline that has not gathered enough rows yet", () => {
+    const rows = (count) => Array.from({length: count}, () => ({download: 900, upload: 500}));
+
+    it("arms the gate while the median is still out of reach", () => {
+        const window = rows(BASELINE_MIN_SAMPLES - 1);
+        const verdict = baselineVerdict({download: 900, upload: 500}, window[0],
+            baselineOf(window), 70);
+
+        assert.equal(baselineOf(window), null, "the window already yields a median; re-anchor this");
+        assert.equal(verdict.armed, true,
+            "a warming-up target reports unarmed, so an integration with no fixed limits "
+            + "notifies on every healthy test");
+        assert.equal(verdict.breached, false, "a target with no median to compare against breached");
+    });
+
+    // And it says nothing about medians it does not have, rather than a zero a
+    // template would print as this target's usual speed.
+    it("names no median it has not got", () => {
+        const window = rows(BASELINE_MIN_SAMPLES - 1);
+        const verdict = baselineVerdict({download: 900, upload: 500}, window[0],
+            baselineOf(window), 70);
+
+        assert.equal(verdict.baselineDownload, null);
+        assert.equal(verdict.baselineUpload, null);
+    });
+
+    /**
+     * A target nobody configured is still unarmed - that is the ordinary case
+     * on every instance, and arming it would fire on every test everywhere.
+     */
+    it("leaves an unconfigured target alone", () => {
+        for (const percent of [null, undefined])
+            assert.equal(baselineVerdict({download: 900}, null, null, percent).armed, false,
+                `a target with percent ${percent} armed itself`);
+    });
+
+    // A stored share nothing can read is not a request either - it is a value
+    // the door would have refused, and baselineOrNull treats it as no baseline.
+    it("leaves an unreadable share unarmed", () => {
+        for (const junk of ["seventy", Number.NaN, 0, 1000])
+            assert.equal(baselineVerdict({download: 900}, null, null, junk).armed, false,
+                `${junk} armed the gate`);
     });
 });

@@ -752,7 +752,7 @@
     "alerts": "Aviseringar & rekommendationer",
     "own_optimals": "Egna optimala värden",
     "baseline_alerts": "Varna under den vanliga hastigheten",
-    "baseline_percent": "Andel av 30-dagarsmedianen (%)",
+    "baseline_percent": "Andel (%)",
     "baseline_desc": "Varnar när ett test faller under denna andel av målets egen 30-dagarsmedian.",
     "all": "Alla mål",
     "saved": "Målet har sparats.",

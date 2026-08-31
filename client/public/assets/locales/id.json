@@ -752,7 +752,7 @@
     "alerts": "Peringatan & rekomendasi",
     "own_optimals": "Nilai optimal sendiri",
     "baseline_alerts": "Peringatan di bawah kecepatan biasa",
-    "baseline_percent": "Bagian dari median 30 hari (%)",
+    "baseline_percent": "Porsi (%)",
     "baseline_desc": "Memperingatkan saat pengujian turun di bawah bagian ini dari median 30 hari target.",
     "all": "Semua tujuan",
     "saved": "Tujuan telah disimpan.",

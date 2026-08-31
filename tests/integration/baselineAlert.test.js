@@ -163,14 +163,28 @@ describe("the verdict a stored history produces", () => {
     // The floor, at the boundary. A fresh instance and one just past a
     // retention purge are the same shape, and a median over a handful of rows
     // moves with one bad afternoon.
-    it("is not armed one row short of the sample it needs", async () => {
+    it("takes no median one row short of the sample it needs", async () => {
         const target = await seedTarget({name: "WAN", baselinePercent: PERCENT});
         await seedHistory(history(target.id, BASELINE_MIN_SAMPLES - 1));
 
-        const {baselineArmed, baselineBreached} = await baselineKeys(target, SLOW);
+        const {baselineArmed, baselineBreached, baselineDownload} =
+            await baselineKeys(target, SLOW);
 
-        assert.equal(baselineArmed, false);
-        assert.equal(baselineBreached, false);
+        assert.equal(baselineBreached, false, "a target with no median to judge against breached");
+        assert.equal(baselineDownload, null, "a median was taken over too few rows");
+
+        /*
+         * Armed, though, which this asserted the opposite of. `armed` answers
+         * "did the operator ask for this alert", and a target still gathering
+         * its first twenty rows has been asked for. Reported unarmed, it put an
+         * integration with the baseline on and the three fixed limits blank
+         * into breachesThreshold's `return !armed` tail: every healthy test
+         * notified, once per test, for the whole warm-up - and indefinitely on
+         * a target run by hand, where twenty successes inside thirty days may
+         * never arrive.
+         */
+        assert.equal(baselineArmed, true,
+            "a warming-up target reports unarmed, which notifies on every healthy test");
     });
 
     // And that the window is a window. Rows older than it describe a line the
@@ -179,7 +193,13 @@ describe("the verdict a stored history produces", () => {
         const target = await seedTarget({name: "WAN", baselinePercent: PERCENT});
         await seedHistory(history(target.id, HISTORY_ROWS, NORMAL, BASELINE_WINDOW_DAYS + 1));
 
-        assert.equal((await baselineKeys(target, SLOW)).baselineArmed, false);
+        const {baselineBreached, baselineDownload} = await baselineKeys(target, SLOW);
+
+        // Read on the median rather than on `armed`, which now says only that
+        // the operator configured this - see the warm-up case above. A window
+        // holding nothing recent has no median, so there is nothing to breach.
+        assert.equal(baselineDownload, null, "rows older than the window fed the median");
+        assert.equal(baselineBreached, false);
     });
 
     /**

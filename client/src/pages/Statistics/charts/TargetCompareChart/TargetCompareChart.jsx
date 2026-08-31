@@ -12,7 +12,7 @@ import {isSingleDaySeries, lineChartOptions, timePoints} from "@/pages/Statistic
 import {lineTensionFor, lonePointHoverRadius, lonePointRadius, pointStyleFor} from "@/pages/Statistics/charts/pointDensity";
 import {Interaction} from "chart.js";
 import {getRelativePosition} from "chart.js/helpers";
-import {mergedTimeline, nearestPerDataset, overlaySeries} from "./targetCompare";
+import {mergedTimeline, nearestPerDataset, overlayOutcome} from "./targetCompare";
 // .chart-container and its header/body, borrowed the way PingChart borrows
 // them: these three are that row's siblings, and the shared stylesheet is what
 // makes them size and expand identically rather than nearly so.
@@ -99,7 +99,15 @@ export const TargetCompareChart = ({targets, statsById, fresh, metric, compact =
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
     const speedUnit = getSpeedUnit(preferences);
 
-    const series = useMemo(() => overlaySeries(targets, statsById, metric), [targets, statsById, metric]);
+    /*
+     * What to draw, and which nothing it is when there is nothing - see
+     * overlayOutcome. A request that failed and a range nobody measured in are
+     * different findings, and this chart used to report the first as the
+     * second while the table beside it said "Couldn't load".
+     */
+    const outcome = useMemo(() => overlayOutcome(targets, statsById, metric),
+        [targets, statsById, metric]);
+    const series = outcome.series;
 
     // The union of the targets' instants feeds only the axis - span, step and
     // the single-day tick format. The datasets keep their own labels: the x
@@ -218,8 +226,17 @@ export const TargetCompareChart = ({targets, statsById, fresh, metric, compact =
      * loading instead of finding a card that has not decided what it is yet.
      */
     const body = () => {
-        if (!fresh) return <p className="target-compare-hint">{t("statistics.detail.loading")}</p>;
-        if (series.length === 0) return <p className="target-compare-hint">{t("statistics.targets.empty")}</p>;
+        if (!fresh || outcome.state === "loading")
+            return <p className="target-compare-hint">{t("statistics.detail.loading")}</p>;
+
+        // The table beside these says the same thing in its own cells; a
+        // reader must not have to look there to find out which of the two
+        // silences this one is.
+        if (outcome.state === "unavailable")
+            return <p className="target-compare-hint">{t("statistics.targets.unavailable")}</p>;
+
+        if (outcome.state === "empty")
+            return <p className="target-compare-hint">{t("statistics.targets.empty")}</p>;
 
         return <ChartWrapper type="line" data={chartData} options={chartOptions}/>;
     };

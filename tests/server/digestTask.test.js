@@ -69,7 +69,9 @@ describe("runDigest", () => {
         const payload = await runDigest("weekly", options);
 
         assert.equal(calls.aggregate.length, 1, "the weekly kind aggregated a second window itself");
-        assert.equal(calls.aggregate[0].options.comparePrevious, true);
+        assert.equal(calls.aggregate[0].options.compare, true,
+            "the digest asks for a comparison by a name listStatistics does not read - "
+            + "see tests/integration/digestComparison.test.js");
         assert.equal(calls.aggregate[0].range.days, 7);
         assert.equal(calls.aggregate[0].range.from.toISOString(), "2026-08-23T22:00:00.000Z",
             "the window left the Berlin calendar");

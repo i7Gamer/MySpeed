@@ -452,6 +452,40 @@ export const TargetEditor = ({open, onClose, target}) => {
                                                   label={t("targets.own_optimals")}/>
                                 </div>
 
+                                {/* Directly under the switch that reveals them.
+                                    Written after the baseline block below, the
+                                    three inputs arrived two switches down the
+                                    dialog with the baseline's own field in
+                                    between - so pressing "Own optimal values"
+                                    opened fields under somebody else's
+                                    heading. */}
+                                {ownOptimals && (
+                                    <div className="target-optimals">
+                                        {optimalFields.map(({label, unit, value, set, placeholder}) => (
+                                            <label key={label} className="target-optimal">
+                                                <span className="target-optimal-label">
+                                                    {/* No brackets of our own: welcome.ms is "(in ms)"
+                                                        and welcome.mbps is "(in Mbps)" - the locale
+                                                        writes the parenthetical whole, because where
+                                                        the bracket goes is part of the translation.
+                                                        Adding a pair here read "Ping ((in ms))" in all
+                                                        twenty-three languages. */}
+                                                    {label} <span className="target-optimal-unit">{unit}</span>
+                                                </span>
+                                                {/* input-error beside the dead button: min="0" lets
+                                                    the spinner step to a 0 the save then refuses, and
+                                                    a greyed Update with every other field looking
+                                                    fine names nothing. The pause dialog marks its own
+                                                    "above zero" rule the same way. */}
+                                                <input type="number"
+                                                       className={`dialog-input${optimalAccepted(value) ? "" : " input-error"}`}
+                                                       min="0" placeholder={placeholder || ""}
+                                                       value={value} onChange={(e) => set(e.target.value)}/>
+                                            </label>
+                                        ))}
+                                    </div>
+                                )}
+
                                 {/* Every provider, unlike the run settings
                                     above: a baseline is about what a target
                                     measures rather than how it measures it.
@@ -487,33 +521,6 @@ export const TargetEditor = ({open, onClose, target}) => {
                                                    onChange={(e) => setBaselinePercent(e.target.value)}/>
                                         </label>
                                         <p className="target-baseline-note">{t("targets.baseline_desc")}</p>
-                                    </div>
-                                )}
-
-                                {ownOptimals && (
-                                    <div className="target-optimals">
-                                        {optimalFields.map(({label, unit, value, set, placeholder}) => (
-                                            <label key={label} className="target-optimal">
-                                                <span className="target-optimal-label">
-                                                    {/* No brackets of our own: welcome.ms is "(in ms)"
-                                                        and welcome.mbps is "(in Mbps)" - the locale
-                                                        writes the parenthetical whole, because where
-                                                        the bracket goes is part of the translation.
-                                                        Adding a pair here read "Ping ((in ms))" in all
-                                                        twenty-three languages. */}
-                                                    {label} <span className="target-optimal-unit">{unit}</span>
-                                                </span>
-                                                {/* input-error beside the dead button: min="0" lets
-                                                    the spinner step to a 0 the save then refuses, and
-                                                    a greyed Update with every other field looking
-                                                    fine names nothing. The pause dialog marks its own
-                                                    "above zero" rule the same way. */}
-                                                <input type="number"
-                                                       className={`dialog-input${optimalAccepted(value) ? "" : " input-error"}`}
-                                                       min="0" placeholder={placeholder || ""}
-                                                       value={value} onChange={(e) => set(e.target.value)}/>
-                                            </label>
-                                        ))}
                                     </div>
                                 )}
                             </div>

@@ -752,7 +752,7 @@
     "alerts": "通知と推奨値",
     "own_optimals": "独自の最適値",
     "baseline_alerts": "通常より遅いときに通知",
-    "baseline_percent": "30日間の中央値に対する割合 (%)",
+    "baseline_percent": "割合 (%)",
     "baseline_desc": "テストがターゲット自身の30日間の中央値のこの割合を下回ったときに通知します。",
     "all": "すべての測定先",
     "saved": "測定先を保存しました。",

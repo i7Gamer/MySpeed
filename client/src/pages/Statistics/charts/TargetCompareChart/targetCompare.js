@@ -158,6 +158,51 @@ export const nearestPerDataset = (datasets, x, tolerance) => {
  * own values, colour-indexed by LIST position - a series that skipped a
  * payload-less neighbour must not take that neighbour's colour with it.
  */
+/**
+ * What an overlay chart should draw, and - when there is nothing - which of the
+ * two nothings it is.
+ *
+ * A fetch that FAILED and a range nobody measured in are different findings,
+ * and the chart could not tell them apart. overlaySeries drops a target with no
+ * payload, so a rejected request - a 429 from the statistics limiter the page's
+ * own request now shares, a proxied node timing out, any 500 - emptied the
+ * series list and all three charts printed "No target measured anything in this
+ * range". The table beside them said "Couldn't load", because it keeps the
+ * distinction: `unavailable: stats === null`.
+ *
+ * So it is decided here, once, for both the empty states. Every target null
+ * means the one request they share did not answer; targets that answered with
+ * empty arrays measured nothing, which is a reading.
+ *
+ * `loading` covers statsById being absent altogether, which is the state before
+ * the first answer and after the key goes stale.
+ */
+export const overlayOutcome = (targets, statsById, metric) => {
+    if (statsById === null || statsById === undefined) return {state: "loading", series: []};
+
+    /*
+     * Series with POINTS in them, not merely series.
+     *
+     * A target that measured nothing still answers - with `labels: []` and an
+     * empty array per metric - so overlaySeries keeps an entry for it and the
+     * list is not empty. The chart then drew: three datasets of no points, an
+     * axis with no instants to take its bounds from, and chart.js falling back
+     * to a linear 0..1 scale whose tick formatter reads those as milliseconds.
+     * Five ticks in January 1970, under a heading naming this week.
+     */
+    const series = overlaySeries(targets, statsById, metric)
+        .filter((one) => one.labels.length > 0);
+
+    if (series.length > 0) return {state: "series", series};
+
+    // Only when nothing at all could be loaded. One failed target beside one
+    // that answered still draws, and must not relabel the whole panel.
+    const asked = (targets ?? []).map(({id}) => statsById[id]);
+    const failed = asked.length > 0 && asked.every((stats) => stats === null);
+
+    return {state: failed ? "unavailable" : "empty", series};
+};
+
 export const overlaySeries = (targets, statsById, metric) => targets.flatMap((target, colourIndex) => {
     const stats = statsById?.[target.id];
     const labels = stats?.labels;

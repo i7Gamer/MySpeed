@@ -752,7 +752,7 @@
     "alerts": "通知与建议",
     "own_optimals": "单独的最佳值",
     "baseline_alerts": "低于平常速度时提醒",
-    "baseline_percent": "30 天中位数的占比 (%)",
+    "baseline_percent": "比例 (%)",
     "baseline_desc": "当测试低于该目标自身 30 天中位数的此占比时发出提醒。",
     "all": "全部测速点",
     "saved": "测速点已保存。",

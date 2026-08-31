@@ -752,7 +752,7 @@
     "alerts": "Benachrichtigungen & Empfehlungen",
     "own_optimals": "Eigene optimale Werte",
     "baseline_alerts": "Warnen bei ungewohnt langsamem Test",
-    "baseline_percent": "Anteil des 30-Tage-Medians (%)",
+    "baseline_percent": "Anteil (%)",
     "baseline_desc": "Warnt, wenn ein Test unter diesen Anteil des eigenen 30-Tage-Medians des Ziels fällt.",
     "all": "Alle Ziele",
     "saved": "Das Ziel wurde gespeichert.",

@@ -752,7 +752,7 @@
     "alerts": "Powiadomienia i rekomendacje",
     "own_optimals": "Własne optymalne wartości",
     "baseline_alerts": "Ostrzegaj poniżej zwykłej prędkości",
-    "baseline_percent": "Udział mediany z 30 dni (%)",
+    "baseline_percent": "Udział (%)",
     "baseline_desc": "Ostrzega, gdy test spadnie poniżej tego udziału mediany z 30 dni danego celu.",
     "all": "Wszystkie cele",
     "saved": "Cel został zapisany.",

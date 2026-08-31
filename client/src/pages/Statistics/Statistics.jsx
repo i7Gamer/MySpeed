@@ -280,7 +280,12 @@ export const Statistics = () => {
 
     // The dates both wordings of the note fill in - the same pair either way,
     // since what differs between them is only whether the window held anything.
-    const comparedWindow = previousWindow && {
+    // Optional on the way in, like everything else that reads this payload
+    // above the guard that settles it. `previousWindow &&` answers for the
+    // object and not for what is inside it, and a previous window arriving
+    // without its dateRange - an older node, a shape nobody has shipped yet -
+    // would throw here during render rather than draw one sentence less.
+    const comparedWindow = previousWindow?.dateRange && {
         from: formatDay(previousWindow.dateRange.from),
         to: formatDay(previousWindow.dateRange.to)
     };
@@ -604,9 +609,17 @@ export const Statistics = () => {
     // statistics being fetched, and its controls - the range being loaded, and
     // starting a test - are exactly what someone waiting might want to reach.
     /* Stated once for the whole page, so every delta below can be a bare arrow
-       and number instead of each repeating the window. A window cut at now's own
-       wall clock - the range is still running - says so, or its dates would
-       claim whole days it only partly covers.
+       and number instead of each repeating the window.
+
+       One wording, and the dates are named as whole days even where the server
+       cut the window at now's own wall clock. There were two, and the second
+       said "up to the same time of day" - it went with the free-form comparison
+       window it was written for. The cut is what MAKES the two windows
+       comparable now, both covering the same elapsed span of the same number of
+       days, so there is no asymmetry left for a caveat to disclose; the
+       selected range's own heading has never carried one either. The server
+       still ships `dateRange.partial` and nothing reads it - see
+       expandedPanes.test.js, which pins the single wording deliberately.
 
        Built for any bounded range, not only when there is something to compare
        against: the control that CHOOSES the window lives in it, and gating that

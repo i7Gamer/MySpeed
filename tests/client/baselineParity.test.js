@@ -6,6 +6,12 @@ import {
 import { baselineOrNull, targetBody } from "@/common/components/TargetsDialog/targetBody.js";
 import { baselinePercentProblem, BASELINE_PERCENT_MAX, BASELINE_PERCENT_MIN }
     from "../../server/util/baselineAlert.js";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { readSource } from "../helpers/source.js";
+
+const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 
 /**
  * The baseline percentage, held to the same discipline the run-shape fields
@@ -121,5 +127,55 @@ describe("the baseline field on every provider", () => {
             assert.equal(targetBody(editorState({provider, endpoint: "nas.lan",
                 baselineAlerts: true, baselinePercent: "70"})).baselinePercent, 70,
             `${provider} dropped its baseline`);
+    });
+});
+
+/**
+ * Where the two conditional blocks appear, which is under the toggles that
+ * govern them.
+ *
+ * The editor draws three switches in a row - alerts, own optimal values,
+ * baseline - and then the fields each switch reveals. Written in that order,
+ * the optimal fields appeared after the baseline's, two switches below the one
+ * that had just been turned on: an operator pressing "Own optimal values"
+ * watched three inputs arrive under a different heading, with the baseline's
+ * own field in between. The block that opens is the one directly beneath the
+ * switch that opened it.
+ */
+describe("the fields a switch reveals", () => {
+    const editor = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+
+    const at = (marker) => {
+        const index = editor.indexOf(marker);
+        assert.notEqual(index, -1, `${marker} is no longer in the editor; re-anchor this`);
+        return index;
+    };
+
+    it("puts the optimal fields under the switch that reveals them", () => {
+        assert.ok(at("{ownOptimals && (") > at('<h3>{t("targets.own_optimals")}</h3>'),
+            "the optimal fields are drawn above their own switch");
+        assert.ok(at("{ownOptimals && (") < at('<h3>{t("targets.baseline_alerts")}</h3>'),
+            "the optimal fields are drawn past the baseline switch, under the wrong heading");
+    });
+
+    it("puts the baseline field under the switch that reveals it", () => {
+        assert.ok(at("{baselineAlerts && (") > at('<h3>{t("targets.baseline_alerts")}</h3>'),
+            "the baseline field is drawn above its own switch");
+    });
+
+    /**
+     * And its label fits the column it is in. At "Share of the 30-day median
+     * (%)" it was cut to "Share of the 30-day medi..." in a 12rem field - and
+     * the sentence beside it says what the share is of, so the label only has
+     * to name the field.
+     */
+    it("labels the baseline field in words its column can hold", () => {
+        const english = JSON.parse(fs.readFileSync(
+            path.join(ROOT, "client", "public", "assets", "locales", "en.json"), "utf8"));
+
+        assert.ok(english.targets.baseline_percent.length <= 12,
+            `"${english.targets.baseline_percent}" is too long for the field it labels`);
+        assert.match(english.targets.baseline_desc, /median/,
+            "the sentence beside the field no longer says what the share is of");
     });
 });

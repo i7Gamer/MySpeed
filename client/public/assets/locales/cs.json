@@ -752,7 +752,7 @@
     "alerts": "Upozornění a doporučení",
     "own_optimals": "Vlastní optimální hodnoty",
     "baseline_alerts": "Upozornit pod obvyklou rychlostí",
-    "baseline_percent": "Podíl 30denního mediánu (%)",
+    "baseline_percent": "Podíl (%)",
     "baseline_desc": "Upozorní, když test klesne pod tento podíl 30denního mediánu daného cíle.",
     "all": "Všechny cíle",
     "saved": "Cíl byl uložen.",

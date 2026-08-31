@@ -132,3 +132,39 @@ describe("what the pause costs", () => {
             + "on an every-minute schedule");
     });
 });
+
+/**
+ * The settle measures elapsed time on a clock that only goes forwards.
+ *
+ * `Date.now()` is the wall clock, and the wall clock steps: an NTP correction,
+ * a VM resuming from suspend, an operator fixing the timezone. Stepped
+ * BACKWARDS mid-settle, a deadline computed from it recedes, and the loop
+ * keeps sleeping for the length of the step plus the ten seconds it was asked
+ * for. The round's latch is held throughout, so every scheduled tick in that
+ * span logs "still running - skipping" and every manual run answers 409.
+ *
+ * The sleeps themselves already run on libuv's monotonic timer; it was only
+ * the deadline that could move. Measured before the fix: a three second
+ * backwards step turned a 300ms settle into 3301ms.
+ */
+describe("the clock the settle counts on", () => {
+    it("is not moved by a wall clock that steps backwards", async () => {
+        const real = Date.now;
+        let skew = 0;
+        Date.now = () => real() + skew;
+
+        const started = real();
+        try {
+            const settling = settleLine(300, {stopped: () => false, slice: 50});
+            setTimeout(() => { skew = -3000; }, 100).unref();
+            await settling;
+        } finally {
+            Date.now = real;
+        }
+
+        const took = real() - started;
+        assert.ok(took < 1000,
+            `a three second backwards clock step stretched a 300ms settle to ${took}ms, `
+            + "holding the round's latch for the whole of it");
+    });
+});

@@ -752,7 +752,7 @@
     "alerts": "Advarsler & anbefalinger",
     "own_optimals": "Egne optimale værdier",
     "baseline_alerts": "Advarsel under den normale hastighed",
-    "baseline_percent": "Andel af 30-dages medianen (%)",
+    "baseline_percent": "Andel (%)",
     "baseline_desc": "Advarer, når en test falder under denne andel af målets egen 30-dages median.",
     "all": "Alle mål",
     "saved": "Målet er blevet gemt.",
