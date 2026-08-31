@@ -748,3 +748,42 @@ describe("a typed server id", () => {
         assert.match(field, /serverIdAccepted \? "" : " input-error"/);
     });
 });
+
+/**
+ * Every field in the editor says its own name.
+ *
+ * The heading beside each one is the field's name, but nothing tied the two
+ * together - these are `<div><h3>Name</h3></div><input>`, with no label and no
+ * htmlFor - so a reader tabbing straight onto the input heard "edit text" and
+ * whatever the placeholder said. Four of them: the target's name, the server
+ * select, the typed server id and the endpoint.
+ *
+ * Said with aria-label from the key the heading already renders, rather than by
+ * introducing ids and rewriting the markup: the accessible name then cannot
+ * drift from the visible one, and it costs no new strings.
+ */
+describe("the target editor's fields", () => {
+    const editor = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+
+    it("names the target name field", () => {
+        assert.match(editor, /aria-label=\{t\("targets\.name"\)\}/,
+            "the name field is announced as an unlabelled text box");
+    });
+
+    it("names the server select", () => {
+        // Asserted on the file rather than on the tag: a <select>'s opening tag
+        // carries `onChange={(e) => …}`, and any scan bounded by the first `>`
+        // stops inside that arrow.
+        assert.match(editor, /aria-label=\{t\("dialog\.provider\.server"\)\}/);
+    });
+
+    it("names the typed server id", () => {
+        assert.match(editor, /aria-label=\{t\("dialog\.provider\.server_id"\)\}/);
+    });
+
+    it("names the endpoint by the field it is standing in for", () => {
+        // Two names for one field, the way its own heading already chooses:
+        // a LibreSpeed backend is a URL and an iperf3 server is a host.
+        assert.match(editor, /aria-label=\{t\(isIperf \? "dialog\.provider\.iperf_host"/);
+    });
+});

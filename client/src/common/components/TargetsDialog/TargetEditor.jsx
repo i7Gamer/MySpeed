@@ -290,7 +290,14 @@ export const TargetEditor = ({open, onClose, target}) => {
                                     every field looking fine names nothing, and
                                     the name is the one field somebody can
                                     empty by hand. */}
+                                {/* The heading beside it is the field's name,
+                                    but nothing ties the two together - no
+                                    label, no htmlFor - so a reader tabbing
+                                    straight to the input heard "edit text" and
+                                    the placeholder. Said on the input instead,
+                                    from the key the heading already renders. */}
                                 <input type="text"
+                                       aria-label={t("targets.name")}
                                        className={`dialog-input provider-input${name.trim() === "" ? " input-error" : ""}`}
                                        placeholder={t("targets.name_placeholder")}
                                        value={name} maxLength={64}
@@ -322,6 +329,7 @@ export const TargetEditor = ({open, onClose, target}) => {
                                         </div>
                                         <span className="select-wrap provider-input-wrap">
                                             <select className="dialog-input select-field provider-input" value={serverId}
+                                                    aria-label={t("dialog.provider.server")}
                                                     onChange={(e) => handleServerIdChange(e.target.value)}>
                                                 <option value="none">{t("dialog.provider.choose_automatically")}</option>
                                                 {provider === "ookla" && Object.keys(ooklaServers).map((current, index) => (
@@ -355,6 +363,7 @@ export const TargetEditor = ({open, onClose, target}) => {
                                             endpoint and the optimals mark themselves:
                                             the door takes digits and nothing else. */}
                                         <input type="text"
+                                               aria-label={t("dialog.provider.server_id")}
                                                className={`dialog-input provider-input${serverIdAccepted ? "" : " input-error"}`}
                                                placeholder={t("dialog.provider.server_id_placeholder")}
                                                value={serverId === "none" ? "" : serverId}
@@ -378,6 +387,8 @@ export const TargetEditor = ({open, onClose, target}) => {
                                             would silently drop, and a greyed Update with every
                                             field looking fine names nothing. */}
                                         <input type="text"
+                                               aria-label={t(isIperf ? "dialog.provider.iperf_host"
+                                                   : "dialog.provider.custom_url")}
                                                className={`dialog-input provider-input${sentinelTyped || badEndpoint ? " input-error" : ""}`}
                                                placeholder={isIperf ? IPERF_HOST_PLACEHOLDER
                                                    : CUSTOM_BACKEND_PLACEHOLDER}
