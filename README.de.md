@@ -28,6 +28,7 @@ MySpeed ist eine Speedtest-Analyse-Software, welche die Geschwindigkeit deines I
 - 🔥 Unterstützung für Prometheus und Grafana
 - 🗳️ Wähle zwischen Ookla, LibreSpeed, Cloudflare und deinem eigenen iperf3-Server
 - 🎯 Miss mehrere Ziele in einem Durchlauf - das Internet und dein eigenes LAN nebeneinander
+- 📉 Lass dich benachrichtigen, wenn ein Ziel unter das fällt, was es sonst liefert - gemessen am eigenen gleitenden Median
 ### ⬇️ Installation
 
 #### 🐳 Docker (empfohlen)
@@ -234,9 +235,13 @@ Passwort-Manager-Export.
 
 <img src=".github/screenshots/homepage-statistics.png" alt="Statistik">
 
-#### Serverauswahl
+#### Zielvergleich
 
-<img src=".github/screenshots/server-selection.png" alt="Serverauswahl">
+<img src=".github/screenshots/target-comparison.png" alt="Zielvergleich">
+
+#### Testziele
+
+<img src=".github/screenshots/targets.png" alt="Testziele">
 
 #### Seite während eines Speedtests
 

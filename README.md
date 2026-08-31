@@ -28,6 +28,7 @@ MySpeed is a speed test analysis software that records your internet speed over 
 - 🔥 Support for Prometheus and Grafana
 - 🗳️ Choose between Ookla, LibreSpeed, Cloudflare and your own iperf3 server
 - 🎯 Measure against several targets in one round - the internet and your own LAN, side by side
+- 📉 Get alerted when a target falls below what it usually delivers, measured against its own rolling median
 
 ### ⬇️ Installation
 
@@ -263,9 +264,13 @@ password manager export.
 
 <img src=".github/screenshots/homepage-statistics.png" alt="Statistics">
 
-#### Server Selection
+#### Target Comparison
 
-<img src=".github/screenshots/server-selection.png" alt="Server Selection">
+<img src=".github/screenshots/target-comparison.png" alt="Target Comparison">
+
+#### Test Targets
+
+<img src=".github/screenshots/targets.png" alt="Test Targets">
 
 #### Page During a Speed Test
 
