@@ -80,3 +80,40 @@ export const targetBody = ({name, provider, serverId, endpoint, alerts, ownOptim
         optimalUpload: optimalOrNull(ownOptimals, optimalUpload)
     };
 };
+
+// The first target wears the bare name, so the numbering the next one takes
+// starts at two - "Ookla" and "Ookla 2", not "Ookla 1".
+const NAME_SUFFIX_START = 2;
+
+/**
+ * A name a new target can be saved under straight away: the provider's own,
+ * numbered past whatever already wears it.
+ *
+ * The editor asked for a name and offered none, so the button that adds the
+ * target was dead the moment the dialog opened. The provider's name is what
+ * nearly every operator types anyway - it just has to be free, because the
+ * server refuses a name another target already wears, and a dialog that opens
+ * pre-filled with a value the door rejects is a worse welcome than a dead
+ * button.
+ *
+ * Judged exactly as nameTaken judges it - trimmed, and case-sensitively. A
+ * looser rule here fails in the harmful direction: a name this thinks is free
+ * and the server refuses. The first free number is taken rather than the next
+ * one up, so deleting "Ookla 2" hands its name back to the target after it.
+ *
+ * @returns {string} the free name, or "" when there is nothing to build one
+ *                   from - which leaves the field empty and the button honest
+ */
+export const uniqueTargetName = (base, targets) => {
+    const wanted = typeof base === "string" ? base.trim() : "";
+    if (wanted === "") return "";
+
+    const taken = new Set((Array.isArray(targets) ? targets : [])
+        .map((target) => typeof target?.name === "string" ? target.name.trim() : null)
+        .filter((name) => name !== null));
+
+    if (!taken.has(wanted)) return wanted;
+
+    for (let suffix = NAME_SUFFIX_START; ; suffix++)
+        if (!taken.has(`${wanted} ${suffix}`)) return `${wanted} ${suffix}`;
+};

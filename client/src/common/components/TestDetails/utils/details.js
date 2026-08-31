@@ -99,6 +99,31 @@ export const providerName = (provider) =>
     Object.hasOwn(PROVIDER_NAMES, provider) ? PROVIDER_NAMES[provider] : null;
 
 /**
+ * The provider to print beneath a target's own name, or null when the name
+ * has already said it.
+ *
+ * The Target fact demotes the provider to a sub-line, which on the instance
+ * the wizard sets up says one word twice: the first target is named after the
+ * provider it runs. "Ookla" over "Ookla" is not a second fact - it is the same
+ * one, taking a line and inviting the reader to look for a difference that is
+ * not there.
+ *
+ * Compared trimmed and case-insensitively, because the operator types one side
+ * and the provider spells the other: "ookla" and "Ookla" are the same claim.
+ * Only the whole name, though - "Ookla backup" is a target somebody named
+ * deliberately, and the provider under it is the fact that says which of
+ * several backups it is.
+ *
+ * @returns {string|null}
+ */
+export const providerBeside = (targetName, provider) => {
+    const name = providerName(provider);
+    if (name === null) return null;
+
+    return String(targetName ?? "").trim().toLowerCase() === name.toLowerCase() ? null : name;
+};
+
+/**
  * The change against the test before this one.
  *
  * @returns {{difference: number, direction: "up"|"down"|"same"}|null}
