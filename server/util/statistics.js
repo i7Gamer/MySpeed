@@ -377,8 +377,24 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
 
     sorted.forEach(entry => {
         const offset = new Date(entry.created).getTime() - from.getTime();
+        /*
+         * Clamped at the top rather than dropped, and that is load-bearing.
+         *
+         * The rows are fetched with an inclusive BETWEEN, so an entry created
+         * on `to` itself does arrive here - and its offset is the whole span,
+         * which divides to exactly targetPoints: one past the last bucket. It
+         * belongs in that bucket rather than nowhere, so removing this to
+         * "wake up" the bounds check below would silently drop the final
+         * reading of every range.
+         */
         const index = Math.min(Math.floor(offset / bucketSize), targetPoints - 1);
-        if (index < 0 || index >= targetPoints) return;
+
+        // Which leaves only the floor to check: the clamp already guarantees
+        // the ceiling, so asking for it again was dead. Written as `>= 0`
+        // rather than `< 0` so a NaN index - an entry whose `created` does not
+        // parse - is refused too, where both halves of the old test let it
+        // through to a buckets[NaN] that has no entries to push onto.
+        if (!(index >= 0)) return;
 
         buckets[index].entries.push(entry);
         if (isFailedTest(entry)) buckets[index].errors.push(entry.error);
