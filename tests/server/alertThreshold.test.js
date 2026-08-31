@@ -207,6 +207,85 @@ describe("breachesThreshold", () => {
     });
 });
 
+/**
+ * The baseline is a third answer to the question this module's docstring
+ * refuses twice: what a result should be judged against. The fixed limits are
+ * an integration's own, the optimal values are deliberately not inherited into
+ * them, and the baseline is the target's own rolling median - decided in
+ * util/baselineAlert.js, where the rows are, and carried here on the payload
+ * already judged.
+ *
+ * It is an additional independent reason to notify, not a replacement, so the
+ * arm has to count as an arm. `breachesThreshold` ends `return !armed`, whose
+ * whole point is that a gate switched on with no usable limit fires on
+ * everything rather than going permanently silent - and an operator who wants
+ * baseline alerts *only* switches the gate on and leaves the three limits
+ * blank, which is exactly that shape.
+ */
+describe("a baseline judged before the payload arrived", () => {
+    const armed = (overrides = {}) => result({baselineArmed: true, baselineBreached: false, ...overrides});
+
+    /**
+     * The bug this exists to prevent, and the reason it is worth a case of its
+     * own: without the arm, a baseline-only setup reads as "no limit anywhere",
+     * falls through to `!armed`, and notifies on every test - hourly, forever.
+     * Fail-open by design, so nothing anywhere says it is happening.
+     */
+    it("suppresses a quiet baseline that is the only thing armed", () => {
+        assert.equal(breachesThreshold(armed(), {}), false);
+        assert.equal(breachesThreshold(armed(), {[ALERT_ONLY]: true}), false);
+    });
+
+    it("fires when the baseline was breached", () => {
+        assert.equal(breachesThreshold(armed({baselineBreached: true}), {}), true);
+    });
+
+    // Either reason is enough: the fixed limits still decide on their own.
+    it("still fires on a fixed limit while the baseline is quiet", () => {
+        assert.equal(breachesThreshold(armed({download: 40}), {alert_download_below: 100}), true);
+        assert.equal(breachesThreshold(armed({download: 400}), {alert_download_below: 100}), false);
+    });
+
+    it("fires on a breached baseline while every fixed limit is met", () => {
+        assert.equal(breachesThreshold(armed({baselineBreached: true}), {alert_download_below: 100}), true);
+    });
+
+    /**
+     * Backward compatibility, exactly. A payload from a target with no baseline
+     * carries null for both keys, and one from a node older than the feature
+     * carries neither - `armed` is untouched in both cases and this behaves as
+     * it did, line for line.
+     */
+    it("is untouched by a payload that carries no baseline", () => {
+        assert.equal(breachesThreshold(result(), {}), true, "the fail-open case changed");
+        assert.equal(breachesThreshold(result({baselineArmed: null, baselineBreached: null}), {}), true);
+        assert.equal(breachesThreshold(result({baselineArmed: false, baselineBreached: false}), {}), true);
+
+        assert.equal(breachesThreshold(result({baselineArmed: null}),
+            {alert_download_below: 100}), false);
+        assert.equal(breachesThreshold(result({baselineArmed: false, download: 40}),
+            {alert_download_below: 100}), true);
+    });
+
+    /**
+     * Strictly true, the way the alerts flag and the alert_only switch are
+     * read. The payload is JSON a node may have written, and a value that
+     * arrived as the string "false" must not read as an armed baseline - which
+     * here would mean silencing a gate that has nothing else armed.
+     */
+    it("reads only an explicit true as an armed baseline", () => {
+        assert.equal(breachesThreshold(result({baselineArmed: "true", baselineBreached: false}), {}), true);
+        assert.equal(breachesThreshold(result({baselineArmed: 1, baselineBreached: false}), {}), true);
+    });
+
+    // And only an explicit true as a breach, for the same reason in the other
+    // direction: a truthy string must not raise an alert nobody's line earned.
+    it("reads only an explicit true as a breach", () => {
+        assert.equal(breachesThreshold(armed({baselineBreached: "true"}), {}), false);
+        assert.equal(breachesThreshold(armed({baselineBreached: null}), {}), false);
+    });
+});
+
 describe("ALERT_METRICS", () => {
     it("names a payload key and a field for each metric it judges", () => {
         assert.deepEqual(ALERT_METRICS.map((metric) => metric.key), ["ping", "download", "upload"]);

@@ -3,6 +3,7 @@ import { Op } from 'sequelize';
 import { buildStatistics, STATISTICS_COLUMNS } from '../util/statistics.js';
 import { previousRange, truncateToElapsed } from '../util/dateRange.js';
 import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER, impossibleMeasurement } from '../util/testOutcome.js';
+import { BASELINE_METRICS } from '../util/baselineAlert.js';
 import { getValue } from './config.js';
 import * as targetsController from './targets.js';
 import db from '../config/database.js';
@@ -238,6 +239,49 @@ export const listSuccessful = async (limit, targetId = undefined) => tests.findA
         : {[Op.and]: [SUCCESSFUL_TEST_FILTER, {targetId}]},
     order: LIST_ORDER,
     limit
+});
+
+/**
+ * The only columns a baseline window is read for.
+ *
+ * One list, defined where the median reads it, so the query and the median
+ * cannot drift: a column added to one and not the other arrives as undefined,
+ * which is exactly the silence STATISTICS_COLUMNS was written against
+ * (util/statistics.js:16-19).
+ */
+export const BASELINE_ROW_COLUMNS = BASELINE_METRICS;
+
+/**
+ * One target's successful rows since the given moment, newest first.
+ *
+ * The rolling window the baseline alert takes its median over. Newest first
+ * because the first row it answers is also the previous test - the one the
+ * storm rule compares against - so the whole verdict costs one query.
+ *
+ * Narrow on purpose, all three ways. Only when a target actually set a
+ * percentage is it asked at all; only that target's rows are read; and only the
+ * two speed columns come back, where a full row carries a server name, a
+ * hostname, an ISP and a result URL that no part of this looks at. The default
+ * hourly cron puts about 720 rows in a window and the installer's minutely one
+ * about 43,000 - two doubles apiece, which is an order of magnitude below what
+ * the statistics endpoint already holds (util/statistics.js:8-19).
+ *
+ * The access path is the covering index speedtests_target_created, created by
+ * 0013-add-targets.js and re-added for already-upgraded instances by 0014 - the
+ * same walk getLatest and watchedFailureStands already lean on.
+ *
+ * `created` is compared as ISO-8601 UTC strings, the way listFilter and
+ * findInRange do it: every write guarantees that format, so a lexicographic
+ * comparison is chronological on every backend the project supports. Both
+ * halves are joined explicitly, for the reason listFilter is - the shared
+ * filter is keyed by Op.or, and a second Op-keyed clause written into the same
+ * object would replace it.
+ */
+export const listForBaseline = async (targetId, since) => tests.findAll({
+    where: {[Op.and]: [SUCCESSFUL_TEST_FILTER, {targetId}, {created: {[Op.gte]: since.toISOString()}}]},
+    attributes: BASELINE_ROW_COLUMNS,
+    order: LIST_ORDER,
+    raw: true
 });
 
 /**

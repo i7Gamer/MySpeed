@@ -4,6 +4,7 @@ import {
     FAILED_VARIABLES, FINISHED_VARIABLES, failedPayload, finishedPayload
 } from "../../server/util/notificationPayload.js";
 import { DATE_VARIABLES, replaceVariables } from "../../server/util/helpers.js";
+import { BASELINE_ARMED, BASELINE_BREACHED } from "../../server/util/alertThreshold.js";
 
 /**
  * What an integration is told about a test.
@@ -117,6 +118,65 @@ describe("finishedPayload", () => {
         assert.equal(finishedPayload({...RECORD, alerts: true}).alerts, true);
         assert.equal(failedPayload({error: "boom", alerts: false}).alerts, false);
         assert.equal(finishedPayload(RECORD).alerts, null);
+    });
+});
+
+/**
+ * And what this target's own line usually delivers, beside what it just did.
+ *
+ * The verdict is decided in util/baselineAlert.js before the row is written and
+ * travels here for the same reason `alerts` and `primary` do: the gate that
+ * reads it touches no database. Adding the names to FINISHED_KEYS is the whole
+ * of the work - FINISHED_VARIABLES is derived from it, and that is the list the
+ * integration dialog offers as the chips a template may use.
+ */
+describe("the baseline a member was judged against", () => {
+    const JUDGED = {...RECORD, baselineArmed: true, baselineBreached: true,
+        baselineDownload: 500, baselineUpload: 200};
+
+    it("carries the verdict and the yardstick it was reached with", () => {
+        const payload = finishedPayload(JUDGED);
+
+        assert.equal(payload.baselineArmed, true);
+        assert.equal(payload.baselineBreached, true);
+        assert.equal(payload.baselineDownload, 500);
+        assert.equal(payload.baselineUpload, 200);
+    });
+
+    /**
+     * Null on every target that set no baseline, and on every payload a node
+     * older than the feature produced. The gate reads either as "no baseline",
+     * the way it reads an absent `alerts` as alerting.
+     */
+    it("carries null for a member that has none", () => {
+        const payload = finishedPayload(RECORD);
+
+        for (const key of ["baselineArmed", "baselineBreached", "baselineDownload", "baselineUpload"])
+            assert.equal(payload[key], null, `${key} is not null`);
+    });
+
+    // The names the gate looks for are the names the payload carries. Taken
+    // from the module that reads them as a decision, so a rename cannot leave a
+    // chip in the dialog that substitutes nothing.
+    it("names them the way the alert gate reads them", () => {
+        assert.ok(FINISHED_VARIABLES.includes(BASELINE_ARMED));
+        assert.ok(FINISHED_VARIABLES.includes(BASELINE_BREACHED));
+    });
+
+    /**
+     * Deliberately not on a failed test. There is no measurement to compare, so
+     * every one of the four would be null in a message that already says the
+     * run failed - and a failure notifies unconditionally, so an armed baseline
+     * there would decide nothing.
+     */
+    it("is offered on a finished test and not on a failed one", () => {
+        for (const key of ["baselineArmed", "baselineBreached", "baselineDownload", "baselineUpload"]) {
+            assert.ok(FINISHED_VARIABLES.includes(key), `${key} is not offered to a finished message`);
+            assert.equal(FAILED_VARIABLES.includes(key), false,
+                `${key} is offered to a failed message, which carries no measurement`);
+        }
+
+        assert.equal("baselineArmed" in failedPayload(JUDGED), false);
     });
 });
 

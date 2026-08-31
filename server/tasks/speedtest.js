@@ -12,6 +12,7 @@ import { failedPayload, finishedPayload } from '../util/notificationPayload.js';
 import { FAILED_TEST, impossibleMeasurement, isFailedTest, measuredPing, usableFigure }
     from '../util/testOutcome.js';
 import { isRateLimitMessage } from '../util/providers/cliOutput.js';
+import { baselineOf, baselineVerdict, baselineWindowStart } from '../util/baselineAlert.js';
 import { backoffRemainingMs, clearBackoff, isBackingOff, recordRateLimit } from '../util/rateLimitBackoff.js';
 import * as targetsController from '../controller/targets.js';
 import * as pauseController from '../controller/pause.js';
@@ -943,6 +944,39 @@ export const isPrimaryMember = async (target) => {
 export const wasPrimaryMember = async (target) => await isPrimaryMember(target)
     .catch(() => lastPlacement.get(target.id) ?? true);
 
+/**
+ * What this member's own line usually delivers, and whether this run fell below
+ * it - as the four keys the event payload carries.
+ *
+ * Nothing at all for a target that set no percentage, which is every target
+ * until somebody sets one: finishedPayload fills an absent key with null, and
+ * the gate reads null as "no baseline". So the common case costs one property
+ * read and no query.
+ *
+ * The window's first row is this target's previous test - listForBaseline
+ * answers newest first - which is what the edge rule compares against, so the
+ * whole verdict is one query. It has to be asked *before* the new row is
+ * written, or that row is its own previous and the edge can never be crossed.
+ *
+ * Exported for its test, the way isPrimaryMember is: the alternative is a real
+ * spawned CLI run, and what is being asked here is one member's verdict over a
+ * history that is already in the table.
+ *
+ * @param target    the round member, as stored
+ * @param measured  the run just parsed, as {download, upload}
+ */
+export const baselineKeys = async (target, measured) => {
+    if (target?.baselinePercent == null) return {};
+
+    const windowRows = await tests.listForBaseline(target.id, baselineWindowStart());
+    const [previous] = windowRows;
+
+    const {armed, breached, baselineDownload, baselineUpload} =
+        baselineVerdict(measured, previous, baselineOf(windowRows), target.baselinePercent);
+
+    return {baselineArmed: armed, baselineBreached: breached, baselineDownload, baselineUpload};
+};
+
 const executeTarget = async (target, type, retried = false) => {
     const mode = target.provider === "preview" ? "preview" : target.provider;
 
@@ -1014,6 +1048,25 @@ const executeTarget = async (target, type, retried = false) => {
         if (mode !== "preview") clearBackoff(mode);
 
         /*
+         * Judged here, one statement before the row goes in, and the ordering
+         * is load-bearing: the window is read newest first, so a verdict
+         * reached after tests.create finds this very run at the head of it -
+         * the test becomes its own previous, the edge the storm rule fires on
+         * is never crossed, and the feature is silent with nothing saying so.
+         *
+         * Degraded rather than thrown, the reasoning wasPrimaryMember states
+         * verbatim: this sits inside a try whose catch measures the whole
+         * member again and writes a second row. A database that could not
+         * answer a question about the median would otherwise turn a perfectly
+         * good measurement into a recorded failure and a failure notification -
+         * the exact escape #875's guard above is careful not to open.
+         */
+        const baseline = await baselineKeys(target, {download, upload}).catch((err) => {
+            console.error(`Could not judge ${memberName(target)} against its baseline: ${toErrorMessage(err)}`);
+            return {};
+        });
+
+        /*
          * The nullable figures ask a different question and get a different
          * answer: null already means "nobody measured this", so a negative one
          * has an honest home to go to. Failing the whole run over a jitter of
@@ -1046,6 +1099,12 @@ const executeTarget = async (target, type, retried = false) => {
             // under the raw mapping, and the gate reads only `false` as opted
             // out - absent means an older node, whose members all alert.
             alerts: Boolean(target.alerts),
+            // Whether this member's own line is being watched against its
+            // rolling median and whether this run crossed under it, judged
+            // above while the row this test wrote was not yet in the window.
+            // Absent entirely for a target with no baseline, which pick()
+            // fills with null and the gate reads as "no baseline".
+            ...baseline,
             // Degraded rather than thrown, and degraded to the last answer
             // this member got rather than to a claim - see wasPrimaryMember.
             primary: await wasPrimaryMember(target)})).catch(err =>

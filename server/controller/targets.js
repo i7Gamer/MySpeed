@@ -4,6 +4,7 @@ import { REGISTRY, IPERF_MAX_BITRATE_MBPS, IPERF_MAX_DURATION_SECONDS, IPERF_MAX
     IPERF_MIN_BITRATE_MBPS, IPERF_MIN_DURATION_SECONDS, IPERF_MIN_STREAMS, IPERF_UDP_STREAMS }
     from '../util/providers/registry.js';
 import { ALLOWED_PROTOCOLS } from '../util/safeUrl.js';
+import { baselinePercentProblem } from '../util/baselineAlert.js';
 
 /**
  * The named provider+server pairings the round tests, and the judgements
@@ -287,7 +288,11 @@ export const targetProblem = (target) => {
         ?? optimalProblem(target.optimalPing, "ping")
         ?? optimalProblem(target.optimalDownload, "download")
         ?? optimalProblem(target.optimalUpload, "upload")
-        ?? iperfTuningProblem(target);
+        ?? iperfTuningProblem(target)
+        // Judged for every provider, unlike the iperf3 tuning above: a rolling
+        // median of a target's own successful runs is a fact about the line,
+        // and every provider measures one.
+        ?? baselinePercentProblem(target.baselinePercent);
 };
 
 /**
@@ -588,6 +593,7 @@ export const create = async (target) => await targets.create({
     iperfStreams: target.iperfStreams ?? null,
     iperfUdp: target.iperfUdp ?? false,
     iperfBitrate: target.iperfBitrate ?? null,
+    baselinePercent: target.baselinePercent ?? null,
     sortOrder: target.sortOrder ?? await nextSortOrder(),
     created: new Date().toISOString()
 });

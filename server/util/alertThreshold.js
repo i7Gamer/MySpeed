@@ -18,12 +18,35 @@
  * chose, so "the user never set a target" is indistinguishable from "the user
  * picked 100 Mbit" - and inheriting them would silently re-arm every
  * integration whenever someone edited an unrelated screen.
+ *
+ * A target's own baseline is the third answer to that same question, and the
+ * one that needs nothing chosen but a percentage: the yardstick is the rolling
+ * median of the target's own successful runs, so each line is judged against
+ * itself. It is decided in util/baselineAlert.js, where the rows are, and
+ * reaches this function on the payload already judged - the same trick `alerts`
+ * and `primary` use, and the only one available to a gate that touches no
+ * database.
  */
 
 import { FAILED_TEST, UNMEASURED_LATENCY } from './testOutcome.js';
 
 /** The switch that turns the whole gate on, off by default and for every existing row. */
 export const ALERT_ONLY = "alert_only";
+
+/**
+ * The two payload keys a target's own baseline verdict arrives on.
+ *
+ * Named here rather than at the module that computes them, because this is the
+ * only place they are read as a decision - and notificationPayload.js takes the
+ * names from here rather than spelling them again, so a key advertised to a
+ * message template cannot drift from the key this gate looks for.
+ *
+ * Both are null on a target that set no baseline, and absent from any payload a
+ * node older than the feature produced. Either reads as "no baseline", which is
+ * how every existing instance keeps behaving exactly as it did.
+ */
+export const BASELINE_ARMED = "baselineArmed";
+export const BASELINE_BREACHED = "baselineBreached";
 
 /**
  * The placeholder a failed test stores in every numeric column. It is not a
@@ -134,6 +157,29 @@ export const wantsOnlyBreaches = (data) => data?.[ALERT_ONLY] === true;
  */
 export const breachesThreshold = (payload, data) => {
     let armed = false;
+
+    /*
+     * The target's own baseline, judged in util/baselineAlert.js before the row
+     * was written and carried here already decided - the rows its median is
+     * taken over are the one thing this function would need a database for.
+     *
+     * It arms the gate as well as breaching it, and that is the whole of why
+     * this block is not an `||` at the end. An operator who wants baseline
+     * alerts *only* switches the gate on and leaves the three limits blank,
+     * which without this line is the "armed with no usable limit" shape the
+     * `return !armed` below deliberately fires on - so the setup that asks for
+     * the fewest notifications would have produced one per test, hourly,
+     * forever.
+     *
+     * Strictly true on both, the way the alerts flag and the switch above are
+     * read: the payload is JSON a node may have written, and a string "false"
+     * must not silence a gate with nothing else armed.
+     */
+    if (payload?.[BASELINE_ARMED] === true) {
+        armed = true;
+
+        if (payload[BASELINE_BREACHED] === true) return true;
+    }
 
     for (const metric of ALERT_METRICS) {
         const limit = limitOf(data?.[metric.field]);

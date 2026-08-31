@@ -432,6 +432,79 @@ describe("PATCH /api/targets/:id", () => {
     });
 });
 
+/**
+ * The baseline percentage, through the whole write path.
+ *
+ * A column is invisible to the API until it is named in the route's whitelist,
+ * and nothing fails when it is not: the request succeeds with a 200, the row is
+ * written, and the field is simply gone. So the assertion that matters is the
+ * read-back, not the status code.
+ */
+describe("a target's baseline percentage", () => {
+    const stored = async () => (await targets.listAll())[0].baselinePercent;
+
+    it("is stored by a create that names it", async () => {
+        const {status} = await put({name: "Frankfurt", provider: "ookla", baselinePercent: 70});
+
+        assert.equal(status, 200);
+        assert.equal(await stored(), 70);
+    });
+
+    // The column is a DOUBLE precisely so this survives: 72.5 per cent of a
+    // line is an ordinary thing to want, and an integer column would have
+    // rounded it here with nothing saying so.
+    it("keeps a fraction across the round trip", async () => {
+        await put({name: "Frankfurt", provider: "ookla", baselinePercent: 72.5});
+
+        assert.equal(await stored(), 72.5);
+    });
+
+    // Every target that exists names none, and that is what "no baseline"
+    // is spelled as.
+    it("is null on a target that names none", async () => {
+        await put({name: "Frankfurt", provider: "ookla"});
+
+        assert.equal(await stored(), null);
+    });
+
+    it("is set and cleared by a patch", async () => {
+        const {body} = await put({name: "Frankfurt", provider: "ookla"});
+
+        assert.equal((await patch(`/${body.id}`, {baselinePercent: 80})).status, 200);
+        assert.equal(await stored(), 80);
+
+        assert.equal((await patch(`/${body.id}`, {baselinePercent: null})).status, 200);
+        assert.equal(await stored(), null);
+    });
+
+    /**
+     * Refused at the door, not stored and ignored later. A hundred per cent
+     * means "alert on roughly every other test" - the median is exceeded by
+     * half of them by construction - and a value that floods the feature is a
+     * mistake worth naming while the operator is still looking at the dialog.
+     */
+    it("refuses a percentage outside the range, naming it", async () => {
+        for (const percent of [0, 5, 100, 150, -70, "70"]) {
+            const {status, body} = await put({name: "Frankfurt", provider: "ookla",
+                baselinePercent: percent});
+
+            assert.equal(status, 400, `${JSON.stringify(percent)} was accepted`);
+            assert.match(body.message, /baseline/i);
+        }
+    });
+
+    // Judged as the row the patch would leave behind, the way every other field
+    // on this route is.
+    it("refuses one arriving by patch too", async () => {
+        const {body} = await put({name: "Frankfurt", provider: "ookla", baselinePercent: 70});
+
+        const {status, message} = await patch(`/${body.id}`, {baselinePercent: 100});
+
+        assert.equal(status, 400, message);
+        assert.equal(await stored(), 70, "the refused value was written anyway");
+    });
+});
+
 describe("DELETE /api/targets/:id", () => {
     it("removes the target and leaves its history rows orphaned, not gone", async () => {
         const {body: {id}} = await put({name: "gone", provider: "ookla"});

@@ -788,6 +788,11 @@ export const importConfig = async (obj) => {
         // before it existed restores as TCP - which is what it was measuring.
         iperfUdp: Boolean(row.iperfUdp),
         iperfBitrate: row.iperfBitrate ?? null,
+        // Null is "this target has no baseline", which is what a file written
+        // before the column existed was describing. Dropping it instead would
+        // be silent: the restore reports the same counts and the target the
+        // operator had watching its own median quietly stops.
+        baselinePercent: row.baselinePercent ?? null,
         sortOrder: Number.isInteger(row.sortOrder) ? row.sortOrder : index,
         created: typeof row.created === "string" ? row.created : new Date().toISOString()
     }));

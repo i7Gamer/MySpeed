@@ -92,6 +92,18 @@ export default db.define("targets", {
         allowNull: true,
         defaultValue: null
     },
+    // The share of this target's own rolling 30-day median a run has to fall
+    // below before the notifiers are told - null meaning the target has no
+    // baseline, which is every target until somebody sets one. The optimal
+    // columns' spelling exactly, and for the same reason: a boolean beside it
+    // would create a "switched on with no percentage" row that every reader
+    // would need a rule for. What the number means, and the storm rule that
+    // decides when a breach is actually announced, live in util/baselineAlert.
+    baselinePercent: {
+        type: Sequelize.DOUBLE,
+        allowNull: true,
+        defaultValue: null
+    },
     sortOrder: {
         type: Sequelize.INTEGER,
         allowNull: false,

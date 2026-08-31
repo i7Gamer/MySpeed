@@ -186,6 +186,46 @@ describe("suppressesEvent", () => {
     });
 
     /**
+     * A target's own baseline reaches the same gate, on the payload.
+     *
+     * The decision is made in util/baselineAlert.js before the row is written -
+     * this path cannot query anything - and alertThreshold.test.js matrixes it.
+     * What is pinned here is that the composition actually reads it: the flag
+     * gate, the threshold gate and the baseline are three separate reasons a
+     * testFinished is or is not withheld, and they are combined in one place.
+     */
+    describe("a member with a baseline of its own", () => {
+        const baseline = (overrides) => ({...good, baselineArmed: true, baselineBreached: false, ...overrides});
+
+        // The setup this is all for: alert_only on, no fixed limits, the
+        // baseline the only armed thing. Without the arm in breachesThreshold
+        // this is the fail-open case and every test is announced.
+        it("is quiet while its line holds up, with nothing else armed", () => {
+            assert.equal(suppressesEvent("testFinished", "telegram",
+                row({[ALERT_ONLY]: true}), baseline()), true);
+        });
+
+        it("announces the test that dropped below it", () => {
+            assert.equal(suppressesEvent("testFinished", "telegram",
+                row({[ALERT_ONLY]: true}), baseline({baselineBreached: true})), false);
+        });
+
+        // The two reasons compose: a breached baseline is announced even where
+        // every fixed limit was met, and vice versa.
+        it("announces a breach a fixed limit would have missed", () => {
+            assert.equal(suppressesEvent("testFinished", "telegram",
+                row(armed), baseline({baselineBreached: true})), false);
+        });
+
+        // And the member flag still stands above both: a target nobody watches
+        // says nothing, whatever its own baseline did.
+        it("stays quiet for a member that opted out of alerting", () => {
+            assert.equal(suppressesEvent("testFinished", "telegram", row(armed),
+                baseline({baselineBreached: true, alerts: false})), true);
+        });
+    });
+
+    /**
      * The alerts switch on a target quiets the notifiers, not the sinks.
      *
      * `target.alerts` used to gate sendFinished and sendError at the source, so

@@ -1,4 +1,9 @@
 import { DATE_VARIABLES } from './helpers.js';
+// The two names the alert gate reads as a decision, taken from there rather
+// than spelled again: a chip the dialog offers must be a key the payload
+// carries, and two literals are how those stop agreeing without anything
+// failing to compile.
+import { BASELINE_ARMED, BASELINE_BREACHED } from './alertThreshold.js';
 
 /**
  * What an integration is told about a test, and what an operator may name in a
@@ -48,7 +53,18 @@ const FINISHED_KEYS = [
     // quiets the notifiers on exactly this flag. Null from an older node,
     // which the gate reads as alerting: how a single-target instance always
     // behaved.
-    "alerts"
+    "alerts",
+    // Whether this member's own baseline is armed, and whether this test fell
+    // below it - the rolling 30-day median of the target's own successful runs,
+    // judged in util/baselineAlert.js before the row was written. Null on every
+    // target that set no baseline and from any older node, which the gate reads
+    // as "no baseline", the way `alerts` reads absent as alerting.
+    BASELINE_ARMED, BASELINE_BREACHED,
+    // And the yardstick itself, so a message can say what this line usually
+    // delivers beside what it just did. The percentage is not here: it is the
+    // operator's own setting, on the screen they set it from, where these four
+    // are facts about the run.
+    "baselineDownload", "baselineUpload"
 ];
 
 const FAILED_KEYS = ["id", "created", "provider", "error", "targetId", "targetName", "primary", "alerts"];
