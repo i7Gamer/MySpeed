@@ -75,14 +75,31 @@ export const readLocale = (code) => JSON.parse(readSource(`${LOCALES_DIR}/${code
  * never close - a truncated file, where the caller keeps the whole window
  * rather than a slice of unknown meaning.
  */
-const lastArgumentComma = (text) => {
-    let depth = 0;
-    let nested = 0;
+/**
+ * The characters of a source that are code, with their positions - strings,
+ * templates and both comment forms skipped, quotes and all.
+ *
+ * Extracted because a second walker needed exactly this discipline and the
+ * file already carries the lesson about what happens when such a walk is
+ * copied: "There were two copies of this walker before, and they had already
+ * drifted into taking different arguments." A quote or a comment marker that
+ * one copy honours and the other does not is a structural read that is right
+ * in one caller and wrong in the next, silently.
+ *
+ * Deliberately not a parser and deliberately not `withoutJsComments`. That one
+ * answers text, which loses the positions every caller here needs, and it
+ * settles the regex-literal question - which this does not, because none of
+ * the structure these callers count can appear inside a literal without also
+ * appearing balanced in the code around it.
+ *
+ * The quote characters themselves are not yielded, which is what the walker
+ * this came from did by writing its quote check first in an else-if chain.
+ */
+function* codeCharacters(text, from = 0) {
     let quote = null;
     let comment = null;
-    let last = -1;
 
-    for (let index = 0; index < text.length; index++) {
+    for (let index = from; index < text.length; index++) {
         const character = text[index];
         const next = text[index + 1];
 
@@ -112,7 +129,17 @@ const lastArgumentComma = (text) => {
         }
 
         if (character === '"' || character === "'" || character === "`") quote = character;
-        else if (character === "{" || character === "[") nested++;
+        else yield {index, character};
+    }
+}
+
+const lastArgumentComma = (text) => {
+    let depth = 0;
+    let nested = 0;
+    let last = -1;
+
+    for (const {index, character} of codeCharacters(text)) {
+        if (character === "{" || character === "[") nested++;
         else if (character === "}" || character === "]") nested--;
         else if (character === "(") depth++;
         else if (character === ")" && --depth === 0) return last;
@@ -251,11 +278,102 @@ export const blockEnd = (source, from = 0) => {
  */
 export const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** The `)` closing the `(` at `from`, or -1 when it never closes. */
+const closingParen = (source, from) => {
+    let depth = 0;
+
+    for (const {index, character} of codeCharacters(source, from)) {
+        if (character === "(") depth++;
+        else if (character === ")" && --depth === 0) return index;
+    }
+
+    return -1;
+};
+
+/**
+ * Whether the paren group closing at `close` is a parameter list.
+ *
+ * Decided by what follows it, which is the only thing that separates the two
+ * cases without parsing: a parameter list is followed by `=>` or by the body
+ * brace, and a call's argument list is followed by whatever the expression
+ * around it wants next - `;`, `,`, `)`, `.`.
+ *
+ * That distinction is the whole rule. `(mode, tuning = {})` is followed by an
+ * arrow, so its braces are parameters and the walk steps over them.
+ * `rows.create({...})` is followed by a semicolon, so the walk goes into it -
+ * and the object literal is answered, which is what the callers pointed at an
+ * arrow whose body is a single call are asking for.
+ */
+const closesParameterList = (source, close) => {
+    const after = [];
+
+    for (const {index, character} of codeCharacters(source, close + 1)) {
+        if (/\s/.test(character)) continue;
+
+        after.push({index, character});
+        if (after.length === 2) break;
+    }
+
+    if (after.length === 0) return false;
+    if (after[0].character === "{") return true;
+
+    // The arrow, as two adjacent characters rather than as a substring: read
+    // out of the raw source, a `=` and a `>` with a comment between them would
+    // pass, and read as `after[0] + after[1]` so would `= >`.
+    return after.length === 2 && after[0].character === "=" && after[1].character === ">"
+        && after[1].index === after[0].index + 1;
+};
+
+/**
+ * The brace that opens the body of the declaration beginning at `start`, or -1
+ * when there is none.
+ *
+ * Not `indexOf("{", start)`, which is the first brace and not the body's
+ * whenever a parameter carries one: an object default, a destructured
+ * argument. That answered the parameter's own pair - `tuning = {}` in the
+ * runner handed six suites the two characters `{}` as a two-hundred-line
+ * function's body. They failed loudly because they ask `assert.match`; a
+ * `doesNotMatch` scan in their place would have been *satisfied* by `{}` and
+ * proved nothing in green, which is the direction these scans must not fail
+ * in.
+ *
+ * So parameter lists are stepped over and everything else is walked into. -1
+ * is answered for a list that never closes as well as for a declaration with
+ * no brace at all, because both are a body of unknown meaning and the caller
+ * refuses rather than answers those.
+ */
+const bodyBrace = (source, start) => {
+    let at = start;
+
+    while (at < source.length) {
+        let jumped = false;
+
+        for (const {index, character} of codeCharacters(source, at)) {
+            if (character === "{") return index;
+
+            if (character === "(") {
+                const close = closingParen(source, index);
+                if (close === -1) return -1;
+
+                if (closesParameterList(source, close)) {
+                    at = close + 1;
+                    jumped = true;
+                    break;
+                }
+            }
+        }
+
+        if (!jumped) return -1;
+    }
+
+    return -1;
+};
+
 export const bodyOf = (source, declaration) => {
     const start = source.indexOf(declaration);
     if (start === -1) throw new Error(`"${declaration}" is not in this source`);
 
-    const from = source.indexOf("{", start);
+    const from = bodyBrace(source, start);
     if (from === -1) throw new Error(`"${declaration}" has no braced body`);
 
     let depth = 0;
