@@ -3,7 +3,7 @@ import { DATE_VARIABLES } from './helpers.js';
 // than spelled again: a chip the dialog offers must be a key the payload
 // carries, and two literals are how those stop agreeing without anything
 // failing to compile.
-import { BASELINE_ARMED, BASELINE_BREACHED } from './alertThreshold.js';
+import { ALERT_CROSSED, BASELINE_ARMED, BASELINE_BREACHED } from './alertThreshold.js';
 
 /**
  * What an integration is told about a test, and what an operator may name in a
@@ -72,7 +72,20 @@ const FINISHED_KEYS = [
     // delivers beside what it just did. The percentage is not here: it is the
     // operator's own setting, on the screen they set it from, where these six
     // are facts about the run.
-    "baselineDownload", "baselineUpload"
+    "baselineDownload", "baselineUpload",
+    /*
+     * And which of *this integration's* own three limits the result missed, as
+     * the clause that names it - "download 40 Mbps under 100".
+     *
+     * The odd one out, and deliberately so. Every key above describes the test
+     * and is the same for every recipient, which is what lets finishedPayload
+     * build them once. Limits are the integration's, and two integrations
+     * watching one test can hold different ones, so this is filled in per
+     * recipient by the dispatcher and arrives here as null - see
+     * controller/integrations.js. Listed all the same, because the chip row is
+     * built from this list and a variable that substitutes must be offered.
+     */
+    ALERT_CROSSED
 ];
 
 const FAILED_KEYS = ["id", "created", "provider", "error", "targetId", "targetName", "primary", "alerts"];

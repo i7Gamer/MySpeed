@@ -1,6 +1,7 @@
 import IntegrationData from '../models/IntegrationData.js';
 import integrationModules from '../integrations/index.js';
-import { ALERT_METRICS, ALERT_ONLY, breachesThreshold, wantsOnlyBreaches } from '../util/alertThreshold.js';
+import { ALERT_CROSSED, ALERT_METRICS, ALERT_ONLY, breachesThreshold, crossedLimits, wantsOnlyBreaches }
+    from '../util/alertThreshold.js';
 import { DIGEST_MONTHLY_FIELD, DIGEST_WEEKLY_FIELD } from '../util/digestOptIn.js';
 export { wantsDigest } from '../util/digestOptIn.js';
 import { FAILED_VARIABLES, FINISHED_VARIABLES } from '../util/notificationPayload.js';
@@ -111,8 +112,31 @@ export const triggerEvent = async (name, data) => {
             // Promise.resolve().then(...) rather than calling the callback
             // here, so a callback that throws before its first await is caught
             // by the same handler as one that rejects.
+            /*
+             * What this integration's own limits made of the result, added
+             * here because here is the only place both are in hand.
+             *
+             * Per recipient, which is the whole reason it is not on the payload
+             * the way the baseline's pair is: two integrations watching one
+             * test can hold different limits, so "what crossed" has a different
+             * answer for each of them and one shared object cannot carry it.
+             *
+             * Filled in whether or not this integration filters on those limits.
+             * suppressesEvent only asks when alert_only is on, but a template
+             * naming the variable means the same thing either way, and an
+             * operator who set limits and kept every message would otherwise
+             * read "nothing crossed" on the very tests that crossed something.
+             *
+             * Finished tests only. A failure carries no readings at all, so
+             * every armed metric would be described as unmeasured - true, and
+             * useless beside the %error% the failure template already has.
+             */
+            const described = name === "testFinished"
+                ? {...data, [ALERT_CROSSED]: crossedLimits(data, integration.data)}
+                : data;
+
             tasks.push(Promise.resolve()
-                .then(() => module.callback(integration, data, (error = false) => triggerActivity(integration.id, error)))
+                .then(() => module.callback(integration, described, (error = false) => triggerActivity(integration.id, error)))
                 .catch((e) => {
                     console.error(`Integration "${module.module}" failed to handle ${name}: ${e?.message ?? e}`);
                     return triggerActivity(integration.id, true).catch(() => undefined);

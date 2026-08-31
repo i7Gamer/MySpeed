@@ -265,3 +265,62 @@ describe("only notifying when a limit is missed", () => {
         }
     });
 });
+
+/**
+ * And what the message that arrives is able to say about it.
+ *
+ * The clause is built per integration, from that integration's own limits,
+ * which is the whole reason it cannot ride the payload the way the baseline's
+ * pair does: two integrations watching one test can hold different limits, so
+ * the answer differs by recipient. This is the only place that dispatch is
+ * exercised end to end.
+ */
+describe("what the message can say about the crossing", () => {
+    it("names the limit it was sent for", async () => {
+        const id = await createTelegram({alert_only: true, alert_download_below: 100,
+            finished_message: "Alert: %alertCrossed%"});
+        try {
+            await triggerEvent("testFinished", SLOW);
+
+            assert.equal(sent.length, 1);
+            assert.match(String(sent[0].body), /Alert: download 40 Mbps under 100/,
+                "the message could not name the limit it was sent for");
+        } finally {
+            await remove(id);
+        }
+    });
+
+    // Filled in whether or not this integration filters on its limits. The gate
+    // only asks when alert_only is on, and a template naming the variable means
+    // the same thing either way - so an operator who set limits and kept every
+    // message is not reading "nothing crossed" on the tests that did.
+    it("names it on an integration that sends every result", async () => {
+        const id = await createTelegram({alert_download_below: 100,
+            finished_message: "Alert: %alertCrossed%"});
+        try {
+            await triggerEvent("testFinished", SLOW);
+
+            assert.equal(sent.length, 1);
+            assert.match(String(sent[0].body), /download 40 Mbps under 100/);
+        } finally {
+            await remove(id);
+        }
+    });
+
+    // A failure carries no readings at all, so every armed metric would be
+    // described as unmeasured - true, and useless beside the %error% the
+    // failure template already carries.
+    it("describes no crossing on a failure", async () => {
+        const id = await createTelegram({alert_ping_above: 50,
+            error_message: "Failed: %alertCrossed% %error%"});
+        try {
+            await triggerEvent("testFailed", {error: "no route to host"});
+
+            assert.equal(sent.length, 1);
+            assert.doesNotMatch(String(sent[0].body), /not measured/,
+                "a failed run was described as a crossed limit");
+        } finally {
+            await remove(id);
+        }
+    });
+});

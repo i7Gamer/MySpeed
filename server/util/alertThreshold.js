@@ -53,6 +53,21 @@ export const BASELINE_ARMED = "baselineArmed";
 export const BASELINE_BREACHED = "baselineBreached";
 
 /**
+ * The payload key crossedLimits travels on.
+ *
+ * Named beside the function that builds it and read by both the dispatcher that
+ * fills it in and the variable list that offers it, for the reason the two
+ * above are taken from here rather than spelled again: two literals are how a
+ * chip the dialog offers stops being a name that substitutes, leaving a literal
+ * "%alertCrossed%" in a message somebody is reading at three in the morning.
+ *
+ * Unlike those two it is not on the payload finishedPayload builds. The limits
+ * belong to the integration, not to the test, so it is filled in per recipient
+ * at dispatch - see controller/integrations.js.
+ */
+export const ALERT_CROSSED = "alertCrossed";
+
+/**
  * The placeholder a failed test stores in every numeric column. It is not a
  * measurement, and on a metric the user is watching it is the strongest
  * possible evidence that something is wrong.
@@ -76,6 +91,19 @@ const FAILED = FAILED_TEST;
  */
 
 /**
+ * The unit the interface prints speeds in, so a message describing a crossing
+ * says what the screen says.
+ *
+ * Every locale's own message placeholder writes it this way, and so do the six
+ * templates that ship - "%download% Mbps". A clause reading "Mbit/s" next to
+ * one of them would look like a second, different measurement.
+ */
+const SPEED_UNIT = "Mbps";
+
+/** And what a latency is measured in. */
+const LATENCY_UNIT = "ms";
+
+/**
  * The metrics that can raise an alert, each named for the comparison it
  * performs.
  *
@@ -92,15 +120,26 @@ const FAILED = FAILED_TEST;
  * arithmetic, read as unusable it breaches through the fail-open case in
  * breachesThreshold. Only on latency do the two roads part, because a zero
  * compared with `>` is the one value that can never breach anything.
+ *
+ * The unit and the word a crossing is described with sit here, beside the
+ * comparison that decides it, rather than in the sentence-building below. They
+ * are the same fact stated twice - a `breaches` of `>` and a clause reading
+ * "under" is precisely the inversion this list exists to keep straight, and
+ * apart they could be edited apart.
  */
 export const ALERT_METRICS = [
     {
         key: "ping", field: "alert_ping_above",
+        unit: LATENCY_UNIT, crossing: "over",
         breaches: (value, limit) => value > limit,
         measured: (value) => value !== UNMEASURED_LATENCY
     },
-    {key: "download", field: "alert_download_below", breaches: (value, limit) => value < limit},
-    {key: "upload", field: "alert_upload_below", breaches: (value, limit) => value < limit}
+    {key: "download", field: "alert_download_below",
+        unit: SPEED_UNIT, crossing: "under",
+        breaches: (value, limit) => value < limit},
+    {key: "upload", field: "alert_upload_below",
+        unit: SPEED_UNIT, crossing: "under",
+        breaches: (value, limit) => value < limit}
 ];
 
 /**
@@ -142,6 +181,68 @@ const measurementOf = (raw, metric) => {
 /** Whether this integration asked to hear only about results that miss a limit. */
 export const wantsOnlyBreaches = (data) => data?.[ALERT_ONLY] === true;
 
+/** What separates the clauses when one result crossed more than one limit. */
+const CLAUSE_SEPARATOR = ", ";
+
+/** How a metric reads when it is armed and there was nothing to compare. */
+const NOT_MEASURED = "(not measured)";
+
+/**
+ * One crossing, as the clause a message names it with: "ping 62 ms over 50".
+ *
+ * A whole clause rather than a name in one key and a number in another, because
+ * these three metrics are neither in one unit nor crossed in one direction. A
+ * bare 12 beside "ping, download" cannot say whether it means milliseconds over
+ * or megabits under, and one number cannot serve two metrics that crossed in
+ * the same round.
+ *
+ * The reading is printed as it stands, which is the figure %ping% and %download%
+ * already print, so a template naming both does not show one number twice in
+ * two roundings.
+ */
+const crossingClause = (metric, value, limit) =>
+    `${metric.key} ${value} ${metric.unit} ${metric.crossing} ${limit}`;
+
+/**
+ * Every armed metric this result did not satisfy, as the clauses that name
+ * them - and whether anything was armed at all.
+ *
+ * One walk over the list, read by the gate below and by the description beside
+ * it. Two walks with the same limit and reading rules are two places for "is
+ * this worth sending" and "what does it say" to stop agreeing, which is a
+ * message that arrives naming nothing or names something it did not arrive for.
+ *
+ * It collects rather than returning at the first find, because the message wants
+ * all of them: a result that missed its download and its upload said one of the
+ * two when the gate stopped at the first.
+ */
+const findings = (payload, data) => {
+    const crossed = [];
+    let armed = false;
+
+    for (const metric of ALERT_METRICS) {
+        const limit = limitOf(data?.[metric.field]);
+        if (limit === null) continue;
+
+        armed = true;
+
+        const value = measurementOf(payload?.[metric.key], metric);
+
+        // Named, not skipped. This metric really is why the message arrives -
+        // see the fail-open case breachesThreshold documents - and a latency of
+        // zero judged as "above" is the exact reading that used to pass for an
+        // excellent line.
+        if (value === null) {
+            crossed.push(`${metric.key} ${NOT_MEASURED}`);
+            continue;
+        }
+
+        if (metric.breaches(value, limit)) crossed.push(crossingClause(metric, value, limit));
+    }
+
+    return {armed, crossed};
+};
+
 /**
  * Whether the result misses at least one of the limits the integration set.
  *
@@ -160,8 +261,6 @@ export const wantsOnlyBreaches = (data) => data?.[ALERT_ONLY] === true;
  *   a fault nobody can see.
  */
 export const breachesThreshold = (payload, data) => {
-    let armed = false;
-
     /*
      * The target's own baseline, judged in util/baselineAlert.js before the row
      * was written and carried here already decided - the rows its median is
@@ -179,23 +278,39 @@ export const breachesThreshold = (payload, data) => {
      * read: the payload is JSON a node may have written, and a string "false"
      * must not silence a gate with nothing else armed.
      */
-    if (payload?.[BASELINE_ARMED] === true) {
-        armed = true;
+    const baselineArmed = payload?.[BASELINE_ARMED] === true;
 
-        if (payload[BASELINE_BREACHED] === true) return true;
-    }
+    if (baselineArmed && payload[BASELINE_BREACHED] === true) return true;
 
-    for (const metric of ALERT_METRICS) {
-        const limit = limitOf(data?.[metric.field]);
-        if (limit === null) continue;
+    // Every finding is one of the two answers above - a limit missed, or an
+    // armed metric with nothing to compare - so any of them is this gate's yes.
+    const {armed, crossed} = findings(payload, data);
 
-        armed = true;
+    return crossed.length > 0 || !(baselineArmed || armed);
+};
 
-        const value = measurementOf(payload?.[metric.key], metric);
-        if (value === null) return true;
+/**
+ * What the gate's yes was about, in the words a message can carry - or null
+ * when this integration's own limits have nothing to say.
+ *
+ * breachesThreshold answers yes or no, so an integration watching ping and
+ * download sent a message that could not say which of them it was about. That
+ * is the gap %baselineDirection% closes for a target's own baseline, and this
+ * closes for the three limits an integration types in.
+ *
+ * Null for the second of the fail-open cases: a gate armed with no usable limit
+ * anywhere crossed nothing, and the message it produces is about a half
+ * finished setup rather than about the line. Naming a metric there would invent
+ * a crossing to explain a message that has another explanation entirely.
+ *
+ * Null about the baseline too, which carries its own pair. The two are not one
+ * fact: a baseline belongs to the target and is judged once, before the row is
+ * written, where these limits belong to this integration and are judged again
+ * for every recipient - which is exactly why this cannot ride the payload the
+ * way the baseline's does.
+ */
+export const crossedLimits = (payload, data) => {
+    const {crossed} = findings(payload, data);
 
-        if (metric.breaches(value, limit)) return true;
-    }
-
-    return !armed;
+    return crossed.length > 0 ? crossed.join(CLAUSE_SEPARATOR) : null;
 };
