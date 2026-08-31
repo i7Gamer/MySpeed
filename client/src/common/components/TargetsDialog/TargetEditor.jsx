@@ -17,9 +17,9 @@ import Checkbox from "@/common/components/Checkbox";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import {CUSTOM_BACKEND_PLACEHOLDER, IPERF_HOST_PLACEHOLDER} from "@/common/utils/InvariantText";
 import {
-    bitrateAccepted, durationAccepted, iperfHostAccepted, providerById, providers,
-    requiresEndpoint, streamsAccepted, takesEndpoint, takesServerId, takesTuning,
-    tuningAccepted, TUNING_BOUNDS
+    baselineAccepted, BASELINE_BOUNDS, BASELINE_PERCENT_DEFAULT, bitrateAccepted,
+    durationAccepted, iperfHostAccepted, providerById, providers, requiresEndpoint,
+    streamsAccepted, takesEndpoint, takesServerId, takesTuning, tuningAccepted, TUNING_BOUNDS
 } from "./providers";
 import {optimalAccepted, optimalsAccepted, targetBody, uniqueTargetName} from "./targetBody";
 
@@ -72,6 +72,12 @@ export const TargetEditor = ({open, onClose, target}) => {
     // CLI's own default is 1 Mbit/s and says nothing about being one.
     const [iperfUdp, setIperfUdp] = useState(false);
     const [iperfBitrate, setIperfBitrate] = useState("");
+    // What "slower than usual" means for this target. Derived from the column
+    // rather than stored beside it, the way ownOptimals is: null is the whole
+    // of how a target says it has no baseline, and a flag beside it would
+    // invent a switched-on-with-no-percentage row nothing else here has.
+    const [baselineAlerts, setBaselineAlerts] = useState(false);
+    const [baselinePercent, setBaselinePercent] = useState("");
     const [ownOptimals, setOwnOptimals] = useState(false);
     const [optimalPing, setOptimalPing] = useState("");
     const [optimalDownload, setOptimalDownload] = useState("");
@@ -98,6 +104,9 @@ export const TargetEditor = ({open, onClose, target}) => {
         // sqlite hands this one back as 0/1 too, under the same raw:true.
         setIperfUdp(Boolean(target?.iperfUdp));
         setIperfBitrate(target?.iperfBitrate != null ? String(target.iperfBitrate) : "");
+
+        setBaselineAlerts(target?.baselinePercent != null);
+        setBaselinePercent(target?.baselinePercent != null ? String(target.baselinePercent) : "");
 
         const hasOwn = target != null
             && (target.optimalPing ?? target.optimalDownload ?? target.optimalUpload) != null;
@@ -163,7 +172,7 @@ export const TargetEditor = ({open, onClose, target}) => {
         // Built by targetBody, which owns the three sentinels the fields carry.
         const body = targetBody({name, provider, serverId, endpoint, alerts, ownOptimals,
             optimalPing, optimalDownload, optimalUpload, iperfDuration, iperfStreams,
-            iperfUdp, iperfBitrate});
+            iperfUdp, iperfBitrate, baselineAlerts, baselinePercent});
 
         try {
             if (target) await assertOk(await patchRequest(`/targets/${target.id}`, body), "target");
@@ -213,7 +222,8 @@ export const TargetEditor = ({open, onClose, target}) => {
         // which of these fields is on the screen depends on the provider and
         // the mode - and a field the dialog is not drawing must not be able to
         // hold the button down. See tuningAccepted.
-        && tuningAccepted({provider, iperfDuration, iperfStreams, iperfUdp, iperfBitrate});
+        && tuningAccepted({provider, iperfDuration, iperfStreams, iperfUdp, iperfBitrate})
+        && baselineAccepted(baselinePercent, baselineAlerts);
 
     const formatServerLabel = (entry) => {
         if (!entry) return "";
@@ -441,6 +451,44 @@ export const TargetEditor = ({open, onClose, target}) => {
                                     <ToggleSwitch checked={ownOptimals} onChange={setOwnOptimals}
                                                   label={t("targets.own_optimals")}/>
                                 </div>
+
+                                {/* Every provider, unlike the run settings
+                                    above: a baseline is about what a target
+                                    measures rather than how it measures it.
+                                    Switching it on fills the field, because
+                                    the column IS the switch - an empty field
+                                    stores null, which is how a target says it
+                                    has no baseline, so a toggle that switched
+                                    on to nothing would not do what it says. */}
+                                <div className="provider-setting provider-setting-switch">
+                                    <div className="provider-setting-label">
+                                        <h3>{t("targets.baseline_alerts")}</h3>
+                                    </div>
+                                    <ToggleSwitch checked={baselineAlerts}
+                                                  onChange={(on) => {
+                                                      setBaselineAlerts(on);
+                                                      if (on && baselinePercent === "")
+                                                          setBaselinePercent(String(BASELINE_PERCENT_DEFAULT));
+                                                  }}
+                                                  label={t("targets.baseline_alerts")}/>
+                                </div>
+
+                                {baselineAlerts && (
+                                    <div className="target-baseline">
+                                        <label className="target-optimal">
+                                            <span className="target-optimal-label">
+                                                {t("targets.baseline_percent")}
+                                            </span>
+                                            <input type="number"
+                                                   className={`dialog-input${baselineAccepted(baselinePercent, baselineAlerts) ? "" : " input-error"}`}
+                                                   min={BASELINE_BOUNDS.min} max={BASELINE_BOUNDS.max}
+                                                   placeholder={String(BASELINE_PERCENT_DEFAULT)}
+                                                   value={baselinePercent}
+                                                   onChange={(e) => setBaselinePercent(e.target.value)}/>
+                                        </label>
+                                        <p className="target-baseline-note">{t("targets.baseline_desc")}</p>
+                                    </div>
+                                )}
 
                                 {ownOptimals && (
                                     <div className="target-optimals">

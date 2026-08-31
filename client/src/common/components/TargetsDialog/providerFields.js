@@ -182,6 +182,54 @@ export const tuningAccepted = ({provider, iperfDuration, iperfStreams, iperfUdp,
         && bitrateAccepted(iperfBitrate, iperfUdp);
 };
 
+/*
+ * The share of its own rolling median a target may be judged at, copied from
+ * the server for the same reason the tuning bounds above are - and pinned
+ * against it by tests/client/baselineParity.test.js.
+ *
+ * The ceiling is below a hundred because the median is exceeded by half the
+ * tests by construction, so a hundred alerts on roughly every other one; the
+ * floor is above zero because a gate that only fires when the line has all but
+ * vanished never fires at all.
+ */
+const MIN_BASELINE_PERCENT = 10;
+const MAX_BASELINE_PERCENT = 95;
+
+/**
+ * What the toggle fills the field with when it is switched on.
+ *
+ * A value rather than a blank, because the switch and the column are the same
+ * thing here: an empty field stores null, and null is how a target says it has
+ * no baseline - so a toggle that switched on to nothing would be a control
+ * that does not do what it says. Seventy is a drop of nearly a third from the
+ * usual speed, which is a bad afternoon rather than ordinary variance.
+ */
+export const BASELINE_PERCENT_DEFAULT = 70;
+
+export const BASELINE_BOUNDS = {min: MIN_BASELINE_PERCENT, max: MAX_BASELINE_PERCENT};
+
+/**
+ * Whether the typed baseline share can be saved.
+ *
+ * Asked with the switch, like the bitrate is asked with the mode: off, the
+ * field is not drawn and whatever is left in it must not hold the button down.
+ * On, blank is the one thing it cannot be - the column IS the switch, so an
+ * empty field would store null and quietly mean "no baseline" under a toggle
+ * that says otherwise.
+ *
+ * A fraction is legitimate here, unlike the run-shape fields: the column is a
+ * DOUBLE and a share is not a count of seconds or connections.
+ */
+export const baselineAccepted = (value, enabled) => {
+    if (!enabled) return true;
+    if (value === "" || value === null || value === undefined) return false;
+
+    const figure = Number(value);
+
+    return Number.isFinite(figure)
+        && figure >= MIN_BASELINE_PERCENT && figure <= MAX_BASELINE_PERCENT;
+};
+
 // The bounds themselves, for the inputs that state them to the operator: a
 // spinner that steps past what the door takes is a control that offers a
 // refusal.

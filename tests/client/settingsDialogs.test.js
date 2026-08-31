@@ -277,8 +277,11 @@ describe("a setting row in the target editor", () => {
         const rows = [...jsx.matchAll(/className="provider-setting[^"]*"/g)].map(([match]) => match);
         const switches = rows.filter((row) => row.includes("provider-setting-switch"));
 
-        assert.equal(switches.length, 2,
-            `${switches.length} rows are marked as switch rows; the editor has two toggle rows`);
+        // Alerts, own optimal values, and the baseline. A count rather than a
+        // list, because the point is that the class is written where the row
+        // is - a row that grows a toggle and forgets it is what this notices.
+        assert.equal(switches.length, 3,
+            `${switches.length} rows are marked as switch rows; the editor has three toggle rows`);
     });
 
     /**
