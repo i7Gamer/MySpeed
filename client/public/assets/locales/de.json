@@ -374,6 +374,14 @@
       "density_description": "Über {{days}} Tage",
       "density_description_partial": "Über {{elapsed}} von {{days}} Tagen"
     },
+    "targets": {
+      "title": "Ziele im Vergleich",
+      "failure_rate": "Fehlerquote",
+      "metric": "Messwert",
+      "empty": "Kein Ziel hat in diesem Zeitraum etwas gemessen",
+      "open_hint": "Öffnen, um die Ziele über diesen Zeitraum zu vergleichen",
+      "unavailable": "Konnte nicht geladen werden"
+    },
     "values": {
       "min": "Niedrigster",
       "max": "Höchster",

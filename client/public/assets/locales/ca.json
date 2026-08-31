@@ -374,6 +374,14 @@
       "density_description": "Al llarg de {{days}} dies",
       "density_description_partial": "Al llarg de {{elapsed}} de {{days}} dies"
     },
+    "targets": {
+      "title": "Comparació d'objectius",
+      "failure_rate": "Taxa d'errors",
+      "metric": "Mètrica",
+      "empty": "Cap objectiu no ha mesurat res en aquest període",
+      "open_hint": "Obriu per comparar els objectius en aquest període",
+      "unavailable": "No s'ha pogut carregar"
+    },
     "values": {
       "min": "Mínim",
       "max": "Màxim",

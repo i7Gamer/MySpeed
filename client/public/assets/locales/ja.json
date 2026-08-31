@@ -374,6 +374,14 @@
       "density_description": "{{days}} 日間の集計",
       "density_description_partial": "{{days}} 日中 {{elapsed}} 日間の集計"
     },
+    "targets": {
+      "title": "ターゲットの比較",
+      "failure_rate": "失敗率",
+      "metric": "指標",
+      "empty": "この期間に測定したターゲットはありません",
+      "open_hint": "開くとこの期間のターゲットを比較できます",
+      "unavailable": "読み込めませんでした"
+    },
     "values": {
       "min": "最小",
       "max": "最大",

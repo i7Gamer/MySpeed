@@ -374,6 +374,14 @@
       "density_description": "Thar {{days}} lá",
       "density_description_partial": "Thar {{elapsed}} as {{days}} lá"
     },
+    "targets": {
+      "title": "Comparáid spriocanna",
+      "failure_rate": "Ráta teipe",
+      "metric": "Méadracht",
+      "empty": "Níor thomhais sprioc ar bith rud ar bith sa tréimhse seo",
+      "open_hint": "Oscail chun na spriocanna a chur i gcomparáid sa tréimhse seo",
+      "unavailable": "Níorbh fhéidir é a lódáil"
+    },
     "values": {
       "min": "Íosmhéid",
       "max": "Uasmhéid",

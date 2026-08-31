@@ -374,6 +374,14 @@
       "density_description": "Across {{days}} days",
       "density_description_partial": "Across {{elapsed}} of {{days}} days"
     },
+    "targets": {
+      "title": "Target comparison",
+      "failure_rate": "Failure rate",
+      "metric": "Metric",
+      "empty": "No target measured anything in this range",
+      "open_hint": "Open to compare the targets over this range",
+      "unavailable": "Couldn't load"
+    },
     "values": {
       "min": "Minimum",
       "max": "Maximum",

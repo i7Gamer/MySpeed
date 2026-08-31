@@ -374,6 +374,14 @@
       "density_description": "{{days}} gün boyunca",
       "density_description_partial": "{{days}} günün {{elapsed}} günü boyunca"
     },
+    "targets": {
+      "title": "Hedef karşılaştırması",
+      "failure_rate": "Hata oranı",
+      "metric": "Metrik",
+      "empty": "Bu aralıkta hiçbir hedef bir şey ölçmedi",
+      "open_hint": "Bu aralıktaki hedefleri karşılaştırmak için açın",
+      "unavailable": "Yüklenemedi"
+    },
     "values": {
       "min": "En küçük",
       "max": "En büyük",

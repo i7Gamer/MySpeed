@@ -60,6 +60,14 @@
 .statistic-area > .hourly-chart
   flex: 1 1 calc(40% - #{$card-gap * 2})
 
+// The comparison card spans the row at every width: a five-column table has
+// nothing to do with a third of one, and unlike the summary it never earns
+// its keep folded. Restated inside each stage below at the same specificity -
+// the stages restate .stats-container, which this card also is, and only
+// source order settles equal specificity.
+.statistic-area > .container-wide
+  flex: 1 1 100%
+
 // Above the stages, deliberately: the stage rules below override this share at
 // equal specificity, which only source order settles.
 .statistic-loading
@@ -109,6 +117,13 @@
     > .skeleton-chart
       flex: 1 1 calc(33.3333% - #{$card-gap} * 2 / 3)
 
+    // The comparison keeps its row where the summary gives its span up: the
+    // stage above restates .stats-container, which this card also is, so the
+    // span has to be said again here - after the share, which only source
+    // order beats.
+    > .container-wide
+      flex: 1 1 100%
+
 // The page's three shapes, decided here because this is the only stylesheet
 // that knows about all nine cards. It used to be a `max-width: 900px` written
 // out twice - once in the stat cards' container, once in the chart cards' - and
@@ -148,6 +163,12 @@
     // read as a paragraph rather than as a tile. It is the one card that has
     // something to do with a full row.
     > .container-large
+      flex: 1 1 100%
+
+    // The comparison table's row, restated for the same source-order reason
+    // as everywhere: the half-share above matches .stats-container, which
+    // this card also is.
+    > .container-wide
       flex: 1 1 100%
 
     // And the two charts the pairing leaves over, which take a row each rather

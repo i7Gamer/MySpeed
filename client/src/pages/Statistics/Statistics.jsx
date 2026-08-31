@@ -44,6 +44,7 @@ import OverviewChart from "@/pages/Statistics/charts/OverviewChart";
 import AverageChart from "@/pages/Statistics/charts/AverageChart";
 import HourlyChart from "@/pages/Statistics/charts/HourlyChart.jsx";
 import ConsistencyChart from "@/pages/Statistics/charts/ConsistencyChart";
+import TargetCompareChart from "@/pages/Statistics/charts/TargetCompareChart";
 import ToggleSwitch from "@/common/components/ToggleSwitch";
 import {crosshairPlugin} from "@/pages/Statistics/crosshairPlugin";
 import i18n, {t} from "i18next";
@@ -68,7 +69,8 @@ const CHART_MODAL_LABELS = {
     ping: "latest.ping",
     hourly: "statistics.hourly.title",
     avgDownload: "statistics.values.down",
-    avgUpload: "statistics.values.up"
+    avgUpload: "statistics.values.up",
+    targets: "statistics.targets.title"
 };
 
 const FULL_HEIGHT_CHARTS = [...LINE_CHARTS, 'hourly'];
@@ -77,7 +79,7 @@ const FULL_HEIGHT_CHARTS = [...LINE_CHARTS, 'hourly'];
 // have a width before they can lay out at all, but not a chart's height. Without
 // it the latest test's whole record stacked into one 400px column - see
 // .modal-wide.
-const WIDE_PANELS = ['latest'];
+const WIDE_PANELS = ['latest', 'targets'];
 
 // A request, not a guarantee: the server clamps this to its own ceiling and
 // echoes what it actually used as `maxDataPoints`.
@@ -154,6 +156,14 @@ export const Statistics = () => {
     const [mountPhase, setMountPhase] = useState(0);
     const [detailStatistics, setDetailStatistics] = useState(null);
     const [detailLoading, setDetailLoading] = useState(false);
+    // The comparison card's per-target payloads, with the key they answer for
+    // - see the compare effect below for why they are fetched lazily.
+    const [compareStats, setCompareStats] = useState(null);
+    // Its own generation, never updateStats' ref: bumping the shared one from
+    // here would make a page request already in flight fail its isCurrent()
+    // check and return before setLoading(false) - a page that spins forever
+    // because somebody opened a card during a slow load.
+    const compareGeneration = useRef(0);
     // Which load is the current one. A ref rather than state: it is read inside
     // the callbacks of requests already in flight, and changing it must not
     // itself render.
@@ -165,7 +175,7 @@ export const Statistics = () => {
     // against. Absent until the config has loaded, and unset on an instance
     // nobody has told what it pays for - both render as no percentage.
     const [config] = useContext(ConfigContext);
-    const {selectedTarget, pageTargetFor} = useContext(TargetsContext);
+    const {targets, selectedTarget, pageTargetFor} = useContext(TargetsContext);
 
     // Which target the page is narrowed to, or null for all of them - the
     // same resolved chip selection the overview reads, so the two pages cannot
@@ -389,6 +399,66 @@ export const Statistics = () => {
         // unmounts this page - but the dependency is what guards it on purpose.
     }, [wantsDetail, isDownsampled, dateRange, targetFilter, currentNode]);
 
+    /*
+     * What the comparison card's figures answer for, by value rather than by
+     * identity: dateRange is a fresh object on every unrelated URL change, and
+     * the targets array is replaced by a cosmetic reload - the query the
+     * requests actually carry, the aimed node and the id list are the three
+     * things a cached answer must match. Ids, not the array: add, delete and
+     * reorder all change the list; a rename changes nothing these payloads
+     * hold.
+     */
+    const compareKey = useMemo(() => [String(rangeQuery(dateRange)), String(currentNode ?? ""),
+        targets.map(({id}) => id).join(",")].join("|"), [dateRange, currentNode, targets]);
+    const compareFresh = compareStats?.key === compareKey;
+
+    /*
+     * The card's fetch, lazy on purpose: N statistics requests per range
+     * change would spend the same fixed-window rate budget the page's own
+     * request lives on, and a 429 there blanks the whole page. Nothing is
+     * asked for until the card is opened; the answer is cached against its
+     * key, so re-opening costs nothing and the collapsed card shows the table
+     * for as long as the key still matches. A key that goes stale UNDER the
+     * open panel - the Back button changes the range without closing it -
+     * re-fires this and the panel shows its loading line rather than the
+     * previous range's series.
+     *
+     * No languageChanged re-fetch, unlike the page's: the labels are ISO
+     * instants and every rendered string re-resolves on its own.
+     */
+    useEffect(() => {
+        if (expandedChart !== "targets" || targets.length < 2 || compareFresh) return;
+
+        const generation = ++compareGeneration.current;
+
+        Promise.allSettled(targets.map(({id}) => {
+            const query = rangeQuery(dateRange);
+            query.set("target", String(id));
+
+            return jsonRequest(`/speedtests/statistics/?${query}`);
+        })).then((results) => {
+            if (generation !== compareGeneration.current) return;
+
+            results.forEach((result, index) => {
+                if (result.status === "rejected")
+                    console.error(`Failed to load the comparison for target ${targets[index].id}:`,
+                        result.reason);
+            });
+
+            // A rejected half becomes the null the table names "couldn't
+            // load" - not the clean N/A of a target that measured nothing.
+            setCompareStats({key: compareKey, byId: Object.fromEntries(results.map((result, index) =>
+                [targets[index].id, result.status === "fulfilled" ? result.value : null]))});
+        });
+    }, [expandedChart, targets, dateRange, compareKey, compareFresh]);
+
+    // The card and its fetch are gated on two targets; the modal is plain
+    // state and would outlive the gate - deleting targets down to one with
+    // the panel open left it standing over nothing.
+    useEffect(() => {
+        if (targets.length < 2 && expandedChart === "targets") setExpandedChart(null);
+    }, [targets, expandedChart]);
+
     if (mountPhase === 0) return null;
 
     // The toolbar is real here rather than a shimmer: it needs nothing from the
@@ -503,6 +573,12 @@ export const Statistics = () => {
             case 'avgUpload':
                 return <AverageChart title={t(CHART_MODAL_LABELS.avgUpload)} data={deferredStatistics.upload} previous={previous?.upload} target={gradeLimits.upload}
                                     consistency={deferredStatistics.consistency?.upload} tests={deferredStatistics.tests} expanded/>;
+            case 'targets':
+                // statsById only while the cache answers for the shown key:
+                // a stale byId is the previous range's series wearing this
+                // range's heading, the fault the page's own guard exists for.
+                return <TargetCompareChart targets={targets} statsById={compareFresh ? compareStats.byId : null}
+                                           fresh={compareFresh} expanded/>;
             default:
                 return null;
         }
@@ -569,6 +645,14 @@ export const Statistics = () => {
 
             <AverageChart title={t(CHART_MODAL_LABELS.avgDownload)} data={deferredStatistics.download} previous={previous?.download} target={gradeLimits.download} onClick={() => setExpandedChart('avgDownload')}/>
             <AverageChart title={t(CHART_MODAL_LABELS.avgUpload)} data={deferredStatistics.upload} previous={previous?.upload} target={gradeLimits.upload} onClick={() => setExpandedChart('avgUpload')}/>
+
+            {/* The chips' own gate: one target has nothing to compare. Every
+                target whatever chip is active - the chip narrows the page,
+                and a comparison narrowed to one target compares nothing. */}
+            {targets.length >= 2 && (
+                <TargetCompareChart targets={targets} statsById={compareFresh ? compareStats.byId : null}
+                                    fresh={compareFresh} onClick={() => setExpandedChart('targets')}/>
+            )}
 
             <ChartModal
                 isOpen={!!expandedChart}

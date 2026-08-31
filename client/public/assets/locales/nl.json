@@ -374,6 +374,14 @@
       "density_description": "Over {{days}} dagen",
       "density_description_partial": "Over {{elapsed}} van {{days}} dagen"
     },
+    "targets": {
+      "title": "Vergelijking van doelen",
+      "failure_rate": "Foutpercentage",
+      "metric": "Meetwaarde",
+      "empty": "Geen enkel doel heeft iets gemeten in deze periode",
+      "open_hint": "Open om de doelen over deze periode te vergelijken",
+      "unavailable": "Kon niet laden"
+    },
     "values": {
       "min": "Laagste",
       "max": "Hoogste",

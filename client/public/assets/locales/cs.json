@@ -374,6 +374,14 @@
       "density_description": "Za období {{days}} dní",
       "density_description_partial": "Za {{elapsed}} z {{days}} dní"
     },
+    "targets": {
+      "title": "Porovnání cílů",
+      "failure_rate": "Míra selhání",
+      "metric": "Metrika",
+      "empty": "Žádný cíl v tomto období nic nenaměřil",
+      "open_hint": "Otevřete pro porovnání cílů v tomto období",
+      "unavailable": "Nepodařilo se načíst"
+    },
     "values": {
       "min": "Minimum",
       "max": "Maximum",

@@ -104,7 +104,8 @@ describe("every chart that draws on a canvas", () => {
     const CANVAS_CHARTS = [
         "charts/SpeedChart/SpeedChart.jsx",
         "charts/PingChart.jsx",
-        "charts/HourlyChart.jsx"
+        "charts/HourlyChart.jsx",
+        "charts/TargetCompareChart/TargetCompareChart.jsx"
     ];
 
     for (const chart of CANVAS_CHARTS) {

@@ -374,6 +374,14 @@
       "density_description": "Su {{days}} giorni",
       "density_description_partial": "Su {{elapsed}} di {{days}} giorni"
     },
+    "targets": {
+      "title": "Confronto degli obiettivi",
+      "failure_rate": "Tasso di errore",
+      "metric": "Metrica",
+      "empty": "Nessun obiettivo ha misurato nulla in questo periodo",
+      "open_hint": "Apri per confrontare gli obiettivi in questo periodo",
+      "unavailable": "Impossibile caricare"
+    },
     "values": {
       "min": "Minimo",
       "max": "Massimo",
