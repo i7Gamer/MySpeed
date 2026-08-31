@@ -297,6 +297,22 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
         t("calendar.sun")
     ];
 
+    /*
+     * What the trigger says, as one string.
+     *
+     * Lifted out of the span because the accessible name needs it too: `label`
+     * used to REPLACE this text, so the second picker announced "Comparison
+     * window" and never which window. On a page where the comparison note is
+     * absent - a window the instance recorded no tests in, so hasPreviousData
+     * is false - the trigger is the only statement of the selection anywhere on
+     * screen, and a reader was told one existed without being told what it was.
+     */
+    const triggerText = timeframeLabelKey(timeframe)
+        ? t(timeframeLabelKey(timeframe))
+        : from && to
+            ? `${formatDisplayDate(from)} - ${formatDisplayDate(to)}`
+            : t("calendar.select_range");
+
     return (
         <div className="date-range-picker">
             {/* A real button, not a div with an onClick: this is the only way
@@ -309,10 +325,16 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                 its own text is its name, and that text is the current range,
                 which is what a reader wants to hear. `label` is for the page
                 that draws a second one - two triggers whose names are both a
-                pair of dates name neither - and it REPLACES that text for a
-                reader, so it has to say which window this is rather than
-                "Calendar". Absent everywhere else, which renders no attribute
-                at all.
+                pair of dates name neither - and it is PREPENDED to that text
+                rather than replacing it, so the second picker says both which
+                window it is and which window is chosen. Replacing it cost the
+                second one the only statement of its selection on the page.
+                Absent everywhere else, which renders no attribute at all.
+
+                Joined with a comma, which is a pause between two independent
+                phrases rather than punctuation inside a sentence - so no
+                locale owns it, and neither half has to be written to fit the
+                other.
 
                 aria-expanded and nothing more. A trigger that announces a
                 pop-up dialog promises one behind it, and what is behind this one
@@ -329,7 +351,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                 ref={triggerRef}
                 onClick={() => isOpen ? closePicker() : setIsOpen(true)}
                 aria-expanded={isOpen}
-                aria-label={label}
+                aria-label={label ? `${label}, ${triggerText}` : undefined}
             >
                 <FontAwesomeIcon icon={faCalendar} className="calendar-icon" />
                 {/* A chosen preset names itself: "Last 7 days" says more than
@@ -337,15 +359,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                     true tomorrow, when those dates no longer would be. Only a
                     custom range shows its concrete dates - and with neither a
                     preset nor dates, the trigger asks for a selection. */}
-                <span className="date-range-text">
-                    {timeframeLabelKey(timeframe) ? (
-                        t(timeframeLabelKey(timeframe))
-                    ) : from && to ? (
-                        <>{formatDisplayDate(from)} - {formatDisplayDate(to)}</>
-                    ) : (
-                        t("calendar.select_range")
-                    )}
-                </span>
+                <span className="date-range-text">{triggerText}</span>
             </button>
 
             {isOpen && (

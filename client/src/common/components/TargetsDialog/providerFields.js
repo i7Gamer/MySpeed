@@ -153,6 +153,35 @@ export const bitrateAccepted = (value, udp) =>
     !udp || (value !== "" && value !== null && value !== undefined
         && withinBounds(value, MIN_BITRATE_MBPS, MAX_BITRATE_MBPS));
 
+/**
+ * Whether the run-shape fields the editor is actually DRAWING are acceptable.
+ *
+ * Asked of the provider and the mode rather than of the values alone, because
+ * a field that is not on the screen cannot be corrected on it. Both ways of
+ * getting one there are ordinary use, and both left the button dead with
+ * nothing marked and no control that could revive it:
+ *
+ * - type 50 streams, then switch UDP on. The stream input is replaced by the
+ *   bitrate, because a UDP run on this build carries one stream - so the 50
+ *   is still refused and no longer anywhere.
+ * - switch UDP on under iperf3, then change the provider to ookla. The whole
+ *   run-settings block unmounts with the blank bitrate still refused inside
+ *   it.
+ *
+ * The values themselves are not cleared, deliberately: switching back must
+ * return the operator to what they typed. targetBody is what stops them
+ * travelling - it nulls every field this returns true in spite of - so the
+ * body the button now permits is exactly the one the door accepts, which
+ * tuningParity asserts over the whole table.
+ */
+export const tuningAccepted = ({provider, iperfDuration, iperfStreams, iperfUdp, iperfBitrate}) => {
+    if (!takesTuning(provider)) return true;
+
+    return durationAccepted(iperfDuration)
+        && (Boolean(iperfUdp) || streamsAccepted(iperfStreams))
+        && bitrateAccepted(iperfBitrate, iperfUdp);
+};
+
 // The bounds themselves, for the inputs that state them to the operator: a
 // spinner that steps past what the door takes is a control that offers a
 // refusal.

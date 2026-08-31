@@ -18,7 +18,7 @@ import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import {CUSTOM_BACKEND_PLACEHOLDER, IPERF_HOST_PLACEHOLDER} from "@/common/utils/InvariantText";
 import {
     bitrateAccepted, durationAccepted, iperfHostAccepted, providers, requiresEndpoint,
-    streamsAccepted, takesEndpoint, takesServerId, takesTuning, TUNING_BOUNDS
+    streamsAccepted, takesEndpoint, takesServerId, takesTuning, tuningAccepted, TUNING_BOUNDS
 } from "./providers";
 import {optimalAccepted, optimalsAccepted, targetBody} from "./targetBody";
 
@@ -184,8 +184,12 @@ export const TargetEditor = ({open, onClose, target}) => {
         // after the fact, the rule this file already keeps for the host and
         // the optimals: the door refuses these bounds, and the field that
         // breaks them marks itself below.
-        && durationAccepted(iperfDuration) && streamsAccepted(iperfStreams)
-        && bitrateAccepted(iperfBitrate, iperfUdp);
+        //
+        // Asked of the whole run shape rather than field by field, because
+        // which of these fields is on the screen depends on the provider and
+        // the mode - and a field the dialog is not drawing must not be able to
+        // hold the button down. See tuningAccepted.
+        && tuningAccepted({provider, iperfDuration, iperfStreams, iperfUdp, iperfBitrate});
 
     const formatServerLabel = (entry) => {
         if (!entry) return "";

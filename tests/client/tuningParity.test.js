@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    bitrateAccepted, durationAccepted, streamsAccepted, TUNING_BOUNDS
+    bitrateAccepted, durationAccepted, streamsAccepted, tuningAccepted, TUNING_BOUNDS
 } from "@/common/components/TargetsDialog/providerFields.js";
 import { targetBody, tuningOrNull } from "@/common/components/TargetsDialog/targetBody.js";
 import { iperfTuningProblem } from "../../server/controller/targets.js";
@@ -122,11 +122,9 @@ describe("the editor and the door judge a UDP run the same way", () => {
         iperfDuration: "", iperfStreams: "", iperfUdp: false, iperfBitrate: "", ...over});
 
     // What the editor would let the operator press Save on, for the tuning
-    // fields alone - the same terms canSave carries, in one place a test can
+    // fields alone - the same term canSave carries, in one place a test can
     // ask without rendering the dialog.
-    const buttonLives = (state) => durationAccepted(state.iperfDuration)
-        && streamsAccepted(state.iperfStreams)
-        && bitrateAccepted(state.iperfBitrate, state.iperfUdp);
+    const buttonLives = (state) => tuningAccepted(state);
 
     const doorTakesBody = (state) => iperfTuningProblem(targetBody(state)) === null;
 
@@ -143,7 +141,16 @@ describe("the editor and the door judge a UDP run the same way", () => {
         {iperfUdp: true, iperfBitrate: "100", iperfStreams: "8"},
         {iperfUdp: true, iperfBitrate: "100", iperfStreams: "1"},
         {iperfUdp: false, iperfBitrate: "100"},
-        {iperfUdp: false, iperfStreams: "8"}
+        {iperfUdp: false, iperfStreams: "8"},
+        // A stream count the door would refuse, on a run that has no stream
+        // count to show: the editor replaces that field with the bitrate the
+        // moment UDP goes on, so a value left in it can be neither seen nor
+        // corrected.
+        {iperfUdp: true, iperfBitrate: "100", iperfStreams: "50"},
+        {iperfUdp: true, iperfBitrate: "100", iperfStreams: "0"},
+        // And a duration the door would refuse is still on screen, so it
+        // still counts.
+        {iperfUdp: true, iperfBitrate: "100", iperfDuration: "3"}
     ];
 
     it("agrees on every state the toggle and its rate can be in", () => {
@@ -187,5 +194,35 @@ describe("the editor and the door judge a UDP run the same way", () => {
         for (const left of ["", "100", "0", "abc", "99999999"])
             assert.equal(bitrateAccepted(left, false), true,
                 `a TCP target was held to a bitrate of ${JSON.stringify(left)}`);
+    });
+
+    /**
+     * And a provider that draws none of these fields is held to none of them.
+     *
+     * Switching the provider unmounts the whole run-settings block and
+     * deliberately does not clear what was typed in it - switching back has to
+     * return the operator to their own values. So every one of these states is
+     * reachable by picking iperf3, touching a field, and changing your mind:
+     * left in the button's terms they greyed Add on an ookla target with no
+     * field on screen to fix and no control that could reach one.
+     */
+    it("holds a provider that draws none of these fields to none of them", () => {
+        const stranded = [
+            {iperfUdp: true, iperfBitrate: ""},
+            {iperfBitrate: "100"},
+            {iperfDuration: "3"},
+            {iperfStreams: "50"},
+            {iperfDuration: "abc", iperfStreams: "0", iperfUdp: true, iperfBitrate: "99999"}
+        ];
+
+        for (const provider of ["ookla", "libre", "cloudflare"])
+            for (const over of stranded) {
+                const state = editorState({provider, endpoint: "", ...over});
+
+                assert.equal(tuningAccepted(state), true,
+                    `${provider} kept the button down on ${JSON.stringify(over)}`);
+                assert.equal(iperfTuningProblem(targetBody(state)), null,
+                    `${provider} carried ${JSON.stringify(over)} into a refusal`);
+            }
     });
 });
