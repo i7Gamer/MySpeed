@@ -372,7 +372,11 @@
       "span_description": "La prova més curta i la més llarga d'aquest interval",
       "density_title": "Proves per dia",
       "density_description": "Al llarg de {{days}} dies",
-      "density_description_partial": "Al llarg de {{elapsed}} de {{days}} dies"
+      "density_description_partial": "Al llarg de {{elapsed}} de {{days}} dies",
+      "streak_title": "Ratxa més llarga d'errors",
+      "streak_description": "Entre {{from}} i {{to}}",
+      "gap_title": "Interval més llarg entre proves",
+      "gap_description": "No es va executar res entre {{from}} i {{to}}"
     },
     "values": {
       "min": "Mínim",

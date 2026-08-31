@@ -372,7 +372,11 @@
       "span_description": "此区间内最短和最长的测速",
       "density_title": "每天测速次数",
       "density_description": "共 {{days}} 天",
-      "density_description_partial": "共 {{days}} 天中的 {{elapsed}} 天"
+      "density_description_partial": "共 {{days}} 天中的 {{elapsed}} 天",
+      "streak_title": "最长连续失败",
+      "streak_description": "{{from}} 至 {{to}}",
+      "gap_title": "测试之间的最大空档",
+      "gap_description": "{{from}} 至 {{to}} 期间未运行任何测试"
     },
     "values": {
       "min": "最小值",

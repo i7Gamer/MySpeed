@@ -372,7 +372,11 @@
       "span_description": "이 범위에서 가장 짧은 테스트와 가장 긴 테스트",
       "density_title": "일일 테스트 수",
       "density_description": "{{days}}일 동안",
-      "density_description_partial": "{{days}}일 중 {{elapsed}}일 동안"
+      "density_description_partial": "{{days}}일 중 {{elapsed}}일 동안",
+      "streak_title": "가장 긴 연속 실패",
+      "streak_description": "{{from}}부터 {{to}}까지",
+      "gap_title": "테스트 간 가장 긴 공백",
+      "gap_description": "{{from}}부터 {{to}}까지 아무것도 실행되지 않았습니다"
     },
     "values": {
       "min": "최소",

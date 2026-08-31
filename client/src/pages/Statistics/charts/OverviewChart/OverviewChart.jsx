@@ -3,11 +3,12 @@ import PanelRow from "@/pages/Statistics/components/PanelRow";
 import {t} from "i18next";
 import {useContext} from "react";
 import {
-    faArrowTrendUp, faCalendarDay, faCircleExclamation, faClockRotateLeft, faDatabase, faGaugeHigh,
-    faHourglassHalf, faLinkSlash, faPingPongPaddleBall, faStopwatch
+    faArrowTrendUp, faCalendarDay, faCalendarXmark, faCircleExclamation, faClockRotateLeft, faDatabase,
+    faGaugeHigh, faHourglassHalf, faLinkSlash, faPingPongPaddleBall, faStopwatch, faTriangleExclamation
 } from "@fortawesome/free-solid-svg-icons";
 import {
-    formatBytes, formatDay, formatDuration, formatHour, formatLatencyWithUnit, formatPercent
+    formatBytes, formatDateTime, formatDay, formatDuration, formatHour, formatLatencyWithUnit,
+    formatPercent, spanInWords
 } from "@/common/utils/FormatUtil";
 import {failureRate, readableFigure} from "@/common/utils/TestUtil";
 import {PreferencesContext} from "@/common/contexts/Preferences";
@@ -175,6 +176,44 @@ const expandedItems = (props, preferences) => {
         // More traffic is neither good nor bad - it mostly tracks how many
         // tests ran - so the change is worth a word but not a colour.
         delta: {current: dataTotal, previous: readableFigure(props.previous?.dataUsed?.total), higherIsBetter: null}
+    });
+
+    /*
+     * The two findings the failed row's count never states, from the
+     * reliability block: failures in a ROW, and the widest hole in the
+     * testing itself. Gated through the shared reader - the block is
+     * server-fed and an older proxied node does not carry it at all - and
+     * neither has a delta, since the previous window's summary carries no
+     * reliability. The block's lastFailureAt stays off the panel on purpose:
+     * "3 hours" measured from a payload ages the moment it is drawn, and the
+     * digest is the surface that quotes it fresh.
+     */
+    const streak = props.reliability?.longestFailureStreak;
+    const streakCount = readableFigure(streak?.count);
+
+    if (streakCount !== null) items.push({
+        icon: faTriangleExclamation,
+        title: t("statistics.overview.streak_title"),
+        description: t("statistics.overview.streak_description", {
+            from: formatDateTime(streak.from, preferences),
+            to: formatDateTime(streak.to, preferences)
+        }),
+        value: streakCount,
+        delta: null
+    });
+
+    const gap = props.reliability?.largestGap;
+    const gapSeconds = readableFigure(gap?.seconds);
+
+    if (gapSeconds !== null) items.push({
+        icon: faCalendarXmark,
+        title: t("statistics.overview.gap_title"),
+        description: t("statistics.overview.gap_description", {
+            from: formatDateTime(gap.from, preferences),
+            to: formatDateTime(gap.to, preferences)
+        }),
+        value: spanInWords(gapSeconds),
+        delta: null
     });
 
     return items;

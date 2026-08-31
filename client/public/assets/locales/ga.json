@@ -372,7 +372,11 @@
       "span_description": "An tástáil is giorra agus an ceann is faide sa raon seo",
       "density_title": "Tástálacha in aghaidh an lae",
       "density_description": "Thar {{days}} lá",
-      "density_description_partial": "Thar {{elapsed}} as {{days}} lá"
+      "density_description_partial": "Thar {{elapsed}} as {{days}} lá",
+      "streak_title": "An tsraith teipeanna is faide",
+      "streak_description": "Idir {{from}} agus {{to}}",
+      "gap_title": "An bhearna is mó idir tástálacha",
+      "gap_description": "Níor rith aon rud idir {{from}} agus {{to}}"
     },
     "values": {
       "min": "Íosmhéid",

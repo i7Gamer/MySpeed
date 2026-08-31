@@ -372,7 +372,11 @@
       "span_description": "Самый короткий и самый длинный тест в этом диапазоне",
       "density_title": "Тестов в день",
       "density_description": "За {{days}} дней",
-      "density_description_partial": "За {{elapsed}} из {{days}} дней"
+      "density_description_partial": "За {{elapsed}} из {{days}} дней",
+      "streak_title": "Самая длинная серия сбоев",
+      "streak_description": "Между {{from}} и {{to}}",
+      "gap_title": "Наибольший перерыв между тестами",
+      "gap_description": "Между {{from}} и {{to}} ничего не выполнялось"
     },
     "values": {
       "min": "Минимум",

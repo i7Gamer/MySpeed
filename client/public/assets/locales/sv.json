@@ -372,7 +372,11 @@
       "span_description": "Det kortaste och det längsta testet i den här perioden",
       "density_title": "Tester per dag",
       "density_description": "Över {{days}} dagar",
-      "density_description_partial": "Över {{elapsed}} av {{days}} dagar"
+      "density_description_partial": "Över {{elapsed}} av {{days}} dagar",
+      "streak_title": "Längsta raden av fel",
+      "streak_description": "Mellan {{from}} och {{to}}",
+      "gap_title": "Största luckan mellan tester",
+      "gap_description": "Inget kördes mellan {{from}} och {{to}}"
     },
     "values": {
       "min": "Lägsta",

@@ -372,7 +372,11 @@
       "span_description": "Nejkratší a nejdelší test v tomto rozsahu",
       "density_title": "Testů za den",
       "density_description": "Za období {{days}} dní",
-      "density_description_partial": "Za {{elapsed}} z {{days}} dní"
+      "density_description_partial": "Za {{elapsed}} z {{days}} dní",
+      "streak_title": "Nejdelší série selhání",
+      "streak_description": "Mezi {{from}} a {{to}}",
+      "gap_title": "Největší mezera mezi testy",
+      "gap_description": "Mezi {{from}} a {{to}} nic neběželo"
     },
     "values": {
       "min": "Minimum",

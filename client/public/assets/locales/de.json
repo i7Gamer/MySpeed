@@ -372,7 +372,11 @@
       "span_description": "Der kürzeste und der längste Test in diesem Zeitraum",
       "density_title": "Tests pro Tag",
       "density_description": "Über {{days}} Tage",
-      "density_description_partial": "Über {{elapsed}} von {{days}} Tagen"
+      "density_description_partial": "Über {{elapsed}} von {{days}} Tagen",
+      "streak_title": "Längste Fehlerserie",
+      "streak_description": "Zwischen {{from}} und {{to}}",
+      "gap_title": "Größte Lücke zwischen Tests",
+      "gap_description": "Zwischen {{from}} und {{to}} lief nichts"
     },
     "values": {
       "min": "Niedrigster",

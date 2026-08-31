@@ -372,7 +372,11 @@
       "span_description": "この範囲で最も短いテストと最も長いテスト",
       "density_title": "1 日あたりのテスト数",
       "density_description": "{{days}} 日間の集計",
-      "density_description_partial": "{{days}} 日中 {{elapsed}} 日間の集計"
+      "density_description_partial": "{{days}} 日中 {{elapsed}} 日間の集計",
+      "streak_title": "最長の連続失敗",
+      "streak_description": "{{from}}から{{to}}まで",
+      "gap_title": "テスト間の最大の空白",
+      "gap_description": "{{from}}から{{to}}まで何も実行されませんでした"
     },
     "values": {
       "min": "最小",

@@ -470,6 +470,53 @@ const transferTotals = (entries) => {
     };
 };
 
+const MS_PER_SECOND = 1000;
+
+/**
+ * The two findings the failed-count never states, walked off the placeable
+ * timeline in one pass: how bad an outage was when it came - failures in a
+ * ROW, not spread singles - and how long the testing itself went dark.
+ *
+ * The gap deliberately counts failed rows as presence: a failed test still
+ * proves the scheduler ran, and the gap exists to find the hours nothing ran
+ * at all. Both walks need consecutive INSTANTS, so a row whose created
+ * nothing can parse counts in the totals but sits in neither - `sorted` is
+ * already that timeline. Ties keep the first: the earlier outage is the one
+ * the range met first, and flapping between equals redraws nothing.
+ */
+const reliabilityOver = (sorted) => {
+    let longest = null;
+    let current = null;
+    let lastFailureAt = null;
+    let largestGap = null;
+    let previous = null;
+
+    for (const entry of sorted) {
+        if (previous !== null) {
+            const seconds = Math.round(
+                (new Date(entry.created) - new Date(previous.created)) / MS_PER_SECOND);
+
+            if (largestGap === null || seconds > largestGap.seconds)
+                largestGap = {seconds, from: previous.created, to: entry.created};
+        }
+        previous = entry;
+
+        if (!isFailedTest(entry)) {
+            current = null;
+            continue;
+        }
+
+        lastFailureAt = entry.created;
+        current = current === null
+            ? {count: 1, from: entry.created, to: entry.created}
+            : {count: current.count + 1, from: current.from, to: entry.created};
+
+        if (longest === null || current.count > longest.count) longest = {...current};
+    }
+
+    return {longestFailureStreak: longest, lastFailureAt, largestGap};
+};
+
 /**
  * Aggregates speedtest rows into the statistics payload the client renders.
  *
@@ -530,6 +577,7 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
         // drawing the same row as a gap.
         time: mapRounded(succeeded, "time", usableFigure),
         dataUsed: transferTotals(entries),
+        reliability: reliabilityOver(sorted),
         data: series.data,
         labels: series.labels,
         failed: series.failed,

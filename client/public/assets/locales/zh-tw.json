@@ -372,7 +372,11 @@
       "span_description": "此範圍內最短與最長的測試",
       "density_title": "每日測試次數",
       "density_description": "共 {{days}} 天",
-      "density_description_partial": "共 {{days}} 天中的 {{elapsed}} 天"
+      "density_description_partial": "共 {{days}} 天中的 {{elapsed}} 天",
+      "streak_title": "最長連續失敗",
+      "streak_description": "{{from}} 至 {{to}}",
+      "gap_title": "測試之間的最大空檔",
+      "gap_description": "{{from}} 至 {{to}} 期間未執行任何測試"
     },
     "values": {
       "min": "最小值",

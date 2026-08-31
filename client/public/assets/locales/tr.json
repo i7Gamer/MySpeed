@@ -372,7 +372,11 @@
       "span_description": "Bu aralıktaki en kısa ve en uzun test",
       "density_title": "Günlük test sayısı",
       "density_description": "{{days}} gün boyunca",
-      "density_description_partial": "{{days}} günün {{elapsed}} günü boyunca"
+      "density_description_partial": "{{days}} günün {{elapsed}} günü boyunca",
+      "streak_title": "En uzun art arda hata serisi",
+      "streak_description": "{{from}} ile {{to}} arasında",
+      "gap_title": "Testler arasındaki en büyük boşluk",
+      "gap_description": "{{from}} ile {{to}} arasında hiçbir şey çalışmadı"
     },
     "values": {
       "min": "En küçük",

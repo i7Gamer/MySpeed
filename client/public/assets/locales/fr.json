@@ -372,7 +372,11 @@
       "span_description": "Le test le plus court et le plus long de cette plage",
       "density_title": "Tests par jour",
       "density_description": "Sur {{days}} jours",
-      "density_description_partial": "Sur {{elapsed}} des {{days}} jours"
+      "density_description_partial": "Sur {{elapsed}} des {{days}} jours",
+      "streak_title": "Plus longue série d'échecs",
+      "streak_description": "Entre {{from}} et {{to}}",
+      "gap_title": "Plus grand écart entre les tests",
+      "gap_description": "Rien n'a tourné entre {{from}} et {{to}}"
     },
     "values": {
       "min": "Minimum",

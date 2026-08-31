@@ -320,6 +320,32 @@ const SECONDS_PER_DAY = 86400;
 const JUST_NOW_SECONDS = 5;
 
 /**
+ * A span of seconds in words - the largest unit that fits, floored.
+ *
+ * The unit ladder generateRelativeTime has always climbed, extracted so a
+ * duration BETWEEN two instants - the largest-gap row - wears the same
+ * localized words as a duration ending now. No "Just now" tier here: that is
+ * a statement about the clock, which only the caller measuring from it can
+ * make, and a three-second span is three seconds.
+ */
+export const spanInWords = (seconds) => {
+    if (seconds < SECONDS_PER_MINUTE) {
+        return t("time.seconds", {replace: {seconds: Math.floor(seconds)}});
+    } else if (seconds < SECONDS_PER_HOUR) {
+        return Math.floor(seconds / SECONDS_PER_MINUTE) === 1
+            ? t("time.minute")
+            : t("time.minutes", {replace: {minutes: Math.floor(seconds / SECONDS_PER_MINUTE)}});
+    } else if (seconds < SECONDS_PER_DAY) {
+        return Math.floor(seconds / SECONDS_PER_HOUR) === 1
+            ? t("time.hour")
+            : t("time.hours", {replace: {hours: Math.floor(seconds / SECONDS_PER_HOUR)}});
+    }
+
+    const days = Math.floor(seconds / SECONDS_PER_DAY);
+    return days === 1 ? t("time.day") : t("time.days", {replace: {days: days}});
+};
+
+/**
  * How long ago something happened, in words.
  *
  * Moved here from the latest-test panel when the status bar replaced it - the
@@ -338,20 +364,9 @@ export function generateRelativeTime(created) {
 
     if (diff < JUST_NOW_SECONDS) {
         return t("time.now");
-    } else if (diff < SECONDS_PER_MINUTE) {
-        return t("time.seconds", {replace: {seconds: Math.floor(diff)}});
-    } else if (diff < SECONDS_PER_HOUR) {
-        return Math.floor(diff / SECONDS_PER_MINUTE) === 1
-            ? t("time.minute")
-            : t("time.minutes", {replace: {minutes: Math.floor(diff / SECONDS_PER_MINUTE)}});
-    } else if (diff < SECONDS_PER_DAY) {
-        return Math.floor(diff / SECONDS_PER_HOUR) === 1
-            ? t("time.hour")
-            : t("time.hours", {replace: {hours: Math.floor(diff / SECONDS_PER_HOUR)}});
     }
 
-    const days = Math.floor(diff / SECONDS_PER_DAY);
-    return days === 1 ? t("time.day") : t("time.days", {replace: {days: days}});
+    return spanInWords(diff);
 }
 
 /**

@@ -372,7 +372,11 @@
       "span_description": "Pengujian terpendek dan terpanjang dalam rentang ini",
       "density_title": "Pengujian per hari",
       "density_description": "Selama {{days}} hari",
-      "density_description_partial": "Selama {{elapsed}} dari {{days}} hari"
+      "density_description_partial": "Selama {{elapsed}} dari {{days}} hari",
+      "streak_title": "Rentetan kegagalan terpanjang",
+      "streak_description": "Antara {{from}} dan {{to}}",
+      "gap_title": "Jeda terbesar antar pengujian",
+      "gap_description": "Tidak ada yang berjalan antara {{from}} dan {{to}}"
     },
     "values": {
       "min": "Minimum",

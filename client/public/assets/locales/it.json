@@ -372,7 +372,11 @@
       "span_description": "Il test più breve e quello più lungo di questo intervallo",
       "density_title": "Test al giorno",
       "density_description": "Su {{days}} giorni",
-      "density_description_partial": "Su {{elapsed}} di {{days}} giorni"
+      "density_description_partial": "Su {{elapsed}} di {{days}} giorni",
+      "streak_title": "Serie di errori più lunga",
+      "streak_description": "Tra {{from}} e {{to}}",
+      "gap_title": "Intervallo più lungo tra i test",
+      "gap_description": "Non è stato eseguito nulla tra {{from}} e {{to}}"
     },
     "values": {
       "min": "Minimo",

@@ -372,7 +372,11 @@
       "span_description": "De kortste en de langste test in dit bereik",
       "density_title": "Tests per dag",
       "density_description": "Over {{days}} dagen",
-      "density_description_partial": "Over {{elapsed}} van {{days}} dagen"
+      "density_description_partial": "Over {{elapsed}} van {{days}} dagen",
+      "streak_title": "Langste reeks mislukkingen",
+      "streak_description": "Tussen {{from}} en {{to}}",
+      "gap_title": "Grootste gat tussen tests",
+      "gap_description": "Er draaide niets tussen {{from}} en {{to}}"
     },
     "values": {
       "min": "Laagste",
