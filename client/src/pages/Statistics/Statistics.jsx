@@ -23,8 +23,10 @@ import {
     DEFAULT_TIMEFRAME,
     TIMEFRAME_ALL,
     TIMEFRAME_CUSTOM,
+    compareToParams,
     formatDateParam,
     isAllTime,
+    parseCompareParams,
     parseRangeParams,
     resolveAllTime,
     selectionOf,
@@ -34,6 +36,7 @@ import {
 } from "@/common/utils/TimeframeUtil";
 import PageToolbar from "@/common/components/PageToolbar";
 import ChartModal from "@/common/components/ChartModal";
+import CompareSelect from "@/pages/Statistics/components/CompareSelect";
 import {formatDay} from "@/common/utils/FormatUtil";
 import {hasPreviousData} from "@/common/components/Delta/deltas";
 import {previousConnection} from "@/common/utils/TestUtil";
@@ -44,7 +47,7 @@ import OverviewChart from "@/pages/Statistics/charts/OverviewChart";
 import AverageChart from "@/pages/Statistics/charts/AverageChart";
 import HourlyChart from "@/pages/Statistics/charts/HourlyChart.jsx";
 import ConsistencyChart from "@/pages/Statistics/charts/ConsistencyChart";
-import TargetCompareChart from "@/pages/Statistics/charts/TargetCompareChart";
+import TargetCompareChart, {TargetCompareTable} from "@/pages/Statistics/charts/TargetCompareChart";
 import ToggleSwitch from "@/common/components/ToggleSwitch";
 import {crosshairPlugin} from "@/pages/Statistics/crosshairPlugin";
 import i18n, {t} from "i18next";
@@ -70,10 +73,27 @@ const CHART_MODAL_LABELS = {
     hourly: "statistics.hourly.title",
     avgDownload: "statistics.values.down",
     avgUpload: "statistics.values.up",
-    targets: "statistics.targets.title"
+    targets: "statistics.targets.title",
+    targetsPing: "statistics.targets.chart.ping",
+    targetsDownload: "statistics.targets.chart.download",
+    targetsUpload: "statistics.targets.chart.upload"
 };
 
-const FULL_HEIGHT_CHARTS = [...LINE_CHARTS, 'hourly'];
+/*
+ * The comparison's four panels - three overlay charts and the table of figures
+ * beside them - named together because they share both of their gates: two
+ * targets to compare, and no chip narrowing the page. The modal is plain state
+ * and has to be closed when either gate shuts under an open one.
+ */
+const TARGET_COMPARE_CHARTS = ['targetsPing', 'targetsDownload', 'targetsUpload'];
+const TARGET_PANELS = ['targets', ...TARGET_COMPARE_CHARTS];
+
+// Which metric a comparison panel draws, taken from the panel's own name so the
+// two cannot drift: 'targetsUpload' is the upload chart by construction rather
+// than by a second table somebody has to keep in step with this one.
+const metricOf = (panel) => panel.slice("targets".length).toLowerCase();
+
+const FULL_HEIGHT_CHARTS = [...LINE_CHARTS, 'hourly', ...TARGET_COMPARE_CHARTS];
 
 // Panels that are a responsive grid rather than a plot: they need the dialog to
 // have a width before they can lay out at all, but not a chart's height. Without
@@ -121,6 +141,23 @@ const rangeQuery = (dateRange) => {
     });
 
     if (!dateRange) query.set("range", TIMEFRAME_ALL);
+
+    return query;
+};
+
+/**
+ * How a request says what to compare the range against.
+ *
+ * One helper for both request sites, so the page and the comparison card
+ * cannot ask different questions of the same window. Nothing precedes all
+ * time, so a rangeless request asks for no comparison at all - the route
+ * refuses it anyway, and asking buys a second table scan over a window that
+ * cannot hold a test.
+ */
+const applyCompare = (query, dateRange, compare) => {
+    if (!dateRange) return query;
+
+    query.set("compare", compare);
 
     return query;
 };
@@ -204,6 +241,11 @@ export const Statistics = () => {
         return selectionOf(preferences.defaultTimeframe ?? DEFAULT_TIMEFRAME);
     }, [searchParams, preferences.defaultTimeframe]);
 
+    // The window the deltas are read against, or null for the period before
+    // the range - which is what the server does when nothing names one. Read
+    // from the URL like the range, so a comparison is a link somebody keeps.
+    const compare = useMemo(() => parseCompareParams(searchParams), [searchParams]);
+
     // Null for all time, which is the absence of a bound rather than a very wide
     // one: every caller below that needs a window says so for itself.
     const dateRange = useMemo(() => isAllTime(selection.timeframe)
@@ -211,6 +253,43 @@ export const Statistics = () => {
         : { from: selection.from, to: selection.to }, [selection]);
 
     const deferredStatistics = useDeferredValue(statistics);
+
+    /*
+     * The gate in front of every delta: a previous window nobody tested in has
+     * no figures to compare against, and its zeros must not colour the page.
+     *
+     * Declared here, beside the payload it reads, rather than down among the
+     * charts. It used to sit there because the charts were its only readers -
+     * and then the comparison row, which names the window this answers for,
+     * was lifted out of the returned tree into a const of its own. A const is
+     * evaluated where it is written, so the row read this one two hundred
+     * lines before the line that declares it: "Cannot access 'previous' before
+     * initialization", thrown while rendering, from a build that compiles
+     * cleanly and a suite that never renders the page.
+     *
+     * And optional on the way in, which everything reading this payload above
+     * the `if (!deferredStatistics)` guard has to be: `statistics` opens as
+     * null, so the first render of every visit reaches this line with nothing
+     * in it. Down among the charts that was already settled - the guard stands
+     * between - and moving up here put it back in front of the question. The
+     * two other early readers, gradeLimits and isDownsampled, have always
+     * spelled it this way.
+     */
+    const previousWindow = deferredStatistics?.previous;
+    const previous = hasPreviousData(previousWindow) ? previousWindow : null;
+
+    // The dates both wordings of the note fill in - the same pair either way,
+    // since what differs between them is only whether the window held anything.
+    // Optional on the way in, like everything else that reads this payload
+    // above the guard that settles it. `previousWindow &&` answers for the
+    // object and not for what is inside it, and a previous window arriving
+    // without its dateRange - an older node, a shape nobody has shipped yet -
+    // would throw here during render rather than draw one sentence less.
+    const comparedWindow = previousWindow?.dateRange && {
+        from: formatDay(previousWindow.dateRange.from),
+        to: formatDay(previousWindow.dateRange.to)
+    };
+
     const isStale = deferredStatistics !== statistics;
 
     /*
@@ -245,9 +324,10 @@ export const Statistics = () => {
     const updateStats = useCallback(() => {
         const query = rangeQuery(dateRange);
 
-        // The summary of the window immediately before, for the deltas. Nothing
-        // precedes all time, so it is asked for only when the range is bounded.
-        if (dateRange) query.set("compare", "previous");
+        // The summary of the window the deltas are read against - the period
+        // before by default, or the one the URL names. Nothing precedes all
+        // time, so it is asked for only when the range is bounded.
+        applyCompare(query, dateRange, compare);
 
         if (targetFilter != null) query.set("target", String(targetFilter));
 
@@ -323,8 +403,12 @@ export const Statistics = () => {
             });
         });
         // currentNode: see its destructure above - a page whose requests have
-        // been re-aimed under it has to re-ask.
-    }, [dateRange, currentNode, targetFilter]);
+        // been re-aimed under it has to re-ask. The rule cannot see that
+        // dependency, since what the value changes is where the api module
+        // points rather than anything named in this callback, and reads it as
+        // one to drop.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dateRange, currentNode, targetFilter, compare]);
 
     const handleTimeframeChange = useCallback((timeframe) => {
         setSearchParams(serializeRange(timeframe), { replace: true });
@@ -334,6 +418,26 @@ export const Statistics = () => {
     const handleDateRangeChange = useCallback((from, to) => {
         setSearchParams(serializeRange(TIMEFRAME_CUSTOM, from, to), { replace: true });
     }, [setSearchParams]);
+
+    /**
+     * The window the page compares against, chosen rather than implied.
+     *
+     * The whole selection is rewritten, because setSearchParams replaces the
+     * query string: the range has to be re-stated or naming a comparison
+     * window would silently drop the page back to its default range.
+     *
+     * A range change drops the comparison window on purpose, and for free -
+     * the two callbacks above replace the query string without it. "This
+     * August against last August" narrowed to "last 7 days" would otherwise
+     * compare a week against a month, which is the mismatch the elapsed cut
+     * exists to prevent.
+     */
+    const handleCompareChange = useCallback((choice) => {
+        setSearchParams({
+            ...serializeRange(selection.timeframe, selection.from, selection.to),
+            ...compareToParams(choice)
+        }, { replace: true });
+    }, [setSearchParams, selection]);
 
     useEffect(() => {
         if (mountPhase >= 2) updateStats();
@@ -409,61 +513,155 @@ export const Statistics = () => {
      * hold.
      */
     const compareKey = useMemo(() => [String(rangeQuery(dateRange)), String(currentNode ?? ""),
-        targets.map(({id}) => id).join(",")].join("|"), [dateRange, currentNode, targets]);
+        targets.map(({id}) => id).join(","),
+        // The comparison window too: the rows' deltas are read against it, so
+        // a cached answer taken under one window is the wrong answer under
+        // the next - and the card can be open while the row below it changes
+        // the window.
+        compare
+    ].join("|"), [dateRange, currentNode, targets, compare]);
     const compareFresh = compareStats?.key === compareKey;
 
     /*
-     * The card's fetch, lazy on purpose: N statistics requests per range
-     * change would spend the same fixed-window rate budget the page's own
-     * request lives on, and a 429 there blanks the whole page. Nothing is
-     * asked for until the card is opened; the answer is cached against its
-     * key, so re-opening costs nothing and the collapsed card shows the table
-     * for as long as the key still matches. A key that goes stale UNDER the
-     * open panel - the Back button changes the range without closing it -
-     * re-fires this and the panel shows its loading line rather than the
-     * previous range's series.
+     * What the four comparison panels read, resolved once. A stale byId is the
+     * previous range's series wearing this range's heading - the fault the
+     * page's own stale guard exists for, which the Back button reaches with a
+     * panel open - and four render sites each spelling the gate for themselves
+     * is four places for one of them to forget it.
+     */
+    const compareStatsById = compareFresh ? compareStats.byId : null;
+
+    /*
+     * The comparison's fetch: eager now, and one request rather than N.
+     *
+     * It used to wait for a click, because asking per target spent the
+     * statistics family's own fixed-window budget - 60 a minute for a
+     * question that costs a full range scan - and a 429 there blanks the whole
+     * page. At three targets a reader stepping through the timeframe presets
+     * reached that ceiling on its own. So the panels showed an invitation
+     * instead of figures, which is the wrong trade: the comparison is a
+     * reading, and a reading nobody can see without asking twice is not one.
+     *
+     * `targets=` is what makes the eager fetch affordable. The server scans
+     * the range once and partitions by target in memory, so this costs one
+     * request whatever the target count - the same one the page itself spends
+     * - and the ceiling stops scaling with how many targets an operator keeps.
+     *
+     * Not asked at all while a chip narrows the page: every other panel is
+     * then about that one target, and a comparison of all of them beside them
+     * contradicts the filter the reader just set. The panels are hidden in
+     * that state, so this would be buying a payload nothing renders.
+     *
+     * The answer is cached against its key, so a re-render costs nothing. A
+     * key that goes stale under an open panel - the Back button changes the
+     * range without closing it - re-fires this and the panel shows its loading
+     * line rather than the previous range's series.
      *
      * No languageChanged re-fetch, unlike the page's: the labels are ISO
      * instants and every rendered string re-resolves on its own.
      */
     useEffect(() => {
-        if (expandedChart !== "targets" || targets.length < 2 || compareFresh) return;
+        if (targetFilter != null || targets.length < 2 || compareFresh) return;
 
         const generation = ++compareGeneration.current;
 
-        Promise.allSettled(targets.map(({id}) => {
-            const query = rangeQuery(dateRange);
-            query.set("target", String(id));
+        const query = rangeQuery(dateRange);
+        query.set("targets", targets.map(({id}) => id).join(","));
+        // The same question the page asks, through the same applier - each
+        // target narrowed to its own line, so a row compares against ITS week
+        // rather than the page's mixture.
+        applyCompare(query, dateRange, compare);
 
-            return jsonRequest(`/speedtests/statistics/?${query}`);
-        })).then((results) => {
+        jsonRequest(`/speedtests/statistics/?${query}`).then((answer) => {
             if (generation !== compareGeneration.current) return;
 
-            results.forEach((result, index) => {
-                if (result.status === "rejected")
-                    console.error(`Failed to load the comparison for target ${targets[index].id}:`,
-                        result.reason);
-            });
+            /*
+             * Every requested target gets an entry, and a target the server
+             * left out becomes the null the table names "couldn't load" -
+             * not the clean N/A of a line that answered honestly with
+             * nothing. The whole request failing is the same finding for
+             * every target at once, which the catch below states the same
+             * way rather than leaving the panels spinning forever.
+             */
+            const byTarget = answer?.byTarget ?? {};
+            setCompareStats({key: compareKey, byId: Object.fromEntries(targets.map(({id}) =>
+                [id, byTarget[id] ?? byTarget[String(id)] ?? null]))});
+        }).catch((error) => {
+            if (generation !== compareGeneration.current) return;
 
-            // A rejected half becomes the null the table names "couldn't
-            // load" - not the clean N/A of a target that measured nothing.
-            setCompareStats({key: compareKey, byId: Object.fromEntries(results.map((result, index) =>
-                [targets[index].id, result.status === "fulfilled" ? result.value : null]))});
+            console.error("Failed to load the target comparison:", error);
+            setCompareStats({key: compareKey,
+                byId: Object.fromEntries(targets.map(({id}) => [id, null]))});
         });
-    }, [expandedChart, targets, dateRange, compareKey, compareFresh]);
+    }, [targetFilter, targets, dateRange, compare, compareKey, compareFresh]);
 
-    // The card and its fetch are gated on two targets; the modal is plain
-    // state and would outlive the gate - deleting targets down to one with
-    // the panel open left it standing over nothing.
+    /*
+     * The panels and their fetch are gated on two targets and on nothing
+     * narrowing the page; the modal is plain state and would outlive either
+     * gate. Deleting targets down to one with a panel open left it standing
+     * over nothing, and pressing a chip under an open one left a comparison of
+     * every target on screen while the page behind it showed exactly one.
+     */
     useEffect(() => {
-        if (targets.length < 2 && expandedChart === "targets") setExpandedChart(null);
-    }, [targets, expandedChart]);
+        if ((targets.length < 2 || targetFilter != null) && TARGET_PANELS.includes(expandedChart))
+            setExpandedChart(null);
+    }, [targets, targetFilter, expandedChart]);
 
     if (mountPhase === 0) return null;
 
     // The toolbar is real here rather than a shimmer: it needs nothing from the
     // statistics being fetched, and its controls - the range being loaded, and
     // starting a test - are exactly what someone waiting might want to reach.
+    /* Stated once for the whole page, so every delta below can be a bare arrow
+       and number instead of each repeating the window.
+
+       One wording, and the dates are named as whole days even where the server
+       cut the window at now's own wall clock. There were two, and the second
+       said "up to the same time of day" - it went with the free-form comparison
+       window it was written for. The cut is what MAKES the two windows
+       comparable now, both covering the same elapsed span of the same number of
+       days, so there is no asymmetry left for a caveat to disclose; the
+       selected range's own heading has never carried one either. The server
+       still ships `dateRange.partial` and nothing reads it - see
+       expandedPanes.test.js, which pins the single wording deliberately.
+
+       Built for any bounded range, not only when there is something to compare
+       against: the control that CHOOSES the window lives in it, and gating that
+       on a previous window having data would lock a young instance out of
+       naming one.
+
+       Handed to the toolbar as its aside rather than drawn under it. The chip
+       row is a handful of names and this is one sentence and a picker, so on
+       any ordinary width the two share a line and the page keeps a row it was
+       spending on whitespace. They separate on their own where they no longer
+       fit - see .toolbar-second-row. */
+    const compareRow = dateRange ? (
+        <div className="statistics-compare-row">
+            {/* Two sentences, not one and a silence.
+                The note used to render only when there was something to
+                compare against, so choosing a window the instance has no tests
+                in simply removed it - and every arrow on the page vanished with
+                no statement anywhere of why. The window is named either way;
+                what changes is whether it had anything in it. previousWindow is
+                the payload as it arrived, which carries the dates even when it
+                counted nothing, where `previous` is the gated one the deltas
+                read. */}
+            {previousWindow && (
+                <p className="statistics-compare-note">
+                    {previous
+                        ? t("statistics.compare.note", comparedWindow)
+                        : t("statistics.compare.empty", comparedWindow)}
+                </p>
+            )}
+            {/* How far back to look, never how much to look at - so the two
+                windows are the same length by construction and there is no
+                second range for a reader to reconcile with the first. The
+                default is itself an option rather than a state to reset out
+                of, which is what removed the reset button beside this. */}
+            <CompareSelect value={compare} onChange={handleCompareChange}/>
+        </div>
+    ) : null;
+
     const toolbar = (
         <PageToolbar
             from={dateRange?.from ?? null}
@@ -474,6 +672,7 @@ export const Statistics = () => {
             // All-time carries no range, but the export endpoint takes one -
             // resolveAllTime is that window.
             exportRange={dateRange ?? resolveAllTime()}
+            aside={compareRow}
         />
     );
 
@@ -536,10 +735,6 @@ export const Statistics = () => {
 
     // `source` is the high-resolution payload when one has been fetched for this
     // chart, and the page payload otherwise.
-    // The gate in front of every delta: a previous window nobody tested in has
-    // no figures to compare against, and its zeros must not colour the page.
-    const previous = hasPreviousData(deferredStatistics.previous) ? deferredStatistics.previous : null;
-
     // The window the page is actually showing, which the overview card is named
     // after. All time has none of its own, so it is the extent of the tests
     // themselves - the first to the last - as echoed by the server.
@@ -577,8 +772,17 @@ export const Statistics = () => {
                 // statsById only while the cache answers for the shown key:
                 // a stale byId is the previous range's series wearing this
                 // range's heading, the fault the page's own guard exists for.
-                return <TargetCompareChart targets={targets} statsById={compareFresh ? compareStats.byId : null}
+                return <TargetCompareTable targets={targets} statsById={compareStatsById}
                                            fresh={compareFresh} expanded/>;
+            case 'targetsPing':
+            case 'targetsDownload':
+            case 'targetsUpload':
+                // The metric is the panel's own identity, read back off the key
+                // rather than passed separately: three cases naming their own
+                // metric a second time is three chances for a case to draw the
+                // chart beside it.
+                return <TargetCompareChart targets={targets} statsById={compareStatsById}
+                                           fresh={compareFresh} metric={metricOf(chartType)}/>;
             default:
                 return null;
         }
@@ -608,22 +812,6 @@ export const Statistics = () => {
         <div className={`statistic-area${isStale ? ' statistic-stale' : ''}`}>
             {toolbar}
 
-            {/* Stated once for the whole page, so every delta below can be a
-                bare arrow and number instead of each repeating the window. A
-                window cut at now's own wall clock - the range is still running
-                - says so, or its dates would claim whole days it only partly
-                covers. */}
-            {previous && (
-                <p className="statistics-compare-note">
-                    {t(previous.dateRange.partial
-                        ? "statistics.compare.note_partial"
-                        : "statistics.compare.note", {
-                        from: formatDay(previous.dateRange.from),
-                        to: formatDay(previous.dateRange.to)
-                    })}
-                </p>
-            )}
-
             <OverviewChart tests={deferredStatistics.tests} time={deferredStatistics.time} packetLoss={deferredStatistics.packetLoss} hourlyAverages={deferredStatistics.hourlyAverages} ping={deferredStatistics.ping} dataUsed={deferredStatistics.dataUsed} reliability={deferredStatistics.reliability} dateRange={chartRange} previous={previous} onClick={() => setExpandedChart('overview')}/>
             <LatestTestChart test={latestTest} onClick={() => setExpandedChart('latest')}/>
             <ConsistencyChart consistency={deferredStatistics.consistency} onClick={() => setExpandedChart('consistency')}/>
@@ -646,12 +834,30 @@ export const Statistics = () => {
             <AverageChart title={t(CHART_MODAL_LABELS.avgDownload)} data={deferredStatistics.download} previous={previous?.download} target={gradeLimits.download} onClick={() => setExpandedChart('avgDownload')}/>
             <AverageChart title={t(CHART_MODAL_LABELS.avgUpload)} data={deferredStatistics.upload} previous={previous?.upload} target={gradeLimits.upload} onClick={() => setExpandedChart('avgUpload')}/>
 
-            {/* The chips' own gate: one target has nothing to compare. Every
-                target whatever chip is active - the chip narrows the page,
-                and a comparison narrowed to one target compares nothing. */}
-            {targets.length >= 2 && (
-                <TargetCompareChart targets={targets} statsById={compareFresh ? compareStats.byId : null}
-                                    fresh={compareFresh} onClick={() => setExpandedChart('targets')}/>
+            {/* Two gates, both about whether there is a comparison to make.
+                One target has nothing to compare - the chips' own gate. And a
+                chip narrows the page to a single target, at which point every
+                panel above is about that one and a comparison of all of them
+                here would be the only thing on screen contradicting the filter
+                the reader just set. Hidden rather than filtered: a comparison
+                narrowed to one target compares nothing. */}
+            {targets.length >= 2 && targetFilter == null && (
+                <>
+                    {/* One per metric, in the order of the row above - ping
+                        leading, then the two speed charts - so the six charts
+                        read down the page in matching columns. */}
+                    <TargetCompareChart targets={targets} statsById={compareStatsById} fresh={compareFresh}
+                                        metric="ping" compact onClick={() => setExpandedChart('targetsPing')}/>
+                    <TargetCompareChart targets={targets} statsById={compareStatsById} fresh={compareFresh}
+                                        metric="download" compact onClick={() => setExpandedChart('targetsDownload')}/>
+                    <TargetCompareChart targets={targets} statsById={compareStatsById} fresh={compareFresh}
+                                        metric="upload" compact onClick={() => setExpandedChart('targetsUpload')}/>
+
+                    {/* And the figures no line can draw: the averages as
+                        numbers, their deltas, and the failure rate. */}
+                    <TargetCompareTable targets={targets} statsById={compareStatsById}
+                                        fresh={compareFresh} onClick={() => setExpandedChart('targets')}/>
+                </>
             )}
 
             <ChartModal

@@ -4,7 +4,12 @@ const NOISE_FLOOR = 0.05;
 
 const PERCENT = 100;
 
-const round = (value) => Math.round(value * 10) / 10;
+// One decimal, which is what every delta on screen is written to. Named beside
+// the two above rather than left as a literal in the expression: 10 twice in
+// one line is the shape where a later change moves one of them.
+const ONE_DECIMAL = 10;
+
+const round = (value) => Math.round(value * ONE_DECIMAL) / ONE_DECIMAL;
 
 /**
  * One figure's change against the previous period, or null when silence is the

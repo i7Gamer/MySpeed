@@ -346,6 +346,59 @@ afterEach(async () => {
     fixture = null;
 });
 
+/**
+ * The targets table, against the model that reads it.
+ *
+ * The speedtests table has had this pair since a column was declared and never
+ * migrated; targets has grown five columns across three migrations since it was
+ * created and had nothing asking the same question. A column the model declares
+ * but no migration creates is invisible until the first query touches it, and
+ * then every read of the table fails - on boot, because the round reads it.
+ */
+describe("the targets table", () => {
+    it("leaves no model column without a column in the table", async () => {
+        const {default: targets} = await import("../../server/models/Targets.js");
+        const columns = await queryInterface.describeTable("targets");
+
+        const missing = Object.keys(targets.getAttributes())
+            .filter((attribute) => !columns[attribute]);
+
+        assert.deepEqual(missing, [], "declared on the targets model but never migrated");
+    });
+
+    /**
+     * The baseline percentage in particular: nullable, because null is the
+     * whole of how a target says it has none, and not an integer, because the
+     * door accepts a fraction and an INTEGER column would round it away on the
+     * way in with nothing saying so.
+     */
+    it("holds the baseline percentage as a nullable fraction", async () => {
+        const columns = await queryInterface.describeTable("targets");
+
+        assert.ok(columns.baselinePercent, "targets.baselinePercent is missing");
+        assert.equal(columns.baselinePercent.allowNull, true,
+            "every existing target would need a percentage it never chose");
+        assert.doesNotMatch(columns.baselinePercent.type, /^INT(EGER)?$/i,
+            `targets.baselinePercent is ${columns.baselinePercent.type}, which rounds a fraction away`);
+    });
+
+    /**
+     * And that its guard is a real guard. "is idempotent" above proves the
+     * *runner* skips a migration already in SequelizeMeta, not that the
+     * migration survives being entered twice - which is what a boot that died
+     * mid-upgrade, or a restored database, actually does. sqlite refuses a
+     * duplicate column outright, so this fails loudly without the describeTable
+     * check the house pattern puts in front of it.
+     */
+    it("adds the baseline column only once, however often it is run", async () => {
+        const {up} = await import("../../server/migrations/0017-add-baseline-percent.js");
+
+        await assert.doesNotReject(() => up(queryInterface));
+
+        assert.ok((await queryInterface.describeTable("targets")).baselinePercent);
+    });
+});
+
 describe("0013 seeding the first target", () => {
     describe("after a boot that died in the back-fill", () => {
         /**

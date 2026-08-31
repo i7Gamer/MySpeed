@@ -1,13 +1,6 @@
 import { BITS_PER_BYTE, roundSpeed } from './parseData.js';
 import { IPERF_DURATION_SECONDS } from './registry.js';
 
-/**
- * The length one iperf3 transfer is measured over, as the progress bar reads
- * it - the same figure the arguments ask for, so a change to the run's length
- * cannot leave the bar filling at the wrong rate.
- */
-const IPERF_PROGRESS_SECONDS = IPERF_DURATION_SECONDS;
-
 // The phases a run moves through, in the order it runs them.
 export const PHASE_ORDER = ["ping", "download", "upload"];
 
@@ -44,8 +37,13 @@ const clamp = (value) => {
  * Returns null for anything that is not progress, including the result line:
  * that is the outcome, and announcing it here would have the interface call the
  * run finished before the row had been written.
+ *
+ * `durationSeconds` is how long this particular iperf3 invocation was asked to
+ * measure for, which only the caller that built the arguments knows. Defaulted
+ * to the shipped figure so every other provider's caller, and every reading of
+ * an untuned target, is unchanged.
  */
-export const parseProgressLine = (mode, line, phase) => {
+export const parseProgressLine = (mode, line, phase, durationSeconds = IPERF_DURATION_SECONDS) => {
     if (typeof line !== "string" || !line.startsWith("{")) return null;
     if (mode !== "ookla" && mode !== "iperf3") return null;
 
@@ -57,7 +55,7 @@ export const parseProgressLine = (mode, line, phase) => {
         return null;
     }
 
-    if (mode === "iperf3") return iperf3Progress(data, phase);
+    if (mode === "iperf3") return iperf3Progress(data, phase, durationSeconds);
 
     if (data.type === "testStart") return {phase: PHASE_START, progress: 0, speed: null};
     if (!PHASE_ORDER.includes(data.type)) return null;
@@ -80,8 +78,14 @@ export const parseProgressLine = (mode, line, phase) => {
  * arguments asked for, because iperf3 states no fraction. The omitted warm-up
  * intervals are skipped: they run before the measurement and would take the
  * bar to a tenth and then back to nothing.
+ *
+ * That duration is a parameter rather than the registry constant it used to be,
+ * because a target may name its own - and a minute-long run divided by the
+ * ten-second default fills the bar in its first sixth and then sits at 100% for
+ * the rest, which reads as a run that has hung. Defaulted to the shipped figure,
+ * so a caller that has no target to ask behaves as it always did.
  */
-export const iperf3Progress = (data, phase) => {
+export const iperf3Progress = (data, phase, durationSeconds = IPERF_DURATION_SECONDS) => {
     // The two transfer phases only. The latency phase is reported by the
     // runner itself - it is measured before the CLI is started at all - so an
     // interval record can never belong to it.
@@ -99,7 +103,7 @@ export const iperf3Progress = (data, phase) => {
 
     return {
         phase,
-        progress: Number.isFinite(elapsed) ? clamp(elapsed / IPERF_PROGRESS_SECONDS) : 0,
+        progress: Number.isFinite(elapsed) ? clamp(elapsed / durationSeconds) : 0,
         speed
     };
 };

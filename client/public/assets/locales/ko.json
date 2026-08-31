@@ -60,7 +60,12 @@
       "ookla_desc": "글로벌 서버 네트워크를 갖춘 인기 제공업체",
       "libre_desc": "오픈소스, 자체 호스팅 가능한 속도 테스트",
       "cloudflare_desc": "빠른 CDN 기반 테스트",
-      "iperf3_desc": "네트워크 안에서 직접 운영하는 iperf3 서버"
+      "iperf3_desc": "네트워크 안에서 직접 운영하는 iperf3 서버",
+      "iperf_advanced": "실행 설정",
+      "iperf_duration": "방향당 초",
+      "iperf_streams": "병렬 스트림",
+      "iperf_udp": "UDP로 측정",
+      "iperf_bitrate": "비트레이트 (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "평균",
     "compare": {
       "note": "{{from}} – {{to}} 대비 변화",
-      "note_partial": "{{from}} – {{to}} 대비 변화 (같은 시각까지)"
+      "empty": "{{from}} – {{to}} 기간에 비교할 테스트가 없습니다",
+      "label": "비교 대상",
+      "choice": {
+        "previous": "이전 기간",
+        "1m": "1개월 전",
+        "3m": "3개월 전",
+        "6m": "6개월 전",
+        "1y": "1년 전",
+        "2y": "2년 전"
+      }
     },
     "downsampled": "평균 처리됨 · 전체 {{total}}개 중 {{shown}}개 테스트 표시",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "대상 비교",
+      "chart": {
+        "ping": "측정 대상별 핑",
+        "download": "측정 대상별 다운로드",
+        "upload": "측정 대상별 업로드"
+      },
       "failure_rate": "실패율",
-      "metric": "지표",
       "empty": "이 기간에 측정한 대상이 없습니다",
-      "open_hint": "열어서 이 기간의 대상을 비교하세요",
       "unavailable": "불러올 수 없음"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "예약에 포함",
     "alerts": "알림 및 권장값",
     "own_optimals": "자체 최적 값",
+    "baseline_alerts": "평소보다 느릴 때 알림",
+    "baseline_percent": "비율 (%)",
+    "baseline_desc": "테스트가 대상의 30일 중앙값에서 이 비율 아래로 떨어지면 알립니다.",
     "all": "전체 측정 대상",
     "saved": "측정 대상이 저장되었습니다.",
     "removed": "측정 대상이 삭제되었습니다.",

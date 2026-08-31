@@ -73,10 +73,17 @@ describe("how the runner performs them", () => {
         assert.match(run, /\{runs: results, latency, endpoint, elapsed\}/);
     });
 
-    // The direction is passed down because the CLI's own records do not name
-    // one: an iperf3 interval describes whichever direction this invocation
-    // was started for, and only the caller knows which.
-    it("tells the progress reader which direction is running", () => {
-        assert.match(run, /parseProgressLine\(mode, line\.trim\(\), phase\)/);
+    /**
+     * The direction is passed down because the CLI's own records do not name
+     * one: an iperf3 interval describes whichever direction this invocation was
+     * started for, and only the caller knows which.
+     *
+     * The length of the run travels with it for the same reason - the records
+     * state no fraction either, so the bar divides the interval clock by it, and
+     * a target measuring for a minute against the ten-second default fills its
+     * bar in the first sixth and then sits still.
+     */
+    it("tells the progress reader which direction is running, and for how long", () => {
+        assert.match(run, /parseProgressLine\(mode, line\.trim\(\), phase, [A-Za-z][\w.]*\)/);
     });
 });

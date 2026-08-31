@@ -17,6 +17,56 @@ body, html
   font-weight: 600
   position: relative
 
+// The font a control is drawn in, which it does not inherit on its own.
+//
+// A browser hands form controls its own UI font - Arial here - and setting one
+// on `body` does not reach them. So a control was in the app's typeface only
+// where somebody had written this line on it by hand, and the ones nobody
+// thought of sat in another face beside labels that were not.
+//
+// Four were, found on screen: every dialog's Save button, the custom cron
+// field, that field's disclosure, and the header's icon buttons. Each already
+// had a font-size and a font-weight of its own, which is exactly what makes
+// the miss so easy to make - the rule looks like it has settled the type.
+//
+// Said once here rather than per component, so a control written next year is
+// right without its author having to know this. The `font-family: inherit`
+// lines already scattered through the components stay correct and are now
+// merely redundant.
+//
+// `//` and not `/* */`: sass emits a block comment into the CSS, where it
+// lands immediately before this selector and is read as part of it by the
+// stylesheet tests - which is how the rule came to exist and be invisible.
+input,
+button,
+select,
+textarea
+  font-family: inherit
+
+// The browser's own spinner on a number field, taken off everywhere.
+//
+// `color-scheme` recolours it so it is no longer a pale chrome widget on a dark
+// field, and that is as far as a colour can take it: it stays a cramped pair of
+// arrows drawn outside the palette, with a hit area sized for a mouse and
+// nothing else. NumberField draws the app's own stepper where stepping is worth
+// offering, and the arrow keys still step every field this hides it on.
+//
+// On the type rather than on a field class, for the reason the typeface above
+// is: there are three independent field classes - .dialog-input,
+// .form-field-input and .storage-input - dressing fourteen number inputs across
+// six components, and only StorageDialog had thought to write this. The other
+// thirteen were a miss nobody could see they were making.
+input[type="number"]
+  appearance: textfield
+  -moz-appearance: textfield
+
+// Both buttons: the inner one is what shows, and the outer one goes on
+// reserving the room it would have sat in.
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button
+  -webkit-appearance: none
+  margin: 0
+
 body::before
   content: ""
   position: fixed

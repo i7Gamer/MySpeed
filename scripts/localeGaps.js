@@ -120,6 +120,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     da: [
+        "dialog.provider.iperf_bitrate",
         "integrations.influxdb.fields.bucket",
         "dialog.okay", "dialog.provider.server", "update.pause", "header.download",  "storage.import",
         "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.down",
@@ -134,6 +135,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     de: [
+        "dialog.provider.iperf_bitrate",
         "integrations.influxdb.fields.bucket",
         "welcome.ms", "dialog.okay", "dialog.provider.server", "storage.speedtests", "storage.tests",
         // The target editor's name field. German writes the noun the same way.
@@ -194,6 +196,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     it: [
+        "dialog.provider.iperf_bitrate",
         "integrations.influxdb.fields.bucket",
         "welcome.ms", "welcome.mbps", "dialog.provider.server", "latest.ping",
         "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
@@ -216,6 +219,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     nb: [
+        "dialog.provider.iperf_bitrate",
         "dialog.provider.server", "update.pause",
         "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
         "latest.byte_speed_unit", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
@@ -230,6 +234,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     nl: [
+        "dialog.provider.iperf_bitrate",
         "latest.down", "latest.up", "integrations.healthChecks.fields.url", "integrations.influxdb.fields.bucket",
         "welcome.ms", "dialog.provider.interface", "dialog.provider.server", "header.servers", "storage.tests", "storage.reset", "latest.ping", "latest.ping_unit",
         "latest.jitter", "latest.jitter_unit", "latest.byte_speed_unit", "info.ping.title",

@@ -38,8 +38,13 @@ describe("the form field's value", () => {
     // The number branch round-trips "" back out through onChange, so "" is
     // already this component's spelling of "no value". Changing that would
     // change what the integration card submits.
+    //
+    // The value is matched by shape rather than by name: the branch reads its
+    // input from NumberField's argument now instead of from an event, and what
+    // has to hold is that the same expression is tested and converted - an
+    // empty string out as an empty string, anything else as a number.
     it("leaves the change contract alone", () => {
-        assert.match(source, /e\.target\.value === "" \? "" : Number\(e\.target\.value\)/);
+        assert.match(source, /([\w.]+) === "" \? "" : Number\(\1\)/);
     });
 });
 

@@ -19,8 +19,29 @@ beforeEach(async () => {
     await setConfig(server.config, "passwordLevel", "none");
 });
 
+/*
+ * Four hundred nines: digits the whole way, and `Number` of them is Infinity.
+ * Reaching the driver as a bind parameter, Infinity is a value no dialect can
+ * compare an INTEGER column against, so the request came back a 500 saying
+ * nothing about which parameter was wrong.
+ *
+ * The shapes a target filter refuses are pinned beside the statistics route,
+ * which is where the guard is written about. What these two pin is that all
+ * three routes read the same parser - so it cannot be repaired on one of them
+ * and left off the others.
+ */
+const OVERFLOWING_TARGET = "9".repeat(400);
+
 describe("GET /api/speedtests/export", () => {
     const exportUrl = (query) => api(server.baseUrl, `/speedtests/export?${query}`);
+
+    it("refuses a target id too large to read as a number", async () => {
+        const {status, body} = await exportUrl(
+            `from=2026-08-01&to=2026-08-07&format=json&target=${OVERFLOWING_TARGET}`);
+
+        assert.equal(status, 400);
+        assert.match(body.message, /target parameter/);
+    });
 
     it("validates the range like the statistics route", async () => {
         assert.equal((await exportUrl("from=2026-02-30&to=2026-03-01")).status, 400);
@@ -133,6 +154,14 @@ describe("GET /api/speedtests", () => {
     it("rejects a non-numeric limit", async () => {
         const {status} = await api(server.baseUrl, "/speedtests?limit=abc");
         assert.equal(status, 400);
+    });
+
+    it("refuses a target id too large to read as a number", async () => {
+        const {status, body} = await api(server.baseUrl,
+            `/speedtests?target=${OVERFLOWING_TARGET}`);
+
+        assert.equal(status, 400);
+        assert.match(body.message, /target parameter/);
     });
 
     it("rejects a non-numeric afterId", async () => {

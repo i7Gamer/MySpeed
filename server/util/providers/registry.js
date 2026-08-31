@@ -34,6 +34,64 @@ export const IPERF_STREAMS = 4;
 export const IPERF_OMIT_SECONDS = 1;
 
 /**
+ * How far a single target may move the first two of those.
+ *
+ * The defaults above describe what a speedtest does, which is the right answer
+ * for a target measuring an internet line and the wrong one for the case this
+ * provider exists for: a ten-second four-stream run says very little about a
+ * 10-gigabit LAN path, and nothing at all about one that only misbehaves after
+ * a minute of sustained transfer.
+ *
+ * The ceiling is the run's own timeout. CLI_TIMEOUT in server/util/speedtest.js
+ * is armed per invocation and an iperf3 test is two of them, so sixty seconds of
+ * transfer plus the omitted warm-up plus the connect timeout leaves that timer
+ * roughly three times the headroom it needs - while a whole test still finishes
+ * well inside the default hourly round.
+ *
+ * The floor is the shortest window that measures anything: below about five
+ * seconds a TCP transfer is mostly the slow start `--omit` exists to discard.
+ * One stream is the floor of the other because it is a legitimate measurement -
+ * it is what a single-connection transfer will actually achieve - and 32 is
+ * past the point where more connections describe the line rather than the two
+ * machines' ability to schedule them.
+ *
+ * Mirrored by the target dialog, which greys its Save button rather than
+ * earning a red toast, so these are a copy the client suite pins by parity.
+ */
+export const IPERF_MIN_DURATION_SECONDS = 5;
+export const IPERF_MAX_DURATION_SECONDS = 60;
+export const IPERF_MIN_STREAMS = 1;
+export const IPERF_MAX_STREAMS = 32;
+
+/**
+ * What a UDP run is asked for in, and between what bounds.
+ *
+ * iperf3 takes the rate with a unit suffix and MySpeed asks in megabits, which
+ * is the unit the rest of the app already states speeds in - so the number in
+ * the dialog is the number in the chart. The floor is the lowest rate that
+ * says anything about a modern link; the ceiling is past 10-gigabit, which is
+ * the fastest path anyone is measuring with a CLI a speedtest downloads.
+ *
+ * The stream count is fixed at one rather than bounded: the shipped Cygwin
+ * build cannot carry a UDP run over more than that. See buildArgs.
+ */
+export const IPERF_BITRATE_UNIT = "M";
+export const IPERF_MIN_BITRATE_MBPS = 1;
+export const IPERF_MAX_BITRATE_MBPS = 10000;
+export const IPERF_UDP_STREAMS = 1;
+
+/**
+ * How long one direction of a target's test measures for - its own where it
+ * names one, the shipped default everywhere else.
+ *
+ * Exported because two places have to reach the same answer: the arguments, and
+ * the progress bar's denominator. Those are built in different files from
+ * different objects, and a bar dividing by ten while the run measures for sixty
+ * fills in the first sixth and then sits still, which reads as a hung test.
+ */
+export const iperfRunSeconds = (target) => target?.iperfDuration ?? IPERF_DURATION_SECONDS;
+
+/**
  * How long the control connection may take to come up.
  *
  * Without it a host that accepts nothing - the usual case for a LAN target
@@ -279,6 +337,15 @@ export const REGISTRY = {
         buildArgs(target, iface) {
             const {host, port} = splitEndpoint(target.endpoint);
 
+            /*
+             * Datagrams instead of a stream, which is a different measurement
+             * rather than a louder one: TCP answers what a file transfer would
+             * achieve, UDP answers what the path does to packets at a rate the
+             * operator names - and only a UDP run reports the jitter and loss
+             * the row has columns for.
+             */
+            const udp = Boolean(target.iperfUdp);
+
             const args = [
                 '--client', host,
                 '--port', String(port),
@@ -287,14 +354,36 @@ export const REGISTRY = {
                 // Plain --json pretty-prints one object across many lines, and
                 // none of them parse on their own.
                 '--json-stream',
-                '--time', String(IPERF_DURATION_SECONDS),
+                // The target's own length where it names one - see
+                // iperfRunSeconds. Null and absent both mean "the default",
+                // which is what every target created before this column
+                // carries, so the argv of an untuned target is unchanged.
+                '--time', String(iperfRunSeconds(target)),
                 // Several streams, because one TCP connection is limited by
                 // its window over a long fat path and will under-report a fast
-                // line badly. Four is what a speedtest does.
-                '--parallel', String(IPERF_STREAMS),
+                // line badly. Four is what a speedtest does; a target on a
+                // faster path than a speedtest measures may say otherwise.
+                //
+                // One when the run is UDP, and not as a preference: `-u -P 2`
+                // fails on the Cygwin build this downloads - twice out of two
+                // attempts, at two different rates, with "unable to read from
+                // stream socket". The door refuses the pair so nobody
+                // configures a target that can only fail; this keeps the argv
+                // honest for a row that reaches it anyway.
+                '--parallel', String(udp ? IPERF_UDP_STREAMS : target.iperfStreams ?? IPERF_STREAMS),
+                // Datagrams at a named rate. Both halves matter: UDP without
+                // an explicit rate falls to the CLI's own 1 Mbit/s default and
+                // stores a gigabit line as a megabit, in the right column,
+                // with nothing in the payload saying which it was.
+                ...(udp ? ['--udp', '--bitrate', `${target.iperfBitrate}${IPERF_BITRATE_UNIT}`] : []),
                 // The first seconds are TCP working out how fast it may go,
                 // and averaging them in reports less than the line carries.
-                '--omit', String(IPERF_OMIT_SECONDS),
+                //
+                // A fixed-rate sender has no such ramp, so a UDP run measures
+                // its whole window - and the first second is where a filling
+                // buffer drops its first packets, which is the reading that
+                // mode exists for.
+                ...(udp ? [] : ['--omit', String(IPERF_OMIT_SECONDS)]),
                 // Bounds the one thing that would otherwise hang until the
                 // run's own three-minute timeout: a host that accepts nothing.
                 '--connect-timeout', String(IPERF_CONNECT_TIMEOUT_MS),

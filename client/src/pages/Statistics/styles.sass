@@ -1,4 +1,5 @@
 @use "@/common/styles/colors" as *
+@use "@/common/styles/focus" as *
 @use "@/common/styles/layout" as *
 
 // No width or inset of its own: the shared `main > *` container in default.sass
@@ -19,6 +20,21 @@
   > .page-toolbar,
   > .target-chips
     margin-bottom: 0
+
+  /*
+   * The comparison table is as tall as its rows.
+   *
+   * Every card takes a 14rem floor from .stats-content, which is there so a
+   * small value card does not look cramped beside the taller line-mates it
+   * shares a row with. This one shares a row with nothing - it spans the width
+   * at every stage - so the floor buys it nothing and left three target rows
+   * sitting in a box with six rems of air beneath them.
+   *
+   * Here rather than in the container's own stylesheet, which says in as many
+   * words that what a card does on this page is decided in this file.
+   */
+  > .container-wide .stats-content
+    min-height: 0
 
 .statistic-stale
   opacity: 0.7
@@ -235,8 +251,26 @@
 // One sentence naming the window every delta on the page compares against,
 // so each delta can be a bare arrow and number. Full width so the cards below
 // wrap beneath it rather than beside it.
+// The sentence, the picker that chooses the window it names, and the way back
+// to the default - one row. Wraps on its own when the three no longer fit.
+//
+// Content-sized rather than full width, because it is drawn beside the target
+// chips as the toolbar's aside: a width of 100% here would take the whole line
+// and put the chips back on one of their own, which is the row this exists to
+// save. .toolbar-second-row is the flex parent that decides whether the two
+// share a line, and it is full width for both of them.
+.statistics-compare-row
+  flex: 0 1 auto
+  min-width: 0
+  display: flex
+  flex-wrap: wrap
+  align-items: center
+  gap: 0.75rem
+
+// The offset control draws itself - see components/CompareSelect.
+
 .statistics-compare-note
-  width: 100%
+  width: auto
   margin: 0
   font-size: 0.85rem
   font-weight: 500
@@ -249,7 +283,15 @@
   align-items: center
   justify-content: center
   padding: 6rem 2rem
-  
+  // The sentence and the button are siblings in a centred row, and there was
+  // nothing between them: "No tests between Aug 25 and Aug 31" ran straight
+  // into "Show all time", both edges measuring at the same pixel.
+  gap: 1rem
+  // The other half of the same fault. This sentence carries two formatted dates
+  // and is the longest string on the page, so on a narrow screen an unwrappable
+  // row squeezes it and the button together instead.
+  flex-wrap: wrap
+
   p
     font-size: 1.1rem
     font-weight: 500

@@ -60,7 +60,12 @@
       "ookla_desc": "Penyedia populer dengan jaringan server global",
       "libre_desc": "Speedtest sumber terbuka yang bisa di-hosting sendiri",
       "cloudflare_desc": "Pengujian cepat berbasis CDN",
-      "iperf3_desc": "Server iperf3 milik Anda sendiri, di jaringan Anda"
+      "iperf3_desc": "Server iperf3 milik Anda sendiri, di jaringan Anda",
+      "iperf_advanced": "Pengaturan pengujian",
+      "iperf_duration": "Detik per arah",
+      "iperf_streams": "Aliran paralel",
+      "iperf_udp": "Ukur dengan UDP",
+      "iperf_bitrate": "Laju bit (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "Rata-rata",
     "compare": {
       "note": "Perubahan dibandingkan dengan {{from}} – {{to}}",
-      "note_partial": "Perubahan dibandingkan dengan {{from}} – {{to}}, hingga waktu yang sama"
+      "empty": "Tidak ada pengujian pada {{from}} – {{to}} untuk dibandingkan",
+      "label": "Bandingkan dengan",
+      "choice": {
+        "previous": "Periode sebelumnya",
+        "1m": "1 bulan lebih awal",
+        "3m": "3 bulan lebih awal",
+        "6m": "6 bulan lebih awal",
+        "1y": "1 tahun lebih awal",
+        "2y": "2 tahun lebih awal"
+      }
     },
     "downsampled": "Dirata-ratakan · menampilkan {{shown}} dari {{total}} pengujian",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "Perbandingan target",
+      "chart": {
+        "ping": "Ping per tujuan",
+        "download": "Unduh per tujuan",
+        "upload": "Unggah per tujuan"
+      },
       "failure_rate": "Tingkat kegagalan",
-      "metric": "Metrik",
       "empty": "Tidak ada target yang mengukur apa pun dalam rentang ini",
-      "open_hint": "Buka untuk membandingkan target dalam rentang ini",
       "unavailable": "Gagal memuat"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "Terjadwal",
     "alerts": "Peringatan & rekomendasi",
     "own_optimals": "Nilai optimal sendiri",
+    "baseline_alerts": "Peringatan di bawah kecepatan biasa",
+    "baseline_percent": "Porsi (%)",
+    "baseline_desc": "Memperingatkan saat pengujian turun di bawah bagian ini dari median 30 hari target.",
     "all": "Semua tujuan",
     "saved": "Tujuan telah disimpan.",
     "removed": "Tujuan telah dihapus.",

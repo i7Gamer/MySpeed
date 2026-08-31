@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { REGISTRY, descriptor, providerIds, LIBRE_DURATION_SECONDS } from "../../server/util/providers/registry.js";
+import { REGISTRY, descriptor, providerIds, LIBRE_DURATION_SECONDS, IPERF_DURATION_SECONDS,
+    IPERF_MAX_DURATION_SECONDS, IPERF_MAX_STREAMS, IPERF_MIN_DURATION_SECONDS, IPERF_MIN_STREAMS,
+    IPERF_STREAMS } from "../../server/util/providers/registry.js";
 
 /**
  * One descriptor per provider, replacing the if/else chains that named the
@@ -105,6 +107,50 @@ describe("cloudflare arguments", () => {
 
         assert.ok(v4.args.includes("--ipv4=192.168.1.2"));
         assert.ok(v6.args.includes("--ipv6=fd00::2"));
+    });
+});
+
+/**
+ * The bounds a target's own iperf3 tuning is held to.
+ *
+ * They live beside the defaults they bound because the same numbers are read
+ * three times: here to judge a write, in the runner to build the argv, and in
+ * the dialog, which mirrors them to grey the Save button rather than earning a
+ * red toast. The values are pinned as literals because that mirror is a copy -
+ * the parity the client suite asserts is against these exact numbers.
+ */
+describe("the iperf3 tuning bounds", () => {
+    it("names the range a target may measure over", () => {
+        assert.equal(IPERF_MIN_DURATION_SECONDS, 5);
+        assert.equal(IPERF_MAX_DURATION_SECONDS, 60);
+    });
+
+    it("names the range of streams a transfer may be carried over", () => {
+        assert.equal(IPERF_MIN_STREAMS, 1);
+        assert.equal(IPERF_MAX_STREAMS, 32);
+    });
+
+    /**
+     * The shipped default is what a target inherits by leaving the field unset,
+     * and it is judged by nothing - so a later edit that moved a default outside
+     * its own bounds would leave every untuned target running a value the dialog
+     * refuses to let anyone type.
+     */
+    it("keeps each shipped default inside its own bounds", () => {
+        assert.ok(IPERF_MIN_DURATION_SECONDS <= IPERF_DURATION_SECONDS
+            && IPERF_DURATION_SECONDS <= IPERF_MAX_DURATION_SECONDS,
+        `the default ${IPERF_DURATION_SECONDS}s duration is outside its own bounds`);
+
+        assert.ok(IPERF_MIN_STREAMS <= IPERF_STREAMS && IPERF_STREAMS <= IPERF_MAX_STREAMS,
+            `the default ${IPERF_STREAMS} streams is outside its own bounds`);
+    });
+
+    // Whole seconds and whole streams, which is all iperf3 takes - and what the
+    // validation refuses anything else on behalf of.
+    it("bounds them with whole numbers", () => {
+        for (const bound of [IPERF_MIN_DURATION_SECONDS, IPERF_MAX_DURATION_SECONDS,
+            IPERF_MIN_STREAMS, IPERF_MAX_STREAMS])
+            assert.ok(Number.isInteger(bound), `${bound} is not a whole number`);
     });
 });
 

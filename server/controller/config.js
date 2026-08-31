@@ -778,6 +778,21 @@ export const importConfig = async (obj) => {
         optimalPing: row.optimalPing ?? null,
         optimalDownload: row.optimalDownload ?? null,
         optimalUpload: row.optimalUpload ?? null,
+        // Null here is "inherit the shipped default" and not "unmeasured", so
+        // a file written before these columns existed restores as it always
+        // measured. Dropping them instead would be silent: the restore reports
+        // the same counts and the target quietly measures at the defaults.
+        iperfDuration: row.iperfDuration ?? null,
+        iperfStreams: row.iperfStreams ?? null,
+        // The mode is a flag rather than an inheritance, so a file written
+        // before it existed restores as TCP - which is what it was measuring.
+        iperfUdp: Boolean(row.iperfUdp),
+        iperfBitrate: row.iperfBitrate ?? null,
+        // Null is "this target has no baseline", which is what a file written
+        // before the column existed was describing. Dropping it instead would
+        // be silent: the restore reports the same counts and the target the
+        // operator had watching its own median quietly stops.
+        baselinePercent: row.baselinePercent ?? null,
         sortOrder: Number.isInteger(row.sortOrder) ? row.sortOrder : index,
         created: typeof row.created === "string" ? row.created : new Date().toISOString()
     }));

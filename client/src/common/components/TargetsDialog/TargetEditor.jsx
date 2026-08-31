@@ -2,7 +2,7 @@ import {Dialog, DialogHeader, DialogBody, DialogFooter} from "@/common/contexts/
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
-    faCheck, faServer, faLink, faHashtag, faExclamationTriangle, faTag
+    faCheck, faServer, faLink, faHashtag, faExclamationTriangle, faStopwatch, faTag
 } from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
 import React, {useContext, useEffect, useState} from "react";
@@ -17,9 +17,15 @@ import Checkbox from "@/common/components/Checkbox";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import {CUSTOM_BACKEND_PLACEHOLDER, IPERF_HOST_PLACEHOLDER} from "@/common/utils/InvariantText";
 import {
-    iperfHostAccepted, providerById, providers, requiresEndpoint, takesEndpoint, takesServerId
+    baselineAccepted, BASELINE_BOUNDS, BASELINE_PERCENT_DEFAULT, bitrateAccepted,
+    durationAccepted, iperfHostAccepted, providerById, providers, requiresEndpoint,
+    streamsAccepted, takesEndpoint, takesServerId, takesTuning, tuningAccepted, TUNING_BOUNDS
 } from "./providers";
 import {optimalAccepted, optimalsAccepted, targetBody, uniqueTargetName} from "./targetBody";
+
+// The rule the door states for a pinned server, kept in step with
+// server/controller/targets.js: an id is digits and nothing else.
+const SERVER_ID_DIGITS = /^\d+$/;
 
 /**
  * One target's whole shape: its name, its provider, where it measures, whether
@@ -59,6 +65,23 @@ export const TargetEditor = ({open, onClose, target}) => {
     // targetBody maps "" to null on the way out.
     const [endpoint, setEndpoint] = useState("");
     const [alerts, setAlerts] = useState(true);
+    // How the run itself is shaped, for the one provider that lets a target
+    // say. Blank is not a value: the column is nullable and null is what the
+    // runner reads as "the registry's own default".
+    const [iperfDuration, setIperfDuration] = useState("");
+    const [iperfStreams, setIperfStreams] = useState("");
+    // Datagrams instead of a stream, which is a different measurement rather
+    // than a louder one - and the only run that reports the jitter and packet
+    // loss the row has columns for. The rate is not optional beside it: the
+    // CLI's own default is 1 Mbit/s and says nothing about being one.
+    const [iperfUdp, setIperfUdp] = useState(false);
+    const [iperfBitrate, setIperfBitrate] = useState("");
+    // What "slower than usual" means for this target. Derived from the column
+    // rather than stored beside it, the way ownOptimals is: null is the whole
+    // of how a target says it has no baseline, and a flag beside it would
+    // invent a switched-on-with-no-percentage row nothing else here has.
+    const [baselineAlerts, setBaselineAlerts] = useState(false);
+    const [baselinePercent, setBaselinePercent] = useState("");
     const [ownOptimals, setOwnOptimals] = useState(false);
     const [optimalPing, setOptimalPing] = useState("");
     const [optimalDownload, setOptimalDownload] = useState("");
@@ -80,6 +103,14 @@ export const TargetEditor = ({open, onClose, target}) => {
         setEndpoint(target?.endpoint ?? "");
         // sqlite hands the flag back as 0/1 under the global raw:true.
         setAlerts(target ? Boolean(target.alerts) : true);
+        setIperfDuration(target?.iperfDuration != null ? String(target.iperfDuration) : "");
+        setIperfStreams(target?.iperfStreams != null ? String(target.iperfStreams) : "");
+        // sqlite hands this one back as 0/1 too, under the same raw:true.
+        setIperfUdp(Boolean(target?.iperfUdp));
+        setIperfBitrate(target?.iperfBitrate != null ? String(target.iperfBitrate) : "");
+
+        setBaselineAlerts(target?.baselinePercent != null);
+        setBaselinePercent(target?.baselinePercent != null ? String(target.baselinePercent) : "");
 
         const hasOwn = target != null
             && (target.optimalPing ?? target.optimalDownload ?? target.optimalUpload) != null;
@@ -144,7 +175,8 @@ export const TargetEditor = ({open, onClose, target}) => {
 
         // Built by targetBody, which owns the three sentinels the fields carry.
         const body = targetBody({name, provider, serverId, endpoint, alerts, ownOptimals,
-            optimalPing, optimalDownload, optimalUpload});
+            optimalPing, optimalDownload, optimalUpload, iperfDuration, iperfStreams,
+            iperfUdp, iperfBitrate, baselineAlerts, baselinePercent});
 
         try {
             if (target) await assertOk(await patchRequest(`/targets/${target.id}`, body), "target");
@@ -180,11 +212,39 @@ export const TargetEditor = ({open, onClose, target}) => {
     // rule it applies is asked here. Said as a button that will not press,
     // rather than as a red toast after the fact.
     const hasEndpoint = !requiresEndpoint(provider) || iperfHostAccepted(endpoint);
+    // Typed and wrong, which is not the same as not typed yet: iperfHostAccepted
+    // refuses an empty host too, so marking on hasEndpoint alone would paint a
+    // fresh iperf3 target red before its operator had touched the field. The
+    // dead Update button already says a host is needed; red says this one is
+    // not a host.
+    const badEndpoint = requiresEndpoint(provider) && endpoint.trim() !== "" && !hasEndpoint;
+    /*
+     * The same rule the door states, asked here.
+     *
+     * The id goes out as null when it is empty or the automatic sentinel - see
+     * targetBody - so only something actually typed has to be digits. It was
+     * not asked at all: "abc" left the button green, went out, and came back a
+     * 400 naming a value the operator was looking at, which is the shape this
+     * editor answers everywhere else with a button that will not press.
+     */
+    const serverIdAccepted = !takesServerId(provider) || !serverId || serverId === "none"
+        || SERVER_ID_DIGITS.test(serverId);
     // What makes the row saveable at all; the in-flight lock is its own term
     // on the button, so the two reasons for a dead button stay legible apart.
-    const canSave = name.trim() !== "" && hasEndpoint && !sentinelTyped
+    const canSave = name.trim() !== "" && hasEndpoint && !sentinelTyped && serverIdAccepted
         && (provider !== "ookla" || acceptedOokla)
-        && optimalsAccepted({ownOptimals, optimalPing, optimalDownload, optimalUpload});
+        && optimalsAccepted({ownOptimals, optimalPing, optimalDownload, optimalUpload})
+        // Said as a button that will not press rather than as a red toast
+        // after the fact, the rule this file already keeps for the host and
+        // the optimals: the door refuses these bounds, and the field that
+        // breaks them marks itself below.
+        //
+        // Asked of the whole run shape rather than field by field, because
+        // which of these fields is on the screen depends on the provider and
+        // the mode - and a field the dialog is not drawing must not be able to
+        // hold the button down. See tuningAccepted.
+        && tuningAccepted({provider, iperfDuration, iperfStreams, iperfUdp, iperfBitrate})
+        && baselineAccepted(baselinePercent, baselineAlerts);
 
     const formatServerLabel = (entry) => {
         if (!entry) return "";
@@ -230,7 +290,14 @@ export const TargetEditor = ({open, onClose, target}) => {
                                     every field looking fine names nothing, and
                                     the name is the one field somebody can
                                     empty by hand. */}
+                                {/* The heading beside it is the field's name,
+                                    but nothing ties the two together - no
+                                    label, no htmlFor - so a reader tabbing
+                                    straight to the input heard "edit text" and
+                                    the placeholder. Said on the input instead,
+                                    from the key the heading already renders. */}
                                 <input type="text"
+                                       aria-label={t("targets.name")}
                                        className={`dialog-input provider-input${name.trim() === "" ? " input-error" : ""}`}
                                        placeholder={t("targets.name_placeholder")}
                                        value={name} maxLength={64}
@@ -260,16 +327,19 @@ export const TargetEditor = ({open, onClose, target}) => {
                                             <FontAwesomeIcon icon={faServer}/>
                                             <h3>{t("dialog.provider.server")}</h3>
                                         </div>
-                                        <select className="dialog-input provider-input" value={serverId}
-                                                onChange={(e) => handleServerIdChange(e.target.value)}>
-                                            <option value="none">{t("dialog.provider.choose_automatically")}</option>
-                                            {provider === "ookla" && Object.keys(ooklaServers).map((current, index) => (
-                                                <option key={index} value={current}>{formatServerLabel(ooklaServers[current])}</option>
-                                            ))}
-                                            {provider === "libre" && Object.keys(libreServers).map((current, index) => (
-                                                <option key={index} value={current}>{formatServerLabel(libreServers[current])}</option>
-                                            ))}
-                                        </select>
+                                        <span className="select-wrap provider-input-wrap">
+                                            <select className="dialog-input select-field provider-input" value={serverId}
+                                                    aria-label={t("dialog.provider.server")}
+                                                    onChange={(e) => handleServerIdChange(e.target.value)}>
+                                                <option value="none">{t("dialog.provider.choose_automatically")}</option>
+                                                {provider === "ookla" && Object.keys(ooklaServers).map((current, index) => (
+                                                    <option key={index} value={current}>{formatServerLabel(ooklaServers[current])}</option>
+                                                ))}
+                                                {provider === "libre" && Object.keys(libreServers).map((current, index) => (
+                                                    <option key={index} value={current}>{formatServerLabel(libreServers[current])}</option>
+                                                ))}
+                                            </select>
+                                        </span>
                                     </div>
                                 )}
 
@@ -289,7 +359,12 @@ export const TargetEditor = ({open, onClose, target}) => {
                                             <FontAwesomeIcon icon={faHashtag}/>
                                             <h3>{t("dialog.provider.server_id")}</h3>
                                         </div>
-                                        <input type="text" className="dialog-input provider-input"
+                                        {/* Red beside the dead button, the way the
+                                            endpoint and the optimals mark themselves:
+                                            the door takes digits and nothing else. */}
+                                        <input type="text"
+                                               aria-label={t("dialog.provider.server_id")}
+                                               className={`dialog-input provider-input${serverIdAccepted ? "" : " input-error"}`}
                                                placeholder={t("dialog.provider.server_id_placeholder")}
                                                value={serverId === "none" ? "" : serverId}
                                                onChange={(e) => handleServerIdChange(e.target.value)}/>
@@ -312,11 +387,85 @@ export const TargetEditor = ({open, onClose, target}) => {
                                             would silently drop, and a greyed Update with every
                                             field looking fine names nothing. */}
                                         <input type="text"
-                                               className={`dialog-input provider-input${sentinelTyped ? " input-error" : ""}`}
+                                               aria-label={t(isIperf ? "dialog.provider.iperf_host"
+                                                   : "dialog.provider.custom_url")}
+                                               className={`dialog-input provider-input${sentinelTyped || badEndpoint ? " input-error" : ""}`}
                                                placeholder={isIperf ? IPERF_HOST_PLACEHOLDER
                                                    : CUSTOM_BACKEND_PLACEHOLDER}
                                                value={endpoint}
                                                onChange={(e) => handleEndpointChange(e.target.value)}/>
+                                    </div>
+                                )}
+
+                                {/* How long the run lasts and how many streams
+                                    it opens - the two knobs a self-hosted
+                                    server's operator actually turns. Left
+                                    blank they store null, which is the
+                                    runner's own default: a target nobody
+                                    tuned runs exactly as it did before these
+                                    existed. Only for the provider that lets a
+                                    target say; the other three decide their
+                                    own run. */}
+                                {takesTuning(provider) && (
+                                    <div className="provider-setting target-tuning-setting">
+                                        <div className="provider-setting-label">
+                                            <FontAwesomeIcon icon={faStopwatch}/>
+                                            <h3>{t("dialog.provider.iperf_advanced")}</h3>
+                                        </div>
+                                        <div className="target-tuning-fields">
+                                            {/* input-error beside the dead button, like the
+                                                optimals: a spinner steps past the bounds the
+                                                door holds these to, and a greyed Add with
+                                                every field looking fine names nothing. */}
+                                            <label className="target-tuning-field">
+                                                <span>{t("dialog.provider.iperf_duration")}</span>
+                                                <input type="number"
+                                                       className={`dialog-input${durationAccepted(iperfDuration) ? "" : " input-error"}`}
+                                                       min={TUNING_BOUNDS.duration.min}
+                                                       max={TUNING_BOUNDS.duration.max}
+                                                       placeholder={String(TUNING_BOUNDS.duration.min)}
+                                                       value={iperfDuration}
+                                                       onChange={(e) => setIperfDuration(e.target.value)}/>
+                                            </label>
+                                            {/* One field or the other, never both.
+                                                A UDP run carries a single stream on
+                                                the build this downloads, so a stream
+                                                count under it is a control that does
+                                                nothing - and the rate takes its place
+                                                because a UDP run must name one. */}
+                                            {iperfUdp ? (
+                                                <label className="target-tuning-field">
+                                                    <span>{t("dialog.provider.iperf_bitrate")}</span>
+                                                    <input type="number"
+                                                           className={`dialog-input${bitrateAccepted(iperfBitrate, iperfUdp) ? "" : " input-error"}`}
+                                                           min={TUNING_BOUNDS.bitrate.min}
+                                                           max={TUNING_BOUNDS.bitrate.max}
+                                                           placeholder={String(TUNING_BOUNDS.bitrate.min)}
+                                                           value={iperfBitrate}
+                                                           onChange={(e) => setIperfBitrate(e.target.value)}/>
+                                                </label>
+                                            ) : (
+                                                <label className="target-tuning-field">
+                                                    <span>{t("dialog.provider.iperf_streams")}</span>
+                                                    <input type="number"
+                                                           className={`dialog-input${streamsAccepted(iperfStreams) ? "" : " input-error"}`}
+                                                           min={TUNING_BOUNDS.streams.min}
+                                                           max={TUNING_BOUNDS.streams.max}
+                                                           placeholder={String(TUNING_BOUNDS.streams.min)}
+                                                           value={iperfStreams}
+                                                           onChange={(e) => setIperfStreams(e.target.value)}/>
+                                                </label>
+                                            )}
+                                        </div>
+                                        {/* Not a provider-setting-switch: those are
+                                            whole rows and draw their own border, and
+                                            this one lives inside the bordered row above
+                                            rather than beside it. */}
+                                        <div className="target-tuning-switch">
+                                            <h3>{t("dialog.provider.iperf_udp")}</h3>
+                                            <ToggleSwitch checked={iperfUdp} onChange={setIperfUdp}
+                                                          label={t("dialog.provider.iperf_udp")}/>
+                                        </div>
                                     </div>
                                 )}
 
@@ -341,6 +490,13 @@ export const TargetEditor = ({open, onClose, target}) => {
                                                   label={t("targets.own_optimals")}/>
                                 </div>
 
+                                {/* Directly under the switch that reveals them.
+                                    Written after the baseline block below, the
+                                    three inputs arrived two switches down the
+                                    dialog with the baseline's own field in
+                                    between - so pressing "Own optimal values"
+                                    opened fields under somebody else's
+                                    heading. */}
                                 {ownOptimals && (
                                     <div className="target-optimals">
                                         {optimalFields.map(({label, unit, value, set, placeholder}) => (
@@ -365,6 +521,44 @@ export const TargetEditor = ({open, onClose, target}) => {
                                                        value={value} onChange={(e) => set(e.target.value)}/>
                                             </label>
                                         ))}
+                                    </div>
+                                )}
+
+                                {/* Every provider, unlike the run settings
+                                    above: a baseline is about what a target
+                                    measures rather than how it measures it.
+                                    Switching it on fills the field, because
+                                    the column IS the switch - an empty field
+                                    stores null, which is how a target says it
+                                    has no baseline, so a toggle that switched
+                                    on to nothing would not do what it says. */}
+                                <div className="provider-setting provider-setting-switch">
+                                    <div className="provider-setting-label">
+                                        <h3>{t("targets.baseline_alerts")}</h3>
+                                    </div>
+                                    <ToggleSwitch checked={baselineAlerts}
+                                                  onChange={(on) => {
+                                                      setBaselineAlerts(on);
+                                                      if (on && baselinePercent === "")
+                                                          setBaselinePercent(String(BASELINE_PERCENT_DEFAULT));
+                                                  }}
+                                                  label={t("targets.baseline_alerts")}/>
+                                </div>
+
+                                {baselineAlerts && (
+                                    <div className="target-baseline">
+                                        <label className="target-optimal">
+                                            <span className="target-optimal-label">
+                                                {t("targets.baseline_percent")}
+                                            </span>
+                                            <input type="number"
+                                                   className={`dialog-input${baselineAccepted(baselinePercent, baselineAlerts) ? "" : " input-error"}`}
+                                                   min={BASELINE_BOUNDS.min} max={BASELINE_BOUNDS.max}
+                                                   placeholder={String(BASELINE_PERCENT_DEFAULT)}
+                                                   value={baselinePercent}
+                                                   onChange={(e) => setBaselinePercent(e.target.value)}/>
+                                        </label>
+                                        <p className="target-baseline-note">{t("targets.baseline_desc")}</p>
                                     </div>
                                 )}
                             </div>

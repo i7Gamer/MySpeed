@@ -90,3 +90,151 @@ export const iperfHostAccepted = (endpoint) => {
 
     return PORT_DIGITS.test(port) && Number(port) >= 1 && Number(port) <= MAX_PORT;
 };
+
+/**
+ * Which providers let a target say how its run is shaped, rather than only
+ * where it measures.
+ *
+ * One today: the other three are hosted services that decide their own run.
+ * Kept as a question rather than an equality test at the call sites, so a
+ * second tunable provider is one line here rather than a grep.
+ */
+export const takesTuning = (provider) => provider === "iperf3";
+
+/*
+ * The bounds the server holds these to, copied for the same reason
+ * iperfHostAccepted is: nothing in this client can reach the server's rule,
+ * and a field the editor accepts but the door refuses is a save that fails
+ * naming a value the operator is looking at. tests/client/tuningParity.test.js
+ * runs this copy and the server's own over one table so the two cannot drift
+ * in silence.
+ *
+ * The duration's ceiling is not arbitrary: a run is armed with the CLI's own
+ * timeout per invocation, and a minute of transfer plus the omitted
+ * slow-start still leaves that timeout most of its headroom.
+ */
+const MIN_DURATION_SECONDS = 5;
+const MAX_DURATION_SECONDS = 60;
+const MIN_STREAMS = 1;
+const MAX_STREAMS = 32;
+const MIN_BITRATE_MBPS = 1;
+const MAX_BITRATE_MBPS = 10000;
+
+// Blank is not a bad value - it is the field left alone, which stores null and
+// runs the registry's own default. Everything else must be a whole number
+// inside the bounds: iperf3 takes -t and -P as integers, and 7.5 seconds
+// reaches the CLI as an argument it refuses.
+const withinBounds = (value, min, max) => {
+    if (value === "" || value === null || value === undefined) return true;
+
+    const figure = Number(value);
+
+    return Number.isInteger(figure) && figure >= min && figure <= max;
+};
+
+export const durationAccepted = (value) => withinBounds(value, MIN_DURATION_SECONDS, MAX_DURATION_SECONDS);
+
+export const streamsAccepted = (value) => withinBounds(value, MIN_STREAMS, MAX_STREAMS);
+
+/**
+ * The rate a UDP run sends at - the one field here where blank is not a valid
+ * answer.
+ *
+ * iperf3's own default is 1 Mbit/s and nothing in its output says it was a
+ * default: a capture measured 1.04 Mbit/s on the same loopback that measured
+ * 99.2 when asked for 100. So an unnamed rate is not "inherit something
+ * sensible", it is a gigabit line recorded as a megabit forever, and the door
+ * refuses it - which means the button must too.
+ *
+ * Asked with the mode, because off it is not a field at all: the editor does
+ * not draw it and the body drops whatever was left in it.
+ */
+export const bitrateAccepted = (value, udp) =>
+    !udp || (value !== "" && value !== null && value !== undefined
+        && withinBounds(value, MIN_BITRATE_MBPS, MAX_BITRATE_MBPS));
+
+/**
+ * Whether the run-shape fields the editor is actually DRAWING are acceptable.
+ *
+ * Asked of the provider and the mode rather than of the values alone, because
+ * a field that is not on the screen cannot be corrected on it. Both ways of
+ * getting one there are ordinary use, and both left the button dead with
+ * nothing marked and no control that could revive it:
+ *
+ * - type 50 streams, then switch UDP on. The stream input is replaced by the
+ *   bitrate, because a UDP run on this build carries one stream - so the 50
+ *   is still refused and no longer anywhere.
+ * - switch UDP on under iperf3, then change the provider to ookla. The whole
+ *   run-settings block unmounts with the blank bitrate still refused inside
+ *   it.
+ *
+ * The values themselves are not cleared, deliberately: switching back must
+ * return the operator to what they typed. targetBody is what stops them
+ * travelling - it nulls every field this returns true in spite of - so the
+ * body the button now permits is exactly the one the door accepts, which
+ * tuningParity asserts over the whole table.
+ */
+export const tuningAccepted = ({provider, iperfDuration, iperfStreams, iperfUdp, iperfBitrate}) => {
+    if (!takesTuning(provider)) return true;
+
+    return durationAccepted(iperfDuration)
+        && (Boolean(iperfUdp) || streamsAccepted(iperfStreams))
+        && bitrateAccepted(iperfBitrate, iperfUdp);
+};
+
+/*
+ * The share of its own rolling median a target may be judged at, copied from
+ * the server for the same reason the tuning bounds above are - and pinned
+ * against it by tests/client/baselineParity.test.js.
+ *
+ * The ceiling is below a hundred because the median is exceeded by half the
+ * tests by construction, so a hundred alerts on roughly every other one; the
+ * floor is above zero because a gate that only fires when the line has all but
+ * vanished never fires at all.
+ */
+const MIN_BASELINE_PERCENT = 10;
+const MAX_BASELINE_PERCENT = 95;
+
+/**
+ * What the toggle fills the field with when it is switched on.
+ *
+ * A value rather than a blank, because the switch and the column are the same
+ * thing here: an empty field stores null, and null is how a target says it has
+ * no baseline - so a toggle that switched on to nothing would be a control
+ * that does not do what it says. Seventy is a drop of nearly a third from the
+ * usual speed, which is a bad afternoon rather than ordinary variance.
+ */
+export const BASELINE_PERCENT_DEFAULT = 70;
+
+export const BASELINE_BOUNDS = {min: MIN_BASELINE_PERCENT, max: MAX_BASELINE_PERCENT};
+
+/**
+ * Whether the typed baseline share can be saved.
+ *
+ * Asked with the switch, like the bitrate is asked with the mode: off, the
+ * field is not drawn and whatever is left in it must not hold the button down.
+ * On, blank is the one thing it cannot be - the column IS the switch, so an
+ * empty field would store null and quietly mean "no baseline" under a toggle
+ * that says otherwise.
+ *
+ * A fraction is legitimate here, unlike the run-shape fields: the column is a
+ * DOUBLE and a share is not a count of seconds or connections.
+ */
+export const baselineAccepted = (value, enabled) => {
+    if (!enabled) return true;
+    if (value === "" || value === null || value === undefined) return false;
+
+    const figure = Number(value);
+
+    return Number.isFinite(figure)
+        && figure >= MIN_BASELINE_PERCENT && figure <= MAX_BASELINE_PERCENT;
+};
+
+// The bounds themselves, for the inputs that state them to the operator: a
+// spinner that steps past what the door takes is a control that offers a
+// refusal.
+export const TUNING_BOUNDS = {
+    duration: {min: MIN_DURATION_SECONDS, max: MAX_DURATION_SECONDS},
+    streams: {min: MIN_STREAMS, max: MAX_STREAMS},
+    bitrate: {min: MIN_BITRATE_MBPS, max: MAX_BITRATE_MBPS}
+};

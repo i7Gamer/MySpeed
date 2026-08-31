@@ -323,14 +323,29 @@ describe("a target's name", () => {
 });
 
 describe("PATCH /api/targets/:id", () => {
+    /**
+     * The fragment is still held against the provider the row will run under -
+     * an endpoint legal on libre is refused the moment the row is an ookla
+     * target.
+     *
+     * Shown on a fragment that STATES the endpoint, because that is the half
+     * of this the retirement above deliberately does not cover. Switching
+     * provider and saying nothing about the endpoint used to be refused too,
+     * naming a field the request never carried; the endpoint is retired with
+     * the provider now, and the case below is the one that proves the door
+     * itself still reads the merged row rather than the fragment.
+     */
     it("judges the row it would become, not the fragment that arrived", async () => {
-        const {body: {id}} = await put({name: "own", provider: "libre"});
+        const {body: {id: libre}} = await put({name: "own", provider: "libre"});
+        assert.equal((await patch(`/${libre}`, {endpoint: "https://speed.example.net"})).status, 200);
 
-        // An endpoint is legal on libre - and this same fragment must be
-        // refused once the row is an ookla target.
-        assert.equal((await patch(`/${id}`, {endpoint: "https://speed.example.net"})).status, 200);
-        assert.equal((await patch(`/${id}`, {provider: "ookla"})).status, 400,
-            "the merged row carries a libre endpoint into a provider that takes none");
+        const {body: {id: ookla}} = await put({name: "hosted", provider: "ookla"});
+        const {status, body} = await patch(`/${ookla}`, {endpoint: "https://speed.example.net"});
+
+        assert.equal(status, 400,
+            "an endpoint was accepted on a provider that takes none, so the fragment was judged "
+            + "on its own rather than against the row it lands in");
+        assert.match(body.message, /endpoint/i);
     });
 
     it("404s a target that does not exist", async () => {
@@ -429,6 +444,79 @@ describe("PATCH /api/targets/:id", () => {
         assert.deepEqual((await targets.listAll()).map((row) => row.name),
             ["first", "second", "third"],
             "a rewrite that died partway left the list half-renumbered");
+    });
+});
+
+/**
+ * The baseline percentage, through the whole write path.
+ *
+ * A column is invisible to the API until it is named in the route's whitelist,
+ * and nothing fails when it is not: the request succeeds with a 200, the row is
+ * written, and the field is simply gone. So the assertion that matters is the
+ * read-back, not the status code.
+ */
+describe("a target's baseline percentage", () => {
+    const stored = async () => (await targets.listAll())[0].baselinePercent;
+
+    it("is stored by a create that names it", async () => {
+        const {status} = await put({name: "Frankfurt", provider: "ookla", baselinePercent: 70});
+
+        assert.equal(status, 200);
+        assert.equal(await stored(), 70);
+    });
+
+    // The column is a DOUBLE precisely so this survives: 72.5 per cent of a
+    // line is an ordinary thing to want, and an integer column would have
+    // rounded it here with nothing saying so.
+    it("keeps a fraction across the round trip", async () => {
+        await put({name: "Frankfurt", provider: "ookla", baselinePercent: 72.5});
+
+        assert.equal(await stored(), 72.5);
+    });
+
+    // Every target that exists names none, and that is what "no baseline"
+    // is spelled as.
+    it("is null on a target that names none", async () => {
+        await put({name: "Frankfurt", provider: "ookla"});
+
+        assert.equal(await stored(), null);
+    });
+
+    it("is set and cleared by a patch", async () => {
+        const {body} = await put({name: "Frankfurt", provider: "ookla"});
+
+        assert.equal((await patch(`/${body.id}`, {baselinePercent: 80})).status, 200);
+        assert.equal(await stored(), 80);
+
+        assert.equal((await patch(`/${body.id}`, {baselinePercent: null})).status, 200);
+        assert.equal(await stored(), null);
+    });
+
+    /**
+     * Refused at the door, not stored and ignored later. A hundred per cent
+     * means "alert on roughly every other test" - the median is exceeded by
+     * half of them by construction - and a value that floods the feature is a
+     * mistake worth naming while the operator is still looking at the dialog.
+     */
+    it("refuses a percentage outside the range, naming it", async () => {
+        for (const percent of [0, 5, 100, 150, -70, "70"]) {
+            const {status, body} = await put({name: "Frankfurt", provider: "ookla",
+                baselinePercent: percent});
+
+            assert.equal(status, 400, `${JSON.stringify(percent)} was accepted`);
+            assert.match(body.message, /baseline/i);
+        }
+    });
+
+    // Judged as the row the patch would leave behind, the way every other field
+    // on this route is.
+    it("refuses one arriving by patch too", async () => {
+        const {body} = await put({name: "Frankfurt", provider: "ookla", baselinePercent: 70});
+
+        const {status, message} = await patch(`/${body.id}`, {baselinePercent: 100});
+
+        assert.equal(status, 400, message);
+        assert.equal(await stored(), 70, "the refused value was written anyway");
     });
 });
 
@@ -550,5 +638,65 @@ describe("the manual-only target", () => {
         });
 
         assert.equal(status, 404);
+    });
+});
+
+/**
+ * The two patches that were dead ends, through the real route.
+ *
+ * The door judges the row a request would leave behind - right, and the reason
+ * a fragment carrying only `{endpoint}` is held against the provider it will
+ * run under. But update() writes only the columns the request names, so both
+ * of these were refused for fields they never carried, and getting past them
+ * meant nulling four columns the caller was not editing.
+ *
+ * Driven here rather than only over retiredByPatch, because the retirement has
+ * to reach the WRITE as well as the judgement: a row left carrying a run shape
+ * for a run it no longer makes is one buildArgs would read and the next patch
+ * would trip over again.
+ */
+describe("PATCH /api/targets/:id retiring what it replaces", () => {
+    const iperfTarget = () => put({
+        name: "NAS", provider: "iperf3", endpoint: "10.0.0.5:5201",
+        iperfDuration: 30, iperfStreams: 1, iperfUdp: true, iperfBitrate: 500
+    });
+
+    it("moves a target off iperf3 without being told to clear the run shape", async () => {
+        const {body: created} = await iperfTarget();
+
+        const {status, body} = await patch(`/${created.id}`, {provider: "ookla"});
+        assert.equal(status, 200, body.message);
+
+        const [row] = await targets.listAll();
+        assert.equal(row.provider, "ookla");
+        assert.equal(row.endpoint, null, "a host the new provider cannot reach was kept");
+        assert.equal(row.iperfDuration, null);
+        assert.equal(row.iperfStreams, null);
+        assert.equal(row.iperfBitrate, null);
+        assert.equal(Boolean(row.iperfUdp), false,
+            "the row still says it measures with datagrams under a provider that has none");
+    });
+
+    it("turns a UDP run off without being told to clear the bitrate", async () => {
+        const {body: created} = await iperfTarget();
+
+        const {status, body} = await patch(`/${created.id}`, {iperfUdp: false});
+        assert.equal(status, 200, body.message);
+
+        const [row] = await targets.listAll();
+        assert.equal(Boolean(row.iperfUdp), false);
+        assert.equal(row.iperfBitrate, null, "a rate was kept on a run that sends no datagrams");
+        assert.equal(row.iperfDuration, 30, "an unrelated column was retired with the rate");
+    });
+
+    // The door still stands over what the request actually states: a
+    // contradiction the caller writes out is refused by the field that names it.
+    it("still refuses a contradiction the request states itself", async () => {
+        const {body: created} = await iperfTarget();
+
+        const {status, body} = await patch(`/${created.id}`, {iperfUdp: false, iperfBitrate: 500});
+
+        assert.equal(status, 400);
+        assert.match(body.message, /bitrate/i);
     });
 });

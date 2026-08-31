@@ -47,7 +47,13 @@ describe("statistics answers only the range still being asked about", () => {
 
         const updateStats = functionAt(statistics, "const updateStats", {
             rangeQuery: () => new URLSearchParams(),
+            // The window the deltas are read against travels through the
+            // shared applier now; this lift is about which ANSWER wins a
+            // race, so it hands over the real thing and a null range - which
+            // is the case the applier refuses outright.
+            applyCompare: (query) => query,
             dateRange: null,
+            compare: "previous",
             targetFilter: null,
             startTransition: (run) => run(),
             setLoading: () => undefined,

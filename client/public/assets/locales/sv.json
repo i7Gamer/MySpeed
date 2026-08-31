@@ -60,7 +60,12 @@
       "ookla_desc": "Populär leverantör med globalt servernätverk",
       "libre_desc": "Hastighetstest med öppen källkod som du kan hosta själv",
       "cloudflare_desc": "Snabb CDN-baserad testning",
-      "iperf3_desc": "Din egen iperf3-server, i ditt nätverk"
+      "iperf3_desc": "Din egen iperf3-server, i ditt nätverk",
+      "iperf_advanced": "Körinställningar",
+      "iperf_duration": "Sekunder per riktning",
+      "iperf_streams": "Parallella strömmar",
+      "iperf_udp": "Mät med UDP",
+      "iperf_bitrate": "Bithastighet (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "Genomsnitt",
     "compare": {
       "note": "Förändringar jämfört med {{from}} – {{to}}",
-      "note_partial": "Förändringar jämfört med {{from}} – {{to}}, fram till samma tid på dagen"
+      "empty": "Inga tester {{from}} – {{to}} att jämföra med",
+      "label": "Jämför med",
+      "choice": {
+        "previous": "Föregående period",
+        "1m": "1 månad tidigare",
+        "3m": "3 månader tidigare",
+        "6m": "6 månader tidigare",
+        "1y": "1 år tidigare",
+        "2y": "2 år tidigare"
+      }
     },
     "downsampled": "Genomsnitt · visar {{shown}} av {{total}} tester",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "Jämförelse av mål",
+      "chart": {
+        "ping": "Ping per testmål",
+        "download": "Nedladdning per testmål",
+        "upload": "Uppladdning per testmål"
+      },
       "failure_rate": "Felfrekvens",
-      "metric": "Mätvärde",
       "empty": "Inget mål har mätt något under denna period",
-      "open_hint": "Öppna för att jämföra målen under denna period",
       "unavailable": "Kunde inte läsas in"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "Schemalagt",
     "alerts": "Aviseringar & rekommendationer",
     "own_optimals": "Egna optimala värden",
+    "baseline_alerts": "Varna under den vanliga hastigheten",
+    "baseline_percent": "Andel (%)",
+    "baseline_desc": "Varnar när ett test faller under denna andel av målets egen 30-dagarsmedian.",
     "all": "Alla mål",
     "saved": "Målet har sparats.",
     "removed": "Målet har tagits bort.",

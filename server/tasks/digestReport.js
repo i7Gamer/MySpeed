@@ -33,7 +33,14 @@ export const runDigest = async (kind, {
     const zone = zoneFromName(timezone);
     const {range, compare, comparePrevious, label} = digestRanges(kind, now, zone);
 
-    const summary = await aggregate(range, {zone, now, ...(comparePrevious ? {comparePrevious: true} : {})});
+    // `compare`, which is what listStatistics gates the previous window on.
+    // It was `comparePrevious` until the statistics grew named offsets and the
+    // option was renamed with them; this call was not, so the digest went on
+    // asking for a comparison nothing was listening for. The summary came back
+    // without `previous`, digestText dropped the whole "vs previous week" line,
+    // and nothing errored - see tests/integration/digestComparison.test.js,
+    // which pins the two spellings against the function that reads them.
+    const summary = await aggregate(range, {zone, now, ...(comparePrevious ? {compare: true} : {})});
     const compareSummary = comparePrevious
         ? summary.previous ?? null
         : await aggregate(compare, {zone, now});

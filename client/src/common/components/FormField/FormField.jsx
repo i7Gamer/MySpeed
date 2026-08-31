@@ -1,5 +1,6 @@
 import {useId} from "react";
 import ToggleSwitch from "@/common/components/ToggleSwitch";
+import NumberField from "@/common/components/NumberField";
 import "./styles.sass";
 
 export const FormField = ({
@@ -35,12 +36,16 @@ export const FormField = ({
             )}
 
             {type === "number" && (
-                <input
+                // Through NumberField rather than an input of its own, so there
+                // is one number field in the client to fix. It hands back the
+                // raw string every input does; the conversion below is this
+                // form's own contract, since the integration forms store typed
+                // values.
+                <NumberField
                     id={inputId}
-                    type="number"
                     className={`form-field-input ${error ? "input-error" : ""}`}
                     value={value ?? ""}
-                    onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
+                    onChange={(next) => onChange(next === "" ? "" : Number(next))}
                     placeholder={placeholder}
                     disabled={disabled}
                     min={min}

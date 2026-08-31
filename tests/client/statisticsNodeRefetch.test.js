@@ -20,7 +20,7 @@ describe("statistics and the active node", () => {
     });
 
     it("re-fetches when the selection changes", () => {
-        assert.match(source, /\}, \[dateRange, currentNode, targetFilter\]\);/,
+        assert.match(source, /\}, \[dateRange, currentNode, targetFilter, compare\]\);/,
             "updateStats no longer re-runs when the active node changes");
     });
 });

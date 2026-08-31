@@ -60,7 +60,12 @@
       "ookla_desc": "Populær leverandør med globalt servernettverk",
       "libre_desc": "Hastighetstest med åpen kildekode, kan driftes selv",
       "cloudflare_desc": "Rask CDN-basert testing",
-      "iperf3_desc": "Din egen iperf3-server, på ditt nettverk"
+      "iperf3_desc": "Din egen iperf3-server, på ditt nettverk",
+      "iperf_advanced": "Kjøreinnstillinger",
+      "iperf_duration": "Sekunder per retning",
+      "iperf_streams": "Parallelle strømmer",
+      "iperf_udp": "Mål med UDP",
+      "iperf_bitrate": "Bitrate (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "Gjennomsnitt",
     "compare": {
       "note": "Endringer sammenlignet med {{from}} – {{to}}",
-      "note_partial": "Endringer sammenlignet med {{from}} – {{to}}, frem til samme tid på dagen"
+      "empty": "Ingen tester i {{from}} – {{to}} å sammenligne med",
+      "label": "Sammenlign med",
+      "choice": {
+        "previous": "Forrige periode",
+        "1m": "1 måned tidligere",
+        "3m": "3 måneder tidligere",
+        "6m": "6 måneder tidligere",
+        "1y": "1 år tidligere",
+        "2y": "2 år tidligere"
+      }
     },
     "downsampled": "Gjennomsnitt · viser {{shown}} av {{total}} tester",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "Sammenligning av mål",
+      "chart": {
+        "ping": "Ping per testmål",
+        "download": "Nedlasting per testmål",
+        "upload": "Opplasting per testmål"
+      },
       "failure_rate": "Feilrate",
-      "metric": "Måleverdi",
       "empty": "Ingen mål har målt noe i denne perioden",
-      "open_hint": "Åpne for å sammenligne målene i denne perioden",
       "unavailable": "Kunne ikke lastes"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "Planlagt",
     "alerts": "Varsler & anbefalinger",
     "own_optimals": "Egne optimale verdier",
+    "baseline_alerts": "Varsle under vanlig hastighet",
+    "baseline_percent": "Andel (%)",
+    "baseline_desc": "Varsler når en test faller under denne andelen av målets egen 30-dagersmedian.",
     "all": "Alle mål",
     "saved": "Målet er lagret.",
     "removed": "Målet er fjernet.",

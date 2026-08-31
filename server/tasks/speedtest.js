@@ -1,6 +1,5 @@
 import speedTest, { isShuttingDown } from '../util/speedtest.js';
 import * as tests from '../controller/speedtests.js';
-import * as config from '../controller/config.js';
 import * as controller from "../controller/recommendations.js";
 import * as parseData from '../util/providers/parseData.js';
 import { setState, sendRunning, sendError, sendFinished, sendRoundFinished, watchedFailureStands }
@@ -12,6 +11,7 @@ import { failedPayload, finishedPayload } from '../util/notificationPayload.js';
 import { FAILED_TEST, impossibleMeasurement, isFailedTest, measuredPing, usableFigure }
     from '../util/testOutcome.js';
 import { isRateLimitMessage } from '../util/providers/cliOutput.js';
+import { baselineOf, baselineVerdict, baselineWindowStart } from '../util/baselineAlert.js';
 import { backoffRemainingMs, clearBackoff, isBackingOff, recordRateLimit } from '../util/rateLimitBackoff.js';
 import * as targetsController from '../controller/targets.js';
 import * as pauseController from '../controller/pause.js';
@@ -252,7 +252,9 @@ export const run = async (target, retryAuto = false) => {
     // The callback is carried whichever server was chosen: the retry is the
     // same logical run, and a bar that stopped moving the moment a test fell
     // back to automatic server selection would read as the run having hung.
-    let speedtest = await speedTest(mode, serverId, serverUrl, updateProgress);
+    // The row is handed over whole for its tuning columns - which of them are
+    // the tuning is the runner's own reading, so the two cannot drift.
+    let speedtest = await speedTest(mode, serverId, serverUrl, updateProgress, target);
 
     // Recorded on the row, not written back into the configuration. Persisting
     // it turned "choose automatically" into a pin the moment the first test
@@ -628,6 +630,87 @@ const outcomeDeadline = () => new Promise((resolve) => {
     setTimeout(() => resolve(null), OUTCOME_READ_TIMEOUT_MS).unref();
 });
 
+/**
+ * How long a round leaves the line alone between two of its members.
+ *
+ * A speed test saturates the connection, and the buffers along it - the
+ * modem's, the ISP's - are still draining when the CLI exits. Run back to
+ * back, the first member of a round measures an idle line and the third
+ * measures one that has had two saturating transfers pushed through it seconds
+ * earlier. Latency is where that lands hardest, which is exactly what this app
+ * measures as bufferbloat and reports as "under load".
+ *
+ * So a target's POSITION in the round was quietly part of its reading. That is
+ * a bias anywhere; it is a fault in the comparison panels, which put those
+ * readings side by side and invite the operator to read the difference as a
+ * fact about the lines.
+ *
+ * Ten seconds is short enough to be affordable and long enough for a domestic
+ * buffer to drain. It is not tuned against a measurement - a figure that
+ * claimed to be would need one per line, since what is draining is the path's
+ * own queue.
+ *
+ * What it costs, stated: every round grows by ten seconds per member after the
+ * first, so three targets add twenty. On the hourly default that is nothing.
+ * On the every-minute preset a three-target round was already close to the
+ * interval and this pushes it past - the tick that arrives mid-round is
+ * skipped, with "A speedtest round is still running" in the log, which is the
+ * existing and correct behaviour rather than a new failure. An operator
+ * wanting a test every minute against three targets is asking for something
+ * the line cannot deliver honestly regardless of this pause.
+ */
+export const TARGET_SETTLE_MS = 10_000;
+
+// How long the settle waits before looking at the shutdown flag again.
+const SETTLE_SLICE_MS = 250;
+
+/**
+ * Leaves the line alone, without holding a shutdown open for the whole of it.
+ *
+ * Taken in slices with the flag read between them, because the shutdown is a
+ * boolean rather than an event here - see markShutdown. A single sleep would
+ * have the process ignore SIGTERM for as long as the settle lasts, and on the
+ * Windows service that is the window the supervisor gives up in and kills it.
+ *
+ * The seams are injectable for the tests, which have no ten seconds to spend.
+ */
+export const settleLine = async (ms = TARGET_SETTLE_MS,
+    {stopped = isShuttingDown, slice = SETTLE_SLICE_MS} = {}) => {
+
+    /*
+     * A monotonic clock, not the wall one.
+     *
+     * `Date.now()` steps - an NTP correction, a VM resuming from suspend, an
+     * operator fixing the timezone - and a deadline computed from it recedes
+     * when the step is backwards. The loop then goes on sleeping for the
+     * length of the step ON TOP of the ten seconds it was asked for, holding
+     * the round's latch the whole time: every scheduled tick in that span logs
+     * "still running - skipping", and every manual run answers 409. Measured
+     * at three seconds of skew turning a 300ms settle into 3301ms.
+     *
+     * The sleeps below always ran on libuv's monotonic timer. It was only the
+     * deadline they were measured against that could move.
+     */
+    const deadline = performance.now() + ms;
+
+    while (!stopped()) {
+        const left = deadline - performance.now();
+        if (left <= 0) return;
+
+        /*
+         * Deliberately NOT unref'd, unlike the deadline timers elsewhere in
+         * this file. Those race a read that is already running; this one is
+         * the work. An unref'd slice lets the loop drain while a round is
+         * mid-flight - node then exits between two members, and on the tests
+         * the promise simply never settles, which is how this was caught.
+         *
+         * It costs nothing at shutdown: the flag is read every slice, so the
+         * longest a settle can hold the process is one of them.
+         */
+        await new Promise((resolve) => { setTimeout(resolve, Math.min(slice, left)); });
+    }
+};
+
 const executeRound = async (type, targetId) => {
     const members = await roundMembers(targetId);
 
@@ -803,6 +886,35 @@ const executeRound = async (type, targetId) => {
                 // proof the database is still there, so the count of members that
                 // could not starts again from here.
                 escapes = 0;
+
+                /*
+                 * The line has just been used; the next member measures it once
+                 * it has drained - see TARGET_SETTLE_MS.
+                 *
+                 * Here rather than at the top of the loop, so that only a
+                 * member the round actually RAN buys the next one its quiet:
+                 * every guard above reaches the next member by `continue` and
+                 * steps over this, and a target that was held, unscheduled or
+                 * paused never touched the line at all.
+                 *
+                 * "Ran" and not "measured", deliberately. executeTarget answers
+                 * a failure rather than throwing one, so a member whose run
+                 * failed settles too - and that is the honest side to err on,
+                 * because most failures are a transfer that timed out or was
+                 * cut off partway, which saturated the line exactly as a
+                 * success would. The ones that touched nothing - a missing
+                 * binary, a hostname that would not resolve - cost ten seconds
+                 * of quiet the round did not need, on a round already failing.
+                 *
+                 * Not after the last member either: that would delay the
+                 * round's own completion event, its healthchecks ping and the
+                 * latch release, to leave a line quiet that nothing is about to
+                 * measure. The guard is positional, so a member whose every
+                 * successor is then skipped by a guard still pays for one
+                 * settle - the round cannot know in advance that it will skip
+                 * them.
+                 */
+                if (index < members.length - 1) await settleLine();
             } catch (error) {
                 // As far as this member got: a guard that could not read the
                 // table has no fresh row to name, and the snapshot is what it
@@ -941,6 +1053,40 @@ export const isPrimaryMember = async (target) => {
 export const wasPrimaryMember = async (target) => await isPrimaryMember(target)
     .catch(() => lastPlacement.get(target.id) ?? true);
 
+/**
+ * What this member's own line usually delivers, and whether this run fell below
+ * it - as the four keys the event payload carries.
+ *
+ * Nothing at all for a target that set no percentage, which is every target
+ * until somebody sets one: finishedPayload fills an absent key with null, and
+ * the gate reads null as "no baseline". So the common case costs one property
+ * read and no query.
+ *
+ * The window's first row is this target's previous test - listForBaseline
+ * answers newest first - which is what the edge rule compares against, so the
+ * whole verdict is one query. It has to be asked *before* the new row is
+ * written, or that row is its own previous and the edge can never be crossed.
+ *
+ * Exported for its test, the way isPrimaryMember is: the alternative is a real
+ * spawned CLI run, and what is being asked here is one member's verdict over a
+ * history that is already in the table.
+ *
+ * @param target    the round member, as stored
+ * @param measured  the run just parsed, as {download, upload}
+ */
+export const baselineKeys = async (target, measured) => {
+    if (target?.baselinePercent == null) return {};
+
+    const windowRows = await tests.listForBaseline(target.id, baselineWindowStart());
+    const [previous] = windowRows;
+
+    const {armed, breached, baselineDirection, baselineShortfall, baselineDownload, baselineUpload} =
+        baselineVerdict(measured, previous, baselineOf(windowRows), target.baselinePercent);
+
+    return {baselineArmed: armed, baselineBreached: breached,
+        baselineDirection, baselineShortfall, baselineDownload, baselineUpload};
+};
+
 const executeTarget = async (target, type, retried = false) => {
     const mode = target.provider === "preview" ? "preview" : target.provider;
 
@@ -1012,6 +1158,25 @@ const executeTarget = async (target, type, retried = false) => {
         if (mode !== "preview") clearBackoff(mode);
 
         /*
+         * Judged here, one statement before the row goes in, and the ordering
+         * is load-bearing: the window is read newest first, so a verdict
+         * reached after tests.create finds this very run at the head of it -
+         * the test becomes its own previous, the edge the storm rule fires on
+         * is never crossed, and the feature is silent with nothing saying so.
+         *
+         * Degraded rather than thrown, the reasoning wasPrimaryMember states
+         * verbatim: this sits inside a try whose catch measures the whole
+         * member again and writes a second row. A database that could not
+         * answer a question about the median would otherwise turn a perfectly
+         * good measurement into a recorded failure and a failure notification -
+         * the exact escape #875's guard above is careful not to open.
+         */
+        const baseline = await baselineKeys(target, {download, upload}).catch((err) => {
+            console.error(`Could not judge ${memberName(target)} against its baseline: ${toErrorMessage(err)}`);
+            return {};
+        });
+
+        /*
          * The nullable figures ask a different question and get a different
          * answer: null already means "nobody measured this", so a negative one
          * has an honest home to go to. Failing the whole run over a jitter of
@@ -1044,6 +1209,12 @@ const executeTarget = async (target, type, retried = false) => {
             // under the raw mapping, and the gate reads only `false` as opted
             // out - absent means an older node, whose members all alert.
             alerts: Boolean(target.alerts),
+            // Whether this member's own line is being watched against its
+            // rolling median and whether this run crossed under it, judged
+            // above while the row this test wrote was not yet in the window.
+            // Absent entirely for a target with no baseline, which pick()
+            // fills with null and the gate reads as "no baseline".
+            ...baseline,
             // Degraded rather than thrown, and degraded to the last answer
             // this member got rather than to a claim - see wasPrimaryMember.
             primary: await wasPrimaryMember(target)})).catch(err =>

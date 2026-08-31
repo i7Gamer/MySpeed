@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    ALERT_ONLY, ALERT_METRICS, breachesThreshold, wantsOnlyBreaches
+    ALERT_ONLY, ALERT_METRICS, breachesThreshold, crossedLimits, wantsOnlyBreaches
 } from "../../server/util/alertThreshold.js";
 
 /**
@@ -204,6 +204,173 @@ describe("breachesThreshold", () => {
         it("ignores an unusable measurement on a metric with no limit", () => {
             assert.equal(breachesThreshold(result({upload: null}), {alert_download_below: 100}), false);
         });
+    });
+});
+
+/**
+ * The baseline is a third answer to the question this module's docstring
+ * refuses twice: what a result should be judged against. The fixed limits are
+ * an integration's own, the optimal values are deliberately not inherited into
+ * them, and the baseline is the target's own rolling median - decided in
+ * util/baselineAlert.js, where the rows are, and carried here on the payload
+ * already judged.
+ *
+ * It is an additional independent reason to notify, not a replacement, so the
+ * arm has to count as an arm. `breachesThreshold` ends `return !armed`, whose
+ * whole point is that a gate switched on with no usable limit fires on
+ * everything rather than going permanently silent - and an operator who wants
+ * baseline alerts *only* switches the gate on and leaves the three limits
+ * blank, which is exactly that shape.
+ */
+describe("a baseline judged before the payload arrived", () => {
+    const armed = (overrides = {}) => result({baselineArmed: true, baselineBreached: false, ...overrides});
+
+    /**
+     * The bug this exists to prevent, and the reason it is worth a case of its
+     * own: without the arm, a baseline-only setup reads as "no limit anywhere",
+     * falls through to `!armed`, and notifies on every test - hourly, forever.
+     * Fail-open by design, so nothing anywhere says it is happening.
+     */
+    it("suppresses a quiet baseline that is the only thing armed", () => {
+        assert.equal(breachesThreshold(armed(), {}), false);
+        assert.equal(breachesThreshold(armed(), {[ALERT_ONLY]: true}), false);
+    });
+
+    it("fires when the baseline was breached", () => {
+        assert.equal(breachesThreshold(armed({baselineBreached: true}), {}), true);
+    });
+
+    // Either reason is enough: the fixed limits still decide on their own.
+    it("still fires on a fixed limit while the baseline is quiet", () => {
+        assert.equal(breachesThreshold(armed({download: 40}), {alert_download_below: 100}), true);
+        assert.equal(breachesThreshold(armed({download: 400}), {alert_download_below: 100}), false);
+    });
+
+    it("fires on a breached baseline while every fixed limit is met", () => {
+        assert.equal(breachesThreshold(armed({baselineBreached: true}), {alert_download_below: 100}), true);
+    });
+
+    /**
+     * Backward compatibility, exactly. A payload from a target with no baseline
+     * carries null for both keys, and one from a node older than the feature
+     * carries neither - `armed` is untouched in both cases and this behaves as
+     * it did, line for line.
+     */
+    it("is untouched by a payload that carries no baseline", () => {
+        assert.equal(breachesThreshold(result(), {}), true, "the fail-open case changed");
+        assert.equal(breachesThreshold(result({baselineArmed: null, baselineBreached: null}), {}), true);
+        assert.equal(breachesThreshold(result({baselineArmed: false, baselineBreached: false}), {}), true);
+
+        assert.equal(breachesThreshold(result({baselineArmed: null}),
+            {alert_download_below: 100}), false);
+        assert.equal(breachesThreshold(result({baselineArmed: false, download: 40}),
+            {alert_download_below: 100}), true);
+    });
+
+    /**
+     * Strictly true, the way the alerts flag and the alert_only switch are
+     * read. The payload is JSON a node may have written, and a value that
+     * arrived as the string "false" must not read as an armed baseline - which
+     * here would mean silencing a gate that has nothing else armed.
+     */
+    it("reads only an explicit true as an armed baseline", () => {
+        assert.equal(breachesThreshold(result({baselineArmed: "true", baselineBreached: false}), {}), true);
+        assert.equal(breachesThreshold(result({baselineArmed: 1, baselineBreached: false}), {}), true);
+    });
+
+    // And only an explicit true as a breach, for the same reason in the other
+    // direction: a truthy string must not raise an alert nobody's line earned.
+    it("reads only an explicit true as a breach", () => {
+        assert.equal(breachesThreshold(armed({baselineBreached: "true"}), {}), false);
+        assert.equal(breachesThreshold(armed({baselineBreached: null}), {}), false);
+    });
+});
+
+/**
+ * What the gate above decided, in the words a message can carry.
+ *
+ * breachesThreshold answers yes or no, so an integration watching ping and
+ * download sent a message that could not say which of them it was about - the
+ * gap %baselineDirection% closes for a target's own baseline, still open on the
+ * three limits an integration types in.
+ *
+ * A clause per crossing rather than a name and a number in two keys: these
+ * three are not in one unit and are not crossed in one direction, so a bare 12
+ * beside "ping, download" cannot say whether it means milliseconds over or
+ * megabits under - and one number cannot serve two metrics that crossed in the
+ * same round.
+ */
+describe("crossedLimits", () => {
+    it("names a latency over its limit, in the unit it is measured in", () => {
+        assert.equal(crossedLimits(result({ping: 62}), {alert_ping_above: 50}),
+            "ping 62 ms over 50");
+    });
+
+    it("names a speed under its limit", () => {
+        assert.equal(crossedLimits(result({download: 80}), {alert_download_below: 100}),
+            "download 80 Mbps under 100");
+        assert.equal(crossedLimits(result({upload: 8}), {alert_upload_below: 20}),
+            "upload 8 Mbps under 20");
+    });
+
+    // In the order the metrics are judged in, which is the order the dialog
+    // lists them - so two messages about the same pair read the same way.
+    it("names every limit one result crossed", () => {
+        assert.equal(
+            crossedLimits(result({ping: 62, download: 80}),
+                {alert_ping_above: 50, alert_download_below: 100, alert_upload_below: 20}),
+            "ping 62 ms over 50, download 80 Mbps under 100");
+    });
+
+    /**
+     * A metric nobody set a limit on is not judged and is not named, however
+     * far it is from anything - the same rule breachesThreshold follows, and
+     * naming it would report a crossing the operator never asked about.
+     */
+    it("says nothing about a metric with no limit", () => {
+        assert.equal(crossedLimits(result({download: 1}), {alert_ping_above: 50}), null);
+    });
+
+    it("says nothing when every armed limit was met", () => {
+        assert.equal(crossedLimits(result(), {alert_ping_above: 50, alert_download_below: 100}), null);
+    });
+
+    /**
+     * The two ways breachesThreshold fires without a limit being crossed.
+     *
+     * An unusable measurement on an armed metric is named, because that metric
+     * really is why the message arrived: a latency of zero is what a run that
+     * measured nothing carries, and judged as "above" it read as an excellent
+     * line. A gate armed with no usable limit anywhere names nothing - nothing
+     * crossed, and the message that arrives is about a half-finished setup
+     * rather than about the line.
+     */
+    it("names an armed metric that could not be measured", () => {
+        assert.equal(crossedLimits(result({ping: 0}), {alert_ping_above: 50}),
+            "ping (not measured)");
+    });
+
+    it("names nothing when the gate is armed with no usable limit", () => {
+        assert.equal(crossedLimits(result(), {[ALERT_ONLY]: true}), null);
+        assert.equal(crossedLimits(result(), {alert_download_below: 0}), null);
+    });
+
+    /**
+     * And nothing about the baseline, which has its own pair of variables. The
+     * two are not the same fact: a baseline belongs to the target and is judged
+     * once per test, where these limits belong to this integration and are
+     * judged again for every recipient.
+     */
+    it("says nothing about a baseline breach", () => {
+        assert.equal(crossedLimits(result({baselineArmed: true, baselineBreached: true}), {}), null);
+    });
+
+    // The same shapes the gate refuses to read as a limit, which must not
+    // become clauses naming a limit of null.
+    it("reads no limit out of a value that is not one", () => {
+        for (const value of [null, undefined, "", "abc", 0, -50])
+            assert.equal(crossedLimits(result({ping: 9999}), {alert_ping_above: value}), null,
+                `${JSON.stringify(value)} was read as a limit`);
     });
 });
 

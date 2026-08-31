@@ -60,7 +60,12 @@
       "ookla_desc": "Proveedor popular con red global de servidores",
       "libre_desc": "Speedtest de código abierto y autoalojable",
       "cloudflare_desc": "Pruebas rápidas basadas en CDN",
-      "iperf3_desc": "Tu propio servidor iperf3, en tu red"
+      "iperf3_desc": "Tu propio servidor iperf3, en tu red",
+      "iperf_advanced": "Ajustes de la prueba",
+      "iperf_duration": "Segundos por dirección",
+      "iperf_streams": "Flujos paralelos",
+      "iperf_udp": "Medir con UDP",
+      "iperf_bitrate": "Tasa de bits (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "Promedio",
     "compare": {
       "note": "Cambios respecto a {{from}} – {{to}}",
-      "note_partial": "Cambios respecto a {{from}} – {{to}}, hasta la misma hora del día"
+      "empty": "No hay pruebas entre {{from}} y {{to}} para comparar",
+      "label": "Comparar con",
+      "choice": {
+        "previous": "Período anterior",
+        "1m": "1 mes antes",
+        "3m": "3 meses antes",
+        "6m": "6 meses antes",
+        "1y": "1 año antes",
+        "2y": "2 años antes"
+      }
     },
     "downsampled": "Promediado · se muestran {{shown}} de {{total}} tests",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "Comparación de objetivos",
+      "chart": {
+        "ping": "Ping por destino",
+        "download": "Descarga por destino",
+        "upload": "Subida por destino"
+      },
       "failure_rate": "Tasa de fallos",
-      "metric": "Métrica",
       "empty": "Ningún objetivo midió nada en este periodo",
-      "open_hint": "Abre para comparar los objetivos en este periodo",
       "unavailable": "No se pudo cargar"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "Programado",
     "alerts": "Avisos y recomendaciones",
     "own_optimals": "Valores óptimos propios",
+    "baseline_alerts": "Avisar por debajo de la velocidad habitual",
+    "baseline_percent": "Cuota (%)",
+    "baseline_desc": "Avisa cuando una prueba cae por debajo de esta parte de la mediana de 30 días del destino.",
     "all": "Todos los destinos",
     "saved": "Se ha guardado el destino.",
     "removed": "Se ha eliminado el destino.",

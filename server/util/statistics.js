@@ -19,7 +19,12 @@ export const TARGET_CHART_POINTS = 300;
  * in step.
  */
 export const STATISTICS_COLUMNS = ["created", "error", "ping", "jitter", "download", "upload",
-    "time", "packetLoss", "downloadLatency", "uploadLatency", "bytesDownloaded", "bytesUploaded"];
+    "time", "packetLoss", "downloadLatency", "uploadLatency", "bytesDownloaded", "bytesUploaded",
+    // Which line each row measured. Not aggregated by - every figure here is
+    // still about the whole selection - but the failure streak is a claim about
+    // one target, and on the unfiltered path no two rows in a row belong to the
+    // same one. See reliabilityOver.
+    "targetId"];
 
 /**
  * How far the client may push the resolution of a chart.
@@ -372,8 +377,24 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
 
     sorted.forEach(entry => {
         const offset = new Date(entry.created).getTime() - from.getTime();
+        /*
+         * Clamped at the top rather than dropped, and that is load-bearing.
+         *
+         * The rows are fetched with an inclusive BETWEEN, so an entry created
+         * on `to` itself does arrive here - and its offset is the whole span,
+         * which divides to exactly targetPoints: one past the last bucket. It
+         * belongs in that bucket rather than nowhere, so removing this to
+         * "wake up" the bounds check below would silently drop the final
+         * reading of every range.
+         */
         const index = Math.min(Math.floor(offset / bucketSize), targetPoints - 1);
-        if (index < 0 || index >= targetPoints) return;
+
+        // Which leaves only the floor to check: the clamp already guarantees
+        // the ceiling, so asking for it again was dead. Written as `>= 0`
+        // rather than `< 0` so a NaN index - an entry whose `created` does not
+        // parse - is refused too, where both halves of the old test let it
+        // through to a buckets[NaN] that has no entries to push onto.
+        if (!(index >= 0)) return;
 
         buckets[index].entries.push(entry);
         if (isFailedTest(entry)) buckets[index].errors.push(entry.error);
@@ -486,10 +507,27 @@ const MS_PER_SECOND = 1000;
  */
 const reliabilityOver = (sorted) => {
     let longest = null;
-    let current = null;
     let lastFailureAt = null;
     let largestGap = null;
     let previous = null;
+
+    /*
+     * A streak belongs to one target, and this timeline is every target
+     * interleaved.
+     *
+     * Read as row-adjacency it was wrong in both directions on any instance
+     * with more than one target, and plausible on screen both times: a NAS
+     * that failed every run for a week reported a streak of 1, because a
+     * working WAN test sat between each of its failures - and one bad round on
+     * four targets reported 4, which reads as an outage and was four different
+     * lines blinking once. The digest is instance-wide by construction, so its
+     * headline outage figure was the one nothing on screen could correct.
+     *
+     * Keyed on the id with null for absent, so a history from before targets
+     * existed and a single-target instance are each one line and read exactly
+     * as they did.
+     */
+    const running = new Map();
 
     for (const entry of sorted) {
         if (previous !== null) {
@@ -501,15 +539,21 @@ const reliabilityOver = (sorted) => {
         }
         previous = entry;
 
+        const line = entry.targetId ?? null;
+
         if (!isFailedTest(entry)) {
-            current = null;
+            running.delete(line);
             continue;
         }
 
         lastFailureAt = entry.created;
-        current = current === null
+
+        const carried = running.get(line);
+        const current = carried === undefined
             ? {count: 1, from: entry.created, to: entry.created}
-            : {count: current.count + 1, from: current.from, to: entry.created};
+            : {count: carried.count + 1, from: carried.from, to: entry.created};
+
+        running.set(line, current);
 
         if (longest === null || current.count > longest.count) longest = {...current};
     }

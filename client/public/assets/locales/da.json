@@ -60,7 +60,12 @@
       "ookla_desc": "Populær udbyder med globalt servernetværk",
       "libre_desc": "Open-source, selv-hostable speedtest",
       "cloudflare_desc": "Hurtig CDN-baseret test",
-      "iperf3_desc": "Din egen iperf3-server, på dit netværk"
+      "iperf3_desc": "Din egen iperf3-server, på dit netværk",
+      "iperf_advanced": "Kørselsindstillinger",
+      "iperf_duration": "Sekunder pr. retning",
+      "iperf_streams": "Parallelle strømme",
+      "iperf_udp": "Mål med UDP",
+      "iperf_bitrate": "Bitrate (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "Gennemsnit",
     "compare": {
       "note": "Ændringer sammenlignet med {{from}} – {{to}}",
-      "note_partial": "Ændringer sammenlignet med {{from}} – {{to}}, frem til samme tidspunkt på dagen"
+      "empty": "Ingen tests i {{from}} – {{to}} at sammenligne med",
+      "label": "Sammenlign med",
+      "choice": {
+        "previous": "Forrige periode",
+        "1m": "1 måned tidligere",
+        "3m": "3 måneder tidligere",
+        "6m": "6 måneder tidligere",
+        "1y": "1 år tidligere",
+        "2y": "2 år tidligere"
+      }
     },
     "downsampled": "Gennemsnit · viser {{shown}} af {{total}} tests",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "Sammenligning af mål",
+      "chart": {
+        "ping": "Ping pr. mål",
+        "download": "Download pr. mål",
+        "upload": "Upload pr. mål"
+      },
       "failure_rate": "Fejlrate",
-      "metric": "Måleværdi",
       "empty": "Intet mål har målt noget i denne periode",
-      "open_hint": "Åbn for at sammenligne målene i denne periode",
       "unavailable": "Kunne ikke indlæses"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "Planlagt",
     "alerts": "Advarsler & anbefalinger",
     "own_optimals": "Egne optimale værdier",
+    "baseline_alerts": "Advarsel under den normale hastighed",
+    "baseline_percent": "Andel (%)",
+    "baseline_desc": "Advarer, når en test falder under denne andel af målets egen 30-dages median.",
     "all": "Alle mål",
     "saved": "Målet er blevet gemt.",
     "removed": "Målet er blevet fjernet.",

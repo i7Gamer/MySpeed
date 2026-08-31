@@ -60,7 +60,12 @@
       "ookla_desc": "Proveïdor popular amb una xarxa global de servidors",
       "libre_desc": "Prova de velocitat de codi obert i autoallotjable",
       "cloudflare_desc": "Proves ràpides basades en CDN",
-      "iperf3_desc": "El teu propi servidor iperf3, a la teva xarxa"
+      "iperf3_desc": "El teu propi servidor iperf3, a la teva xarxa",
+      "iperf_advanced": "Configuració de l'execució",
+      "iperf_duration": "Segons per direcció",
+      "iperf_streams": "Fluxos paral·lels",
+      "iperf_udp": "Mesura amb UDP",
+      "iperf_bitrate": "Taxa de bits (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "Mitjana",
     "compare": {
       "note": "Canvis respecte a {{from}} – {{to}}",
-      "note_partial": "Canvis respecte a {{from}} – {{to}}, fins a la mateixa hora del dia"
+      "empty": "Cap prova entre {{from}} i {{to}} per comparar",
+      "label": "Compara amb",
+      "choice": {
+        "previous": "Període anterior",
+        "1m": "1 mes abans",
+        "3m": "3 mesos abans",
+        "6m": "6 mesos abans",
+        "1y": "1 any abans",
+        "2y": "2 anys abans"
+      }
     },
     "downsampled": "Amb mitjanes · es mostren {{shown}} de {{total}} proves",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "Comparació d'objectius",
+      "chart": {
+        "ping": "Ping per destinació",
+        "download": "Baixada per destinació",
+        "upload": "Pujada per destinació"
+      },
       "failure_rate": "Taxa d'errors",
-      "metric": "Mètrica",
       "empty": "Cap objectiu no ha mesurat res en aquest període",
-      "open_hint": "Obriu per comparar els objectius en aquest període",
       "unavailable": "No s'ha pogut carregar"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "Programada",
     "alerts": "Avisos i recomanacions",
     "own_optimals": "Valors òptims propis",
+    "baseline_alerts": "Avisa per sota de la velocitat habitual",
+    "baseline_percent": "Part (%)",
+    "baseline_desc": "Avisa quan una prova baixa d'aquesta part de la mediana de 30 dies de l'objectiu.",
     "all": "Totes les destinacions",
     "saved": "S'ha desat la destinació.",
     "removed": "S'ha eliminat la destinació.",

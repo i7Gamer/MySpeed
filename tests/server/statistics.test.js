@@ -1392,3 +1392,52 @@ describe("STATISTICS_COLUMNS", () => {
         assert.deepEqual(unused, [], "these are selected but never read");
     });
 });
+
+/**
+ * The two ends of a bucketed range, and the entry that sits exactly on one.
+ *
+ * The chart's rows are fetched with `Op.between`, which SQL reads inclusively,
+ * so an entry created on the range's own `to` does arrive here - and its offset
+ * is the whole span, which divides to exactly `targetPoints`: one past the last
+ * bucket. The clamp is what puts it in the last bucket instead of nowhere.
+ *
+ * Written because the clamp looks like dead defence beside the bounds check
+ * under it - the check's upper half can never fire while the clamp is there -
+ * and removing the clamp rather than the dead half is the tempting way round.
+ * It would silently drop the final reading of every range.
+ */
+describe("an entry on the edge of a downsampled range", () => {
+    const spanning = (extra = []) => buildStatistics([
+        ...Array.from({length: TARGET_CHART_POINTS * 2}, (_, index) =>
+            at(new Date(Date.UTC(2026, 7, 7, 0, 0, 0) + index * 60_000).toISOString())),
+        ...extra
+    ], DAY);
+
+    it("keeps a reading taken on the range's last instant", () => {
+        const withEdge = spanning([at(DAY.to.toISOString(), {download: 999})]);
+
+        assert.equal(withEdge.downsampled, true, "the bucketing path was not taken");
+        // Asserted on the series, not on download.max: the aggregates are taken
+        // over every entry whether or not it reached a bucket, so a max of 999
+        // says nothing about whether the chart drew it. The generated rows stop
+        // hours before `to`, so this reading is alone in the last bucket and
+        // reaches the series as itself rather than as an average.
+        assert.ok(withEdge.data.download.includes(999),
+            "the reading on the range's own end never reached the chart");
+    });
+
+    it("still refuses one from before the range began", () => {
+        // A negative offset is not a bucket, and the clamp does not rescue it:
+        // Math.min leaves a negative negative.
+        const before = spanning([at("2026-08-06T12:00:00.000Z", {download: 999})]);
+
+        assert.ok(before.data.download.every((value) => value !== 999),
+            "an entry from before the range was bucketed into it");
+    });
+
+    it("refuses an entry whose timestamp does not parse", () => {
+        // NaN passes `< 0` and `>= targetPoints` alike, and buckets[NaN] is
+        // undefined - so this used to throw rather than skip the row.
+        assert.doesNotThrow(() => spanning([at("not a date", {download: 999})]));
+    });
+});

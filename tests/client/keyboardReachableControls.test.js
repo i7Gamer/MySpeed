@@ -6,7 +6,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import * as sass from "sass";
 import { clickable } from "@/common/utils/Clickable.js";
 import { nextFocus } from "@/common/hooks/useModalFocus.js";
-import { blockEnd, escapeRegExp } from "../helpers/source.js";
+import { blockEnd, escapeRegExp, tagHolding } from "../helpers/source.js";
+import { compile, rules } from "../helpers/sass.mjs";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -19,7 +20,6 @@ const datePicker = read("common/components/DateRangePicker/DateRangePicker.jsx")
 const datePickerStyles = read("common/components/DateRangePicker/styles.sass");
 const settingsMenu = read("common/components/Dropdown/DropdownComponent.jsx");
 const exportMenu = read("common/components/ExportButton/ExportButton.jsx");
-const exportStyles = read("common/components/ExportButton/styles.sass");
 const integrationDialog = read("common/components/IntegrationDialog/IntegrationDialog.jsx");
 const contextMenu = read("common/components/ContextMenu/ContextMenu.jsx");
 
@@ -44,20 +44,9 @@ const elementsCarrying = (source, marker) => {
     return found;
 };
 
-/**
- * The opening tag of the element carrying `marker`, attributes and all.
- *
- * Walking back to the nearest `<` for the reason elementsCarrying does, and
- * forward to the first `>` after the marker - which is the end of the tag only
- * while its attributes hold no arrow function. Both callers are containers whose
- * handlers are named rather than written inline.
- */
-const tagHolding = (source, marker) => {
-    const at = source.indexOf(marker);
-    assert.notEqual(at, -1, `${marker} is no longer in this component`);
-
-    return source.slice(source.lastIndexOf("<", at), source.indexOf(">", at) + 1);
-};
+// tagHolding is imported from the helper rather than restated here: source.js
+// says "one home rather than a copy per test file", and this was the copy. A
+// fix to the walk now reaches this suite with the others.
 
 // Every <button …> in a component says which kind it is, since a button left
 // untyped defaults to submit. The same reason HelpButton gives.
@@ -450,11 +439,37 @@ describe("the export menu answers the keyboard", () => {
         everyButtonIsTyped(exportMenu, "the export menu");
     });
 
+    /**
+     * Read from the compiled CSS rather than the stylesheet, because the
+     * declarations are no longer written where the selector is: a second menu
+     * was drawn beside this one - the statistics comparison offsets - and the
+     * look of a row moved into a mixin both of them take. A source scan for
+     * `.export-option` found only `+dropdown-option` and reported the resets
+     * gone, which is exactly the false alarm this shape avoids: what reaches
+     * the browser is what the claim is about.
+     *
+     * Both menus, for the same reason. They share one definition, so a reset
+     * dropped from it takes both rows with it - and a row that later states its
+     * own is still checked here on its own terms.
+     */
     it("clears the styling a button arrives with", () => {
-        const option = exportStyles.slice(exportStyles.indexOf(".export-option"));
+        const menus = [
+            ["an export option", "common/components/ExportButton/styles.sass", ".export-option"],
+            ["a compare option", "pages/Statistics/components/CompareSelect/styles.sass",
+                ".compare-select-option"]
+        ];
 
-        for (const reset of [/background: none/, /border: none/, /font-family: inherit/, /width: 100%/])
-            assert.match(option, reset, `an export option keeps the button's own ${reset.source}`);
+        for (const [name, sheet, selector] of menus) {
+            const option = rules(compile(sheet))
+                .filter((rule) => rule.selector.trim() === selector)
+                .map((rule) => rule.body)
+                .join("\n");
+
+            assert.notEqual(option.length, 0, `${selector} is not declared`);
+
+            for (const reset of [/background: none/, /border: none/, /font-family: inherit/, /width: 100%/])
+                assert.match(option, reset, `${name} keeps the button's own ${reset.source}`);
+        }
     });
 });
 

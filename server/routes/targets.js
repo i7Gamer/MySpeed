@@ -11,12 +11,19 @@ const app = express.Router();
 // created are the server's to assign, and anything else in the body is a
 // typo to ignore rather than a column to invent.
 const WRITABLE = ["name", "provider", "serverId", "endpoint", "enabled", "alerts",
-    "optimalPing", "optimalDownload", "optimalUpload"];
+    "optimalPing", "optimalDownload", "optimalUpload", "iperfDuration", "iperfStreams",
+    "iperfUdp", "iperfBitrate", "baselinePercent"];
 
 const writableFields = (body) =>
     Object.fromEntries(WRITABLE.filter((key) => key in (body ?? {})).map((key) => [key, body[key]]));
 
-const ID = /^\d+$/;
+const DIGITS = /^\d+$/;
+
+// Digits, and a number the database can actually be asked about. The digit test
+// alone accepts an id past 2^53, where Number() lands on a neighbouring float
+// and the row looked up is not the row named. speedtests.js already asks both
+// questions of its own :id; this is the same question asked the same way.
+const ID = {test: (raw) => DIGITS.test(raw) && Number.isSafeInteger(Number(raw))};
 
 app.get("/", password(true), async (req, res) => {
     const rows = await targets.listAll();
@@ -72,7 +79,15 @@ app.patch("/:id", password(false), previewReadOnly, async (req, res) => {
     // Judged as the row it would become, not as the fragment that arrived:
     // a PATCH carrying only {endpoint} has to be held against the provider
     // it will run under.
-    const fields = writableFields(req.body);
+    /*
+     * Plus the columns this request retires without naming them - see
+     * retiredByPatch. Folded into the fields themselves rather than only into
+     * the judged row, so the write clears them too: a row left carrying a run
+     * shape for a run it no longer makes is one buildArgs would read and the
+     * next patch would trip over again.
+     */
+    const named = writableFields(req.body);
+    const fields = {...named, ...targets.retiredByPatch(current, named)};
     const merged = {...current, ...fields};
 
     const problem = targets.targetProblem(merged);

@@ -203,6 +203,10 @@ describe("i18n keys", () => {
         const DYNAMIC_KEY_FAMILIES = [
             // statistics.delta.${delta.direction} - Delta.jsx
             /^statistics\.delta\.(up|down)$/,
+            // statistics.compare.choice.${choice} over COMPARE_CHOICES -
+            // Statistics.jsx. Digits and letters both: the offsets are named
+            // 1m, 3m, 6m, 1y, 2y beside "previous".
+            /^statistics\.compare\.choice\.(previous|\d+[my])$/,
             // "dropdown." + (paused ? "resume_tests" : "pause_tests") - DropdownComponent.jsx
             /^dropdown\.(pause|resume)_tests$/,
             // options.cron.${preset.id} and its _desc - FrequencyDialog.jsx

@@ -60,7 +60,12 @@
       "ookla_desc": "Beliebter Anbieter mit globalem Servernetzwerk",
       "libre_desc": "Open-Source, selbst-hostbarer Speedtest",
       "cloudflare_desc": "Schnelle CDN-basierte Tests",
-      "iperf3_desc": "Dein eigener iperf3-Server, in deinem Netzwerk"
+      "iperf3_desc": "Dein eigener iperf3-Server, in deinem Netzwerk",
+      "iperf_advanced": "Testeinstellungen",
+      "iperf_duration": "Sekunden je Richtung",
+      "iperf_streams": "Parallele Streams",
+      "iperf_udp": "Mit UDP messen",
+      "iperf_bitrate": "Bitrate (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "Durchschnitt",
     "compare": {
       "note": "Veränderung gegenüber {{from}} – {{to}}",
-      "note_partial": "Veränderung gegenüber {{from}} – {{to}}, bis zur gleichen Uhrzeit"
+      "empty": "Keine Tests von {{from}} bis {{to}} zum Vergleichen",
+      "label": "Vergleichen mit",
+      "choice": {
+        "previous": "Vorheriger Zeitraum",
+        "1m": "1 Monat früher",
+        "3m": "3 Monate früher",
+        "6m": "6 Monate früher",
+        "1y": "1 Jahr früher",
+        "2y": "2 Jahre früher"
+      }
     },
     "downsampled": "Gemittelt · {{shown}} von {{total}} Tests",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "Ziele im Vergleich",
+      "chart": {
+        "ping": "Ping pro Ziel",
+        "download": "Download pro Ziel",
+        "upload": "Upload pro Ziel"
+      },
       "failure_rate": "Fehlerquote",
-      "metric": "Messwert",
       "empty": "Kein Ziel hat in diesem Zeitraum etwas gemessen",
-      "open_hint": "Öffnen, um die Ziele über diesen Zeitraum zu vergleichen",
       "unavailable": "Konnte nicht geladen werden"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "Eingeplant",
     "alerts": "Benachrichtigungen & Empfehlungen",
     "own_optimals": "Eigene optimale Werte",
+    "baseline_alerts": "Warnen bei ungewohnt langsamem Test",
+    "baseline_percent": "Anteil (%)",
+    "baseline_desc": "Warnt, wenn ein Test unter diesen Anteil des eigenen 30-Tage-Medians des Ziels fällt.",
     "all": "Alle Ziele",
     "saved": "Das Ziel wurde gespeichert.",
     "removed": "Das Ziel wurde entfernt.",

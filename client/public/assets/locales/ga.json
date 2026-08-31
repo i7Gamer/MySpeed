@@ -60,7 +60,12 @@
       "ookla_desc": "Soláthraí coitianta le líonra freastalaí domhanda",
       "libre_desc": "Tástáil luais foinse oscailte, féin-óstála",
       "cloudflare_desc": "Tástáil thapa bunaithe ar CDN",
-      "iperf3_desc": "Do fhreastalaí iperf3 féin, ar do líonra"
+      "iperf3_desc": "Do fhreastalaí iperf3 féin, ar do líonra",
+      "iperf_advanced": "Socruithe an rite",
+      "iperf_duration": "Soicindí sa treo",
+      "iperf_streams": "Sruthanna comhthreomhara",
+      "iperf_udp": "Tomhais le UDP",
+      "iperf_bitrate": "Ráta giotán (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "Meán",
     "compare": {
       "note": "Athruithe i gcomparáid le {{from}} – {{to}}",
-      "note_partial": "Athruithe i gcomparáid le {{from}} – {{to}}, suas go dtí an t-am céanna den lá"
+      "empty": "Níl aon tástáil idir {{from}} agus {{to}} le cur i gcomparáid",
+      "label": "Cuir i gcomparáid le",
+      "choice": {
+        "previous": "An tréimhse roimhe",
+        "1m": "1 mhí níos luaithe",
+        "3m": "3 mhí níos luaithe",
+        "6m": "6 mhí níos luaithe",
+        "1y": "1 bhliain níos luaithe",
+        "2y": "2 bhliain níos luaithe"
+      }
     },
     "downsampled": "Meánaithe · {{shown}} as {{total}} tástáil ar taispeáint",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "Comparáid spriocanna",
+      "chart": {
+        "ping": "Ping de réir sprice",
+        "download": "Íoslódáil de réir sprice",
+        "upload": "Uaslódáil de réir sprice"
+      },
       "failure_rate": "Ráta teipe",
-      "metric": "Méadracht",
       "empty": "Níor thomhais sprioc ar bith rud ar bith sa tréimhse seo",
-      "open_hint": "Oscail chun na spriocanna a chur i gcomparáid sa tréimhse seo",
       "unavailable": "Níorbh fhéidir é a lódáil"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "Sceidealta",
     "alerts": "Foláirimh & moltaí",
     "own_optimals": "A luachanna is fearr féin",
+    "baseline_alerts": "Foláireamh faoi bhun an ghnáthluais",
+    "baseline_percent": "Sciar (%)",
+    "baseline_desc": "Tugann foláireamh nuair a thiteann tástáil faoi bhun an sciar seo de mheán 30 lá an sprice.",
     "all": "Gach sprioc",
     "saved": "Tá an sprioc sábháilte.",
     "removed": "Tá an sprioc bainte.",

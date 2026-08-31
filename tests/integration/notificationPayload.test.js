@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, api, setConfig } from "./helpers/boot.js";
+import { bootServer, api } from "./helpers/boot.js";
 import { FINISHED_VARIABLES } from "../../server/util/notificationPayload.js";
 import { DATE_VARIABLES } from "../../server/util/helpers.js";
 

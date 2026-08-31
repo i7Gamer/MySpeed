@@ -186,9 +186,9 @@ export default ({tests, close}) => {
                             </div>
                         </>
                     ) : (
-                        <div className="storage-retention-select-wrap">
+                        <div className="storage-retention-select-wrap select-wrap">
                             <select
-                                className="storage-select"
+                                className="storage-select select-field"
                                 value={retentionSelected}
                                 onChange={(e) => handleSelectChange(e.target.value)}
                             >

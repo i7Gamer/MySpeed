@@ -55,6 +55,26 @@ describe("bodyOf", () => {
         assert.equal(bodyOf(source, "const a"), "{ if (x) { deep(); } done(); }");
     });
 
+    /**
+     * A brace that is not a brace: one inside a string, a template or a comment
+     * is text, and counting it closed the body early - handing back a slice that
+     * ends mid-function, which an assertion against it then passes or fails for
+     * reasons that have nothing to do with the code. bodyBrace already read the
+     * source through the lexer; this walk did not.
+     */
+    it("is not closed by a brace inside a string, a template or a comment", () => {
+        for (const [what, body] of [
+            ["a string", `{ const s = "closing }"; return s; }`],
+            ["a template", "{ const s = `closing }`; return s; }"],
+            ["a line comment", "{ // closing }\n return 1; }"],
+            ["a block comment", "{ /* closing } */ return 1; }"]
+        ]) {
+            const source = `const a = () => ${body};\nconst b = () => { two(); };`;
+
+            assert.equal(bodyOf(source, "const a"), body, `a brace in ${what} closed the body`);
+        }
+    });
+
     // The failure the two copies existed to prevent: a slice that runs on into
     // the next function passes assertions that belong to neither.
     it("stops before the declaration that follows", () => {
@@ -113,6 +133,168 @@ describe("bodyOf", () => {
         }
 
         assert.equal(answered, "not called");
+    });
+});
+
+/**
+ * The brace that opens the body, and the ones that only look like it.
+ *
+ * "The first brace after the declaration" is not the body whenever a parameter
+ * takes a brace of its own - an object default, a destructured argument. The
+ * walker then balanced *that* pair and answered it: `tuning = {}` in
+ * server/util/speedtest.js handed six suites the two characters `{}` as the
+ * body of a two-hundred-line function.
+ *
+ * Those six failed loudly, because they ask `assert.match`. The hazard is the
+ * other direction, and it is the reason this is worth a walker rather than a
+ * convention: `assert.doesNotMatch(body, /…/)` and `body.indexOf(x) === -1`
+ * are *satisfied* by `{}`. A scan written to prove something is absent from a
+ * function - that a callback cannot throw, that a release sits in a finally,
+ * that a route carries its guard - would prove nothing at all and say so in
+ * green. That is the one direction this helper's own docstring says these
+ * scans must not fail in.
+ *
+ * The workaround at the time was to keep `= {}` out of the scanned signature.
+ * That fixes one file and nothing for the next author.
+ */
+describe("bodyOf and the braces that are not the body", () => {
+    it("steps over an object default in the parameter list", () => {
+        const source = "const a = (mode, tuning = {}) => { real(); };";
+
+        assert.equal(bodyOf(source, "const a"), "{ real(); }");
+    });
+
+    // The shape that first showed it, spelled the way the file had it.
+    it("steps over one in a long signature matched by its first parameter", () => {
+        const source = "export default async (mode, serverId, onProgress, tuning = {}) => { real(); };";
+
+        assert.equal(bodyOf(source, "export default async (mode"), "{ real(); }");
+    });
+
+    it("steps over a destructured parameter", () => {
+        const source = "const a = ({from, to}) => { real(); };";
+
+        assert.equal(bodyOf(source, "const a"), "{ real(); }");
+    });
+
+    it("steps over a default that is itself a function", () => {
+        const source = "const a = (done = () => {}) => { real(); };";
+
+        assert.equal(bodyOf(source, "const a"), "{ real(); }");
+    });
+
+    /**
+     * And the assertion that would have passed against the truncated answer,
+     * stated as itself: this is the whole reason the shape matters.
+     */
+    it("does not hand a doesNotMatch scan a body it cannot fail against", () => {
+        const source = "const a = (tuning = {}) => { forbidden(); };";
+
+        assert.match(bodyOf(source, "const a"), /forbidden/,
+            "the scan was handed the parameter default, where nothing can be found");
+    });
+
+    /**
+     * The other half of the rule, and the reason this is not simply "the first
+     * brace outside parentheses".
+     *
+     * Several callers point this at a call rather than at a declaration -
+     * `useEffect(`, `db.transaction` - where the body wanted is the arrow's,
+     * two parens deep. A walk that skipped every paren group would run past it
+     * to the next brace in the file, which belongs to something else entirely.
+     * So a paren group is stepped over only when it is a parameter list, and
+     * what makes it one is what follows its close: an arrow, or the body brace
+     * itself.
+     */
+    it("finds the body of a callback inside a call", () => {
+        const source = "useEffect(() => { real(); }, [dep]);";
+
+        assert.equal(bodyOf(source, "useEffect("), "{ real(); }");
+    });
+
+    it("finds it when the callback takes an object default too", () => {
+        const source = "db.transaction(async (t, options = {}) => { real(); });";
+
+        assert.equal(bodyOf(source, "db.transaction"), "{ real(); }");
+    });
+
+    /**
+     * And an object literal argument is still answered, which is what a
+     * handful of callers are actually asking for - `export const create =` is
+     * an arrow whose whole body is one `create({...})` call. Its brace is
+     * inside a paren group, so the rule that keeps it is the same one: that
+     * group is not followed by an arrow or a brace, so it is a call, and the
+     * walk goes into it rather than over it.
+     */
+    it("still answers the object literal of a call it is pointed at", () => {
+        const source = "export const create = async (target) => rows.create({name: target.name});"
+            + "\nconst next = () => { other(); };";
+
+        assert.equal(bodyOf(source, "export const create ="), "{name: target.name}");
+    });
+
+    // A parameter list that never closes is a truncated file, and a body of
+    // unknown meaning is the thing this helper exists not to answer.
+    it("throws rather than guessing when the parameter list never closes", () => {
+        assert.throws(() => bodyOf("const a = (tuning = {}", "const a"), /no braced body/);
+    });
+
+    /**
+     * An arrow whose body is a parenthesised expression has no block to find,
+     * and the braces inside it are not one.
+     *
+     * This is the commonest declaration shape in the client, and it was the
+     * remaining way to get a body of unknown meaning out of this walk: the
+     * parameters were stepped over correctly, the body paren was walked into
+     * because a `;` follows it, and a JSX attribute came back as the
+     * component's body. Twenty characters that no doesNotMatch scan could ever
+     * fail against.
+     */
+    it("refuses an arrow whose body is a parenthesised expression", () => {
+        const source = [
+            "export const Row = ({level, title}) => (",
+            "    <div data-grade={level || undefined}>{title}</div>",
+            ");"
+        ].join("\n");
+
+        assert.throws(() => bodyOf(source, "export const Row"), /no braced body/,
+            "a JSX attribute was answered as the component's body");
+    });
+
+    /**
+     * But a parenthesised OBJECT literal is answered, because that literal is
+     * what the callers pointed at this shape are asking for - the restored
+     * target rebuild and the round's own outcome are both `=> ({...})`.
+     *
+     * So the parenthesis alone does not decide it; what is inside it does.
+     */
+    it("answers the object literal an arrow returns in parentheses", () => {
+        const source = [
+            "const outcome = async (failures, members) => ({",
+            "    failed: failures > 0,",
+            "    members",
+            "});"
+        ].join("\n");
+
+        assert.match(bodyOf(source, "const outcome"), /failed: failures > 0/);
+    });
+
+    // And the arrow shapes either side of it are untouched: a block body is
+    // still a body, and an expression body that calls something still answers
+    // the literal that caller is pointed at.
+    it("keeps both arrow bodies that do have something to answer", () => {
+        assert.equal(bodyOf("const a = (x) => { real(x); };", "const a"), "{ real(x); }");
+        assert.equal(bodyOf("const a = (x) => rows.create({name: x});", "const a"),
+            "{name: x}");
+    });
+
+    // Strings and comments inside the signature are not structure. A default
+    // carrying a bracket in a string closed the list early, and the brace that
+    // followed was read as the body.
+    it("reads no structure out of a string or a comment in the signature", () => {
+        const source = 'const a = (sep = ")", /* ) */ tuning = {}) => { real(); };';
+
+        assert.equal(bodyOf(source, "const a"), "{ real(); }");
     });
 });
 

@@ -60,7 +60,12 @@
       "ookla_desc": "Provider popolare con rete di server globale",
       "libre_desc": "Speedtest open source, ospitabile in proprio",
       "cloudflare_desc": "Test veloci basati su CDN",
-      "iperf3_desc": "Il tuo server iperf3, sulla tua rete"
+      "iperf3_desc": "Il tuo server iperf3, sulla tua rete",
+      "iperf_advanced": "Impostazioni del test",
+      "iperf_duration": "Secondi per direzione",
+      "iperf_streams": "Flussi paralleli",
+      "iperf_udp": "Misura con UDP",
+      "iperf_bitrate": "Bitrate (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "Media",
     "compare": {
       "note": "Variazioni rispetto a {{from}} – {{to}}",
-      "note_partial": "Variazioni rispetto a {{from}} – {{to}}, fino alla stessa ora del giorno"
+      "empty": "Nessun test tra {{from}} e {{to}} da confrontare",
+      "label": "Confronta con",
+      "choice": {
+        "previous": "Periodo precedente",
+        "1m": "1 mese prima",
+        "3m": "3 mesi prima",
+        "6m": "6 mesi prima",
+        "1y": "1 anno prima",
+        "2y": "2 anni prima"
+      }
     },
     "downsampled": "Mediato · mostrati {{shown}} test su {{total}}",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "Confronto degli obiettivi",
+      "chart": {
+        "ping": "Ping per destinazione",
+        "download": "Scaricare per destinazione",
+        "upload": "Caricare per destinazione"
+      },
       "failure_rate": "Tasso di errore",
-      "metric": "Metrica",
       "empty": "Nessun obiettivo ha misurato nulla in questo periodo",
-      "open_hint": "Apri per confrontare gli obiettivi in questo periodo",
       "unavailable": "Impossibile caricare"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "Pianificata",
     "alerts": "Avvisi e raccomandazioni",
     "own_optimals": "Valori ottimali propri",
+    "baseline_alerts": "Avvisa sotto la velocità abituale",
+    "baseline_percent": "Quota (%)",
+    "baseline_desc": "Avvisa quando un test scende sotto questa quota della mediana a 30 giorni della destinazione.",
     "all": "Tutte le destinazioni",
     "saved": "La destinazione è stata salvata.",
     "removed": "La destinazione è stata rimossa.",

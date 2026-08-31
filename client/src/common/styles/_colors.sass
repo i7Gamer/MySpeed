@@ -289,6 +289,23 @@ $default-palette: slate
   @if map.has-key($t, series)
     $series: map.merge($series, token($t, series))
 
+  // Which scheme these surfaces are, said to the browser rather than only to
+  // the stylesheet.
+  //
+  // Everything below paints what a rule can reach. The rest of a form control
+  // is drawn by the browser, in whichever scheme it believes it is in - and
+  // with nothing declared that is light, on every palette, including the four
+  // dark ones. So a number input's spin buttons were a pale chrome widget on a
+  // dark field, a time input's clock glyph and its empty `--:--` segments were
+  // near-black on near-black, and the time picker and every native <select>
+  // opened a white panel over a dark dialog. None of those are styleable; this
+  // is the only thing that moves them.
+  //
+  // It belongs here rather than on `:root` once, for the reason the chart
+  // chrome below does: the mode is a property of the block, and a preview that
+  // stamps [data-palette] on a nested element means it in that scope too.
+  color-scheme: #{$mode-name}
+
   --background: #{token($t, background)}
   --darker-gray: #{token($t, darker-gray)}
   --dark-gray: #{token($t, dark-gray)}

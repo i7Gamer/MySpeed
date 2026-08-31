@@ -241,12 +241,14 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
                                }}/>
                     )}
                     {alert.type === "select" && (
-                        <select className="dialog-input" value={inputValue}
-                                onChange={(e) => setInputValue(e.target.value)}>
-                            {Object.entries(alert.options || {}).map(([key, label]) => (
-                                <option key={key} value={key}>{label}</option>
-                            ))}
-                        </select>
+                        <span className="select-wrap">
+                            <select className="dialog-input select-field" value={inputValue}
+                                    onChange={(e) => setInputValue(e.target.value)}>
+                                {Object.entries(alert.options || {}).map(([key, label]) => (
+                                    <option key={key} value={key}>{label}</option>
+                                ))}
+                            </select>
+                        </span>
                     )}
                 </div>
                 <div className="dialog-buttons">

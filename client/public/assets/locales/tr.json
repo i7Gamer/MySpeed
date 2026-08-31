@@ -60,7 +60,12 @@
       "ookla_desc": "Küresel sunucu ağına sahip popüler sağlayıcı",
       "libre_desc": "Açık kaynaklı, kendi sunucunuzda barındırılabilir hız testi",
       "cloudflare_desc": "CDN tabanlı hızlı test",
-      "iperf3_desc": "Kendi ağınızda çalışan iperf3 sunucunuz"
+      "iperf3_desc": "Kendi ağınızda çalışan iperf3 sunucunuz",
+      "iperf_advanced": "Çalıştırma ayarları",
+      "iperf_duration": "Yön başına saniye",
+      "iperf_streams": "Paralel akışlar",
+      "iperf_udp": "UDP ile ölç",
+      "iperf_bitrate": "Bit hızı (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "Ortalama",
     "compare": {
       "note": "{{from}} – {{to}} ile karşılaştırıldığında değişimler",
-      "note_partial": "{{from}} – {{to}} ile karşılaştırıldığında değişimler, günün aynı saatine kadar"
+      "empty": "{{from}} – {{to}} aralığında karşılaştırılacak test yok",
+      "label": "Şununla karşılaştır",
+      "choice": {
+        "previous": "Önceki dönem",
+        "1m": "1 ay öncesi",
+        "3m": "3 ay öncesi",
+        "6m": "6 ay öncesi",
+        "1y": "1 yıl öncesi",
+        "2y": "2 yıl öncesi"
+      }
     },
     "downsampled": "Ortalaması alındı · {{total}} testin {{shown}} tanesi gösteriliyor",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "Hedef karşılaştırması",
+      "chart": {
+        "ping": "Noktaya göre ping",
+        "download": "Noktaya göre indirme",
+        "upload": "Noktaya göre yükleme"
+      },
       "failure_rate": "Hata oranı",
-      "metric": "Metrik",
       "empty": "Bu aralıkta hiçbir hedef bir şey ölçmedi",
-      "open_hint": "Bu aralıktaki hedefleri karşılaştırmak için açın",
       "unavailable": "Yüklenemedi"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "Planlanmış",
     "alerts": "Bildirimler ve öneriler",
     "own_optimals": "Kendi optimum değerleri",
+    "baseline_alerts": "Olağan hızın altında uyar",
+    "baseline_percent": "Oran (%)",
+    "baseline_desc": "Bir test, hedefin kendi 30 günlük ortancasının bu payının altına düştüğünde uyarır.",
     "all": "Tüm test noktaları",
     "saved": "Test noktası kaydedildi.",
     "removed": "Test noktası silindi.",

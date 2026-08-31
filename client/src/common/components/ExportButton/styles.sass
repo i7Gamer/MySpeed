@@ -1,6 +1,7 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/focus" as *
 @use "@/common/styles/layout" as *
+@use "@/common/styles/menu" as *
 
 .export-button-container
   position: relative
@@ -61,58 +62,16 @@
   top: calc(100% + 0.375rem)
   right: 0
   left: 0
-  z-index: 1000
-  background-color: $dark-gray
-  border: 1px solid $light-gray
-  border-radius: 0.6rem
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3)
-  overflow: hidden
-  padding: 6px
-  animation: dropdownFadeIn 0.15s ease-out
+  +dropdown-menu
 
-@keyframes dropdownFadeIn
-  from
-    opacity: 0
-    transform: translateY(-8px) scale(0.98)
-  to
-    opacity: 1
-    transform: translateY(0) scale(1)
++dropdown-fade-in
 
 // A real button now, so the styling one arrives with is cleared here. width is
 // among them: a button shrinks to its text, where the div it replaces filled the
 // menu - which is what keeps the two options the same width and their hover
 // backgrounds aligned with the menu's edges.
 .export-option
-  display: flex
-  align-items: center
-  gap: 10px
-  padding: 8px 12px
-  border-radius: 6px
-  color: $subtext
-  cursor: pointer
-  transition: all 0.15s ease
-  background: none
-  border: none
-  font-family: inherit
-  font-size: inherit
-  width: 100%
-  text-align: left
-
-  &:hover
-    background-color: $darker-gray
-    color: $white
-
-    svg
-      color: $white
-
-  svg
-    width: 14px
-    height: 14px
-    flex-shrink: 0
-
-  span
-    font-size: 0.95rem
-    font-weight: 500
+  +dropdown-option
 
 // The collapsed shape - icon-only button, no chevron, a menu that states its
 // own width - lives in PageToolbar/styles.sass, keyed off the stage that

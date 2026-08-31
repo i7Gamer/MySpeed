@@ -58,9 +58,22 @@ describe("the targets a statistics payload was built from", () => {
             "a model instance per row is what this read exists to avoid");
     });
 
-    // STATISTICS_COLUMNS is the set statistics.js reads, and the test beside
-    // that file fails a column selected and read nowhere in it.
-    it("does not widen the aggregation's own column contract", () => {
-        assert.ok(!STATISTICS_COLUMNS.includes("targetId"));
+    /**
+     * STATISTICS_COLUMNS is the set statistics.js reads, and the test beside
+     * that file fails a column selected and read nowhere in it. targetId used
+     * to be appended to the query instead of joining that list, because only
+     * this file read it.
+     *
+     * The failure streak reads it now - a streak belongs to one target, and
+     * the unfiltered timeline is every target interleaved - so it belongs to
+     * the contract, and appending it a second time would list it twice on
+     * every read.
+     */
+    it("carries the column in the aggregation's own contract, exactly once", () => {
+        assert.ok(STATISTICS_COLUMNS.includes("targetId"),
+            "reliabilityOver groups on a column the aggregation does not claim to read");
+
+        const listed = SUMMARISED_ROWS_QUERY.attributes.filter((column) => column === "targetId");
+        assert.equal(listed.length, 1, "the column is selected twice");
     });
 });

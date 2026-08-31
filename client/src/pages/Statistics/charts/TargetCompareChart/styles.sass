@@ -2,21 +2,43 @@
 @use "@/common/styles/layout" as *
 @use "@/common/styles/typography" as *
 
-// ChartModal's own $modal-breakpoint-tall, restated because the variable is
-// private to that stylesheet - the tier that gives a desktop reader the tall
-// plot, and the one an N-series overlay needs most. The four height tiers
-// below mirror .modal-body-chart's .chart-body values line for line.
-$compare-modal-tall: 900px
-
+// The three overlay charts take .chart-container from the speed charts' own
+// stylesheet, the same one PingChart borrows: they are siblings of that row,
+// not a card of their own kind, and the shared class is what makes them size,
+// scroll and expand identically. Only what is particular to an overlay lives
+// here.
 .target-compare-chart
+  .target-compare-hint
+    margin: 0
+    color: $subtext
+    font-size: $dialog-hint
+
+// The figures the charts cannot draw: the averages as numbers, their deltas,
+// and the failure rate.
+.target-compare-panel
   display: flex
   flex-direction: column
   gap: 0.75rem
+  // On the narrow card the table scrolls in place rather than wrapping its
+  // figures - the page body must never scroll sideways for it.
+  overflow-x: auto
+
+  .target-compare-hint
+    margin: 0
+    color: $subtext
+    font-size: $dialog-hint
 
   .target-compare-table
     width: 100%
     border-collapse: collapse
     font-size: $dialog-body
+    // The panel is a full-width one and the table is its only content, so the
+    // columns share that width rather than huddling at the left of it. Fixed
+    // layout makes the shares the header's to set: without it the columns take
+    // their content's width and a five-column table of short figures drew
+    // itself in the first third of a very wide box, with two thirds of the
+    // panel empty beside it.
+    table-layout: fixed
 
     th, td
       text-align: left
@@ -32,74 +54,48 @@ $compare-modal-tall: 900px
     tbody th
       font-weight: 500
       color: $white
-      display: flex
-      align-items: center
-      gap: 0.5rem
+
+      // The flex lives on a span inside the cell, not on the cell.
+      //
+      // `display: flex` on a <th> replaces `table-cell`, which takes the
+      // element out of the table's own layout - the engine then wraps it in an
+      // anonymous cell to put it back. Chromium's answer is identical either
+      // way, measured; it is the standards-strict engines the row and its
+      // fixed columns are being trusted to on faith. A wrapper costs one span
+      // and asks nothing of them.
+      .target-compare-name
+        display: flex
+        align-items: center
+        gap: 0.5rem
 
     tbody td
       color: $subtext
 
-    // The columns after the name share the row evenly; the name takes what
-    // is left, so a long operator name squeezes figures before it wraps.
-    // Numbers may overflow-scroll on the narrowest card rather than wrap
-    // mid-figure.
     tbody tr
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04)
+      // Through the palette's own light-gray, not a literal white: at
+      // rgba(255,255,255,0.04) this separator was drawn for the dark themes and
+      // simply was not there on the light ones, which is the fault _colors.sass
+      // records twenty-three rules having had. The -rgb triplet is what makes an
+      // alpha possible at all here - $light-gray is a custom property, and
+      // rgba() cannot take one.
+      border-bottom: 1px solid rgba(var(--light-gray-rgb), 0.4)
+
+      // A separator between rows, and the last row has nothing under it to be
+      // separated from: the line there reads as a second edge drawn a few
+      // pixels inside the panel's own.
+      &:last-child
+        border-bottom: none
+
+    // Under the figure rather than beside it - AverageChart's own answer to
+    // the same question. Four figures each grown by a nowrap annotation is
+    // some 240px this table does not have, and the delta is the half of the
+    // pair that can move.
+    tbody td .stat-delta
+      display: flex
+      margin-left: 0
+      padding-left: 0
+      border-left: none
+      margin-top: 0.15rem
 
   .target-compare-unavailable
     font-style: italic
-
-  .target-compare-teaser
-    display: flex
-    flex-wrap: wrap
-    align-items: center
-    gap: 0.5rem 1.25rem
-
-  .target-compare-name
-    display: inline-flex
-    align-items: center
-    gap: 0.5rem
-    color: $white
-    font-size: $dialog-body
-
-  .target-compare-hint
-    margin: 0
-    color: $subtext
-    font-size: $dialog-hint
-    // The teaser line explains the click; it must not swallow it. The whole
-    // card is the control (StatisticContainer's clickable), so the hint is
-    // plain text, not a second button inside one.
-    flex-basis: 100%
-
-  .target-compare-metric
-    align-self: flex-start
-
-  // On the narrow card the table scrolls in place rather than wrapping its
-  // figures - the page body must never scroll sideways for it.
-  overflow-x: auto
-
-/*
- * The plot exists only in the modal, and the modal resets every height above
- * it (.stats-container and .stats-content both go auto there), so the height
- * lives on this one wrapper - stated on .chart-modal-body's side, never on
- * .stats-content itself, whose reset wins by import order.
- */
-.chart-modal-body
-  .target-compare-plot
-    position: relative
-    min-height: min(60vh, 400px)
-    max-height: 65vh
-
-    @media screen and (min-height: $compare-modal-tall)
-      min-height: min(64vh, 620px)
-      max-height: 72vh
-
-  @media screen and (max-width: 768px)
-    .target-compare-plot
-      min-height: min(40vh, 250px)
-      max-height: 50vh
-
-  @media screen and (max-width: 500px)
-    .target-compare-plot
-      min-height: min(35vh, 220px)
-      max-height: 45vh

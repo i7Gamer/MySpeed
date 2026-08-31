@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readSource, withoutJsComments } from "../helpers/source.js";
-import { compile } from "../helpers/sass.mjs";
+import { compile, rules } from "../helpers/sass.mjs";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const COMPONENTS = path.join(ROOT, "client", "src", "common", "components");
@@ -161,16 +161,30 @@ describe("the targets manager and its editor", () => {
      * the dialog was widened to give them - the interface select showed 224px
      * of a value needing 311, and of options needing 415.
      */
+    /*
+     * Found by the selector it contains rather than by an exact string, and
+     * asked of the wrapper as well.
+     *
+     * A <select> is a replaced element with no ::after to hang the shared caret
+     * on, so the two selects on these rows sit inside a .select-wrap - which
+     * makes the wrapper the flex item the row is dividing, and leaves the field
+     * dividing nothing. Whatever share the field is given, the wrapper has to be
+     * given too, or the interface select is back to the 224px this rule exists
+     * to have fixed.
+     */
+    const sharedRow = (prefix) => rules(css)
+        .filter(({selector}) => selector.split(",").map((one) => one.trim())
+            .some((one) => one === `${prefix}.provider-input`))
+        .map(({selector, body}) => ({parts: selector.split(",").map((one) => one.trim()), body}));
+
     it("lets a field use the width the dialog has", () => {
-        const at = css.indexOf(".provider-input {");
-        assert.notEqual(at, -1, "the shared field rule is gone");
+        const [rule] = sharedRow("").filter(({body}) => /flex:/.test(body));
 
-        const rule = css.slice(at, css.indexOf("}", at));
-
-        assert.doesNotMatch(rule, /max-width:\s*\d+(?:\.\d+)?(?:rem|px)/,
+        assert.ok(rule, "the field takes no share of the row, so it cannot grow into it");
+        assert.doesNotMatch(rule.body, /max-width:\s*\d+(?:\.\d+)?(?:rem|px)/,
             "the field is pinned to a fixed width, so a wider dialog cannot help it");
-        assert.match(rule, /flex:/,
-            "the field takes no share of the row, so it cannot grow into it");
+        assert.ok(rule.parts.includes(".provider-input-wrap"),
+            "the wrapper a select sits in takes no share of the row, so the select cannot grow into it");
     });
 
     /**
@@ -185,16 +199,18 @@ describe("the targets manager and its editor", () => {
      * width of its dialog, which is what the commit before this one gave it.
      */
     it("draws every field in the editor at one width", () => {
-        const at = css.indexOf(".provider-dialog-wrapper .provider-input {");
-        assert.notEqual(at, -1, "the editor no longer sizes its fields together");
+        const [rule] = sharedRow(".provider-dialog-wrapper ");
 
-        const rule = css.slice(at, css.indexOf("}", at));
-        const [, grow] = /flex:\s*(\d+)/.exec(rule) ?? [];
+        assert.ok(rule, "the editor no longer sizes its fields together");
+
+        const [, grow] = /flex:\s*(\d+)/.exec(rule.body) ?? [];
 
         assert.equal(grow, "0",
             "a field that grows takes what its row leaves it, which is a different width per row");
-        assert.match(rule, /flex:\s*0\s+0\s+\d/,
+        assert.match(rule.body, /flex:\s*0\s+0\s+\d/,
             "the fields need a shared basis, not a share of each row");
+        assert.ok(rule.parts.includes(".provider-dialog-wrapper .provider-input-wrap"),
+            "the wrapped select is the one field in the column drawn at another width");
     });
 });
 
@@ -277,8 +293,113 @@ describe("a setting row in the target editor", () => {
         const rows = [...jsx.matchAll(/className="provider-setting[^"]*"/g)].map(([match]) => match);
         const switches = rows.filter((row) => row.includes("provider-setting-switch"));
 
-        assert.equal(switches.length, 2,
-            `${switches.length} rows are marked as switch rows; the editor has two toggles`);
+        // Alerts, own optimal values, and the baseline. A count rather than a
+        // list, because the point is that the class is written where the row
+        // is - a row that grows a toggle and forgets it is what this notices.
+        assert.equal(switches.length, 3,
+            `${switches.length} rows are marked as switch rows; the editor has three toggle rows`);
+    });
+
+    /**
+     * And the third toggle is deliberately not one of them. The UDP switch
+     * sits inside the run-settings row rather than beside it, so borrowing
+     * this class would draw a second border within the first - the row style
+     * carries its own padding and edge, which is the whole of what it is for.
+     */
+    it("keeps the toggle nested in a row out of the row style", () => {
+        const jsx = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+
+        assert.match(jsx, /className="target-tuning-switch"/,
+            "the run-settings toggle no longer names itself");
+        assert.doesNotMatch(jsx, /className="provider-setting-switch target-tuning-switch"/,
+            "the nested toggle took the bordered row style");
+    });
+
+    /**
+     * A field with a fixed height does not also carry the shared field's
+     * vertical padding, or its text is cut off inside it.
+     *
+     * `.dialog-input` pads 0.7rem top and bottom, which is what gives a field
+     * its height when nothing else does. `.provider-input` states a height of
+     * its own - 2.5rem, so the rows line up - and border-box sizing then takes
+     * that padding out of it: 40px, less 11.2 twice, less the border, leaves
+     * **15.6px** of content box for a line that wants **20**. The glyphs were
+     * clipped by about two pixels top and bottom, which is exactly the shape a
+     * reader describes as "somehow doesn't fit" - the box is plainly tall
+     * enough, and the padding inside it is not.
+     *
+     * The typeface reset surfaced this rather than caused it: the browser's UI
+     * font sat lower in the same 15.6px and the clipping went unnoticed.
+     *
+     * The height is deliberately unchanged - the row's alignment depends on
+     * it. The padding goes instead, and a fixed-height field centres its own
+     * text without needing any.
+     */
+    it("leaves a fixed-height field room for its own text", () => {
+        // Found by what each rule declares rather than by position: the editor
+        // scopes a width onto the same class, so a substring search for the
+        // selector finds whichever of them the stylesheet writes first.
+        const bodyOf = (test) => rules(settings).filter(({selector, body}) =>
+            selector.split(",").some((one) => test(one.trim())) && /padding|height/.test(body));
+
+        const sized = bodyOf((one) => one === ".provider-input")
+            .find(({body}) => /height:\s*2\.5rem/.test(body));
+
+        assert.notEqual(sized, undefined,
+            "no .provider-input rule sets the 2.5rem row height; the padding below was removed "
+            + "to fit inside it, so re-anchor this");
+
+        /*
+         * Both classes on the selector, not one. `.dialog-input` writes its
+         * padding as a shorthand, so a longhand at equal specificity does not
+         * beat it - which of them applies would come down to the order the
+         * bundle puts the two stylesheets in, which neither file can see.
+         */
+        const override = bodyOf((one) =>
+            one === ".provider-input.dialog-input" || one === ".dialog-input.provider-input");
+
+        assert.notEqual(override.length, 0,
+            "the padding override no longer names both classes, so .dialog-input's shorthand "
+            + "outranks it whenever the bundle happens to put that stylesheet last");
+
+        const body = override.map(({body}) => body).join("\n");
+        assert.match(body, /padding-top:\s*0/);
+        assert.match(body, /padding-bottom:\s*0/,
+            "the shared 0.7rem padding is back inside a 2.5rem box, which cuts the text");
+    });
+
+    /**
+     * And that row stacks, because it is the one row whose control is not a
+     * control but three of them: a label, two number fields, and the mode
+     * toggle underneath.
+     *
+     * `.provider-setting` is a row - a label on the left and one field on the
+     * right - which is right for every other setting here and wrong for this
+     * one. Laid out as a row, the three blocks became three columns: the
+     * fields and the switch took an equal share each, the label was squeezed
+     * to 52px with its own heading 64px wide overflowing it, and the two
+     * number fields wrapped into a stack tall enough that "Run settings" was
+     * drawn across "Parallel streams".
+     *
+     * The modifier class was already written on the row in the JSX for this,
+     * and the rule it names was never written - so the class said the row was
+     * special and the stylesheet treated it like every other. Both halves of
+     * the pair are read here, because the class alone changes nothing and the
+     * rule alone is dead.
+     */
+    it("stacks the run-settings row rather than laying it out as three columns", () => {
+        const jsx = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+        const rule = ruleFor(settings, ".target-tuning-setting");
+
+        assert.match(jsx, /className="provider-setting target-tuning-setting"/,
+            "the run-settings row no longer marks itself as the one that stacks");
+        assert.notEqual(rule, null,
+            ".target-tuning-setting is named in the JSX and styled nowhere, so the row is laid "
+            + "out as three columns and the label is crushed under its own heading");
+        assert.match(rule, /flex-direction:\s*column/,
+            "the row lays its label, its fields and its toggle out side by side");
+        assert.match(rule, /align-items:\s*stretch/,
+            "centred items leave the full-width fields and toggle sized to their content");
     });
 });
 

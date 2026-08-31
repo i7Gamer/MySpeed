@@ -32,10 +32,153 @@ const CREATED_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
  * The ?target= filter, three-valued: undefined when absent (no filter), a
  * number when usable, null when malformed - the caller answers the 400, so
  * the message lives beside the route the way the other parameter guards do.
+ *
+ * Digits are not quite enough on their own to make a number the database can
+ * be asked about, which is what the safe-integer half is for. `Number` of four
+ * hundred nines is Infinity, and Infinity reached the driver as a bind
+ * parameter no dialect can compare an INTEGER column against: the whole
+ * request came back a 500 that named no parameter at all, on a URL anybody
+ * could type, where every other malformed filter on these three routes earns
+ * a 400 that says which one was wrong.
  */
 const parseTargetParam = (value) => {
     if (value === undefined) return undefined;
-    return /^\d+$/.test(value) ? Number(value) : null;
+
+    const id = Number(value);
+    return /^\d+$/.test(value) && Number.isSafeInteger(id) ? id : null;
+};
+
+/**
+ * What separates the ids of a batched request.
+ *
+ * A comma cannot appear inside an id, so the list needs no escaping - and it
+ * keeps the whole list in one parameter. Repeating `targets=` instead would
+ * arrive as a string for one id and an array for two, a shape every reader
+ * would then have to normalise before it could count anything.
+ */
+const TARGETS_SEPARATOR = ",";
+
+/**
+ * How many targets one batched request may ask about.
+ *
+ * Not a limit on database work: the ids are answered from one scan of the range
+ * however many of them there are, so an extra id costs a partition of rows that
+ * are already in memory. It is a limit on the payload, which is a full
+ * statistics answer per target and by far the largest thing this API returns -
+ * without a ceiling, a pasted URL naming ten thousand ids would have the server
+ * build and serialise ten thousand of them.
+ *
+ * Fifty is far above anything an instance runs. The comparison panel this
+ * parameter exists for draws a column per target, and a dozen already overflows
+ * the widest screen, so no honest caller comes near it and no caller that does
+ * is drawing a panel.
+ */
+export const MAX_BATCH_TARGETS = 50;
+
+/**
+ * The ?targets= filter: the ids a batched request wants a payload each for.
+ *
+ * Three-valued the way parseCompare is - undefined when the parameter is
+ * absent, and otherwise a verdict carrying either the ids or the reason they
+ * were refused, because the caller is what answers the 400 and the messages
+ * belong beside the route like every other parameter guard here.
+ *
+ * Each id is read by parseTargetParam above, so a list is not a place where
+ * "12abc" or "-2" starts meaning something it does not mean on its own.
+ */
+export const parseTargetsParam = (value) => {
+    if (value === undefined) return undefined;
+
+    /*
+     * `?targets=1&targets=2` is the other way a caller might write a list, and
+     * Express hands a repeated parameter over as an array - a string for one id
+     * and an array for two, which is the very shape the comma-separated list
+     * exists to avoid. Named rather than tolerated, because guessing at what
+     * was meant would make one spelling of the parameter work by accident and
+     * the other by design; unguarded it is not even a wrong answer but a 500,
+     * since nothing but a string has `split`.
+     */
+    if (typeof value !== "string") return {valid: false,
+        message: "The targets parameter is one comma-separated list of ids, not a repeated parameter"};
+
+    // A list nobody filled in is a caller that built its URL wrongly, not a
+    // request for every target and not a request for none. Answered as an empty
+    // batch it would be read as "this instance has no targets", which is a
+    // different and quite plausible-looking fact.
+    if (value === "") return {valid: false,
+        message: "The targets parameter needs at least one target id"};
+
+    const ids = value.split(TARGETS_SEPARATOR).map((id) => parseTargetParam(id));
+
+    /*
+     * One check rather than two, because an id is an id: parseTargetParam
+     * refuses everything a list refuses, down to the shapes that are all
+     * digits and still not a number the database can be asked about.
+     *
+     * The safe-integer half of that rule used to be written out a second time
+     * here, while the single filter still answered 500 for four hundred nines
+     * and this was the worse place to leave it - one unusable id in a list of
+     * fifty took the figures of the other forty-nine down with it. The single
+     * filter has caught up, so the rule lives once, above, where every target
+     * id in this file is read.
+     */
+    if (ids.some((id) => id === null))
+        return {valid: false, message: "You need to provide correct numbers in the targets parameter"};
+
+    /*
+     * Collapsed rather than refused. A repeated id is a caller building its
+     * list from a page that names a target twice, not a request that cannot be
+     * answered - and the answer for one id is the same answer however many
+     * times it was asked for.
+     *
+     * The cap is counted after the collapse, because the work and the bytes are
+     * both per distinct target; the raw list is bounded by the URL itself,
+     * which Node refuses long before a repetition of one id could cost
+     * anything to split.
+     */
+    const distinct = [...new Set(ids)];
+
+    if (distinct.length > MAX_BATCH_TARGETS)
+        return {valid: false, message:
+            `The targets parameter accepts at most ${MAX_BATCH_TARGETS} target ids`};
+
+    return {valid: true, ids: distinct};
+};
+
+/**
+ * How far back a comparison looks, as whole calendar months - or 0 for the
+ * period immediately before the range, which is its own length back.
+ *
+ * An offset rather than a window the caller draws, and that is the whole of
+ * the shape: two windows of the same length are comparable, and a free pair of
+ * dates let "August so far" be compared against all of 2025 - a question
+ * nobody asked, which the elapsed cut then answered by quietly comparing
+ * against the first fortnight of January.
+ *
+ * The names are what the URL carries, so a comparison is a link somebody can
+ * keep: `compare=1y` says what it means a year from now, where a pair of dates
+ * says only what it said the day it was copied.
+ */
+export const COMPARE_OFFSETS = {previous: 0, "1m": 1, "3m": 3, "6m": 6, "1y": 12, "2y": 24};
+
+/**
+ * Three-valued like the target filter above: undefined when nothing was asked
+ * for, a verdict carrying the offset when one was named, and a verdict
+ * carrying its own message when the name is not one of them - the caller
+ * answers the 400, so the message lives beside the route the way the other
+ * guards do.
+ */
+const parseCompare = (value) => {
+    if (value === undefined) return undefined;
+
+    // Named rather than ignored. An unreadable value used to mean "no
+    // comparison", so a bookmark carrying a typo drew a page with every delta
+    // silently missing and nothing saying why.
+    if (!Object.hasOwn(COMPARE_OFFSETS, value))
+        return {valid: false, message: "The compare parameter must be one of "
+            + Object.keys(COMPARE_OFFSETS).join(", ")};
+
+    return {valid: true, months: COMPARE_OFFSETS[value]};
 };
 
 
@@ -124,19 +267,66 @@ app.get("/statistics", password(true), async (req, res) => {
     if (points !== undefined && /[^0-9]/.test(points))
         return res.status(400).json({message: "You need to provide a correct number in the points parameter"});
 
+    /*
+     * Two different questions rather than one narrower one: `target` narrows
+     * the single answer to a line, `targets` asks for a batch of those single
+     * answers. Letting either win silently would answer the question the caller
+     * did not ask, in the shape of the one they did - a panel handed one
+     * payload where it expects a map of them, or a page handed a map where it
+     * expects a payload.
+     */
+    if (req.query.target !== undefined && req.query.targets !== undefined)
+        return res.status(400).json({message: "The target and targets parameters cannot be combined - "
+            + "target narrows the answer to one line, targets asks for one answer per line"});
+
     const target = parseTargetParam(req.query.target);
     if (target !== undefined && target === null)
         return res.status(400).json({message: "You need to provide a correct number in the target parameter"});
 
-    res.json(await tests.listStatistics(range, {
+    const targets = parseTargetsParam(req.query.targets);
+    if (targets !== undefined && !targets.valid)
+        return res.status(400).json({message: targets.message});
+
+    // Not parsed at all for all time, which drops the window anyway: refusing
+    // a malformed pair the request was never going to use answers 400 for a
+    // parameter that has no meaning here - the same "the name wins" rule the
+    // all-time branch keeps everywhere else.
+    // Nothing precedes all time, so a comparison is never taken against it -
+    // and the parameter is not refused there either, because the client sends
+    // the reader's standing choice with every request and the range they
+    // happen to be on is not a mistake to name.
+    const compare = allTime ? undefined : parseCompare(req.query.compare);
+    if (compare && !compare.valid)
+        return res.status(400).json({message: compare.message});
+
+    // Everything except the target filter, which is the one thing the two
+    // answers below disagree about. Named once so that a batched entry cannot
+    // end up built under different options from the single answer it promises
+    // to be - a divergence a reader would only ever see as two figures that
+    // disagree, with nothing saying which parameter went missing on which path.
+    const options = {
         zone: timezone.zone,
         maxPoints: points,
-        target,
-        // The summary of the window immediately before the range, for the
+        // Whether to summarise a second window at all, for the
         // period-over-period deltas. Opt-in: it costs a second table scan.
-        // Nothing precedes all time, so it is never compared.
-        comparePrevious: !allTime && req.query.compare === "previous"
-    }));
+        compare: compare !== undefined,
+        // And how far back it sits. Zero is the period immediately before,
+        // which is the range's own length rather than a fixed number of
+        // months - previousSummary reads it that way.
+        compareMonths: compare?.months
+    };
+
+    /*
+     * One payload per target, under `byTarget`, rather than the payload itself.
+     * A wrapper rather than the bare map so that the two answers cannot be
+     * mistaken for one another by a reader that only ever sees the JSON: a map
+     * keyed by ids has no field in common with a statistics payload, but it has
+     * no field that says what it is either.
+     */
+    if (targets !== undefined)
+        return res.json({byTarget: await tests.listStatisticsByTarget(range, targets.ids, options)});
+
+    res.json(await tests.listStatistics(range, {...options, target}));
 });
 
 app.get("/export", password(true), async (req, res) => {

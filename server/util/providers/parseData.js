@@ -464,6 +464,42 @@ const directionBytes = (end) => {
 };
 
 /**
+ * The jitter and loss one direction of a UDP run reported, or null for a TCP
+ * one - which carries neither key, so their absence is the whole branch and
+ * nothing about the invocation has to reach the parser for it to know which
+ * kind of run it is reading.
+ *
+ * The receiver's figures alone, and deliberately not as a preference the way
+ * directionRate reads throughput. The sender does not measure either of these:
+ * `sum_sent.jitter_ms` is zero in every capture, and `sum_sent.lost_percent`
+ * stayed zero through a run that lost 2789 of 17260 packets. A fallback to it
+ * would not be a degraded reading, it would be a confident wrong one - a badly
+ * lossy line stored as perfect.
+ */
+const udpQuality = (end) => {
+    const received = end?.sum_received;
+
+    const jitter = Number.isFinite(received?.jitter_ms) ? received.jitter_ms : null;
+    const loss = Number.isFinite(received?.lost_percent) ? received.lost_percent : null;
+
+    return jitter === null && loss === null ? null : {jitter, loss};
+};
+
+/**
+ * The worse of the two directions, for a figure the row keeps one column for.
+ *
+ * Larger is worse for both of these, and a test where one way was steady and
+ * the other was not is not a steady test - so the direction that suffered is
+ * the one worth storing. Reported as a measurement rather than an average,
+ * because a mean of two directions is a number neither of them measured.
+ */
+const worstOf = (readings, key) => {
+    const figures = readings.map((reading) => reading[key]).filter(Number.isFinite);
+
+    return figures.length === 0 ? null : Math.max(...figures);
+};
+
+/**
  * One iperf3 test, which is two invocations of the CLI.
  *
  * iperf3 measures a single direction at a time, so the runner performs one run
@@ -543,9 +579,23 @@ export const parseIperf3 = (test) => {
     // without a latency is still a result.
     const ping = round(test?.latency?.ping) ?? 0;
 
+    /*
+     * What the transfer itself measured, when it was a UDP one.
+     *
+     * The runner's own jitter is timed off TCP handshakes, because a TCP
+     * transfer leaves nothing else to time. A UDP transfer measures the thing
+     * the test was actually for, so it displaces the handshake sample rather
+     * than sitting beside it - storing the handshake's would answer a question
+     * nobody asked while the real figure went in no column at all.
+     */
+    const udp = [udpQuality(download), udpQuality(upload)].filter((reading) => reading !== null);
+    const measuredJitter = worstOf(udp, "jitter");
+
     return {
         ping,
-        jitter: round(test?.latency?.jitter),
+        // ?? rather than ||, so a run that measured a jitter of zero keeps it
+        // instead of falling back to the handshake sample.
+        jitter: round(measuredJitter) ?? round(test?.latency?.jitter),
         download: roundSpeed(downloadRate),
         upload: roundSpeed(uploadRate),
         // Both transfers, in seconds, as the other providers report their own
@@ -554,6 +604,10 @@ export const parseIperf3 = (test) => {
         time: Math.round((Number(download?.sum_received?.seconds ?? download?.sum_sent?.seconds ?? 0)
             + Number(upload?.sum_sent?.seconds ?? upload?.sum_received?.seconds ?? 0))),
         ...identity,
+        // After the spread, which carries the null a TCP run keeps: this is
+        // the one provider whose packet loss depends on how the run was asked
+        // for rather than on what the CLI can measure.
+        packetLoss: round(worstOf(udp, "loss")),
         bytesDownloaded: directionBytes(download),
         bytesUploaded: directionBytes(upload)
     };

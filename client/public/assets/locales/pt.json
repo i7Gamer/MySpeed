@@ -60,7 +60,12 @@
       "ookla_desc": "Provedor popular com uma rede global de servidores",
       "libre_desc": "Speedtest de código aberto e auto-hospedável",
       "cloudflare_desc": "Teste rápido baseado em CDN.",
-      "iperf3_desc": "Seu próprio servidor iperf3, na sua rede"
+      "iperf3_desc": "Seu próprio servidor iperf3, na sua rede",
+      "iperf_advanced": "Definições do teste",
+      "iperf_duration": "Segundos por direção",
+      "iperf_streams": "Fluxos paralelos",
+      "iperf_udp": "Medir com UDP",
+      "iperf_bitrate": "Taxa de bits (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "Média",
     "compare": {
       "note": "Mudanças em relação a {{from}} – {{to}}",
-      "note_partial": "Mudanças em relação a {{from}} – {{to}}, até o mesmo horário do dia"
+      "empty": "Sem testes entre {{from}} e {{to}} para comparar",
+      "label": "Comparar com",
+      "choice": {
+        "previous": "Período anterior",
+        "1m": "1 mês antes",
+        "3m": "3 meses antes",
+        "6m": "6 meses antes",
+        "1y": "1 ano antes",
+        "2y": "2 anos antes"
+      }
     },
     "downsampled": "Média · mostrando {{shown}} de {{total}} testes",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "Comparação de alvos",
+      "chart": {
+        "ping": "Ping por destino",
+        "download": "Download por destino",
+        "upload": "Upload por destino"
+      },
       "failure_rate": "Taxa de falhas",
-      "metric": "Métrica",
       "empty": "Nenhum alvo mediu nada neste período",
-      "open_hint": "Abra para comparar os alvos neste período",
       "unavailable": "Não foi possível carregar"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "Agendado",
     "alerts": "Alertas e recomendações",
     "own_optimals": "Valores ideais próprios",
+    "baseline_alerts": "Avisar abaixo da velocidade habitual",
+    "baseline_percent": "Quota (%)",
+    "baseline_desc": "Avisa quando um teste desce abaixo desta percentagem da mediana de 30 dias do destino.",
     "all": "Todos os destinos",
     "saved": "O destino foi salvo.",
     "removed": "O destino foi removido.",

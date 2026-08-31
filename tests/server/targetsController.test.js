@@ -1,7 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { alertingScope, targetProblem, resolveLimits, viewerFacing, TARGET_NAME_LIMIT }
-    from "../../server/controller/targets.js";
+import { alertingScope, iperfTuningProblem, targetProblem, resolveLimits, viewerFacing,
+    TARGET_NAME_LIMIT } from "../../server/controller/targets.js";
+import { IPERF_MAX_DURATION_SECONDS, IPERF_MAX_STREAMS, IPERF_MIN_DURATION_SECONDS,
+    IPERF_MIN_STREAMS } from "../../server/util/providers/registry.js";
 
 /**
  * The judgement half of the targets controller, kept pure so it can be read
@@ -134,6 +136,96 @@ describe("targetProblem", () => {
 });
 
 /**
+ * An iperf3 target's own run tuning: how long each direction measures for, and
+ * over how many parallel streams.
+ *
+ * Null on either column means "inherit the registry default", the same spelling
+ * the three optimal columns already use - so the accepting half of this is as
+ * much of the rule as the refusing half. What it refuses it refuses at the door,
+ * because a value the CLI will not take is a target that fails on a schedule
+ * with the reason three clicks away in a row's error column.
+ */
+describe("iperfTuningProblem", () => {
+    const tuned = (tuning, provider = "iperf3") =>
+        iperfTuningProblem({name: "LAN", provider, endpoint: "10.0.0.5", ...tuning});
+
+    it("accepts a target that tunes nothing, however that is spelled", () => {
+        assert.equal(tuned({}), null);
+        assert.equal(tuned({iperfDuration: null, iperfStreams: null}), null);
+        assert.equal(tuned({iperfDuration: undefined, iperfStreams: undefined}), null);
+    });
+
+    it("accepts each bound and refuses the step outside it", () => {
+        assert.equal(tuned({iperfDuration: IPERF_MIN_DURATION_SECONDS}), null);
+        assert.equal(tuned({iperfDuration: IPERF_MAX_DURATION_SECONDS}), null);
+        assert.match(tuned({iperfDuration: IPERF_MIN_DURATION_SECONDS - 1}), /duration/i);
+        assert.match(tuned({iperfDuration: IPERF_MAX_DURATION_SECONDS + 1}), /duration/i);
+
+        assert.equal(tuned({iperfStreams: IPERF_MIN_STREAMS}), null);
+        assert.equal(tuned({iperfStreams: IPERF_MAX_STREAMS}), null);
+        assert.match(tuned({iperfStreams: IPERF_MIN_STREAMS - 1}), /stream/i);
+        assert.match(tuned({iperfStreams: IPERF_MAX_STREAMS + 1}), /stream/i);
+    });
+
+    /**
+     * Whole seconds and whole streams, which is all iperf3 takes. Refused
+     * rather than rounded or coerced, the way the flags are: a target quietly
+     * measuring for something other than the number on the dialog is a worse
+     * surprise than a 400 naming the field.
+     */
+    it("refuses anything that is not a whole number", () => {
+        for (const value of [10.5, "30", "", NaN, Infinity, true, {}, []])
+            assert.match(tuned({iperfDuration: value}), /duration/i,
+                `${String(value)} was accepted as a duration`);
+
+        for (const value of [1.5, "4", NaN, false, []])
+            assert.match(tuned({iperfStreams: value}), /stream/i,
+                `${String(value)} was accepted as a stream count`);
+    });
+
+    it("names the bounds it refused against", () => {
+        assert.match(tuned({iperfDuration: 0}),
+            new RegExp(`${IPERF_MIN_DURATION_SECONDS}[^0-9]+${IPERF_MAX_DURATION_SECONDS}`));
+        assert.match(tuned({iperfStreams: 0}),
+            new RegExp(`${IPERF_MIN_STREAMS}[^0-9]+${IPERF_MAX_STREAMS}`));
+    });
+
+    /**
+     * Every other provider measures for as long as its own CLI says, and there
+     * is nowhere on one for these numbers to go. Refused by name the way an
+     * endpoint on a provider that takes none is: a value silently dropped is a
+     * dialog that lies about what the target will do.
+     */
+    it("refuses tuning on a provider that does not take it", () => {
+        for (const provider of ["ookla", "libre", "cloudflare"]) {
+            assert.match(tuned({iperfDuration: 30}, provider), /iperf3/i,
+                `${provider} accepted a duration it cannot run`);
+            assert.match(tuned({iperfStreams: 8}, provider), /iperf3/i,
+                `${provider} accepted a stream count it cannot run`);
+        }
+    });
+
+    // And leaves the ones that carry nothing alone, which is every target on
+    // every instance that has not opened the dialog since the upgrade.
+    it("leaves an untuned target of another provider alone", () => {
+        assert.equal(tuned({}, "ookla"), null);
+        assert.equal(tuned({iperfDuration: null, iperfStreams: null}, "ookla"), null);
+    });
+
+    // The door the API actually stands behind is targetProblem, which is what
+    // both the route and the import path ask.
+    it("is asked by targetProblem", () => {
+        const target = {name: "LAN", provider: "iperf3", endpoint: "10.0.0.5"};
+
+        assert.equal(targetProblem({...target, iperfDuration: 30, iperfStreams: 8}), null);
+        assert.match(targetProblem({...target, iperfDuration: IPERF_MIN_DURATION_SECONDS - 1}),
+            /duration/i);
+        assert.match(targetProblem({name: "Frankfurt", provider: "ookla", serverId: "1234",
+            iperfStreams: 8}), /iperf3/i);
+    });
+});
+
+/**
  * Which targets' rows the alerting speaks for.
  *
  * The keep-alive reads the last test to decide whether healthchecks.io's check
@@ -213,5 +305,20 @@ describe("viewerFacing", () => {
             id: 3, name: "NAS", provider: "libre", enabled: true, sortOrder: 2,
             optimalPing: 1, optimalDownload: 940, optimalUpload: 940
         });
+    });
+
+    /**
+     * Deliberately not the iperf3 tuning. This function's contract is what the
+     * interface needs to label, order and grade a target, and how long its test
+     * runs is none of the three - where the optimal values above are the grading
+     * itself.
+     */
+    it("withholds the iperf3 tuning, which none of those three needs", () => {
+        const shown = viewerFacing({id: 4, name: "LAN", provider: "iperf3", enabled: true,
+            sortOrder: 0, optimalPing: null, optimalDownload: null, optimalUpload: null,
+            iperfDuration: 30, iperfStreams: 8});
+
+        assert.equal("iperfDuration" in shown, false);
+        assert.equal("iperfStreams" in shown, false);
     });
 });

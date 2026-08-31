@@ -60,7 +60,12 @@
       "ookla_desc": "Popularny dostawca z globalną siecią serwerów",
       "libre_desc": "Open-source, samodzielny test prędkości",
       "cloudflare_desc": "Szybkie testowanie oparte na CDN",
-      "iperf3_desc": "Twój własny serwer iperf3, w Twojej sieci"
+      "iperf3_desc": "Twój własny serwer iperf3, w Twojej sieci",
+      "iperf_advanced": "Ustawienia testu",
+      "iperf_duration": "Sekundy na kierunek",
+      "iperf_streams": "Równoległe strumienie",
+      "iperf_udp": "Pomiar przez UDP",
+      "iperf_bitrate": "Przepływność (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "Średnia",
     "compare": {
       "note": "Zmiany w porównaniu z {{from}} – {{to}}",
-      "note_partial": "Zmiany w porównaniu z {{from}} – {{to}}, do tej samej pory dnia"
+      "empty": "Brak testów w okresie {{from}} – {{to}} do porównania",
+      "label": "Porównaj z",
+      "choice": {
+        "previous": "Poprzednim okresem",
+        "1m": "1 miesiąc wcześniej",
+        "3m": "3 miesiące wcześniej",
+        "6m": "6 miesięcy wcześniej",
+        "1y": "1 rok wcześniej",
+        "2y": "2 lata wcześniej"
+      }
     },
     "downsampled": "Uśrednione · pokazano {{shown}} z {{total}} testów",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "Porównanie celów",
+      "chart": {
+        "ping": "Ping wg celu",
+        "download": "Pobieranie wg celu",
+        "upload": "Wysyłanie wg celu"
+      },
       "failure_rate": "Wskaźnik niepowodzeń",
-      "metric": "Metryka",
       "empty": "Żaden cel niczego nie zmierzył w tym okresie",
-      "open_hint": "Otwórz, aby porównać cele w tym okresie",
       "unavailable": "Nie udało się wczytać"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "Zaplanowany",
     "alerts": "Powiadomienia i rekomendacje",
     "own_optimals": "Własne optymalne wartości",
+    "baseline_alerts": "Ostrzegaj poniżej zwykłej prędkości",
+    "baseline_percent": "Udział (%)",
+    "baseline_desc": "Ostrzega, gdy test spadnie poniżej tego udziału mediany z 30 dni danego celu.",
     "all": "Wszystkie cele",
     "saved": "Cel został zapisany.",
     "removed": "Cel został usunięty.",

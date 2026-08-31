@@ -60,7 +60,12 @@
       "ookla_desc": "拥有全球服务器网络的流行提供商",
       "libre_desc": "开源、可自托管的测速工具",
       "cloudflare_desc": "基于 CDN 的快速测试",
-      "iperf3_desc": "你自己的 iperf3 服务器，就在你的网络中"
+      "iperf3_desc": "你自己的 iperf3 服务器，就在你的网络中",
+      "iperf_advanced": "运行设置",
+      "iperf_duration": "每个方向的秒数",
+      "iperf_streams": "并行流数",
+      "iperf_udp": "使用 UDP 测量",
+      "iperf_bitrate": "比特率 (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "平均",
     "compare": {
       "note": "与 {{from}} – {{to}} 相比的变化",
-      "note_partial": "与 {{from}} – {{to}} 相比的变化（截至同一时刻）"
+      "empty": "{{from}} – {{to}} 期间没有可比较的测试",
+      "label": "对比时段",
+      "choice": {
+        "previous": "上一时段",
+        "1m": "1 个月前",
+        "3m": "3 个月前",
+        "6m": "6 个月前",
+        "1y": "1 年前",
+        "2y": "2 年前"
+      }
     },
     "downsampled": "已取平均 · 显示 {{total}} 次测速中的 {{shown}} 次",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "目标对比",
+      "chart": {
+        "ping": "各测速点 ping 延迟",
+        "download": "各测速点下载",
+        "upload": "各测速点上传"
+      },
       "failure_rate": "失败率",
-      "metric": "指标",
       "empty": "此时间段内没有任何目标进行过测量",
-      "open_hint": "打开以对比此时间段内的各个目标",
       "unavailable": "无法加载"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "列入计划",
     "alerts": "通知与建议",
     "own_optimals": "单独的最佳值",
+    "baseline_alerts": "低于平常速度时提醒",
+    "baseline_percent": "比例 (%)",
+    "baseline_desc": "当测试低于该目标自身 30 天中位数的此占比时发出提醒。",
     "all": "全部测速点",
     "saved": "测速点已保存。",
     "removed": "测速点已删除。",

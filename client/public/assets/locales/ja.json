@@ -60,7 +60,12 @@
       "ookla_desc": "世界中にサーバー網を持つ定番のプロバイダー",
       "libre_desc": "オープンソースでセルフホスト可能なスピードテスト",
       "cloudflare_desc": "CDN ベースの高速なテスト",
-      "iperf3_desc": "自分のネットワーク上にある自前の iperf3 サーバー"
+      "iperf3_desc": "自分のネットワーク上にある自前の iperf3 サーバー",
+      "iperf_advanced": "実行設定",
+      "iperf_duration": "方向ごとの秒数",
+      "iperf_streams": "並列ストリーム数",
+      "iperf_udp": "UDP で測定",
+      "iperf_bitrate": "ビットレート (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "平均",
     "compare": {
       "note": "{{from}} – {{to}} と比較した変化",
-      "note_partial": "{{from}} – {{to}} と比較した変化（同時刻まで）"
+      "empty": "{{from}} – {{to}} に比較できるテストがありません",
+      "label": "比較対象",
+      "choice": {
+        "previous": "前の期間",
+        "1m": "1 か月前",
+        "3m": "3 か月前",
+        "6m": "6 か月前",
+        "1y": "1 年前",
+        "2y": "2 年前"
+      }
     },
     "downsampled": "平均化 · {{total}} 件中 {{shown}} 件のテストを表示",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "ターゲットの比較",
+      "chart": {
+        "ping": "測定先ごとのPing",
+        "download": "測定先ごとのダウンロード",
+        "upload": "測定先ごとのアップロード"
+      },
       "failure_rate": "失敗率",
-      "metric": "指標",
       "empty": "この期間に測定したターゲットはありません",
-      "open_hint": "開くとこの期間のターゲットを比較できます",
       "unavailable": "読み込めませんでした"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "スケジュールに含める",
     "alerts": "通知と推奨値",
     "own_optimals": "独自の最適値",
+    "baseline_alerts": "通常より遅いときに通知",
+    "baseline_percent": "割合 (%)",
+    "baseline_desc": "テストがターゲット自身の30日間の中央値のこの割合を下回ったときに通知します。",
     "all": "すべての測定先",
     "saved": "測定先を保存しました。",
     "removed": "測定先を削除しました。",

@@ -1,8 +1,9 @@
 import tests from '../models/Speedtests.js';
 import { Op } from 'sequelize';
 import { buildStatistics, STATISTICS_COLUMNS } from '../util/statistics.js';
-import { previousRange, truncateToElapsed } from '../util/dateRange.js';
+import { previousRange, shiftedRange, truncateToElapsed } from '../util/dateRange.js';
 import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER, impossibleMeasurement } from '../util/testOutcome.js';
+import { BASELINE_METRICS } from '../util/baselineAlert.js';
 import { getValue } from './config.js';
 import * as targetsController from './targets.js';
 import db from '../config/database.js';
@@ -238,6 +239,49 @@ export const listSuccessful = async (limit, targetId = undefined) => tests.findA
         : {[Op.and]: [SUCCESSFUL_TEST_FILTER, {targetId}]},
     order: LIST_ORDER,
     limit
+});
+
+/**
+ * The only columns a baseline window is read for.
+ *
+ * One list, defined where the median reads it, so the query and the median
+ * cannot drift: a column added to one and not the other arrives as undefined,
+ * which is exactly the silence STATISTICS_COLUMNS was written against
+ * (util/statistics.js:16-19).
+ */
+export const BASELINE_ROW_COLUMNS = BASELINE_METRICS;
+
+/**
+ * One target's successful rows since the given moment, newest first.
+ *
+ * The rolling window the baseline alert takes its median over. Newest first
+ * because the first row it answers is also the previous test - the one the
+ * storm rule compares against - so the whole verdict costs one query.
+ *
+ * Narrow on purpose, all three ways. Only when a target actually set a
+ * percentage is it asked at all; only that target's rows are read; and only the
+ * two speed columns come back, where a full row carries a server name, a
+ * hostname, an ISP and a result URL that no part of this looks at. The default
+ * hourly cron puts about 720 rows in a window and the installer's minutely one
+ * about 43,000 - two doubles apiece, which is an order of magnitude below what
+ * the statistics endpoint already holds (util/statistics.js:8-19).
+ *
+ * The access path is the covering index speedtests_target_created, created by
+ * 0013-add-targets.js and re-added for already-upgraded instances by 0014 - the
+ * same walk getLatest and watchedFailureStands already lean on.
+ *
+ * `created` is compared as ISO-8601 UTC strings, the way listFilter and
+ * findInRange do it: every write guarantees that format, so a lexicographic
+ * comparison is chronological on every backend the project supports. Both
+ * halves are joined explicitly, for the reason listFilter is - the shared
+ * filter is keyed by Op.or, and a second Op-keyed clause written into the same
+ * object would replace it.
+ */
+export const listForBaseline = async (targetId, since) => tests.findAll({
+    where: {[Op.and]: [SUCCESSFUL_TEST_FILTER, {targetId}, {created: {[Op.gte]: since.toISOString()}}]},
+    attributes: BASELINE_ROW_COLUMNS,
+    order: LIST_ORDER,
+    raw: true
 });
 
 /**
@@ -486,6 +530,31 @@ export const importTests = async (data) => {
 /** Every test there is, oldest first - the order the aggregation reads them in. */
 const findEvery = async (query = {}) => tests.findAll({order: [["created", "ASC"]], ...query});
 
+/**
+ * The `where` fragment that narrows a read to one target, to several, or to no
+ * target at all.
+ *
+ * The list arm is the whole of what makes a batched statistics request cheap: a
+ * page asking about a dozen targets reads the range once with an IN rather than
+ * a dozen times with an equality, and the partitioning that follows is done over
+ * rows that are already in memory. Written as a fragment rather than inline, so
+ * the two reads a statistics request makes - the range and the window before it
+ * - cannot end up narrowed by two different rules.
+ *
+ * An empty list is not handled here and must not reach it: `targetId IN ()` is
+ * not something to hand to three dialects, and the callers answer "no targets"
+ * without asking the database at all - see latestOfTargets and
+ * listStatisticsByTarget, which both short circuit on it.
+ *
+ * Exported for its test, which is where the promise about the IN is visible
+ * without counting queries against a live database.
+ */
+export const targetFilter = (target) => {
+    if (target === undefined) return {};
+
+    return {targetId: Array.isArray(target) ? {[Op.in]: target} : target};
+};
+
 // `created` always holds an ISO-8601 UTC string - both write paths guarantee it
 // (create() uses toISOString(), importTests() rejects anything else) - so a
 // lexicographic BETWEEN is chronologically correct on every supported backend.
@@ -493,7 +562,7 @@ const findEvery = async (query = {}) => tests.findAll({order: [["created", "ASC"
 const findInRange = async ({from, to}, query = {}, target = undefined) => findEvery({
     where: {
         created: {[Op.between]: [from.toISOString(), to.toISOString()]},
-        ...(target !== undefined && {targetId: target})
+        ...targetFilter(target)
     },
     ...query
 });
@@ -530,14 +599,20 @@ const STATISTICS_QUERY = {attributes: STATISTICS_COLUMNS, raw: true};
  * inside every figure on it, and only the rows themselves can say so. See
  * pageTarget in client/src/common/utils/TargetUtil.js.
  *
- * Exported so a test can hold the extra column in place. Nothing here would
- * break if it were dropped from this list: the rows would simply arrive without
- * it, targetsPresent would answer [null] for every page, and the client reads a
+ * Exported so a test can hold the column in place, because nothing here fails
+ * loudly without it. The rows would simply arrive without a targetId,
+ * targetsPresent would answer [null] for every page, and the client reads a
  * page of nulls as a mixture - so every single-target instance would quietly go
  * back to grading against the instance-wide settings with not one assertion
- * failing.
+ * failing. The failure streak would go the same way in silence: reliabilityOver
+ * groups on this column, and one group is exactly the row-adjacency reading it
+ * was written to replace.
+ *
+ * It rides in STATISTICS_COLUMNS rather than beside it now. It used to be
+ * appended here because the aggregation selected it and read it nowhere, which
+ * that list is not for; the streak reads it, so the list is where it belongs.
  */
-export const SUMMARISED_ROWS_QUERY = {attributes: [...STATISTICS_COLUMNS, "targetId"], raw: true};
+export const SUMMARISED_ROWS_QUERY = {attributes: [...STATISTICS_COLUMNS], raw: true};
 
 /**
  * The distinct targets the summarised rows belong to, a row that names none
@@ -558,28 +633,46 @@ export const targetsPresent = (entries) => [...new Set(entries.map((entry) => en
 const SUMMARY_KEYS = ["tests", "packetLoss", "ping", "jitter", "download", "upload", "time", "consistency", "dataUsed"];
 
 /**
- * The same summary, for the window immediately before the range.
+ * The window a comparison is taken over, or null when there is none to take.
  *
- * Computed server-side rather than by a second client request: the payload
- * stays scalar, and the definition of "the previous period" lives here next to
- * the range arithmetic instead of in a component.
+ * Worked out apart from the summary below because a batched request would
+ * otherwise ask the same question once per target: the window follows from the
+ * range and the caller's offset alone, never from the rows, so repeating the
+ * arithmetic per target would be one more place for two paths to disagree about
+ * what "the period before" means.
  */
-const previousSummary = async (range, options) => {
-    const previous = previousRange(range, options);
+const comparisonWindow = (range, options) => {
+    /*
+     * How far back the comparison looks, never how much of it to look at.
+     *
+     * "The period before" is the default answer and the offsets are the same
+     * question asked further back - both are the range's own length, so the
+     * two windows are comparable by construction. Both shapes are a parsed
+     * range, so everything below - the elapsed cut, the target filter, the
+     * summary - reads one thing.
+     */
+    const previous = options.compareMonths
+        ? shiftedRange(range, options.compareMonths, options)
+        : previousRange(range, options);
+
     if (!previous.valid) return null;
 
     // Cut to what the range has actually lived through: a range ending today
     // is a part-week, and counted against a whole previous week every total
     // read lower on every partial day. Null when none of the range has
     // happened yet - there is nothing a comparison could be about.
-    const window = truncateToElapsed(range, previous, options.now ?? new Date());
-    if (window === null) return null;
+    return truncateToElapsed(range, previous, options.now ?? new Date());
+};
 
-    // The comparison answers for the same slice the range does - a filtered
-    // window compared against everyone's previous window would report a delta
-    // between two different questions.
-    const statistics = buildStatistics(
-        await findInRange(window, STATISTICS_QUERY, options.target), window, options);
+/**
+ * The summary itself, from rows already read for the window.
+ *
+ * Takes the rows rather than fetching them, so a batched request can read the
+ * comparison window once and hand each target its own share of what came back -
+ * the whole point of the batch being that N targets cost one scan and not N.
+ */
+const comparisonSummary = (entries, window, options) => {
+    const statistics = buildStatistics(entries, window, options);
 
     return {
         ...Object.fromEntries(SUMMARY_KEYS.map((key) => [key, statistics[key]])),
@@ -592,6 +685,24 @@ const previousSummary = async (range, options) => {
             ...(window.partial && {partial: true})
         }
     };
+};
+
+/**
+ * The same summary, for the window immediately before the range.
+ *
+ * Computed server-side rather than by a second client request: the payload
+ * stays scalar, and the definition of "the previous period" lives here next to
+ * the range arithmetic instead of in a component.
+ */
+const previousSummary = async (range, options) => {
+    const window = comparisonWindow(range, options);
+    if (window === null) return null;
+
+    // The comparison answers for the same slice the range does - a filtered
+    // window compared against everyone's previous window would report a delta
+    // between two different questions.
+    return comparisonSummary(
+        await findInRange(window, STATISTICS_QUERY, options.target), window, options);
 };
 
 /**
@@ -658,24 +769,26 @@ const elapsedDaysOf = (range, now) => {
 };
 
 /**
- * The statistics for a range, or for every test there is when given none.
+ * The payload itself, assembled from rows that have already been read.
  *
- * All time is the absence of a bound rather than a very wide one: the rows are
- * unfiltered, and the extent they cover is both what the charts bucket over and
- * what the client names its headings after. Nothing precedes everything, so
- * there is no previous window to compare it against.
+ * Shared by the single answer and by every entry of a batched one, because the
+ * batch promises to hand back exactly what a single-target request hands back.
+ * Assembled twice it would be two things to keep in step, and the copy read
+ * only by a comparison panel is the one that would quietly fall behind - a
+ * field added to the page's request arriving in the page and missing from the
+ * panel beside it, with nothing failing to say so.
+ *
+ * `previous` is passed in rather than computed here, and its three states are
+ * the contract: undefined leaves the key off the payload entirely, which is
+ * what a request that asked for no comparison gets, while null is the key
+ * present and empty - a comparison was asked for and there is no window to take
+ * it over. `options.now` is required rather than defaulted, so that the
+ * elapsed-day figure below and the comparison the caller already built cannot
+ * disagree about when now was.
  */
-export const listStatistics = async (range, options = {}) => {
-    // One reading of the clock for the whole answer: the previous window's cut
-    // and the elapsed-day figure below must not disagree about when now was.
-    const now = options.now ?? new Date();
-    const targetWhere = options.target !== undefined ? {where: {targetId: options.target}} : {};
-    const entries = range
-        ? await findInRange(range, SUMMARISED_ROWS_QUERY, options.target)
-        : await findEvery({...SUMMARISED_ROWS_QUERY, ...targetWhere});
-
+const summarise = (entries, range, options, previous) => {
     const covered = range ?? extentOf(entries);
-    const elapsedDays = elapsedDaysOf(range, now);
+    const elapsedDays = elapsedDaysOf(range, options.now);
 
     return {
         ...buildStatistics(entries, covered, options),
@@ -687,7 +800,7 @@ export const listStatistics = async (range, options = {}) => {
         // by. A filtered request answers the one target it was narrowed to,
         // which is the same statement about the same rows.
         targetIds: targetsPresent(entries),
-        ...(range && options.comparePrevious ? {previous: await previousSummary(range, {...options, now})} : {}),
+        ...(previous !== undefined ? {previous} : {}),
         // The window actually answered for, which the client names its headings
         // after and measures its per-day figures against. Whole days rather than
         // the exact span: an all-time range on a young instance is the extent of
@@ -710,6 +823,132 @@ export const listStatistics = async (range, options = {}) => {
             ...(elapsedDays !== null && {elapsedDays})
         }
     };
+};
+
+/**
+ * The statistics for a range, or for every test there is when given none.
+ *
+ * All time is the absence of a bound rather than a very wide one: the rows are
+ * unfiltered, and the extent they cover is both what the charts bucket over and
+ * what the client names its headings after. Nothing precedes everything, so
+ * there is no previous window to compare it against.
+ */
+export const listStatistics = async (range, options = {}) => {
+    // One reading of the clock for the whole answer, carried in the options the
+    // comparison and the summary are both built from: the previous window's cut
+    // and the elapsed-day figure must not disagree about when now was.
+    const shared = {...options, now: options.now ?? new Date()};
+    const targetWhere = options.target !== undefined ? {where: targetFilter(options.target)} : {};
+    const entries = range
+        ? await findInRange(range, SUMMARISED_ROWS_QUERY, options.target)
+        : await findEvery({...SUMMARISED_ROWS_QUERY, ...targetWhere});
+
+    // Undefined rather than null when nothing asked for a comparison, which is
+    // what leaves the key off the payload altogether - see summarise.
+    const previous = range && options.compare ? await previousSummary(range, shared) : undefined;
+
+    return summarise(entries, range, shared, previous);
+};
+
+/**
+ * The rows of one read, split into the target each of them measured.
+ *
+ * Every requested id gets a bucket whether a row landed in it or not, because a
+ * target that has been quiet is an answer rather than an absence: a panel
+ * drawing a column per target must not lose one because the line reported
+ * nothing this week, and a caller must not have to tell "no tests" apart from
+ * "no key".
+ *
+ * Keyed by the id written as a string, which is what the response is keyed by
+ * anyway and what closes the one way this could go wrong quietly. A row's
+ * targetId comes back from whichever dialect is underneath, and an id that
+ * arrived as a string where the request carried a number would fall into no
+ * bucket at all - the target would answer as empty while its rows sat in the
+ * result set, with nothing raising. A row belonging to no target (a restored
+ * export, a test older than targets) lands on the key "null", which no
+ * digits-only id can be, so it is dropped rather than folded into whichever
+ * entry it was nearest.
+ */
+const groupByTarget = (entries, ids) => {
+    const grouped = new Map(ids.map((id) => [String(id), []]));
+
+    for (const entry of entries) grouped.get(String(entry.targetId))?.push(entry);
+
+    return grouped;
+};
+
+/**
+ * The statistics of several targets at once, each entry exactly what a
+ * single-target request would have answered on its own.
+ *
+ * One scan of the range, plus one of the window before it when a comparison was
+ * asked for, partitioned in memory - never a scan per target. The rows are the
+ * same rows either way, so what this saves is not database work but requests:
+ * the statistics family is rate limited, and the comparison panel this exists
+ * for asked once per target, so a dozen targets stepped through a handful of
+ * timeframes walked into the limit and left the reader with a 429 and a blank
+ * panel for doing nothing but clicking around. That cost is what kept the panel
+ * lazy; one request per page rather than one per target is what lets it be
+ * eager.
+ *
+ * Answered as an object keyed by the id as a string, because that is what an
+ * object key is. Everything else - the range, the comparison offset, the
+ * timezone, the point count - means exactly what it means for a single answer
+ * and is applied to each entry, so each target's `previous` is that target's
+ * own previous window rather than the instance's.
+ */
+export const listStatisticsByTarget = async (range, ids, options = {}) => {
+    // One reading of the clock for every entry, for the reason listStatistics
+    // takes one for its single answer - and here it also keeps the entries
+    // agreeing with each other rather than only with themselves.
+    const shared = {...options, now: options.now ?? new Date()};
+
+    /*
+     * Collapsed here as well as at the route that parses the parameter, so the
+     * promise of one entry per distinct id belongs to this function rather than
+     * to whoever called it. Through Number, because the ids reach the database
+     * as an IN list and a dialect that does not coerce would match nothing at
+     * all for an id that arrived as a string.
+     */
+    const wanted = [...new Set(ids.map((id) => Number(id)))];
+
+    // Asking about no targets is a real request - a page whose target list has
+    // not loaded yet - and the answer is known without a query. `targetId IN ()`
+    // is not something to hand to three dialects; the same short circuit
+    // latestOfTargets keeps, for the same reason.
+    if (wanted.length === 0) return {};
+
+    const entries = range
+        ? await findInRange(range, SUMMARISED_ROWS_QUERY, wanted)
+        : await findEvery({...SUMMARISED_ROWS_QUERY, where: targetFilter(wanted)});
+
+    const rows = groupByTarget(entries, wanted);
+
+    /*
+     * The comparison window is a property of the range, so every target is
+     * compared against the same window and one scan answers all of them.
+     *
+     * Three states, matching what summarise() does with `previous`: undefined
+     * for a request that asked for no comparison, null for one that asked and
+     * has no window to take it over, and a parsed window otherwise.
+     */
+    const comparison = range && options.compare ? comparisonWindow(range, shared) : undefined;
+    const comparisonRows = comparison
+        ? groupByTarget(await findInRange(comparison, STATISTICS_QUERY, wanted), wanted)
+        : null;
+
+    const previousFor = (key) => {
+        if (comparison === undefined) return undefined;
+        if (comparison === null) return null;
+
+        return comparisonSummary(comparisonRows.get(key), comparison, shared);
+    };
+
+    return Object.fromEntries(wanted.map((id) => {
+        const key = String(id);
+
+        return [key, summarise(rows.get(key), range, shared, previousFor(key))];
+    }));
 };
 
 export const deleteOne = async (id) => {

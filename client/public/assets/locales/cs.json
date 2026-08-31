@@ -60,7 +60,12 @@
       "ookla_desc": "Oblíbený poskytovatel s globální sítí serverů",
       "libre_desc": "Open-source test rychlosti, který lze provozovat na vlastním serveru",
       "cloudflare_desc": "Rychlé testování přes CDN",
-      "iperf3_desc": "Váš vlastní server iperf3, ve vaší síti"
+      "iperf3_desc": "Váš vlastní server iperf3, ve vaší síti",
+      "iperf_advanced": "Nastavení běhu",
+      "iperf_duration": "Sekund na směr",
+      "iperf_streams": "Paralelní toky",
+      "iperf_udp": "Měřit přes UDP",
+      "iperf_bitrate": "Datový tok (Mbit/s)"
     }
   },
   "dropdown": {
@@ -338,7 +343,16 @@
     "average": "Průměr",
     "compare": {
       "note": "Změny v porovnání s {{from}} – {{to}}",
-      "note_partial": "Změny v porovnání s {{from}} – {{to}}, do stejné denní doby"
+      "empty": "Žádné testy v období {{from}} – {{to}} k porovnání",
+      "label": "Porovnat s",
+      "choice": {
+        "previous": "Předchozím obdobím",
+        "1m": "O 1 měsíc dříve",
+        "3m": "O 3 měsíce dříve",
+        "6m": "O 6 měsíců dříve",
+        "1y": "O 1 rok dříve",
+        "2y": "O 2 roky dříve"
+      }
     },
     "downsampled": "Zprůměrováno · zobrazeno {{shown}} z {{total}} testů",
     "detail": {
@@ -380,10 +394,13 @@
     },
     "targets": {
       "title": "Porovnání cílů",
+      "chart": {
+        "ping": "Ping podle cíle",
+        "download": "Stahování podle cíle",
+        "upload": "Nahrávání podle cíle"
+      },
       "failure_rate": "Míra selhání",
-      "metric": "Metrika",
       "empty": "Žádný cíl v tomto období nic nenaměřil",
-      "open_hint": "Otevřete pro porovnání cílů v tomto období",
       "unavailable": "Nepodařilo se načíst"
     },
     "values": {
@@ -734,6 +751,9 @@
     "scheduled": "Plánovaný",
     "alerts": "Upozornění a doporučení",
     "own_optimals": "Vlastní optimální hodnoty",
+    "baseline_alerts": "Upozornit pod obvyklou rychlostí",
+    "baseline_percent": "Podíl (%)",
+    "baseline_desc": "Upozorní, když test klesne pod tento podíl 30denního mediánu daného cíle.",
     "all": "Všechny cíle",
     "saved": "Cíl byl uložen.",
     "removed": "Cíl byl smazán.",

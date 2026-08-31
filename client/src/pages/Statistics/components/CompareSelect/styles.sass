@@ -1,0 +1,122 @@
+@use "@/common/styles/colors" as *
+@use "@/common/styles/focus" as *
+@use "@/common/styles/layout" as *
+@use "@/common/styles/menu" as *
+
+.compare-select
+  display: flex
+  align-items: center
+  gap: 0.5rem
+  flex: 0 0 auto
+
+// What the menu hangs from, and the reason it is a box of its own: the menu's
+// width floor is a share of its positioning ancestor, so with the label in that
+// box the label was setting it. Shrink-wrapped around the button, which is what
+// makes 100% mean "the button".
+.compare-select-anchor
+  position: relative
+  display: flex
+
+// The quiet half of the pair, drawn like the sentence beside it rather than
+// like a field label: the two read as one line of prose leading into a control.
+.compare-select-label
+  font-size: 0.85rem
+  font-weight: 500
+  color: $subtext
+  white-space: nowrap
+
+// The export button's own box. This sits one row under the toolbar, and the
+// toolbar states one voice across its three controls - $toolbar-text-size and
+// the glass fill - because each of them setting its own size drifted them a
+// notch apart. So this answers to the same two tokens rather than to
+// .export-button's component defaults, which that row overrides anyway.
+.compare-select-trigger
+  display: flex
+  align-items: center
+  gap: 0.5rem
+  padding: $toolbar-control-padding-y 1rem
+  background-color: var(--glass-bg)
+  backdrop-filter: blur(16px)
+  -webkit-backdrop-filter: blur(16px)
+  color: $white
+  border: $toolbar-control-border solid $light-gray
+  border-radius: 0.6rem
+  font-family: inherit
+  font-size: $toolbar-text-size
+  font-weight: 600
+  white-space: nowrap
+  cursor: pointer
+  // Only the border answers a state change, the reason the export button gives
+  // for the same line: easing `all` retunes the padding under the toolbar's fit
+  // walk, which measures a box in the frame it writes it.
+  transition: border-color 0.2s ease-in-out
+
+  &:hover
+    border-color: $accent-primary
+
+  // The toolbar's controls each drew the browser's own ring - a white double
+  // ring on this theme - where everything around them drew the app's.
+  +focus-ring
+
+// The chosen label and the six shadow copies behind it, all in one grid cell:
+// the cell is as wide as the widest of them, which is what keeps the button
+// one size as the choice moves. Nested twice for the same reason - the sizer
+// stacks its own children too, or the six would form a column.
+.compare-select-value,
+.compare-select-sizer
+  display: grid
+
+  > *
+    grid-area: 1 / 1
+
+// Hidden but still measured: display: none or a zero width would take the
+// shadow labels out of the layout, which is the entire job they do here.
+.compare-select-sizer
+  visibility: hidden
+
+.compare-select-icon
+  color: $subtext
+  font-size: 1rem
+  flex-shrink: 0
+
+.compare-select-chevron
+  color: $subtext
+  font-size: 0.75rem
+  transition: transform 0.2s ease
+
+  &.open
+    transform: rotate(180deg)
+
+.compare-select-menu
+  +dropdown-menu
+  position: absolute
+  top: calc(100% + 0.375rem)
+  // Both edges pinned to the anchor, which is the button's own box - so the
+  // menu is exactly the button's width rather than nearly it, the way
+  // .export-dropdown is. It asked for `min-width: 100%` before, and this
+  // stylesheet inherits `box-sizing: content-box`, so that 100% sized the
+  // CONTENT box and the menu came out its padding and border wider than the
+  // button, overhanging it to the left.
+  left: 0
+  right: 0
+  box-sizing: border-box
+  // The button is already as wide as the widest label - see
+  // .compare-select-sizer - so no row here has to wrap to fit.
+  white-space: nowrap
+
+.compare-select-option
+  +dropdown-option
+
+  // The one that is chosen, said with a mark rather than only with a colour -
+  // and the mark is kept in the layout when it is not shown, so the rows do not
+  // shift by an icon's width as the choice moves.
+  &.chosen
+    color: $white
+
+    svg
+      color: $accent-primary
+
+.compare-select-unchosen
+  visibility: hidden
+
++dropdown-fade-in

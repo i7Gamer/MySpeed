@@ -1,7 +1,10 @@
 import targets from '../models/Targets.js';
 import db from '../config/database.js';
-import { REGISTRY } from '../util/providers/registry.js';
+import { REGISTRY, IPERF_MAX_BITRATE_MBPS, IPERF_MAX_DURATION_SECONDS, IPERF_MAX_STREAMS,
+    IPERF_MIN_BITRATE_MBPS, IPERF_MIN_DURATION_SECONDS, IPERF_MIN_STREAMS, IPERF_UDP_STREAMS }
+    from '../util/providers/registry.js';
 import { ALLOWED_PROTOCOLS } from '../util/safeUrl.js';
+import { baselinePercentProblem } from '../util/baselineAlert.js';
 
 /**
  * The named provider+server pairings the round tests, and the judgements
@@ -37,6 +40,75 @@ const takesEndpoint = (provider) => provider === "libre" || provider === "iperf3
 // the public backend list, where an iperf3 target with no host has nothing to
 // measure against at all.
 const requiresEndpoint = (provider) => provider === "iperf3";
+
+/**
+ * The columns a PATCH retires without naming them.
+ *
+ * The door judges the row a request would LEAVE BEHIND, which is right: a
+ * fragment carrying only `{endpoint}` has to be held against the provider it
+ * will run under. But update() writes only the columns the request named, so a
+ * fragment was being judged against fields it never sent, and refused for them:
+ *
+ *   PATCH {provider: "ookla"}  ->  "This provider takes no iperf3 tuning"
+ *   PATCH {iperfUdp: false}    ->  "A bitrate applies only to a UDP run"
+ *
+ * Both name a field the request did not carry, and getting past them meant
+ * nulling four columns the caller was not editing. The dialog never met it,
+ * sending the whole tuning block every time, so it was an API-only dead end -
+ * and a trap for the next caller that sends a minimal patch.
+ *
+ * The same shape as the `renames` door in the route, fixed for the same reason:
+ * a check about what a request DOES must not be asked of values the request is
+ * implicitly retiring. So the retirement is computed here and merged into both
+ * the judged row and the written one - written too, or the stored row keeps a
+ * run shape describing a run it no longer makes, which buildArgs would read and
+ * the next patch would trip over again.
+ *
+ * Only columns the request did not name itself: a caller stating a
+ * contradiction on purpose - datagrams off and a bitrate in one breath - still
+ * earns the refusal that names it rather than having half of it dropped.
+ */
+export const retiredByPatch = (current, fields) => {
+    const retired = {};
+
+    const set = (key, value) => {
+        if (!Object.hasOwn(fields, key) && current[key] !== value) retired[key] = value;
+    };
+
+    const provider = Object.hasOwn(fields, "provider") ? fields.provider : current.provider;
+
+    // The run shape describes a run this target no longer makes.
+    if (current.provider === "iperf3" && provider !== "iperf3") {
+        set("iperfDuration", null);
+        set("iperfStreams", null);
+        set("iperfBitrate", null);
+        set("iperfUdp", false);
+    }
+
+    // And the endpoint is refused on its own terms under a provider that takes
+    // none - a caller moving to ookla is not asking to keep a host it can no
+    // longer reach.
+    if (!takesEndpoint(provider)) set("endpoint", null);
+
+    // And the pinned server on the same terms, which it did not have: the door
+    // refuses an id under a provider with no list to pin from, so a target
+    // moving off ookla failed with "This provider has no servers to pin" unless
+    // the caller happened to send `serverId: null` alongside - a requirement the
+    // API states nowhere. A caller moving to cloudflare is no more asking to
+    // keep a server it can no longer pick than it is asking to keep a host.
+    // `!= null` rather than a bare call to set(): set() writes whenever the
+    // stored value differs from the new one, and `undefined !== null` - so a row
+    // that simply does not carry the column at all would be "retired" from a
+    // server it never had, putting an unasked-for key in every iperf3 patch.
+    if (!takesServerId(provider) && current.serverId != null) set("serverId", null);
+
+    // A rate is inert on a run that sends no datagrams, which is the whole of
+    // why the door refuses the pair.
+    if (Object.hasOwn(fields, "iperfUdp") && !fields.iperfUdp && current.iperfUdp)
+        set("iperfBitrate", null);
+
+    return retired;
+};
 
 const PORT_DIGITS = /^\d+$/;
 const MAX_PORT = 65535;
@@ -97,6 +169,116 @@ export const iperfEndpointProblem = (endpoint) => {
         if (Number(port) < 1 || Number(port) > MAX_PORT)
             return `The port must be between 1 and ${MAX_PORT}`;
     }
+
+    return null;
+};
+
+/**
+ * The tuning columns an iperf3 target may carry, with the bounds each is held
+ * to and the word the refusal names it by.
+ *
+ * A table rather than two hand-written branches because the rule is the same
+ * for both and the messages have to differ only in the field they name - which
+ * is what the operator needs and what the dialog highlights on.
+ */
+const TUNING_COLUMNS = [
+    {key: "iperfDuration", label: "duration in seconds",
+        min: IPERF_MIN_DURATION_SECONDS, max: IPERF_MAX_DURATION_SECONDS},
+    {key: "iperfStreams", label: "stream count",
+        min: IPERF_MIN_STREAMS, max: IPERF_MAX_STREAMS},
+    {key: "iperfBitrate", label: "bitrate in Mbit/s",
+        min: IPERF_MIN_BITRATE_MBPS, max: IPERF_MAX_BITRATE_MBPS}
+];
+
+/**
+ * What is wrong with a target's iperf3 run tuning, or null when nothing is.
+ *
+ * Null and absent both mean "inherit the shipped default", the same spelling
+ * the three optimal columns use - so a target that names neither is the
+ * ordinary case and has nothing to answer for. That is also every target on
+ * every instance that upgrades into these columns.
+ *
+ * A value on a provider that does not run iperf3 is refused rather than
+ * ignored, the way an endpoint on a provider that takes none already is: the
+ * dialog would otherwise show a duration the run can never honour, and nothing
+ * on the row or in the interface would say the number is inert.
+ *
+ * Whole numbers only, and refused rather than rounded or coerced - the
+ * reasoning flagProblem states verbatim. iperf3 takes integers, and a target
+ * quietly measuring for something other than the figure that was typed is a
+ * worse surprise than a 400 naming the field.
+ *
+ * Exported and pure over a row, because the API route and the import path both
+ * have to make the same call and a test should be able to ask it without a
+ * database.
+ */
+export const iperfTuningProblem = (target) => {
+    const named = TUNING_COLUMNS.filter((column) =>
+        target[column.key] !== undefined && target[column.key] !== null);
+
+    /*
+     * The mode is named only when it is on.
+     *
+     * false is not a setting, it is every target on every provider once the
+     * column exists - so reading it as "named" the way the numbers above are
+     * would refuse every ookla target the moment a backup was restored.
+     *
+     * Judged before it is coerced, and judged here rather than in the chain
+     * below because this is the line that decides what it means. Left to
+     * `Boolean` alone, the value this function judged and the value the column
+     * stored disagreed: "false" read as a UDP target, so the bitrate was
+     * demanded and the row accepted, while sequelize's BOOLEAN sanitised the
+     * same string to false on the way in. What landed was `iperfUdp = 0` beside
+     * a bitrate - the one pair the rule below exists to refuse - measuring TCP
+     * forever, and refused by every later PATCH naming a field the dialog does
+     * not draw. flagProblem's own docstring names this trap for the two flags
+     * beside it: a `Boolean("false")` that is true is a worse surprise than a
+     * 400.
+     */
+    const flag = flagProblem(target.iperfUdp, "UDP");
+    if (flag !== null) return flag;
+
+    const udp = Boolean(target.iperfUdp);
+
+    if (named.length === 0 && !udp) return null;
+
+    if (target.provider !== "iperf3") return "This provider takes no iperf3 tuning";
+
+    for (const column of named) {
+        const value = target[column.key];
+
+        if (!Number.isInteger(value) || value < column.min || value > column.max)
+            return `The iperf3 ${column.label} must be a whole number `
+                + `between ${column.min} and ${column.max}, or unset`;
+    }
+
+    /*
+     * A UDP run must name its rate, because the CLI's own default is 1 Mbit/s
+     * and it does not say so. A capture of it measured 1.04 Mbit/s on the same
+     * loopback that measured 99.2 when asked for 100 - a gigabit line stored
+     * as a megabit, a plausible number in the right column, and the payload
+     * echoes a target_bitrate that reads the same as an explicit `-b 1M`. So
+     * nothing after the fact can tell the two apart, and the rate has to be
+     * required here.
+     */
+    if (udp && (target.iperfBitrate === undefined || target.iperfBitrate === null))
+        return "A UDP run must name the bitrate it sends at";
+
+    // And a rate on a run that sends no datagrams is inert, refused for the
+    // same reason a duration on an ookla target is: nothing on the row or in
+    // the dialog would say the number does nothing.
+    if (!udp && target.iperfBitrate !== undefined && target.iperfBitrate !== null)
+        return "A bitrate applies only to a UDP run";
+
+    /*
+     * Not a preference: `-u -P 2` fails on the Cygwin build this downloads,
+     * twice out of two attempts and at two different rates, with "unable to
+     * read from stream socket: Resource temporarily unavailable". Refusing the
+     * pair here is the difference between a configuration error the operator
+     * sees once and a target that fails every scheduled run forever.
+     */
+    if (udp && Number.isInteger(target.iperfStreams) && target.iperfStreams !== IPERF_UDP_STREAMS)
+        return `A UDP run measures over ${IPERF_UDP_STREAMS} stream`;
 
     return null;
 };
@@ -189,7 +371,12 @@ export const targetProblem = (target) => {
         ?? flagProblem(target.alerts, "alerts")
         ?? optimalProblem(target.optimalPing, "ping")
         ?? optimalProblem(target.optimalDownload, "download")
-        ?? optimalProblem(target.optimalUpload, "upload");
+        ?? optimalProblem(target.optimalUpload, "upload")
+        ?? iperfTuningProblem(target)
+        // Judged for every provider, unlike the iperf3 tuning above: a rolling
+        // median of a target's own successful runs is a fact about the line,
+        // and every provider measures one.
+        ?? baselinePercentProblem(target.baselinePercent);
 };
 
 /**
@@ -211,6 +398,11 @@ export const resolveLimits = (target, global) => ({
  * the interface (name, provider, the optimal values the grading needs), and
  * nothing that describes the operator's network - the endpoint can carry a
  * credential, and a server id narrows down where the instance lives.
+ *
+ * Deliberately not the iperf3 tuning. How long a target's test runs and over
+ * how many streams is needed to label, order or grade nothing, which is the
+ * whole of what this answers - and it is one more detail of how the operator's
+ * own machines are being measured.
  */
 export const viewerFacing = ({id, name, provider, enabled, sortOrder,
     optimalPing, optimalDownload, optimalUpload}) =>
@@ -481,6 +673,11 @@ export const create = async (target) => await targets.create({
     optimalPing: target.optimalPing ?? null,
     optimalDownload: target.optimalDownload ?? null,
     optimalUpload: target.optimalUpload ?? null,
+    iperfDuration: target.iperfDuration ?? null,
+    iperfStreams: target.iperfStreams ?? null,
+    iperfUdp: target.iperfUdp ?? false,
+    iperfBitrate: target.iperfBitrate ?? null,
+    baselinePercent: target.baselinePercent ?? null,
     sortOrder: target.sortOrder ?? await nextSortOrder(),
     created: new Date().toISOString()
 });

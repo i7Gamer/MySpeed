@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseDateRange, previousRange } from "../../server/util/dateRange.js";
+import { parseDateRange, previousRange, shiftedRange } from "../../server/util/dateRange.js";
+import { zoneFromName } from "../../server/util/timezone.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -90,5 +91,60 @@ describe("previousRange", () => {
 
         assert.equal(previous.from.getTime(), expected.from.getTime());
         assert.equal(previous.to.getTime(), expected.to.getTime());
+    });
+});
+
+/**
+ * A day whose LAST hour is the one the zone skips.
+ *
+ * Nearly every zone springs forward in the small hours, so a range's end -
+ * 23:59:59.999 local - is a time that existed. Greenland's transition is at
+ * 23:00, which makes that day's requested end fall inside the gap, and
+ * utcFromLocal has no real candidate to return.
+ *
+ * It answered with the later of the two, which is what a caller asking for a
+ * time that never happened wants when it asks for the FIRST such instant - and
+ * exactly wrong when it asks for the last. The day's end landed an hour into
+ * the next local day, so `previousRange` overlapped the range it is compared
+ * against by a full hour and every test in that hour was counted in both
+ * windows. `shiftedRange` inherited it, coming out a day and an hour long while
+ * echoing the day count it was asked for - the one thing that function exists
+ * to prevent.
+ *
+ * Two zones, thirteen days between 2023 and 2030, and a Greenland browser
+ * reaches it: the client sends its own resolved zone name.
+ */
+describe("a day the zone truncates at its last hour", () => {
+    const nuuk = zoneFromName("America/Nuuk");
+
+    it("ends the day at the last instant the day actually had", () => {
+        const day = parseDateRange("2026-03-28", "2026-03-28", {zone: nuuk});
+
+        // Local 22:59:59.999, the last reading before the clock jumps to
+        // midnight - not 00:59:59.999 the next day.
+        assert.equal(day.to.toISOString(), "2026-03-29T00:59:59.999Z",
+            "the day's end overshot the gap into the next local day");
+    });
+
+    it("leaves no overlap between a range and the window before it", () => {
+        const range = parseDateRange("2026-03-29", "2026-03-29", {zone: nuuk});
+        const previous = previousRange(range, {zone: nuuk});
+
+        assert.ok(previous.to < range.from,
+            `the comparison window ends ${(previous.to - range.from) / 3600000}h inside the range `
+            + "it is compared against, so every test in that hour is counted in both");
+    });
+
+    // And the length promise holds across it: a month-long window shifted a
+    // year back must still be that many days rather than that many days and an
+    // hour, which is a reach into one more local day.
+    it("keeps a shifted window's length across the truncated day", () => {
+        const range = parseDateRange("2026-02-28", "2026-03-29", {zone: nuuk});
+        const shifted = shiftedRange(range, 12, {zone: nuuk});
+
+        const span = (window) => (window.to - window.from + 1) / (24 * 60 * 60 * 1000);
+
+        assert.equal(Math.round(span(shifted) * 100) / 100, Math.round(span(range) * 100) / 100,
+            "the shifted window is a different length from the range it is compared against");
     });
 });

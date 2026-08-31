@@ -179,3 +179,92 @@ describe("the reliability block", () => {
         assert.equal(stats.reliability.largestGap.seconds, 3600);
     });
 });
+
+/**
+ * A streak is a claim about one target, and the unfiltered timeline is every
+ * target interleaved.
+ *
+ * The walk read row-adjacency, and on an instance with more than one target no
+ * two rows in a row belong to the same line. Both directions were wrong and
+ * both were plausible on screen: a NAS that failed every run for a week
+ * reported a streak of 1, because a working WAN test sat between each of its
+ * failures - and one bad round on four targets reported a streak of 4, which
+ * reads as an outage and was four different lines blinking once.
+ *
+ * The digest is where that mattered most: it is always instance-wide, so its
+ * headline outage figure was the one nothing could correct.
+ */
+describe("the longest failure streak across several targets", () => {
+    const tagged = (targetId, entry) => ({...entry, targetId});
+
+    it("does not let another target's success break a streak", () => {
+        // The NAS fails at :00, :10 and :20; the WAN succeeds between each.
+        const {longestFailureStreak} = reliabilityOf([
+            tagged(1, failedAt("2026-08-07T01:00:00.000Z")),
+            tagged(2, at("2026-08-07T01:01:00.000Z")),
+            tagged(1, failedAt("2026-08-07T01:10:00.000Z")),
+            tagged(2, at("2026-08-07T01:11:00.000Z")),
+            tagged(1, failedAt("2026-08-07T01:20:00.000Z")),
+            tagged(2, at("2026-08-07T01:21:00.000Z"))
+        ]);
+
+        assert.equal(longestFailureStreak.count, 3,
+            "a target that failed three times running reported a shorter streak");
+    });
+
+    it("does not join one bad round across targets into an outage", () => {
+        // Four targets, one round, every one of them failing once.
+        const {longestFailureStreak} = reliabilityOf([1, 2, 3, 4].map((id) =>
+            tagged(id, failedAt(`2026-08-07T02:0${id}:00.000Z`))));
+
+        assert.equal(longestFailureStreak.count, 1,
+            "four lines blinking once was reported as an outage of four");
+    });
+
+    // The span still names the failing target's own first and last, not the
+    // interleaved timeline's.
+    it("spans the streak's own instants", () => {
+        const {longestFailureStreak} = reliabilityOf([
+            tagged(1, failedAt("2026-08-07T01:00:00.000Z")),
+            tagged(2, at("2026-08-07T01:05:00.000Z")),
+            tagged(1, failedAt("2026-08-07T01:30:00.000Z"))
+        ]);
+
+        assert.equal(longestFailureStreak.from, "2026-08-07T01:00:00.000Z");
+        assert.equal(longestFailureStreak.to, "2026-08-07T01:30:00.000Z");
+    });
+
+    /**
+     * A history from before targets existed carries no targetId at all, and a
+     * single-target instance carries one value - both are one line, and both
+     * have to read exactly as they did.
+     */
+    it("reads an untagged history as the single line it is", () => {
+        const untagged = reliabilityOf([
+            failedAt("2026-08-07T01:00:00.000Z"),
+            failedAt("2026-08-07T01:10:00.000Z"),
+            at("2026-08-07T01:20:00.000Z")
+        ]);
+
+        assert.equal(untagged.longestFailureStreak.count, 2);
+    });
+
+    /**
+     * The gap stays a question about the instance, deliberately.
+     *
+     * "Nothing ran for six hours" is what it exists to find, and the scheduler
+     * runs every target in one round - so the interleaved timeline is the right
+     * one to ask, and per-target gaps would report the ordinary spacing between
+     * rounds as downtime on every target.
+     */
+    it("still measures the gap across every target", () => {
+        const {largestGap} = reliabilityOf([
+            tagged(1, at("2026-08-07T01:00:00.000Z")),
+            tagged(2, at("2026-08-07T01:01:00.000Z")),
+            tagged(1, at("2026-08-07T07:00:00.000Z"))
+        ]);
+
+        assert.equal(largestGap.from, "2026-08-07T01:01:00.000Z",
+            "the gap was measured within one target rather than across the round");
+    });
+});

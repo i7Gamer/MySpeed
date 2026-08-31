@@ -1,4 +1,9 @@
 import { DATE_VARIABLES } from './helpers.js';
+// The two names the alert gate reads as a decision, taken from there rather
+// than spelled again: a chip the dialog offers must be a key the payload
+// carries, and two literals are how those stop agreeing without anything
+// failing to compile.
+import { ALERT_CROSSED, BASELINE_ARMED, BASELINE_BREACHED } from './alertThreshold.js';
 
 /**
  * What an integration is told about a test, and what an operator may name in a
@@ -48,7 +53,39 @@ const FINISHED_KEYS = [
     // quiets the notifiers on exactly this flag. Null from an older node,
     // which the gate reads as alerting: how a single-target instance always
     // behaved.
-    "alerts"
+    "alerts",
+    // Whether this member's own baseline is armed, and whether this test fell
+    // below it - the rolling 30-day median of the target's own successful runs,
+    // judged in util/baselineAlert.js before the row was written. Null on every
+    // target that set no baseline and from any older node, which the gate reads
+    // as "no baseline", the way `alerts` reads absent as alerting.
+    BASELINE_ARMED, BASELINE_BREACHED,
+    // What that breach was, in the two facts a sentence needs: which direction
+    // crossed, and how far under its own median it landed. A template has
+    // neither arithmetic nor a conditional, so a message can say only what the
+    // verdict already worked out - and without these, download collapsing and
+    // upload collapsing an hour later arrived as two alerts that read
+    // identically. Null on a test that crossed nothing, which every template
+    // naming them renders as the not-measured mark.
+    "baselineDirection", "baselineShortfall",
+    // And the yardstick itself, so a message can say what this line usually
+    // delivers beside what it just did. The percentage is not here: it is the
+    // operator's own setting, on the screen they set it from, where these six
+    // are facts about the run.
+    "baselineDownload", "baselineUpload",
+    /*
+     * And which of *this integration's* own three limits the result missed, as
+     * the clause that names it - "download 40 Mbps under 100".
+     *
+     * The odd one out, and deliberately so. Every key above describes the test
+     * and is the same for every recipient, which is what lets finishedPayload
+     * build them once. Limits are the integration's, and two integrations
+     * watching one test can hold different ones, so this is filled in per
+     * recipient by the dispatcher and arrives here as null - see
+     * controller/integrations.js. Listed all the same, because the chip row is
+     * built from this list and a variable that substitutes must be offered.
+     */
+    ALERT_CROSSED
 ];
 
 const FAILED_KEYS = ["id", "created", "provider", "error", "targetId", "targetName", "primary", "alerts"];

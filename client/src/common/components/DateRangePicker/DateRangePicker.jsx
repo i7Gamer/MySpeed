@@ -297,6 +297,22 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
         t("calendar.sun")
     ];
 
+    /*
+     * What the trigger says, as one string.
+     *
+     * Its own name, which is the point: this is the only picker on any page, so
+     * the trigger's text IS its accessible name and that text is the current
+     * range - which is what a reader wants to hear. There was briefly a second
+     * one, for a comparison window a reader drew by hand, and it needed a
+     * `label` prop to tell the two apart; the comparison is an offset now and
+     * draws no picker, so the prop went with it.
+     */
+    const triggerText = timeframeLabelKey(timeframe)
+        ? t(timeframeLabelKey(timeframe))
+        : from && to
+            ? `${formatDisplayDate(from)} - ${formatDisplayDate(to)}`
+            : t("calendar.select_range");
+
     return (
         <div className="date-range-picker">
             {/* A real button, not a div with an onClick: this is the only way
@@ -305,8 +321,10 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                 so a keyboard-only reader was left with whatever range the page
                 loaded with, on both toolbars that draw one.
 
-                It needs no aria-label: its own text is its name, and that text
-                is the current range, which is what a reader wants to hear.
+                No aria-label, and that is deliberate rather than an omission:
+                its own text is its name, and that text is the current range.
+                An aria-label would REPLACE it, so a reader would be told the
+                control's category instead of its value.
 
                 aria-expanded and nothing more. A trigger that announces a
                 pop-up dialog promises one behind it, and what is behind this one
@@ -330,15 +348,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                     true tomorrow, when those dates no longer would be. Only a
                     custom range shows its concrete dates - and with neither a
                     preset nor dates, the trigger asks for a selection. */}
-                <span className="date-range-text">
-                    {timeframeLabelKey(timeframe) ? (
-                        t(timeframeLabelKey(timeframe))
-                    ) : from && to ? (
-                        <>{formatDisplayDate(from)} - {formatDisplayDate(to)}</>
-                    ) : (
-                        t("calendar.select_range")
-                    )}
-                </span>
+                <span className="date-range-text">{triggerText}</span>
             </button>
 
             {isOpen && (

@@ -27,7 +27,8 @@
    * its interface select is alone on its row and holds a value needing 311px,
    * so it keeps the full width of the dialog it is in.
    */
-  .provider-input
+  .provider-input,
+  .provider-input-wrap
     flex: 0 0 18rem
     max-width: 100%
 
@@ -118,7 +119,13 @@
   border: 1px solid $light-gray
   border-radius: 0.75rem
 
-.provider-input
+// The row share, taken by the field itself where the field is an input, and by
+// the wrapper where it is a select: a <select> is a replaced element with no
+// ::after to hang the shared caret on, so .select-wrap sits in between and
+// becomes the flex item the row is dividing. Both spellings, because both are
+// on this row - three text fields and two selects.
+.provider-input,
+.provider-input-wrap
   // A share of the row rather than a fixed width. Pinned to 14rem it could not
   // use the room the dialog has: the interface select showed 224px of a value
   // needing 311, and of options needing 415. 14rem stays as the basis, so a
@@ -127,7 +134,32 @@
   // Without this the basis is a floor and the field pushes the label off the
   // row instead of sharing it - flex items refuse to shrink past their content.
   min-width: 0
+
+.provider-input
   height: 2.5rem
+
+  /*
+   * The shared field's 0.7rem does not fit inside that height.
+   *
+   * These are border-box, so the padding comes out of the 2.5rem rather than
+   * adding to it: 40px less 11.2 twice less the border leaves 15.6px of
+   * content box for a line that wants 20, and the text was cut off by about
+   * two pixels top and bottom - a box visibly tall enough, clipping anyway.
+   * The height stays, because the rows line up on it, and a field this size
+   * centres its own text without any vertical padding at all.
+   *
+   * Both classes, because .dialog-input writes `padding` as a shorthand and a
+   * longhand of the same specificity does not beat it - which of the two wins
+   * would be decided by the order the bundle happens to put the stylesheets
+   * in. Every element carrying this class carries that one too, so naming both
+   * costs nothing and settles it.
+   *
+   * Only visible since the controls were given the page's typeface: the
+   * browser's UI font sat lower in the same 15.6px and nobody saw it.
+   */
+  &.dialog-input
+    padding-top: 0
+    padding-bottom: 0
   box-sizing: border-box
   margin: 0 !important
   padding: 0.6rem 0.875rem
@@ -283,7 +315,8 @@
     align-items: flex-start
     gap: 0.5rem
 
-  .provider-input
+  .provider-input,
+  .provider-input-wrap
     // The row stacks here, so the main axis is vertical and the basis above
     // would be read as a height - a 14rem-tall select, stretched by the grow.
     // The field takes the full width of the column instead.
@@ -303,3 +336,77 @@
 
     &-actions
       margin-left: auto
+
+/*
+ * The one setting row whose control is not a control but three of them: a
+ * label, the two number fields, and the mode toggle underneath.
+ *
+ * .provider-setting is a row - label left, one field right - which is what
+ * every other setting here is and exactly what this one is not. Laid out that
+ * way the three blocks became three columns of a 512px dialog: the fields and
+ * the switch took 214px each, the label was left with 52px to draw a heading
+ * 64px wide, and the two number fields wrapped into a stack tall enough that
+ * "Run settings" was printed across "Parallel streams".
+ *
+ * stretch rather than the row's centre, so the two blocks below take the width
+ * they both ask for - each states `width: 100%`, which a centred cross axis
+ * measures against their content instead.
+ */
+.target-tuning-setting
+  flex-direction: column
+  align-items: stretch
+  gap: 0.75rem
+
+// The run's own shape: two short number fields side by side under one label,
+// because they are one decision - how long and how wide - and stacking them
+// gave the dialog two more full-width rows for figures that want four
+// characters each.
+.target-tuning-fields
+  display: flex
+  flex-wrap: wrap
+  gap: 0.75rem
+  width: 100%
+
+  .target-tuning-field
+    display: flex
+    flex-direction: column
+    gap: 0.35rem
+    flex: 1 1 8rem
+    min-width: 0
+
+    span
+      font-size: $dialog-hint
+      color: $subtext
+
+// The mode sits under the fields it governs rather than beside them: turning
+// it on swaps one of those fields for another, and a toggle below the thing it
+// changes reads as a footnote to it instead of a fourth column.
+.target-tuning-switch
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 0.75rem
+  width: 100%
+  margin-top: 0.75rem
+
+// One field and the sentence that explains it, rather than the three-column
+// grid the optimals are: a lone percentage stretched across a third of the
+// dialog with two empty cells beside it reads as two fields somebody forgot.
+.target-baseline
+  display: flex
+  flex-wrap: wrap
+  align-items: flex-start
+  gap: 0.75rem
+
+  .target-optimal
+    flex: 0 1 12rem
+
+  // The one setting here whose meaning its label does not carry: "70" says
+  // nothing on its own about what it is seventy percent of.
+  .target-baseline-note
+    flex: 1 1 16rem
+    margin: 0
+    align-self: center
+    font-size: $dialog-hint
+    color: $subtext
+    line-height: 1.5

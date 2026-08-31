@@ -411,24 +411,36 @@ describe("the columns the second and third rows fall into", () => {
     const cards = () => {
         const body = statisticsSource.slice(statisticsSource.lastIndexOf("statistic-area${isStale"));
         const named = [...body.slice(0, body.indexOf("<ChartModal"))
-            .matchAll(/<(OverviewChart|LatestTestChart|ConsistencyChart|PingChart|SpeedChart|HourlyChart|AverageChart|TargetCompareChart)\b([^>]*)>/g)];
+            .matchAll(/<(OverviewChart|LatestTestChart|ConsistencyChart|PingChart|SpeedChart|HourlyChart|AverageChart|TargetCompareChart|TargetCompareTable)\b([^>]*)>/g)];
 
         return named.map(([, name, props]) => {
             if (name === "SpeedChart") return `speed:${props.match(/dataKey="(\w+)"/)?.[1]}`;
             // Named by the map entry the title now reads from - the charts and
             // the dialog share one authority, so the card namer follows it.
             if (name === "AverageChart") return `average:${props.match(/CHART_MODAL_LABELS\.(\w+)/)?.[1]}`;
+            // Three of these now, one per metric, and which is which is the
+            // whole question this describe asks - an unnamed trio would leave
+            // the column checks below unable to tell them apart.
+            if (name === "TargetCompareChart") return `compare:${props.match(/metric="(\w+)"/)?.[1]}`;
             return name;
         });
     };
 
-    it("renders the ten the page is made of", () => {
-        assert.equal(cards().length, 10, `the page renders ${cards().length} cards, so the rows are not three deep`);
+    it("renders the thirteen the page is made of", () => {
+        assert.equal(cards().length, 13, `the page renders ${cards().length} cards, so the rows are not three deep`);
     });
 
     // avgDownload/avgUpload on the value cards, download/upload on the charts
     // - the two names for one metric, which is the pairing this is about.
-    for (const [chart, panel] of [["speed:download", "average:avgDownload"], ["speed:upload", "average:avgUpload"]])
+    /*
+     * And the comparison charts continue the same columns one row further
+     * down: the download overlay under the download average, under the
+     * download chart. Three cards about one metric, stacked - which is the
+     * arrangement the hourly chart's old position broke, in the row that
+     * started this.
+     */
+    for (const [chart, panel] of [["speed:download", "average:avgDownload"], ["speed:upload", "average:avgUpload"],
+        ["average:avgDownload", "compare:download"], ["average:avgUpload", "compare:upload"]])
         it(`puts ${panel} directly under ${chart}`, () => {
             const order = cards();
             const above = order.indexOf(chart);
@@ -462,12 +474,15 @@ describe("the columns the second and third rows fall into", () => {
      * takes the row it starts, whatever is left of it, and everything else
      * fills two at a time.
      */
-    // The comparison card spans at EVERY stage, not only this one - a
+    // The comparison TABLE spans at EVERY stage, not only this one - a
     // five-column table has nothing to do with a third of a row - and it is
     // rendered last, so it takes the final row alone without disturbing a
-    // pair. Conditional on the target count, which the model need not know:
-    // dropping the last card removes a whole row and re-pairs nothing.
-    const SPANNING = ["OverviewChart", "PingChart", "HourlyChart", "TargetCompareChart"];
+    // pair. The three overlay charts beside it do not: they are
+    // .chart-container like the row they join, and take the share of a row the
+    // ping and speed charts take. Conditional on the target count, which the
+    // model need not know: dropping the last four removes whole rows and
+    // re-pairs nothing.
+    const SPANNING = ["OverviewChart", "PingChart", "HourlyChart", "TargetCompareTable"];
 
     const twoColumnRows = () => {
         const rows = [];

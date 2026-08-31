@@ -265,8 +265,27 @@ describe("typing an endpoint that begins with the sentinel", () => {
         const field = editor.match(/<input type="text"(?:(?!\/>)[^])*?handleEndpointChange(?:(?!\/>)[^])*?\/>/)?.[0];
 
         assert.ok(field, "the endpoint input is no longer recognisable by its handler");
-        assert.match(field, /sentinelTyped \? " input-error" : ""/,
+        assert.match(field, /sentinelTyped(?:[^?]*)\? " input-error" : ""/,
             "a typed sentinel greys the button with nothing on screen naming the field");
+    });
+
+    /**
+     * And the other value the button refuses.
+     *
+     * hasEndpoint deadens Update for a host iperf3 cannot dial, but only the
+     * sentinel ever coloured the field - so "bad host!" was a greyed button
+     * with every field looking fine, which is the puzzle the rule above exists
+     * to prevent. Marked on a *typed* value rather than on hasEndpoint itself:
+     * iperfHostAccepted refuses an empty host too, and a fresh iperf3 target
+     * would otherwise open with its host already red.
+     */
+    it("marks a host the door would refuse, once one has been typed", () => {
+        assert.match(editor, /badEndpoint = requiresEndpoint\(provider\) && endpoint\.trim\(\) !== "" && !hasEndpoint/,
+            "an untouched empty host is marked as an error, or a bad one is not marked at all");
+
+        const field = editor.match(/<input type="text"(?:(?!\/>)[^])*?handleEndpointChange(?:(?!\/>)[^])*?\/>/)?.[0];
+
+        assert.match(field, /badEndpoint/, "the endpoint field does not wear it");
     });
 });
 
@@ -511,6 +530,101 @@ describe("the interface select", () => {
 });
 
 /**
+ * How a run is shaped, for the one provider that lets a target say.
+ *
+ * Nullable on purpose: the column's null is what the runner reads as "use the
+ * registry's own default", so a field left alone must go out as null rather
+ * than as a zero the CLI would be handed.
+ */
+describe("the run's own shape on the body", () => {
+    const IPERF = {name: "LAN", provider: "iperf3", endpoint: "nas.lan", serverId: "none",
+        alerts: true, ownOptimals: false, optimalPing: "", optimalDownload: "", optimalUpload: ""};
+
+    it("sends what was typed", () => {
+        const body = targetBody({...IPERF, iperfDuration: "30", iperfStreams: "8"});
+
+        assert.equal(body.iperfDuration, 30);
+        assert.equal(body.iperfStreams, 8);
+    });
+
+    it("sends null for a field nobody touched", () => {
+        for (const blank of ["", null, undefined]) {
+            const body = targetBody({...IPERF, iperfDuration: blank, iperfStreams: blank});
+
+            assert.equal(body.iperfDuration, null, `${JSON.stringify(blank)} went out as a value`);
+            assert.equal(body.iperfStreams, null);
+        }
+    });
+
+    // The server judges the row this would become, and refuses a run's shape
+    // on a provider that decides its own - so a value left behind by a
+    // provider switch must not travel with the save.
+    it("sends nothing at all for a provider that shapes its own run", () => {
+        for (const provider of ["ookla", "libre", "cloudflare"]) {
+            const body = targetBody({...IPERF, provider, endpoint: "", iperfDuration: "30", iperfStreams: "8"});
+
+            assert.equal(body.iperfDuration, null, `${provider} carried a duration`);
+            assert.equal(body.iperfStreams, null, `${provider} carried a stream count`);
+        }
+    });
+
+    // A fraction is not a whole number of seconds or streams, and the CLI
+    // takes both as integers - so it is dropped rather than silently floored.
+    it("drops what is not a whole number", () => {
+        const body = targetBody({...IPERF, iperfDuration: "7.5", iperfStreams: "abc"});
+
+        assert.equal(body.iperfDuration, null);
+        assert.equal(body.iperfStreams, null);
+    });
+
+    /**
+     * And the datagram mode, which is a flag rather than an inheritance: the
+     * body always states it, because false is what every target is and the
+     * column is NOT NULL.
+     */
+    describe("asked for over UDP", () => {
+        it("states the mode either way", () => {
+            assert.equal(targetBody({...IPERF, iperfUdp: true, iperfBitrate: "100"}).iperfUdp, true);
+            assert.equal(targetBody({...IPERF, iperfUdp: false}).iperfUdp, false);
+            assert.equal(targetBody(IPERF).iperfUdp, false, "an untouched target was not TCP");
+        });
+
+        it("sends the bitrate a UDP target names", () => {
+            assert.equal(targetBody({...IPERF, iperfUdp: true, iperfBitrate: "100"}).iperfBitrate, 100);
+        });
+
+        /**
+         * The door refuses a rate on a run that sends no datagrams, so a value
+         * left behind by switching the toggle back off must not travel with
+         * the save - the same reasoning that drops a duration on ookla.
+         */
+        it("drops a bitrate left behind by a target that went back to TCP", () => {
+            assert.equal(targetBody({...IPERF, iperfUdp: false, iperfBitrate: "100"}).iperfBitrate, null);
+        });
+
+        /**
+         * And the stream count goes with it. The shipped build cannot carry a
+         * UDP run over more than one stream and the door refuses the pair, so
+         * a target that had eight and then turned UDP on would otherwise be
+         * unsaveable with nothing in the dialog saying which field to fix.
+         */
+        it("drops a stream count a UDP run could never use", () => {
+            assert.equal(targetBody({...IPERF, iperfUdp: true, iperfBitrate: "100",
+                iperfStreams: "8"}).iperfStreams, null);
+        });
+
+        // Every one of them is inert on a provider that shapes its own run.
+        it("sends nothing at all for a provider that shapes its own run", () => {
+            const body = targetBody({...IPERF, provider: "ookla", endpoint: "",
+                iperfUdp: true, iperfBitrate: "100"});
+
+            assert.equal(body.iperfUdp, false, "ookla carried the datagram mode");
+            assert.equal(body.iperfBitrate, null, "ookla carried a bitrate");
+        });
+    });
+});
+
+/**
  * The name a new target opens with.
  *
  * The editor asked for a name and offered none, so the button that adds the
@@ -598,5 +712,78 @@ describe("the editor opens on a name that already works", () => {
     it("marks the name field while it is what blocks the save", () => {
         assert.match(editor, /className=\{`dialog-input provider-input\$\{name\.trim\(\) === "" \? " input-error" : ""\}`\}/,
             "an empty name leaves the field looking fine beside a button that will not press");
+    });
+});
+
+/**
+ * A pinned server id the door would refuse.
+ *
+ * The free-text field takes anything, and the door takes digits: "abc" left the
+ * Update button green, went out, and came back a 400 naming a value the operator
+ * was looking at. Every other refusal in this editor is said as a button that
+ * will not press, so this one is too.
+ *
+ * Empty and the automatic sentinel both pass, because targetBody sends null for
+ * either - it is only something actually typed that has to be digits.
+ */
+describe("a typed server id", () => {
+    const editor = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+
+    it("is held to the rule the door states", () => {
+        assert.ok(editor.includes(String.raw`const SERVER_ID_DIGITS = /^\d+$/`),
+            "the editor no longer states the digits rule the server enforces");
+        assert.match(editor, /serverIdAccepted = !takesServerId\(provider\) \|\| !serverId \|\| serverId === "none"/,
+            "an empty or automatic id is refused, or a provider without a list is asked for one");
+    });
+
+    it("greys the button rather than letting the save fail", () => {
+        assert.match(editor, /canSave = [^;]*&& serverIdAccepted/,
+            "a non-digit id still leaves the button pressable");
+    });
+
+    it("marks the field, so the dead button names itself", () => {
+        const field = editor.match(/<input type="text"(?:(?!\/>)[^])*?handleServerIdChange(?:(?!\/>)[^])*?\/>/)?.[0];
+
+        assert.ok(field, "the server id input is no longer recognisable by its handler");
+        assert.match(field, /serverIdAccepted \? "" : " input-error"/);
+    });
+});
+
+/**
+ * Every field in the editor says its own name.
+ *
+ * The heading beside each one is the field's name, but nothing tied the two
+ * together - these are `<div><h3>Name</h3></div><input>`, with no label and no
+ * htmlFor - so a reader tabbing straight onto the input heard "edit text" and
+ * whatever the placeholder said. Four of them: the target's name, the server
+ * select, the typed server id and the endpoint.
+ *
+ * Said with aria-label from the key the heading already renders, rather than by
+ * introducing ids and rewriting the markup: the accessible name then cannot
+ * drift from the visible one, and it costs no new strings.
+ */
+describe("the target editor's fields", () => {
+    const editor = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+
+    it("names the target name field", () => {
+        assert.match(editor, /aria-label=\{t\("targets\.name"\)\}/,
+            "the name field is announced as an unlabelled text box");
+    });
+
+    it("names the server select", () => {
+        // Asserted on the file rather than on the tag: a <select>'s opening tag
+        // carries `onChange={(e) => …}`, and any scan bounded by the first `>`
+        // stops inside that arrow.
+        assert.match(editor, /aria-label=\{t\("dialog\.provider\.server"\)\}/);
+    });
+
+    it("names the typed server id", () => {
+        assert.match(editor, /aria-label=\{t\("dialog\.provider\.server_id"\)\}/);
+    });
+
+    it("names the endpoint by the field it is standing in for", () => {
+        // Two names for one field, the way its own heading already chooses:
+        // a LibreSpeed backend is a URL and an iperf3 server is a host.
+        assert.match(editor, /aria-label=\{t\(isIperf \? "dialog\.provider\.iperf_host"/);
     });
 });

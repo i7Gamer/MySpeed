@@ -30,4 +30,8 @@ export const providerById = (id) => providers.find((provider) => provider.id ===
  * logos above make this one unloadable outside a bundler - and are re-exported
  * here so a caller that wants both has one import.
  */
-export {takesServerId, takesEndpoint, requiresEndpoint, iperfHostAccepted} from "./providerFields.js";
+export {
+    takesServerId, takesEndpoint, requiresEndpoint, iperfHostAccepted,
+    takesTuning, durationAccepted, streamsAccepted, bitrateAccepted, tuningAccepted,
+    TUNING_BOUNDS, baselineAccepted, BASELINE_BOUNDS, BASELINE_PERCENT_DEFAULT
+} from "./providerFields.js";
