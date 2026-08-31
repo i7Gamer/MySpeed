@@ -232,17 +232,17 @@ describe("baselineVerdict", () => {
          * they set it from.
          */
         it("names the direction that went under and how far under", () => {
-            const {baselineBelow, baselineShortfall} = verdict(below, above);
+            const {baselineDirection, baselineShortfall} = verdict(below, above);
 
-            assert.equal(baselineBelow, "download");
+            assert.equal(baselineDirection, "download");
             assert.equal(baselineShortfall, 40, "300 against a 500 median is 40 per cent under");
         });
 
         // Download 300 of 500 is 40 under, upload 100 of 200 is 50.
         it("names both when one round puts both under, and the deeper shortfall", () => {
-            const {baselineBelow, baselineShortfall} = verdict({download: 300, upload: 100}, above);
+            const {baselineDirection, baselineShortfall} = verdict({download: 300, upload: 100}, above);
 
-            assert.equal(baselineBelow, "download, upload");
+            assert.equal(baselineDirection, "download, upload");
             assert.equal(baselineShortfall, 50, "the shallower of the two was reported");
         });
 
@@ -253,10 +253,10 @@ describe("baselineVerdict", () => {
          * two directions collapsing where one did.
          */
         it("names only the direction this round crossed", () => {
-            const {baselineBelow, baselineShortfall} =
+            const {baselineDirection, baselineShortfall} =
                 verdict({download: 300, upload: 100}, {download: 300, upload: 200});
 
-            assert.equal(baselineBelow, "upload");
+            assert.equal(baselineDirection, "upload");
             assert.equal(baselineShortfall, 50);
         });
 
@@ -275,16 +275,16 @@ describe("baselineVerdict", () => {
          */
         it("names nothing on a round that crossed nothing", () => {
             for (const [row, previous] of [[above, above], [below, below], [above, below]]) {
-                const {baselineBelow, baselineShortfall} = verdict(row, previous);
+                const {baselineDirection, baselineShortfall} = verdict(row, previous);
 
-                assert.equal(baselineBelow, null);
+                assert.equal(baselineDirection, null);
                 assert.equal(baselineShortfall, null);
             }
         });
     });
 
     describe("when there is nothing to judge against", () => {
-        const quiet = {armed: false, breached: false, baselineBelow: null,
+        const quiet = {armed: false, breached: false, baselineDirection: null,
             baselineShortfall: null, baselineDownload: null, baselineUpload: null};
 
         /**
@@ -301,7 +301,7 @@ describe("baselineVerdict", () => {
          */
         it("is armed but silent while it has no baseline to judge against", () => {
             assert.deepEqual(baselineVerdict(below, above, null, PERCENT),
-                {armed: true, breached: false, baselineBelow: null, baselineShortfall: null,
+                {armed: true, breached: false, baselineDirection: null, baselineShortfall: null,
                     baselineDownload: null, baselineUpload: null});
         });
 

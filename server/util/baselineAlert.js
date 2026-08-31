@@ -163,7 +163,7 @@ const usablePercent = (value) => {
  * carrying a key on one path and not the other - a template reading as
  * unmeasured for a reason nothing on the screen explains.
  */
-const quiet = () => ({armed: false, breached: false, baselineBelow: null,
+const quiet = () => ({armed: false, breached: false, baselineDirection: null,
     baselineShortfall: null, baselineDownload: null, baselineUpload: null});
 
 /**
@@ -329,12 +329,22 @@ export const baselineVerdict = (row, previous, baseline, percent) => {
          * nothing to report - where "0% under" reads as a line sitting exactly
          * on its median, which is a different statement and an untrue one.
          *
+         * Named for the direction rather than for "below", which is the word
+         * this module uses everywhere else. The key is operator-facing: on the
+         * dialog's chip row it stands next to %baselineDownload% and
+         * %baselineUpload%, which are both speeds, and a %baselineBelow% read
+         * there is the speed the alert fires under rather than the name of a
+         * metric - a template would say "dropped below download Mbit/s" and
+         * nothing would refuse it. Not "crossed" either, which is what
+         * %baselineBreached% beside it already means, and that one is a
+         * boolean.
+         *
          * One shortfall, the deepest, and the pair is meant to be read together
          * as "down by at least this much" - the figure worth being woken for.
          * Two numbers positionally matched to two names is a shape a sentence
          * cannot hold.
          */
-        baselineBelow: below.length > 0 ? below.join(METRIC_SEPARATOR) : null,
+        baselineDirection: below.length > 0 ? below.join(METRIC_SEPARATOR) : null,
         baselineShortfall: below.length > 0
             ? Math.max(...below.map((metric) => shortfallOf(row, baseline, metric)))
             : null,

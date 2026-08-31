@@ -67,7 +67,7 @@ const FINISHED_KEYS = [
     // upload collapsing an hour later arrived as two alerts that read
     // identically. Null on a test that crossed nothing, which every template
     // naming them renders as the not-measured mark.
-    "baselineBelow", "baselineShortfall",
+    "baselineDirection", "baselineShortfall",
     // And the yardstick itself, so a message can say what this line usually
     // delivers beside what it just did. The percentage is not here: it is the
     // operator's own setting, on the screen they set it from, where these six

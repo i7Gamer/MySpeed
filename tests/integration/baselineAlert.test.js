@@ -117,7 +117,7 @@ describe("the verdict a stored history produces", () => {
             baselineArmed: true, baselineBreached: true,
             // 300 against the 500 median the history above produces, with
             // upload holding, so the round names one direction.
-            baselineBelow: "download", baselineShortfall: 40,
+            baselineDirection: "download", baselineShortfall: 40,
             baselineDownload: 500, baselineUpload: 200
         });
     });
@@ -287,7 +287,7 @@ describe("what the notifier is actually told", () => {
         await seedHistory(history(target.id));
 
         const id = await createTelegram({alert_only: true,
-            finished_message: "%targetName%: %baselineBelow% %baselineShortfall%% under"});
+            finished_message: "%targetName%: %baselineDirection% %baselineShortfall%% under"});
         try {
             await announce(target, SLOW);
 
