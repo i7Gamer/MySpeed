@@ -128,6 +128,29 @@
   // row instead of sharing it - flex items refuse to shrink past their content.
   min-width: 0
   height: 2.5rem
+
+  /*
+   * The shared field's 0.7rem does not fit inside that height.
+   *
+   * These are border-box, so the padding comes out of the 2.5rem rather than
+   * adding to it: 40px less 11.2 twice less the border leaves 15.6px of
+   * content box for a line that wants 20, and the text was cut off by about
+   * two pixels top and bottom - a box visibly tall enough, clipping anyway.
+   * The height stays, because the rows line up on it, and a field this size
+   * centres its own text without any vertical padding at all.
+   *
+   * Both classes, because .dialog-input writes `padding` as a shorthand and a
+   * longhand of the same specificity does not beat it - which of the two wins
+   * would be decided by the order the bundle happens to put the stylesheets
+   * in. Every element carrying this class carries that one too, so naming both
+   * costs nothing and settles it.
+   *
+   * Only visible since the controls were given the page's typeface: the
+   * browser's UI font sat lower in the same 15.6px and nobody saw it.
+   */
+  &.dialog-input
+    padding-top: 0
+    padding-bottom: 0
   box-sizing: border-box
   margin: 0 !important
   padding: 0.6rem 0.875rem

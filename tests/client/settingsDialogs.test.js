@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readSource, withoutJsComments } from "../helpers/source.js";
-import { compile } from "../helpers/sass.mjs";
+import { compile, rules } from "../helpers/sass.mjs";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const COMPONENTS = path.join(ROOT, "client", "src", "common", "components");
@@ -297,6 +297,59 @@ describe("a setting row in the target editor", () => {
             "the run-settings toggle no longer names itself");
         assert.doesNotMatch(jsx, /className="provider-setting-switch target-tuning-switch"/,
             "the nested toggle took the bordered row style");
+    });
+
+    /**
+     * A field with a fixed height does not also carry the shared field's
+     * vertical padding, or its text is cut off inside it.
+     *
+     * `.dialog-input` pads 0.7rem top and bottom, which is what gives a field
+     * its height when nothing else does. `.provider-input` states a height of
+     * its own - 2.5rem, so the rows line up - and border-box sizing then takes
+     * that padding out of it: 40px, less 11.2 twice, less the border, leaves
+     * **15.6px** of content box for a line that wants **20**. The glyphs were
+     * clipped by about two pixels top and bottom, which is exactly the shape a
+     * reader describes as "somehow doesn't fit" - the box is plainly tall
+     * enough, and the padding inside it is not.
+     *
+     * The typeface reset surfaced this rather than caused it: the browser's UI
+     * font sat lower in the same 15.6px and the clipping went unnoticed.
+     *
+     * The height is deliberately unchanged - the row's alignment depends on
+     * it. The padding goes instead, and a fixed-height field centres its own
+     * text without needing any.
+     */
+    it("leaves a fixed-height field room for its own text", () => {
+        // Found by what each rule declares rather than by position: the editor
+        // scopes a width onto the same class, so a substring search for the
+        // selector finds whichever of them the stylesheet writes first.
+        const bodyOf = (test) => rules(settings).filter(({selector, body}) =>
+            selector.split(",").some((one) => test(one.trim())) && /padding|height/.test(body));
+
+        const sized = bodyOf((one) => one === ".provider-input")
+            .find(({body}) => /height:\s*2\.5rem/.test(body));
+
+        assert.notEqual(sized, undefined,
+            "no .provider-input rule sets the 2.5rem row height; the padding below was removed "
+            + "to fit inside it, so re-anchor this");
+
+        /*
+         * Both classes on the selector, not one. `.dialog-input` writes its
+         * padding as a shorthand, so a longhand at equal specificity does not
+         * beat it - which of them applies would come down to the order the
+         * bundle puts the two stylesheets in, which neither file can see.
+         */
+        const override = bodyOf((one) =>
+            one === ".provider-input.dialog-input" || one === ".dialog-input.provider-input");
+
+        assert.notEqual(override.length, 0,
+            "the padding override no longer names both classes, so .dialog-input's shorthand "
+            + "outranks it whenever the bundle happens to put that stylesheet last");
+
+        const body = override.map(({body}) => body).join("\n");
+        assert.match(body, /padding-top:\s*0/);
+        assert.match(body, /padding-bottom:\s*0/,
+            "the shared 0.7rem padding is back inside a 2.5rem box, which cuts the text");
     });
 
     /**
