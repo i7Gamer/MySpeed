@@ -82,9 +82,7 @@ herunter, lege die Datei in einen Ordner deiner Wahl und starte sie.
 Die Exe legt ihre Daten im Ordner `data` neben dem Verzeichnis ab, aus dem du sie
 startest - starte sie also aus dem Ordner, in dem die Daten liegen sollen. Der
 MSI-Installer installiert nach `C:\Program Files\MySpeed` und legt die Daten
-stattdessen unter `C:\ProgramData\MySpeed` ab. Beim Update einer MSI-Installation von
-1.1.0 oder älter wandert das Programm aus `C:\Program Files (x86)` heraus und die
-vorhandene Datenbank wird an den neuen Ort kopiert.
+stattdessen unter `C:\ProgramData\MySpeed` ab.
 
 #### 🔧 Aus dem Quellcode
 
@@ -164,10 +162,6 @@ den Fall, dass etwas anderes mitliest:
 | `113` | Die Datenbank wurde geöffnet und enthält keine MySpeed-Konfiguration. | Es wurde nichts geändert. Die Daten liegen woanders – den Befehl im Verzeichnis des Servers ausführen. |
 | `114` | Die Konfiguration ist da, der Schreibvorgang ging nicht durch. | **Das Passwort ist unverändert, der Zugang bleibt gesperrt.** Der Pfad stimmt; prüfen, ob die Datenbank von einem anderen Prozess gesperrt und das Verzeichnis beschreibbar ist. |
 
-`113` und `114` sind das Paar, das ein Skript auseinanderhalten sollte: Der erste
-sagt, der Pfad ist falsch und den Daten fehlt nichts, der zweite sagt, der Pfad
-stimmt und die Datenbank braucht Aufmerksamkeit.
-
 #### Einen Reverse Proxy davorsetzen
 
 Das ist der unterstützte Weg. Der Proxy übernimmt TLS und idealerweise auch die
@@ -230,26 +224,6 @@ gibt ein gemeinsames Passwort statt einzelner Benutzerkonten. Zugangsdaten liege
 unverschlüsselt in `data/storage.db`; sichere diese Datei so sorgfältig wie einen
 Passwort-Manager-Export.
 
-### ⬆️ Update auf 1.1.1
-
-Bei Docker genügt weiterhin `docker pull` und den Container neu erstellen – das
-vorhandene Daten-Volume wird beim ersten Start übernommen, da der Server jetzt
-als unprivilegierter Benutzer statt als root läuft.
-
-Zwei Änderungen erfordern eine Entscheidung:
-
-- **Eine Instanz ohne Passwort antwortet dem Netzwerk nicht mehr.** Anfragen von
-  anderen Rechnern werden abgelehnt, bis ein Passwort gesetzt oder das einmalige
-  Setup-Token aus dem Server-Log eingegeben wurde. Lokale Anfragen bleiben
-  unberührt, eine reine LAN-Installation läuft also weiter – mit
-  `ALLOW_NO_PASSWORD=true` lässt sich das alte Verhalten bewusst beibehalten.
-- **Du wirst abgemeldet.** Der Browser speichert das Passwort nicht mehr, sondern
-  hält ein Session-Cookie. Die bestehende Anmeldung wird einmalig übernommen,
-  danach bedeutet ein Server-Neustart eine erneute Anmeldung.
-
-Alles andere – Datenbank, exportierte Konfigurationen, Integrationen, Nodes –
-bleibt unverändert. Ein Migrationsschritt ist nicht nötig.
-
 ### 📸 Beispiel-Screenshots
 
 #### Startseite (Listen-Ansicht)
@@ -267,10 +241,6 @@ bleibt unverändert. Ein Migrationsschritt ist nicht nötig.
 #### Seite während eines Speedtests
 
 <img src=".github/screenshots/speed-test.gif" alt="Seite während eines Speedtests">
-
-## Überzeugt?
-
-Cool, dann lass uns loslegen! Die Installationsanleitung für Linux (und Windows) findest du oben unter Installation.
 
 ## Lizenz
 

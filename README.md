@@ -28,6 +28,7 @@ MySpeed is a speed test analysis software that records your internet speed over 
 - 🔥 Support for Prometheus and Grafana
 - 🗳️ Choose between Ookla, LibreSpeed, Cloudflare and your own iperf3 server
 - 🎯 Measure against several targets in one round - the internet and your own LAN, side by side
+
 ### ⬇️ Installation
 
 #### 🐳 Docker (recommended)
@@ -115,8 +116,6 @@ keeps your database.
 The exe keeps its data in a `data` folder next to the directory you start it from, so
 run it from the folder you want that data to live in. The MSI installs to
 `C:\Program Files\MySpeed` and keeps its data in `C:\ProgramData\MySpeed` instead.
-Upgrading an MSI install from 1.1.0 or earlier moves the program out of
-`C:\Program Files (x86)` and copies the existing database over to the new location.
 
 #### 🔧 From source
 
@@ -193,10 +192,6 @@ else is reading:
 | `113` | The database opened and holds no MySpeed configuration. | Nothing was changed. The data is elsewhere — run the command from the directory the server runs in. |
 | `114` | The configuration is there and the write did not go through. | **The password is unchanged and you are still locked out.** The path is right; check that the database is not locked by another process and that the directory is writable. |
 
-`113` and `114` are the pair worth keeping apart in a script: the first says the
-path is wrong and the data is fine, the second says the path is fine and the
-database needs attention.
-
 #### Put a reverse proxy in front
 
 This is the supported way to expose MySpeed. The proxy terminates TLS and, ideally,
@@ -258,26 +253,6 @@ single shared password rather than per-user accounts. Secrets are stored
 unencrypted in `data/storage.db` — back that file up as carefully as you would a
 password manager export.
 
-### ⬆️ Upgrading to 1.1.1
-
-Docker upgrades are still `docker pull` and recreate — the container takes
-ownership of an existing data volume on first start, because the server now runs
-as an unprivileged user rather than as root.
-
-Two changes need a decision rather than just an upgrade:
-
-- **An instance with no password no longer answers the network.** Requests from
-  other machines are refused until a password is set or the one-time setup token
-  printed in the server log is presented. Local requests are unaffected, so a
-  LAN-only install can carry on as before — set `ALLOW_NO_PASSWORD=true` to keep
-  the old behaviour deliberately.
-- **You are signed out.** The browser no longer stores your password; it holds a
-  session cookie instead. Your existing login is carried over once, and after
-  that a server restart means signing in again.
-
-Everything else — the database, exported configs, integrations, nodes — carries
-over untouched. No migration step is needed.
-
 ### 📸 Example Screenshots
 
 #### Homepage (List View)
@@ -295,10 +270,6 @@ over untouched. No migration step is needed.
 #### Page During a Speed Test
 
 <img src=".github/screenshots/speed-test.gif" alt="Page During a Speed Test">
-
-## Convinced?
-
-Great, let's get started! You can find the installation instructions for Linux (and Windows) at the top under Installation.
 
 ## License
 
