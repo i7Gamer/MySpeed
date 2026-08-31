@@ -631,6 +631,73 @@ const outcomeDeadline = () => new Promise((resolve) => {
     setTimeout(() => resolve(null), OUTCOME_READ_TIMEOUT_MS).unref();
 });
 
+/**
+ * How long a round leaves the line alone between two of its members.
+ *
+ * A speed test saturates the connection, and the buffers along it - the
+ * modem's, the ISP's - are still draining when the CLI exits. Run back to
+ * back, the first member of a round measures an idle line and the third
+ * measures one that has had two saturating transfers pushed through it seconds
+ * earlier. Latency is where that lands hardest, which is exactly what this app
+ * measures as bufferbloat and reports as "under load".
+ *
+ * So a target's POSITION in the round was quietly part of its reading. That is
+ * a bias anywhere; it is a fault in the comparison panels, which put those
+ * readings side by side and invite the operator to read the difference as a
+ * fact about the lines.
+ *
+ * Ten seconds is short enough to be affordable and long enough for a domestic
+ * buffer to drain. It is not tuned against a measurement - a figure that
+ * claimed to be would need one per line, since what is draining is the path's
+ * own queue.
+ *
+ * What it costs, stated: every round grows by ten seconds per member after the
+ * first, so three targets add twenty. On the hourly default that is nothing.
+ * On the every-minute preset a three-target round was already close to the
+ * interval and this pushes it past - the tick that arrives mid-round is
+ * skipped, with "A speedtest round is still running" in the log, which is the
+ * existing and correct behaviour rather than a new failure. An operator
+ * wanting a test every minute against three targets is asking for something
+ * the line cannot deliver honestly regardless of this pause.
+ */
+export const TARGET_SETTLE_MS = 10_000;
+
+// How long the settle waits before looking at the shutdown flag again.
+const SETTLE_SLICE_MS = 250;
+
+/**
+ * Leaves the line alone, without holding a shutdown open for the whole of it.
+ *
+ * Taken in slices with the flag read between them, because the shutdown is a
+ * boolean rather than an event here - see markShutdown. A single sleep would
+ * have the process ignore SIGTERM for as long as the settle lasts, and on the
+ * Windows service that is the window the supervisor gives up in and kills it.
+ *
+ * The seams are injectable for the tests, which have no ten seconds to spend.
+ */
+export const settleLine = async (ms = TARGET_SETTLE_MS,
+    {stopped = isShuttingDown, slice = SETTLE_SLICE_MS} = {}) => {
+
+    const deadline = Date.now() + ms;
+
+    while (!stopped()) {
+        const left = deadline - Date.now();
+        if (left <= 0) return;
+
+        /*
+         * Deliberately NOT unref'd, unlike the deadline timers elsewhere in
+         * this file. Those race a read that is already running; this one is
+         * the work. An unref'd slice lets the loop drain while a round is
+         * mid-flight - node then exits between two members, and on the tests
+         * the promise simply never settles, which is how this was caught.
+         *
+         * It costs nothing at shutdown: the flag is read every slice, so the
+         * longest a settle can hold the process is one of them.
+         */
+        await new Promise((resolve) => { setTimeout(resolve, Math.min(slice, left)); });
+    }
+};
+
 const executeRound = async (type, targetId) => {
     const members = await roundMembers(targetId);
 
@@ -806,6 +873,21 @@ const executeRound = async (type, targetId) => {
                 // proof the database is still there, so the count of members that
                 // could not starts again from here.
                 escapes = 0;
+
+                /*
+                 * The line has just been saturated; the next member measures it
+                 * once it has drained - see TARGET_SETTLE_MS.
+                 *
+                 * Here rather than at the top of the loop, so that only a
+                 * member which actually MEASURED buys the next one its quiet:
+                 * every guard above reaches the next member by `continue` and
+                 * steps over this, and a target that was held, unscheduled or
+                 * paused never touched the line. Not after the last member
+                 * either - that would delay the round's own completion event,
+                 * its healthchecks ping and the latch release, to leave a line
+                 * quiet that nothing is about to measure.
+                 */
+                if (index < members.length - 1) await settleLine();
             } catch (error) {
                 // As far as this member got: a guard that could not read the
                 // table has no fresh row to name, and the snapshot is what it

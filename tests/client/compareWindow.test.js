@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readSource, withoutJsComments } from "../helpers/source.js";
+import { escapeRegExp, readSource, withoutJsComments } from "../helpers/source.js";
 import { compile, rules } from "../helpers/sass.mjs";
 import {
     COMPARE_CHOICES, DEFAULT_COMPARE, compareToParams, parseCompareParams, rangeKey
@@ -286,8 +286,12 @@ describe("the statistics page and its comparison choice", () => {
         assert.match(body, /\{previousWindow && \(/,
             "the note is drawn from the gated payload, so an empty window says nothing at all");
 
+        // Through the shared escaper rather than a dots-only replace of its
+        // own: that one left a backslash in the key unescaped, which is a
+        // pattern meaning something other than the text it was built from.
+        // These keys carry neither today - it is the next key that would.
         for (const key of ["statistics.compare.note", "statistics.compare.empty"])
-            assert.match(body, new RegExp(`t\\("${key.replace(/\./g, "\\.")}",`),
+            assert.match(body, new RegExp(`t\\("${escapeRegExp(key)}",`),
                 `${key} is not a literal call, so nothing checks it against the locales`);
     });
 });
