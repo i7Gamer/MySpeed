@@ -261,3 +261,61 @@ describe("TimeField on touch, where the native clock disagrees", () => {
             "emptying one column leaves half a time, which is not a window");
     });
 });
+
+/**
+ * Three faults found by opening the picker rather than by reading it, each
+ * measured on the running dialog.
+ */
+describe("the picker, as it actually behaved", () => {
+    it("does not treat its own trigger as a click outside", () => {
+        /*
+         * The button could not close the picker. useClickOutside hears the
+         * mousedown, closes, and React flushes that before the click arrives -
+         * so the click read isOpen as false and opened it again. Measured: the
+         * menu was gone after a bare mousedown and back after the click.
+         */
+        assert.match(source, /ignore: \(target\) => !!triggerRef\.current\?\.contains\(target\)/,
+            "the trigger is outside its own menu again, so it cannot close it");
+        assert.match(source, /ref=\{triggerRef\}/);
+    });
+
+    it("centres each column in a pass after the height lands", () => {
+        /*
+         * place() sets the menu's maxHeight as state, so a column is not yet
+         * scrollable in that same pass and a scroll there does nothing at all.
+         * Measured on a stored 23:30: both columns sat at scrollTop 0 with the
+         * chosen rows off-screen.
+         */
+        assert.match(source, /\}, \[isOpen, position\]\)/,
+            "the centring runs before the height that makes a column scrollable");
+        assert.match(source, /centred\.current/, "it re-centres on every scroll and resize");
+    });
+
+    it("centres every column, and only its own scroller", () => {
+        assert.match(source, /querySelectorAll\("\.time-field-chosen"\)/,
+            "querySelector answers the hour alone, so the minutes never move");
+        assert.doesNotMatch(source, /scrollIntoView/,
+            "scrollIntoView walks up and scrolls the page this menu is portalled onto");
+        assert.match(source, /column\.scrollTop =/);
+    });
+});
+
+describe("a select given the shared caret", () => {
+    const dialogCss = compile("common/contexts/Dialog/styles.sass");
+
+    it("fills the wrapper the caret is drawn on", () => {
+        /*
+         * The caret is positioned against the wrapper, so the two have to end
+         * at the same pixel. In the targets manager they did not: .provider-
+         * input's 14rem basis stopped being a share of the row once the select
+         * sat inside a wrapper, leaving the field 224px inside a 314px wrapper
+         * and the caret 86px clear of the control. Measured, not deduced.
+         */
+        const filled = rules(dialogCss).find((rule) => rule.selector === ".select-wrap > .select-field");
+
+        assert.ok(filled, "nothing makes the field fill its wrapper");
+        assert.match(filled.body, /width:\s*100%/);
+        assert.match(filled.body, /flex:\s*1 1 auto/,
+            "a call site that gives the field its own flex basis strands the caret again");
+    });
+});

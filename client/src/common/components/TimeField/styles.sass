@@ -67,6 +67,10 @@
   display: flex
   flex-direction: column
   gap: 2px
+  // So a row's offsetTop is measured against its own column: the centring pass
+  // in TimeField sets scrollTop from it, and without this it would be measured
+  // against the menu and every column would land a header's height out.
+  position: relative
   // 24 hours is taller than any dialog has room for, so the column scrolls
   // rather than the menu growing to hold it. The scrollbar it gets is the one
   // default.sass states for the whole app - a component that draws its own is

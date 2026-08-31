@@ -17,8 +17,33 @@
 // move the odd step further down the list.
 $storage-row-band: 2.375rem
 
+// Wide enough for the longest of these rows in every language it ships in.
+//
+// At 48rem the retention row wrapped: the label went on one line and its select
+// and Save button dropped onto the next, which reads as a broken row rather
+// than as a setting. German was reported, but German is not the worst - it is
+// ninth.
+//
+// Measured on the running dialog rather than picked, by substituting each
+// locale's own strings into the rows and reading back whether the row wrapped.
+// The retention row is the widest in all twenty-three, because it carries a
+// select sized to its longest option - "1 year (default)" - beside the Save
+// button's own floor, and that pair outgrows every label on the other rows.
+//
+// The order, widest first: bg, fr, it, ca, ga, es, pl, nl, de, pt, ru, id, uk,
+// da, cs, ja, nb, tr, en, sv, ko, zh-tw, zh. German is ninth - it was the one
+// reported, but fitting it alone would have left eight languages still wrapped.
+//
+// Bulgarian is the binding case and it is a long way out: "Съхранение на
+// данните" beside that select still wrapped at 58rem, and was 8px short at 60.
+// Hence 62: about 24px of slack, because these are one machine's font metrics
+// and Inter does not rasterise identically on every platform.
+//
+// 95vw still caps it on a narrow screen, where the rows wrap as they always did.
+$storage-dialog-width: 62rem
+
 .storage-dialog-wrapper
-  width: 48rem
+  width: $storage-dialog-width
   max-width: 95vw
 
   .dialog-main

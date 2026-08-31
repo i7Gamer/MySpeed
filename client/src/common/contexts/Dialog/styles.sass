@@ -285,6 +285,22 @@
   // Room for the caret, so a long option does not run underneath it.
   padding-right: 2.25rem
 
+// The field fills the wrapper, whatever the field's own rules say.
+//
+// The caret is drawn on the wrapper, so the two have to end at the same pixel.
+// They did not: the targets manager gives .provider-input a 14rem flex basis,
+// and once the select sat inside a wrapper that basis stopped being a share of
+// the row and became a width inside it - the wrapper took 314px of the row, the
+// select stayed at its 224px basis, and the caret floated 86px clear of the
+// control it belongs to. Measured on the running dialog, not deduced.
+//
+// Stated here rather than by editing each call site's own width, because the
+// rule is a property of this pair: any select given .select-wrap must fill it.
+.select-wrap > .select-field
+  flex: 1 1 auto
+  width: 100%
+  min-width: 0
+
 // Edge's own arrow, which the appearance reset above does not reach.
 .select-field::-ms-expand
   display: none

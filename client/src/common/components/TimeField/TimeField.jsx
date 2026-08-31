@@ -95,8 +95,19 @@ export const TimeField = ({value, onChange, className = "", id, ariaLabel}) => {
     const [position, setPosition] = useState({visibility: "hidden"});
     const inputRef = useRef(null);
     const menuRef = useRef(null);
+    const triggerRef = useRef(null);
+    const centred = useRef(false);
 
-    useClickOutside(isOpen, [inputRef, menuRef], () => setIsOpen(false));
+    /*
+     * The trigger is not "outside", even though no ref holds the menu it opened.
+     *
+     * Without this the button could not close the picker at all: this listener
+     * hears the mousedown and closes, React flushes that before the click
+     * arrives, and the click then reads isOpen as false and opens it again. The
+     * hook carries `ignore` for exactly this case.
+     */
+    useClickOutside(isOpen, [inputRef, menuRef], () => setIsOpen(false),
+        {ignore: (target) => !!triggerRef.current?.contains(target)});
 
     /*
      * Placed against the viewport, and flipped where there is no room below.
@@ -127,11 +138,6 @@ export const TimeField = ({value, onChange, className = "", id, ariaLabel}) => {
 
         place();
 
-        // The hour already set, brought into view: the column opens at midnight
-        // otherwise, and a window starting at 23:00 would show none of itself.
-        menuRef.current?.querySelector(".time-field-chosen")
-            ?.scrollIntoView({block: "center"});
-
         window.addEventListener("resize", place);
         window.addEventListener("scroll", place, true);
 
@@ -140,6 +146,64 @@ export const TimeField = ({value, onChange, className = "", id, ariaLabel}) => {
             window.removeEventListener("scroll", place, true);
         };
     }, [isOpen]);
+
+    /*
+     * Each column opened on the value it already holds.
+     *
+     * A second pass, and that is the whole point of it: the height that makes a
+     * column scrollable arrives as state from place() above, so a scroll
+     * attempted in the same pass finds a column that is not yet scrollable and
+     * silently does nothing - which is what shipped, and why a stored 23:30
+     * opened on 00 in both columns.
+     *
+     * Every column, not the first: querySelector answered the hour alone, so
+     * the minutes would have stayed at the top even once the rest worked.
+     *
+     * scrollTop rather than scrollIntoView, which walks up and scrolls every
+     * scrollable ancestor it finds - and this menu is portalled to the body,
+     * so that includes the page behind the dialog.
+     *
+     * Once per opening, guarded by the ref: place() runs again on every scroll
+     * and resize, and re-centring there would drag the column back under the
+     * reader mid-scroll.
+     */
+    useLayoutEffect(() => {
+        if (!isOpen) {
+            centred.current = false;
+            return;
+        }
+
+        if (centred.current || position.visibility === "hidden") return;
+        centred.current = true;
+
+        /*
+         * Under the sticky header, rather than centred in the column: centring
+         * asks for a scrollTop the browser must clamp for any row near the end,
+         * and anchoring to the top asks for one that is either legal outright or
+         * clamped to the very end, where the row is visible anyway.
+         */
+        const anchor = () => {
+            for (const row of menuRef.current?.querySelectorAll(".time-field-chosen") ?? []) {
+                const column = row.parentElement;
+                const header = column.querySelector(".time-field-head");
+
+                column.scrollTop = row.offsetTop - (header?.offsetHeight ?? 0);
+            }
+        };
+
+        anchor();
+
+        /*
+         * And again on the next frame, because the first pass is clamped against
+         * the scrollHeight of that instant and the menu is still settling:
+         * measured at 772 during the effect and 788 once it had, which left a
+         * stored 23:30 sixteen pixels short with the hour still cut off. The
+         * second pass costs nothing and lands against the final height.
+         */
+        const settled = requestAnimationFrame(anchor);
+
+        return () => cancelAnimationFrame(settled);
+    }, [isOpen, position]);
 
     /** Typed text: masked for the field, normalised for the caller. */
     const publish = (raw) => {
@@ -267,7 +331,7 @@ export const TimeField = ({value, onChange, className = "", id, ariaLabel}) => {
                 onChange={(e) => publish(e.target.value)}
             />
 
-            <button type="button" className="time-field-trigger"
+            <button type="button" className="time-field-trigger" ref={triggerRef}
                     aria-label={ariaLabel} aria-haspopup="dialog" aria-expanded={isOpen}
                     // A mousedown here blurs the field, and the toggle below
                     // would then be fighting a focus that had already moved.
