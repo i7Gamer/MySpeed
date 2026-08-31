@@ -574,14 +574,20 @@ const STATISTICS_QUERY = {attributes: STATISTICS_COLUMNS, raw: true};
  * inside every figure on it, and only the rows themselves can say so. See
  * pageTarget in client/src/common/utils/TargetUtil.js.
  *
- * Exported so a test can hold the extra column in place. Nothing here would
- * break if it were dropped from this list: the rows would simply arrive without
- * it, targetsPresent would answer [null] for every page, and the client reads a
+ * Exported so a test can hold the column in place, because nothing here fails
+ * loudly without it. The rows would simply arrive without a targetId,
+ * targetsPresent would answer [null] for every page, and the client reads a
  * page of nulls as a mixture - so every single-target instance would quietly go
  * back to grading against the instance-wide settings with not one assertion
- * failing.
+ * failing. The failure streak would go the same way in silence: reliabilityOver
+ * groups on this column, and one group is exactly the row-adjacency reading it
+ * was written to replace.
+ *
+ * It rides in STATISTICS_COLUMNS rather than beside it now. It used to be
+ * appended here because the aggregation selected it and read it nowhere, which
+ * that list is not for; the streak reads it, so the list is where it belongs.
  */
-export const SUMMARISED_ROWS_QUERY = {attributes: [...STATISTICS_COLUMNS, "targetId"], raw: true};
+export const SUMMARISED_ROWS_QUERY = {attributes: [...STATISTICS_COLUMNS], raw: true};
 
 /**
  * The distinct targets the summarised rows belong to, a row that names none

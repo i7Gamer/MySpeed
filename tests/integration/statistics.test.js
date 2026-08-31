@@ -806,13 +806,22 @@ describe("GET /api/speedtests/statistics", () => {
         const MS_PER_DAY = 24 * 60 * 60 * 1000;
         let controller;
         let parseDateRange;
+        let utc;
 
         before(async () => {
             controller = await import("../../server/controller/speedtests.js");
             ({parseDateRange} = await import("../../server/util/dateRange.js"));
+
+            // The zone as parseDateRange takes it. Written "Etc/UTC" here, the
+            // third argument was destructured as {offsetMinutes, zone} - both
+            // undefined off a string - so the block silently ran on the host
+            // clock and the pin every other block in this file states with
+            // `tz=` was simply absent from this one.
+            const {zoneFromName} = await import("../../server/util/timezone.js");
+            utc = {zone: zoneFromName("Etc/UTC")};
         });
 
-        const range = () => parseDateRange("2026-08-10", "2026-08-16", "Etc/UTC");
+        const range = () => parseDateRange("2026-08-10", "2026-08-16", utc);
         const afterStart = (days) => new Date(range().from.getTime() + days * MS_PER_DAY);
 
         it("is withheld below a tenth of a day, not rounded up into one", async () => {

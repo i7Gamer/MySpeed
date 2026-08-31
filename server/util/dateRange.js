@@ -110,8 +110,43 @@ const wallDay = (carrier) => Date.UTC(carrier.getUTCFullYear(), carrier.getUTCMo
  * about, and the caller answers "no comparison" rather than a window of no
  * width.
  */
+/** The earliest of several instants, as a Date. */
+const earliest = (...instants) => new Date(Math.min(...instants.map((at) => at.getTime())));
+
+/**
+ * The window, ending no later than an instant that has actually happened.
+ *
+ * One home for the cap, because both branches below need it and each had its
+ * own idea of what "the end" was. Only an end that really moved is partial -
+ * the same rule the elapsed cut keeps, for the same reason.
+ */
+const endingBy = (previous, to) => to.getTime() === previous.to.getTime()
+    ? previous
+    : {...previous, to, partial: true};
+
 export const truncateToElapsed = (range, previous, now = new Date()) => {
-    if (now >= range.to) return previous;
+    /*
+     * Nothing of the comparison window has happened.
+     *
+     * Not reachable while `previous` was always previousRange's answer - a
+     * window immediately before the range is finished whenever the range has
+     * started - but a caller may name any window, and nothing upstream takes a
+     * view on the future: parseCompareWindow and parseDateRange both accept a
+     * date that has not arrived, and the picker's newest selectable day is
+     * today, whose parsed end is tonight.
+     */
+    if (now <= previous.from) return null;
+
+    /*
+     * A finished range still cannot be compared against time that has not
+     * happened. This branch returned `previous` untouched, which was right
+     * while the only window it could be given was a finished one: a July day
+     * compared against today reported the whole of today, twelve hours of
+     * which had not occurred, with no partial flag - so the page printed the
+     * plain sentence and every count read about half.
+     */
+    if (now >= range.to) return endingBy(previous, earliest(previous.to, now));
+
     if (now < range.from) return null;
 
     const zone = previous.zone;
@@ -131,16 +166,15 @@ export const truncateToElapsed = (range, previous, now = new Date()) => {
 
     // The clamp is for a cut the skipped hour pushed past the window's own end
     // on its last day - and, since a caller may name a comparison window of
-    // its own length, for one that simply ends before the elapsed offset.
-    const to = new Date(Math.min(cut.getTime(), previous.to.getTime()));
-
+    // its own length, for one that simply ends before the elapsed offset. `now`
+    // is in the same list because a named window can sit ahead of the range it
+    // is compared against, where the elapsed offset lands in the future.
+    //
     // Only a cut that actually moved the end is a partial window. A window
     // shorter than the elapsed offset is answered with the whole of itself,
     // which it is - and calling that "up to the same time of day" puts the
     // partial sentence under a comparison that covers all of its own window.
-    return to.getTime() === previous.to.getTime()
-        ? previous
-        : {...previous, to, partial: true};
+    return endingBy(previous, earliest(cut, previous.to, now));
 };
 
 export const parseDateRange = (from, to, {offsetMinutes, zone} = {}) => {

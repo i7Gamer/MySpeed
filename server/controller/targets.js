@@ -153,7 +153,22 @@ export const iperfTuningProblem = (target) => {
      * false is not a setting, it is every target on every provider once the
      * column exists - so reading it as "named" the way the numbers above are
      * would refuse every ookla target the moment a backup was restored.
+     *
+     * Judged before it is coerced, and judged here rather than in the chain
+     * below because this is the line that decides what it means. Left to
+     * `Boolean` alone, the value this function judged and the value the column
+     * stored disagreed: "false" read as a UDP target, so the bitrate was
+     * demanded and the row accepted, while sequelize's BOOLEAN sanitised the
+     * same string to false on the way in. What landed was `iperfUdp = 0` beside
+     * a bitrate - the one pair the rule below exists to refuse - measuring TCP
+     * forever, and refused by every later PATCH naming a field the dialog does
+     * not draw. flagProblem's own docstring names this trap for the two flags
+     * beside it: a `Boolean("false")` that is true is a worse surprise than a
+     * 400.
      */
+    const flag = flagProblem(target.iperfUdp, "UDP");
+    if (flag !== null) return flag;
+
     const udp = Boolean(target.iperfUdp);
 
     if (named.length === 0 && !udp) return null;

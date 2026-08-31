@@ -364,6 +364,37 @@ describe("what a UDP target may ask for", () => {
             "a UDP run over the one stream it may use was refused");
     });
 
+    /**
+     * The mode is a flag and is held to being one, which the two flags beside
+     * it already are - flagProblem's own docstring names this exact trap:
+     * "for a value arriving over the API, `Boolean(\"false\")` being true is a
+     * worse surprise than a 400 naming the field".
+     *
+     * Left coerced, the judged value and the stored value disagree. The door
+     * reads `Boolean("false")` as a UDP target, finds the bitrate it requires
+     * and answers 200; sequelize's BOOLEAN then sanitises the string to false,
+     * so the row lands as `iperfUdp = 0, iperfBitrate = 500` - the exact pair
+     * this file refuses two tests above. The run measures TCP forever, the
+     * dialog reopens with the toggle off and the bitrate undrawn, and every
+     * later PATCH is refused naming a field nothing on screen shows.
+     */
+    it("refuses a mode that is not a flag", () => {
+        for (const shape of ["false", "true", "yes", 2, "", []])
+            assert.notEqual(iperfTuningProblem(udp({iperfUdp: shape})), null,
+                `${JSON.stringify(shape)} was taken as the datagram mode`);
+    });
+
+    // And the shapes sqlite and JSON legitimately deliver, which the flag rule
+    // beside it already takes: 0/1 from a raw read, true/false from a body.
+    it("takes the flag in every shape a row or a body carries it", () => {
+        assert.equal(iperfTuningProblem(udp({iperfUdp: true})), null);
+        assert.equal(iperfTuningProblem(udp({iperfUdp: 1})), null);
+
+        for (const off of [false, 0])
+            assert.equal(iperfTuningProblem({provider: "iperf3", endpoint: "nas.lan",
+                iperfUdp: off}), null, `${JSON.stringify(off)} was refused as "not UDP"`);
+    });
+
     it("refuses datagrams on a provider that runs no iperf3", () => {
         assert.notEqual(iperfTuningProblem({provider: "ookla", iperfUdp: true, iperfBitrate: 100}),
             null);

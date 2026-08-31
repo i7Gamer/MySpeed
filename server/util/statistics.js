@@ -19,7 +19,12 @@ export const TARGET_CHART_POINTS = 300;
  * in step.
  */
 export const STATISTICS_COLUMNS = ["created", "error", "ping", "jitter", "download", "upload",
-    "time", "packetLoss", "downloadLatency", "uploadLatency", "bytesDownloaded", "bytesUploaded"];
+    "time", "packetLoss", "downloadLatency", "uploadLatency", "bytesDownloaded", "bytesUploaded",
+    // Which line each row measured. Not aggregated by - every figure here is
+    // still about the whole selection - but the failure streak is a claim about
+    // one target, and on the unfiltered path no two rows in a row belong to the
+    // same one. See reliabilityOver.
+    "targetId"];
 
 /**
  * How far the client may push the resolution of a chart.
@@ -486,10 +491,27 @@ const MS_PER_SECOND = 1000;
  */
 const reliabilityOver = (sorted) => {
     let longest = null;
-    let current = null;
     let lastFailureAt = null;
     let largestGap = null;
     let previous = null;
+
+    /*
+     * A streak belongs to one target, and this timeline is every target
+     * interleaved.
+     *
+     * Read as row-adjacency it was wrong in both directions on any instance
+     * with more than one target, and plausible on screen both times: a NAS
+     * that failed every run for a week reported a streak of 1, because a
+     * working WAN test sat between each of its failures - and one bad round on
+     * four targets reported 4, which reads as an outage and was four different
+     * lines blinking once. The digest is instance-wide by construction, so its
+     * headline outage figure was the one nothing on screen could correct.
+     *
+     * Keyed on the id with null for absent, so a history from before targets
+     * existed and a single-target instance are each one line and read exactly
+     * as they did.
+     */
+    const running = new Map();
 
     for (const entry of sorted) {
         if (previous !== null) {
@@ -501,15 +523,21 @@ const reliabilityOver = (sorted) => {
         }
         previous = entry;
 
+        const line = entry.targetId ?? null;
+
         if (!isFailedTest(entry)) {
-            current = null;
+            running.delete(line);
             continue;
         }
 
         lastFailureAt = entry.created;
-        current = current === null
+
+        const carried = running.get(line);
+        const current = carried === undefined
             ? {count: 1, from: entry.created, to: entry.created}
-            : {count: current.count + 1, from: current.from, to: entry.created};
+            : {count: carried.count + 1, from: carried.from, to: entry.created};
+
+        running.set(line, current);
 
         if (longest === null || current.count > longest.count) longest = {...current};
     }
