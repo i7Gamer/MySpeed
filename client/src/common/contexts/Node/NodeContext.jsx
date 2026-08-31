@@ -100,6 +100,10 @@ export const NodeProvider = (props) => {
     useEffect(() => {
         if (!configLoaded) return;
         if (!config.viewMode) updateNodes();
+        // updateNodes is the omission the docblock above argues for, not one
+        // nobody noticed: listing it puts the refetch back on every identity
+        // reloadConfig hands out, which is the race this keying removed.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [configLoaded, config.viewMode]);
 
     const updateCurrentNode = useCallback((node) => {

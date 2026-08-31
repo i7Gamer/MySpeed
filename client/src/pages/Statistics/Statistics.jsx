@@ -403,7 +403,11 @@ export const Statistics = () => {
             });
         });
         // currentNode: see its destructure above - a page whose requests have
-        // been re-aimed under it has to re-ask.
+        // been re-aimed under it has to re-ask. The rule cannot see that
+        // dependency, since what the value changes is where the api module
+        // points rather than anything named in this callback, and reads it as
+        // one to drop.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dateRange, currentNode, targetFilter, compare]);
 
     const handleTimeframeChange = useCallback((timeframe) => {

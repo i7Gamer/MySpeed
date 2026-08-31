@@ -10,7 +10,6 @@ import { REGISTRY, descriptor, iperfRunSeconds, splitEndpoint, binaryPath as pro
 import { measureLatency } from './providers/iperfLatency.js';
 import { toErrorMessage } from './helpers.js';
 import fs from 'node:fs';
-import path from 'node:path';
 
 const MS_PER_SECOND = 1000;
 const CLI_TIMEOUT = 180 * MS_PER_SECOND;

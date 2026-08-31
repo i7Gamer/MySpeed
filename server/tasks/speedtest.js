@@ -1,6 +1,5 @@
 import speedTest, { isShuttingDown } from '../util/speedtest.js';
 import * as tests from '../controller/speedtests.js';
-import * as config from '../controller/config.js';
 import * as controller from "../controller/recommendations.js";
 import * as parseData from '../util/providers/parseData.js';
 import { setState, sendRunning, sendError, sendFinished, sendRoundFinished, watchedFailureStands }
