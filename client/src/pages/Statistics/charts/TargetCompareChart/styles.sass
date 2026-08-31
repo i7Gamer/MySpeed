@@ -64,6 +64,12 @@
     tbody tr
       border-bottom: 1px solid rgba(255, 255, 255, 0.04)
 
+      // A separator between rows, and the last row has nothing under it to be
+      // separated from: the line there reads as a second edge drawn a few
+      // pixels inside the panel's own.
+      &:last-child
+        border-bottom: none
+
     // Under the figure rather than beside it - AverageChart's own answer to
     // the same question. Four figures each grown by a nowrap annotation is
     // some 240px this table does not have, and the delta is the half of the

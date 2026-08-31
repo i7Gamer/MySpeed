@@ -21,6 +21,21 @@
   > .target-chips
     margin-bottom: 0
 
+  /*
+   * The comparison table is as tall as its rows.
+   *
+   * Every card takes a 14rem floor from .stats-content, which is there so a
+   * small value card does not look cramped beside the taller line-mates it
+   * shares a row with. This one shares a row with nothing - it spans the width
+   * at every stage - so the floor buys it nothing and left three target rows
+   * sitting in a box with six rems of air beneath them.
+   *
+   * Here rather than in the container's own stylesheet, which says in as many
+   * words that what a card does on this page is decided in this file.
+   */
+  > .container-wide .stats-content
+    min-height: 0
+
 .statistic-stale
   opacity: 0.7
   transition: opacity 0.2s ease

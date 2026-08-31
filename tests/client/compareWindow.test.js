@@ -363,6 +363,52 @@ describe("the comparison row beside the target chips", () => {
     });
 
     /**
+     * The button is as wide as its widest possible label, and the menu is
+     * exactly as wide as the button.
+     *
+     * Two faults that read as one. The button sized itself to whatever was
+     * chosen, so picking "1 year earlier" after "3 months earlier" shrank it
+     * and moved the sentence beside it - a control that changes size when you
+     * use it. And the menu asked for `min-width: 100%` under `box-sizing:
+     * content-box`, which makes that 100% the CONTENT box: the menu came out
+     * its padding and border wider than the button it hangs from, overhanging
+     * it on the left by ten pixels.
+     *
+     * A min-width in rem answers neither. "1 bhliain níos luaithe" is half
+     * again as long as "1 year earlier", so one number is either too wide for
+     * English or too narrow for Irish - and it would still be a guess about
+     * the twenty-three languages nobody measured. The button carries every
+     * label instead, stacked in one grid cell behind the chosen one, so its
+     * width is the widest of them in whatever language is loaded.
+     */
+    it("keeps one width whatever is chosen, and gives the menu the same one", () => {
+        const sheet = compile("pages/Statistics/components/CompareSelect/styles.sass");
+        const source = readSource(
+            "client/src/pages/Statistics/components/CompareSelect/CompareSelect.jsx");
+        const menu = ruleFor(sheet, ".compare-select-menu");
+
+        assert.match(source, /className="compare-select-sizer" aria-hidden="true"/,
+            "the button no longer carries every label, so it resizes as the choice moves");
+        // Any rule that names this selector, rather than a rule that names
+        // only it: the sizer stacks its children the same way, and saying so
+        // once in a selector list is the honest spelling of that.
+        const stacked = rules(sheet)
+            .filter((rule) => rule.selector.split(",").some((one) => one.trim() === ".compare-select-value > *"))
+            .map((rule) => rule.body).join("\n");
+
+        assert.match(stacked, /grid-area:\s*1\s*\/\s*1/,
+            "the labels no longer share one cell, so they stack into a column instead of overlapping");
+
+        assert.equal(value(menu, "left"), "0");
+        assert.equal(value(menu, "right"), "0",
+            "the menu is pinned on one side only, so it takes its own width rather than the button's");
+        assert.equal(value(menu, "box-sizing"), "border-box",
+            "content-box makes the menu its padding and border wider than the button it hangs from");
+        assert.equal(value(menu, "min-width"), null,
+            "a width floor is back beside the pinned edges, which can only disagree with them");
+    });
+
+    /**
      * And the menu measures itself against the button it drops from, not
      * against the button and its label together.
      *

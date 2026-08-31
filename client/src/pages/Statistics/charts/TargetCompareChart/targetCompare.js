@@ -100,6 +100,60 @@ export const mergedTimeline = (seriesList) => {
 };
 
 /**
+ * One reading per target, each the nearest to a position on the x axis - the
+ * selection behind the overlay's tooltip.
+ *
+ * The tooltip has to name every target at the hovered moment, which is the
+ * whole reason for drawing them on one plot. None of chart.js's own modes can:
+ *
+ *   - `nearest` answers with a single point, by construction.
+ *   - `index` reads one position from every dataset, which means the same
+ *     moment in each only where they share a label array. Laying every target
+ *     onto one timeline gets that far and no further: a round tests its
+ *     targets one after another, so their instants differ by the seconds the
+ *     tests took and land on adjacent entries. Tried against the real page,
+ *     and the tooltip named one target per entry.
+ *   - `x` collects everything within a point's radius plus its hit radius of
+ *     the cursor - under two pixels on a week of five-minute tests, so hovering
+ *     produced no tooltip at all. Widening the hit radius to fix that makes a
+ *     dense series match several of its OWN points, and the tooltip lists one
+ *     target three times.
+ *
+ * So: nearest, but per dataset, which is one entry each by construction.
+ *
+ * The tolerance is in PIXELS rather than in seconds, because the question this
+ * answers is "what is under the cursor" - a reader who sees two points at one
+ * x should be told about both, and how many minutes apart they are is a fact
+ * about the zoom rather than about the readings.
+ *
+ * @param datasets  [{index, points: [{x, skip}]}] in chart order
+ * @param x         the hovered position, in the points' own pixel space
+ * @param tolerance how far a reading may be and still count as under the cursor
+ */
+export const nearestPerDataset = (datasets, x, tolerance) => {
+    const found = [];
+
+    for (const dataset of datasets ?? []) {
+        let best = null;
+
+        for (const [index, point] of (dataset.points ?? []).entries()) {
+            // A skipped point is a gap in the series - there is no reading
+            // there to report, and its coordinates are whatever the layout
+            // left behind.
+            if (point?.skip || !Number.isFinite(point?.x)) continue;
+
+            const distance = Math.abs(point.x - x);
+            if (best === null || distance < best.distance) best = {index, distance};
+        }
+
+        if (best !== null && best.distance <= tolerance)
+            found.push({datasetIndex: dataset.index, index: best.index});
+    }
+
+    return found;
+};
+
+/**
  * The series the overlay draws for one metric: a target's own labels and its
  * own values, colour-indexed by LIST position - a series that skipped a
  * payload-less neighbour must not take that neighbour's colour with it.

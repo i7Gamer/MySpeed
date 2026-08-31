@@ -298,6 +298,40 @@ describe("a setting row in the target editor", () => {
         assert.doesNotMatch(jsx, /className="provider-setting-switch target-tuning-switch"/,
             "the nested toggle took the bordered row style");
     });
+
+    /**
+     * And that row stacks, because it is the one row whose control is not a
+     * control but three of them: a label, two number fields, and the mode
+     * toggle underneath.
+     *
+     * `.provider-setting` is a row - a label on the left and one field on the
+     * right - which is right for every other setting here and wrong for this
+     * one. Laid out as a row, the three blocks became three columns: the
+     * fields and the switch took an equal share each, the label was squeezed
+     * to 52px with its own heading 64px wide overflowing it, and the two
+     * number fields wrapped into a stack tall enough that "Run settings" was
+     * drawn across "Parallel streams".
+     *
+     * The modifier class was already written on the row in the JSX for this,
+     * and the rule it names was never written - so the class said the row was
+     * special and the stylesheet treated it like every other. Both halves of
+     * the pair are read here, because the class alone changes nothing and the
+     * rule alone is dead.
+     */
+    it("stacks the run-settings row rather than laying it out as three columns", () => {
+        const jsx = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+        const rule = ruleFor(settings, ".target-tuning-setting");
+
+        assert.match(jsx, /className="provider-setting target-tuning-setting"/,
+            "the run-settings row no longer marks itself as the one that stacks");
+        assert.notEqual(rule, null,
+            ".target-tuning-setting is named in the JSX and styled nowhere, so the row is laid "
+            + "out as three columns and the label is crushed under its own heading");
+        assert.match(rule, /flex-direction:\s*column/,
+            "the row lays its label, its fields and its toggle out side by side");
+        assert.match(rule, /align-items:\s*stretch/,
+            "centred items leave the full-width fields and toggle sized to their content");
+    });
 });
 
 /**

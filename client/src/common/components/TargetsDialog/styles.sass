@@ -304,6 +304,26 @@
     &-actions
       margin-left: auto
 
+/*
+ * The one setting row whose control is not a control but three of them: a
+ * label, the two number fields, and the mode toggle underneath.
+ *
+ * .provider-setting is a row - label left, one field right - which is what
+ * every other setting here is and exactly what this one is not. Laid out that
+ * way the three blocks became three columns of a 512px dialog: the fields and
+ * the switch took 214px each, the label was left with 52px to draw a heading
+ * 64px wide, and the two number fields wrapped into a stack tall enough that
+ * "Run settings" was printed across "Parallel streams".
+ *
+ * stretch rather than the row's centre, so the two blocks below take the width
+ * they both ask for - each states `width: 100%`, which a centred cross axis
+ * measures against their content instead.
+ */
+.target-tuning-setting
+  flex-direction: column
+  align-items: stretch
+  gap: 0.75rem
+
 // The run's own shape: two short number fields side by side under one label,
 // because they are one decision - how long and how wide - and stacking them
 // gave the dialog two more full-width rows for figures that want four

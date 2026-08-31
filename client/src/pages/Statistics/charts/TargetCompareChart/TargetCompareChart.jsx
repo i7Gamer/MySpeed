@@ -10,7 +10,9 @@ import {clickable} from "@/common/utils/Clickable";
 import {useChartTheme} from "@/pages/Statistics/charts/useChartTheme";
 import {isSingleDaySeries, lineChartOptions, timePoints} from "@/pages/Statistics/charts/lineChartConfig";
 import {lineTensionFor, lonePointHoverRadius, lonePointRadius, pointStyleFor} from "@/pages/Statistics/charts/pointDensity";
-import {mergedTimeline, overlaySeries} from "./targetCompare";
+import {Interaction} from "chart.js";
+import {getRelativePosition} from "chart.js/helpers";
+import {mergedTimeline, nearestPerDataset, overlaySeries} from "./targetCompare";
 // .chart-container and its header/body, borrowed the way PingChart borrows
 // them: these three are that row's siblings, and the shared stylesheet is what
 // makes them size and expand identically rather than nearly so.
@@ -33,6 +35,45 @@ const METRIC_TITLES = {
 // The stock options close over a per-point error list; this chart draws no
 // failure markers, so there is nothing for the callback to find.
 const NO_ERRORS = [];
+
+/**
+ * How far from the cursor a target's reading still counts as under it.
+ *
+ * In pixels, and the unit is the argument: a reader sees points, not
+ * timestamps, and two readings drawn at the same place should be reported
+ * together however many minutes apart the zoom makes them. Twelve is about a
+ * fingertip - wide enough that the plot answers wherever it is hovered, short
+ * of the ~20px at which two visibly separate rounds start being read as one.
+ */
+const HOVER_TOLERANCE_PX = 12;
+
+// The mode's name in chart.js's own registry, which is global: a second
+// registration under this name would silently replace this one, so it is
+// stated once here and used by name below.
+const COMPARE_HOVER_MODE = "nearestPerTarget";
+
+/*
+ * Registered at import, beside the only chart that asks for it.
+ *
+ * chart.js resolves an interaction mode by name out of a shared registry, so
+ * this has to exist before the first render rather than be built per chart -
+ * and being shared, it is deliberately named for what it does rather than for
+ * this component, since anything else drawing several series of one quantity
+ * wants exactly this.
+ */
+Interaction.modes[COMPARE_HOVER_MODE] = (chart, event, options, useFinalPosition) => {
+    const position = getRelativePosition(event, chart);
+
+    const datasets = chart.getSortedVisibleDatasetMetas().map((meta) => ({
+        index: meta.index,
+        points: meta.data.map((element) => element.getProps(["x", "skip"], useFinalPosition))
+    }));
+
+    return nearestPerDataset(datasets, position.x, HOVER_TOLERANCE_PX)
+        .map(({datasetIndex, index}) => ({
+            element: chart.getDatasetMeta(datasetIndex).data[index], datasetIndex, index
+        }));
+};
 
 /**
  * One metric's targets, overlaid - the payoff the chips only filter towards.
@@ -62,7 +103,9 @@ export const TargetCompareChart = ({targets, statsById, fresh, metric, compact =
 
     // The union of the targets' instants feeds only the axis - span, step and
     // the single-day tick format. The datasets keep their own labels: the x
-    // axis is linear epoch time, so disjoint instants share it natively.
+    // axis is linear epoch time, so disjoint instants share it natively, and
+    // the tooltip reaches across them by pixel rather than by index - see
+    // nearestPerDataset.
     const merged = useMemo(() => mergedTimeline(series), [series]);
 
     /*
@@ -97,13 +140,30 @@ export const TargetCompareChart = ({targets, statsById, fresh, metric, compact =
         });
 
         /*
-         * Index mode assumes every dataset shares one label array; these
-         * datasets each keep their own, so the nearest single point is the
-         * honest answer. axis stated explicitly - the shared builder leaves
-         * it to the mode's default, and a later axis added there must not
-         * silently retarget this chart.
+         * Every target at the hovered moment, which is the whole point of
+         * drawing them on one plot: a tooltip naming one line makes the reader
+         * hover three times and hold two numbers in their head to compare
+         * them.
+         *
+         * The mode registered above rather than one of chart.js's own - see
+         * nearestPerDataset for why none of the three fit, each having been
+         * tried against the real page. axis stated explicitly: the shared
+         * builder leaves it to the mode's default, and a later axis added
+         * there must not silently retarget this chart.
          */
-        options.interaction = {mode: "nearest", axis: "xy", intersect: false};
+        options.interaction = {mode: COMPARE_HOVER_MODE, axis: "x", intersect: false};
+
+        /*
+         * Only the targets that actually measured at this instant.
+         *
+         * Index mode hands the tooltip one entry per dataset whether or not
+         * that dataset has a reading there, so every instant only one target
+         * was tested at would otherwise list the other two with an empty
+         * figure beside their names - which reads as "measured nothing"
+         * rather than "was not measured".
+         */
+        options.plugins.tooltip.filter = (item) => item.parsed?.y !== null
+            && item.parsed?.y !== undefined;
 
         options.plugins.tooltip.callbacks = {
             // The stock title reads labels[dataIndex], which names another

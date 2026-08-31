@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { targetColour, targetSeriesToken } from "@/common/utils/TargetUtil.js";
-import { mergedTimeline, overlaySeries, targetSummaries } from "@/pages/Statistics/charts/TargetCompareChart/targetCompare.js";
+import { mergedTimeline, nearestPerDataset, overlaySeries, targetSummaries } from "@/pages/Statistics/charts/TargetCompareChart/targetCompare.js";
 
 /**
  * The comparison card's figures, computed where node can execute them.
@@ -228,6 +228,82 @@ describe("overlaySeries", () => {
  * must resolve the same token for the same target, and the canvas cannot read
  * a var() - so the token is the shared fact and the var is derived from it.
  */
+/**
+ * The selection behind the overlay's tooltip: one reading per target, each the
+ * nearest to where the cursor is.
+ *
+ * The tooltip has to name every target at the hovered moment, and none of
+ * chart.js's own modes does. Each was tried against the real page: `nearest`
+ * answers with a single point by construction; `index` reads one position from
+ * every dataset, which lines up only where they share a label array, and a
+ * round tests its targets seconds apart so they land on adjacent entries; `x`
+ * collects what is within a point's radius plus its hit radius, under two
+ * pixels on a week of five-minute tests, and produced no tooltip at all -
+ * while widening that radius makes a dense series match several of its own
+ * points and name one target three times.
+ */
+describe("nearestPerDataset", () => {
+    const points = (...xs) => xs.map((x) => (x === null ? {skip: true} : {x}));
+
+    it("takes one reading from each target, the nearest to the cursor", () => {
+        const found = nearestPerDataset([
+            {index: 0, points: points(10, 100, 200)},
+            {index: 1, points: points(12, 103, 205)}
+        ], 102, 12);
+
+        assert.deepEqual(found, [{datasetIndex: 0, index: 1}, {datasetIndex: 1, index: 1}],
+            "a round's targets are seconds apart and must be reported together");
+    });
+
+    /**
+     * One entry per dataset whatever the spacing, which is the property the
+     * mode exists for: `x` mode collects every point in range and lists a
+     * dense series several times over.
+     */
+    it("never names one target twice, however close its own readings are", () => {
+        const found = nearestPerDataset([{index: 0, points: points(98, 100, 102, 104)}], 101, 12);
+
+        assert.deepEqual(found, [{datasetIndex: 0, index: 1}]);
+    });
+
+    // A target that has no reading near the cursor is absent rather than
+    // answered for by its nearest reading from another hour.
+    it("leaves out a target whose nearest reading is too far", () => {
+        const found = nearestPerDataset([
+            {index: 0, points: points(100)},
+            {index: 1, points: points(400)}
+        ], 100, 12);
+
+        assert.deepEqual(found, [{datasetIndex: 0, index: 0}]);
+    });
+
+    it("counts the tolerance inclusively, on either side", () => {
+        assert.deepEqual(nearestPerDataset([{index: 0, points: points(112)}], 100, 12),
+            [{datasetIndex: 0, index: 0}]);
+        assert.deepEqual(nearestPerDataset([{index: 0, points: points(88)}], 100, 12),
+            [{datasetIndex: 0, index: 0}]);
+        assert.deepEqual(nearestPerDataset([{index: 0, points: points(113)}], 100, 12), []);
+    });
+
+    /**
+     * A skipped point is a gap - the target measured nothing there - and its
+     * coordinates are whatever the layout left behind, so reporting it would
+     * be reporting a position rather than a reading.
+     */
+    it("passes over a gap to reach the target's real reading", () => {
+        const found = nearestPerDataset([{index: 0, points: points(99, null, 105)}], 100, 12);
+
+        assert.deepEqual(found, [{datasetIndex: 0, index: 0}]);
+        assert.deepEqual(nearestPerDataset([{index: 0, points: points(null)}], 100, 12), []);
+    });
+
+    it("answers nothing for no datasets and for none given", () => {
+        assert.deepEqual(nearestPerDataset([], 100, 12), []);
+        assert.deepEqual(nearestPerDataset(undefined, 100, 12), []);
+        assert.deepEqual(nearestPerDataset([{index: 0, points: []}], 100, 12), []);
+    });
+});
+
 describe("the colour cycle", () => {
     it("keeps targetColour exactly the token wrapped in its var()", () => {
         for (const index of [0, 1, 2, 3, 4, 5, 6, 11, -1])

@@ -79,7 +79,32 @@ export const CompareSelect = ({value, onChange}) => {
                     aria-labelledby="compare-select-label compare-select-value"
                 >
                     <FontAwesomeIcon icon={faClockRotateLeft} className="compare-select-icon"/>
-                    <span id="compare-select-value">{t(`statistics.compare.choice.${value}`)}</span>
+
+                    {/* The chosen label, and every other one stacked in the
+                        same grid cell behind it.
+
+                        The button is then as wide as its widest possible
+                        label rather than as its current one, so choosing a
+                        different offset does not resize the control or move
+                        the sentence beside it. A min-width in rem cannot do
+                        this: "1 bhliain níos luaithe" is half again as long
+                        as "1 year earlier", so one number is either too wide
+                        for English or too narrow for Irish, and a guess about
+                        the twenty-one languages between them.
+
+                        aria-hidden, so the six shadow labels are not read out
+                        and do not join the button's accessible name - which is
+                        computed from this element by aria-labelledby, and
+                        skips hidden nodes. */}
+                    <span id="compare-select-value" className="compare-select-value">
+                        <span>{t(`statistics.compare.choice.${value}`)}</span>
+                        <span className="compare-select-sizer" aria-hidden="true">
+                            {COMPARE_CHOICES.map((choice) => (
+                                <span key={choice}>{t(`statistics.compare.choice.${choice}`)}</span>
+                            ))}
+                        </span>
+                    </span>
+
                     <FontAwesomeIcon icon={faChevronDown}
                                      className={`compare-select-chevron${isOpen ? " open" : ""}`}/>
                 </button>

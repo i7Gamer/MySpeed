@@ -188,14 +188,52 @@ describe("the comparison panels on the statistics page", () => {
 
 describe("the overlay chart", () => {
     /**
-     * The shared options assume every dataset reads one label array - index
-     * mode resolves one index and takes it from EVERY series, and these
-     * series each keep their own instants. Nearest is the honest answer, and
-     * the axis is stated so a later default added to the shared builder
-     * cannot silently retarget this chart.
+     * Every target at the hovered instant, which is what putting them on one
+     * plot is for - a tooltip naming one line makes the reader hover three
+     * times and hold two numbers in their head.
+     *
+     * The same mode the single-target charts use, which works here for the
+     * same reason it works there: alignedValues lays every dataset onto one
+     * timeline, so an index is one moment across all of them.
+     *
+     * Both alternatives were tried against the real page. `nearest` answers
+     * with a single point, by construction. `x` collects the points within a
+     * few pixels of the cursor - the point's radius plus its hit radius, under
+     * two pixels on a week of five-minute tests - and hovering produced no
+     * tooltip at all, which is why the shared timeline is not optional here.
+     *
+     * The axis is stated so a later default added to the shared builder cannot
+     * silently retarget this chart.
      */
-    it("interacts by nearest point, axis stated", () => {
-        assert.match(card, /options\.interaction = \{mode: "nearest", axis: "xy", intersect: false\};/);
+    it("names every target at the hovered instant", () => {
+        assert.match(card, /options\.interaction = \{mode: COMPARE_HOVER_MODE, axis: "x", intersect: false\};/,
+            "the tooltip is back to naming a single line, so the overlay cannot be read across");
+        assert.match(card, /Interaction\.modes\[COMPARE_HOVER_MODE\] =/,
+            "the mode is named but never registered, so chart.js falls back to its default");
+        assert.match(card, /nearestPerDataset\(datasets, position\.x, HOVER_TOLERANCE_PX\)/,
+            "the registered mode no longer asks each target for its own nearest reading");
+    });
+
+    /**
+     * The tolerance is a pixel distance and says so. In seconds it would be a
+     * claim about the data - "these two readings are the same moment" - where
+     * what is actually being answered is "these two are under the cursor",
+     * which changes with the zoom and not with the tests.
+     */
+    it("measures the cursor's reach in pixels", () => {
+        assert.match(card, /const HOVER_TOLERANCE_PX = \d+;/,
+            "the hover reach is unnamed or is no longer stated in pixels");
+    });
+
+    /**
+     * And only the targets that measured there. A dataset can carry a null of
+     * its own - a test that failed - and an entry naming a target with an
+     * empty figure beside it reads as "measured nothing" rather than "was not
+     * measured".
+     */
+    it("leaves out a target that has no reading there", () => {
+        assert.match(card, /options\.plugins\.tooltip\.filter = \(item\) => item\.parsed\?\.y !== null/,
+            "a target with no reading at the hovered instant is listed with a blank figure");
     });
 
     it("titles the tooltip from the point's own instant", () => {
@@ -324,6 +362,39 @@ describe("the panels' stylesheet", () => {
     it("stacks the delta under its figure", () => {
         assert.match(cardStyles, /tbody td \.stat-delta/,
             "the deltas widen every column of the table instead of stacking");
+    });
+
+    /**
+     * The rules between the rows are separators, and the last row has nothing
+     * under it to be separated from - so the line there is an edge drawn
+     * inside an edge, a second border a few pixels above the panel's own.
+     */
+    it("draws no rule under the last row", () => {
+        const rows = cardStyles.slice(cardStyles.indexOf("tbody tr"));
+
+        assert.match(rows, /&:last-child\s*\n\s*border-bottom: none/,
+            "the bottom row keeps its separator, which reads as a line above the panel's edge");
+    });
+
+    /**
+     * And the panel is as tall as the table in it.
+     *
+     * Every card takes a 14rem floor from .stats-content, which is there so
+     * that the small value cards do not look cramped beside their taller
+     * line-mates. This one shares no row with anything - it is the full-width
+     * card at the bottom - so the floor buys it nothing and simply left three
+     * target rows sitting in a box with six rems of air under them.
+     *
+     * Written where the page's shape is decided rather than in the container's
+     * own stylesheet, which says in as many words that the reflow belongs
+     * here.
+     */
+    it("lets the table's panel size to its rows", () => {
+        const page = fs.readFileSync(
+            path.join(ROOT, "client", "src", "pages", "Statistics", "styles.sass"), "utf8");
+
+        assert.match(page, /> \.container-wide \.stats-content\s*\n\s*min-height: 0/,
+            "the comparison table keeps the 14rem floor meant for cards that share a row");
     });
 });
 

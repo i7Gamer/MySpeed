@@ -58,6 +58,22 @@
   // ring on this theme - where everything around them drew the app's.
   +focus-ring
 
+// The chosen label and the six shadow copies behind it, all in one grid cell:
+// the cell is as wide as the widest of them, which is what keeps the button
+// one size as the choice moves. Nested twice for the same reason - the sizer
+// stacks its own children too, or the six would form a column.
+.compare-select-value,
+.compare-select-sizer
+  display: grid
+
+  > *
+    grid-area: 1 / 1
+
+// Hidden but still measured: display: none or a zero width would take the
+// shadow labels out of the layout, which is the entire job they do here.
+.compare-select-sizer
+  visibility: hidden
+
 .compare-select-icon
   color: $subtext
   font-size: 1rem
@@ -75,11 +91,17 @@
   +dropdown-menu
   position: absolute
   top: calc(100% + 0.375rem)
+  // Both edges pinned to the anchor, which is the button's own box - so the
+  // menu is exactly the button's width rather than nearly it, the way
+  // .export-dropdown is. It asked for `min-width: 100%` before, and this
+  // stylesheet inherits `box-sizing: content-box`, so that 100% sized the
+  // CONTENT box and the menu came out its padding and border wider than the
+  // button, overhanging it to the left.
+  left: 0
   right: 0
-  // Wide enough for the longest option in any language without the rows
-  // reflowing, and free to grow past it: "3 Monate früher" and "6 mhí níos
-  // luaithe" are both longer than the trigger that opens the menu.
-  min-width: 100%
+  box-sizing: border-box
+  // The button is already as wide as the widest label - see
+  // .compare-select-sizer - so no row here has to wrap to fit.
   white-space: nowrap
 
 .compare-select-option
