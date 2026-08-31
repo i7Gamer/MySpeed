@@ -31,7 +31,55 @@ MySpeed ist eine Speedtest-Analyse-Software, welche die Geschwindigkeit deines I
 - 📉 Lass dich benachrichtigen, wenn ein Ziel unter das fällt, was es sonst liefert - gemessen am eigenen gleitenden Median
 ### ⬇️ Installation
 
-#### 🐳 Docker (empfohlen)
+Die nativen Builds binden den Speedtest an deine echte Netzwerkkarte. Docker tut das nur
+mit Host-Networking auf einem Linux-Host - überall sonst misst es den Weg durch den
+Netzwerk-Stack von Docker statt deine Leitung.
+
+#### 🐧 Linux (Binary)
+
+Lade eine Linux-Binary von der [Releases-Seite](https://github.com/i7Gamer/MySpeed/releases/latest) herunter:
+
+- `MySpeed-linux-x64` - Standard-Ziel von Bun (benötigt **AVX2**)
+- `MySpeed-linux-x64-baseline` - ältere x86_64-CPUs ohne AVX2 (SSE4.2 / Nehalem+)
+- `MySpeed-linux-arm64` - aarch64
+
+Beendet sich die Standard-Binary sofort mit `Illegal instruction` / `SIGILL`, nimm den
+Baseline-Build. Das Installationsskript wählt Baseline automatisch, wenn `/proc/cpuinfo`
+kein `avx2`-Flag enthält.
+
+```bash
+curl -sSL -o /tmp/myspeed-install.sh \
+  https://raw.githubusercontent.com/i7Gamer/MySpeed/development/scripts/install.sh
+sudo bash /tmp/myspeed-install.sh
+```
+
+Eine Linux-Binary selbst zu bauen (`bun run build:binary:baseline`) muss *auf* Linux
+geschehen - ein Container reicht. Wird von macOS oder Windows aus kompiliert, landen die
+nativen Module des Host-Systems (z. B. `@resvg/resvg-js`) in der Binary; sie startet dann
+zwar, scheitert aber zur Laufzeit.
+
+#### 🪟 Windows
+
+Lade von der [Releases-Seite](https://github.com/i7Gamer/MySpeed/releases/latest) herunter:
+
+- `MySpeed-windows-x64.exe` - Standard-Ziel von Bun (benötigt **AVX2**)
+- `MySpeed-windows-x64-baseline.exe` - ältere x86_64-CPUs ohne AVX2 (SSE4.2 / Nehalem+)
+- `MySpeed-installer.msi` und `MySpeed-installer-baseline.msi` - dieselben beiden als
+  Installer, der MySpeed als Windows-Dienst einrichtet
+
+Hier wählt nichts automatisch für dich aus, also geh nach dem Symptom: Die Exe beendet
+sich sofort mit `Illegal instruction`, und das MSI installiert sauber, hinterlässt aber
+einen Dienst, der nie startet. Beides heißt Baseline-Build. Vorab beantwortet PowerShell 7
+die Frage mit `[System.Runtime.Intrinsics.X86.Avx2]::IsSupported`.
+
+Die beiden Installer sind ein Produkt: Den jeweils anderen auszuführen wechselt den Build
+und behält deine Datenbank.
+
+Die Exe legt ihre Daten im Ordner `data` neben dem Verzeichnis ab, aus dem du sie startest
+- starte sie also aus dem Ordner, in dem die Daten liegen sollen. Das MSI installiert nach
+`C:\Program Files\MySpeed` und legt die Daten stattdessen unter `C:\ProgramData\MySpeed` ab.
+
+#### 🐳 Docker
 
 ```bash
 docker run -d -p 5216:5216 -v myspeed:/myspeed/data --restart=unless-stopped --name MySpeed i7gamer/myspeed
@@ -74,18 +122,10 @@ MySpeed lauscht weiterhin auf Port 5216, jetzt direkt auf dem Host. Unter Docker
 Desktop für Windows und macOS bringt das nichts, dort läuft der Verkehr ohnehin durch
 eine VM.
 
-#### 🪟 Windows
-
-Lade `MySpeed-windows-x64.exe` (oder den MSI-Installer, der MySpeed als
-Windows-Dienst einrichtet) von der [Releases-Seite](https://github.com/i7Gamer/MySpeed/releases/latest)
-herunter, lege die Datei in einen Ordner deiner Wahl und starte sie.
-
-Die Exe legt ihre Daten im Ordner `data` neben dem Verzeichnis ab, aus dem du sie
-startest - starte sie also aus dem Ordner, in dem die Daten liegen sollen. Der
-MSI-Installer installiert nach `C:\Program Files\MySpeed` und legt die Daten
-stattdessen unter `C:\ProgramData\MySpeed` ab.
-
 #### 🔧 Aus dem Quellcode
+
+<details>
+<summary><strong>Selbst bauen und starten</strong> - die Binaries oben sind genau das, nur schon gebaut</summary>
 
 Benötigt [bun](https://bun.sh).
 
@@ -99,10 +139,15 @@ bun run server/index.js
 
 MySpeed ist danach unter **http://localhost:5216** erreichbar.
 
+</details>
+
 ### 🔐 MySpeed im Internet betreiben
 
 Im heimischen Netz kann MySpeed ohne weitere Schritte laufen. Für eine öffentlich
 erreichbare Adresse sind ein paar bewusste Entscheidungen nötig.
+
+<details>
+<summary><strong>Zur Anleitung</strong> - erster Start, Passwort zurücksetzen, Reverse Proxy, Umgebungsvariablen und was geschützt ist</summary>
 
 #### Erster Start
 
@@ -224,6 +269,8 @@ jeder Anfrage mitgeschickt – wer Zugriff auf das Browserprofil hat, hat es auc
 gibt ein gemeinsames Passwort statt einzelner Benutzerkonten. Zugangsdaten liegen
 unverschlüsselt in `data/storage.db`; sichere diese Datei so sorgfältig wie einen
 Passwort-Manager-Export.
+
+</details>
 
 ### 📸 Beispiel-Screenshots
 

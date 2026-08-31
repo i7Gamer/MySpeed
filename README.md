@@ -32,46 +32,9 @@ MySpeed is a speed test analysis software that records your internet speed over 
 
 ### ⬇️ Installation
 
-#### 🐳 Docker (recommended)
-
-```bash
-docker run -d -p 5216:5216 -v myspeed:/myspeed/data --restart=unless-stopped --name MySpeed i7gamer/myspeed
-```
-
-Or with Compose:
-
-```yaml
-services:
-  myspeed:
-    image: i7gamer/myspeed
-    container_name: MySpeed
-    restart: unless-stopped
-    ports:
-      - "5216:5216"
-    volumes:
-      - myspeed:/myspeed/data
-
-volumes:
-  myspeed:
-```
-
-##### ⚡ Getting the full line speed
-
-On a Linux host, add `--network host` (Compose: `network_mode: host`) and drop the
-port mapping:
-
-```bash
-docker run -d --network host -v myspeed:/myspeed/data --restart=unless-stopped --name MySpeed i7gamer/myspeed
-```
-
-MySpeed binds the speed test to a specific network interface. On the default bridge
-network the only interface a container can see is its own `eth0`, so every test is
-forced through Docker's NAT and measures that path rather than your line - the faster
-your connection, the more it costs you. Host networking lets MySpeed bind to the real
-NIC, and the interface picker in the settings starts listing your actual interfaces.
-
-MySpeed still listens on port 5216, now directly on the host. This has no effect on
-Docker Desktop for Windows and macOS, where the traffic goes through a VM either way.
+The native builds bind the speed test to your real network interface. Docker only
+does that with host networking on a Linux host — anywhere else it measures the path
+through Docker's network stack rather than your line.
 
 #### 🐧 Linux (binary)
 
@@ -118,7 +81,51 @@ The exe keeps its data in a `data` folder next to the directory you start it fro
 run it from the folder you want that data to live in. The MSI installs to
 `C:\Program Files\MySpeed` and keeps its data in `C:\ProgramData\MySpeed` instead.
 
+#### 🐳 Docker
+
+```bash
+docker run -d -p 5216:5216 -v myspeed:/myspeed/data --restart=unless-stopped --name MySpeed i7gamer/myspeed
+```
+
+Or with Compose:
+
+```yaml
+services:
+  myspeed:
+    image: i7gamer/myspeed
+    container_name: MySpeed
+    restart: unless-stopped
+    ports:
+      - "5216:5216"
+    volumes:
+      - myspeed:/myspeed/data
+
+volumes:
+  myspeed:
+```
+
+##### ⚡ Getting the full line speed
+
+On a Linux host, add `--network host` (Compose: `network_mode: host`) and drop the
+port mapping:
+
+```bash
+docker run -d --network host -v myspeed:/myspeed/data --restart=unless-stopped --name MySpeed i7gamer/myspeed
+```
+
+MySpeed binds the speed test to a specific network interface. On the default bridge
+network the only interface a container can see is its own `eth0`, so every test is
+forced through Docker's NAT and measures that path rather than your line - the faster
+your connection, the more it costs you. Host networking lets MySpeed bind to the real
+NIC, and the interface picker in the settings starts listing your actual interfaces.
+
+MySpeed still listens on port 5216, now directly on the host. This has no effect on
+Docker Desktop for Windows and macOS, where the traffic goes through a VM either way.
+
 #### 🔧 From source
+
+<details>
+<summary><strong>Build and run it yourself</strong> — the binaries above are this, already built</summary>
 
 Requires [bun](https://bun.sh).
 
@@ -132,10 +139,15 @@ bun run server/index.js
 
 MySpeed then listens on **http://localhost:5216**.
 
+</details>
+
 ### 🔐 Exposing MySpeed to the internet
 
 MySpeed is safe to run on a trusted LAN out of the box. Putting it on a public
 address takes a few deliberate steps.
+
+<details>
+<summary><strong>Read the guide</strong> — first run, password recovery, reverse proxy, environment variables, and what is protected</summary>
 
 #### First run
 
@@ -253,6 +265,8 @@ on every request, so anyone with access to the browser profile has it. There is 
 single shared password rather than per-user accounts. Secrets are stored
 unencrypted in `data/storage.db` — back that file up as carefully as you would a
 password manager export.
+
+</details>
 
 ### 📸 Example Screenshots
 
