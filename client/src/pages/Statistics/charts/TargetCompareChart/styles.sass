@@ -46,6 +46,17 @@ $compare-modal-tall: 900px
     tbody tr
       border-bottom: 1px solid rgba(255, 255, 255, 0.04)
 
+    // Under the figure rather than beside it - AverageChart's own answer to
+    // the same question. Four figures each grown by a nowrap annotation is
+    // some 240px this table does not have, and the delta is the half of the
+    // pair that can move.
+    tbody td .stat-delta
+      display: flex
+      margin-left: 0
+      padding-left: 0
+      border-left: none
+      margin-top: 0.15rem
+
   .target-compare-unavailable
     font-style: italic
 

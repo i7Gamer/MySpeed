@@ -194,3 +194,53 @@ describe("the card's strings", () => {
                 `statistics.targets.${key} is missing`);
     });
 });
+
+/**
+ * The deltas beside each target's figures, and the window they are read
+ * against. The card asks for each target's OWN previous window, so a row
+ * compares against its line a week ago rather than against the page's
+ * mixture of every target.
+ */
+describe("the comparison table's deltas", () => {
+    it("asks for the previous window, gated the way the page gates its own", () => {
+        const effect = statistics.slice(statistics.indexOf('if (expandedChart !== "targets"'),
+            statistics.indexOf("}, [expandedChart, targets, dateRange, compareKey, compareFresh]);"));
+
+        assert.notEqual(effect.length, 0, "the compare effect moved; re-anchor this lift");
+        assert.match(effect, /if \(dateRange\) query\.set\("compare", "previous"\);/,
+            "the card's requests stopped asking for the window its deltas are read against, "
+            + "or stopped gating it - nothing precedes all time, and the route refuses to compare it");
+    });
+
+    it("annotates every figure, each in its own direction", () => {
+        assert.equal((card.match(/<Delta /g) ?? []).length, 4,
+            "a figure lost its delta, or grew a second");
+        assert.match(card, /previous=\{row\.previous\?\.download\}\s*higherIsBetter=\{true\}/);
+        assert.match(card, /previous=\{row\.previous\?\.upload\}\s*higherIsBetter=\{true\}/);
+        assert.match(card, /previous=\{row\.previous\?\.ping\}\s*higherIsBetter=\{false\}/,
+            "more latency became good news");
+        assert.match(card, /previous=\{row\.previous\?\.failureRate\}\s*higherIsBetter=\{false\} mode="absolute" unit="%"/,
+            "the failure rate is compared as a percentage of a percentage - 5% to 7% is +2 points, not +40%");
+    });
+
+    /**
+     * The raw averages on both sides, never the printed ones: a delta taken
+     * from speed() would change with the reader's unit preference and differ
+     * between the collapsed card and the expanded modal, which is exactly
+     * what the shared printer exists to prevent. The accepted edge, stated:
+     * two figures that both print "900" can carry an arrow between them.
+     */
+    it("compares the measurements rather than their printed form", () => {
+        assert.doesNotMatch(card, /<Delta current=\{speed\(/,
+            "the delta reads the printed figure, so it moves with the unit preference");
+        assert.doesNotMatch(card, /<Delta[^/]*current=\{formatLatencyWithUnit/);
+        assert.match(card, /<Delta current=\{row\.download\}/);
+    });
+
+    // Under the figure, not beside it - four nowrap annotations is 240px this
+    // table does not have, and AverageChart answered the same question first.
+    it("stacks the delta under its figure", () => {
+        assert.match(cardStyles, /tbody td \.stat-delta/,
+            "the deltas widen every column of the table instead of stacking");
+    });
+});

@@ -38,9 +38,9 @@ describe("targetSummaries", () => {
 
         assert.deepEqual(rows.map(({id}) => id), [3, 7, 9], "the rows left the list's order");
         assert.deepEqual(rows[0], {id: 3, name: "Ookla", colourIndex: 0, unavailable: false,
-            download: 900, upload: 500, ping: 8.4, failureRate: 5});
+            download: 900, upload: 500, ping: 8.4, failureRate: 5, previous: null});
         assert.deepEqual(rows[1], {id: 7, name: "Backup line", colourIndex: 1, unavailable: false,
-            download: 440.5, upload: 220, ping: 15.2, failureRate: 0},
+            download: 440.5, upload: 220, ping: 15.2, failureRate: 0, previous: null},
             "a text-spelled average dropped its row or went out unread");
     });
 
@@ -48,7 +48,7 @@ describe("targetSummaries", () => {
         const [row] = targetSummaries([TARGETS[2]], {});
 
         assert.deepEqual(row, {id: 9, name: "LAN", colourIndex: 0, unavailable: false,
-            download: null, upload: null, ping: null, failureRate: null});
+            download: null, upload: null, ping: null, failureRate: null, previous: null});
     });
 
     /**
@@ -87,6 +87,70 @@ describe("targetSummaries", () => {
         const [row] = targetSummaries([TARGETS[0]], {3: payload({tests: {total: "40", failed: 2}})});
 
         assert.equal(row.failureRate, null, "a text count coerced into a rate");
+    });
+
+    /**
+     * The window before, per target and per figure.
+     *
+     * The card asks for each target's own previous window, so a row compares
+     * against ITS line a week ago rather than against the page's mixture. The
+     * figures are read exactly as the row's own are - averages through the
+     * shared reader, counts strict - because reading the two sides two
+     * different ways is how one ends up coercing what the other refuses.
+     */
+    it("carries the previous window's figures beside the row's own", () => {
+        const [row] = targetSummaries([TARGETS[0]], {3: payload({previous: {
+            download: {avg: 800}, upload: {avg: 400}, ping: {avg: 12},
+            tests: {total: 30, failed: 3}
+        }})});
+
+        assert.deepEqual(row.previous, {download: 800, upload: 400, ping: 12, failureRate: 10});
+        assert.equal(row.download, 900, "the row's own figures moved when the previous window arrived");
+    });
+
+    it("compares nothing where there is no window to compare against", () => {
+        // No key at all - an older node, or an all-time range the server
+        // refuses to compare - and the explicit null it sends for a window
+        // that has not begun.
+        assert.equal(targetSummaries([TARGETS[0]], {3: payload()})[0].previous, null);
+        assert.equal(targetSummaries([TARGETS[0]], {3: payload({previous: null})})[0].previous, null);
+        // A failed fetch has no previous either.
+        assert.equal(targetSummaries([TARGETS[0]], {3: null})[0].previous, null);
+    });
+
+    // The page's own gate, per row: a window nobody tested in has no figures
+    // to compare against, and its zeros must not colour a row.
+    it("refuses a previous window nobody tested in", () => {
+        const [row] = targetSummaries([TARGETS[0]], {3: payload({previous: {
+            tests: {total: 0, failed: 0}, download: {avg: null}
+        }})});
+
+        assert.equal(row.previous, null);
+    });
+
+    it("reads the previous window's spellings the way it reads the row's", () => {
+        const text = targetSummaries([TARGETS[0]], {3: payload({previous: {
+            download: {avg: "800"}, tests: {total: 30, failed: 3}
+        }})})[0];
+
+        assert.equal(text.previous.download, 800, "a text-spelled previous average went out unread");
+        assert.equal(text.previous.failureRate, 10);
+
+        const refused = targetSummaries([TARGETS[0]], {3: payload({previous: {
+            download: {avg: -1}, ping: {avg: -1}, tests: {total: 30, failed: 0}
+        }})})[0];
+
+        assert.equal(refused.previous.download, null, "a placeholder fed the arrow");
+        assert.equal(refused.previous.ping, null);
+        assert.equal(refused.previous.failureRate, 0,
+            "the readable half of the window went missing with the unreadable half");
+
+        const strict = targetSummaries([TARGETS[0]], {3: payload({previous: {
+            tests: {total: "30", failed: 3}, download: {avg: 800}
+        }})})[0];
+
+        assert.equal(strict.previous.failureRate, null, "a text count coerced into a previous rate");
+        assert.equal(strict.previous.download, 800, "the strict count took the readable average with it");
     });
 
     it("gives the fourth target a colour index past the cycle without wrapping here", () => {

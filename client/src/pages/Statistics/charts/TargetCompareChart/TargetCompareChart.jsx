@@ -3,6 +3,7 @@ import {t} from "i18next";
 import StatisticContainer from "@/pages/Statistics/components/StatisticContainer";
 import SegmentedControl from "@/common/components/SegmentedControl";
 import ChartWrapper from "@/common/components/ChartWrapper";
+import Delta from "@/common/components/Delta";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {
     appLocale, convertSpeed, formatLatencyWithUnit, formatPercent, formatWithUnit, getSpeedUnit,
@@ -171,11 +172,35 @@ export const TargetCompareChart = ({targets, statsById, fresh, expanded, onClick
                                 {t("statistics.targets.unavailable")}
                             </td>
                         ) : (
+                            /*
+                             * The deltas compare the measurements, never the
+                             * printed figures: a delta taken from speed()
+                             * would move with the reader's unit preference
+                             * and differ between this card and its modal,
+                             * which is what the shared printer exists to
+                             * prevent. The edge that buys, stated: the
+                             * collapsed card rounds to whole units, so 899.6
+                             * and 904.4 both print "900" with an arrow
+                             * between them - wider than the one decimal the
+                             * overview already accepts, and wider again in
+                             * MB/s, where a whole unit is eight Mbit/s.
+                             */
                             <>
-                                <td>{speed(row.download)}</td>
-                                <td>{speed(row.upload)}</td>
-                                <td>{formatLatencyWithUnit(row.ping, t("latest.ping_unit"))}</td>
-                                <td>{formatPercent(row.failureRate)}</td>
+                                <td>{speed(row.download)}
+                                    <Delta current={row.download} previous={row.previous?.download}
+                                           higherIsBetter={true}/></td>
+                                <td>{speed(row.upload)}
+                                    <Delta current={row.upload} previous={row.previous?.upload}
+                                           higherIsBetter={true}/></td>
+                                <td>{formatLatencyWithUnit(row.ping, t("latest.ping_unit"))}
+                                    <Delta current={row.ping} previous={row.previous?.ping}
+                                           higherIsBetter={false}/></td>
+                                {/* Points of the percentage it already is,
+                                    like the overview's loss row: 5% to 7% is
+                                    two points, not forty per cent. */}
+                                <td>{formatPercent(row.failureRate)}
+                                    <Delta current={row.failureRate} previous={row.previous?.failureRate}
+                                           higherIsBetter={false} mode="absolute" unit="%"/></td>
                             </>
                         )}
                     </tr>

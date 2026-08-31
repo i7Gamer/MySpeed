@@ -16,7 +16,28 @@
  * clean N/A of a line that answered honestly with nothing. Only the overlay
  * drops such a target, since a series with no points draws nothing anyway.
  */
+import {hasPreviousData} from "@/common/components/Delta/deltas";
 import {failureRate, readableFigure} from "@/common/utils/TestUtil";
+
+/**
+ * The four figures a row states, read the one way.
+ *
+ * The window a row is compared against arrives in the same shape as the row's
+ * own, so both go through this: reading the two sides two different ways is
+ * how one ends up coercing what the other refuses, and an arrow drawn between
+ * a coerced figure and a refused one is a change nobody measured.
+ *
+ * Averages through the shared reader, because a proxied older node can spell
+ * any of them as text; the count strict, because counts are array lengths on
+ * the server and a text spelling is a producer that changed shape - the
+ * failed row's own convention, which degrades to no rate rather than coercing.
+ */
+const comparableFigures = (summary) => ({
+    download: readableFigure(summary?.download?.avg),
+    upload: readableFigure(summary?.upload?.avg),
+    ping: readableFigure(summary?.ping?.avg),
+    failureRate: failureRate(summary?.tests?.total, summary?.tests?.failed)
+});
 
 /**
  * One row per target, in the list's own order - the order the chips draw in,
@@ -28,6 +49,16 @@ import {failureRate, readableFigure} from "@/common/utils/TestUtil";
 export const targetSummaries = (targets, statsById) => targets.map((target, colourIndex) => {
     const stats = statsById?.[target.id];
 
+    /*
+     * The page's own gate, asked per row: a previous window nobody tested in
+     * has no figures to compare against, and its zeros must not colour a
+     * row. Per row rather than per page, because the page's gate answers for
+     * whatever slice it is showing and this table answers for every target
+     * at once - each one narrowed to its own line, so a target added on
+     * Wednesday compares against nothing while its neighbours compare.
+     */
+    const previous = hasPreviousData(stats?.previous) ? stats.previous : null;
+
     return {
         id: target.id,
         name: target.name,
@@ -35,13 +66,11 @@ export const targetSummaries = (targets, statsById) => targets.map((target, colo
         // Null is the fetch's own sentinel for "asked and failed"; a payload
         // that simply is not there yet is not a failure to report.
         unavailable: stats === null,
-        download: readableFigure(stats?.download?.avg),
-        upload: readableFigure(stats?.upload?.avg),
-        ping: readableFigure(stats?.ping?.avg),
-        // Strict on purpose - counts are array lengths on the server, so a
-        // text spelling is a producer that changed shape, and the cell
-        // degrades to N/A rather than coercing: the failed row's convention.
-        failureRate: failureRate(stats?.tests?.total, stats?.tests?.failed)
+        ...comparableFigures(stats),
+        // Null, never a half-populated object: each cell's delta refuses a
+        // missing operand on its own, so this only has to be safe to read
+        // through `?.`.
+        previous: previous && comparableFigures(previous)
     };
 });
 

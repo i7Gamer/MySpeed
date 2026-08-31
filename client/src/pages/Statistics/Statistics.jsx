@@ -434,6 +434,12 @@ export const Statistics = () => {
         Promise.allSettled(targets.map(({id}) => {
             const query = rangeQuery(dateRange);
             query.set("target", String(id));
+            // The window before, for the row's own deltas - each target
+            // narrowed to its own line, so a row compares against ITS week
+            // rather than against the page's mixture. Gated like the page's
+            // own line above: nothing precedes all time, and the route
+            // refuses to compare it.
+            if (dateRange) query.set("compare", "previous");
 
             return jsonRequest(`/speedtests/statistics/?${query}`);
         })).then((results) => {
