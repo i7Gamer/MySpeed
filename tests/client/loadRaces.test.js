@@ -53,7 +53,7 @@ describe("statistics answers only the range still being asked about", () => {
             // is the case the applier refuses outright.
             applyCompare: (query) => query,
             dateRange: null,
-            compareWindow: null,
+            compare: "previous",
             targetFilter: null,
             startTransition: (run) => run(),
             setLoading: () => undefined,

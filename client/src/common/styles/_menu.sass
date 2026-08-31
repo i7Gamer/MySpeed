@@ -1,0 +1,74 @@
+@use "colors" as *
+
+// The look of a menu that drops from a control in the page's chrome, and of
+// one row inside it.
+//
+// Mixins rather than classes, because the two callers name their rows for
+// themselves and the toolbar's fit stages key off .export-dropdown by name -
+// a shared class would have meant renaming that and re-tuning the stages with
+// it. What is shared here is the appearance, which is all that has to agree.
+//
+// Written after a second menu was drawn beside the first: the statistics
+// comparison was a native <select>, whose open list the browser draws in its
+// own chrome and no stylesheet can reach, and matching it to the export button
+// meant either a third copy of these values or one home for them.
+
+// The menu's own box: the panel the rows sit in.
+@mixin dropdown-menu
+  z-index: 1000
+  background-color: $dark-gray
+  border: 1px solid $light-gray
+  border-radius: 0.6rem
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3)
+  overflow: hidden
+  padding: 6px
+  animation: dropdownFadeIn 0.15s ease-out
+
+// One row in it. A real button, so the keyboard can reach it - which brings a
+// background, a border, a centred label and a font of its own, none of which
+// belong on a menu row. width is among them: a button shrinks to its text,
+// where a div fills the menu, and that is what keeps the rows the same width
+// and their hover backgrounds aligned with the menu's edges.
+@mixin dropdown-option
+  display: flex
+  align-items: center
+  gap: 10px
+  padding: 8px 12px
+  border-radius: 6px
+  color: $subtext
+  cursor: pointer
+  transition: all 0.15s ease
+  background: none
+  border: none
+  font-family: inherit
+  font-size: inherit
+  width: 100%
+  text-align: left
+
+  &:hover
+    background-color: $darker-gray
+    color: $white
+
+    svg
+      color: $white
+
+  svg
+    width: 14px
+    height: 14px
+    flex-shrink: 0
+
+  span
+    font-size: 0.95rem
+    font-weight: 500
+
+// Emitted once per stylesheet that uses the menu mixin. Duplicated @keyframes
+// of the same name and body collapse to one rule in the bundle, so this costs
+// nothing and keeps each menu's animation with the menu.
+@mixin dropdown-fade-in
+  @keyframes dropdownFadeIn
+    from
+      opacity: 0
+      transform: translateY(-8px) scale(0.98)
+    to
+      opacity: 1
+      transform: translateY(0) scale(1)

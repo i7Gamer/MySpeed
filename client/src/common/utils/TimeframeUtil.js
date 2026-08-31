@@ -179,32 +179,49 @@ export const parseRangeParams = (searchParams, now = new Date()) => {
  * changes which tests are being asked for.
  */
 /**
- * The window the statistics compare against, or null for the period
- * immediately before the range - which is what every page means by default.
+ * How far back the statistics compare, in the order the dropdown offers them.
+ *
+ * An offset rather than a window the reader draws: both windows are then the
+ * range's own length by construction, and the question is only how far to look
+ * back. Drawing the second window by hand let "August so far" be compared
+ * against all of 2025 - two spans of different lengths, which the server's
+ * elapsed cut then answered by quietly comparing against the first fortnight
+ * of January.
+ *
+ * The ids are what the URL carries, so a comparison is a link somebody can
+ * keep: `compare=1y` still means a year earlier when it is opened next spring,
+ * where a pair of dates means only what it meant the day it was copied. The
+ * server holds the same list - COMPARE_OFFSETS in routes/speedtests.js - and
+ * refuses anything else by name.
+ */
+export const COMPARE_CHOICES = ["previous", "1m", "3m", "6m", "1y", "2y"];
+
+export const DEFAULT_COMPARE = "previous";
+
+/**
+ * The reader's choice, or the default for a URL that names none.
  *
  * Deliberately NOT a member of RANGE_PARAMS below. That list is what rangeKey
  * answers for, and SpeedtestProvider - mounted above the router outlet, so
  * alive on every page - rebuilds its query and fetches a page of rows
- * whenever it changes. A comparison window changes which deltas the
+ * whenever it changes. A comparison offset changes which deltas the
  * statistics draw and nothing at all about which tests any list holds; in
  * that list, every compare change would buy a page of rows nobody shows,
  * which is the exact fault rangeKey's own note records.
  *
- * An inverted pair is swapped rather than refused, like parseRangeParams'
- * own: a bookmark somebody hand-edited names a window either way round.
+ * An unknown value falls back to the default rather than being carried
+ * through: the server refuses what it does not know, and a hand-edited
+ * bookmark should draw the ordinary page rather than a 400.
  */
 export const parseCompareParams = (searchParams) => {
-    const from = parseDay(searchParams.get("compareFrom"));
-    const to = parseDay(searchParams.get("compareTo"));
-    if (!from || !to) return null;
+    const named = searchParams.get("compare");
 
-    return from > to ? {from: to, to: from} : {from, to};
+    return COMPARE_CHOICES.includes(named) ? named : DEFAULT_COMPARE;
 };
 
 /** The other end of that round trip. Absent, not empty, for the default. */
-export const compareToParams = (window) => window
-    ? {compareFrom: formatDateParam(window.from), compareTo: formatDateParam(window.to)}
-    : {};
+export const compareToParams = (choice) =>
+    choice && choice !== DEFAULT_COMPARE ? {compare: choice} : {};
 
 const RANGE_PARAMS = ["range", "from", "to"];
 

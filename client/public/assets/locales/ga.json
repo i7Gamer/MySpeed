@@ -343,9 +343,16 @@
     "average": "Meán",
     "compare": {
       "note": "Athruithe i gcomparáid le {{from}} – {{to}}",
-      "note_partial": "Athruithe i gcomparáid le {{from}} – {{to}}, suas go dtí an t-am céanna den lá",
-      "picker_label": "Tréimhse chomparáide",
-      "reset": "Cuir i gcomparáid leis an tréimhse roimhe seo"
+      "empty": "Níl aon tástáil idir {{from}} agus {{to}} le cur i gcomparáid",
+      "label": "Cuir i gcomparáid le",
+      "choice": {
+        "previous": "An tréimhse roimhe",
+        "1m": "1 mhí níos luaithe",
+        "3m": "3 mhí níos luaithe",
+        "6m": "6 mhí níos luaithe",
+        "1y": "1 bhliain níos luaithe",
+        "2y": "2 bhliain níos luaithe"
+      }
     },
     "downsampled": "Meánaithe · {{shown}} as {{total}} tástáil ar taispeáint",
     "detail": {

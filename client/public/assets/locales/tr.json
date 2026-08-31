@@ -343,9 +343,16 @@
     "average": "Ortalama",
     "compare": {
       "note": "{{from}} – {{to}} ile karşılaştırıldığında değişimler",
-      "note_partial": "{{from}} – {{to}} ile karşılaştırıldığında değişimler, günün aynı saatine kadar",
-      "picker_label": "Karşılaştırma aralığı",
-      "reset": "Önceki dönemle karşılaştırın"
+      "empty": "{{from}} – {{to}} aralığında karşılaştırılacak test yok",
+      "label": "Şununla karşılaştır",
+      "choice": {
+        "previous": "Önceki dönem",
+        "1m": "1 ay öncesi",
+        "3m": "3 ay öncesi",
+        "6m": "6 ay öncesi",
+        "1y": "1 yıl öncesi",
+        "2y": "2 yıl öncesi"
+      }
     },
     "downsampled": "Ortalaması alındı · {{total}} testin {{shown}} tanesi gösteriliyor",
     "detail": {

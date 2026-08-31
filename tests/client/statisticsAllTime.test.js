@@ -34,10 +34,14 @@ describe("the statistics ask for all time by name", () => {
     // one applier now - the page's and the comparison card's - so the refusal
     // is stated once, where they share it.
     it("only asks for the previous window when the range is bounded", () => {
-        assert.match(statistics, /const applyCompare = \(query, dateRange, compareWindow\) => \{\s*if \(!dateRange\) return query;/,
+        assert.match(statistics, /const applyCompare = \(query, dateRange, compare\) => \{\s*if \(!dateRange\) return query;/,
             "the applier stopped refusing a rangeless request");
-        assert.match(statistics, /\} else query\.set\("compare", "previous"\);/,
-            "the default comparison - the period immediately before - is gone");
+        // The reader's standing choice, sent on every bounded request. It is
+        // always present - "previous" is an option rather than the absence of
+        // one - so the applier states it unconditionally and the only question
+        // left here is the rangeless refusal above.
+        assert.match(statistics, /query\.set\("compare", compare\);/,
+            "the applier no longer carries the reader's comparison choice");
     });
 
     // The page request, the high-resolution one a reader opens a chart for,

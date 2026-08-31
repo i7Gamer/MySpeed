@@ -343,9 +343,16 @@
     "average": "Média",
     "compare": {
       "note": "Mudanças em relação a {{from}} – {{to}}",
-      "note_partial": "Mudanças em relação a {{from}} – {{to}}, até o mesmo horário do dia",
-      "picker_label": "Período de comparação",
-      "reset": "Comparar com o período anterior"
+      "empty": "Sem testes entre {{from}} e {{to}} para comparar",
+      "label": "Comparar com",
+      "choice": {
+        "previous": "Período anterior",
+        "1m": "1 mês antes",
+        "3m": "3 meses antes",
+        "6m": "6 meses antes",
+        "1y": "1 ano antes",
+        "2y": "2 anos antes"
+      }
     },
     "downsampled": "Média · mostrando {{shown}} de {{total}} testes",
     "detail": {

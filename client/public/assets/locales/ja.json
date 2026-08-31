@@ -343,9 +343,16 @@
     "average": "平均",
     "compare": {
       "note": "{{from}} – {{to}} と比較した変化",
-      "note_partial": "{{from}} – {{to}} と比較した変化（同時刻まで）",
-      "picker_label": "比較する期間",
-      "reset": "直前の期間と比較"
+      "empty": "{{from}} – {{to}} に比較できるテストがありません",
+      "label": "比較対象",
+      "choice": {
+        "previous": "前の期間",
+        "1m": "1 か月前",
+        "3m": "3 か月前",
+        "6m": "6 か月前",
+        "1y": "1 年前",
+        "2y": "2 年前"
+      }
     },
     "downsampled": "平均化 · {{total}} 件中 {{shown}} 件のテストを表示",
     "detail": {

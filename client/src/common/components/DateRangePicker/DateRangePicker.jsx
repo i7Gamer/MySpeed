@@ -13,7 +13,7 @@ import "./styles.sass";
 // One list of presets, wherever the picker is: each page it sits on can show
 // every test it has, so each of them leads with "All time". The list used to be
 // handed in by the page, back when the statistics could not draw one.
-export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timeframe, onTimeframeChange, label }) => {
+export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timeframe, onTimeframeChange }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [selecting, setSelecting] = useState("from");
     const [tempFrom, setTempFrom] = useState(from);
@@ -300,12 +300,12 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
     /*
      * What the trigger says, as one string.
      *
-     * Lifted out of the span because the accessible name needs it too: `label`
-     * used to REPLACE this text, so the second picker announced "Comparison
-     * window" and never which window. On a page where the comparison note is
-     * absent - a window the instance recorded no tests in, so hasPreviousData
-     * is false - the trigger is the only statement of the selection anywhere on
-     * screen, and a reader was told one existed without being told what it was.
+     * Its own name, which is the point: this is the only picker on any page, so
+     * the trigger's text IS its accessible name and that text is the current
+     * range - which is what a reader wants to hear. There was briefly a second
+     * one, for a comparison window a reader drew by hand, and it needed a
+     * `label` prop to tell the two apart; the comparison is an offset now and
+     * draws no picker, so the prop went with it.
      */
     const triggerText = timeframeLabelKey(timeframe)
         ? t(timeframeLabelKey(timeframe))
@@ -321,20 +321,10 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                 so a keyboard-only reader was left with whatever range the page
                 loaded with, on both toolbars that draw one.
 
-                It needs no aria-label where it is the only picker on the page:
-                its own text is its name, and that text is the current range,
-                which is what a reader wants to hear. `label` is for the page
-                that draws a second one - two triggers whose names are both a
-                pair of dates name neither - and it is PREPENDED to that text
-                rather than replacing it, so the second picker says both which
-                window it is and which window is chosen. Replacing it cost the
-                second one the only statement of its selection on the page.
-                Absent everywhere else, which renders no attribute at all.
-
-                Joined with a comma, which is a pause between two independent
-                phrases rather than punctuation inside a sentence - so no
-                locale owns it, and neither half has to be written to fit the
-                other.
+                No aria-label, and that is deliberate rather than an omission:
+                its own text is its name, and that text is the current range.
+                An aria-label would REPLACE it, so a reader would be told the
+                control's category instead of its value.
 
                 aria-expanded and nothing more. A trigger that announces a
                 pop-up dialog promises one behind it, and what is behind this one
@@ -351,7 +341,6 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                 ref={triggerRef}
                 onClick={() => isOpen ? closePicker() : setIsOpen(true)}
                 aria-expanded={isOpen}
-                aria-label={label ? `${label}, ${triggerText}` : undefined}
             >
                 <FontAwesomeIcon icon={faCalendar} className="calendar-icon" />
                 {/* A chosen preset names itself: "Last 7 days" says more than

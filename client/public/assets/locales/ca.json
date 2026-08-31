@@ -343,9 +343,16 @@
     "average": "Mitjana",
     "compare": {
       "note": "Canvis respecte a {{from}} – {{to}}",
-      "note_partial": "Canvis respecte a {{from}} – {{to}}, fins a la mateixa hora del dia",
-      "picker_label": "Període de comparació",
-      "reset": "Compara amb el període anterior"
+      "empty": "Cap prova entre {{from}} i {{to}} per comparar",
+      "label": "Compara amb",
+      "choice": {
+        "previous": "Període anterior",
+        "1m": "1 mes abans",
+        "3m": "3 mesos abans",
+        "6m": "6 mesos abans",
+        "1y": "1 any abans",
+        "2y": "2 anys abans"
+      }
     },
     "downsampled": "Amb mitjanes · es mostren {{shown}} de {{total}} proves",
     "detail": {

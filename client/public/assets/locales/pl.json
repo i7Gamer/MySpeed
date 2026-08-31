@@ -343,9 +343,16 @@
     "average": "Średnia",
     "compare": {
       "note": "Zmiany w porównaniu z {{from}} – {{to}}",
-      "note_partial": "Zmiany w porównaniu z {{from}} – {{to}}, do tej samej pory dnia",
-      "picker_label": "Okres porównawczy",
-      "reset": "Porównaj z poprzednim okresem"
+      "empty": "Brak testów w okresie {{from}} – {{to}} do porównania",
+      "label": "Porównaj z",
+      "choice": {
+        "previous": "Poprzednim okresem",
+        "1m": "1 miesiąc wcześniej",
+        "3m": "3 miesiące wcześniej",
+        "6m": "6 miesięcy wcześniej",
+        "1y": "1 rok wcześniej",
+        "2y": "2 lata wcześniej"
+      }
     },
     "downsampled": "Uśrednione · pokazano {{shown}} z {{total}} testów",
     "detail": {

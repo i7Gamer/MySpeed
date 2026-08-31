@@ -343,9 +343,16 @@
     "average": "Moyenne",
     "compare": {
       "note": "Évolution par rapport à {{from}} – {{to}}",
-      "note_partial": "Évolution par rapport à {{from}} – {{to}}, jusqu'à la même heure",
-      "picker_label": "Période de comparaison",
-      "reset": "Comparer avec la période précédente"
+      "empty": "Aucun test entre {{from}} et {{to}} à comparer",
+      "label": "Comparer avec",
+      "choice": {
+        "previous": "Période précédente",
+        "1m": "1 mois plus tôt",
+        "3m": "3 mois plus tôt",
+        "6m": "6 mois plus tôt",
+        "1y": "1 an plus tôt",
+        "2y": "2 ans plus tôt"
+      }
     },
     "downsampled": "Moyenné · {{shown}} tests affichés sur {{total}}",
     "detail": {

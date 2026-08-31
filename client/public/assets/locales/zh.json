@@ -343,9 +343,16 @@
     "average": "平均",
     "compare": {
       "note": "与 {{from}} – {{to}} 相比的变化",
-      "note_partial": "与 {{from}} – {{to}} 相比的变化（截至同一时刻）",
-      "picker_label": "对比时间段",
-      "reset": "与上一时间段对比"
+      "empty": "{{from}} – {{to}} 期间没有可比较的测试",
+      "label": "对比时段",
+      "choice": {
+        "previous": "上一时段",
+        "1m": "1 个月前",
+        "3m": "3 个月前",
+        "6m": "6 个月前",
+        "1y": "1 年前",
+        "2y": "2 年前"
+      }
     },
     "downsampled": "已取平均 · 显示 {{total}} 次测速中的 {{shown}} 次",
     "detail": {

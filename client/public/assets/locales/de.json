@@ -343,9 +343,16 @@
     "average": "Durchschnitt",
     "compare": {
       "note": "Veränderung gegenüber {{from}} – {{to}}",
-      "note_partial": "Veränderung gegenüber {{from}} – {{to}}, bis zur gleichen Uhrzeit",
-      "picker_label": "Vergleichszeitraum",
-      "reset": "Mit dem vorherigen Zeitraum vergleichen"
+      "empty": "Keine Tests von {{from}} bis {{to}} zum Vergleichen",
+      "label": "Vergleichen mit",
+      "choice": {
+        "previous": "Vorheriger Zeitraum",
+        "1m": "1 Monat früher",
+        "3m": "3 Monate früher",
+        "6m": "6 Monate früher",
+        "1y": "1 Jahr früher",
+        "2y": "2 Jahre früher"
+      }
     },
     "downsampled": "Gemittelt · {{shown}} von {{total}} Tests",
     "detail": {

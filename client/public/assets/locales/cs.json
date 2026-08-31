@@ -343,9 +343,16 @@
     "average": "Průměr",
     "compare": {
       "note": "Změny v porovnání s {{from}} – {{to}}",
-      "note_partial": "Změny v porovnání s {{from}} – {{to}}, do stejné denní doby",
-      "picker_label": "Období pro porovnání",
-      "reset": "Porovnat s předchozím obdobím"
+      "empty": "Žádné testy v období {{from}} – {{to}} k porovnání",
+      "label": "Porovnat s",
+      "choice": {
+        "previous": "Předchozím obdobím",
+        "1m": "O 1 měsíc dříve",
+        "3m": "O 3 měsíce dříve",
+        "6m": "O 6 měsíců dříve",
+        "1y": "O 1 rok dříve",
+        "2y": "O 2 roky dříve"
+      }
     },
     "downsampled": "Zprůměrováno · zobrazeno {{shown}} z {{total}} testů",
     "detail": {

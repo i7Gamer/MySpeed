@@ -51,7 +51,7 @@ describe("the comparison card on the statistics page", () => {
      * somebody opened a card during a slow load.
      */
     it("guards staleness with its own generation, never the page's", () => {
-        const closes = statistics.indexOf("}, [expandedChart, targets, dateRange, compareWindow, compareKey, compareFresh]);");
+        const closes = statistics.indexOf("}, [expandedChart, targets, dateRange, compare, compareKey, compareFresh]);");
         assert.notEqual(closes, -1,
             "the compare effect's dependency list changed, so this lift slices to the end of the file "
             + "and asks its question of the whole page - re-anchor it");
@@ -72,11 +72,11 @@ describe("the comparison card on the statistics page", () => {
     it("keys the cache by the query it actually sent", () => {
         assert.match(statistics, /\[String\(rangeQuery\(dateRange\)\), String\(currentNode \?\? ""\),\s*targets\.map\(\(\{id\}\) => id\)\.join\(","\)/,
             "the cache key drifted from the request's own values");
-        // The comparison window too: the rows' deltas are read against it, so
-        // an answer cached under one window is the wrong answer under the
-        // next - and the row that changes the window sits above an open card.
-        assert.match(statistics, /formatDateParam\(compareWindow\.from\)\}\.\.\$\{formatDateParam\(compareWindow\.to\)\}/,
-            "a compare change under an open card serves the previous window's deltas");
+        // The comparison offset too: the rows' deltas are read against it, so
+        // an answer cached under one offset is the wrong answer under the
+        // next - and the control that changes it sits beside an open card.
+        assert.match(statistics, /\.join\("\|"\), \[dateRange, currentNode, targets, compare\]\)/,
+            "a compare change under an open card serves the previous offset's deltas");
     });
 
     /**
@@ -210,11 +210,11 @@ describe("the card's strings", () => {
  */
 describe("the comparison table's deltas", () => {
     it("asks for the previous window, gated the way the page gates its own", () => {
-        const closes = statistics.indexOf("}, [expandedChart, targets, dateRange, compareWindow, compareKey, compareFresh]);");
+        const closes = statistics.indexOf("}, [expandedChart, targets, dateRange, compare, compareKey, compareFresh]);");
         assert.notEqual(closes, -1, "the compare effect moved; re-anchor this lift");
 
         const effect = statistics.slice(statistics.indexOf('if (expandedChart !== "targets"'), closes);
-        assert.match(effect, /applyCompare\(query, dateRange, compareWindow\);/,
+        assert.match(effect, /applyCompare\(query, dateRange, compare\);/,
             "the card's requests stopped asking for the window its deltas are read against - "
             + "and they ask through the page's own applier, so the two cannot compare "
             + "against different windows");

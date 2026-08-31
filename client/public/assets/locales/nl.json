@@ -343,9 +343,16 @@
     "average": "Gemiddeld",
     "compare": {
       "note": "Wijzigingen ten opzichte van {{from}} – {{to}}",
-      "note_partial": "Wijzigingen ten opzichte van {{from}} – {{to}}, tot hetzelfde tijdstip",
-      "picker_label": "Vergelijkingsperiode",
-      "reset": "Vergelijk met de vorige periode"
+      "empty": "Geen tests in {{from}} – {{to}} om mee te vergelijken",
+      "label": "Vergelijken met",
+      "choice": {
+        "previous": "Vorige periode",
+        "1m": "1 maand eerder",
+        "3m": "3 maanden eerder",
+        "6m": "6 maanden eerder",
+        "1y": "1 jaar eerder",
+        "2y": "2 jaar eerder"
+      }
     },
     "downsampled": "Gemiddeld · {{shown}} van {{total}} tests getoond",
     "detail": {

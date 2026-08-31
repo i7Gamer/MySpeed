@@ -343,9 +343,16 @@
     "average": "Average",
     "compare": {
       "note": "Changes compared with {{from}} – {{to}}",
-      "note_partial": "Changes compared with {{from}} – {{to}}, up to the same time of day",
-      "picker_label": "Comparison window",
-      "reset": "Compare with the previous period"
+      "empty": "No tests in {{from}} – {{to}} to compare with",
+      "label": "Compare with",
+      "choice": {
+        "previous": "Previous period",
+        "1m": "1 month earlier",
+        "3m": "3 months earlier",
+        "6m": "6 months earlier",
+        "1y": "1 year earlier",
+        "2y": "2 years earlier"
+      }
     },
     "downsampled": "Averaged · showing {{shown}} of {{total}} tests",
     "detail": {

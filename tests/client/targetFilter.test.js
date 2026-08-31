@@ -85,7 +85,7 @@ describe("the chip selection reaches every request it narrows", () => {
     it("re-fetches the statistics when the chip changes", () => {
         const statistics = readSource("client/src/pages/Statistics/Statistics.jsx");
 
-        assert.match(statistics, /\}, \[dateRange, currentNode, targetFilter, compareWindow\]\);/,
+        assert.match(statistics, /\}, \[dateRange, currentNode, targetFilter, compare\]\);/,
             "the statistics keep the previous target's figures under the new chip");
         assert.match(statistics, /\}, \[wantsDetail, isDownsampled, dateRange, targetFilter, currentNode\]\);/,
             "the high-resolution series is still the previous target's");

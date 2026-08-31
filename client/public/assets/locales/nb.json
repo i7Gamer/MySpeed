@@ -343,9 +343,16 @@
     "average": "Gjennomsnitt",
     "compare": {
       "note": "Endringer sammenlignet med {{from}} – {{to}}",
-      "note_partial": "Endringer sammenlignet med {{from}} – {{to}}, frem til samme tid på dagen",
-      "picker_label": "Sammenligningsperiode",
-      "reset": "Sammenlign med forrige periode"
+      "empty": "Ingen tester i {{from}} – {{to}} å sammenligne med",
+      "label": "Sammenlign med",
+      "choice": {
+        "previous": "Forrige periode",
+        "1m": "1 måned tidligere",
+        "3m": "3 måneder tidligere",
+        "6m": "6 måneder tidligere",
+        "1y": "1 år tidligere",
+        "2y": "2 år tidligere"
+      }
     },
     "downsampled": "Gjennomsnitt · viser {{shown}} av {{total}} tester",
     "detail": {

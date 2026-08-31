@@ -35,8 +35,8 @@ import {
     timezoneParams
 } from "@/common/utils/TimeframeUtil";
 import PageToolbar from "@/common/components/PageToolbar";
-import DateRangePicker from "@/common/components/DateRangePicker";
 import ChartModal from "@/common/components/ChartModal";
+import CompareSelect from "@/pages/Statistics/components/CompareSelect";
 import {formatDay} from "@/common/utils/FormatUtil";
 import {hasPreviousData} from "@/common/components/Delta/deltas";
 import {previousConnection} from "@/common/utils/TestUtil";
@@ -137,13 +137,10 @@ const rangeQuery = (dateRange) => {
  * refuses it anyway, and asking buys a second table scan over a window that
  * cannot hold a test.
  */
-const applyCompare = (query, dateRange, compareWindow) => {
+const applyCompare = (query, dateRange, compare) => {
     if (!dateRange) return query;
 
-    if (compareWindow) {
-        query.set("compareFrom", formatDateParam(compareWindow.from));
-        query.set("compareTo", formatDateParam(compareWindow.to));
-    } else query.set("compare", "previous");
+    query.set("compare", compare);
 
     return query;
 };
@@ -230,7 +227,7 @@ export const Statistics = () => {
     // The window the deltas are read against, or null for the period before
     // the range - which is what the server does when nothing names one. Read
     // from the URL like the range, so a comparison is a link somebody keeps.
-    const compareWindow = useMemo(() => parseCompareParams(searchParams), [searchParams]);
+    const compare = useMemo(() => parseCompareParams(searchParams), [searchParams]);
 
     // Null for all time, which is the absence of a bound rather than a very wide
     // one: every caller below that needs a window says so for itself.
@@ -239,6 +236,38 @@ export const Statistics = () => {
         : { from: selection.from, to: selection.to }, [selection]);
 
     const deferredStatistics = useDeferredValue(statistics);
+
+    /*
+     * The gate in front of every delta: a previous window nobody tested in has
+     * no figures to compare against, and its zeros must not colour the page.
+     *
+     * Declared here, beside the payload it reads, rather than down among the
+     * charts. It used to sit there because the charts were its only readers -
+     * and then the comparison row, which names the window this answers for,
+     * was lifted out of the returned tree into a const of its own. A const is
+     * evaluated where it is written, so the row read this one two hundred
+     * lines before the line that declares it: "Cannot access 'previous' before
+     * initialization", thrown while rendering, from a build that compiles
+     * cleanly and a suite that never renders the page.
+     *
+     * And optional on the way in, which everything reading this payload above
+     * the `if (!deferredStatistics)` guard has to be: `statistics` opens as
+     * null, so the first render of every visit reaches this line with nothing
+     * in it. Down among the charts that was already settled - the guard stands
+     * between - and moving up here put it back in front of the question. The
+     * two other early readers, gradeLimits and isDownsampled, have always
+     * spelled it this way.
+     */
+    const previousWindow = deferredStatistics?.previous;
+    const previous = hasPreviousData(previousWindow) ? previousWindow : null;
+
+    // The dates both wordings of the note fill in - the same pair either way,
+    // since what differs between them is only whether the window held anything.
+    const comparedWindow = previousWindow && {
+        from: formatDay(previousWindow.dateRange.from),
+        to: formatDay(previousWindow.dateRange.to)
+    };
+
     const isStale = deferredStatistics !== statistics;
 
     /*
@@ -276,7 +305,7 @@ export const Statistics = () => {
         // The summary of the window the deltas are read against - the period
         // before by default, or the one the URL names. Nothing precedes all
         // time, so it is asked for only when the range is bounded.
-        applyCompare(query, dateRange, compareWindow);
+        applyCompare(query, dateRange, compare);
 
         if (targetFilter != null) query.set("target", String(targetFilter));
 
@@ -353,7 +382,7 @@ export const Statistics = () => {
         });
         // currentNode: see its destructure above - a page whose requests have
         // been re-aimed under it has to re-ask.
-    }, [dateRange, currentNode, targetFilter, compareWindow]);
+    }, [dateRange, currentNode, targetFilter, compare]);
 
     const handleTimeframeChange = useCallback((timeframe) => {
         setSearchParams(serializeRange(timeframe), { replace: true });
@@ -377,10 +406,10 @@ export const Statistics = () => {
      * compare a week against a month, which is the mismatch the elapsed cut
      * exists to prevent.
      */
-    const handleCompareChange = useCallback((from, to) => {
+    const handleCompareChange = useCallback((choice) => {
         setSearchParams({
             ...serializeRange(selection.timeframe, selection.from, selection.to),
-            ...compareToParams(from && to ? {from, to} : null)
+            ...compareToParams(choice)
         }, { replace: true });
     }, [setSearchParams, selection]);
 
@@ -463,8 +492,8 @@ export const Statistics = () => {
         // a cached answer taken under one window is the wrong answer under
         // the next - and the card can be open while the row below it changes
         // the window.
-        compareWindow ? `${formatDateParam(compareWindow.from)}..${formatDateParam(compareWindow.to)}` : ""
-    ].join("|"), [dateRange, currentNode, targets, compareWindow]);
+        compare
+    ].join("|"), [dateRange, currentNode, targets, compare]);
     const compareFresh = compareStats?.key === compareKey;
 
     /*
@@ -492,7 +521,7 @@ export const Statistics = () => {
             // The same question the page asks, through the same applier -
             // each target narrowed to its own line, so a row compares
             // against ITS week rather than the page's mixture.
-            applyCompare(query, dateRange, compareWindow);
+            applyCompare(query, dateRange, compare);
 
             return jsonRequest(`/speedtests/statistics/?${query}`);
         })).then((results) => {
@@ -509,7 +538,7 @@ export const Statistics = () => {
             setCompareStats({key: compareKey, byId: Object.fromEntries(results.map((result, index) =>
                 [targets[index].id, result.status === "fulfilled" ? result.value : null]))});
         });
-    }, [expandedChart, targets, dateRange, compareWindow, compareKey, compareFresh]);
+    }, [expandedChart, targets, dateRange, compare, compareKey, compareFresh]);
 
     // The card and its fetch are gated on two targets; the modal is plain
     // state and would outlive the gate - deleting targets down to one with
@@ -540,28 +569,28 @@ export const Statistics = () => {
        fit - see .toolbar-second-row. */
     const compareRow = dateRange ? (
         <div className="statistics-compare-row">
-            {previous && (
+            {/* Two sentences, not one and a silence.
+                The note used to render only when there was something to
+                compare against, so choosing a window the instance has no tests
+                in simply removed it - and every arrow on the page vanished with
+                no statement anywhere of why. The window is named either way;
+                what changes is whether it had anything in it. previousWindow is
+                the payload as it arrived, which carries the dates even when it
+                counted nothing, where `previous` is the gated one the deltas
+                read. */}
+            {previousWindow && (
                 <p className="statistics-compare-note">
-                    {t(previous.dateRange.partial
-                        ? "statistics.compare.note_partial"
-                        : "statistics.compare.note", {
-                        from: formatDay(previous.dateRange.from),
-                        to: formatDay(previous.dateRange.to)
-                    })}
+                    {previous
+                        ? t("statistics.compare.note", comparedWindow)
+                        : t("statistics.compare.empty", comparedWindow)}
                 </p>
             )}
-            {/* No onTimeframeChange, which is what suppresses the
-                preset list: "last 7 days" as a COMPARISON window is a
-                window that moves under the bookmark naming it. */}
-            <DateRangePicker from={compareWindow?.from ?? null} to={compareWindow?.to ?? null}
-                             onChange={handleCompareChange}
-                             label={t("statistics.compare.picker_label")}/>
-            {compareWindow && (
-                <button type="button" className="statistics-compare-reset"
-                        onClick={() => handleCompareChange(null, null)}>
-                    {t("statistics.compare.reset")}
-                </button>
-            )}
+            {/* How far back to look, never how much to look at - so the two
+                windows are the same length by construction and there is no
+                second range for a reader to reconcile with the first. The
+                default is itself an option rather than a state to reset out
+                of, which is what removed the reset button beside this. */}
+            <CompareSelect value={compare} onChange={handleCompareChange}/>
         </div>
     ) : null;
 
@@ -638,10 +667,6 @@ export const Statistics = () => {
 
     // `source` is the high-resolution payload when one has been fetched for this
     // chart, and the page payload otherwise.
-    // The gate in front of every delta: a previous window nobody tested in has
-    // no figures to compare against, and its zeros must not colour the page.
-    const previous = hasPreviousData(deferredStatistics.previous) ? deferredStatistics.previous : null;
-
     // The window the page is actually showing, which the overview card is named
     // after. All time has none of its own, so it is the extent of the tests
     // themselves - the first to the last - as echoed by the server.

@@ -343,9 +343,16 @@
     "average": "平均",
     "compare": {
       "note": "與 {{from}} – {{to}} 相比的變化",
-      "note_partial": "與 {{from}} – {{to}} 相比的變化（截至同一時刻）",
-      "picker_label": "比較期間",
-      "reset": "與上一期間比較"
+      "empty": "{{from}} – {{to}} 期間沒有可比較的測試",
+      "label": "比較對象",
+      "choice": {
+        "previous": "上一期間",
+        "1m": "1 個月前",
+        "3m": "3 個月前",
+        "6m": "6 個月前",
+        "1y": "1 年前",
+        "2y": "2 年前"
+      }
     },
     "downsampled": "已平均 · 顯示 {{total}} 次測試中的 {{shown}} 次",
     "detail": {

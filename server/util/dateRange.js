@@ -51,6 +51,82 @@ const toCalendarParts = (value) => {
  *
  * @returns {{valid: true, from: Date, to: Date}|{valid: false, message: string}}
  */
+/*
+ * The calendar day an instant falls on, in a given zone, as a carrier whose
+ * UTC fields read back as that local day - and as the YYYY-MM-DD the range
+ * parser takes.
+ *
+ * Both windows below are built the same way: shift the local calendar, then
+ * hand the result back through parseDateRange so the ends are the zone's own
+ * midnights rather than an arithmetic result. Written once, because these two
+ * had the same walk and the same off-by-a-zone waiting in it.
+ */
+const localAnchor = (instant, zone) =>
+    new Date(instant.getTime() - zone.offsetAt(instant) * MS_PER_MINUTE);
+
+const dayString = (carrier) =>
+    `${carrier.getUTCFullYear()}-${String(carrier.getUTCMonth() + 1).padStart(2, "0")}`
+    + `-${String(carrier.getUTCDate()).padStart(2, "0")}`;
+
+/**
+ * How many calendar days a range covers, both ends included.
+ *
+ * Rounded rather than floored: a range runs to 23:59:59.999 of its last day, so
+ * the difference is a day short of whole, and a boundary the clock crossed
+ * makes it an hour short of that again.
+ */
+const calendarDays = (from, to) => Math.round((to - from) / MS_PER_DAY);
+
+/**
+ * The same window, whole calendar months earlier.
+ *
+ * Calendar months rather than a fixed number of days, for the reason
+ * previousRange walks the calendar: a month is not a fixed number of
+ * milliseconds and neither is a year, so a comparison taken by subtraction
+ * drifts a day per quarter and stops naming the period it was picked for.
+ *
+ * The length is never touched. That is the whole point of asking a reader how
+ * far back to look rather than what to look at: two windows of the same length
+ * are comparable, and a free pair of dates let "August so far" be compared
+ * against all of 2025 - a question nobody asked, which the elapsed cut then
+ * answered by quietly comparing against the first fortnight of January.
+ */
+export const shiftedRange = ({from, to}, months, {offsetMinutes, zone} = {}) => {
+    const resolved = zone ? {valid: true, zone} : zoneFromOffset(offsetMinutes);
+    if (!resolved.valid) return invalid(resolved.message);
+
+    const days = calendarDays(from, to);
+    const wall = localAnchor(from, resolved.zone);
+    const month = wall.getUTCMonth() - months;
+
+    /*
+     * The thirty-first of March, a month back, is the thirty-first of February.
+     * Clamped to the last day the target month has - day 0 of the month after
+     * it - which is what every calendar keeps. Rolling over into March instead
+     * would start the window in the month after the one the option names.
+     */
+    const lastOfMonth = new Date(Date.UTC(wall.getUTCFullYear(), month + 1, 0)).getUTCDate();
+    const start = new Date(Date.UTC(wall.getUTCFullYear(), month,
+        Math.min(wall.getUTCDate(), lastOfMonth)));
+
+    /*
+     * Only the start is shifted; the end is counted forward from it, so the
+     * window is exactly as many days as the one it answers for.
+     *
+     * Shifting both ends independently would not be: August has thirty-one
+     * days and February twenty-eight, so "six months earlier" over a whole
+     * August would have compared thirty-one days against twenty-eight and
+     * every count would have read low - which is the very fault the equal
+     * length exists to end, reintroduced by the clamp meant to keep the
+     * window inside its month. A window that runs a day or two past the end
+     * of its month is the honest answer: it is the same span, that far back.
+     */
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + days - 1);
+
+    return parseDateRange(dayString(start), dayString(end), {zone: resolved.zone});
+};
+
 /**
  * The window a range is compared against: the same span, immediately before it.
  *
@@ -70,12 +146,8 @@ export const previousRange = ({from, to}, {offsetMinutes, zone} = {}) => {
 
     // The calendar day the range starts on, in the timezone that anchored it -
     // the UTC fields read the shifted instant back as that local day.
-    const anchor = new Date(from.getTime() - resolved.zone.offsetAt(from) * MS_PER_MINUTE);
-
-    const day = (date) => {
-        const shifted = new Date(date);
-        return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
-    };
+    const anchor = localAnchor(from, resolved.zone);
+    const day = dayString;
 
     const previousTo = new Date(anchor);
     previousTo.setUTCDate(previousTo.getUTCDate() - 1);

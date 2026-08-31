@@ -51,20 +51,33 @@ const parseTargetParam = (value) => {
  * ruling the scroll cursor's after/afterId pair earns below, and for the same
  * reason - a window with one end is a window nobody named.
  */
-const parseCompareWindow = ({compareFrom, compareTo}, zone) => {
-    if (compareFrom === undefined && compareTo === undefined) return undefined;
-    if (compareFrom === undefined || compareTo === undefined)
-        return {valid: false,
-            message: "The compareFrom and compareTo parameters are a pair - send both or neither"};
+/**
+ * How far back a comparison looks, as whole calendar months - or 0 for the
+ * period immediately before the range, which is its own length back.
+ *
+ * An offset rather than a window the caller draws, and that is the whole of
+ * the shape: two windows of the same length are comparable, and a free pair of
+ * dates let "August so far" be compared against all of 2025 - a question
+ * nobody asked, which the elapsed cut then answered by quietly comparing
+ * against the first fortnight of January.
+ *
+ * The names are what the URL carries, so a comparison is a link somebody can
+ * keep: `compare=1y` says what it means a year from now, where a pair of dates
+ * says only what it said the day it was copied.
+ */
+export const COMPARE_OFFSETS = {previous: 0, "1m": 1, "3m": 3, "6m": 6, "1y": 12, "2y": 24};
 
-    const parsed = parseDateRange(compareFrom, compareTo, {zone});
+const parseCompare = (value) => {
+    if (value === undefined) return undefined;
 
-    // parseDateRange names the pair it was written for, so a bad compareFrom
-    // came back as "The 'from' value is not a real calendar date" - the one
-    // message the caller gets, pointing at the half of the request that was
-    // fine. The window's own parameter names are put back.
-    return parsed.valid ? parsed : {...parsed,
-        message: parsed.message.replaceAll("'from'", "'compareFrom'").replaceAll("'to'", "'compareTo'")};
+    // Named rather than ignored. An unreadable value used to mean "no
+    // comparison", so a bookmark carrying a typo drew a page with every delta
+    // silently missing and nothing saying why.
+    if (!Object.hasOwn(COMPARE_OFFSETS, value))
+        return {valid: false, message: "The compare parameter must be one of "
+            + Object.keys(COMPARE_OFFSETS).join(", ")};
+
+    return {valid: true, months: COMPARE_OFFSETS[value]};
 };
 
 
@@ -161,23 +174,25 @@ app.get("/statistics", password(true), async (req, res) => {
     // a malformed pair the request was never going to use answers 400 for a
     // parameter that has no meaning here - the same "the name wins" rule the
     // all-time branch keeps everywhere else.
-    const compareWindow = allTime ? undefined : parseCompareWindow(req.query, timezone.zone);
-    if (compareWindow && !compareWindow.valid)
-        return res.status(400).json({message: compareWindow.message});
+    // Nothing precedes all time, so a comparison is never taken against it -
+    // and the parameter is not refused there either, because the client sends
+    // the reader's standing choice with every request and the range they
+    // happen to be on is not a mistake to name.
+    const compare = allTime ? undefined : parseCompare(req.query.compare);
+    if (compare && !compare.valid)
+        return res.status(400).json({message: compare.message});
 
     res.json(await tests.listStatistics(range, {
         zone: timezone.zone,
         maxPoints: points,
         target,
-        // The summary of the window immediately before the range, for the
+        // Whether to summarise a second window at all, for the
         // period-over-period deltas. Opt-in: it costs a second table scan.
-        // Nothing precedes all time, so it is never compared.
-        comparePrevious: !allTime && req.query.compare === "previous",
-        // Or a window the caller named instead - "this August against last
-        // August". The same cost, and never for all time: its own window is
-        // the extent of the tests, which the caller cannot know when it
-        // builds the URL, so there is no elapsed share to cut against.
-        compareWindow
+        compare: compare !== undefined,
+        // And how far back it sits. Zero is the period immediately before,
+        // which is the range's own length rather than a fixed number of
+        // months - previousSummary reads it that way.
+        compareMonths: compare?.months
     }));
 });
 

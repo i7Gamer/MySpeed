@@ -343,9 +343,16 @@
     "average": "Promedio",
     "compare": {
       "note": "Cambios respecto a {{from}} – {{to}}",
-      "note_partial": "Cambios respecto a {{from}} – {{to}}, hasta la misma hora del día",
-      "picker_label": "Periodo de comparación",
-      "reset": "Comparar con el periodo anterior"
+      "empty": "No hay pruebas entre {{from}} y {{to}} para comparar",
+      "label": "Comparar con",
+      "choice": {
+        "previous": "Período anterior",
+        "1m": "1 mes antes",
+        "3m": "3 meses antes",
+        "6m": "6 meses antes",
+        "1y": "1 año antes",
+        "2y": "2 años antes"
+      }
     },
     "downsampled": "Promediado · se muestran {{shown}} de {{total}} tests",
     "detail": {

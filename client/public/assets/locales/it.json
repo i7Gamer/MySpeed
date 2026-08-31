@@ -343,9 +343,16 @@
     "average": "Media",
     "compare": {
       "note": "Variazioni rispetto a {{from}} – {{to}}",
-      "note_partial": "Variazioni rispetto a {{from}} – {{to}}, fino alla stessa ora del giorno",
-      "picker_label": "Periodo di confronto",
-      "reset": "Confronta con il periodo precedente"
+      "empty": "Nessun test tra {{from}} e {{to}} da confrontare",
+      "label": "Confronta con",
+      "choice": {
+        "previous": "Periodo precedente",
+        "1m": "1 mese prima",
+        "3m": "3 mesi prima",
+        "6m": "6 mesi prima",
+        "1y": "1 anno prima",
+        "2y": "2 anni prima"
+      }
     },
     "downsampled": "Mediato · mostrati {{shown}} test su {{total}}",
     "detail": {

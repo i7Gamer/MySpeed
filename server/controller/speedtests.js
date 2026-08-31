@@ -1,7 +1,7 @@
 import tests from '../models/Speedtests.js';
 import { Op } from 'sequelize';
 import { buildStatistics, STATISTICS_COLUMNS } from '../util/statistics.js';
-import { previousRange, truncateToElapsed } from '../util/dateRange.js';
+import { previousRange, shiftedRange, truncateToElapsed } from '../util/dateRange.js';
 import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER, impossibleMeasurement } from '../util/testOutcome.js';
 import { BASELINE_METRICS } from '../util/baselineAlert.js';
 import { getValue } from './config.js';
@@ -615,11 +615,19 @@ const SUMMARY_KEYS = ["tests", "packetLoss", "ping", "jitter", "download", "uplo
  * the range arithmetic instead of in a component.
  */
 const previousSummary = async (range, options) => {
-    // A window the caller named wins over the implicit one: "the period
-    // before" is the DEFAULT answer to what a range is compared against, not
-    // the only one. Both shapes are a parsed range, so everything below -
-    // the elapsed cut, the target filter, the summary - reads one thing.
-    const previous = options.compareWindow ?? previousRange(range, options);
+    /*
+     * How far back the comparison looks, never how much of it to look at.
+     *
+     * "The period before" is the default answer and the offsets are the same
+     * question asked further back - both are the range's own length, so the
+     * two windows are comparable by construction. Both shapes are a parsed
+     * range, so everything below - the elapsed cut, the target filter, the
+     * summary - reads one thing.
+     */
+    const previous = options.compareMonths
+        ? shiftedRange(range, options.compareMonths, options)
+        : previousRange(range, options);
+
     if (!previous.valid) return null;
 
     // Cut to what the range has actually lived through: a range ending today
@@ -741,7 +749,7 @@ export const listStatistics = async (range, options = {}) => {
         // by. A filtered request answers the one target it was narrowed to,
         // which is the same statement about the same rows.
         targetIds: targetsPresent(entries),
-        ...(range && (options.comparePrevious || options.compareWindow)
+        ...(range && options.compare
             ? {previous: await previousSummary(range, {...options, now})} : {}),
         // The window actually answered for, which the client names its headings
         // after and measures its per-day figures against. Whole days rather than

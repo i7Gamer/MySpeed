@@ -343,9 +343,16 @@
     "average": "Rata-rata",
     "compare": {
       "note": "Perubahan dibandingkan dengan {{from}} – {{to}}",
-      "note_partial": "Perubahan dibandingkan dengan {{from}} – {{to}}, hingga waktu yang sama",
-      "picker_label": "Periode perbandingan",
-      "reset": "Bandingkan dengan periode sebelumnya"
+      "empty": "Tidak ada pengujian pada {{from}} – {{to}} untuk dibandingkan",
+      "label": "Bandingkan dengan",
+      "choice": {
+        "previous": "Periode sebelumnya",
+        "1m": "1 bulan lebih awal",
+        "3m": "3 bulan lebih awal",
+        "6m": "6 bulan lebih awal",
+        "1y": "1 tahun lebih awal",
+        "2y": "2 tahun lebih awal"
+      }
     },
     "downsampled": "Dirata-ratakan · menampilkan {{shown}} dari {{total}} pengujian",
     "detail": {

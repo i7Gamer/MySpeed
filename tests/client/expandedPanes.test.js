@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { withoutJsComments } from "../helpers/source.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const CLIENT_SRC = path.join(ROOT, "client", "src");
@@ -235,20 +236,46 @@ describe("tests per day on a still-running range", () => {
 });
 
 /**
- * The note every delta on the page is read against. A window cut at now's own
- * wall clock - the range is still running - has to say so, or its dates would
- * claim whole days it only partly covers.
+ * The note every delta on the page is read against: one sentence, naming the
+ * window the comparison came from.
+ *
+ * There were two wordings, and the second said the window was "up to the same
+ * time of day". That qualifier went with the free-form comparison window it
+ * was written for. The cut is what MAKES the two windows equivalent - both
+ * cover the same elapsed span of the same number of days - so there is no
+ * asymmetry left to disclose, and the selected range's own heading has never
+ * carried such a qualifier either. A caveat that appeared on every running
+ * range distinguished nothing.
  */
 describe("the comparison note", () => {
-    it("says when the window it names was cut", () => {
-        assert.match(statistics,
-            /previous\.dateRange\.partial\s*\?\s*"statistics\.compare\.note_partial"\s*:\s*"statistics\.compare\.note"/);
+    it("is one wording, not a cut and an uncut one", () => {
+        assert.doesNotMatch(withoutJsComments(statistics), /note_partial/,
+            "the note branches on a partial flag again, so it has two wordings to keep in step");
+        assert.equal(english.statistics.compare.note_partial, undefined,
+            "the second wording is still in the locales, where nothing renders it");
     });
 
-    it("has both wordings, each naming the window", () => {
-        for (const key of ["note", "note_partial"])
-            assert.match(english.statistics.compare[key], /\{\{from}}[\s\S]*\{\{to}}/,
-                `statistics.compare.${key}`);
+    it("names the window it compared against", () => {
+        assert.match(english.statistics.compare.note, /\{\{from}}[\s\S]*\{\{to}}/);
+    });
+
+    /**
+     * And the empty wording names it too, rather than saying "the selected
+     * period": the selected period is the one that has data. It is the window
+     * being compared against that holds nothing, and those are different dates
+     * on screen at the same moment.
+     */
+    it("names the window it found nothing in", () => {
+        assert.match(english.statistics.compare.empty, /\{\{from}}[\s\S]*\{\{to}}/);
+    });
+
+    // And the dropdown that chooses the offset says what it is an offset from.
+    it("labels the offset and names every choice", () => {
+        assert.equal(typeof english.statistics.compare.label, "string");
+
+        for (const choice of ["previous", "1m", "3m", "6m", "1y", "2y"])
+            assert.equal(typeof english.statistics.compare.choice[choice], "string",
+                `statistics.compare.choice.${choice} is not a string`);
     });
 });
 
