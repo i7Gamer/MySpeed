@@ -120,6 +120,22 @@ const MAX_STREAMS = 32;
 const MIN_BITRATE_MBPS = 1;
 const MAX_BITRATE_MBPS = 10000;
 
+/**
+ * What a blank field actually runs: the registry's own defaults, mirrored the
+ * way the bounds above mirror the door's.
+ *
+ * These are the placeholders, and they used to be the *minimums* - so the
+ * dialog promised 5 seconds and 1 stream while a field left alone ran 10 and
+ * 4. A placeholder is the one sentence an empty field speaks, and it was
+ * naming the least the door would take rather than what leaving it means.
+ *
+ * Bitrate has no entry because it has no default: a UDP run must name its
+ * rate, so that field's placeholder stays an example of a legal value.
+ * tuningParity.test.js holds this copy to IPERF_DURATION_SECONDS and
+ * IPERF_STREAMS in server/util/providers/registry.js.
+ */
+export const IPERF_DEFAULTS = {duration: 10, streams: 4};
+
 // Blank is not a bad value - it is the field left alone, which stores null and
 // runs the registry's own default. Everything else must be a whole number
 // inside the bounds: iperf3 takes -t and -P as integers, and 7.5 seconds

@@ -18,8 +18,9 @@ import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import {CUSTOM_BACKEND_PLACEHOLDER, IPERF_HOST_PLACEHOLDER} from "@/common/utils/InvariantText";
 import {
     baselineAccepted, BASELINE_BOUNDS, BASELINE_PERCENT_DEFAULT, bitrateAccepted,
-    durationAccepted, iperfHostAccepted, providerById, providers, requiresEndpoint,
-    streamsAccepted, takesEndpoint, takesServerId, takesTuning, tuningAccepted, TUNING_BOUNDS
+    durationAccepted, iperfHostAccepted, IPERF_DEFAULTS, providerById, providers,
+    requiresEndpoint, streamsAccepted, takesEndpoint, takesServerId, takesTuning,
+    tuningAccepted, TUNING_BOUNDS
 } from "./providers";
 import {optimalAccepted, optimalsAccepted, targetBody, uniqueTargetName} from "./targetBody";
 
@@ -423,7 +424,7 @@ export const TargetEditor = ({open, onClose, target}) => {
                                                        className={`dialog-input${durationAccepted(iperfDuration) ? "" : " input-error"}`}
                                                        min={TUNING_BOUNDS.duration.min}
                                                        max={TUNING_BOUNDS.duration.max}
-                                                       placeholder={String(TUNING_BOUNDS.duration.min)}
+                                                       placeholder={String(IPERF_DEFAULTS.duration)}
                                                        value={iperfDuration}
                                                        onChange={(e) => setIperfDuration(e.target.value)}/>
                                             </label>
@@ -451,7 +452,7 @@ export const TargetEditor = ({open, onClose, target}) => {
                                                            className={`dialog-input${streamsAccepted(iperfStreams) ? "" : " input-error"}`}
                                                            min={TUNING_BOUNDS.streams.min}
                                                            max={TUNING_BOUNDS.streams.max}
-                                                           placeholder={String(TUNING_BOUNDS.streams.min)}
+                                                           placeholder={String(IPERF_DEFAULTS.streams)}
                                                            value={iperfStreams}
                                                            onChange={(e) => setIperfStreams(e.target.value)}/>
                                                 </label>

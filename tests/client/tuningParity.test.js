@@ -1,10 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    bitrateAccepted, durationAccepted, streamsAccepted, tuningAccepted, TUNING_BOUNDS
+    bitrateAccepted, durationAccepted, streamsAccepted, tuningAccepted, IPERF_DEFAULTS, TUNING_BOUNDS
 } from "@/common/components/TargetsDialog/providerFields.js";
 import { targetBody, tuningOrNull } from "@/common/components/TargetsDialog/targetBody.js";
 import { iperfTuningProblem } from "../../server/controller/targets.js";
+import { IPERF_DURATION_SECONDS, IPERF_STREAMS } from "../../server/util/providers/registry.js";
+import { readSource } from "../helpers/source.js";
 
 /**
  * The client's question and the server's answer, held to be the same question
@@ -194,6 +196,62 @@ describe("the editor and the door judge a UDP run the same way", () => {
         for (const left of ["", "100", "0", "abc", "99999999"])
             assert.equal(bitrateAccepted(left, false), true,
                 `a TCP target was held to a bitrate of ${JSON.stringify(left)}`);
+    });
+
+    /**
+     * What a blank field actually gets, said where the operator is looking.
+     *
+     * The placeholders printed the *minimum* the bounds allow - 5 seconds, 1
+     * stream - while a blank field runs the registry's defaults of 10 and 4:
+     * buildArgs falls back with `??`, so the dialog promised half the duration
+     * and a quarter of the streams the run then used. A placeholder is the one
+     * sentence the field speaks while empty, and it was wrong on both fields.
+     *
+     * The client cannot import the registry - the bundle must not carry the
+     * server - so it keeps a copy, and this is the test that holds the copy to
+     * the original, the way the bounds themselves are held above.
+     */
+    it("suggests the default a blank field really runs", () => {
+        assert.equal(IPERF_DEFAULTS.duration, IPERF_DURATION_SECONDS);
+        assert.equal(IPERF_DEFAULTS.streams, IPERF_STREAMS);
+    });
+
+    // And they have to be legal to type, or the suggestion is a value the
+    // button would grey on the moment somebody takes it literally.
+    it("suggests defaults the editor itself accepts", () => {
+        assert.equal(durationAccepted(String(IPERF_DEFAULTS.duration)), true);
+        assert.equal(streamsAccepted(String(IPERF_DEFAULTS.streams)), true);
+    });
+
+    /**
+     * The wiring itself, read as text the way the suite reads all JSX - and
+     * scoped to each field's own block, the way customServerId.test.js scopes
+     * its scan: matched against the whole file, the two assertions could not
+     * tell the duration input from the streams input, and swapping the two
+     * placeholders left every one of them green. Each label opens with its
+     * translation key, so the stretch from the key to the input's onChange is
+     * the field.
+     *
+     * Bitrate is deliberately absent: a UDP run must name a rate - there is
+     * no default to advertise - so its placeholder stays the example it
+     * always was.
+     */
+    it("prints each default on the field it belongs to", () => {
+        const editor = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
+        const fieldBlock = (key) => {
+            // Generous enough for the field's own attributes and comments,
+            // tight enough that it cannot reach the next field's input.
+            const match = editor.match(new RegExp(`dialog\\.provider\\.${key}[\\s\\S]{0,900}?onChange`));
+            assert.ok(match, `no ${key} field found in the editor`);
+            return match[0];
+        };
+
+        assert.match(fieldBlock("iperf_duration"), /placeholder=\{String\(IPERF_DEFAULTS\.duration\)\}/,
+            "the duration field does not offer the default a blank field runs");
+        assert.match(fieldBlock("iperf_streams"), /placeholder=\{String\(IPERF_DEFAULTS\.streams\)\}/,
+            "the streams field does not offer the default a blank field runs");
+        assert.doesNotMatch(editor, /placeholder=\{String\(TUNING_BOUNDS\.(duration|streams)\.min\)\}/,
+            "a placeholder still advertises the minimum as if it were the default");
     });
 
     /**

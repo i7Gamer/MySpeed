@@ -616,7 +616,7 @@ export const Statistics = () => {
        and number instead of each repeating the window.
 
        One wording, and the dates are named as whole days even where the server
-       cut the window at now's own wall clock. There were two, and the second
+       cut the window at the range's own elapsed position. There were two, and the second
        said "up to the same time of day" - it went with the free-form comparison
        window it was written for. The cut is what MAKES the two windows
        comparable now, both covering the same elapsed span of the same number of
