@@ -679,9 +679,12 @@ const comparisonSummary = (entries, window, options) => {
         dateRange: {
             from: window.from.toISOString(),
             to: window.to.toISOString(),
-            // Says the last day is covered only up to now's own wall clock, so
-            // the note above the deltas can say so too. Absent, not false, for
-            // a complete window - the way every other optional echo travels.
+            // Says the last day is covered only up to the time the range has
+            // lived of its own - now's wall clock, except across a shift, when
+            // the elapsed offset is the honest measure (see truncateToElapsed)
+            // - so the note above the deltas can say so too. Absent, not
+            // false, for a complete window - the way every other optional
+            // echo travels.
             ...(window.partial && {partial: true})
         }
     };

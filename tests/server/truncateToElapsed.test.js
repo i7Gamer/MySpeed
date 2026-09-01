@@ -33,8 +33,10 @@ const previousOf = (current) => {
  *
  * A range that ends today has only run until now while the window before it is
  * complete, so every count compared a part-week against a whole one and read
- * lower on every partial day. The cut is the same calendar position at now's
- * own wall clock, which is what makes "total tests, versus the week before" a
+ * lower on every partial day. The cut is the same calendar position at the
+ * same time lived since that day's own local midnight - a wall clock
+ * everywhere except the transition days, where the wall clock is the measure
+ * that lies - which is what makes "total tests, versus the week before" a
  * claim about two windows of the same length.
  */
 describe("truncateToElapsed", () => {
@@ -60,6 +62,20 @@ describe("truncateToElapsed", () => {
 
         assert.equal(truncateToElapsed(current, previousOf(current), new Date("2026-08-01T09:00:00.000Z")), null,
             "nothing has elapsed, so there is nothing a comparison could be about");
+    });
+
+    /**
+     * And at the range's own first instant, which is the boundary the guard
+     * used to let through. Zero days elapsed at a wall clock of midnight put
+     * the cut exactly on the window's start: a comparison over no time at all,
+     * carried out to the page as zero counts under a partial heading - where
+     * the promise above is null, "nothing to compare against yet".
+     */
+    it("answers null at the range's exact first instant", () => {
+        const current = range("2026-08-04", "2026-08-10");
+
+        assert.equal(truncateToElapsed(current, previousOf(current), new Date(current.from.getTime())), null,
+            "a window of zero width is not a comparison, it is the absence of one");
     });
 
     it("cuts at the same wall clock one window earlier", () => {
@@ -100,12 +116,15 @@ describe("truncateToElapsed", () => {
         assert.equal(window.to.toISOString(), "2026-08-16T12:32:05.123Z");
     });
 
-    it("resolves a cut in the hour spring skips the way the range bounds do", () => {
-        // Berlin skips 02:00-03:00 on 29 March 2026. Now's wall clock is
-        // 02:30 and the cut day is the transition day, so the cut names a
-        // moment that never happened there. utcFromLocal answers what every
-        // date library answers for a time that never was: the arithmetic
-        // pushed past the gap, 03:30 CEST.
+    it("lands past the hour spring skips, at the elapsed position", () => {
+        // Berlin skips 02:00-03:00 on 29 March 2026, so the cut day has only
+        // 23 hours. Two and a half hours lived since now's midnight land two
+        // and a half hours into that shorter day: 03:30 CEST, on the far side
+        // of the gap. The instant is the one the old wall-clock rule also
+        // produced - pushing 02:30 through a one-hour gap IS adding the hour -
+        // but it is arithmetic on midnights now, not utcFromLocal resolving a
+        // time that never was; the gap rule itself is pinned in
+        // timezone.test.js, where the primitive lives.
         const current = range("2026-03-30", "2026-04-05");
 
         const window = truncateToElapsed(current, previousOf(current), new Date("2026-04-05T00:30:00.000Z"));
@@ -113,10 +132,13 @@ describe("truncateToElapsed", () => {
         assert.equal(window.to.toISOString(), "2026-03-29T01:30:00.000Z");
     });
 
-    it("takes the first reading of the hour autumn repeats", () => {
-        // Berlin repeats 02:00-03:00 on 25 October 2026. The first reading
-        // keeps the doubled hour counted once - the current window has lived
-        // that wall clock once too - so the two elapsed spans stay equal.
+    it("lands in the first pass of the hour autumn repeats", () => {
+        // Berlin repeats 02:00-03:00 on 25 October 2026. Two and a half hours
+        // lived since now's midnight land in the FIRST 02:30 of the doubled
+        // hour, because that is the instant two and a half hours into the cut
+        // day - not because anything chose between two readings of one wall
+        // clock; no ambiguous local time is resolved on this path any more,
+        // and that tie-break is pinned in timezone.test.js.
         const current = range("2026-10-26", "2026-11-01");
         const previous = previousOf(current);
         const now = new Date("2026-11-01T01:30:00.000Z");
@@ -126,6 +148,122 @@ describe("truncateToElapsed", () => {
         assert.equal(window.to.toISOString(), "2026-10-25T00:30:00.000Z");
         assert.equal(window.to - previous.from, now - current.from,
             "the two windows no longer cover the same elapsed time");
+    });
+
+    /**
+     * The transition day itself, from both sides. The cut used to copy now's
+     * wall clock onto the earlier day, and a wall clock is only a measure of
+     * elapsed time while the offset holds still: with now inside the hour
+     * autumn repeats, 02:30 read the same at 3.5 elapsed hours as it had at
+     * 2.5, so the previous window was cut an hour short - and once the earlier
+     * day was the one carrying the extra hour, the same copy cut it an hour
+     * long. Both windows now cover the same time lived since their own local
+     * midnights, which is the only sentence that stays true through a shift.
+     */
+    it("keeps the spans equal while now is inside the doubled hour", () => {
+        // 01:30Z on 25 October 2026 is 02:30 CET, the second pass - three and
+        // a half hours into the local day, at a wall clock that says two and
+        // a half.
+        const current = range("2026-10-19", "2026-10-25");
+        const previous = previousOf(current);
+        const now = new Date("2026-10-25T01:30:00.000Z");
+
+        const window = truncateToElapsed(current, previous, now);
+
+        assert.equal(window.to.toISOString(), "2026-10-18T01:30:00.000Z");
+        assert.equal(window.to - previous.from, now - current.from,
+            "the two windows no longer cover the same elapsed time");
+    });
+
+    it("keeps the spans equal for the rest of the day the doubled hour stretched", () => {
+        // 04:00 CET on 1 November: four hours into a plain day. The cut day a
+        // week earlier lived 25 hours, so its 04:00 wall clock stands at five
+        // elapsed hours - the cut lands at four hours in, 03:00 CET, the shift
+        // already behind it.
+        const current = range("2026-10-26", "2026-11-01");
+        const previous = previousOf(current);
+        const now = new Date("2026-11-01T03:00:00.000Z");
+
+        const window = truncateToElapsed(current, previous, now);
+
+        assert.equal(window.to.toISOString(), "2026-10-25T02:00:00.000Z");
+        assert.equal(window.to - previous.from, now - current.from,
+            "the two windows no longer cover the same elapsed time");
+    });
+
+    it("keeps the spans equal for the rest of the day spring shortened", () => {
+        // 03:30 CEST on 29 March 2026, half an hour after the skipped hour:
+        // two and a half hours into a 23-hour day. Copied as a wall clock onto
+        // the plain day a week before it read three and a half.
+        const current = range("2026-03-23", "2026-03-29");
+        const previous = previousOf(current);
+        const now = new Date("2026-03-29T01:30:00.000Z");
+
+        const window = truncateToElapsed(current, previous, now);
+
+        assert.equal(window.to.toISOString(), "2026-03-22T01:30:00.000Z");
+        assert.equal(window.to - previous.from, now - current.from,
+            "the two windows no longer cover the same elapsed time");
+    });
+
+    /**
+     * The 25th hour itself, mid-window. Once the fall-back day has lived past
+     * 24 hours, the elapsed offset is longer than the plain day it is laid
+     * onto - unbounded, it spilled into the next day of the comparison window
+     * and the day rollover at local midnight then snapped the cut BACK an
+     * hour, so a page refreshed across midnight watched its comparison window
+     * shrink. The extra hour has no counterpart: the cut saturates at the end
+     * of its own day, exactly where the rollover resumes.
+     */
+    it("saturates the cut at its day's end while now lives the extra hour", () => {
+        const current = range("2026-10-01", "2026-10-31");
+        const previous = previousOf(current);
+
+        // 22:30Z is 24.5 hours into Berlin's 25-hour 25 October; the plain
+        // 24 September a month back has no 24.5th hour to point into.
+        const window = truncateToElapsed(current, previous, new Date("2026-10-25T22:30:00.000Z"));
+
+        assert.equal(window.to.toISOString(), "2026-09-24T22:00:00.000Z",
+            "the cut left its own day");
+    });
+
+    it("never moves the cut backwards as now crosses local midnight", () => {
+        const current = range("2026-10-01", "2026-10-31");
+        const previous = previousOf(current);
+
+        let last = null;
+        for (const iso of ["2026-10-25T22:59:59.000Z", "2026-10-25T23:00:00.000Z",
+            "2026-10-25T23:30:00.000Z"]) {
+            const window = truncateToElapsed(current, previous, new Date(iso));
+
+            if (last !== null)
+                assert.ok(window.to.getTime() >= last,
+                    `the cut moved backwards while now advanced to ${iso}`);
+            last = window.to.getTime();
+        }
+    });
+
+    /**
+     * The one anchor the cut still asks utcFromLocal for is midnight itself,
+     * and Santiago is the zone the docblock names for why: Chile springs
+     * forward AT midnight, so 6 September 2026 has no 00:00 at all. The
+     * anchor resolves to the day's first real instant, 01:00 -03, and the
+     * lived offset is laid onto that - the same rule the range bounds follow,
+     * which is the whole point of resolving both with one function.
+     */
+    it("anchors on a day whose midnight the shift removed", () => {
+        const resolved = resolveTimezone({tz: "America/Santiago"});
+        assert.equal(resolved.valid, true, "America/Santiago did not resolve");
+
+        const current = parseDateRange("2026-09-07", "2026-09-13", {zone: resolved.zone});
+        const previous = previousRange(current, {zone: resolved.zone});
+
+        // Noon lived on 13 September - 15:00Z at -03 - laid onto a cut day
+        // that begins at 01:00 -03 (04:00Z): twelve hours after the day's
+        // first real instant, 16:00Z.
+        const window = truncateToElapsed(current, previous, new Date("2026-09-13T15:00:00.000Z"));
+
+        assert.equal(window.to.toISOString(), "2026-09-06T16:00:00.000Z");
     });
 
     it("cuts the same way from a bare offset as from a named zone", () => {

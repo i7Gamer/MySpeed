@@ -168,18 +168,29 @@ const wallDay = (carrier) => Date.UTC(carrier.getUTCFullYear(), carrier.getUTCMo
  * complete - so every count compared a part-week against a whole one and read
  * lower on every partial day. The cut is the same position in the previous
  * window: the day the range has reached, counted in calendar days from its
- * start, at now's own wall clock. Not "now minus so many milliseconds", which
- * drifts by an hour across a daylight saving boundary - the same reason
- * previousRange walks the calendar.
+ * start, at the same time *lived* since that day's own local midnight. Not
+ * "now minus so many milliseconds", which drifts by an hour across a daylight
+ * saving boundary - the same reason previousRange walks the calendar.
  *
- * A cut in the hour spring skips resolves the way utcFromLocal answers a time
- * that never was. In the hour autumn repeats the first reading is taken, so
- * the doubled hour counts once - the current window has lived that wall clock
- * once too, and the two elapsed spans stay equal.
+ * Lived time rather than now's wall clock, and only the transition days can
+ * tell them apart. A wall clock measures the day only while the offset holds
+ * still: with now inside the hour autumn repeats, 02:30 reads the same at
+ * three and a half elapsed hours as it did at two and a half, so copying it
+ * cut the previous window an hour short - and once the *earlier* day was the
+ * one carrying the extra hour, the same copy cut it an hour long, for the
+ * whole rest of that day. The elapsed offset from midnight is the one measure
+ * both days agree on, and on the other 363 days it is the wall clock.
+ *
+ * Midnight itself is resolved by utcFromLocal on both sides, so a day that
+ * starts inside a skipped or doubled hour - Santiago moves at exactly
+ * midnight - is anchored by one rule, not two.
  *
  * Returns the window untouched when the range is fully in the past, and null
- * when none of it has happened yet: there is nothing a comparison could be
- * about, and the caller answers "no comparison" rather than a window of no
+ * when none of it has happened yet - the range's own first instant included,
+ * where zero elapsed days at a wall clock of midnight used to cut the window
+ * to exactly nothing: a comparison over no time at all, carried to the page
+ * as zero counts under a partial heading. There is nothing a comparison could
+ * be about, and the caller answers "no comparison" rather than a window of no
  * width.
  */
 /** The earliest of several instants, as a Date. */
@@ -219,7 +230,9 @@ export const truncateToElapsed = (range, previous, now = new Date()) => {
      */
     if (now >= range.to) return endingBy(previous, earliest(previous.to, now));
 
-    if (now < range.from) return null;
+    // `<=`, not `<`: the range's exact first instant has zero elapsed time,
+    // and the arithmetic below would dutifully cut the window to zero width.
+    if (now <= range.from) return null;
 
     const zone = previous.zone;
     const nowWall = localWallClock(zone, now);
@@ -230,14 +243,33 @@ export const truncateToElapsed = (range, previous, now = new Date()) => {
     const cutDay = new Date(Date.UTC(startWall.getUTCFullYear(), startWall.getUTCMonth(),
         startWall.getUTCDate() + daysElapsed));
 
-    const cut = utcFromLocal(zone, {
-        year: cutDay.getUTCFullYear(), month: cutDay.getUTCMonth() + 1, day: cutDay.getUTCDate(),
-        hour: nowWall.getUTCHours(), minute: nowWall.getUTCMinutes(),
-        second: nowWall.getUTCSeconds(), ms: nowWall.getUTCMilliseconds()
+    // The first instant of a wall day, as the zone actually lived it.
+    const midnightOf = (day) => utcFromLocal(zone, {
+        year: day.getUTCFullYear(), month: day.getUTCMonth() + 1, day: day.getUTCDate(),
+        hour: 0, minute: 0, second: 0, ms: 0
     });
 
-    // The clamp is for a cut the skipped hour pushed past the window's own end
-    // on its last day - and, since a caller may name a comparison window of
+    // The same time lived since local midnight, not the same wall clock - the
+    // docblock above says why only the transition days can tell them apart.
+    const cut = new Date(midnightOf(cutDay).getTime()
+        + (now.getTime() - midnightOf(new Date(wallDay(nowWall))).getTime()));
+
+    /*
+     * Bounded by the cut day's own end. Once the fall-back day has lived past
+     * twenty-four hours, the elapsed offset is longer than the plain day it is
+     * laid onto: unbounded, the cut spilled into the next day of the window,
+     * and the day rollover at the following local midnight then snapped it
+     * back an hour - so a page refreshed across midnight watched its
+     * comparison shrink. The extra hour has no counterpart on the earlier day;
+     * the cut holds at that day's end, which is exactly where the rollover
+     * resumes, so the end of the window never moves backwards.
+     */
+    const dayEnd = midnightOf(new Date(Date.UTC(cutDay.getUTCFullYear(), cutDay.getUTCMonth(),
+        cutDay.getUTCDate() + 1)));
+
+    // The clamp is for a final day now has lived longer than the cut day
+    // holds - the last hour of the 25-hour day autumn makes has no counterpart
+    // on a plain one - and, since a caller may name a comparison window of
     // its own length, for one that simply ends before the elapsed offset. `now`
     // is in the same list because a named window can sit ahead of the range it
     // is compared against, where the elapsed offset lands in the future.
@@ -246,7 +278,7 @@ export const truncateToElapsed = (range, previous, now = new Date()) => {
     // shorter than the elapsed offset is answered with the whole of itself,
     // which it is - and calling that "up to the same time of day" puts the
     // partial sentence under a comparison that covers all of its own window.
-    return endingBy(previous, earliest(cut, previous.to, now));
+    return endingBy(previous, earliest(cut, dayEnd, previous.to, now));
 };
 
 export const parseDateRange = (from, to, {offsetMinutes, zone} = {}) => {
