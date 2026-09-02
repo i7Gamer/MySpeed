@@ -41,7 +41,7 @@ export const isValidFieldValue = (field, value) => {
 
     // The same rule the server holds a select to: one of the field's own
     // options, or nothing - which the empty check above already let through.
-    if (field.type === "select" && !field.options.includes(value)) return false;
+    if (field.type === "select" && !field.options?.includes(value)) return false;
 
     if (field.type === "number") {
         const number = Number(value);

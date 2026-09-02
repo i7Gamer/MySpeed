@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "test:integration": "node --import ./tests/helpers/register.mjs --test \"tests/integration/**/*.test.js\"",
     "test:all": "node --import ./tests/helpers/register.mjs --test \"tests/**/*.test.js\"",
-    "test:coverage": "node --import ./tests/helpers/register.mjs --test --experimental-test-coverage \"tests/**/*.test.js\"",
+    "test:coverage": "node --import ./tests/helpers/register.mjs --test --experimental-test-coverage --test-coverage-exclude=\"**/*.sass\" --test-coverage-exclude=\"**/*.scss\" --test-coverage-exclude=\"**/*.css\" --test-coverage-exclude=\"**/*.{png,webp,jpg,jpeg,gif,svg}\" \"tests/**/*.test.js\"",
     "client": "cd client && bun run dev",
     "server": "bun run --watch server/index.js",
     "build": "bun run generate-migrations && bun run generate-integrations && cd client && bun run build",

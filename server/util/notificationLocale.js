@@ -29,7 +29,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 /** The language a notifier that chose none writes in, and the one every key falls back to. */
 export const DEFAULT_LANGUAGE = "en";
@@ -53,7 +52,7 @@ const LOCALE_EXTENSION = ".json";
 /** The `{{name}}` a phrase carries where a value goes. */
 const PLACEHOLDER = /\{\{\s*(\w+)\s*\}\}/g;
 
-const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+const ROOT = path.resolve(import.meta.dirname, "..", "..");
 
 /*
  * The client the binary carries, generated before compilation and absent from
@@ -88,13 +87,22 @@ const DIRECTORIES = [
 
 const localeFileName = (code) => `${code}${LOCALE_EXTENSION}`;
 
-/** The locale codes one source holds, or null when the source is not there. */
-const codesInDirectory = (directory) => {
+/**
+ * The locale codes one directory holds, or null when it holds none - a
+ * directory that exists and is empty is as much "not this source" as one
+ * that is absent, and answering [] for it would stop the chain below on a
+ * source with nothing in it while the next one had every file.
+ *
+ * Exported for the test alone.
+ */
+export const localeCodesIn = (directory) => {
     if (!fs.existsSync(directory)) return null;
 
-    return fs.readdirSync(directory)
+    const codes = fs.readdirSync(directory)
         .filter((name) => name.endsWith(LOCALE_EXTENSION))
         .map((name) => name.slice(0, -LOCALE_EXTENSION.length));
+
+    return codes.length > 0 ? codes : null;
 };
 
 const embeddedLocalePrefix = `/${LOCALES_PATH.join("/")}/`;
@@ -120,7 +128,7 @@ const codesInEmbed = () => {
  * integration dialog's field definition is built from this once.
  */
 export const NOTIFICATION_LANGUAGES = (() => {
-    const codes = codesInDirectory(DIRECTORIES[0]) ?? codesInEmbed() ?? codesInDirectory(DIRECTORIES[1]) ?? [];
+    const codes = localeCodesIn(DIRECTORIES[0]) ?? localeCodesIn(DIRECTORIES[1]) ?? codesInEmbed() ?? [];
     const sorted = codes.filter((code) => code !== DEFAULT_LANGUAGE).sort();
 
     return codes.includes(DEFAULT_LANGUAGE) ? [DEFAULT_LANGUAGE, ...sorted] : sorted;
@@ -130,14 +138,13 @@ export const NOTIFICATION_LANGUAGES = (() => {
 const readLocaleFile = (code) => {
     const name = localeFileName(code);
 
-    const built = path.join(DIRECTORIES[0], name);
-    if (fs.existsSync(built)) return fs.readFileSync(built, "utf8");
+    for (const directory of DIRECTORIES) {
+        const file = path.join(directory, name);
+        if (fs.existsSync(file)) return fs.readFileSync(file, "utf8");
+    }
 
     const inEmbed = embedded?.readEmbeddedFile?.(embeddedLocalePrefix + name);
-    if (inEmbed) return inEmbed.toString("utf8");
-
-    const source = path.join(DIRECTORIES[1], name);
-    return fs.existsSync(source) ? fs.readFileSync(source, "utf8") : null;
+    return inEmbed ? inEmbed.toString("utf8") : null;
 };
 
 /*
@@ -152,10 +159,13 @@ const sections = new Map();
  * rather than throws.
  *
  * Only a code the list above offers is read at all: the code becomes a file
- * name, and the stored column is JSON somebody may have edited by hand.
+ * name, and the stored column is JSON somebody may have edited by hand. The
+ * default is the one exception, being a literal of this module's own - so
+ * English is read wherever a source holds it, and a list that came up empty
+ * at load cannot turn every shipped template into its keys.
  */
 const sectionOf = (code) => {
-    if (!NOTIFICATION_LANGUAGES.includes(code)) return {};
+    if (code !== DEFAULT_LANGUAGE && !NOTIFICATION_LANGUAGES.includes(code)) return {};
 
     if (!sections.has(code)) {
         let phrases = {};
@@ -217,8 +227,9 @@ export const plainDefaults = (language) => {
     const word = (key) => phrase(language, key);
 
     return {
-        finished: `${word("finished")}:\n${word("target")}: %targetName%\n${word("ping")}: %ping% ms (±%jitter% ms)\n`
-            + `${word("upload")}: %upload% Mbps\n${word("download")}: %download% Mbps%alertSummary%`,
+        // One literal, however long: tests/server/integrationSends.test.js reads
+        // the template off this source, and a literal ends at its first backtick.
+        finished: `${word("finished")}:\n${word("target")}: %targetName%\n${word("ping")}: %ping% ms (±%jitter% ms)\n${word("upload")}: %upload% Mbps\n${word("download")}: %download% Mbps%alertSummary%`,
         failed: `${word("failed")}.\n${word("target")}: %targetName%\n${word("reason")}: %error%`
     };
 };

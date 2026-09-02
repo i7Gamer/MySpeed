@@ -91,6 +91,13 @@ describe("mediaQueryAnswer", () => {
         assert.equal(mediaQueryAnswer({matches: false, media: "not all"}), undefined);
     });
 
+    // A list that carries no media at all is a stub or a stranger engine,
+    // not a machine that prefers light.
+    it("reads a list with no media as no answer", () => {
+        assert.equal(mediaQueryAnswer({matches: false}), undefined);
+        assert.equal(mediaQueryAnswer({matches: true}), undefined);
+    });
+
     it("reads no list as no answer", () => {
         assert.equal(mediaQueryAnswer(undefined), undefined);
         assert.equal(mediaQueryAnswer(null), undefined);

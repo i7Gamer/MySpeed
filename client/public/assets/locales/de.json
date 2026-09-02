@@ -787,7 +787,7 @@
     "limit_under": "{{metric}} {{value}} {{unit}} unter {{limit}}",
     "not_measured": "{{metric}} (nicht gemessen)",
     "below_usual": "Unter der üblichen Geschwindigkeit: {{crossings}} darunter",
-    "shortfall": "{{metric}} {{shortfall}} %",
+    "shortfall": "{{metric}} um {{shortfall}} %",
     "and": " und "
   }
 }

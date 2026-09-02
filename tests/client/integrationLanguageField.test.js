@@ -4,10 +4,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { initialize, getIntegrations } from "../../server/controller/integrations.js";
-import { NOTIFICATION_LANGUAGES } from "../../server/util/notificationLocale.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const DIALOG = path.join(ROOT, "client", "src", "common", "components", "IntegrationDialog", "IntegrationDialog.jsx");
+const I18N = path.join(ROOT, "client", "src", "i18n.js");
+
+/**
+ * The languages the client registers, read off its own list. The server's
+ * options come off the locale directory, so this is the check that a locale
+ * file merged ahead of its menu entry is not offered under a raw code.
+ */
+const registeredCodes = () =>
+    [...fs.readFileSync(I18N, "utf8").matchAll(/code: '([a-z-]+)'/g)].map(([, code]) => code).sort();
 
 /**
  * The language a notifier writes in reaches the form as a select whose
@@ -36,7 +44,9 @@ describe("the language setting on every notifier", () => {
             assert.ok(field, `${name} offers no language`);
             assert.equal(field.type, "select");
             assert.equal(field.required, false, `${name} demands a language`);
-            assert.deepEqual(field.options, NOTIFICATION_LANGUAGES, `${name} offers a list of its own`);
+            assert.deepEqual([...field.options].sort(), registeredCodes(),
+                `${name} offers a language the client cannot name, or misses one it can`);
+            assert.equal(field.options[0], "en", "the default is not offered first");
         }
     });
 

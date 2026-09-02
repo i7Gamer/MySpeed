@@ -25,6 +25,14 @@ import { DateRangePicker } from "@/common/components/DateRangePicker/DateRangePi
  */
 afterEach(cleanup);
 
+/**
+ * How long the stubbed export is given to run its chain - fetch, blob, object
+ * URL, anchor click, the state change that re-enables the trigger. The fetch
+ * resolves at once, so this is slack for the microtask queue, not a wait for
+ * I/O.
+ */
+const EXPORT_SETTLE_MS = 10;
+
 /** Pointer or keyboard, a reader on a control is focused on it before pressing. */
 const press = (element) => {
     focus(element);
@@ -70,7 +78,7 @@ describe("the export menu giving focus back", () => {
         assert.ok(focused() === null, "focus survived the format button being unmounted");
         assert.equal(trigger.disabled, true, "the trigger was not disabled for the export");
 
-        await settle(10);
+        await settle(EXPORT_SETTLE_MS);
 
         assert.equal(trigger.disabled, false, "the export never ended");
         assert.ok(focused() === trigger, "the reader was left on the body after choosing a format");
@@ -85,17 +93,17 @@ describe("the export menu giving focus back", () => {
         assert.ok(focused() === trigger, "the reader was left on the body");
     });
 
-    // A click outside closes the menu too, and there focus belongs to whatever
-    // was clicked - the guard the fix is built around.
-    it("leaves focus alone when a click outside closes it", async () => {
-        const {container, trigger} = mountExport();
+    // A click outside closes the menu too. Nothing on that path can move
+    // focus - the hook is handed a bare setIsOpen(false) - so only the close
+    // itself is asserted; a focus check here could not fail.
+    it("closes on a click outside", async () => {
+        const {container} = mountExport();
 
         await settle(0);
         outside();
         await settle(0);
 
         assert.ok(container.querySelector(".export-dropdown") === null, "the menu stayed open");
-        assert.ok(focused() !== trigger, "a click elsewhere handed focus to the trigger");
     });
 });
 

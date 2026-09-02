@@ -344,9 +344,9 @@ describe("what the message can say about the crossing", () => {
 
             assert.equal(sent.length, 1);
             const body = String(sent[0].body);
-            assert.match(body, /Ein Speedtest ist abgeschlossen/, "the template's own words stayed English");
+            assert.match(body, /Ein Speedtest ist abgeschlossen/, "the template's own words are not German");
             assert.match(body, /Grenzwerte überschritten: Download 40 Mbps unter 100/,
-                "the summary stayed English");
+                "the summary is not German");
             assert.doesNotMatch(body, /Crossed limits|A speedtest is finished/);
         } finally {
             await remove(id);

@@ -787,7 +787,7 @@
     "limit_under": "{{metric}} {{value}} {{unit}} нижче {{limit}}",
     "not_measured": "{{metric}} (не виміряно)",
     "below_usual": "Нижче звичайної швидкості: {{crossings}} менше",
-    "shortfall": "{{metric}} {{shortfall}} %",
+    "shortfall": "{{metric}} на {{shortfall}} %",
     "and": " і "
   }
 }

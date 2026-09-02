@@ -787,7 +787,7 @@
     "limit_under": "{{metric}} {{value}} {{unit}} pod {{limit}}",
     "not_measured": "{{metric}} (neměřeno)",
     "below_usual": "Pod obvyklou rychlostí: {{crossings}} méně",
-    "shortfall": "{{metric}} {{shortfall}} %",
+    "shortfall": "{{metric}} o {{shortfall}} %",
     "and": " a "
   }
 }

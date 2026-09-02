@@ -443,7 +443,7 @@ describe("alertSummary", () => {
                 baselineShortfallDownload: 40, baselineShortfallUpload: 50});
 
             assert.equal(alertSummary(payload, {language: "de"}),
-                "\nUnter der üblichen Geschwindigkeit: Download 40 % und Upload 50 % darunter");
+                "\nUnter der üblichen Geschwindigkeit: Download um 40 % und Upload um 50 % darunter");
         });
 
         it("phrases an unmeasured metric", () => {

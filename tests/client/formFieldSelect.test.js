@@ -58,6 +58,20 @@ describe("a select form field", () => {
         assert.deepEqual(changes, ["en", ""]);
     });
 
+    /**
+     * A stored code the list no longer offers - a locale dropped in an
+     * upgrade. React sets a select to a value with no option as blank, and
+     * the blank control was still sent on save and refused by the server, a
+     * red mark over a field the operator never touched. Shown as itself, it
+     * can be seen and changed.
+     */
+    it("shows a value the list does not offer as itself", () => {
+        const {select} = mount({value: "tlh"});
+
+        assert.equal(select.value, "tlh");
+        assert.deepEqual([...select.options].map((option) => option.value), ["", "en", "de", "tlh"]);
+    });
+
     it("is labelled for the reader", () => {
         const {container, select} = mount();
         const label = container.querySelector("label");

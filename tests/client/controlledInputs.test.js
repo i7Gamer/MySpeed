@@ -23,7 +23,7 @@ describe("the form field's value", () => {
         return source.slice(at, source.indexOf(")}", at));
     };
 
-    for (const type of ["text", "number", "textarea"])
+    for (const type of ["text", "number", "textarea", "select"])
         it(`never hands the ${type} input an undefined value`, () => {
             assert.match(branchFor(type), /value=\{value \?\? ""\}/,
                 `the ${type} input flips between controlled and uncontrolled`);

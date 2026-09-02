@@ -1,8 +1,44 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import os from "node:os";
 import {
-    DEFAULT_LANGUAGE, NOTIFICATION_LANGUAGES, phrase
+    DEFAULT_LANGUAGE, NOTIFICATION_LANGUAGES, localeCodesIn, phrase
 } from "../../server/util/notificationLocale.js";
+import { ALERT_METRICS } from "../../server/util/alertThreshold.js";
+
+const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+
+/**
+ * The keys the server asks the section for, read off its source.
+ *
+ * The client's own key scanner cannot see these - they are never rendered by
+ * the client, and it exempts the whole section - so without this a phrase
+ * deleted from every locale, or a key misspelt in the code, prints as its
+ * own key in a message and nothing fails. Three shapes: a literal handed to
+ * phrase() or the modules' word(), a constant ending in _PHRASE, and the
+ * crossing each alert metric names; the metric names are built from a prefix
+ * and are listed from the metrics themselves.
+ */
+const phrasesTheServerAsksFor = () => {
+    const files = ["server/util/alertThreshold.js", "server/util/notificationLocale.js",
+        ...fs.readdirSync(path.join(ROOT, "server", "integrations"))
+            .filter((name) => name.endsWith(".js") && name !== "index.js")
+            .map((name) => `server/integrations/${name}`)];
+    const source = files.map((file) => fs.readFileSync(path.join(ROOT, file), "utf8")).join("\n");
+
+    const keys = new Set();
+    for (const [, key] of source.matchAll(/\b(?:phrase\([^,)]+,|word\()\s*"([a-z_]+)"/g)) keys.add(key);
+    for (const [, key] of source.matchAll(/_PHRASE = "([a-z_]+)"/g)) keys.add(key);
+    for (const metric of ALERT_METRICS) keys.add(metric.crossing).add(`metric_${metric.key}`);
+
+    return keys;
+};
+
+const englishSection = () => Object.keys(JSON.parse(fs.readFileSync(
+    path.join(ROOT, "client", "public", "assets", "locales", "en.json"), "utf8")).notification);
 
 /**
  * The words a notification is built from, in the recipient's language.
@@ -58,6 +94,40 @@ describe("the notification phrases", () => {
     // %variable%.
     it("leaves a placeholder it was given nothing for", () => {
         assert.equal(phrase("en", "limit_over", {metric: "ping"}), "ping {{value}} {{unit}} over {{limit}}");
+    });
+
+    it("defines in English every phrase the server asks for, and no phrase it does not", () => {
+        const asked = phrasesTheServerAsksFor();
+        const defined = englishSection();
+
+        assert.ok(asked.size >= 15, `only ${asked.size} phrases found in the source; the scan stopped seeing them`);
+        assert.deepEqual([...asked].filter((key) => !defined.includes(key)), [],
+            "the server asks for phrases en.json does not define - they would print as their own key");
+        assert.deepEqual(defined.filter((key) => !asked.has(key)), [],
+            "en.json defines phrases nothing asks for - dead strings every translator still has to carry");
+    });
+
+    /**
+     * The sources are tried in turn and the first that answers wins - so a
+     * directory that exists and holds no locale must answer nothing, not an
+     * empty list, or the chain stops there while the next source had every
+     * file: a `build/` left by a partial build beside a full source tree,
+     * or the reverse.
+     */
+    it("reads an empty directory as no source at all", () => {
+        const empty = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-locales-"));
+        const full = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-locales-"));
+        fs.writeFileSync(path.join(full, "en.json"), "{}");
+        fs.writeFileSync(path.join(full, "readme.txt"), "not a locale");
+
+        try {
+            assert.equal(localeCodesIn(path.join(empty, "absent")), null);
+            assert.equal(localeCodesIn(empty), null, "an empty directory answered a list");
+            assert.deepEqual(localeCodesIn(full), ["en"]);
+        } finally {
+            fs.rmSync(empty, {recursive: true, force: true});
+            fs.rmSync(full, {recursive: true, force: true});
+        }
     });
 
     /**

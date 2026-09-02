@@ -1,7 +1,7 @@
 import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { useState } from "react";
-import { cleanup, click, createElement, focus, focused, render } from "../helpers/renderHarness.js";
+import { cleanup, click, createElement, focus, focused, pendingListenerError, render } from "../helpers/renderHarness.js";
 import { Counter } from "./fixtures/Counter.jsx";
 
 /**
@@ -13,6 +13,25 @@ import { Counter } from "./fixtures/Counter.jsx";
 afterEach(cleanup);
 
 describe("the render harness", () => {
+    /**
+     * jsdom reports an exception thrown inside a DOM listener on its own
+     * channel and dispatchEvent returns as if nothing happened - so a hook
+     * that threw passed every test that drove it, and only a focus assertion
+     * that happened to look would have noticed. cleanup() rethrows what the
+     * channel recorded, and every suite runs it after each test.
+     */
+    it("fails the test whose listener threw", () => {
+        const {container} = render(createElement("button", null, "x"));
+        const button = container.querySelector("button");
+        button.addEventListener("click", () => { throw new Error("the listener threw"); });
+
+        click(button);
+
+        assert.ok(pendingListenerError(), "the throw was swallowed");
+        assert.throws(() => cleanup(), /the listener threw/);
+        assert.equal(pendingListenerError(), false, "the error was reported twice");
+    });
+
     it("loads a component written as JSX and renders it", () => {
         const {container} = render(createElement(Counter));
 

@@ -88,6 +88,12 @@ export const FormField = ({
                         {options.map((option) => (
                             <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
+                        {/* A stored value the list no longer offers - a locale
+                            dropped in an upgrade - is shown as itself rather
+                            than as a blank control that is still sent on save. */}
+                        {value && !options.some((option) => option.value === value) && (
+                            <option value={value}>{value}</option>
+                        )}
                     </select>
                 </span>
             )}

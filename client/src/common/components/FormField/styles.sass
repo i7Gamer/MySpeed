@@ -51,11 +51,20 @@
   min-height: 4rem
   resize: vertical
 
+// The select's flex item is its wrapper, not the select - the caret is drawn
+// on the wrapper (see the shared .select-wrap in the dialog styles), and the
+// select inside it is told to fill it. Without this the wrapper takes the
+// whole row and the label folds to one word per line.
+.form-field .select-wrap
+  width: min(55%, 22rem)
+  flex-shrink: 0
+
 @media (max-width: 600px)
   .form-field
     flex-direction: column
     align-items: flex-start
     gap: 0.5rem
 
-    .form-field-input
+    .form-field-input,
+    .select-wrap
       width: 100%

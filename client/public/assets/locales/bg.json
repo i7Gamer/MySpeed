@@ -787,7 +787,7 @@
     "limit_under": "{{metric}} {{value}} {{unit}} под {{limit}}",
     "not_measured": "{{metric}} (не е измерено)",
     "below_usual": "Под обичайната скорост: {{crossings}} по-малко",
-    "shortfall": "{{metric}} {{shortfall}} %",
+    "shortfall": "{{metric}} с {{shortfall}} %",
     "and": " и "
   }
 }

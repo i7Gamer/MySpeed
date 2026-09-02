@@ -24,6 +24,8 @@ const LOCALES = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..",
 
 export const FALLBACK_LANGUAGE = "en";
 
+// Directory order and code-for-name: a test must not read languages[0] or a
+// name off this list and expect the real module's answer.
 export const languages = fs.readdirSync(LOCALES)
     .filter((name) => name.endsWith(".json"))
     .map((name) => name.slice(0, -".json".length))

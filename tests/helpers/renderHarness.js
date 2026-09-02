@@ -1,4 +1,6 @@
-import { JSDOM, VirtualConsole } from "jsdom";
+// First, before React DOM: it decides at load whether it has a DOM. See the
+// module itself for what went wrong when it did not.
+import { listenerErrors, window } from "./domGlobals.js";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import i18next from "i18next";
@@ -24,37 +26,13 @@ import english from "../../client/public/assets/locales/en.json" with { type: "j
  * Tests here are for logic, state and focus, which is why the helpers stop at
  * hooks, contexts and menus rather than pages.
  *
- * One document per process, installed at import. Components read `document`
- * and `window` as globals, React DOM reads them at module load, and a test
- * file is one process under node --test - so the world is set up once and each
- * test empties it rather than rebuilding it.
+ * One document per process, installed at import by domGlobals.js - ahead of
+ * React DOM, which reads the globals at module load. Components read
+ * `document` and `window` as globals, and a test file is one process under
+ * node --test, so the world is set up once and each test empties it rather
+ * than rebuilding it.
  */
 
-// Navigation is what an <a download> click asks for, and jsdom does not
-// implement it: it reports the fact through its virtual console as an error
-// and carries on, which is the right outcome and the wrong noise.
-const virtualConsole = new VirtualConsole();
-virtualConsole.forwardTo(console, {jsdomErrors: "none"});
-
-const dom = new JSDOM("<!doctype html><html><body></body></html>",
-    {url: "http://localhost/", pretendToBeVisual: true, virtualConsole});
-
-const {window} = dom;
-
-// Everything a component or React DOM reaches for as a bare global. Defined
-// rather than assigned, because node already owns a `navigator` and a
-// `localStorage` of its own on the global, and neither of them is jsdom's.
-for (const name of ["window", "document", "navigator", "localStorage", "sessionStorage",
-    "HTMLElement", "HTMLInputElement", "HTMLButtonElement", "HTMLAnchorElement", "SVGElement",
-    "Element", "Node", "Text", "DocumentFragment", "Event", "CustomEvent", "KeyboardEvent",
-    "MouseEvent", "FocusEvent", "InputEvent", "MutationObserver", "getComputedStyle",
-    "requestAnimationFrame", "cancelAnimationFrame"])
-    Object.defineProperty(globalThis, name, {value: window[name], configurable: true, writable: true});
-
-// What a browser hands an export: a URL for the blob it just built. jsdom
-// implements neither, and the export's own code needs both.
-window.URL.createObjectURL = () => "blob:jsdom";
-window.URL.revokeObjectURL = () => undefined;
 
 // Tells React that act() is in charge of flushing, so a state update outside
 // one is a warning rather than a silent difference in timing.
@@ -107,7 +85,15 @@ export const render = (element) => {
 export const cleanup = () => {
     for (const mount of [...mounted]) mount.unmount();
     window.document.body.innerHTML = "";
+
+    if (listenerErrors.length > 0) {
+        const [first] = listenerErrors.splice(0);
+        throw first;
+    }
 };
+
+/** Whether a listener has thrown since the last cleanup - for the harness's own test. */
+export const pendingListenerError = () => listenerErrors.length > 0;
 
 /**
  * The events a reader produces, dispatched the way a browser would - bubbling

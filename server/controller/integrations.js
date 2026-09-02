@@ -206,8 +206,11 @@ const DIGEST_FIELDS = [
 ];
 
 /**
- * The language a notifier writes in, offered to every notifier for the reason
- * the two lists above are. A choice from the locales the interface ships -
+ * The language a notifier writes its per-test messages in - the finished and
+ * failed templates and the alert summary - offered to every notifier for the
+ * reason the two lists above are. The digest is composed once per instance
+ * before any recipient is known (tasks/digestReport.js) and does not read it
+ * yet. A choice from the locales the interface ships -
  * the list is read off the locale directory, so it cannot name a language
  * nothing can answer - and not required: a notifier that chose none writes
  * English, which is what every row from before the field existed did.
