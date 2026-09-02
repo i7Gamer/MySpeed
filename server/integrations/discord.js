@@ -33,7 +33,7 @@ export const DISCORD_USERNAME_LIMIT = 80;
 // otherwise reads identically whether it describes the WAN or the LAN box. A
 // pre-target row renders it as N/A, the shape every unmeasured figure takes.
 const defaults = {
-    finished: ":sparkles: **A speedtest is finished**\n > :dart: `Target`: %targetName%\n > :ping_pong: `Ping`: %ping% ms (±%jitter% ms)\n > :arrow_up: `Upload`: %upload% Mbps\n > :arrow_down: `Download`: %download% Mbps",
+    finished: ":sparkles: **A speedtest is finished**\n > :dart: `Target`: %targetName%\n > :ping_pong: `Ping`: %ping% ms (±%jitter% ms)\n > :arrow_up: `Upload`: %upload% Mbps\n > :arrow_down: `Download`: %download% Mbps%alertSummary%",
     failed: ":x: **A speedtest has failed**\n > `Target`: %targetName%\n > `Reason`: %error%"
 };
 

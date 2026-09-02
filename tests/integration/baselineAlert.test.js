@@ -118,6 +118,7 @@ describe("the verdict a stored history produces", () => {
             // 300 against the 500 median the history above produces, with
             // upload holding, so the round names one direction.
             baselineDirection: "download", baselineShortfall: 40,
+            baselineDetail: "download 40% under",
             baselineDownload: 500, baselineUpload: 200
         });
     });
@@ -294,6 +295,25 @@ describe("what the notifier is actually told", () => {
             assert.equal(sent.length, 1, "the drop below the line went unreported");
             assert.match(String(sent[0].body), /WAN: download 40% under/,
                 "the message could not name what crossed");
+        } finally {
+            await remove(id);
+        }
+    });
+
+    // The shipped template, untouched: %alertSummary% at its end carries the
+    // baseline crossing with each direction's own number, so the alert this
+    // feature sends explains itself without anyone editing a template.
+    it("explains the crossing in the default template", async () => {
+        const target = await seedTarget({name: "WAN", baselinePercent: PERCENT});
+        await seedHistory(history(target.id));
+
+        const id = await createTelegram({alert_only: true});
+        try {
+            await announce(target, SLOW);
+
+            assert.equal(sent.length, 1);
+            assert.match(String(sent[0].body), /Below its usual speed: download 40% under/,
+                "the default message does not say what the alert is about");
         } finally {
             await remove(id);
         }

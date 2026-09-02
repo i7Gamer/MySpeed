@@ -314,3 +314,52 @@ export const crossedLimits = (payload, data) => {
 
     return crossed.length > 0 ? crossed.join(CLAUSE_SEPARATOR) : null;
 };
+
+/**
+ * The payload key the whole alert travels on as one ready-made passage, and
+ * the labels its lines open with.
+ */
+export const ALERT_SUMMARY = "alertSummary";
+
+const SUMMARY_BASELINE_LABEL = "Below its usual speed: ";
+const SUMMARY_LIMITS_LABEL = "Crossed limits: ";
+
+/**
+ * Everything the alert has to say, as a passage a default template can carry -
+ * or the empty string, which is the whole trick.
+ *
+ * Every other key renders a null as the not-measured mark, so naming any of
+ * them in a shipped template stamped "N/A" on every healthy message - which is
+ * why, until this, no default could say why an alert arrived. This one
+ * substitutes to nothing at all, leading newlines included: a healthy message
+ * reads byte-for-byte as it always did, and a breach explains itself without
+ * anyone editing a template. Each line carries its own "\n", so the token sits
+ * flush against a default's last line with no blank tail.
+ *
+ * The target's own line first, then this integration's limits: the baseline is
+ * a fact about the test and reads the same to every recipient, where the
+ * limits are the recipient's own - the same split that puts this key on the
+ * dispatcher rather than on the payload.
+ *
+ * The baseline line hangs on the phrase, not the flag alone: a payload from an
+ * older node can say breached without carrying baselineDetail, and a label
+ * introducing nothing is not a line worth sending.
+ *
+ * English composed in the server, like the six defaults it rides in; the
+ * localisation pass (the language config key) takes both together.
+ */
+export const alertSummary = (payload, data) => {
+    const lines = [];
+
+    if (payload?.[BASELINE_BREACHED] === true
+        && typeof payload.baselineDetail === "string" && payload.baselineDetail !== "")
+        lines.push(SUMMARY_BASELINE_LABEL + payload.baselineDetail);
+
+    // A second three-entry walk over ALERT_METRICS beside the dispatcher's
+    // crossedLimits call - shared, the two calls would trade this line for a
+    // threaded argument at every site; the walk is three comparisons.
+    const crossed = crossedLimits(payload, data);
+    if (crossed !== null) lines.push(SUMMARY_LIMITS_LABEL + crossed);
+
+    return lines.map((line) => `\n${line}`).join("");
+};

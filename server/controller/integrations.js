@@ -1,7 +1,7 @@
 import IntegrationData from '../models/IntegrationData.js';
 import integrationModules from '../integrations/index.js';
-import { ALERT_CROSSED, ALERT_METRICS, ALERT_ONLY, breachesThreshold, crossedLimits, wantsOnlyBreaches }
-    from '../util/alertThreshold.js';
+import { ALERT_CROSSED, ALERT_METRICS, ALERT_ONLY, ALERT_SUMMARY, alertSummary, breachesThreshold,
+    crossedLimits, wantsOnlyBreaches } from '../util/alertThreshold.js';
 import { DIGEST_MONTHLY_FIELD, DIGEST_WEEKLY_FIELD } from '../util/digestOptIn.js';
 export { wantsDigest } from '../util/digestOptIn.js';
 import { FAILED_VARIABLES, FINISHED_VARIABLES } from '../util/notificationPayload.js';
@@ -132,7 +132,8 @@ export const triggerEvent = async (name, data) => {
              * useless beside the %error% the failure template already has.
              */
             const described = name === "testFinished"
-                ? {...data, [ALERT_CROSSED]: crossedLimits(data, integration.data)}
+                ? {...data, [ALERT_CROSSED]: crossedLimits(data, integration.data),
+                    [ALERT_SUMMARY]: alertSummary(data, integration.data)}
                 : data;
 
             tasks.push(Promise.resolve()

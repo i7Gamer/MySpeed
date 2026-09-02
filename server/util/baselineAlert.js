@@ -164,7 +164,7 @@ const usablePercent = (value) => {
  * unmeasured for a reason nothing on the screen explains.
  */
 const quiet = () => ({armed: false, breached: false, baselineDirection: null,
-    baselineShortfall: null, baselineDownload: null, baselineUpload: null});
+    baselineShortfall: null, baselineDetail: null, baselineDownload: null, baselineUpload: null});
 
 /**
  * Whether one metric's reading sits under its share of that metric's median.
@@ -347,6 +347,17 @@ export const baselineVerdict = (row, previous, baseline, percent) => {
         baselineDirection: below.length > 0 ? below.join(METRIC_SEPARATOR) : null,
         baselineShortfall: below.length > 0
             ? Math.max(...below.map((metric) => shortfallOf(row, baseline, metric)))
+            : null,
+        /*
+         * And the crossing as one ready-made phrase, each direction carrying
+         * its own number - the sentence the deepest-only pair above cannot
+         * say when both cross in one round. The message summary is composed
+         * from this (alertThreshold.js alertSummary), and a template may name
+         * it directly.
+         */
+        baselineDetail: below.length > 0
+            ? `${below.map((metric) => `${metric} ${shortfallOf(row, baseline, metric)}%`)
+                .join(" and ")} under`
             : null,
         // The medians themselves rather than the lines they imply, so a message
         // template can say what this target usually delivers beside what it

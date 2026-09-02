@@ -260,6 +260,22 @@ describe("baselineVerdict", () => {
             assert.equal(baselineShortfall, 50);
         });
 
+        /**
+         * The whole crossing as one ready-made phrase, each direction carrying
+         * its own number - which is what the deepest-only pair above cannot
+         * say when both cross in one round. The message summary is built from
+         * this, and a template may name it directly.
+         */
+        it("phrases the crossing with each direction's own number", () => {
+            assert.equal(verdict(below, above).baselineDetail, "download 40% under");
+            assert.equal(verdict({download: 300, upload: 100}, above).baselineDetail,
+                "download 40% and upload 50% under");
+        });
+
+        it("phrases nothing on a round that crossed nothing", () => {
+            assert.equal(verdict(above, above).baselineDetail, null);
+        });
+
         // A whole percentage: the figure goes into a sentence, not into
         // arithmetic, and 30.02 per cent under is a number nobody says.
         it("rounds the shortfall to a whole percentage", () => {
@@ -285,7 +301,8 @@ describe("baselineVerdict", () => {
 
     describe("when there is nothing to judge against", () => {
         const quiet = {armed: false, breached: false, baselineDirection: null,
-            baselineShortfall: null, baselineDownload: null, baselineUpload: null};
+            baselineShortfall: null, baselineDetail: null,
+            baselineDownload: null, baselineUpload: null};
 
         /**
          * A share the operator set, with no median to judge it against yet, is
@@ -302,7 +319,7 @@ describe("baselineVerdict", () => {
         it("is armed but silent while it has no baseline to judge against", () => {
             assert.deepEqual(baselineVerdict(below, above, null, PERCENT),
                 {armed: true, breached: false, baselineDirection: null, baselineShortfall: null,
-                    baselineDownload: null, baselineUpload: null});
+                    baselineDetail: null, baselineDownload: null, baselineUpload: null});
         });
 
         /**

@@ -17,7 +17,7 @@ export const TELEGRAM_MESSAGE_LIMIT = 4096;
 // Both templates name the target: on a multi-target instance every message
 // otherwise reads identically whether it describes the WAN or the LAN box.
 const defaults = {
-    finished: "✨ *A speedtest is finished*\n🎯 `Target`: %targetName%\n🏓 `Ping`: %ping% ms (±%jitter% ms)\n🔼 `Upload`: %upload% Mbps\n🔽 `Download`: %download% Mbps",
+    finished: "✨ *A speedtest is finished*\n🎯 `Target`: %targetName%\n🏓 `Ping`: %ping% ms (±%jitter% ms)\n🔼 `Upload`: %upload% Mbps\n🔽 `Download`: %download% Mbps%alertSummary%",
     failed: "❌ *A speedtest has failed*\n`Target`: %targetName%\n`Reason`: %error%"
 };
 

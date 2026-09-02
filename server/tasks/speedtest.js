@@ -1080,11 +1080,12 @@ export const baselineKeys = async (target, measured) => {
     const windowRows = await tests.listForBaseline(target.id, baselineWindowStart());
     const [previous] = windowRows;
 
-    const {armed, breached, baselineDirection, baselineShortfall, baselineDownload, baselineUpload} =
+    const {armed, breached, baselineDirection, baselineShortfall, baselineDetail,
+        baselineDownload, baselineUpload} =
         baselineVerdict(measured, previous, baselineOf(windowRows), target.baselinePercent);
 
     return {baselineArmed: armed, baselineBreached: breached,
-        baselineDirection, baselineShortfall, baselineDownload, baselineUpload};
+        baselineDirection, baselineShortfall, baselineDetail, baselineDownload, baselineUpload};
 };
 
 const executeTarget = async (target, type, retried = false) => {

@@ -3,7 +3,7 @@ import { DATE_VARIABLES } from './helpers.js';
 // than spelled again: a chip the dialog offers must be a key the payload
 // carries, and two literals are how those stop agreeing without anything
 // failing to compile.
-import { ALERT_CROSSED, BASELINE_ARMED, BASELINE_BREACHED } from './alertThreshold.js';
+import { ALERT_CROSSED, ALERT_SUMMARY, BASELINE_ARMED, BASELINE_BREACHED } from './alertThreshold.js';
 
 /**
  * What an integration is told about a test, and what an operator may name in a
@@ -68,6 +68,11 @@ const FINISHED_KEYS = [
     // identically. Null on a test that crossed nothing, which every template
     // naming them renders as the not-measured mark.
     "baselineDirection", "baselineShortfall",
+    // The same crossing as one ready-made phrase, each direction carrying its
+    // own number - "download 40% and upload 50% under" - which the pair above
+    // cannot say when both cross in one round. The default templates' summary
+    // line is built from it.
+    "baselineDetail",
     // And the yardstick itself, so a message can say what this line usually
     // delivers beside what it just did. The percentage is not here: it is the
     // operator's own setting, on the screen they set it from, where these six
@@ -85,7 +90,16 @@ const FINISHED_KEYS = [
      * controller/integrations.js. Listed all the same, because the chip row is
      * built from this list and a variable that substitutes must be offered.
      */
-    ALERT_CROSSED
+    ALERT_CROSSED,
+    /*
+     * The whole alert as one ready-made passage, filled in at the same
+     * dispatch point - and the one key whose quiet value is the empty string
+     * rather than null. Null renders as the not-measured mark, which is right
+     * for a measurement nobody took and would stamp "N/A" on every healthy
+     * message here; empty substitutes to nothing at all, which is what lets
+     * this key sit in the six shipped templates.
+     */
+    ALERT_SUMMARY
 ];
 
 const FAILED_KEYS = ["id", "created", "provider", "error", "targetId", "targetName", "primary", "alerts"];

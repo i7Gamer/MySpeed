@@ -307,6 +307,48 @@ describe("what the message can say about the crossing", () => {
         }
     });
 
+    /**
+     * The shipped template, untouched by the operator, now explains the alert
+     * it carries: %alertSummary% sits at its end and substitutes to a passage
+     * on a breach and to nothing at all on a healthy result. This is the pair
+     * that pins both halves - the passage arriving without anyone editing a
+     * template, and the healthy message reading exactly as it always did.
+     */
+    it("explains a breach in the default template", async () => {
+        const id = await createTelegram({alert_only: true, alert_download_below: 100});
+        try {
+            await triggerEvent("testFinished", SLOW);
+
+            assert.equal(sent.length, 1);
+            const body = String(sent[0].body);
+            assert.match(body, /Crossed limits: download 40 Mbps under 100/,
+                "the shipped template still cannot say why the message arrived");
+            assert.doesNotMatch(body, /%alertSummary%/,
+                "the token stood unsubstituted in the message");
+        } finally {
+            await remove(id);
+        }
+    });
+
+    it("adds nothing to a healthy result's default message", async () => {
+        const id = await createTelegram({alert_download_below: 10});
+        try {
+            await triggerEvent("testFinished", GOOD);
+
+            assert.equal(sent.length, 1);
+            const body = String(sent[0].body);
+            // Not asserting on N/A: the payload here names no target, and the
+            // default's %targetName% legitimately reads unmeasured - what must
+            // not appear is the summary's prose or its raw token.
+            assert.doesNotMatch(body, /Crossed limits|Below its usual|%alertSummary%/,
+                "a healthy message carries alert prose or the raw token");
+            assert.match(body, /Download.*: 500 Mbps/,
+                "the default message lost its own last line");
+        } finally {
+            await remove(id);
+        }
+    });
+
     // A failure carries no readings at all, so every armed metric would be
     // described as unmeasured - true, and useless beside the %error% the
     // failure template already carries.

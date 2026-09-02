@@ -28,7 +28,7 @@ import { wantsDigest } from "../util/digestOptIn.js";
 // box.
 const defaults = {
     finished_subject: "MySpeed: speedtest finished",
-    finished: "A speedtest is finished:\nTarget: %targetName%\nPing: %ping% ms (±%jitter% ms)\nDownload: %download% Mbps\nUpload: %upload% Mbps",
+    finished: "A speedtest is finished:\nTarget: %targetName%\nPing: %ping% ms (±%jitter% ms)\nDownload: %download% Mbps\nUpload: %upload% Mbps%alertSummary%",
     error_subject: "MySpeed: speedtest failed",
     failed: "A speedtest has failed.\nTarget: %targetName%\nReason: %error%"
 };

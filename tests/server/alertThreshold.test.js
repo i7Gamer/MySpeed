@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    ALERT_ONLY, ALERT_METRICS, breachesThreshold, crossedLimits, wantsOnlyBreaches
+    ALERT_ONLY, ALERT_METRICS, alertSummary, breachesThreshold, crossedLimits, wantsOnlyBreaches
 } from "../../server/util/alertThreshold.js";
 
 /**
@@ -371,6 +371,57 @@ describe("crossedLimits", () => {
         for (const value of [null, undefined, "", "abc", 0, -50])
             assert.equal(crossedLimits(result({ping: 9999}), {alert_ping_above: value}), null,
                 `${JSON.stringify(value)} was read as a limit`);
+    });
+});
+
+/**
+ * The whole alert as one ready-made passage, empty when there is nothing to
+ * say - which is what lets it live in the six default templates. Every other
+ * key renders a null as the not-measured mark, so putting any of them in a
+ * default stamped "N/A" on every healthy message; this one substitutes to
+ * nothing at all, leading newlines included, and a healthy message reads
+ * byte-for-byte as it always did.
+ */
+describe("alertSummary", () => {
+    it("says nothing at all about a healthy result", () => {
+        assert.equal(alertSummary(result(), {alert_ping_above: 50}), "");
+        assert.equal(alertSummary(result(), {}), "");
+    });
+
+    it("carries the crossed limits on their own line", () => {
+        assert.equal(alertSummary(result({ping: 62}), {alert_ping_above: 50}),
+            "\nCrossed limits: ping 62 ms over 50");
+    });
+
+    it("carries the baseline crossing on its own line", () => {
+        const payload = result({baselineArmed: true, baselineBreached: true,
+            baselineDetail: "download 40% under"});
+
+        assert.equal(alertSummary(payload, {}),
+            "\nBelow its usual speed: download 40% under");
+    });
+
+    // The target's own line first, then this integration's limits: the
+    // baseline is a fact about the test and reads the same to every
+    // recipient, where the limits are the recipient's own.
+    it("carries both, the target's own line first", () => {
+        const payload = result({download: 80, baselineArmed: true, baselineBreached: true,
+            baselineDetail: "download 40% under"});
+
+        assert.equal(alertSummary(payload, {alert_download_below: 100}),
+            "\nBelow its usual speed: download 40% under"
+            + "\nCrossed limits: download 80 Mbps under 100");
+    });
+
+    // A payload from an older node can say breached without carrying the
+    // phrase; a label introducing nothing is not a line worth sending.
+    it("says nothing for a breach that brought no phrase", () => {
+        assert.equal(alertSummary(result({baselineArmed: true, baselineBreached: true}), {}), "");
+    });
+
+    it("names an armed metric that could not be measured", () => {
+        assert.equal(alertSummary(result({ping: 0}), {alert_ping_above: 50}),
+            "\nCrossed limits: ping (not measured)");
     });
 });
 
