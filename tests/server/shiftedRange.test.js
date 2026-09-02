@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseDateRange, shiftedRange } from "../../server/util/dateRange.js";
+import { calendarDays, parseDateRange, shiftedRange } from "../../server/util/dateRange.js";
 import { zoneFromName } from "../../server/util/timezone.js";
 
 const BERLIN = {zone: zoneFromName("Europe/Berlin")};
@@ -130,5 +130,28 @@ describe("shiftedRange", () => {
         assert.equal(shifted.valid, true);
         assert.ok(shifted.from instanceof Date && shifted.to instanceof Date);
         assert.ok(shifted.zone, "the window carries no zone, so the elapsed cut cannot read one");
+    });
+
+    /**
+     * A recorded decision, not a regression pin. When Samoa jumped the date
+     * line at the end of 2011 it struck 30 December from its calendar, so a
+     * range whose labels span seven dates held six days of tests - and six is
+     * what the day count answers, on purpose: it sizes the comparison window,
+     * and a window is comparable by the time it lived, the same reading
+     * truncateToElapsed cuts by. No zone in today's tzdata has such a jump
+     * ahead of it; this holds the answer still so a real one arrives with the
+     * question already settled rather than re-litigated under an outage.
+     *
+     * Built from instants rather than a fake zone, because the count reads
+     * only the two ends: 27 December 00:00 at -11 to 2 January 23:59:59.999
+     * at +13, exactly what parseDateRange would produce either side of the
+     * jump.
+     */
+    it("counts a range across a struck date by the days it lived", () => {
+        const from = new Date("2011-12-27T11:00:00.000Z");
+        const to = new Date("2012-01-02T10:59:59.999Z");
+
+        assert.equal(calendarDays(from, to), 6,
+            "the struck date was counted as a day somebody could have tested on");
     });
 });

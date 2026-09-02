@@ -74,8 +74,19 @@ const dayString = (carrier) =>
  * Rounded rather than floored: a range runs to 23:59:59.999 of its last day, so
  * the difference is a day short of whole, and a boundary the clock crossed
  * makes it an hour short of that again.
+ *
+ * Counted in time lived, not in date labels, and across a date-line
+ * redefinition the two part ways: a zone that jumps the line the way Samoa did
+ * in 2011 strikes a whole date from its calendar, so a range whose labels span
+ * seven dates holds six days of tests. Six is the answer on purpose - the
+ * count sizes shiftedRange's comparison window, and a window is comparable by
+ * the time it lived, the same reading truncateToElapsed cuts by. No zone in
+ * today's tzdata has such a jump ahead of it; the fake-zone test pins the
+ * choice so a real one arrives with the question already answered.
+ *
+ * Exported for that test alone, the way isPrimaryMember is.
  */
-const calendarDays = (from, to) => Math.round((to - from) / MS_PER_DAY);
+export const calendarDays = (from, to) => Math.round((to - from) / MS_PER_DAY);
 
 /**
  * The same window, whole calendar months earlier.
