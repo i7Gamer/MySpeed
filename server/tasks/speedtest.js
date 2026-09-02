@@ -1201,6 +1201,9 @@ const executeTarget = async (target, type, retried = false) => {
         console.log(`Test #${testResult.id}${target.name ? ` (${target.name})` : ""} was executed successfully in ${time}s. 🏓 ${ping} (±${jitter ?? 'N/A'}) ⬇ ${download}️ ⬆ ${upload}️`);
         // Awaited, so the write is inside the round the shutdown waits for; still
         // contained, so a failed recommendation cannot fail the test it follows.
+        // A write that hangs holds the round's latch - and so does the
+        // tests.create above it, through the same connection, so this adds no
+        // exposure the row did not already carry.
         await createRecommendations().catch(err =>
             console.error(`Could not update the recommendations: ${toErrorMessage(err)}`));
         // Everything the row records, not the five figures this used to send:

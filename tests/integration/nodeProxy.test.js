@@ -417,7 +417,7 @@ describe("node proxy", () => {
      * request open until the 15s timeout.
      */
     it("drops the upstream request when the caller disconnects", async () => {
-        const waitFor = async (condition, timeoutMs) => {
+        const becomesTrue = async (condition, timeoutMs) => {
             const deadline = Date.now() + timeoutMs;
             while (!condition() && Date.now() < deadline)
                 await new Promise((resolve) => setTimeout(resolve, 25));
@@ -428,7 +428,7 @@ describe("node proxy", () => {
         const pending = fetch(`${server.baseUrl}/api/nodes/${nodeId}/hang`, {signal: controller.signal})
             .catch(() => null);
 
-        assert.ok(await waitFor(() => hangReceived > 0, 2000), "the upstream never saw the request");
+        assert.ok(await becomesTrue(() => hangReceived > 0, 2000), "the upstream never saw the request");
         assert.equal(hangClosed, 0, "the upstream request ended before the caller left");
 
         controller.abort();
@@ -436,7 +436,7 @@ describe("node proxy", () => {
 
         // Well under the proxy's own 15s timeout: this close has to come from
         // the disconnect, not from the deadline.
-        assert.ok(await waitFor(() => hangClosed > 0, 2000),
+        assert.ok(await becomesTrue(() => hangClosed > 0, 2000),
             "the upstream request outlived the caller");
     });
 });

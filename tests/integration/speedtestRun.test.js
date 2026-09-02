@@ -22,11 +22,18 @@ beforeEach(async () => {
  * failure has to end up as a stored row explaining itself, because a run that
  * dies without recording anything looks identical to one that never started.
  */
+const NO_TEST_YET = "no test has been stored yet";
+
+// null on the deadline only. A request that failed, or a body that could not
+// be read, names itself rather than being reported as a test that never came.
 const waitForTest = (timeoutMs = 15000) =>
     waitFor(async () => {
         const {body} = await api(server.baseUrl, "/speedtests?limit=1");
         return Array.isArray(body) && body.length > 0 ? body[0] : undefined;
-    }, {timeout: timeoutMs, interval: 100}).catch(() => null);
+    }, {timeout: timeoutMs, interval: 100, message: NO_TEST_YET}).catch((err) => {
+        if (err?.message !== NO_TEST_YET) throw err;
+        return null;
+    });
 
 /**
  * The round the scheduler starts when every target sits outside the schedule.

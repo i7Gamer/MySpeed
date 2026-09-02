@@ -56,6 +56,9 @@ const MISSING_DURATION = 0;
 const durationSeconds = (elapsedMs) =>
     Number.isFinite(elapsedMs) ? Math.round(elapsedMs / MS_PER_SECOND) : MISSING_DURATION;
 
+// The same guard for a provider that already reports seconds.
+const wholeSeconds = (seconds) => Number.isFinite(seconds) ? Math.round(seconds) : MISSING_DURATION;
+
 const round = (value) => value === null || value === undefined || !Number.isFinite(Number(value))
     ? null
     : parseFloat(Number(value).toFixed(2));
@@ -612,8 +615,8 @@ export const parseIperf3 = (test) => {
         // Both transfers, in seconds, as the other providers report their own
         // total. Taken from the runs' own clocks rather than the wall time,
         // which would include the latency sampling and the process starts.
-        time: Math.round((Number(download?.sum_received?.seconds ?? download?.sum_sent?.seconds ?? 0)
-            + Number(upload?.sum_sent?.seconds ?? upload?.sum_received?.seconds ?? 0))),
+        time: wholeSeconds(Number(download?.sum_received?.seconds ?? download?.sum_sent?.seconds ?? 0)
+            + Number(upload?.sum_sent?.seconds ?? upload?.sum_received?.seconds ?? 0)),
         ...identity,
         // After the spread, which carries the null a TCP run keeps: this is
         // the one provider whose packet loss depends on how the run was asked

@@ -18,10 +18,12 @@
  *
  * What is left of a round by then is database writes and a notification, so
  * this is generous. Sized with util/speedtest.js's SHUTDOWN_EXIT_WAIT to stay
- * inside shutdown.js's SHUTDOWN_GRACE_MS: the two waits run in sequence, and
- * the deadline that outranks them exits without closing the handle at all.
+ * inside shutdown.js's SHUTDOWN_GRACE_MS with room for the close itself: the
+ * two waits run in sequence before it, and the deadline that outranks them
+ * all exits without closing the handle at all - so a child that cannot die
+ * and a round that cannot end must still leave the close its own time.
  */
-export const SHUTDOWN_ROUND_WAIT = 2000;
+export const SHUTDOWN_ROUND_WAIT = 1500;
 
 let activeRound = null;
 

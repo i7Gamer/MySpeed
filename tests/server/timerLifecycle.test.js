@@ -323,26 +323,24 @@ describe("the startup speedtest", () => {
     });
 
     it("takes no offset when asked for now", () => {
-        assert.match(runTask, /if \(!immediate && scheduleOffset === "true"/,
+        assert.match(runTask, /const scheduleOffset = immediate \? undefined : await config\.getValue\("scheduleOffset"\)/,
             "the offset sleep is not conditional on how the run was asked for");
     });
 
-    // Someone set the flag asking for a test the moment the server is up, the
-    // way a run by hand asks for one now - and those are not held to the quiet
-    // hours either.
-    it("is not held to the quiet hours", () => {
-        assert.match(runTask, /if \(!immediate && await withinQuietHours\(\)\)/);
+    // The quiet hours bind the round itself, member by member, for an "auto"
+    // run - so an exemption here would only move the refusal one call down.
+    it("is still held to the quiet hours", () => {
+        assert.match(runTask, /if \(await withinQuietHours\(\)\)/);
+        assert.doesNotMatch(runTask, /immediate && await withinQuietHours/,
+            "the startup run skips a check the round repeats anyway");
     });
 
     // The pause is someone asking for no tests at all, which a boot does not
     // override.
     it("still honours the pause", () => {
-        const pause = runTask.indexOf("pauseController.currentState");
-        const option = runTask.indexOf("const immediate");
-
-        assert.notEqual(pause, -1);
-        assert.doesNotMatch(runTask, /!immediate && pauseController/);
-        assert.ok(option < pause, "the option is read after a guard that should not depend on it");
+        assert.notEqual(runTask.indexOf("pauseController.currentState"), -1);
+        assert.doesNotMatch(runTask, /immediate && pauseController|immediate \|\| pauseController/,
+            "a boot overrides the pause");
     });
 
     it("reads its option inside the body, where bodyOf() can see the whole function", () => {

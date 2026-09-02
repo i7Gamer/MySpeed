@@ -107,14 +107,6 @@ describe("updating the recommendations", () => {
     });
 
     /**
-     * The write happens before the announcement, which it did not.
-     *
-     * triggerEvent used to be called above the write, so a database that then
-     * refused it had already told every configured webhook that the
-     * recommendations had changed - and told them the figures it was about to
-     * fail to store. A notification is not retractable.
-     */
-    /**
      * The writer is reached once per round member, and two members finishing
      * close together both read an empty table before either wrote. The row is
      * a singleton by intent and the reader copes with a stray - but a first
@@ -129,6 +121,14 @@ describe("updating the recommendations", () => {
         assert.equal(stored.download, 200, "the later update lost to the earlier one");
     });
 
+    /**
+     * The write happens before the announcement, which it did not.
+     *
+     * triggerEvent used to be called above the write, so a database that then
+     * refused it had already told every configured webhook that the
+     * recommendations had changed - and told them the figures it was about to
+     * fail to store. A notification is not retractable.
+     */
     it("does not announce a set it failed to store", async () => {
         const create = model.create;
         model.create = async () => {

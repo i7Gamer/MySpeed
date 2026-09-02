@@ -102,9 +102,13 @@ describe("waiting for the active round", () => {
      * outranks them both exits without closing the database. Sized together
      * so the ordinary path always finishes inside it.
      */
-    it("fits inside the shutdown deadline beside the child's wait", () => {
-        assert.ok(SHUTDOWN_EXIT_WAIT + SHUTDOWN_ROUND_WAIT < SHUTDOWN_GRACE_MS,
-            "the two waits together outlast the deadline that would skip the close");
+    it("fits inside the shutdown deadline beside the child's wait, with time for the close", () => {
+        // What the close needs when both waits gave up: a mysql pool draining
+        // is the slow case, and it is the case the whole wait exists for.
+        const DB_CLOSE_BUDGET_MS = 1500;
+
+        assert.ok(SHUTDOWN_EXIT_WAIT + SHUTDOWN_ROUND_WAIT + DB_CLOSE_BUDGET_MS <= SHUTDOWN_GRACE_MS,
+            "the two waits together leave the close no time before the deadline skips it");
     });
 });
 

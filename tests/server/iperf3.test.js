@@ -159,6 +159,15 @@ describe("parsing an iperf3 test", () => {
         assert.equal(parseIperf3(bothWays()).time, 20);
     });
 
+    // A duration the CLI could not report is the column's own default, never
+    // NaN - which the INTEGER column refuses, taking the measurement with it.
+    it("stores no duration rather than NaN when a transfer's time is unreadable", () => {
+        const cut = bothWays();
+        cut.runs.download.data.sum_received.seconds = "unreadable";
+
+        assert.equal(parseIperf3(cut).time, 0);
+    });
+
     /**
      * Half a result has nowhere honest to be stored: both throughput columns
      * are NOT NULL and neither has a sentinel for "unmeasured", so a run that

@@ -28,10 +28,8 @@ export const moveClientBuild = (rootDir = path.join(import.meta.dirname, '..')) 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
 if (isMain) {
-    const rootDir = process.argv[2] ?? process.env.MOVE_CLIENT_BUILD_ROOT;
-
     try {
-        const rootBuild = moveClientBuild(rootDir);
+        const rootBuild = moveClientBuild(process.argv[2]);
         console.log(`Moved client/build to ${rootBuild}`);
     } catch (err) {
         console.error(err.message);
