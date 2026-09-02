@@ -195,6 +195,24 @@ describe("withAlpha", () => {
         assert.equal(withAlpha("rgb(8, 145, 178)", 0.4), "rgba(8, 145, 178, 0.4)");
     });
 
+    /**
+     * The space-separated spelling CSS Color 4 prefers. Nothing in the palette
+     * is authored that way today, but the docblock promises "whatever notation
+     * it arrived in" - and the comma-only split honoured that promise by
+     * emitting the mixed syntax `rgba(8 145 178, 0.25)`, which canvas
+     * addColorStop rejects with a thrown SyntaxError, blanking the chart
+     * mid-draw the day an engine's computed value comes back space-form.
+     */
+    it("takes the space-separated forms too", async () => {
+        const {withAlpha} = await import("../../client/src/pages/Statistics/charts/lineChartConfig.js");
+
+        assert.equal(withAlpha("rgb(8 145 178)", 0.25), "rgba(8, 145, 178, 0.25)");
+        assert.equal(withAlpha("hsl(38 92% 50%)", 0.25), "hsla(38, 92%, 50%, 0.25)");
+        // The slash form carries its own alpha, which is replaced the way the
+        // comma form's is.
+        assert.equal(withAlpha("rgb(8 145 178 / 0.6)", 0.1), "rgba(8, 145, 178, 0.1)");
+    });
+
     it("replaces an alpha rather than appending a second one", async () => {
         const {withAlpha} = await import("../../client/src/pages/Statistics/charts/lineChartConfig.js");
 

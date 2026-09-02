@@ -313,10 +313,17 @@ export const withAlpha = (color, alpha) => {
     // The a-form of whichever function it is. Sliced to three arguments so a
     // value that already carries an alpha has that one replaced rather than a
     // second one appended, which is not a colour any canvas would take.
+    //
+    // Split on commas, whitespace and the slash alike, because the docblock
+    // promises "whatever notation it arrived in" and CSS Color 4's preferred
+    // spelling separates with spaces and carries its alpha behind a slash.
+    // Split on commas alone, `rgb(8 145 178)` came back as the mixed syntax
+    // `rgba(8 145 178, 0.25)` - which addColorStop answers with a thrown
+    // SyntaxError, blanking the chart mid-draw.
     const functional = /^(hsl|rgb)a?\((.+)\)$/i.exec(String(color).trim());
 
     if (functional) {
-        const parts = functional[2].split(",").slice(0, 3).map((part) => part.trim());
+        const parts = functional[2].split(/[,\s/]+/).slice(0, 3).map((part) => part.trim());
 
         return `${functional[1].toLowerCase()}a(${parts.join(", ")}, ${alpha})`;
     }
