@@ -143,6 +143,14 @@ describe("terminateActiveProcess", () => {
  * shutdown never asks for it, and that is precisely the state this was found in.
  */
 describe("the shutdown sequence", () => {
+    // stdin was an open pipe nothing ever wrote to. A CLI that stops to ask
+    // something reads EOF at once and fails, instead of waiting on an answer
+    // that cannot come until the run times out.
+    it("gives the child no stdin to wait on", () => {
+        assert.match(read("util/speedtest.js"), /spawn\(binaryPath,[^)]*\{[^}]*stdio:\s*\["ignore",\s*"pipe",\s*"pipe"\]/,
+            "the CLI is spawned with a stdin pipe nothing writes to");
+    });
+
     it("tracks the process it spawns", () => {
         assert.match(read("util/speedtest.js"), /trackProcess\(\s*spawn\(/,
             "the spawned CLI is not reachable from outside the run again");

@@ -705,6 +705,19 @@ describe("the latency the runner measures for it", () => {
         return socket;
     };
 
+    // The first error settles the sample; a second one - a reset during the
+    // teardown the handler itself started - must find a listener too, because
+    // an error nobody hears is thrown, and thrown here is the whole process.
+    it("still listens after the first error", async () => {
+        const reading = await sampleHandshake({host: "h", port: 1,
+            connect: socketThat((socket) => {
+                socket.emit("error", new Error("refused"));
+                socket.emit("error", new Error("reset"));
+            })});
+
+        assert.equal(reading, null);
+    });
+
     it("times a handshake that completed", async () => {
         const reading = await sampleHandshake({host: "h", port: 1,
             connect: socketThat((socket) => socket.emit("connect"))});

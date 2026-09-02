@@ -107,6 +107,7 @@ class Database {
             if (callback) process.nextTick(() => callback.call(context, null));
         } catch (err) {
             if (callback) process.nextTick(() => callback.call({}, err));
+            else console.error(`sqlite statement failed with nothing to tell: ${err?.message ?? err}`);
         }
         return this;
     }
@@ -118,6 +119,7 @@ class Database {
             if (callback) process.nextTick(() => callback(null, rows));
         } catch (err) {
             if (callback) process.nextTick(() => callback(err, []));
+            else console.error(`sqlite query failed with nothing to tell: ${err?.message ?? err}`);
         }
         return this;
     }
@@ -133,6 +135,7 @@ class Database {
             if (callback) process.nextTick(() => callback(null));
         } catch (err) {
             if (callback) process.nextTick(() => callback(err));
+            else console.error(`sqlite close failed with nothing to tell: ${err?.message ?? err}`);
         }
         return this;
     }

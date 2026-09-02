@@ -1236,7 +1236,7 @@ const executeTarget = async (target, type, retried = false) => {
         // that failed once and then measured reports the measurement.
         return {failed: false};
     } catch (e) {
-        console.log(e)
+        console.error(e);
 
         // A thrown string or a plain object has no `message`, and storing
         // undefined writes NULL - which marks the row as *successful* and lets

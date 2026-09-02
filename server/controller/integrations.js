@@ -19,6 +19,13 @@ const registerEvent = (module) => (name, callback) => {
     events[name].push({module, callback});
 }
 
+const MS_PER_MINUTE = 60_000;
+
+// How early a minute tick may land and still count as the next ping. The
+// scheduler is not exact, and a window of exactly the interval would skip
+// every tick that arrives a few seconds ahead of it.
+const PING_THROTTLE_TOLERANCE_MS = 30_000;
+
 const shouldThrottlePing = (eventName, integration) => {
     if (eventName !== "minutePassed") return false;
 
@@ -28,7 +35,7 @@ const shouldThrottlePing = (eventName, integration) => {
 
     const now = Date.now();
     const last = lastPings[integration.id];
-    if (last !== undefined && now - last < interval * 60 * 1000 - 30 * 1000) return true;
+    if (last !== undefined && now - last < interval * MS_PER_MINUTE - PING_THROTTLE_TOLERANCE_MS) return true;
 
     lastPings[integration.id] = now;
     return false;

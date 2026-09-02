@@ -52,3 +52,57 @@ describe("the sqlite shim's connection settings", () => {
         assert.equal(timeout, 5000, "busy_timeout is unset, so concurrent writes fail with SQLITE_BUSY");
     });
 });
+
+/**
+ * Sequelize runs two statements through the shim without a callback: the
+ * FOREIGN_KEYS pragma on every acquire, and close() on every transaction
+ * release. Real sqlite3 emits those failures on the Database; the shim, with
+ * nothing to hand them to, dropped them on the floor. Logged now, not thrown:
+ * a throw from close() escapes into the pool's release path.
+ */
+describe("a statement the shim is given no callback for", () => {
+    const captured = () => {
+        const lines = [];
+        const original = console.error;
+        console.error = (...args) => lines.push(args.map(String).join(" "));
+        return {lines, restore: () => { console.error = original; }};
+    };
+
+    it("logs a failed run and still hands the database back", () => {
+        const db = new Database(":memory:");
+        const log = captured();
+        try {
+            assert.equal(db.run("NOT SQL AT ALL"), db);
+        } finally {
+            log.restore();
+            db.close();
+        }
+        assert.equal(log.lines.length, 1, "the failure was dropped without a trace");
+        assert.match(log.lines[0], /NOT SQL AT ALL|syntax/i);
+    });
+
+    it("logs a failed all the same way", () => {
+        const db = new Database(":memory:");
+        const log = captured();
+        try {
+            assert.equal(db.all("SELECT * FROM no_such_table"), db);
+        } finally {
+            log.restore();
+            db.close();
+        }
+        assert.equal(log.lines.length, 1);
+    });
+
+    it("stays quiet when the statement succeeds", () => {
+        const db = new Database(":memory:");
+        const log = captured();
+        try {
+            db.run("CREATE TABLE t (id INTEGER)");
+            db.all("SELECT * FROM t");
+        } finally {
+            log.restore();
+            db.close();
+        }
+        assert.deepEqual(log.lines, []);
+    });
+});

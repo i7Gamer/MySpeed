@@ -525,7 +525,11 @@ export default async (mode, serverId, serverUrl, onProgress, tuning = undefined)
         // like - node emits 'error' and 'close' within milliseconds but never
         // clears that timer, and the whole process then stays alive until it
         // fires. Owning it means it is cleared however the run ends.
-        const testProcess = trackProcess(spawn(binaryPath, [...args, ...runArgs], {windowsHide: true}));
+        // No stdin: nothing here ever writes to the child, and a pipe left
+        // open is what a CLI that stops to ask something waits on - until the
+        // run's own timeout. EOF makes it fail at once instead.
+        const testProcess = trackProcess(spawn(binaryPath, [...args, ...runArgs],
+            {windowsHide: true, stdio: ["ignore", "pipe", "pipe"]}));
 
         let timedOut = false;
         let escalation;

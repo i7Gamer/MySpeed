@@ -305,7 +305,8 @@ const run = async () => {
     await initializeIntegrations();
 
     await requestInterfaces();
-    intervals.push(setInterval(() => requestInterfaces(), INTERFACE_REFRESH_INTERVAL));
+    intervals.push(setInterval(() => requestInterfaces().catch(err =>
+        console.error(`Could not refresh the network interfaces: ${err?.message ?? err}`)), INTERFACE_REFRESH_INTERVAL));
 
     if (process.env.PREVIEW_MODE !== "true") await loadCli();
 
