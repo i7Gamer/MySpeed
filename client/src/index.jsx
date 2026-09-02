@@ -3,14 +3,10 @@ import ReactDOM from "react-dom/client";
 import App from './App';
 import {migrateStoredPassword} from '@/common/utils/RequestUtil';
 
-export const PROJECT_URL = "https://github.com/i7Gamer/MySpeed";
-
-// Where the binaries and the release notes live.
-export const RELEASES_URL = `${PROJECT_URL}/releases/latest`;
-
-// Installation and update instructions live in the repository README now that
-// the separate documentation site is gone. #readme is a stable GitHub anchor.
-export const INSTALL_URL = `${PROJECT_URL}#readme`;
+// The project URLs used to be declared here and imported back by four
+// components. They live in common/utils/InvariantText.js now: this module
+// mounts the app when evaluated, so nothing that wants to be loaded outside a
+// browser can import from it.
 
 // Runs before the first render so the very first request already carries the
 // session, rather than bouncing the user through a password prompt on upgrade.

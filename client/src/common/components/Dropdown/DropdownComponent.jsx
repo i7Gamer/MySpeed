@@ -25,7 +25,7 @@ import {useAlert} from "@/common/contexts/Alert";
 import {assertOk, postRequest} from "@/common/utils/RequestUtil";
 import {t} from "i18next";
 import {Trans} from "react-i18next";
-import {INSTALL_URL} from "@/index";
+import {INSTALL_URL} from "@/common/utils/InvariantText";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {IntegrationDialog} from "@/common/components/IntegrationDialog";
 import LanguageDialog from "@/common/components/LanguageDialog";

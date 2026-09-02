@@ -28,6 +28,8 @@ const CLIENT_PARENT = pathToFileURL(path.join(CLIENT_SRC, "index.js")).href;
 
 const isBare = (specifier) => !specifier.startsWith(".") && !specifier.startsWith("/") && !specifier.includes("://");
 
+const isRelative = (specifier) => specifier.startsWith("./") || specifier.startsWith("../");
+
 export async function resolve(specifier, context, next) {
     if (specifier.startsWith("@/")) {
         const resolved = firstExisting(path.join(CLIENT_SRC, specifier.slice(2)));
@@ -41,12 +43,27 @@ export async function resolve(specifier, context, next) {
     try {
         return await next(specifier, context);
     } catch (error) {
+        // A directory - "./components/Pagination", meaning its index file - is
+        // refused with a code of its own rather than as not found, and wants
+        // the same candidates as an extensionless path.
+        if (error?.code !== "ERR_MODULE_NOT_FOUND" && error?.code !== "ERR_UNSUPPORTED_DIR_IMPORT")
+            throw error;
+
         // The client keeps its own node_modules, but a test for client code
         // lives under tests/, so node looks for its dependencies in the root
         // package and does not find them. Retry as if the import had come from
         // inside the client.
-        if (error?.code !== "ERR_MODULE_NOT_FOUND" || !isBare(specifier)) throw error;
+        if (isBare(specifier)) return next(specifier, {...context, parentURL: CLIENT_PARENT});
 
-        return next(specifier, {...context, parentURL: CLIENT_PARENT});
+        // A component imports its neighbours the way the bundler lets it -
+        // "../Dropdown/DropdownComponent", no extension - and node's own
+        // resolver wants one on a relative path. The same candidates the alias
+        // gets, for the same reason: this is what vite would have found.
+        if (isRelative(specifier) && context.parentURL) {
+            const resolved = firstExisting(path.join(path.dirname(fileURLToPath(context.parentURL)), specifier));
+            if (resolved) return next(pathToFileURL(resolved).href, context);
+        }
+
+        throw error;
     }
 }

@@ -18,7 +18,7 @@ import { t } from "i18next";
 import { ConfigContext } from "@/common/contexts/Config";
 import { deniesAdminAccess } from "@/common/contexts/Config/configOutcome";
 import { NodeContext } from "@/common/contexts/Node";
-import { INSTALL_URL, RELEASES_URL } from "@/index";
+import { INSTALL_URL, RELEASES_URL } from "@/common/utils/InvariantText";
 import { nodeTitle } from "@/common/components/Header/nodeTitle";
 import { Trans } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";

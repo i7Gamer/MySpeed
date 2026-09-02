@@ -34,6 +34,25 @@
 /** The application's own name, shown when a node has none of its own. */
 export const PRODUCT_NAME = "MySpeed";
 
+/**
+ * Where the project lives, and the two pages of it the interface links to.
+ *
+ * Here rather than in index.jsx, where they were declared: the entry module
+ * mounts the application when it is evaluated and awaits a request before it
+ * does, so a component importing a URL from it could not be loaded anywhere
+ * but a browser with the app in it - which is what kept the header and the
+ * settings menu out of the behavioural tests. A URL is invariant text; this is
+ * its home.
+ */
+export const PROJECT_URL = "https://github.com/i7Gamer/MySpeed";
+
+// Where the binaries and the release notes live.
+export const RELEASES_URL = `${PROJECT_URL}/releases/latest`;
+
+// Installation and update instructions live in the repository README now that
+// the separate documentation site is gone. #readme is a stable GitHub anchor.
+export const INSTALL_URL = `${PROJECT_URL}#readme`;
+
 /** The label on the link to the project, which is the site's name. */
 export const GITHUB_LABEL = "GitHub";
 
