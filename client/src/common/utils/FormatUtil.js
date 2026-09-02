@@ -53,29 +53,6 @@ export const formatDay = (value) => {
 };
 
 /**
- * A calendar day without its year, for a label that has no room for one.
- *
- * The averaged rows in the test list used to build this by hand as `DD.MM` -
- * the last numeric date left in the interface, read as MM.DD by about half the
- * people who saw it. The month is named instead, which is unambiguous in every
- * locale; the year stays off because the list is already bounded by the range
- * the reader chose.
- *
- * Nothing calls this any more. Those averaged rows were its only caller, and
- * they have not been produced since listAverage left the speedtest controller
- * in June 2025; the overview row's dead branch on them was removed with this
- * note. Kept rather than deleted because it is an exported formatter with a
- * suite of its own - but it is dead weight until something wants a bare day
- * again, and worth removing if nothing does.
- */
-export const formatShortDay = (value) => {
-    const date = toDate(value);
-    if (isNaN(date.getTime())) return "";
-
-    return date.toLocaleDateString(locale(), {day: "2-digit", month: "short"});
-};
-
-/**
  * A month and its year, for the calendar's heading.
  *
  * Sits directly above weekday names that come from the translations, so a
@@ -92,8 +69,7 @@ export const formatMonth = (value) => {
 /**
  * A whole date with its weekday spelled out, for the date pill that floats over
  * the test list. The rows beneath it print a clock time, so the pill is the only
- * place the day itself is named - it used to share that job with formatShortDay
- * on the averaged rows, which is why both had to agree on a language.
+ * place the day itself is named at all.
  */
 export const formatFullDay = (value) => {
     const date = toDate(value);

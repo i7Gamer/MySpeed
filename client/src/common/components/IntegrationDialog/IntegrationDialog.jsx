@@ -18,6 +18,11 @@ import {appendVariable, variableToken} from "@/common/components/IntegrationDial
 import {integrationPlaceholder, integrationTitle} from "@/common/utils/InvariantText";
 import {languages} from "@/i18n";
 
+// How long a saved card wears its checkmark, and how long a delete button
+// stays armed waiting for the second press that means it.
+export const SAVE_CONFIRM_MS = 1500;
+export const DELETE_CONFIRM_MS = 3000;
+
 const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, config}) => {
     const [displayName, setDisplayName] = useState(integration.displayName || integrationTitle(integration.name, t));
     const [fields, setFields] = useState(() => {
@@ -42,6 +47,25 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
     const [deleteConfirmed, setDeleteConfirmed] = useState(false);
     const [error, setError] = useState(false);
     const [lastActivity, setLastActivity] = useState(generateRelativeTime(integration.lastActivity));
+
+    /*
+     * The two confirmation windows, held rather than merely started.
+     *
+     * Both were bare setTimeout calls with nothing keeping the id, which costs
+     * twice. A card that leaves the screen inside either window - the dialog
+     * closed on a checkmark, an unsaved integration removed by the second press
+     * of its own delete button - left a callback in flight to set state on a
+     * card that no longer exists. And a second arming inside an open window
+     * left the first timer running, so the confirmation it started was cut
+     * short by the one before it rather than running its own length.
+     */
+    const saveTimer = useRef(null);
+    const deleteTimer = useRef(null);
+
+    useEffect(() => () => {
+        clearTimeout(saveTimer.current);
+        clearTimeout(deleteTimer.current);
+    }, []);
 
     useEffect(() => {
         const interval = setInterval(() => {
@@ -126,7 +150,8 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
             setUnsavedChanges(false);
             setSaveConfirmed(true);
             setError(false);
-            setTimeout(() => setSaveConfirmed(false), 1500);
+            clearTimeout(saveTimer.current);
+            saveTimer.current = setTimeout(() => setSaveConfirmed(false), SAVE_CONFIRM_MS);
         } catch {
             setError(true);
         } finally {
@@ -137,7 +162,8 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
     const handleDelete = async () => {
         if (!deleteConfirmed) {
             setDeleteConfirmed(true);
-            setTimeout(() => setDeleteConfirmed(false), 3000);
+            clearTimeout(deleteTimer.current);
+            deleteTimer.current = setTimeout(() => setDeleteConfirmed(false), DELETE_CONFIRM_MS);
             return;
         }
         if (!integration.id) {
