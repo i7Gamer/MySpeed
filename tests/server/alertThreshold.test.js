@@ -395,7 +395,7 @@ describe("alertSummary", () => {
 
     it("carries the baseline crossing on its own line", () => {
         const payload = result({baselineArmed: true, baselineBreached: true,
-            baselineDetail: "download 40% under"});
+            baselineShortfallDownload: 40});
 
         assert.equal(alertSummary(payload, {}),
             "\nBelow its usual speed: download 40% under");
@@ -406,7 +406,7 @@ describe("alertSummary", () => {
     // recipient, where the limits are the recipient's own.
     it("carries both, the target's own line first", () => {
         const payload = result({download: 80, baselineArmed: true, baselineBreached: true,
-            baselineDetail: "download 40% under"});
+            baselineShortfallDownload: 40});
 
         assert.equal(alertSummary(payload, {alert_download_below: 100}),
             "\nBelow its usual speed: download 40% under"
@@ -422,6 +422,39 @@ describe("alertSummary", () => {
     it("names an armed metric that could not be measured", () => {
         assert.equal(alertSummary(result({ping: 0}), {alert_ping_above: 50}),
             "\nCrossed limits: ping (not measured)");
+    });
+
+    /**
+     * In the recipient's language, read off the integration's own `language`
+     * setting - the same row that holds its limits, so a German Telegram and
+     * an English email beside it each read their own. The phrases come from
+     * the locale files the interface ships; German is the one the field-label
+     * tests hold to a real translation, so it is the one pinned here.
+     */
+    describe("in the recipient's language", () => {
+        it("phrases the crossed limits", () => {
+            assert.equal(alertSummary(result({ping: 62, download: 80}),
+                {alert_ping_above: 50, alert_download_below: 100, language: "de"}),
+            "\nGrenzwerte überschritten: Ping 62 ms über 50, Download 80 Mbps unter 100");
+        });
+
+        it("phrases the baseline crossing with each direction's own number", () => {
+            const payload = result({baselineArmed: true, baselineBreached: true,
+                baselineShortfallDownload: 40, baselineShortfallUpload: 50});
+
+            assert.equal(alertSummary(payload, {language: "de"}),
+                "\nUnter der üblichen Geschwindigkeit: Download 40 % und Upload 50 % darunter");
+        });
+
+        it("phrases an unmeasured metric", () => {
+            assert.equal(alertSummary(result({ping: 0}), {alert_ping_above: 50, language: "de"}),
+                "\nGrenzwerte überschritten: Ping (nicht gemessen)");
+        });
+
+        it("answers English for a language it does not know", () => {
+            assert.equal(alertSummary(result({ping: 62}), {alert_ping_above: 50, language: "tlh"}),
+                "\nCrossed limits: ping 62 ms over 50");
+        });
     });
 });
 

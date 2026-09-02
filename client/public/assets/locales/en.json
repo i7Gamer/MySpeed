@@ -654,7 +654,9 @@
       "alert_upload_below": "Notify when upload is below (Mbps)",
       "alert_upload_below_placeholder": "e.g. 20",
       "digest_weekly": "Send a weekly digest",
-      "digest_monthly": "Send a monthly digest"
+      "digest_monthly": "Send a monthly digest",
+      "language": "Message language",
+      "language_placeholder": "English (default)"
     },
     "variables": "Available variables",
     "variables_hint": "Click to add it to the message"
@@ -766,5 +768,26 @@
       "description": "<Bold>{{name}}</Bold> will be deleted. The tests it has already measured stay in the history.",
       "yes": "Delete"
     }
+  },
+  "notification": {
+    "finished": "A speedtest is finished",
+    "failed": "A speedtest has failed",
+    "finished_subject": "MySpeed: speedtest finished",
+    "failed_subject": "MySpeed: speedtest failed",
+    "target": "Target",
+    "ping": "Ping",
+    "download": "Download",
+    "upload": "Upload",
+    "reason": "Reason",
+    "metric_ping": "ping",
+    "metric_download": "download",
+    "metric_upload": "upload",
+    "crossed_limits": "Crossed limits: {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}} over {{limit}}",
+    "limit_under": "{{metric}} {{value}} {{unit}} under {{limit}}",
+    "not_measured": "{{metric}} (not measured)",
+    "below_usual": "Below its usual speed: {{crossings}} under",
+    "shortfall": "{{metric}} {{shortfall}}%",
+    "and": " and "
   }
 }

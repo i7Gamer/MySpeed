@@ -654,7 +654,9 @@
       "alert_upload_below": "Melden wanneer de upload onder (Mbit/s) zakt",
       "alert_upload_below_placeholder": "bijv. 20",
       "digest_weekly": "Wekelijkse samenvatting versturen",
-      "digest_monthly": "Maandelijkse samenvatting versturen"
+      "digest_monthly": "Maandelijkse samenvatting versturen",
+      "language": "Taal van de berichten",
+      "language_placeholder": "Engels (standaard)"
     },
     "variables": "Beschikbare variabelen",
     "variables_hint": "Klik om hem aan het bericht toe te voegen"
@@ -766,5 +768,26 @@
       "description": "<Bold>{{name}}</Bold> wordt verwijderd. De tests die het al heeft gemeten, blijven in de geschiedenis.",
       "yes": "Verwijderen"
     }
+  },
+  "notification": {
+    "finished": "Een snelheidstest is voltooid",
+    "failed": "Een snelheidstest is mislukt",
+    "finished_subject": "MySpeed: snelheidstest voltooid",
+    "failed_subject": "MySpeed: snelheidstest mislukt",
+    "target": "Doel",
+    "ping": "Ping",
+    "download": "Download",
+    "upload": "Upload",
+    "reason": "Reden",
+    "metric_ping": "ping",
+    "metric_download": "download",
+    "metric_upload": "upload",
+    "crossed_limits": "Overschreden limieten: {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}} boven {{limit}}",
+    "limit_under": "{{metric}} {{value}} {{unit}} onder {{limit}}",
+    "not_measured": "{{metric}} (niet gemeten)",
+    "below_usual": "Onder de gebruikelijke snelheid: {{crossings}} lager",
+    "shortfall": "{{metric}} {{shortfall}}%",
+    "and": " en "
   }
 }

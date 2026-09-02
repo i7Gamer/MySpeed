@@ -261,19 +261,28 @@ describe("baselineVerdict", () => {
         });
 
         /**
-         * The whole crossing as one ready-made phrase, each direction carrying
-         * its own number - which is what the deepest-only pair above cannot
-         * say when both cross in one round. The message summary is built from
-         * this, and a template may name it directly.
+         * Each direction's own number, which is what the deepest-only pair
+         * above cannot say when both cross in one round. Two numeric keys
+         * rather than a ready-made phrase, because the phrase is the
+         * recipient's - it is written in the integration's language at
+         * dispatch - where these are facts about the test and read the same
+         * to everyone. Null for a direction that did not newly cross, so a
+         * template naming one reads as unmeasured rather than as a zero
+         * shortfall.
          */
-        it("phrases the crossing with each direction's own number", () => {
-            assert.equal(verdict(below, above).baselineDetail, "download 40% under");
-            assert.equal(verdict({download: 300, upload: 100}, above).baselineDetail,
-                "download 40% and upload 50% under");
+        it("carries each direction's own shortfall", () => {
+            const one = verdict(below, above);
+            assert.equal(one.baselineShortfallDownload, 40);
+            assert.equal(one.baselineShortfallUpload, null);
+
+            const both = verdict({download: 300, upload: 100}, above);
+            assert.equal(both.baselineShortfallDownload, 40);
+            assert.equal(both.baselineShortfallUpload, 50);
         });
 
-        it("phrases nothing on a round that crossed nothing", () => {
-            assert.equal(verdict(above, above).baselineDetail, null);
+        it("carries no shortfall on a round that crossed nothing", () => {
+            assert.equal(verdict(above, above).baselineShortfallDownload, null);
+            assert.equal(verdict(above, above).baselineShortfallUpload, null);
         });
 
         // A whole percentage: the figure goes into a sentence, not into
@@ -301,7 +310,7 @@ describe("baselineVerdict", () => {
 
     describe("when there is nothing to judge against", () => {
         const quiet = {armed: false, breached: false, baselineDirection: null,
-            baselineShortfall: null, baselineDetail: null,
+            baselineShortfall: null, baselineShortfallDownload: null, baselineShortfallUpload: null,
             baselineDownload: null, baselineUpload: null};
 
         /**
@@ -319,7 +328,8 @@ describe("baselineVerdict", () => {
         it("is armed but silent while it has no baseline to judge against", () => {
             assert.deepEqual(baselineVerdict(below, above, null, PERCENT),
                 {armed: true, breached: false, baselineDirection: null, baselineShortfall: null,
-                    baselineDetail: null, baselineDownload: null, baselineUpload: null});
+                    baselineShortfallDownload: null, baselineShortfallUpload: null,
+                    baselineDownload: null, baselineUpload: null});
         });
 
         /**

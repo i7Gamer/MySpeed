@@ -654,7 +654,9 @@
       "alert_upload_below": "Avisera när uppladdning är under (Mbit/s)",
       "alert_upload_below_placeholder": "t.ex. 20",
       "digest_weekly": "Skicka en veckosammanfattning",
-      "digest_monthly": "Skicka en månadssammanfattning"
+      "digest_monthly": "Skicka en månadssammanfattning",
+      "language": "Språk för meddelanden",
+      "language_placeholder": "Engelska (standard)"
     },
     "variables": "Tillgängliga variabler",
     "variables_hint": "Klicka för att lägga till den i meddelandet"
@@ -766,5 +768,26 @@
       "description": "<Bold>{{name}}</Bold> kommer att tas bort. De tester som målet redan har mätt finns kvar i historiken.",
       "yes": "Ta bort"
     }
+  },
+  "notification": {
+    "finished": "Ett hastighetstest är klart",
+    "failed": "Ett hastighetstest misslyckades",
+    "finished_subject": "MySpeed: hastighetstest klart",
+    "failed_subject": "MySpeed: hastighetstest misslyckades",
+    "target": "Mål",
+    "ping": "Ping",
+    "download": "Nedladdning",
+    "upload": "Uppladdning",
+    "reason": "Orsak",
+    "metric_ping": "ping",
+    "metric_download": "nedladdning",
+    "metric_upload": "uppladdning",
+    "crossed_limits": "Överskridna gränser: {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}} över gränsen {{limit}}",
+    "limit_under": "{{metric}} {{value}} {{unit}} under gränsen {{limit}}",
+    "not_measured": "{{metric}} (inte uppmätt)",
+    "below_usual": "Under den vanliga hastigheten: {{crossings}} lägre",
+    "shortfall": "{{metric}} {{shortfall}} %",
+    "and": " och "
   }
 }

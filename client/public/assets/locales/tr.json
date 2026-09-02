@@ -654,7 +654,9 @@
       "alert_upload_below": "Yükleme şu değerin altına düşünce bildir (Mbps)",
       "alert_upload_below_placeholder": "örn. 20",
       "digest_weekly": "Haftalık özet gönder",
-      "digest_monthly": "Aylık özet gönder"
+      "digest_monthly": "Aylık özet gönder",
+      "language": "Mesaj dili",
+      "language_placeholder": "İngilizce (varsayılan)"
     },
     "variables": "Kullanılabilir değişkenler",
     "variables_hint": "Mesaja eklemek için tıklayın"
@@ -766,5 +768,26 @@
       "description": "<Bold>{{name}}</Bold> silinecek. Şimdiye kadar ölçtüğü testler geçmişte kalır.",
       "yes": "Sil"
     }
+  },
+  "notification": {
+    "finished": "Bir hız testi tamamlandı",
+    "failed": "Bir hız testi başarısız oldu",
+    "finished_subject": "MySpeed: hız testi tamamlandı",
+    "failed_subject": "MySpeed: hız testi başarısız",
+    "target": "Test noktası",
+    "ping": "Ping",
+    "download": "İndirme",
+    "upload": "Yükleme",
+    "reason": "Neden",
+    "metric_ping": "ping",
+    "metric_download": "indirme",
+    "metric_upload": "yükleme",
+    "crossed_limits": "Aşılan sınırlar: {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}}, sınır {{limit}} üzerinde",
+    "limit_under": "{{metric}} {{value}} {{unit}}, sınır {{limit}} altında",
+    "not_measured": "{{metric}} (ölçülmedi)",
+    "below_usual": "Olağan hızın altında: {{crossings}} daha düşük",
+    "shortfall": "{{metric}} %{{shortfall}}",
+    "and": " ve "
   }
 }

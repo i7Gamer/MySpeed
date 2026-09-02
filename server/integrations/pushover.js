@@ -1,3 +1,4 @@
+import { plainDefaults } from '../util/notificationLocale.js';
 import { postJson } from "../util/http.js";
 import { replaceVariables, truncate } from "../util/helpers.js";
 import { wantsDigest } from "../util/digestOptIn.js";
@@ -21,10 +22,9 @@ export const PUSHOVER_MESSAGE_LIMIT = 1024;
 
 // Both templates name the target: on a multi-target instance every message
 // otherwise reads identically whether it describes the WAN or the LAN box.
-const defaults = {
-    finished: "A speedtest is finished:\nTarget: %targetName%\nPing: %ping% ms (±%jitter% ms)\nUpload: %upload% Mbps\nDownload: %download% Mbps%alertSummary%",
-    failed: "A speedtest has failed.\nTarget: %targetName%\nReason: %error%"
-};
+// The plain-text pair three notifiers share, in the integration's own
+// language - see util/notificationLocale.js.
+const defaults = plainDefaults;
 
 // Trimmed here rather than at each call site, so a message added later cannot
 // be the one that is sent whole and refused.
@@ -45,12 +45,12 @@ const CREDENTIAL = /^[A-Za-z0-9]{30}$/;
 export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {
         if (c.send_finished) await send(c,
-            replaceVariables(c.finished_message || defaults.finished, data), activity);
+            replaceVariables(c.finished_message || defaults(c.language).finished, data), activity);
     });
 
     registerEvent('testFailed', async ({data: c}, failure, activity) => {
         if (c.send_failed) await send(c,
-            replaceVariables(c.error_message || defaults.failed, failure), activity);
+            replaceVariables(c.error_message || defaults(c.language).failed, failure), activity);
     });
 
     registerEvent('digestReady', async ({data: c}, payload, activity) => {

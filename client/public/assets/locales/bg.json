@@ -654,7 +654,9 @@
       "alert_upload_below": "Известяване, когато качването е под (Mbit/s)",
       "alert_upload_below_placeholder": "напр. 20",
       "digest_weekly": "Изпращане на седмично резюме",
-      "digest_monthly": "Изпращане на месечно резюме"
+      "digest_monthly": "Изпращане на месечно резюме",
+      "language": "Език на съобщенията",
+      "language_placeholder": "Английски (по подразбиране)"
     },
     "variables": "Налични променливи",
     "variables_hint": "Щракнете, за да я добавите към съобщението"
@@ -766,5 +768,26 @@
       "description": "Целта <Bold>{{name}}</Bold> ще бъде изтрита. Тестовете, които вече е измерила, остават в историята.",
       "yes": "Изтрий"
     }
+  },
+  "notification": {
+    "finished": "Тестът за скорост приключи",
+    "failed": "Тестът за скорост е неуспешен",
+    "finished_subject": "MySpeed: тестът за скорост приключи",
+    "failed_subject": "MySpeed: тестът за скорост е неуспешен",
+    "target": "Цел",
+    "ping": "Ping",
+    "download": "Изтегляне",
+    "upload": "Качване",
+    "reason": "Причина",
+    "metric_ping": "ping",
+    "metric_download": "изтегляне",
+    "metric_upload": "качване",
+    "crossed_limits": "Надхвърлени граници: {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}} над {{limit}}",
+    "limit_under": "{{metric}} {{value}} {{unit}} под {{limit}}",
+    "not_measured": "{{metric}} (не е измерено)",
+    "below_usual": "Под обичайната скорост: {{crossings}} по-малко",
+    "shortfall": "{{metric}} {{shortfall}} %",
+    "and": " и "
   }
 }

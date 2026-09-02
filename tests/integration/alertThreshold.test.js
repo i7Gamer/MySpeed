@@ -330,6 +330,29 @@ describe("what the message can say about the crossing", () => {
         }
     });
 
+    /**
+     * The shipped template and the passage it ends with, in the language the
+     * integration was set to - the `language` field every notifier carries.
+     * German is the locale the field-label tests hold to a real translation,
+     * so it is the one pinned; the words are the locale file's, so what is
+     * asserted is that the file is read and the row's setting is honoured.
+     */
+    it("writes the default template in the integration's own language", async () => {
+        const id = await createTelegram({alert_only: true, alert_download_below: 100, language: "de"});
+        try {
+            await triggerEvent("testFinished", SLOW);
+
+            assert.equal(sent.length, 1);
+            const body = String(sent[0].body);
+            assert.match(body, /Ein Speedtest ist abgeschlossen/, "the template's own words stayed English");
+            assert.match(body, /Grenzwerte überschritten: Download 40 Mbps unter 100/,
+                "the summary stayed English");
+            assert.doesNotMatch(body, /Crossed limits|A speedtest is finished/);
+        } finally {
+            await remove(id);
+        }
+    });
+
     it("adds nothing to a healthy result's default message", async () => {
         const id = await createTelegram({alert_download_below: 10});
         try {

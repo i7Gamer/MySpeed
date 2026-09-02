@@ -654,7 +654,9 @@
       "alert_upload_below": "Beri tahu bila unggah di bawah (Mbps)",
       "alert_upload_below_placeholder": "mis. 20",
       "digest_weekly": "Kirim ringkasan mingguan",
-      "digest_monthly": "Kirim ringkasan bulanan"
+      "digest_monthly": "Kirim ringkasan bulanan",
+      "language": "Bahasa pesan",
+      "language_placeholder": "Inggris (bawaan)"
     },
     "variables": "Variabel yang tersedia",
     "variables_hint": "Klik untuk menambahkannya ke pesan"
@@ -766,5 +768,26 @@
       "description": "<Bold>{{name}}</Bold> akan dihapus. Pengujian yang sudah diukurnya tetap tersimpan di riwayat.",
       "yes": "Hapus"
     }
+  },
+  "notification": {
+    "finished": "Sebuah tes kecepatan telah selesai",
+    "failed": "Sebuah tes kecepatan gagal",
+    "finished_subject": "MySpeed: tes kecepatan selesai",
+    "failed_subject": "MySpeed: tes kecepatan gagal",
+    "target": "Tujuan",
+    "ping": "Ping",
+    "download": "Unduh",
+    "upload": "Unggah",
+    "reason": "Alasan",
+    "metric_ping": "ping",
+    "metric_download": "unduh",
+    "metric_upload": "unggah",
+    "crossed_limits": "Batas terlampaui: {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}} di atas {{limit}}",
+    "limit_under": "{{metric}} {{value}} {{unit}} di bawah {{limit}}",
+    "not_measured": "{{metric}} (tidak terukur)",
+    "below_usual": "Di bawah kecepatan biasanya: {{crossings}} lebih rendah",
+    "shortfall": "{{metric}} {{shortfall}}%",
+    "and": " dan "
   }
 }

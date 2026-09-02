@@ -14,7 +14,8 @@ export const FormField = ({
     disabled = false,
     min,
     max,
-    decimals = false
+    decimals = false,
+    options = []
 }) => {
     const generatedId = useId();
     const inputId = id || generatedId;
@@ -67,6 +68,28 @@ export const FormField = ({
                     placeholder={placeholder}
                     disabled={disabled}
                 />
+            )}
+
+            {type === "select" && (
+                // A native select rather than the dropdown menu the dialog's
+                // add button uses: that one is a command menu, this is a
+                // value. The blank first entry is "none", which the server
+                // reads as its default, and it wears the placeholder so the
+                // default has a name.
+                <span className="select-wrap">
+                    <select
+                        id={inputId}
+                        className={`form-field-input select-field ${error ? "input-error" : ""}`}
+                        value={value ?? ""}
+                        onChange={(e) => onChange(e.target.value)}
+                        disabled={disabled}
+                    >
+                        <option value="">{placeholder}</option>
+                        {options.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                    </select>
+                </span>
             )}
 
             {type === "boolean" && (

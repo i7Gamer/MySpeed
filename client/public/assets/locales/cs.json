@@ -654,7 +654,9 @@
       "alert_upload_below": "Upozornit, když je nahrávání pod (Mbps)",
       "alert_upload_below_placeholder": "např. 20",
       "digest_weekly": "Posílat týdenní přehled",
-      "digest_monthly": "Posílat měsíční přehled"
+      "digest_monthly": "Posílat měsíční přehled",
+      "language": "Jazyk zpráv",
+      "language_placeholder": "Angličtina (výchozí)"
     },
     "variables": "Dostupné proměnné",
     "variables_hint": "Kliknutím ji přidáte do zprávy"
@@ -766,5 +768,26 @@
       "description": "Cíl <Bold>{{name}}</Bold> bude smazán. Testy, které už změřil, zůstanou v historii.",
       "yes": "Smazat"
     }
+  },
+  "notification": {
+    "finished": "Test rychlosti byl dokončen",
+    "failed": "Test rychlosti selhal",
+    "finished_subject": "MySpeed: test rychlosti dokončen",
+    "failed_subject": "MySpeed: test rychlosti selhal",
+    "target": "Cíl",
+    "ping": "Ping",
+    "download": "Stahování",
+    "upload": "Nahrávání",
+    "reason": "Důvod",
+    "metric_ping": "ping",
+    "metric_download": "stahování",
+    "metric_upload": "nahrávání",
+    "crossed_limits": "Překročené limity: {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}} nad {{limit}}",
+    "limit_under": "{{metric}} {{value}} {{unit}} pod {{limit}}",
+    "not_measured": "{{metric}} (neměřeno)",
+    "below_usual": "Pod obvyklou rychlostí: {{crossings}} méně",
+    "shortfall": "{{metric}} {{shortfall}} %",
+    "and": " a "
   }
 }

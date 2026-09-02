@@ -382,6 +382,33 @@ describe("validateInput", () => {
         assert.equal(validateInput("webhook", {url: "https://hook.example", interval: "1.5"}), false);
     });
 
+    /**
+     * A choice from a list - the language a notifier writes in. Held to the
+     * list the field declares rather than to a pattern, because the list is
+     * the locale directory and a pattern would have to be kept in step with
+     * it by hand. Empty is "not chosen", which the sender reads as English.
+     */
+    describe("a select field", () => {
+        it("accepts a value the field offers", () => {
+            const result = validateInput("telegram", telegram({language: "de"}));
+
+            assert.notEqual(result, false);
+            assert.equal(result.language, "de");
+        });
+
+        it("accepts no choice at all", () => {
+            assert.notEqual(validateInput("telegram", telegram({language: ""})), false);
+            assert.notEqual(validateInput("telegram", telegram({language: null})), false);
+            assert.notEqual(validateInput("telegram", telegram()), false);
+        });
+
+        it("rejects a value the field does not offer", () => {
+            for (const value of ["tlh", "EN", "en-US", 42, true, ["de"], {code: "de"}])
+                assert.equal(validateInput("telegram", telegram({language: value})), false,
+                    `${JSON.stringify(value)} was accepted as a language`);
+        });
+    });
+
     // The returned object is what gets stored, so anything not declared by the
     // integration must not survive - that whitelist is what stops a caller
     // planting arbitrary keys in the data column.

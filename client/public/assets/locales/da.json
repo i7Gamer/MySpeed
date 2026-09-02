@@ -654,7 +654,9 @@
       "alert_upload_below": "Giv besked, når upload er under (Mbps)",
       "alert_upload_below_placeholder": "f.eks. 20",
       "digest_weekly": "Send et ugentligt sammendrag",
-      "digest_monthly": "Send et månedligt sammendrag"
+      "digest_monthly": "Send et månedligt sammendrag",
+      "language": "Sprog for beskeder",
+      "language_placeholder": "Engelsk (standard)"
     },
     "variables": "Tilgængelige variabler",
     "variables_hint": "Klik for at føje den til beskeden"
@@ -766,5 +768,26 @@
       "description": "<Bold>{{name}}</Bold> bliver slettet. De tests, det allerede har målt, bliver i historikken.",
       "yes": "Slet"
     }
+  },
+  "notification": {
+    "finished": "En hastighedstest er afsluttet",
+    "failed": "En hastighedstest mislykkedes",
+    "finished_subject": "MySpeed: hastighedstest afsluttet",
+    "failed_subject": "MySpeed: hastighedstest mislykkedes",
+    "target": "Mål",
+    "ping": "Ping",
+    "download": "Download",
+    "upload": "Upload",
+    "reason": "Årsag",
+    "metric_ping": "ping",
+    "metric_download": "download",
+    "metric_upload": "upload",
+    "crossed_limits": "Overskredne grænser: {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}} over grænsen {{limit}}",
+    "limit_under": "{{metric}} {{value}} {{unit}} under grænsen {{limit}}",
+    "not_measured": "{{metric}} (ikke målt)",
+    "below_usual": "Under den sædvanlige hastighed: {{crossings}} lavere",
+    "shortfall": "{{metric}} {{shortfall}} %",
+    "and": " og "
   }
 }

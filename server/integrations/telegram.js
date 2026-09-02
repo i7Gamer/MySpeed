@@ -1,3 +1,4 @@
+import { phrase } from '../util/notificationLocale.js';
 import { postJson } from "../util/http.js";
 import { replaceVariables, truncate } from "../util/helpers.js";
 import { TELEGRAM_MARKDOWN, stripMarkdown as strip, balancedForTelegram } from "../util/markdown.js";
@@ -16,9 +17,19 @@ export const TELEGRAM_MESSAGE_LIMIT = 4096;
 
 // Both templates name the target: on a multi-target instance every message
 // otherwise reads identically whether it describes the WAN or the LAN box.
-const defaults = {
-    finished: "✨ *A speedtest is finished*\n🎯 `Target`: %targetName%\n🏓 `Ping`: %ping% ms (±%jitter% ms)\n🔼 `Upload`: %upload% Mbps\n🔽 `Download`: %download% Mbps%alertSummary%",
-    failed: "❌ *A speedtest has failed*\n`Target`: %targetName%\n`Reason`: %error%"
+/**
+ * The messages a notifier sends when nothing was edited, in the language the
+ * integration was set to - see util/notificationLocale.js. A function of the
+ * language rather than a constant, because the language is the integration's
+ * own setting and two integrations may hold two.
+ */
+const defaults = (language) => {
+    const word = (key) => phrase(language, key);
+
+    return {
+        finished: `✨ *${word("finished")}*\n🎯 \`${word("target")}\`: %targetName%\n🏓 \`${word("ping")}\`: %ping% ms (±%jitter% ms)\n🔼 \`${word("upload")}\`: %upload% Mbps\n🔽 \`${word("download")}\`: %download% Mbps%alertSummary%`,
+        failed: `❌ *${word("failed")}*\n\`${word("target")}\`: %targetName%\n\`${word("reason")}\`: %error%`
+    };
 };
 
 /**
@@ -101,13 +112,13 @@ const send = (token, chat_id, text, activity, message_thread_id) => {
 export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {
         if (c.send_finished) await send(c.token, c.chat_id,
-            replaceVariables(c.finished_message || defaults.finished, stripMarkdown(data)), activity,
+            replaceVariables(c.finished_message || defaults(c.language).finished, stripMarkdown(data)), activity,
             c.message_thread_id);
     });
 
     registerEvent('testFailed', async ({data: c}, failure, activity) => {
         if (c.send_failed) await send(c.token, c.chat_id,
-            replaceVariables(c.error_message || defaults.failed, stripMarkdown(failure)), activity,
+            replaceVariables(c.error_message || defaults(c.language).failed, stripMarkdown(failure)), activity,
             c.message_thread_id);
     });
 

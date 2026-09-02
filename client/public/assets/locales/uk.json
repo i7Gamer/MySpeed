@@ -654,7 +654,9 @@
       "alert_upload_below": "Сповіщати, коли вивантаження нижче за (Мбіт/с)",
       "alert_upload_below_placeholder": "напр. 20",
       "digest_weekly": "Надсилати щотижневе зведення",
-      "digest_monthly": "Надсилати щомісячне зведення"
+      "digest_monthly": "Надсилати щомісячне зведення",
+      "language": "Мова повідомлень",
+      "language_placeholder": "Англійська (типово)"
     },
     "variables": "Доступні змінні",
     "variables_hint": "Натисніть, щоб додати її до повідомлення"
@@ -766,5 +768,26 @@
       "description": "Ціль <Bold>{{name}}</Bold> буде видалено. Тести, які вона вже виміряла, залишаться в історії.",
       "yes": "Видалити"
     }
+  },
+  "notification": {
+    "finished": "Тест швидкості завершено",
+    "failed": "Тест швидкості не вдався",
+    "finished_subject": "MySpeed: тест швидкості завершено",
+    "failed_subject": "MySpeed: тест швидкості не вдався",
+    "target": "Ціль",
+    "ping": "Пінг",
+    "download": "Завантаження",
+    "upload": "Вивантаження",
+    "reason": "Причина",
+    "metric_ping": "пінг",
+    "metric_download": "завантаження",
+    "metric_upload": "вивантаження",
+    "crossed_limits": "Перевищено межі: {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}} вище {{limit}}",
+    "limit_under": "{{metric}} {{value}} {{unit}} нижче {{limit}}",
+    "not_measured": "{{metric}} (не виміряно)",
+    "below_usual": "Нижче звичайної швидкості: {{crossings}} менше",
+    "shortfall": "{{metric}} {{shortfall}} %",
+    "and": " і "
   }
 }

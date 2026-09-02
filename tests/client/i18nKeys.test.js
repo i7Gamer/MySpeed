@@ -233,7 +233,11 @@ describe("i18n keys", () => {
             // integrations.${name}.fields.${field}${suffix}, with the shared
             // integrations.fields.${field}${suffix} fallback - IntegrationDialog.jsx
             /^integrations\.[a-zA-Z]+\.fields\.[a-z_]+$/,
-            /^integrations\.fields\.[a-z_]+$/
+            /^integrations\.fields\.[a-z_]+$/,
+            // notification.${key} - the phrases the server writes a notification
+            // from, in the recipient's language (server/util/notificationLocale.js);
+            // nothing in the client renders them, and nothing should.
+            /^notification\.[a-z_]+$/
         ];
 
         it("are all reachable from the source tree", () => {

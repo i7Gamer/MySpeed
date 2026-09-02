@@ -87,6 +87,7 @@ const TEMPLATES = (...names) => names.map((name) => `integrations.${name}.fields
  */
 export const LANGUAGE_SHARED = {
     bg: [
+        "notification.ping", "notification.metric_ping",
         "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit",
         "latest.byte_speed_unit", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
         "test.details.bufferbloat", "test.details.bufferbloat_value", "preview.info",
@@ -94,6 +95,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "gotify", "pushover", "ntfy", "telegram")
     ],
     ca: [
+        "notification.ping", "notification.metric_ping",
         "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
         "latest.byte_speed_unit", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
         "test.details.seconds", "test.details.bufferbloat", "test.details.bufferbloat_value", "preview.info",
@@ -107,6 +109,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     cs: [
+        "notification.ping", "notification.metric_ping",
         "dialog.provider.server", "storage.export", "storage.import",
         "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
         "latest.byte_speed_unit", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
@@ -120,6 +123,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     da: [
+        "notification.ping", "notification.download", "notification.upload", "notification.metric_ping", "notification.metric_download", "notification.metric_upload",
         "dialog.provider.iperf_bitrate",
         "integrations.influxdb.fields.bucket",
         "dialog.okay", "dialog.provider.server", "update.pause", "header.download",  "storage.import",
@@ -135,6 +139,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     de: [
+        "notification.ping", "notification.download", "notification.upload",
         "dialog.provider.iperf_bitrate",
         "integrations.influxdb.fields.bucket",
         "welcome.ms", "dialog.okay", "dialog.provider.server", "storage.speedtests", "storage.tests",
@@ -155,6 +160,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     es: [
+        "notification.ping", "notification.metric_ping",
         "integrations.influxdb.fields.bucket",
         "latest.ping", "latest.ping_unit", "latest.jitter",
         "latest.jitter_unit", "latest.speed_unit", "latest.byte_speed_unit", "info.ping.title",
@@ -169,6 +175,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     fr: [
+        "notification.ping", "notification.metric_ping",
         "dialog.provider.interface", "storage.configuration", "storage.tests",
         "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
         "info.jitter.title", "info.bufferbloat.title", "time.minute", "test.details.seconds",
@@ -179,6 +186,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("email")
     ],
     ga: [
+        "notification.ping", "notification.metric_ping", "notification.shortfall",
         "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit",
         "latest.speed_unit", "latest.byte_speed_unit", "info.ping.title", "info.jitter.title",
         "info.bufferbloat.title", "test.details.seconds", "test.details.bufferbloat",
@@ -187,6 +195,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     id: [
+        "notification.ping", "notification.metric_ping", "notification.shortfall",
         "dialog.provider.server", "storage.reset", "latest.ping",
         "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
         "latest.byte_speed_unit", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
@@ -196,6 +205,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     it: [
+        "notification.ping", "notification.download", "notification.upload", "notification.metric_ping", "notification.metric_download", "notification.metric_upload", "notification.shortfall",
         "dialog.provider.iperf_bitrate",
         "integrations.influxdb.fields.bucket",
         "welcome.ms", "welcome.mbps", "dialog.provider.server", "latest.ping",
@@ -206,6 +216,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     ja: [
+        "notification.ping", "notification.shortfall",
         "latest.ping", "latest.ping_unit", "latest.jitter_unit", "latest.speed_unit",
         "latest.byte_speed_unit", "info.ping.title",
         "test.details.bufferbloat_value", "nodes.placeholder.url",
@@ -213,12 +224,14 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     ko: [
+        "notification.shortfall",
         "latest.ping_unit", "latest.jitter_unit", "latest.speed_unit", "latest.byte_speed_unit",
         "test.details.bufferbloat_value", "nodes.placeholder.url",
         "integrations.ntfy.fields.topic_placeholder", "integrations.webhook.fields.url_placeholder",
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     nb: [
+        "notification.ping", "notification.metric_ping",
         "dialog.provider.iperf_bitrate",
         "dialog.provider.server", "update.pause",
         "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
@@ -234,6 +247,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     nl: [
+        "notification.ping", "notification.download", "notification.upload", "notification.metric_ping", "notification.metric_download", "notification.metric_upload", "notification.shortfall",
         "dialog.provider.iperf_bitrate",
         "latest.down", "latest.up", "integrations.healthChecks.fields.url", "integrations.influxdb.fields.bucket",
         "welcome.ms", "dialog.provider.interface", "dialog.provider.server", "header.servers", "storage.tests", "storage.reset", "latest.ping", "latest.ping_unit",
@@ -244,6 +258,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     pl: [
+        "notification.ping", "notification.metric_ping",
         "integrations.ntfy.fields.topic_placeholder", "integrations.influxdb.fields.bucket",
         "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit",
         "latest.speed_unit", "latest.byte_speed_unit", "info.ping.title", "info.jitter.title",
@@ -253,6 +268,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     pt: [
+        "notification.ping", "notification.download", "notification.upload", "notification.metric_ping", "notification.metric_download", "notification.metric_upload", "notification.shortfall",
         "dialog.provider.interface", "latest.ping", "latest.ping_unit",
         "latest.jitter", "latest.jitter_unit", "latest.down", "latest.speed_unit", "latest.byte_speed_unit",
         "latest.up", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
@@ -265,6 +281,7 @@ export const LANGUAGE_SHARED = {
         "latest.jitter", "info.jitter.title", "info.bufferbloat.title", "test.details.bufferbloat"
     ],
     sv: [
+        "notification.ping", "notification.metric_ping",
         "dialog.provider.server", "latest.ping",
         "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.byte_speed_unit",
         "info.ping.title", "info.jitter.title", "info.bufferbloat.title", "test.details.seconds",
@@ -279,6 +296,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     tr: [
+        "notification.ping", "notification.metric_ping",
         "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit",
         "latest.byte_speed_unit", "info.ping.title", "info.jitter.title", "info.bufferbloat.title",
         "test.details.bufferbloat", "test.details.bufferbloat_value", "preview.info",
@@ -293,6 +311,7 @@ export const LANGUAGE_SHARED = {
         "latest.speed_unit", "latest.byte_speed_unit", "integrations.ntfy.fields.topic_placeholder"
     ],
     "zh-tw": [
+        "notification.ping",
         "latest.ping", "latest.speed_unit", "latest.byte_speed_unit", "info.ping.title",
         "integrations.ntfy.fields.topic_placeholder", "integrations.influxdb.fields.bucket",
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")

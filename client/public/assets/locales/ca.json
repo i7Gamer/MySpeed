@@ -654,7 +654,9 @@
       "alert_upload_below": "Notifica quan la pujada sigui inferior a (Mbps)",
       "alert_upload_below_placeholder": "p. ex. 20",
       "digest_weekly": "Envia un resum setmanal",
-      "digest_monthly": "Envia un resum mensual"
+      "digest_monthly": "Envia un resum mensual",
+      "language": "Idioma dels missatges",
+      "language_placeholder": "Anglès (per defecte)"
     },
     "variables": "Variables disponibles",
     "variables_hint": "Fes-hi clic per afegir-la al missatge"
@@ -766,5 +768,26 @@
       "description": "S'eliminarà <Bold>{{name}}</Bold>. Les proves que ja ha mesurat es conserven a l'historial.",
       "yes": "Elimina"
     }
+  },
+  "notification": {
+    "finished": "S'ha completat un test de velocitat",
+    "failed": "Ha fallat un test de velocitat",
+    "finished_subject": "MySpeed: test de velocitat completat",
+    "failed_subject": "MySpeed: test de velocitat fallit",
+    "target": "Destinació",
+    "ping": "Ping",
+    "download": "Baixada",
+    "upload": "Pujada",
+    "reason": "Motiu",
+    "metric_ping": "ping",
+    "metric_download": "baixada",
+    "metric_upload": "pujada",
+    "crossed_limits": "Límits superats: {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}} per sobre de {{limit}}",
+    "limit_under": "{{metric}} {{value}} {{unit}} per sota de {{limit}}",
+    "not_measured": "{{metric}} (no mesurat)",
+    "below_usual": "Per sota de la velocitat habitual: {{crossings}} menys",
+    "shortfall": "{{metric}} {{shortfall}} %",
+    "and": " i "
   }
 }

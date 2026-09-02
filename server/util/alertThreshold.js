@@ -29,6 +29,8 @@
  */
 
 import { FAILED_TEST, UNMEASURED_LATENCY } from './testOutcome.js';
+import { BASELINE_METRICS, shortfallKey } from './baselineAlert.js';
+import { LANGUAGE_FIELD, phrase } from './notificationLocale.js';
 
 /** The switch that turns the whole gate on, off by default and for every existing row. */
 export const ALERT_ONLY = "alert_only";
@@ -121,26 +123,36 @@ const LATENCY_UNIT = "ms";
  * breachesThreshold. Only on latency do the two roads part, because a zero
  * compared with `>` is the one value that can never breach anything.
  *
- * The unit and the word a crossing is described with sit here, beside the
+ * The unit and the phrase a crossing is described with sit here, beside the
  * comparison that decides it, rather than in the sentence-building below. They
  * are the same fact stated twice - a `breaches` of `>` and a clause reading
  * "under" is precisely the inversion this list exists to keep straight, and
- * apart they could be edited apart.
+ * apart they could be edited apart. The phrase is a key into the locale's
+ * `notification` section, so the word itself is the translator's.
  */
 export const ALERT_METRICS = [
     {
         key: "ping", field: "alert_ping_above",
-        unit: LATENCY_UNIT, crossing: "over",
+        unit: LATENCY_UNIT, crossing: "limit_over",
         breaches: (value, limit) => value > limit,
         measured: (value) => value !== UNMEASURED_LATENCY
     },
     {key: "download", field: "alert_download_below",
-        unit: SPEED_UNIT, crossing: "under",
+        unit: SPEED_UNIT, crossing: "limit_under",
         breaches: (value, limit) => value < limit},
     {key: "upload", field: "alert_upload_below",
-        unit: SPEED_UNIT, crossing: "under",
+        unit: SPEED_UNIT, crossing: "limit_under",
         breaches: (value, limit) => value < limit}
 ];
+
+/**
+ * The locale key a metric is named by in a sentence - "metric_ping" - kept
+ * apart from the capitalised label a template line opens with, because the
+ * two are different words in a language that declines its nouns.
+ */
+const METRIC_NAME_PREFIX = "metric_";
+
+const metricName = (language, key) => phrase(language, `${METRIC_NAME_PREFIX}${key}`);
 
 /**
  * A limit that can be compared against, or null.
@@ -184,8 +196,18 @@ export const wantsOnlyBreaches = (data) => data?.[ALERT_ONLY] === true;
 /** What separates the clauses when one result crossed more than one limit. */
 const CLAUSE_SEPARATOR = ", ";
 
-/** How a metric reads when it is armed and there was nothing to compare. */
-const NOT_MEASURED = "(not measured)";
+/*
+ * The keys under a locale's `notification` section that the sentences below
+ * are built from - see notificationLocale.js for where the words come from.
+ * What joins two directions is a phrase too, being a word; the separator
+ * above is not, because a comma between two Latin-numbered clauses reads the
+ * same in every script and localising it was twenty identical entries.
+ */
+const AND_PHRASE = "and";
+const NOT_MEASURED_PHRASE = "not_measured";
+const CROSSED_LIMITS_PHRASE = "crossed_limits";
+const BELOW_USUAL_PHRASE = "below_usual";
+const SHORTFALL_PHRASE = "shortfall";
 
 /**
  * One crossing, as the clause a message names it with: "ping 62 ms over 50".
@@ -200,8 +222,8 @@ const NOT_MEASURED = "(not measured)";
  * already print, so a template naming both does not show one number twice in
  * two roundings.
  */
-const crossingClause = (metric, value, limit) =>
-    `${metric.key} ${value} ${metric.unit} ${metric.crossing} ${limit}`;
+const crossingClause = (language, metric, value, limit) =>
+    phrase(language, metric.crossing, {metric: metricName(language, metric.key), value, unit: metric.unit, limit});
 
 /**
  * Every armed metric this result did not satisfy, as the clauses that name
@@ -217,6 +239,7 @@ const crossingClause = (metric, value, limit) =>
  * two when the gate stopped at the first.
  */
 const findings = (payload, data) => {
+    const language = data?.[LANGUAGE_FIELD];
     const crossed = [];
     let armed = false;
 
@@ -233,11 +256,11 @@ const findings = (payload, data) => {
         // zero judged as "above" is the exact reading that used to pass for an
         // excellent line.
         if (value === null) {
-            crossed.push(`${metric.key} ${NOT_MEASURED}`);
+            crossed.push(phrase(language, NOT_MEASURED_PHRASE, {metric: metricName(language, metric.key)}));
             continue;
         }
 
-        if (metric.breaches(value, limit)) crossed.push(crossingClause(metric, value, limit));
+        if (metric.breaches(value, limit)) crossed.push(crossingClause(language, metric, value, limit));
     }
 
     return {armed, crossed};
@@ -315,14 +338,26 @@ export const crossedLimits = (payload, data) => {
     return crossed.length > 0 ? crossed.join(CLAUSE_SEPARATOR) : null;
 };
 
-/**
- * The payload key the whole alert travels on as one ready-made passage, and
- * the labels its lines open with.
- */
+/** The payload key the whole alert travels on as one ready-made passage. */
 export const ALERT_SUMMARY = "alertSummary";
 
-const SUMMARY_BASELINE_LABEL = "Below its usual speed: ";
-const SUMMARY_LIMITS_LABEL = "Crossed limits: ";
+/**
+ * The target's own crossing, phrased with each direction's own number -
+ * "download 40% and upload 50% under" - or null when the verdict carries no
+ * shortfall.
+ *
+ * Phrased here rather than in the verdict, which is decided once per test
+ * and knows no recipient: the words are the integration's, in the language
+ * it was set to, where the numbers are facts about the test.
+ */
+const baselineCrossing = (payload, language) => {
+    const crossings = BASELINE_METRICS
+        .filter((metric) => typeof payload?.[shortfallKey(metric)] === "number")
+        .map((metric) => phrase(language, SHORTFALL_PHRASE,
+            {metric: metricName(language, metric), shortfall: payload[shortfallKey(metric)]}));
+
+    return crossings.length > 0 ? crossings.join(phrase(language, AND_PHRASE)) : null;
+};
 
 /**
  * Everything the alert has to say, as a passage a default template can carry -
@@ -341,25 +376,27 @@ const SUMMARY_LIMITS_LABEL = "Crossed limits: ";
  * limits are the recipient's own - the same split that puts this key on the
  * dispatcher rather than on the payload.
  *
- * The baseline line hangs on the phrase, not the flag alone: a payload from an
- * older node can say breached without carrying baselineDetail, and a label
+ * The baseline line hangs on the shortfalls, not the flag alone: a payload
+ * from an older node can say breached without carrying them, and a label
  * introducing nothing is not a line worth sending.
  *
- * English composed in the server, like the six defaults it rides in; the
- * localisation pass (the language config key) takes both together.
+ * In the integration's own language - the `language` setting beside its
+ * limits - so a German Telegram and an English email beside it each read
+ * their own. The words come from the locale files the interface ships; see
+ * notificationLocale.js.
  */
 export const alertSummary = (payload, data) => {
+    const language = data?.[LANGUAGE_FIELD];
     const lines = [];
 
-    if (payload?.[BASELINE_BREACHED] === true
-        && typeof payload.baselineDetail === "string" && payload.baselineDetail !== "")
-        lines.push(SUMMARY_BASELINE_LABEL + payload.baselineDetail);
+    const crossing = payload?.[BASELINE_BREACHED] === true ? baselineCrossing(payload, language) : null;
+    if (crossing !== null) lines.push(phrase(language, BELOW_USUAL_PHRASE, {crossings: crossing}));
 
     // A second three-entry walk over ALERT_METRICS beside the dispatcher's
     // crossedLimits call - shared, the two calls would trade this line for a
     // threaded argument at every site; the walk is three comparisons.
     const crossed = crossedLimits(payload, data);
-    if (crossed !== null) lines.push(SUMMARY_LIMITS_LABEL + crossed);
+    if (crossed !== null) lines.push(phrase(language, CROSSED_LIMITS_PHRASE, {clauses: crossed}));
 
     return lines.map((line) => `\n${line}`).join("");
 };

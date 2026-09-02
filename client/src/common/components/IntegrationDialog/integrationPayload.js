@@ -39,6 +39,10 @@ export const isValidFieldValue = (field, value) => {
     if (field.type === "text" && String(value).length > TEXT_LIMIT) return false;
     if (field.type === "textarea" && String(value).length > TEXTAREA_LIMIT) return false;
 
+    // The same rule the server holds a select to: one of the field's own
+    // options, or nothing - which the empty check above already let through.
+    if (field.type === "select" && !field.options.includes(value)) return false;
+
     if (field.type === "number") {
         const number = Number(value);
 
@@ -66,14 +70,20 @@ export const isValidFieldValue = (field, value) => {
  * A *required* number is still omitted when empty, because the server rejects
  * null on a required field outright - sending it would turn a half-filled form
  * into a flat error rather than a partial save.
+ *
+ * A choice put back to its blank entry is cleared the same way, for the same
+ * reason: omitted, the old choice survives, and a notifier goes on writing
+ * German after the operator set it back to the default.
  */
+const CLEARABLE_TYPES = ["number", "select"];
+
 export const integrationPayload = (definition, fields, displayName) => {
     const payload = {};
 
     for (const field of definition.fields) {
         const value = fields[field.name];
 
-        if (field.type === "number" && isEmpty(value)) {
+        if (CLEARABLE_TYPES.includes(field.type) && isEmpty(value)) {
             if (!field.required) payload[field.name] = null;
             continue;
         }

@@ -654,7 +654,9 @@
       "alert_upload_below": "Notifier lorsque le téléversement est inférieur à (Mbps)",
       "alert_upload_below_placeholder": "p. ex. 20",
       "digest_weekly": "Envoyer un résumé hebdomadaire",
-      "digest_monthly": "Envoyer un résumé mensuel"
+      "digest_monthly": "Envoyer un résumé mensuel",
+      "language": "Langue des messages",
+      "language_placeholder": "Anglais (par défaut)"
     },
     "variables": "Variables disponibles",
     "variables_hint": "Cliquez pour l'ajouter au message"
@@ -766,5 +768,26 @@
       "description": "<Bold>{{name}}</Bold> sera supprimée. Les tests qu'elle a déjà mesurés restent dans l'historique.",
       "yes": "Supprimer"
     }
+  },
+  "notification": {
+    "finished": "Un test de vitesse est terminé",
+    "failed": "Un test de vitesse a échoué",
+    "finished_subject": "MySpeed : test de vitesse terminé",
+    "failed_subject": "MySpeed : test de vitesse échoué",
+    "target": "Cible",
+    "ping": "Ping",
+    "download": "Téléchargement",
+    "upload": "Téléversement",
+    "reason": "Raison",
+    "metric_ping": "ping",
+    "metric_download": "téléchargement",
+    "metric_upload": "téléversement",
+    "crossed_limits": "Limites dépassées : {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}} au-dessus de {{limit}}",
+    "limit_under": "{{metric}} {{value}} {{unit}} en dessous de {{limit}}",
+    "not_measured": "{{metric}} (non mesuré)",
+    "below_usual": "En dessous de la vitesse habituelle : {{crossings}} de moins",
+    "shortfall": "{{metric}} {{shortfall}} %",
+    "and": " et "
   }
 }

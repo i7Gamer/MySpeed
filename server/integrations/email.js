@@ -1,3 +1,4 @@
+import { phrase } from '../util/notificationLocale.js';
 import nodemailer from "nodemailer";
 import { replaceVariables, truncate } from "../util/helpers.js";
 import { checkOutboundHost } from "../util/safeUrl.js";
@@ -26,11 +27,21 @@ import { wantsDigest } from "../util/digestOptIn.js";
 // Both body templates name the target: on a multi-target instance every
 // message otherwise reads identically whether it describes the WAN or the LAN
 // box.
-const defaults = {
-    finished_subject: "MySpeed: speedtest finished",
-    finished: "A speedtest is finished:\nTarget: %targetName%\nPing: %ping% ms (±%jitter% ms)\nDownload: %download% Mbps\nUpload: %upload% Mbps%alertSummary%",
-    error_subject: "MySpeed: speedtest failed",
-    failed: "A speedtest has failed.\nTarget: %targetName%\nReason: %error%"
+/**
+ * The messages a notifier sends when nothing was edited, in the language the
+ * integration was set to - see util/notificationLocale.js. A function of the
+ * language rather than a constant, because the language is the integration's
+ * own setting and two integrations may hold two.
+ */
+const defaults = (language) => {
+    const word = (key) => phrase(language, key);
+
+    return {
+        finished_subject: word("finished_subject"),
+        finished: `${word("finished")}:\n${word("target")}: %targetName%\n${word("ping")}: %ping% ms (±%jitter% ms)\n${word("download")}: %download% Mbps\n${word("upload")}: %upload% Mbps%alertSummary%`,
+        error_subject: word("failed_subject"),
+        failed: `${word("failed")}.\n${word("target")}: %targetName%\n${word("reason")}: %error%`
+    };
 };
 
 /**
@@ -206,14 +217,14 @@ export default (registerEvent, createTransport = nodemailer.createTransport) => 
 
     registerEvent('testFinished', async ({data: c}, data, activity) => {
         if (c.send_finished) await send(c,
-            replaceVariables(c.finished_subject || defaults.finished_subject, data),
-            replaceVariables(c.finished_message || defaults.finished, data), activity);
+            replaceVariables(c.finished_subject || defaults(c.language).finished_subject, data),
+            replaceVariables(c.finished_message || defaults(c.language).finished, data), activity);
     });
 
     registerEvent('testFailed', async ({data: c}, failure, activity) => {
         if (c.send_failed) await send(c,
-            replaceVariables(c.error_subject || defaults.error_subject, failure),
-            replaceVariables(c.error_message || defaults.failed, failure), activity);
+            replaceVariables(c.error_subject || defaults(c.language).error_subject, failure),
+            replaceVariables(c.error_message || defaults(c.language).failed, failure), activity);
     });
 
     registerEvent('digestReady', async ({data: c}, payload, activity) => {

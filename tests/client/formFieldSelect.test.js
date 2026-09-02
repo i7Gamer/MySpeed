@@ -1,0 +1,78 @@
+import { afterEach, describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { act, cleanup, createElement, render, window } from "../helpers/renderHarness.js";
+import { FormField } from "@/common/components/FormField/FormField";
+
+/**
+ * The fourth field type the integration form draws: a choice from a list,
+ * which the language setting every notifier carries is. A native select
+ * rather than the dropdown menu the dialog's add button uses - that one is a
+ * command menu, and this is a value.
+ *
+ * Rendered rather than scanned, because what matters is what a keyboard and
+ * a screen reader meet: a labelled select whose first entry is the "none"
+ * the server reads as English, and which reports the chosen value the way
+ * every other field type does.
+ */
+afterEach(cleanup);
+
+const OPTIONS = [{value: "en", label: "English"}, {value: "de", label: "Deutsch"}];
+
+const mount = (props = {}) => {
+    const changes = [];
+    const {container} = render(createElement(FormField, {
+        label: "Message language", type: "select", options: OPTIONS, placeholder: "English (default)",
+        value: "de", onChange: (value) => changes.push(value), ...props
+    }));
+    const select = container.querySelector("select");
+    assert.ok(select, "no select was drawn");
+
+    return {container, select, changes};
+};
+
+const choose = (select, value) => act(() => {
+    select.value = value;
+    select.dispatchEvent(new window.Event("change", {bubbles: true}));
+});
+
+describe("a select form field", () => {
+    it("offers the options after a blank entry that reads as the placeholder", () => {
+        const {select} = mount();
+        const entries = [...select.options].map((option) => [option.value, option.textContent]);
+
+        assert.deepEqual(entries, [["", "English (default)"], ["en", "English"], ["de", "Deutsch"]]);
+    });
+
+    it("shows the value it was given", () => {
+        assert.equal(mount().select.value, "de");
+        assert.equal(mount({value: undefined}).select.value, "", "an unset value did not land on the blank entry");
+        assert.equal(mount({value: null}).select.value, "");
+    });
+
+    it("reports a choice, and the blank entry as an empty string", () => {
+        const {select, changes} = mount();
+
+        choose(select, "en");
+        choose(select, "");
+
+        assert.deepEqual(changes, ["en", ""]);
+    });
+
+    it("is labelled for the reader", () => {
+        const {container, select} = mount();
+        const label = container.querySelector("label");
+
+        assert.equal(label.getAttribute("for"), select.id);
+        assert.equal(label.textContent, "Message language");
+    });
+
+    it("wears the error mark like every other field type", () => {
+        const {select} = mount({error: true});
+
+        assert.ok(select.classList.contains("input-error"), "the select is not marked");
+    });
+
+    it("can be disabled", () => {
+        assert.equal(mount({disabled: true}).select.disabled, true);
+    });
+});

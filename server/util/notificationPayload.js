@@ -4,6 +4,7 @@ import { DATE_VARIABLES } from './helpers.js';
 // carries, and two literals are how those stop agreeing without anything
 // failing to compile.
 import { ALERT_CROSSED, ALERT_SUMMARY, BASELINE_ARMED, BASELINE_BREACHED } from './alertThreshold.js';
+import { BASELINE_METRICS, shortfallKey } from './baselineAlert.js';
 
 /**
  * What an integration is told about a test, and what an operator may name in a
@@ -68,11 +69,10 @@ const FINISHED_KEYS = [
     // identically. Null on a test that crossed nothing, which every template
     // naming them renders as the not-measured mark.
     "baselineDirection", "baselineShortfall",
-    // The same crossing as one ready-made phrase, each direction carrying its
-    // own number - "download 40% and upload 50% under" - which the pair above
-    // cannot say when both cross in one round. The default templates' summary
-    // line is built from it.
-    "baselineDetail",
+    // And each direction's own number, which the pair above cannot say when
+    // both cross in one round. The summary line the default templates end
+    // with is phrased from these, in the recipient's language.
+    ...BASELINE_METRICS.map(shortfallKey),
     // And the yardstick itself, so a message can say what this line usually
     // delivers beside what it just did. The percentage is not here: it is the
     // operator's own setting, on the screen they set it from, where these six

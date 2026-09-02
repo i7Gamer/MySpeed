@@ -1080,12 +1080,13 @@ export const baselineKeys = async (target, measured) => {
     const windowRows = await tests.listForBaseline(target.id, baselineWindowStart());
     const [previous] = windowRows;
 
-    const {armed, breached, baselineDirection, baselineShortfall, baselineDetail,
-        baselineDownload, baselineUpload} =
+    const {armed, breached, ...described} =
         baselineVerdict(measured, previous, baselineOf(windowRows), target.baselinePercent);
 
-    return {baselineArmed: armed, baselineBreached: breached,
-        baselineDirection, baselineShortfall, baselineDetail, baselineDownload, baselineUpload};
+    // The verdict's own keys - the direction, the shortfalls, the medians -
+    // travel under the names the verdict gives them; only the two the gate
+    // reads are renamed onto the payload's spelling.
+    return {baselineArmed: armed, baselineBreached: breached, ...described};
 };
 
 const executeTarget = async (target, type, retried = false) => {

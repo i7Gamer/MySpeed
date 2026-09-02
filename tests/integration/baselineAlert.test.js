@@ -118,7 +118,7 @@ describe("the verdict a stored history produces", () => {
             // 300 against the 500 median the history above produces, with
             // upload holding, so the round names one direction.
             baselineDirection: "download", baselineShortfall: 40,
-            baselineDetail: "download 40% under",
+            baselineShortfallDownload: 40, baselineShortfallUpload: null,
             baselineDownload: 500, baselineUpload: 200
         });
     });

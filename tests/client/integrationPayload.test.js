@@ -73,10 +73,38 @@ describe("integrationPayload", () => {
 
         assert.ok(!("port" in integrationPayload(definition, {port: ""}, "x")));
     });
+
+    /**
+     * A choice set back to "none" - the language select returned to its
+     * blank first entry - is cleared the way an emptied number is, and for
+     * the same reason: omitted, the server keeps the old choice, and the
+     * notifier goes on writing German after the operator put it back.
+     */
+    it("sends an explicit null for a choice that was cleared", () => {
+        const definition = {fields: [{name: "language", type: "select", required: false, options: ["en", "de"]}]};
+
+        for (const emptied of ["", null, undefined])
+            assert.equal(integrationPayload(definition, {language: emptied}, "x").language, null,
+                `an emptied choice (${JSON.stringify(emptied)}) was not cleared`);
+
+        assert.equal(integrationPayload(definition, {language: "de"}, "x").language, "de");
+    });
 });
 
 describe("isValidFieldValue", () => {
     const field = (overrides) => ({name: "x", type: "text", required: false, ...overrides});
+
+    // The same rule the server holds a select to: one of the field's own
+    // options, or nothing.
+    it("holds a choice to the options the field offers", () => {
+        const select = field({type: "select", options: ["en", "de"]});
+
+        assert.equal(isValidFieldValue(select, "de"), true);
+        assert.equal(isValidFieldValue(select, ""), true);
+        assert.equal(isValidFieldValue(select, undefined), true);
+        assert.equal(isValidFieldValue(select, "tlh"), false);
+        assert.equal(isValidFieldValue(select, "EN"), false);
+    });
 
     it("requires the fields marked required", () => {
         assert.equal(isValidFieldValue(field({required: true}), ""), false);

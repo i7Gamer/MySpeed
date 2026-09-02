@@ -1,3 +1,4 @@
+import { phrase } from '../util/notificationLocale.js';
 import { postJson } from "../util/http.js";
 import { replaceVariables, truncate } from "../util/helpers.js";
 import { DISCORD_MARKDOWN, stripMarkdown } from "../util/markdown.js";
@@ -32,9 +33,19 @@ export const DISCORD_USERNAME_LIMIT = 80;
 // Both templates name the target: on a multi-target instance every message
 // otherwise reads identically whether it describes the WAN or the LAN box. A
 // pre-target row renders it as N/A, the shape every unmeasured figure takes.
-const defaults = {
-    finished: ":sparkles: **A speedtest is finished**\n > :dart: `Target`: %targetName%\n > :ping_pong: `Ping`: %ping% ms (±%jitter% ms)\n > :arrow_up: `Upload`: %upload% Mbps\n > :arrow_down: `Download`: %download% Mbps%alertSummary%",
-    failed: ":x: **A speedtest has failed**\n > `Target`: %targetName%\n > `Reason`: %error%"
+/**
+ * The messages a notifier sends when nothing was edited, in the language the
+ * integration was set to - see util/notificationLocale.js. A function of the
+ * language rather than a constant, because the language is the integration's
+ * own setting and two integrations may hold two.
+ */
+const defaults = (language) => {
+    const word = (key) => phrase(language, key);
+
+    return {
+        finished: `:sparkles: **${word("finished")}**\n > :dart: \`${word("target")}\`: %targetName%\n > :ping_pong: \`${word("ping")}\`: %ping% ms (±%jitter% ms)\n > :arrow_up: \`${word("upload")}\`: %upload% Mbps\n > :arrow_down: \`${word("download")}\`: %download% Mbps%alertSummary%`,
+        failed: `:x: **${word("failed")}**\n > \`${word("target")}\`: %targetName%\n > \`${word("reason")}\`: %error%`
+    };
 };
 
 /**
@@ -125,12 +136,12 @@ const DIGEST_COLOR = 4543686;
 export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity) => {
         if (c.send_finished) await send(c.url, c.display_name, 4572762,
-            replaceVariables(c.finished_message || defaults.finished, clean(data)), activity);
+            replaceVariables(c.finished_message || defaults(c.language).finished, clean(data)), activity);
     });
 
     registerEvent('testFailed', async ({data: c}, failure, activity) => {
         if (c.send_failed) await send(c.url, c.display_name, 12993861,
-            replaceVariables(c.error_message || defaults.failed, clean(failure)), activity);
+            replaceVariables(c.error_message || defaults(c.language).failed, clean(failure)), activity);
     });
 
     registerEvent('digestReady', async ({data: c}, payload, activity) => {

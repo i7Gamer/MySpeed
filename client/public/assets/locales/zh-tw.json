@@ -654,7 +654,9 @@
       "alert_upload_below": "當上傳低於此值時通知（Mbps）",
       "alert_upload_below_placeholder": "例如 20",
       "digest_weekly": "傳送每週摘要",
-      "digest_monthly": "傳送每月摘要"
+      "digest_monthly": "傳送每月摘要",
+      "language": "訊息語言",
+      "language_placeholder": "英文（預設）"
     },
     "variables": "可用變數",
     "variables_hint": "點一下即可加入訊息中"
@@ -766,5 +768,26 @@
       "description": "測速點 <Bold>{{name}}</Bold> 將被刪除。它已完成的測試仍會保留在歷史記錄中。",
       "yes": "刪除"
     }
+  },
+  "notification": {
+    "finished": "速度測試已完成",
+    "failed": "速度測試失敗",
+    "finished_subject": "MySpeed：速度測試已完成",
+    "failed_subject": "MySpeed：速度測試失敗",
+    "target": "測速點",
+    "ping": "Ping",
+    "download": "下載",
+    "upload": "上傳",
+    "reason": "原因",
+    "metric_ping": "Ping",
+    "metric_download": "下載",
+    "metric_upload": "上傳",
+    "crossed_limits": "超出限制：{{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}}，超過 {{limit}}",
+    "limit_under": "{{metric}} {{value}} {{unit}}，低於 {{limit}}",
+    "not_measured": "{{metric}}（未測量）",
+    "below_usual": "低於平常速度：{{crossings}}",
+    "shortfall": "{{metric}} 下降 {{shortfall}}%",
+    "and": "、"
   }
 }

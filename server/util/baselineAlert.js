@@ -164,7 +164,7 @@ const usablePercent = (value) => {
  * unmeasured for a reason nothing on the screen explains.
  */
 const quiet = () => ({armed: false, breached: false, baselineDirection: null,
-    baselineShortfall: null, baselineDetail: null, baselineDownload: null, baselineUpload: null});
+    baselineShortfall: null, ...perMetricShortfall(() => null), baselineDownload: null, baselineUpload: null});
 
 /**
  * Whether one metric's reading sits under its share of that metric's median.
@@ -227,6 +227,23 @@ const newlyBelow = (row, previous, baseline, percent) => BASELINE_METRICS.filter
  * says its keys are flat on purpose.
  */
 const METRIC_SEPARATOR = ", ";
+
+/**
+ * The payload key one metric's own shortfall travels on: baselineShortfallDownload.
+ *
+ * One key per metric beside the deepest-only pair, because the pair cannot say
+ * what a round that put both directions under says - two numbers positionally
+ * matched to two names is a shape a sentence cannot hold, and the sentence is
+ * written at dispatch in the recipient's own language (util/alertThreshold.js
+ * alertSummary) from exactly these. Numbers rather than a ready-made phrase
+ * for that reason: a phrase composed here would be composed in one language
+ * for every recipient.
+ */
+export const shortfallKey = (metric) => `baselineShortfall${metric[0].toUpperCase()}${metric.slice(1)}`;
+
+/** Every metric's shortfall key, each answered by the function given. */
+const perMetricShortfall = (answer) =>
+    Object.fromEntries(BASELINE_METRICS.map((metric) => [shortfallKey(metric), answer(metric)]));
 
 /**
  * How far under its own median a reading landed, as a whole percentage of that
@@ -349,16 +366,13 @@ export const baselineVerdict = (row, previous, baseline, percent) => {
             ? Math.max(...below.map((metric) => shortfallOf(row, baseline, metric)))
             : null,
         /*
-         * And the crossing as one ready-made phrase, each direction carrying
-         * its own number - the sentence the deepest-only pair above cannot
-         * say when both cross in one round. The message summary is composed
-         * from this (alertThreshold.js alertSummary), and a template may name
-         * it directly.
+         * And each direction's own number - see shortfallKey. Null for a
+         * direction that did not newly cross, for the reason the pair above is
+         * null on a quiet round: a template naming it reads as unmeasured
+         * rather than as a zero shortfall.
          */
-        baselineDetail: below.length > 0
-            ? `${below.map((metric) => `${metric} ${shortfallOf(row, baseline, metric)}%`)
-                .join(" and ")} under`
-            : null,
+        ...perMetricShortfall((metric) =>
+            below.includes(metric) ? shortfallOf(row, baseline, metric) : null),
         // The medians themselves rather than the lines they imply, so a message
         // template can say what this target usually delivers beside what it
         // just did. The percentage is the operator's own setting and is on the

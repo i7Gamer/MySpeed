@@ -79,7 +79,15 @@ const INVENTORY = new Map([
         "a tooltip whose increase is coerced at the card's boundary and whose tests is a computed count"],
     ["status.elapsed",
         "a live tick counter - the only no-space UNIT gluing in the file (of_target's percent is the "
-        + "no-space other), and never a stored column"]
+        + "no-space other), and never a stored column"],
+    // The three the server writes a notification from, never the client:
+    // the values are the gate's own, already judged.
+    ["notification.shortfall",
+        "the baseline verdict's whole-percent shortfall, phrased only for a direction that newly crossed"],
+    ["notification.limit_over",
+        "a crossing clause phrased only from a measurement measurementOf accepted, with the metric's own unit"],
+    ["notification.limit_under",
+        "the same clause in the other direction, behind the same measurementOf gate"]
 ]);
 
 describe("a locale string that glues a value to its unit is a reviewed decision", () => {

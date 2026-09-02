@@ -3,6 +3,7 @@ import integrationModules from '../integrations/index.js';
 import { ALERT_CROSSED, ALERT_METRICS, ALERT_ONLY, ALERT_SUMMARY, alertSummary, breachesThreshold,
     crossedLimits, wantsOnlyBreaches } from '../util/alertThreshold.js';
 import { DIGEST_MONTHLY_FIELD, DIGEST_WEEKLY_FIELD } from '../util/digestOptIn.js';
+import { LANGUAGE_FIELD, NOTIFICATION_LANGUAGES } from '../util/notificationLocale.js';
 export { wantsDigest } from '../util/digestOptIn.js';
 import { FAILED_VARIABLES, FINISHED_VARIABLES } from '../util/notificationPayload.js';
 import { withoutUrlCredentials } from '../util/urlCredentials.js';
@@ -205,6 +206,17 @@ const DIGEST_FIELDS = [
 ];
 
 /**
+ * The language a notifier writes in, offered to every notifier for the reason
+ * the two lists above are. A choice from the locales the interface ships -
+ * the list is read off the locale directory, so it cannot name a language
+ * nothing can answer - and not required: a notifier that chose none writes
+ * English, which is what every row from before the field existed did.
+ */
+const LANGUAGE_FIELDS = [
+    {name: LANGUAGE_FIELD, type: "select", required: false, options: NOTIFICATION_LANGUAGES}
+];
+
+/**
  * Whether a module asked to be offered the threshold settings.
  *
  * `notifier: true` is a module's own opt-in: it exists to tell a person
@@ -269,7 +281,7 @@ export const initialize = async () => {
         // integration test harness, and the definition is handed out by
         // reference, so appending in place stacks another copy on every pass.
         const fields = (isNotifier(definition)
-            ? [...definition.fields, ...ALERT_FIELDS, ...DIGEST_FIELDS]
+            ? [...definition.fields, ...ALERT_FIELDS, ...DIGEST_FIELDS, ...LANGUAGE_FIELDS]
             : definition.fields).map(withVariables);
 
         integrations[name] = {...definition, fields};
@@ -516,6 +528,10 @@ export const validateInput = (module, data, isPatch = false) => {
             if (field.regex && !new RegExp(field.regex).test(data[field.name])) return false;
 
             if (field.type === "boolean" && typeof data[field.name] !== "boolean") return false;
+            // Held to the list the field declares. `includes` is a strict
+            // comparison, so a number, an array or an object holding a valid
+            // code is refused with the rest.
+            if (field.type === "select" && !field.options.includes(data[field.name])) return false;
             if (field.type === "number") {
                 // Checked before coercing, for the same reason the text branch
                 // above checks its own type: Number([]) is 0 and Number(true) is

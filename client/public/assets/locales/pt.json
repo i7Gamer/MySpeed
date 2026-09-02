@@ -654,7 +654,9 @@
       "alert_upload_below": "Avisar quando o upload ficar abaixo de (Mbps)",
       "alert_upload_below_placeholder": "ex.: 20",
       "digest_weekly": "Enviar um resumo semanal",
-      "digest_monthly": "Enviar um resumo mensal"
+      "digest_monthly": "Enviar um resumo mensal",
+      "language": "Idioma das mensagens",
+      "language_placeholder": "Inglês (padrão)"
     },
     "variables": "Variáveis disponíveis",
     "variables_hint": "Clique para adicioná-la à mensagem"
@@ -766,5 +768,26 @@
       "description": "<Bold>{{name}}</Bold> será excluído. Os testes que ele já mediu permanecem no histórico.",
       "yes": "Excluir"
     }
+  },
+  "notification": {
+    "finished": "Um teste de velocidade foi concluído",
+    "failed": "Um teste de velocidade falhou",
+    "finished_subject": "MySpeed: teste de velocidade concluído",
+    "failed_subject": "MySpeed: teste de velocidade falhou",
+    "target": "Destino",
+    "ping": "Ping",
+    "download": "Download",
+    "upload": "Upload",
+    "reason": "Motivo",
+    "metric_ping": "ping",
+    "metric_download": "download",
+    "metric_upload": "upload",
+    "crossed_limits": "Limites ultrapassados: {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}} acima de {{limit}}",
+    "limit_under": "{{metric}} {{value}} {{unit}} abaixo de {{limit}}",
+    "not_measured": "{{metric}} (não medido)",
+    "below_usual": "Abaixo da velocidade habitual: {{crossings}} a menos",
+    "shortfall": "{{metric}} {{shortfall}}%",
+    "and": " e "
   }
 }

@@ -654,7 +654,9 @@
       "alert_upload_below": "Cuir in iúl nuair atá an uaslódáil faoi bhun (Mbps)",
       "alert_upload_below_placeholder": "m.sh. 20",
       "digest_weekly": "Seol achoimre sheachtainiúil",
-      "digest_monthly": "Seol achoimre mhíosúil"
+      "digest_monthly": "Seol achoimre mhíosúil",
+      "language": "Teanga na dteachtaireachtaí",
+      "language_placeholder": "Béarla (réamhshocrú)"
     },
     "variables": "Athróga ar fáil",
     "variables_hint": "Cliceáil chun é a chur leis an teachtaireacht"
@@ -766,5 +768,26 @@
       "description": "Scriosfar <Bold>{{name}}</Bold>. Fanann na tástálacha a thomhais sí cheana féin sa stair.",
       "yes": "Scrios"
     }
+  },
+  "notification": {
+    "finished": "Tá tástáil luais críochnaithe",
+    "failed": "Theip ar thástáil luais",
+    "finished_subject": "MySpeed: tástáil luais críochnaithe",
+    "failed_subject": "MySpeed: theip ar thástáil luais",
+    "target": "Sprioc",
+    "ping": "Ping",
+    "download": "Íoslódáil",
+    "upload": "Uaslódáil",
+    "reason": "Cúis",
+    "metric_ping": "ping",
+    "metric_download": "íoslódáil",
+    "metric_upload": "uaslódáil",
+    "crossed_limits": "Teorainneacha sáraithe: {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}} os cionn {{limit}}",
+    "limit_under": "{{metric}} {{value}} {{unit}} faoi bhun {{limit}}",
+    "not_measured": "{{metric}} (gan tomhas)",
+    "below_usual": "Faoi bhun an ghnáthluais: {{crossings}} níos lú",
+    "shortfall": "{{metric}} {{shortfall}}%",
+    "and": " agus "
   }
 }

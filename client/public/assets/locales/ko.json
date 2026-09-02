@@ -654,7 +654,9 @@
       "alert_upload_below": "업로드가 다음보다 낮을 때 알림 (Mbps)",
       "alert_upload_below_placeholder": "예: 20",
       "digest_weekly": "주간 요약 보내기",
-      "digest_monthly": "월간 요약 보내기"
+      "digest_monthly": "월간 요약 보내기",
+      "language": "메시지 언어",
+      "language_placeholder": "영어 (기본값)"
     },
     "variables": "사용 가능한 변수",
     "variables_hint": "클릭하면 메시지에 추가됩니다"
@@ -766,5 +768,26 @@
       "description": "<Bold>{{name}}</Bold>이(가) 삭제됩니다. 이 대상이 이미 측정한 테스트는 기록에 그대로 남습니다.",
       "yes": "삭제"
     }
+  },
+  "notification": {
+    "finished": "속도 테스트가 완료되었습니다",
+    "failed": "속도 테스트가 실패했습니다",
+    "finished_subject": "MySpeed: 속도 테스트 완료",
+    "failed_subject": "MySpeed: 속도 테스트 실패",
+    "target": "측정 대상",
+    "ping": "핑",
+    "download": "다운로드",
+    "upload": "업로드",
+    "reason": "이유",
+    "metric_ping": "핑",
+    "metric_download": "다운로드",
+    "metric_upload": "업로드",
+    "crossed_limits": "한계 초과: {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}} (기준 {{limit}} 초과)",
+    "limit_under": "{{metric}} {{value}} {{unit}} (기준 {{limit}} 미만)",
+    "not_measured": "{{metric}} (측정되지 않음)",
+    "below_usual": "평소 속도 미만: {{crossings}} 감소",
+    "shortfall": "{{metric}} {{shortfall}}%",
+    "and": " 및 "
   }
 }

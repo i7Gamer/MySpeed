@@ -105,5 +105,9 @@ export const createEmbeddedFallback = () => (req, res) => {
 
 /** Reads an embedded asset by its url path. Returns null when it is not bundled. */
 export const readEmbeddedFile = (url) => cache.get(decodeEmbedPath(url))?.content ?? null;
+
+// Every path the embed holds, for a reader that has to discover files rather
+// than name them - the notification catalog lists the locales this way.
+export const embeddedPaths = () => [...cache.keys()];
 `;
 };

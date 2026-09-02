@@ -16,6 +16,7 @@ import {renderableIntegrations} from "@/common/components/IntegrationDialog/rend
 import {integrationPayload, isValidDisplayName, isValidFieldValue} from "@/common/components/IntegrationDialog/integrationPayload";
 import {appendVariable, variableToken} from "@/common/components/IntegrationDialog/templateVariables";
 import {integrationPlaceholder, integrationTitle} from "@/common/utils/InvariantText";
+import {languages} from "@/i18n";
 
 const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, config}) => {
     const [displayName, setDisplayName] = useState(integration.displayName || integrationTitle(integration.name, t));
@@ -55,6 +56,17 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
     };
 
     const isValidInput = (field) => isValidFieldValue(field, fields[field.name]);
+
+    /**
+     * The entries of a select: the server's options - for the language
+     * field, the locale codes it can answer - labelled with the native names
+     * the language menu already shows beside each flag, so neither side
+     * lists the languages by hand. A code the menu does not know is shown as
+     * itself rather than dropped, since the server would still accept it.
+     */
+    const selectOptions = (field) => (field.options ?? []).map((value) => ({
+        value, label: languages.find((language) => language.code === value)?.name ?? value
+    }));
 
     /**
      * The label for a field, falling back to the shared namespace.
@@ -185,7 +197,8 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
                     <FormField label={getLabel(field.name)}
                         type={field.type} value={fields[field.name]} onChange={(value) => updateField(field.name, value)}
                         placeholder={getPlaceholder(field.name)} error={!isValidInput(field)}
-                        min={field.min} max={field.max} decimals={field.decimals}/>
+                        min={field.min} max={field.max} decimals={field.decimals}
+                        options={field.type === "select" ? selectOptions(field) : undefined}/>
                     {/* Only a template carries a list, and the list is the
                         server's - it is the side that substitutes them. */}
                     {field.variables?.length > 0 && (

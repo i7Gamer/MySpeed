@@ -654,7 +654,9 @@
       "alert_upload_below": "アップロードが次の値を下回ったら通知（Mbps）",
       "alert_upload_below_placeholder": "例: 20",
       "digest_weekly": "週次ダイジェストを送信",
-      "digest_monthly": "月次ダイジェストを送信"
+      "digest_monthly": "月次ダイジェストを送信",
+      "language": "メッセージの言語",
+      "language_placeholder": "英語（既定）"
     },
     "variables": "使用できる変数",
     "variables_hint": "クリックするとメッセージに追加されます"
@@ -766,5 +768,26 @@
       "description": "<Bold>{{name}}</Bold> を削除します。この測定先で測定済みのテストは履歴に残ります。",
       "yes": "削除"
     }
+  },
+  "notification": {
+    "finished": "スピードテストが完了しました",
+    "failed": "スピードテストが失敗しました",
+    "finished_subject": "MySpeed: スピードテスト完了",
+    "failed_subject": "MySpeed: スピードテスト失敗",
+    "target": "測定先",
+    "ping": "Ping",
+    "download": "ダウンロード",
+    "upload": "アップロード",
+    "reason": "理由",
+    "metric_ping": "Ping",
+    "metric_download": "ダウンロード",
+    "metric_upload": "アップロード",
+    "crossed_limits": "しきい値を超過: {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}}（しきい値 {{limit}} 超過）",
+    "limit_under": "{{metric}} {{value}} {{unit}}（しきい値 {{limit}} 未満）",
+    "not_measured": "{{metric}}（未計測）",
+    "below_usual": "通常の速度を下回りました: {{crossings}} 低下",
+    "shortfall": "{{metric}} {{shortfall}}%",
+    "and": "、"
   }
 }

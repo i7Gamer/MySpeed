@@ -7,7 +7,7 @@ import setupPushover, { PUSHOVER_MESSAGE_LIMIT } from "../../server/integrations
 import setupWebhook from "../../server/integrations/webhook.js";
 import setupHealthChecks from "../../server/integrations/healthChecks.js";
 import setupInflux from "../../server/integrations/influxdb.js";
-import { bodyOf, readSource } from "../helpers/source.js";
+import { readSource } from "../helpers/source.js";
 
 /**
  * These modules are what actually reaches the user when a speedtest finishes or
@@ -769,12 +769,23 @@ describe("the default templates", () => {
      * satisfied a count, and the failure alert - the notification that matters
      * most - went back to reading identically for the WAN and the LAN box.
      *
-     * None of the six bodies carries a double quote of its own, so the value
-     * ends where the string does.
+     * The bodies are template literals since the localisation pass - the
+     * words come from the locale file, the %variables% stay in the code - and
+     * the three plain-text notifiers share one pair kept beside the phrases
+     * in util/notificationLocale.js, so a module that delegates is read
+     * there. A literal ends at its first unescaped backtick, and the escaped
+     * ones the markdown modules carry are stepped over.
      */
+    const templateSource = (module) => {
+        const own = readSource(`server/integrations/${module}.js`);
+
+        return /const defaults = plainDefaults;/.test(own)
+            ? readSource("server/util/notificationLocale.js")
+            : own;
+    };
+
     const templateFor = (module, key) => {
-        const defaults = bodyOf(readSource(`server/integrations/${module}.js`), "const defaults =");
-        const written = defaults.match(new RegExp(`\\b${key}: "([^"]*)"`));
+        const written = templateSource(module).match(new RegExp(`\\b${key}: \`((?:[^\`\\\\]|\\\\.)*)\``));
 
         assert.notEqual(written, null, `${module} declares no default ${key} message`);
 

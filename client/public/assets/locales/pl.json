@@ -654,7 +654,9 @@
       "alert_upload_below": "Powiadom, gdy wysyłanie spadnie poniżej (Mbps)",
       "alert_upload_below_placeholder": "np. 20",
       "digest_weekly": "Wysyłaj cotygodniowe podsumowanie",
-      "digest_monthly": "Wysyłaj comiesięczne podsumowanie"
+      "digest_monthly": "Wysyłaj comiesięczne podsumowanie",
+      "language": "Język wiadomości",
+      "language_placeholder": "Angielski (domyślny)"
     },
     "variables": "Dostępne zmienne",
     "variables_hint": "Kliknij, aby dodać ją do wiadomości"
@@ -766,5 +768,26 @@
       "description": "Cel <Bold>{{name}}</Bold> zostanie usunięty. Testy, które już zmierzył, pozostaną w historii.",
       "yes": "Usuń"
     }
+  },
+  "notification": {
+    "finished": "Test prędkości został zakończony",
+    "failed": "Test prędkości nie powiódł się",
+    "finished_subject": "MySpeed: test prędkości zakończony",
+    "failed_subject": "MySpeed: test prędkości nie powiódł się",
+    "target": "Cel",
+    "ping": "Ping",
+    "download": "Pobieranie",
+    "upload": "Wysyłanie",
+    "reason": "Powód",
+    "metric_ping": "ping",
+    "metric_download": "pobieranie",
+    "metric_upload": "wysyłanie",
+    "crossed_limits": "Przekroczone limity: {{clauses}}",
+    "limit_over": "{{metric}} {{value}} {{unit}} powyżej {{limit}}",
+    "limit_under": "{{metric}} {{value}} {{unit}} poniżej {{limit}}",
+    "not_measured": "{{metric}} (nie zmierzono)",
+    "below_usual": "Poniżej zwykłej prędkości: {{crossings}} mniej",
+    "shortfall": "{{metric}} {{shortfall}} %",
+    "and": " i "
   }
 }
