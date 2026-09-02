@@ -344,6 +344,7 @@
     "compare": {
       "note": "Perubahan dibandingkan dengan {{from}} – {{to}}",
       "empty": "Tidak ada pengujian pada {{from}} – {{to}} untuk dibandingkan",
+      "unsupported": "Node ini menjalankan MySpeed versi lama dan menjawab tanpa perbandingan",
       "label": "Bandingkan dengan",
       "choice": {
         "previous": "Periode sebelumnya",

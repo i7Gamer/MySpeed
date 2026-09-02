@@ -294,6 +294,29 @@ describe("the statistics page and its comparison choice", () => {
             assert.match(body, new RegExp(`t\\("${escapeRegExp(key)}",`),
                 `${key} is not a literal call, so nothing checks it against the locales`);
     });
+
+    /**
+     * The third silence: a node on an older release. Every ranged request asks
+     * for a comparison - DEFAULT_COMPARE is "previous" and applyCompare always
+     * sends one - so a current server always answers with the `previous` key,
+     * an object or a null. A node from before the compare parameter ignores
+     * what it does not know and answers without the key at all, and the page
+     * drew no arrows and no sentence: exactly the blank the two-wordings rule
+     * above exists to prevent, arriving through a third door.
+     *
+     * `=== undefined`, not falsy: null is a current server saying "nothing to
+     * compare against", which stays silent on purpose - nothing has elapsed,
+     * and the heading already names the range. Absent is a server that never
+     * understood the question.
+     */
+    it("says so when the node is too old to answer the comparison", () => {
+        const body = withoutJsComments(statistics);
+
+        assert.match(body, /previousWindow === undefined/,
+            "an old node's missing key is indistinguishable from a deliberate null");
+        assert.match(body, new RegExp(`t\\("${escapeRegExp("statistics.compare.unsupported")}"`),
+            "the unsupported wording is not a literal call, so nothing checks it against the locales");
+    });
 });
 
 /**

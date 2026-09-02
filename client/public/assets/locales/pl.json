@@ -344,6 +344,7 @@
     "compare": {
       "note": "Zmiany w porównaniu z {{from}} – {{to}}",
       "empty": "Brak testów w okresie {{from}} – {{to}} do porównania",
+      "unsupported": "Ten węzeł działa na starszej wersji MySpeed i odpowiedział bez porównania",
       "label": "Porównaj z",
       "choice": {
         "previous": "Poprzednim okresem",

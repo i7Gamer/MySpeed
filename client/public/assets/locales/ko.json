@@ -344,6 +344,7 @@
     "compare": {
       "note": "{{from}} – {{to}} 대비 변화",
       "empty": "{{from}} – {{to}} 기간에 비교할 테스트가 없습니다",
+      "unsupported": "이 노드는 이전 버전의 MySpeed를 실행 중이며 비교 없이 응답했습니다",
       "label": "비교 대상",
       "choice": {
         "previous": "이전 기간",

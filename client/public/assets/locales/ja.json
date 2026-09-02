@@ -344,6 +344,7 @@
     "compare": {
       "note": "{{from}} – {{to}} と比較した変化",
       "empty": "{{from}} – {{to}} に比較できるテストがありません",
+      "unsupported": "このノードは古いMySpeedを実行しており、比較なしで応答しました",
       "label": "比較対象",
       "choice": {
         "previous": "前の期間",

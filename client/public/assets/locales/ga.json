@@ -344,6 +344,7 @@
     "compare": {
       "note": "Athruithe i gcomparáid le {{from}} – {{to}}",
       "empty": "Níl aon tástáil idir {{from}} agus {{to}} le cur i gcomparáid",
+      "unsupported": "Tá leagan níos sine de MySpeed ar an nód seo agus d'fhreagair sé gan an chomparáid",
       "label": "Cuir i gcomparáid le",
       "choice": {
         "previous": "An tréimhse roimhe",

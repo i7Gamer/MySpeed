@@ -344,6 +344,7 @@
     "compare": {
       "note": "Endringer sammenlignet med {{from}} – {{to}}",
       "empty": "Ingen tester i {{from}} – {{to}} å sammenligne med",
+      "unsupported": "Denne noden kjører en eldre MySpeed og svarte uten sammenligningen",
       "label": "Sammenlign med",
       "choice": {
         "previous": "Forrige periode",

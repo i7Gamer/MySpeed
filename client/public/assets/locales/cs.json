@@ -344,6 +344,7 @@
     "compare": {
       "note": "Změny v porovnání s {{from}} – {{to}}",
       "empty": "Žádné testy v období {{from}} – {{to}} k porovnání",
+      "unsupported": "Tento uzel běží na starší verzi MySpeed a odpověděl bez porovnání",
       "label": "Porovnat s",
       "choice": {
         "previous": "Předchozím obdobím",

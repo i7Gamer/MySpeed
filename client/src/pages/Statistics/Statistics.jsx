@@ -653,6 +653,23 @@ export const Statistics = () => {
                         : t("statistics.compare.empty", comparedWindow)}
                 </p>
             )}
+            {/* The third silence: a node on an older release. Every ranged
+                request asks for a comparison - the default choice is
+                "previous" - so a current server always answers with the key,
+                an object or a null. A node from before the parameter ignores
+                what it does not know and answers without it, and the page drew
+                no arrows and no sentence saying why.
+
+                `=== undefined`, not falsy: null is a current server saying
+                "nothing to compare against", which stays silent on purpose -
+                nothing has elapsed and the heading already names the range.
+                Absent is a server that never understood the question. All time
+                sends no comparison and gates itself out through dateRange. */}
+            {dateRange && deferredStatistics && previousWindow === undefined && (
+                <p className="statistics-compare-note">
+                    {t("statistics.compare.unsupported")}
+                </p>
+            )}
             {/* How far back to look, never how much to look at - so the two
                 windows are the same length by construction and there is no
                 second range for a reader to reconcile with the first. The

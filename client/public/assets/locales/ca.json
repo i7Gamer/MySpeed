@@ -344,6 +344,7 @@
     "compare": {
       "note": "Canvis respecte a {{from}} – {{to}}",
       "empty": "Cap prova entre {{from}} i {{to}} per comparar",
+      "unsupported": "Aquest node executa un MySpeed més antic i ha respost sense la comparació",
       "label": "Compara amb",
       "choice": {
         "previous": "Període anterior",

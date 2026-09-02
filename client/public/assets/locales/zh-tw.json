@@ -344,6 +344,7 @@
     "compare": {
       "note": "與 {{from}} – {{to}} 相比的變化",
       "empty": "{{from}} – {{to}} 期間沒有可比較的測試",
+      "unsupported": "此節點執行的是舊版 MySpeed，回應中不含比較",
       "label": "比較對象",
       "choice": {
         "previous": "上一期間",

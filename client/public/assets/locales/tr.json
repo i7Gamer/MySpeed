@@ -344,6 +344,7 @@
     "compare": {
       "note": "{{from}} – {{to}} ile karşılaştırıldığında değişimler",
       "empty": "{{from}} – {{to}} aralığında karşılaştırılacak test yok",
+      "unsupported": "Bu düğüm daha eski bir MySpeed sürümü çalıştırıyor ve karşılaştırma olmadan yanıt verdi",
       "label": "Şununla karşılaştır",
       "choice": {
         "previous": "Önceki dönem",

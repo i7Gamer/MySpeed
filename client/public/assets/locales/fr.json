@@ -344,6 +344,7 @@
     "compare": {
       "note": "Évolution par rapport à {{from}} – {{to}}",
       "empty": "Aucun test entre {{from}} et {{to}} à comparer",
+      "unsupported": "Ce nœud utilise un MySpeed plus ancien et a répondu sans la comparaison",
       "label": "Comparer avec",
       "choice": {
         "previous": "Période précédente",
