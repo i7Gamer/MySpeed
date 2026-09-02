@@ -1,4 +1,7 @@
 import path from 'node:path';
+// A leaf with no imports of its own, so the registry stays clear of the
+// integrations' index-TDZ hazard - see util/metricValue.js.
+import { usableFigure } from '../metricValue.js';
 import * as loadOokla from './loadOokla.js';
 import * as loadLibre from './loadLibre.js';
 import * as loadCloudflare from './loadCloudflare.js';
@@ -346,6 +349,24 @@ export const REGISTRY = {
              */
             const udp = Boolean(target.iperfUdp);
 
+            /*
+             * A UDP run must have a usable rate before anything is spawned.
+             * The door refuses a row without one, so only a hand-edited
+             * database or an import reaches this - and interpolated bare, it
+             * reached the CLI as `--bitrate nullM`. A zero is worse than the
+             * crash that never came: `-b 0` is iperf3's spelling of
+             * "unlimited", which for datagrams is a flood aimed at the named
+             * host on every scheduled run. Thrown here, the reason lands in
+             * the row's own error column like any failed run's.
+             *
+             * Read through usableFigure because an imported history can hold
+             * "50" where a number belongs - a rate somebody really named.
+             */
+            const rate = usableFigure(target.iperfBitrate);
+            if (udp && (rate === null || rate <= 0))
+                throw new Error("This UDP target names no usable rate to send at - "
+                    + "edit the target and set its bitrate");
+
             const args = [
                 '--client', host,
                 '--port', String(port),
@@ -375,7 +396,7 @@ export const REGISTRY = {
                 // an explicit rate falls to the CLI's own 1 Mbit/s default and
                 // stores a gigabit line as a megabit, in the right column,
                 // with nothing in the payload saying which it was.
-                ...(udp ? ['--udp', '--bitrate', `${target.iperfBitrate}${IPERF_BITRATE_UNIT}`] : []),
+                ...(udp ? ['--udp', '--bitrate', `${rate}${IPERF_BITRATE_UNIT}`] : []),
                 // The first seconds are TCP working out how fast it may go,
                 // and averaging them in reports less than the line carries.
                 //

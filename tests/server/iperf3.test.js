@@ -446,6 +446,29 @@ describe("an iperf3 target's own tuning", () => {
             UNTUNED_ARGV);
     });
 
+    /**
+     * A UDP row with no usable rate cannot reach the CLI. The door refuses
+     * such a row at the API, so only a hand-edited database or an import
+     * produces one - and interpolated bare, it produced `--bitrate nullM`.
+     * Worse than the crash that never came: a zero is iperf3's spelling of
+     * "unlimited", which for UDP is a flood aimed at the named host on every
+     * scheduled run. Refused with a reason that names the fix, and thrown
+     * before the spawn, so it lands in the row's own error column the way any
+     * failed run does.
+     */
+    it("refuses a UDP row with no usable rate rather than spelling it nullM", () => {
+        for (const bitrate of [null, undefined, "", 0, "abc", -50])
+            assert.throws(() => tunedArgs({endpoint: "10.0.0.5", iperfUdp: true,
+                iperfBitrate: bitrate}), /rate/i,
+            `${JSON.stringify(bitrate)} reached the argv`);
+    });
+
+    // The rate an imported history stored as text is a rate somebody named.
+    it("still reads a rate stored as text", () => {
+        assert.equal(valueOf(tunedArgs({endpoint: "10.0.0.5", iperfUdp: true, iperfBitrate: "50"}),
+            "--bitrate"), "50M");
+    });
+
     it("measures for the duration the target names", () => {
         const args = tunedArgs({endpoint: "10.0.0.5", iperfDuration: 30});
 
