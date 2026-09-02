@@ -14,6 +14,25 @@
  * the machine said when the tab opened", which is what it meant for everyone
  * before the machine was watched at all.
  */
+/**
+ * What a MediaQueryList actually answered, or undefined where it could not.
+ *
+ * An engine that has matchMedia but no prefers-color-scheme parses the query
+ * to nothing, serialises its media as "not all", and then reports
+ * `matches: false` forever. Bare, that false reads as "the machine prefers
+ * light" - and resolveTheme's documented rule is the opposite: a machine that
+ * cannot state a preference has not stated light, and stays dark. The same
+ * distinction themeBoot.js draws inline, since a pre-paint script cannot
+ * import; the parity test compares the two.
+ *
+ * A change event carries matches and media the same way the list does, so the
+ * subscription's handler reads through this too - a change event for an
+ * unparseable query cannot fire, but one rule in one place beats a rule and
+ * an exception.
+ */
+export const mediaQueryAnswer = (query) =>
+    query && query.media !== "not all" ? query.matches === true : undefined;
+
 export const watchMediaQuery = (query, onChange) => {
     if (typeof query?.addEventListener === "function") {
         query.addEventListener("change", onChange);

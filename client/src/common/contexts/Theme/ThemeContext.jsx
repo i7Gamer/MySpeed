@@ -2,7 +2,7 @@ import React, {createContext, useCallback, useEffect, useMemo, useState} from "r
 import {readStored, writeStored} from "@/common/utils/Storage";
 import {normaliseTheme, resolveTheme} from "./themeChoice";
 import {normalisePalette} from "./paletteChoice";
-import {watchMediaQuery} from "./mediaQuery";
+import {mediaQueryAnswer, watchMediaQuery} from "./mediaQuery";
 
 export const ThemeContext = createContext({});
 
@@ -18,7 +18,10 @@ const DARK_QUERY = "(prefers-color-scheme: dark)";
  * preference to have" - the second must not flip an instance to light.
  */
 const prefersDark = () => typeof window !== "undefined" && typeof window.matchMedia === "function"
-    ? window.matchMedia(DARK_QUERY).matches
+    // Through the answer rule, not .matches bare: an engine that has
+    // matchMedia but cannot parse the query answers false forever, and bare
+    // that false is a light preference the machine never stated.
+    ? mediaQueryAnswer(window.matchMedia(DARK_QUERY))
     : undefined;
 
 export const ThemeProvider = (props) => {
@@ -38,10 +41,20 @@ export const ThemeProvider = (props) => {
     useEffect(() => {
         if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
 
+        const query = window.matchMedia(DARK_QUERY);
+
+        // Re-sampled before subscribing, because the subscription only
+        // reports changes: a preference that flipped between the mount-time
+        // sample and this effect stood wrong until the machine's next change
+        // of mind.
+        setSystemDark(mediaQueryAnswer(query));
+
         // Through the shim, not addEventListener directly: Safari before 14
         // has only the older addListener spelling, and subscribing here threw
-        // the whole provider - and with it the tree - on those engines.
-        return watchMediaQuery(window.matchMedia(DARK_QUERY), (event) => setSystemDark(event.matches));
+        // the whole provider - and with it the tree - on those engines. The
+        // event goes through the answer rule like the list itself, so both
+        // readings of the machine are the same reading.
+        return watchMediaQuery(query, (event) => setSystemDark(mediaQueryAnswer(event)));
     }, []);
 
     const resolved = resolveTheme(theme, systemDark);

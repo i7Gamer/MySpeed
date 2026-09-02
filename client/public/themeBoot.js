@@ -72,7 +72,13 @@
      */
     function prefersDark() {
         if (typeof window.matchMedia !== "function") return undefined;
-        return window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var query = window.matchMedia("(prefers-color-scheme: dark)");
+        // An engine that cannot parse the query serialises its media as
+        // "not all" and answers matches: false forever - a failure to answer,
+        // not a preference for light. mediaQueryAnswer in mediaQuery.js is
+        // the same rule; this script runs before anything can import.
+        if (query.media === "not all") return undefined;
+        return query.matches;
     }
 
     function resolveTheme(theme, dark) {

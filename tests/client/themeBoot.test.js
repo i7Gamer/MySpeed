@@ -34,7 +34,7 @@ const css = compile("common/styles/default.sass");
  * a case the resolution rule distinguishes - and `throws` is the blocked
  * localStorage the whole of Storage.js exists for.
  */
-const run = ({stored = {}, prefersDark, matchMedia = true, throws = false} = {}) => {
+const run = ({stored = {}, prefersDark, matchMedia = true, unsupported = false, throws = false} = {}) => {
     const attributes = {};
     const meta = {content: "#000000", setAttribute: (name, value) => { meta[name] = value; }};
 
@@ -46,7 +46,12 @@ const run = ({stored = {}, prefersDark, matchMedia = true, throws = false} = {})
                     return stored[key] ?? null;
                 }
             },
-            ...(matchMedia ? {matchMedia: () => ({matches: prefersDark === true})} : {})
+            // An engine that parses the query to nothing serialises its media
+            // as "not all" and answers matches: false forever - the shape the
+            // unsupported case reproduces.
+            ...(matchMedia ? {matchMedia: () => (unsupported
+                ? {matches: false, media: "not all"}
+                : {matches: prefersDark === true, media: "(prefers-color-scheme: dark)"})} : {})
         },
         document: {
             documentElement: {setAttribute: (name, value) => { attributes[name] = value; }},
@@ -141,6 +146,19 @@ describe("what the pre-paint script accepts", () => {
             assert.equal(stamped["data-theme"], resolveTheme(DEFAULT_THEME, prefersDark));
             assert.equal(stamped["data-palette"], DEFAULT_PALETTE);
         }
+    });
+
+    /**
+     * matchMedia present, prefers-color-scheme not: the query parses to
+     * nothing, its media reads "not all", and matches is false forever. That
+     * false is not a light preference - it is the machine failing to answer -
+     * and the documented rule is that a machine which cannot answer stays
+     * dark. Read bare, it flipped exactly the degraded embedded webviews
+     * Storage.js exists for to light.
+     */
+    it("stays dark when the engine cannot parse the query at all", () => {
+        assert.equal(run({unsupported: true})["data-theme"], "dark",
+            "an unanswerable query was read as a preference for light");
     });
 });
 
