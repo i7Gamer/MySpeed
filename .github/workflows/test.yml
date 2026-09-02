@@ -52,25 +52,32 @@ jobs:
           bun run generate-migrations
           bun run generate-integrations
 
-      # Before the tests, because it is the cheap tier and it sees what they
-      # cannot: the suite reads the client's modules as text rather than
-      # evaluating them, so a name that is re-exported and then used - which
-      # binds nothing, and throws at render - passes 2300 tests and a build.
+      # Before the tests, because it is the cheap tier and it sees what most of
+      # them cannot: the bulk of the suite reads the client's modules as text
+      # rather than evaluating them, so a name that is re-exported and then
+      # used - which binds nothing, and throws at render - passes thousands of
+      # tests and a build. The behavioural tests (tests/helpers/renderHarness.js)
+      # do evaluate what they render, but they cover hooks and menus, not every
+      # module.
       #
       # Errors fail the job; warnings do not - though the count stands at zero
       # since the sweep that answered them, so a warning here is new.
       - name: Lint
         run: npm run lint
 
-      # test:all rather than test: `npm test` is the fast tier for the edit-run
-      # loop, and running only that here would publish without the integration
-      # suite ever having executed.
+      # test:coverage is test:all - every suite, where `npm test` is the fast
+      # tier for the edit-run loop and running only that here would publish
+      # without the integration suite ever having executed - plus node's own
+      # coverage table in the log. Printed for visibility, not enforced: the
+      # number worth watching is how much of client/src the behavioural tests
+      # reach as they grow, and a threshold would only be gamed.
       - name: Run tests
-        run: npm run test:all
+        run: npm run test:coverage
 
-      # Nothing above compiles the client. The suite reads its modules as text -
-      # node cannot parse JSX - and lint parses each file alone, so neither sees
-      # a build that resolves its imports: a component importing a sibling whose
+      # Nothing above compiles the client. Most of the suite reads its modules
+      # as text, the behavioural tests resolve imports through a loader of their
+      # own, and lint parses each file alone - so none of them sees the build
+      # resolving its imports: a component importing a sibling whose
       # filename differs only in case builds on a case-insensitive filesystem and
       # fails here, and the error it fails with names the service worker rather
       # than the import.
