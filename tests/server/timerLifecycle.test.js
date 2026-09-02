@@ -2,7 +2,7 @@ import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import * as timer from "../../server/tasks/timer.js";
 import * as integrationTimer from "../../server/tasks/integrations.js";
-import { bodyIn } from "../helpers/source.js";
+import { bodyIn, readSource } from "../helpers/source.js";
 
 /**
  * The schedule offset delays a run by a random amount so a fleet does not
@@ -300,5 +300,52 @@ describe("the pending offset run", () => {
         await timer.delayRun(10);
 
         assert.equal(timer.pendingRunAt(), null);
+    });
+});
+
+/**
+ * RUN_TEST_ON_STARTUP asked for a test the moment the server was up, and got
+ * one after the schedule offset's sleep - up to five minutes, during which a
+ * real tick could land first and take the latch, so the startup run woke to
+ * find a round in progress and was dropped as an overlap. A boot is not a
+ * tick: there is no fleet to spread across the hour.
+ */
+describe("the startup speedtest", () => {
+    const runTask = bodyIn("server/tasks/timer.js", "export const runTask = async");
+
+    it("is asked for now, from the one place that asks", () => {
+        const startup = readSource("server/index.js").split("\n")
+            .find((line) => line.includes("timerTask.runTask("));
+
+        assert.ok(startup, "index.js no longer runs the startup test through runTask");
+        assert.match(startup, /runTask\(\{immediate: true\}\)/,
+            "the startup run still sleeps its offset before it can start");
+    });
+
+    it("takes no offset when asked for now", () => {
+        assert.match(runTask, /if \(!immediate && scheduleOffset === "true"/,
+            "the offset sleep is not conditional on how the run was asked for");
+    });
+
+    // Someone set the flag asking for a test the moment the server is up, the
+    // way a run by hand asks for one now - and those are not held to the quiet
+    // hours either.
+    it("is not held to the quiet hours", () => {
+        assert.match(runTask, /if \(!immediate && await withinQuietHours\(\)\)/);
+    });
+
+    // The pause is someone asking for no tests at all, which a boot does not
+    // override.
+    it("still honours the pause", () => {
+        const pause = runTask.indexOf("pauseController.currentState");
+        const option = runTask.indexOf("const immediate");
+
+        assert.notEqual(pause, -1);
+        assert.doesNotMatch(runTask, /!immediate && pauseController/);
+        assert.ok(option < pause, "the option is read after a guard that should not depend on it");
+    });
+
+    it("reads its option inside the body, where bodyOf() can see the whole function", () => {
+        assert.match(readSource("server/tasks/timer.js"), /export const runTask = async \(options = undefined\) =>/);
     });
 });

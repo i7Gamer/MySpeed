@@ -318,7 +318,9 @@ const run = async () => {
 
     integrationTask.startTimer();
     if (process.env.RUN_TEST_ON_STARTUP === "true") {
-        timerTask.runTask().catch(err =>
+        // Now, not after the schedule offset: a boot is not a tick, and the
+        // sleep only let a real tick land first and drop this run as an overlap.
+        timerTask.runTask({immediate: true}).catch(err =>
             console.error(`The startup speedtest failed: ${err?.message ?? err}`));
     }
 

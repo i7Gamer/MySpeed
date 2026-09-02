@@ -330,7 +330,20 @@ export const withinQuietHours = async () => isQuietHour(new Date(),
     // ever stops being true.
     zoneFromName(await config.getValue("timezone")));
 
-export const runTask = async () => {
+// `options` is unpacked inside the body rather than destructured in the
+// signature, for the reason tasks/speedtest.js's create() gives: the suite
+// reads this function through bodyOf(), which balances the first brace after
+// the declaration.
+export const runTask = async (options = undefined) => {
+    // A run asked for now - RUN_TEST_ON_STARTUP - rather than one the schedule
+    // reached. It takes no offset: the offset spreads a fleet's ticks across
+    // the hour, and a boot is not a tick - sleeping up to five minutes here
+    // only let a real tick land first and drop this one as an overlap. And it
+    // is not held to the quiet hours, the way a run started by hand is not:
+    // someone set the flag asking for a test the moment the server is up.
+    // The pause still holds - that is someone asking for no tests at all.
+    const immediate = options?.immediate === true;
+
     if (pauseController.currentState) {
         console.warn("Speedtests currently paused. Trying again later...");
         return;
@@ -348,7 +361,7 @@ export const runTask = async () => {
     // Only the scheduled runs are held to the quiet hours. A test started by
     // hand is someone asking for one now, and create() is reached directly for
     // those - refusing it here would be a fault rather than a courtesy.
-    if (await withinQuietHours()) {
+    if (!immediate && await withinQuietHours()) {
         console.warn("Within the configured quiet hours. Skipping this test...");
         return;
     }
@@ -358,7 +371,7 @@ export const runTask = async () => {
     // that refused, not the iperf3 box standing next to it.
     const scheduleOffset = await config.getValue("scheduleOffset");
 
-    if (scheduleOffset === "true" && currentCron) {
+    if (!immediate && scheduleOffset === "true" && currentCron) {
         const delay = getRandomDelay(currentCron);
         console.log(`Schedule offset enabled. Delaying speedtest by ${Math.round(delay / 1000)} seconds...`);
         await delayRun(delay);
