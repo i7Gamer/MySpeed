@@ -156,6 +156,9 @@ export default (registerEvent) => {
         // Opts in to the shared threshold settings; isNotifier in
         // controller/integrations.js explains the flag.
         notifier: true,
+        // And to the language setting, because what it sends is prose a person
+        // reads; isLocalised in controller/integrations.js explains this one.
+        localised: true,
         icon: "fa-brands fa-discord",
         fields: [
             {name: "url", type: "text", required: true, secret: true, regex: WEBHOOK_URL},

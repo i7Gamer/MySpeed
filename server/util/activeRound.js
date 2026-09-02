@@ -46,6 +46,12 @@ export const trackRound = (round) => {
     return round;
 };
 
+/**
+ * Whether a round is in flight at all.
+ *
+ * Exported for the test alone - the shutdown asks waitForActiveRound below,
+ * which answers the same question and then waits for the answer.
+ */
 export const hasActiveRound = () => activeRound !== null;
 
 /**

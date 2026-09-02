@@ -99,6 +99,9 @@ export default (registerEvent) => {
         // Opts in to the shared threshold settings; isNotifier in
         // controller/integrations.js explains the flag.
         notifier: true,
+        // And to the language setting, because what it sends is prose a person
+        // reads; isLocalised in controller/integrations.js explains this one.
+        localised: true,
         icon: "fa-solid fa-bell-concierge",
         fields: [
             // `.+` stops at a newline without an end anchor to refuse it, and

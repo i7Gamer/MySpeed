@@ -66,6 +66,48 @@ describe("the locale files", () => {
         assert.deepEqual(leaked, [], "these values are pipeline metadata, rendered verbatim to the reader");
     });
 
+    /**
+     * The notification phrases carry no markdown and no line breaks.
+     *
+     * These are the only strings in the files that the server composes into a
+     * message rather than the interface rendering into a DOM node, and two of
+     * the sinks parse what they are handed as markdown. Telegram's legacy
+     * parser has no escape syntax and answers a 400 for formatting that does
+     * not balance - it delivers nothing at all - and Discord renders masked
+     * links inside an embed description. util/markdown.js cleans the values
+     * that are interpolated *into* a template and deliberately leaves the
+     * template alone, because the operator's own formatting is theirs; the
+     * words a phrase supplies land inside the template, between the
+     * delimiters the shipped default puts there - `*${word("finished")}*` -
+     * so an asterisk or a backtick from a translator closes a pair early and
+     * takes the message down for a language nobody tested in.
+     *
+     * A carriage return or a newline is here for the plainer reason: the
+     * templates lay the phrases out themselves, and ntfy carries its title in
+     * a header, where a line break is also how a request smuggles a second
+     * header in.
+     *
+     * The per cent sign is not in the list, though the templates' own
+     * %variables% are written with it: `shortfall` legitimately spells a
+     * percentage in every language, and it is safe there because
+     * replaceVariables never re-reads what it substituted - a phrase is put
+     * into the message, not into the template.
+     *
+     * Every locale is clean today, English included. This is the guard that
+     * keeps the next translation from being the one that is never delivered.
+     */
+    it("keeps the notification phrases free of markup in every language", () => {
+        const FORMATTING = /[`*_[\]~|\\\r\n]/;
+
+        const marked = [SOURCE, ...codes].flatMap((code) =>
+            Object.entries(read(code).notification ?? {})
+                .filter(([, value]) => FORMATTING.test(String(value)))
+                .map(([key, value]) => `[${code}] notification.${key} = ${JSON.stringify(value)}`));
+
+        assert.deepEqual(marked, [],
+            "these land between a template's own markdown delimiters, and an unbalanced message is not delivered");
+    });
+
     for (const code of codes) {
         describe(`${code}.json`, () => {
             const locale = read(code);

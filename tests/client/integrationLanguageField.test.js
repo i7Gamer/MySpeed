@@ -35,13 +35,23 @@ describe("the language setting on every notifier", () => {
     const notifiers = () => Object.entries(getIntegrations())
         .filter(([, definition]) => definition.fields.some((field) => field.name === "alert_only"));
 
-    it("is offered wherever the threshold settings are", () => {
-        assert.ok(notifiers().length >= 6, "fewer notifiers than ship");
+    const localised = () => Object.entries(getIntegrations())
+        .filter(([, definition]) => definition.fields.some((field) => field.name === "language"));
 
-        for (const [name, definition] of notifiers()) {
+    /**
+     * The modules whose whole output is a sentence somebody reads. Named
+     * rather than counted, because the point of the setting is which
+     * integrations it belongs to - and the list it used to be handed to,
+     * "every notifier", included one whose output is a JSON document.
+     */
+    const TEXT_NOTIFIERS = ["discord", "email", "gotify", "ntfy", "pushover", "telegram"];
+
+    it("is offered to every notifier that writes prose", () => {
+        assert.deepEqual(localised().map(([name]) => name).sort(), TEXT_NOTIFIERS);
+
+        for (const [name, definition] of localised()) {
             const field = definition.fields.find((candidate) => candidate.name === "language");
 
-            assert.ok(field, `${name} offers no language`);
             assert.equal(field.type, "select");
             assert.equal(field.required, false, `${name} demands a language`);
             assert.deepEqual([...field.options].sort(), registeredCodes(),
@@ -50,13 +60,40 @@ describe("the language setting on every notifier", () => {
         }
     });
 
+    /**
+     * The webhook carries the threshold settings and not the language, which
+     * is the one place the two opt-ins come apart.
+     *
+     * It is a notifier in every sense that matters to the thresholds - an
+     * operator wants it quiet while the line is fine - but what it delivers is
+     * a JSON document a program reads. The only thing a language reached there
+     * was the `alertCrossed` and `alertSummary` strings inside that document,
+     * so choosing German rewrote the fields a receiving script matches on, in
+     * a place where nobody was reading the wording.
+     */
+    it("is not offered to the webhook, whose payload is read by a program", () => {
+        const {webhook} = getIntegrations();
+
+        assert.ok(webhook.fields.some((field) => field.name === "alert_only"),
+            "the webhook stopped carrying the threshold settings, and this no longer tests the split");
+        assert.ok(!webhook.fields.some((field) => field.name === "language"),
+            "the webhook offers a language for strings only a program reads");
+    });
+
     it("is not offered to a module that tells nobody anything", () => {
         for (const [name, definition] of Object.entries(getIntegrations())) {
-            if (notifiers().some(([notifier]) => notifier === name)) continue;
+            if (TEXT_NOTIFIERS.includes(name)) continue;
 
             assert.ok(!definition.fields.some((field) => field.name === "language"),
                 `${name} sends no prose and offers a language for it`);
         }
+    });
+
+    // The thresholds still reach every notifier, the webhook included - the
+    // split above is about the wording, not about staying quiet.
+    it("leaves the threshold settings on every notifier", () => {
+        assert.ok(notifiers().length >= TEXT_NOTIFIERS.length + 1,
+            "fewer notifiers than ship, or the webhook lost its thresholds with its language");
     });
 
     describe("in the dialog", () => {

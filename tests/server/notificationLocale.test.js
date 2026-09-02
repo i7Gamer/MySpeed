@@ -4,8 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
+import { execFileSync } from "node:child_process";
 import {
-    DEFAULT_LANGUAGE, NOTIFICATION_LANGUAGES, localeCodesIn, phrase
+    DEFAULT_LANGUAGE, ENGLISH_PHRASES, NOTIFICATION_LANGUAGES, localeCodesIn, phrase
 } from "../../server/util/notificationLocale.js";
 import { ALERT_METRICS } from "../../server/util/alertThreshold.js";
 
@@ -37,8 +38,49 @@ const phrasesTheServerAsksFor = () => {
     return keys;
 };
 
-const englishSection = () => Object.keys(JSON.parse(fs.readFileSync(
-    path.join(ROOT, "client", "public", "assets", "locales", "en.json"), "utf8")).notification);
+const englishNotification = () => JSON.parse(fs.readFileSync(
+    path.join(ROOT, "client", "public", "assets", "locales", "en.json"), "utf8")).notification;
+
+const englishSection = () => Object.keys(englishNotification());
+
+/**
+ * The module evaluated in a tree of its own, with the working directory
+ * somewhere else again.
+ *
+ * It reads its sources once, while it is being evaluated, and this process has
+ * the real files beside it - so an instance that finds a different set of them,
+ * or none at all, can only be arranged in another process. `furnish` is handed
+ * the sandbox and puts there whatever the case under test is about; the third
+ * directory the probe runs from is what keeps the working-directory entry in
+ * DIRECTORIES from being the one that answered.
+ */
+const inASandbox = (furnish) => {
+    const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-sandbox-"));
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-elsewhere-"));
+
+    try {
+        fs.mkdirSync(path.join(sandbox, "server", "util"), {recursive: true});
+        fs.copyFileSync(path.join(ROOT, "server", "util", "notificationLocale.js"),
+            path.join(sandbox, "server", "util", "notificationLocale.js"));
+        furnish(sandbox);
+
+        const probe = path.join(sandbox, "probe.mjs");
+        fs.writeFileSync(probe,
+            'import { NOTIFICATION_LANGUAGES, phrase, plainDefaults } '
+            + 'from "./server/util/notificationLocale.js";\n'
+            + 'console.log(JSON.stringify({languages: NOTIFICATION_LANGUAGES, '
+            + 'finished: phrase("en", "finished"), target: phrase("de", "target"), '
+            + 'summary: phrase("en", "crossed_limits", {clauses: "download 40 Mbps under 100"}), '
+            + 'plain: plainDefaults(null).finished}));\n');
+
+        const printed = execFileSync(process.execPath, [probe], {cwd: elsewhere, encoding: "utf8"});
+
+        return JSON.parse(printed.trim().split("\n").at(-1));
+    } finally {
+        fs.rmSync(sandbox, {recursive: true, force: true});
+        fs.rmSync(elsewhere, {recursive: true, force: true});
+    }
+};
 
 /**
  * The words a notification is built from, in the recipient's language.
@@ -84,6 +126,74 @@ describe("the notification phrases", () => {
         assert.equal(phrase("en", "a_key_no_locale_defines"), "a_key_no_locale_defines");
     });
 
+    /**
+     * The rung between English and the key: the phrases as this module's own
+     * literal, for the instance where no source answers at all.
+     *
+     * That instance is not hypothetical. The client tree is absent from a
+     * release, the build is looked for beside the process as well as beside
+     * the server, and a directory can be there and unreadable - so a server
+     * started from the wrong place, or by an account that cannot read its own
+     * assets, found nothing. Every shipped template then rendered as its own
+     * keys, and the operator was sent "finished:" over "target: WAN" instead
+     * of a notification.
+     *
+     * Run in a sandbox holding the module and nothing else, with the working
+     * directory there too, because that is the only way to have every source
+     * genuinely answer nothing: the module reads its directories once, while
+     * it is being evaluated, and this process has the real files.
+     */
+    it("writes the shipped English when no source answers at all", () => {
+        const answered = inASandbox(() => undefined);
+
+        assert.deepEqual(answered.languages, [], "the sandbox found a locale source after all");
+        assert.equal(answered.finished, "A speedtest is finished");
+        assert.equal(answered.target, "Target");
+        assert.equal(answered.summary, "Crossed limits: download 40 Mbps under 100");
+        assert.match(answered.plain, /^A speedtest is finished:\nTarget: %targetName%\n/,
+            "the shipped template rendered as its own keys");
+    });
+
+    /**
+     * The build is looked for beside the server tree, not only beside the
+     * process.
+     *
+     * The source archive ships `build`, `server` and a package.json side by
+     * side and no client tree at all, so on that layout the build is the only
+     * source there is. An init system starts a service from wherever it
+     * pleases - a unit file with no WorkingDirectory starts it from `/` - and
+     * with the build looked for against the working directory alone, that
+     * instance had no languages to offer and every phrase to fall back for.
+     *
+     * The probe runs from a third directory here, so the working-directory
+     * entry cannot be the one that answers.
+     */
+    it("reads the build beside the server tree, wherever the process was started", () => {
+        const answered = inASandbox((sandbox) => {
+            const locales = path.join(sandbox, "build", "assets", "locales");
+            fs.mkdirSync(locales, {recursive: true});
+            fs.writeFileSync(path.join(locales, "en.json"),
+                JSON.stringify({notification: {finished: "The release build's own words"}}));
+            fs.writeFileSync(path.join(locales, "de.json"), JSON.stringify({notification: {}}));
+        });
+
+        assert.deepEqual(answered.languages, ["en", "de"], "the build beside the server was not read");
+        assert.equal(answered.finished, "The release build's own words");
+    });
+
+    /**
+     * The literal and the locale file say the same thing, key for key.
+     *
+     * A copy of English is exactly the second catalog this module's header
+     * argues against keeping, and it is only tolerable while it cannot drift:
+     * a phrase reworded in en.json and not here would leave the fallback
+     * quoting the wording of an older release, which is worse to diagnose
+     * than the keys it replaces because it reads like a real message.
+     */
+    it("keeps its English literal in step with the locale file", () => {
+        assert.deepEqual({...ENGLISH_PHRASES}, englishNotification());
+    });
+
     it("fills the placeholders a phrase carries", () => {
         assert.equal(phrase("en", "limit_over", {metric: "ping", value: 62, unit: "ms", limit: 50}),
             "ping 62 ms over 50");
@@ -127,6 +237,32 @@ describe("the notification phrases", () => {
         } finally {
             fs.rmSync(empty, {recursive: true, force: true});
             fs.rmSync(full, {recursive: true, force: true});
+        }
+    });
+
+    /**
+     * A directory that cannot be listed is not this source either.
+     *
+     * existsSync answers true for a path the process may not read, and for a
+     * plain file sitting where a directory was expected - and the throw came
+     * out of readdirSync, which runs while the module is still being
+     * evaluated. An ESM evaluation that throws takes every importer down with
+     * it, so the server did not start at all over a locale directory whose
+     * only job is the wording of a notification.
+     *
+     * A file rather than a directory with its permissions taken away: the
+     * throw is the same shape, and it is the one this suite can arrange on
+     * every platform it runs on, Windows included.
+     */
+    it("reads a path it cannot list as no source at all", () => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-locales-"));
+        const file = path.join(directory, "en.json");
+        fs.writeFileSync(file, "{}");
+
+        try {
+            assert.equal(localeCodesIn(file), null, "a file where a directory belongs threw instead of answering");
+        } finally {
+            fs.rmSync(directory, {recursive: true, force: true});
         }
     });
 

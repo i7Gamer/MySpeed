@@ -139,9 +139,10 @@ export const triggerEvent = async (name, data) => {
              * every armed metric would be described as unmeasured - true, and
              * useless beside the %error% the failure template already has.
              */
+            const settings = composingSettings(module.module, integration.data);
             const described = name === "testFinished"
-                ? {...data, [ALERT_CROSSED]: crossedLimits(data, integration.data),
-                    [ALERT_SUMMARY]: alertSummary(data, integration.data)}
+                ? {...data, [ALERT_CROSSED]: crossedLimits(data, settings),
+                    [ALERT_SUMMARY]: alertSummary(data, settings)}
                 : data;
 
             tasks.push(Promise.resolve()
@@ -214,8 +215,8 @@ const DIGEST_FIELDS = [
 
 /**
  * The language a notifier writes its per-test messages in - the finished and
- * failed templates and the alert summary - offered to every notifier for the
- * reason the two lists above are. The digest is composed once per instance
+ * failed templates and the alert summary - offered for the reason the two
+ * lists above are declared once. The digest is composed once per instance
  * before any recipient is known (tasks/digestReport.js) and does not read it
  * yet. A choice from the locales the interface ships -
  * the list is read off the locale directory, so it cannot name a language
@@ -240,6 +241,37 @@ const LANGUAGE_FIELDS = [
  * notice when it changes.
  */
 const isNotifier = (definition) => definition?.notifier === true;
+
+/**
+ * Whether a module asked to be offered the language setting.
+ *
+ * A second opt-in rather than a reading of the first, because "can be asked to
+ * stay quiet" and "writes prose somebody reads" are not the same property, and
+ * the webhook is the integration that separates them. It calls itself a
+ * notifier - it carries the thresholds, and staying quiet while the line is
+ * fine is exactly what an operator wants of it - but what it delivers is a
+ * JSON document a program reads. The only thing the language reached there was
+ * the `alertCrossed` and `alertSummary` strings inside that document, so a
+ * German setting rewrote the fields a script was matching on, in a place no
+ * human was reading the wording anyway.
+ *
+ * The six that do set it are the ones with message templates: their whole
+ * output is the sentence the setting is about.
+ */
+const isLocalised = (definition) => definition?.localised === true;
+
+/**
+ * The settings a message is composed from, with the language dropped for a
+ * module that was never offered one.
+ *
+ * The stored column is whatever was last written to it, and rows saved while
+ * the webhook was offered the field still carry a language. Read here rather
+ * than migrated away, so a row that is later reconfigured onto a notifier
+ * keeps the choice its operator made.
+ */
+const composingSettings = (moduleName, data) => isLocalised(getIntegration(moduleName))
+    ? data
+    : {...data, [LANGUAGE_FIELD]: undefined};
 
 /**
  * The variables each message template accepts.
@@ -290,9 +322,11 @@ export const initialize = async () => {
         // fields: initialize() runs from the server's boot and again from the
         // integration test harness, and the definition is handed out by
         // reference, so appending in place stacks another copy on every pass.
-        const fields = (isNotifier(definition)
-            ? [...definition.fields, ...ALERT_FIELDS, ...DIGEST_FIELDS, ...LANGUAGE_FIELDS]
-            : definition.fields).map(withVariables);
+        const fields = [
+            ...definition.fields,
+            ...(isNotifier(definition) ? [...ALERT_FIELDS, ...DIGEST_FIELDS] : []),
+            ...(isLocalised(definition) ? LANGUAGE_FIELDS : [])
+        ].map(withVariables);
 
         integrations[name] = {...definition, fields};
 
@@ -541,7 +575,15 @@ export const validateInput = (module, data, isPatch = false) => {
             // Held to the list the field declares. `includes` is a strict
             // comparison, so a number, an array or an object holding a valid
             // code is refused with the rest.
-            if (field.type === "select" && !field.options.includes(data[field.name])) return false;
+            //
+            // A select that declares no list refuses everything rather than
+            // throwing on the read: the only such list today is built from the
+            // locale directory, which answers an empty array where no source
+            // could be found - and a field with nothing to offer has no value
+            // it can accept. A TypeError here would come out of the route as a
+            // 500 on an ordinary save.
+            if (field.type === "select"
+                && (!Array.isArray(field.options) || !field.options.includes(data[field.name]))) return false;
             if (field.type === "number") {
                 // Checked before coercing, for the same reason the text branch
                 // above checks its own type: Number([]) is 0 and Number(true) is

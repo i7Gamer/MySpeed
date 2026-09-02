@@ -4,7 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-    initialize, secretFieldNames, withoutSecrets, validateInput, getIntegrations, asDataObject
+    initialize, secretFieldNames, withoutSecrets, validateInput, getIntegration, getIntegrations,
+    asDataObject
 } from "../../server/controller/integrations.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
@@ -406,6 +407,34 @@ describe("validateInput", () => {
             for (const value of ["tlh", "EN", "en-US", 42, true, ["de"], {code: "de"}])
                 assert.equal(validateInput("telegram", telegram({language: value})), false,
                     `${JSON.stringify(value)} was accepted as a language`);
+        });
+
+        /**
+         * A select that declares no list refuses everything rather than
+         * throwing on the read.
+         *
+         * No module ships one - the only select today is built from the locale
+         * directory, which answers an empty array when it finds nothing - so
+         * the branch is reached by handing the registered definition a field
+         * that has none, which is what a module would do the day somebody
+         * declared a select and left the options for later. Reaching a
+         * TypeError there means a 500 with a stack in the operator's log for
+         * an ordinary save, and a field with nothing to offer has no value it
+         * can accept anyway.
+         */
+        it("refuses every value for a select that declares no options", () => {
+            const definition = getIntegration("telegram");
+            const declared = definition.fields;
+
+            definition.fields = [...declared, {name: "unlisted", type: "select", required: false}];
+
+            try {
+                assert.equal(validateInput("telegram", telegram({unlisted: "anything"})), false);
+                assert.notEqual(validateInput("telegram", telegram()), false,
+                    "the empty select refused a body that never mentioned it");
+            } finally {
+                definition.fields = declared;
+            }
         });
     });
 

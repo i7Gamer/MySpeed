@@ -5,6 +5,8 @@ import setupTelegram, { TELEGRAM_MESSAGE_LIMIT } from "../../server/integrations
 import setupGotify from "../../server/integrations/gotify.js";
 import setupPushover, { PUSHOVER_MESSAGE_LIMIT } from "../../server/integrations/pushover.js";
 import setupWebhook from "../../server/integrations/webhook.js";
+import setupEmail from "../../server/integrations/email.js";
+import { DEFAULT_LANGUAGE, plainDefaults } from "../../server/util/notificationLocale.js";
 import setupHealthChecks from "../../server/integrations/healthChecks.js";
 import setupInflux from "../../server/integrations/influxdb.js";
 import { readSource } from "../helpers/source.js";
@@ -816,5 +818,107 @@ describe("the default templates", () => {
             {...failure("boom"), targetName: "LAN Box"});
 
         assert.match(sent[0].body.embeds[0].description, /LAN Box/);
+    });
+});
+
+/**
+ * The English the shipped templates are, written out.
+ *
+ * The words in them are no longer in the code: they come from the locale
+ * files, which translators edit through Crowdin, and English is one of the
+ * files that pipeline writes to. So the sentence an operator who edited
+ * nothing receives can now be changed by a translation round, in a file whose
+ * review is about fifteen other languages - and nothing anywhere said what it
+ * is meant to say. These eight strings are the fixture: a reword of an English
+ * phrase fails here and is read as the deliberate change it has to be, rather
+ * than shipping as a surprise.
+ *
+ * Rendered rather than read out of the source, because rendering is what has
+ * to keep working: the phrase lookup, the fallbacks under it, and the
+ * %variables% the template keeps for the sender. Fired with no payload at all,
+ * so every %variable% is left standing the way replaceVariables leaves one it
+ * was given nothing for - what is left is exactly the template.
+ *
+ * The plain trio is pinned at its shared source. gotify, ntfy and pushover
+ * carry no markup, so they take one pair between them from
+ * util/notificationLocale.js, and the describe above already holds each of
+ * them to it.
+ */
+describe("the English the default templates ship", () => {
+    const NO_PAYLOAD = {};
+
+    const telegramText = async (event, flag) => {
+        const {events} = load(setupTelegram);
+        await fire(events, event, {token: "1:t", chat_id: "42", [flag]: true}, NO_PAYLOAD);
+
+        // The last send, not the first: the recorder is reset per test and
+        // each of these fires both events.
+        return sent.at(-1).body.text;
+    };
+
+    const discordText = async (event, flag) => {
+        const {events} = load(setupDiscord);
+        await fire(events, event,
+            {url: "https://discord.com/api/webhooks/1/token", [flag]: true}, NO_PAYLOAD);
+
+        return sent.at(-1).body.embeds[0].description;
+    };
+
+    // Email speaks SMTP rather than HTTP, so the fetch recorder above cannot
+    // see it - the module takes its transport factory as a second argument and
+    // this hands in one that records instead of connecting.
+    const emailMail = async (event, flag) => {
+        const mail = [];
+        const events = {};
+        setupEmail((name, callback) => { events[name] = callback; },
+            () => ({sendMail: async (message) => { mail.push(message); return {accepted: []}; }}));
+
+        await fire(events, event, {host: "smtp.example.com", port: 587,
+            from: "myspeed@example.com", to: "ops@example.com", [flag]: true}, NO_PAYLOAD);
+
+        return mail[0];
+    };
+
+    it("writes telegram's pair", async () => {
+        assert.equal(await telegramText("testFinished", "send_finished"),
+            "✨ *A speedtest is finished*\n🎯 `Target`: %targetName%\n🏓 `Ping`: %ping% ms (±%jitter% ms)"
+            + "\n🔼 `Upload`: %upload% Mbps\n🔽 `Download`: %download% Mbps%alertSummary%");
+        assert.equal(await telegramText("testFailed", "send_failed"),
+            "❌ *A speedtest has failed*\n`Target`: %targetName%\n`Reason`: %error%");
+    });
+
+    it("writes discord's pair", async () => {
+        assert.equal(await discordText("testFinished", "send_finished"),
+            ":sparkles: **A speedtest is finished**\n > :dart: `Target`: %targetName%"
+            + "\n > :ping_pong: `Ping`: %ping% ms (±%jitter% ms)\n > :arrow_up: `Upload`: %upload% Mbps"
+            + "\n > :arrow_down: `Download`: %download% Mbps%alertSummary%");
+        assert.equal(await discordText("testFailed", "send_failed"),
+            ":x: **A speedtest has failed**\n > `Target`: %targetName%\n > `Reason`: %error%");
+    });
+
+    it("writes email's pair, and the subject over each of them", async () => {
+        const finished = await emailMail("testFinished", "send_finished");
+        assert.equal(finished.subject, "MySpeed: speedtest finished");
+        assert.equal(finished.text,
+            "A speedtest is finished:\nTarget: %targetName%\nPing: %ping% ms (±%jitter% ms)"
+            + "\nDownload: %download% Mbps\nUpload: %upload% Mbps%alertSummary%");
+
+        const failed = await emailMail("testFailed", "send_failed");
+        assert.equal(failed.subject, "MySpeed: speedtest failed");
+        assert.equal(failed.text, "A speedtest has failed.\nTarget: %targetName%\nReason: %error%");
+    });
+
+    it("writes the pair the three plain-text notifiers share", () => {
+        assert.equal(plainDefaults(DEFAULT_LANGUAGE).finished,
+            "A speedtest is finished:\nTarget: %targetName%\nPing: %ping% ms (±%jitter% ms)"
+            + "\nUpload: %upload% Mbps\nDownload: %download% Mbps%alertSummary%");
+        assert.equal(plainDefaults(DEFAULT_LANGUAGE).failed,
+            "A speedtest has failed.\nTarget: %targetName%\nReason: %error%");
+    });
+
+    // The language nothing chose is the same one, and the same words: a row
+    // saved before the setting existed carries no language at all.
+    it("writes the same pair for a notifier that chose no language", () => {
+        assert.deepEqual(plainDefaults(undefined), plainDefaults(DEFAULT_LANGUAGE));
     });
 });
