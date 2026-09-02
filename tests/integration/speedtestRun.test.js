@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, api, seedTarget, seedTests, setConfig } from "./helpers/boot.js";
+import { bootServer, api, seedTarget, seedTests, setConfig, waitFor } from "./helpers/boot.js";
 
 let server;
 
@@ -22,17 +22,11 @@ beforeEach(async () => {
  * failure has to end up as a stored row explaining itself, because a run that
  * dies without recording anything looks identical to one that never started.
  */
-const waitForTest = async (timeoutMs = 15000) => {
-    const deadline = Date.now() + timeoutMs;
-
-    while (Date.now() < deadline) {
+const waitForTest = (timeoutMs = 15000) =>
+    waitFor(async () => {
         const {body} = await api(server.baseUrl, "/speedtests?limit=1");
-        if (Array.isArray(body) && body.length > 0) return body[0];
-        await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-
-    return null;
-};
+        return Array.isArray(body) && body.length > 0 ? body[0] : undefined;
+    }, {timeout: timeoutMs, interval: 100}).catch(() => null);
 
 /**
  * The round the scheduler starts when every target sits outside the schedule.
@@ -295,17 +289,11 @@ describe("two manual runs racing for the same round", () => {
 
     // The loser of the race is refused, but the winner's round is real and
     // holds the latch until it ends - later tests must not inherit it.
-    const untilIdle = async (timeoutMs = 15000) => {
-        const deadline = Date.now() + timeoutMs;
-
-        while (Date.now() < deadline) {
+    const untilIdle = (timeoutMs = 15000) =>
+        waitFor(async () => {
             const {body} = await api(server.baseUrl, "/speedtests/status");
-            if (!body.running) return;
-            await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-
-        throw new Error("the promised round never finished");
-    };
+            return !body.running;
+        }, {timeout: timeoutMs, interval: 100, message: "the promised round never finished"});
 
     it("promises the round to exactly one of them", async () => {
         try {
