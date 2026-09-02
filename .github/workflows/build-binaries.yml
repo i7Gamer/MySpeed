@@ -53,7 +53,7 @@ jobs:
         run: bun run build
 
       - name: Move build folder
-        run: Move-Item -Path client/build -Destination .
+        run: bun scripts/move-client-build.js
 
       - name: Install server dependencies
         run: bun install --frozen-lockfile
@@ -200,7 +200,7 @@ jobs:
         run: bun run build
 
       - name: Move build folder
-        run: mv client/build .
+        run: bun scripts/move-client-build.js
 
       - name: Install server dependencies
         run: bun install --frozen-lockfile
@@ -301,7 +301,7 @@ jobs:
         run: bun run build
 
       - name: Move build folder
-        run: mv client/build .
+        run: bun scripts/move-client-build.js
 
       - name: Install server dependencies
         run: bun install --frozen-lockfile
@@ -369,7 +369,7 @@ jobs:
         run: bun run build
 
       - name: Move build folder
-        run: mv client/build .
+        run: bun scripts/move-client-build.js
 
       - name: Install server dependencies
         run: bun install --frozen-lockfile

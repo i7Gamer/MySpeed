@@ -1,4 +1,4 @@
-FROM oven/bun:1-alpine AS client-build
+FROM oven/bun:1.4.0-alpine AS client-build
 
 WORKDIR /client
 # The lockfile is copied with the manifest so the install is reproducible and
@@ -14,7 +14,7 @@ RUN bun run build
 # records a failed test every run with nothing naming the cause. The crate is
 # published, so the same version is compiled against musl here and shipped in
 # bin/, where fileExists() finds it and the download is skipped.
-FROM rust:1-alpine AS cfspeedtest-build
+FROM rust:1.98.0-alpine AS cfspeedtest-build
 
 ARG CFSPEEDTEST_VERSION=2.2.2
 
@@ -23,7 +23,7 @@ ARG CFSPEEDTEST_VERSION=2.2.2
 RUN apk add --no-cache musl-dev
 RUN cargo install cfspeedtest --locked --version ${CFSPEEDTEST_VERSION} --root /out
 
-FROM oven/bun:1-alpine AS server-build
+FROM oven/bun:1.4.0-alpine AS server-build
 
 WORKDIR /myspeed
 
@@ -35,7 +35,7 @@ COPY ./scripts /myspeed/scripts
 RUN bun run generate-migrations
 RUN bun run generate-integrations
 
-FROM oven/bun:1-alpine
+FROM oven/bun:1.4.0-alpine
 
 # ca-certificates for TLS to the speedtest providers, tzdata so the configured
 # TZ resolves - both are needed at runtime. apk --no-cache leaves no index behind,

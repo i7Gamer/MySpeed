@@ -241,6 +241,8 @@ through the proxy.
 
 #### Environment variables
 
+The full list the server reads — including database and preview/testing variables not shown here — is in [`.env.example`](.env.example) at the repository root, with defaults and a one-line purpose for each.
+
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `TRUST_PROXY` | unset | Number of proxies in front (`1`) or a preset such as `loopback`. Required behind a reverse proxy so rate limiting sees real client addresses. `true` is read as `1`: Express would otherwise take the address from a header the caller writes. |

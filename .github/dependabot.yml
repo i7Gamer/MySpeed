@@ -45,3 +45,19 @@ updates:
       interval: "monthly"
     commit-message:
       prefix: "chore(ci)"
+
+  # The Dockerfile pins oven/bun and rust to specific minor.patch alpine tags
+  # rather than the rolling "1-alpine" tags, so nothing keeps those pins fresh
+  # unless dependabot watches the Dockerfile itself.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      docker-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"

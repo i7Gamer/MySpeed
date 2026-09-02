@@ -96,6 +96,5 @@ jobs:
       # build:binary, whose generator reads the build directory at the root.
       - name: Package the client into the embed
         run: |
-          rm -rf build
-          mv client/build build
+          node scripts/move-client-build.js
           bun run generate-client-embed
