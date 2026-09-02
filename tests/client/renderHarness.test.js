@@ -1,7 +1,9 @@
 import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { useState } from "react";
-import { cleanup, click, createElement, focus, focused, pendingListenerError, render } from "../helpers/renderHarness.js";
+import {
+    cleanup, click, createElement, focus, focused, pendingListenerError, render, window
+} from "../helpers/renderHarness.js";
 import { Counter } from "./fixtures/Counter.jsx";
 
 /**
@@ -30,6 +32,45 @@ describe("the render harness", () => {
         assert.ok(pendingListenerError(), "the throw was swallowed");
         assert.throws(() => cleanup(), /the listener threw/);
         assert.equal(pendingListenerError(), false, "the error was reported twice");
+    });
+
+    /**
+     * There is one document per process and one pair of stores behind it, so
+     * whatever a test leaves in them is what the next test in the file starts
+     * from. A theme test that stored "light", a preferences test that stored a
+     * default timeframe: the next test read it back as the state of a fresh
+     * browser, and the order the file happens to be written in decided whether
+     * it passed. Same for the attributes ThemeContext stamps on <html>, which
+     * nothing else ever removes.
+     */
+    it("empties the storage and the document a test wrote to", () => {
+        window.localStorage.setItem("theme", "light");
+        window.sessionStorage.setItem("draft", "half a target");
+        window.document.documentElement.setAttribute("data-theme", "light");
+        window.document.documentElement.setAttribute("data-palette", "ember");
+
+        cleanup();
+
+        assert.equal(window.localStorage.length, 0, "a stored value outlived the test that wrote it");
+        assert.equal(window.sessionStorage.length, 0, "a session value outlived the test that wrote it");
+        assert.deepEqual(window.document.documentElement.getAttributeNames(), [],
+            "the document root kept the theme a test stamped on it");
+    });
+
+    /**
+     * And the clearing happens whether or not a listener threw. It used to be
+     * the other way round - the throw left the mounts down but the stores and
+     * the document untouched, so one failing test handed its state to every
+     * test after it and turned one red mark into a cascade.
+     */
+    it("clears up before it reports a listener that threw", () => {
+        const {container} = render(createElement("button", null, "x"));
+        const button = container.querySelector("button");
+        button.addEventListener("click", () => { throw new Error("the listener threw"); });
+        window.localStorage.setItem("theme", "light");
+
+        assert.throws(() => { click(button); cleanup(); }, /the listener threw/);
+        assert.equal(window.localStorage.length, 0, "a failing test kept its storage");
     });
 
     it("loads a component written as JSX and renders it", () => {

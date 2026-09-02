@@ -81,10 +81,29 @@ export const render = (element) => {
     return mount;
 };
 
-/** Takes down everything render() put up, for an afterEach. */
+/**
+ * Takes down everything render() put up, for an afterEach.
+ *
+ * The document is one per process and so are the two stores behind it, so
+ * anything a test leaves in them is the state the next test in the file opens
+ * with - a stored theme, a stored default timeframe, the data-theme attribute
+ * ThemeContext stamps on <html> and nothing ever removes. Read back by the next
+ * test as the state of a fresh browser, that makes the order the file happens
+ * to be written in part of what passes.
+ *
+ * All of it before the rethrow, not after: a listener that threw is exactly the
+ * test whose leavings should not reach the next one, and leaving them behind
+ * turns one red mark into a cascade that hides it.
+ */
 export const cleanup = () => {
     for (const mount of [...mounted]) mount.unmount();
     window.document.body.innerHTML = "";
+
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+
+    const root = window.document.documentElement;
+    for (const name of root.getAttributeNames()) root.removeAttribute(name);
 
     if (listenerErrors.length > 0) {
         const [first] = listenerErrors.splice(0);

@@ -5,6 +5,7 @@ import { readSource } from "../helpers/source.js";
 import { compile, declarationsIn } from "../helpers/sass.mjs";
 import { DEFAULT_THEME, normaliseTheme, resolveTheme, THEMES } from "../../client/src/common/contexts/Theme/themeChoice.js";
 import { DEFAULT_PALETTE, normalisePalette, PALETTES } from "../../client/src/common/contexts/Theme/paletteChoice.js";
+import { mediaQueryAnswer } from "../../client/src/common/contexts/Theme/mediaQuery.js";
 
 /**
  * The one copy of the theme rules that is not the modules.
@@ -33,8 +34,14 @@ const css = compile("common/styles/default.sass");
  * `prefersDark` is undefined for a browser with no matchMedia at all, which is
  * a case the resolution rule distinguishes - and `throws` is the blocked
  * localStorage the whole of Storage.js exists for.
+ *
+ * `query` hands the script a MediaQueryList verbatim, which is what the parity
+ * loop against mediaQueryAnswer needs: the shapes those two copies disagreed on
+ * are not "dark or light" but the malformed ones - a list with no media, a list
+ * whose matches was never filled in - and neither is reachable through the
+ * prefersDark flag.
  */
-const run = ({stored = {}, prefersDark, matchMedia = true, unsupported = false, throws = false} = {}) => {
+const run = ({stored = {}, prefersDark, query, matchMedia = true, unsupported = false, throws = false} = {}) => {
     const attributes = {};
     const meta = {content: "#000000", setAttribute: (name, value) => { meta[name] = value; }};
 
@@ -49,7 +56,7 @@ const run = ({stored = {}, prefersDark, matchMedia = true, unsupported = false, 
             // An engine that parses the query to nothing serialises its media
             // as "not all" and answers matches: false forever - the shape the
             // unsupported case reproduces.
-            ...(matchMedia ? {matchMedia: () => (unsupported
+            ...(matchMedia ? {matchMedia: () => query ?? (unsupported
                 ? {matches: false, media: "not all"}
                 : {matches: prefersDark === true, media: "(prefers-color-scheme: dark)"})} : {})
         },
@@ -183,6 +190,47 @@ describe("what the pre-paint script stamps", () => {
         }
 
         assert.deepEqual(disagreements, []);
+    });
+
+    /**
+     * The MediaQueryList shapes an engine can actually hand back, and the one
+     * rule both copies of the answer have to give for each of them.
+     *
+     * The first two are the ordinary machine. "not all" is the engine that has
+     * matchMedia but not prefers-color-scheme: it parses the query to nothing
+     * and answers `matches: false` forever, which is a failure to answer rather
+     * than a preference for light. The last two are the ones the two copies had
+     * silently drifted apart on - a list with no media at all, which is a stub
+     * or a webview stranger still, and one that never filled matches in. The
+     * boot script read `query.matches` bare there and stamped light off a false
+     * and off an undefined alike, where mediaQueryAnswer says undefined for the
+     * first and false only for a real `matches === true` test.
+     */
+    const QUERY_SHAPES = [
+        {matches: true, media: "(prefers-color-scheme: dark)"},
+        {matches: false, media: "(prefers-color-scheme: dark)"},
+        {matches: false, media: "not all"},
+        {matches: false},
+        {media: "(prefers-color-scheme: dark)"}
+    ];
+
+    it("reads a MediaQueryList the way mediaQueryAnswer does", () => {
+        const disagreements = [];
+
+        for (const theme of STORED_THEMES) {
+            for (const query of QUERY_SHAPES) {
+                const stamped = run({stored: {theme}, query});
+                const expected = resolveTheme(normaliseTheme(theme), mediaQueryAnswer(query));
+
+                if (stamped["data-theme"] !== expected)
+                    disagreements.push(`${theme}/${JSON.stringify(query)}: `
+                        + `boot ${stamped["data-theme"]} vs module ${expected}`);
+            }
+        }
+
+        assert.deepEqual(disagreements, [],
+            "the pre-paint script and mediaQuery.js read the same list differently, so the page "
+            + "flashes one theme and settles on the other");
     });
 
     it("agrees with normalisePalette on every input", () => {

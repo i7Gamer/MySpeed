@@ -290,6 +290,17 @@ export const seriesAverage = (values) => {
 /** A failure sits on the axis (0); everything else stays off the series (null). */
 export const failureMarkers = (failed) => failed.map((isFailed) => isFailed ? 0 : null);
 
+// The components a colour states before its alpha. A 4- or 8-digit hex and a
+// slash-form functional notation both append one, and the alpha this function
+// is asked for replaces it rather than sitting behind it - two alphas is not a
+// colour any canvas would take.
+const COLOUR_COMPONENTS = 3;
+
+// Up to this many digits a hex spells each component as one digit and doubles
+// it; beyond it, as a pair. Four and eight are the same two forms carrying an
+// alpha digit or pair on the end.
+const SHORTHAND_HEX_DIGITS = 4;
+
 /**
  * A colour at an alpha, whatever notation it arrived in.
  *
@@ -300,14 +311,27 @@ export const failureMarkers = (failed) => failed.map((isFailed) => isFailed ? 0 
  * was declared as. The replace would have found nothing to replace and handed
  * `#0891b2` back unchanged for both stops of a gradient, drawing a flat fill at
  * full opacity over the chart below it.
+ *
+ * "Whatever notation it arrived in" means the notations a stylesheet in this
+ * repo can hand it: hex in three, four, six or eight digits, and hsl()/rgb() in
+ * either separator. Deliberately not CSS Color 4's wider grammar - `none` as a
+ * component, color(), lab(), a colour named in words - none of which the
+ * palette authors and each of which would want a parser rather than a pattern.
+ * They fall through to the last line and are returned unchanged, which draws
+ * the flat opaque fill this function exists to avoid rather than throwing.
  */
 export const withAlpha = (color, alpha) => {
-    const hex = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(String(color).trim());
+    // Four digits and eight are the alpha-carrying spellings of the three and
+    // the six. They were not accepted at all, so `#0891b2ff` fell past every
+    // branch and came back unchanged - both stops of a gradient at full opacity.
+    const hex = /^#([\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i.exec(String(color).trim());
 
     if (hex) {
-        const pairs = hex[1].length === 3 ? [...hex[1]].map((digit) => digit + digit) : hex[1].match(/../g);
+        const pairs = hex[1].length <= SHORTHAND_HEX_DIGITS
+            ? [...hex[1]].map((digit) => digit + digit)
+            : hex[1].match(/../g);
 
-        return `rgba(${pairs.map((pair) => parseInt(pair, 16)).join(", ")}, ${alpha})`;
+        return `rgba(${pairs.slice(0, COLOUR_COMPONENTS).map((pair) => parseInt(pair, 16)).join(", ")}, ${alpha})`;
     }
 
     // The a-form of whichever function it is. Sliced to three arguments so a
@@ -323,7 +347,13 @@ export const withAlpha = (color, alpha) => {
     const functional = /^(hsl|rgb)a?\((.+)\)$/i.exec(String(color).trim());
 
     if (functional) {
-        const parts = functional[2].split(/[,\s/]+/).slice(0, 3).map((part) => part.trim());
+        // Trimmed before the split, not after it. Outside the parentheses the
+        // trim tidied the whole result and not the components, so the padding a
+        // stylesheet is free to write - `rgb( 8, 145, 178 )`, which
+        // getComputedStyle hands back on a custom property verbatim - opened
+        // the split with an empty token and produced `rgba(, 8, 145, 0.25)`:
+        // the same thrown SyntaxError, through a different door.
+        const parts = functional[2].trim().split(/[,\s/]+/).slice(0, COLOUR_COMPONENTS);
 
         return `${functional[1].toLowerCase()}a(${parts.join(", ")}, ${alpha})`;
     }

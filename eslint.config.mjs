@@ -45,7 +45,12 @@ const UNUSED_VARS = {
     ignoreRestSiblings: true,
     // The conventional mark for a parameter a signature requires and the body
     // does not want.
-    argsIgnorePattern: "^_"
+    argsIgnorePattern: "^_",
+    // And the same mark for a caught error nothing reads. `catch {}` says that
+    // without a name at all, but themeBoot.js is a classic ES5 script served
+    // unbundled to whatever engine the reader has, and optional catch binding
+    // is ES2019.
+    caughtErrorsIgnorePattern: "^_"
 };
 
 export default [
@@ -74,13 +79,37 @@ export default [
             "no-unused-vars": ["warn", {...UNUSED_VARS, varsIgnorePattern: "^React$"}]
         }
     },
+    /*
+     * The pre-paint script, which the block above cannot reach: it is served
+     * straight out of public/ rather than bundled, so it is not under src/ -
+     * and it is a classic script rather than a module, which is the whole
+     * reason it can run before the parser reaches the app. Unlinted, it was the
+     * one file in the client where the `no-undef` fault this config exists for
+     * would have shipped in silence.
+     */
     {
-        files: ["server/**/*.js", "scripts/**/*.js", "tests/**/*.{js,mjs}"],
+        files: ["client/public/*.js"],
+        ...js.configs.recommended,
+        languageOptions: {
+            ecmaVersion: ECMA_VERSION,
+            sourceType: "script",
+            globals: {...globals.browser}
+        },
+        rules: {
+            ...js.configs.recommended.rules,
+            "no-unused-vars": ["warn", UNUSED_VARS]
+        }
+    },
+    {
+        // .jsx too: the suite renders components now, and the fixtures it
+        // renders are written as JSX like the components they stand in for.
+        files: ["server/**/*.js", "scripts/**/*.js", "tests/**/*.{js,mjs,jsx}"],
         ...js.configs.recommended,
         languageOptions: {
             ecmaVersion: ECMA_VERSION,
             sourceType: "module",
-            globals: {...globals.node}
+            globals: {...globals.node},
+            parserOptions: {ecmaFeatures: {jsx: true}}
         },
         rules: {
             ...js.configs.recommended.rules,

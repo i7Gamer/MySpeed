@@ -55,7 +55,7 @@
     function stored(key) {
         try {
             return window.localStorage.getItem(key);
-        } catch (error) {
+        } catch (_error) {
             return null;
         }
     }
@@ -75,10 +75,16 @@
         var query = window.matchMedia("(prefers-color-scheme: dark)");
         // An engine that cannot parse the query serialises its media as
         // "not all" and answers matches: false forever - a failure to answer,
-        // not a preference for light. mediaQueryAnswer in mediaQuery.js is
-        // the same rule; this script runs before anything can import.
-        if (query.media === "not all") return undefined;
-        return query.matches;
+        // not a preference for light. A list with no media at all - a stub, a
+        // webview stranger still - has not answered either, which is the half
+        // this copy was missing. mediaQueryAnswer in mediaQuery.js is the same
+        // rule, written the same way round; this script runs before anything
+        // can import, so themeBoot.test.js compares the two on every shape.
+        if (typeof query.media !== "string" || query.media === "not all") return undefined;
+        // `=== true`, not the value itself: a list that never filled matches in
+        // handed undefined back, which resolveTheme reads as "no preference"
+        // and the module reads as "not dark". One of them had to give.
+        return query.matches === true;
     }
 
     function resolveTheme(theme, dark) {

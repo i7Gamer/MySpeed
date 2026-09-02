@@ -384,7 +384,25 @@ export const Statistics = () => {
                 console.error("Failed to load the recent tests:", tests.reason);
 
             startTransition(() => {
-                setStatistics(stats.value);
+                /*
+                 * Tagged with whether the request that fetched it asked for a
+                 * comparison at all, the way compareStats stores the key its
+                 * figures answer for.
+                 *
+                 * Because the page never clears `statistics` on a range change:
+                 * from choosing a bounded range until its answer lands, what is
+                 * on screen is the previous range's payload. Coming from all
+                 * time that payload has no `previous` key - all time asks for
+                 * no comparison - and the sentence below that reads a missing
+                 * key as "this node is too old" accused every current server of
+                 * it, for as long as the second request took.
+                 *
+                 * `dateRange` here is the one this callback was built with, not
+                 * whatever the toolbar says by the time the answer arrives:
+                 * updateStats is rebuilt per range, so the tag belongs to the
+                 * request rather than to the moment it finished.
+                 */
+                setStatistics(stats.value && {...stats.value, askedCompare: Boolean(dateRange)});
                 setRecentTests(tests.status === "fulfilled" && Array.isArray(tests.value) ? tests.value : []);
                 setLoading(false);
             });
@@ -663,9 +681,20 @@ export const Statistics = () => {
                 `=== undefined`, not falsy: null is a current server saying
                 "nothing to compare against", which stays silent on purpose -
                 nothing has elapsed and the heading already names the range.
-                Absent is a server that never understood the question. All time
-                sends no comparison and gates itself out through dateRange. */}
-            {dateRange && deferredStatistics && previousWindow === undefined && (
+                Absent is a server that never understood the question.
+
+                Asked of the payload's own tag rather than of the range the
+                toolbar currently shows. `statistics` is never cleared on a
+                range change, so between choosing a bounded range and its
+                answer arriving this read the all-time payload still on screen
+                - which has no `previous` key because all time asks for no
+                comparison - and every current server accused itself of being
+                too old for as long as the request took. askedCompare travels
+                with the answer, so a payload fetched without a comparison
+                cannot be mistaken for one that asked and was ignored. It also
+                answers for the range on its own: an all-time payload is never
+                tagged, and the row around this only exists for a bounded one. */}
+            {deferredStatistics?.askedCompare && previousWindow === undefined && (
                 <p className="statistics-compare-note">
                     {t("statistics.compare.unsupported")}
                 </p>

@@ -76,6 +76,14 @@ export const FormField = ({
                 // value. The blank first entry is "none", which the server
                 // reads as its default, and it wears the placeholder so the
                 // default has a name.
+                //
+                // Falling back to the label, because a field definition that
+                // names no placeholder drew that entry empty: a nameless first
+                // option in an open list, announced as nothing at all and
+                // indistinguishable from a rendering fault. The label is the
+                // one name every field has, and it is the same fallback
+                // IntegrationDialog's getPlaceholder already makes for the
+                // other three types.
                 <span className="select-wrap">
                     <select
                         id={inputId}
@@ -84,7 +92,7 @@ export const FormField = ({
                         onChange={(e) => onChange(e.target.value)}
                         disabled={disabled}
                     >
-                        <option value="">{placeholder}</option>
+                        <option value="">{placeholder ?? label}</option>
                         {options.map((option) => (
                             <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
