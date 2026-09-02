@@ -1,6 +1,7 @@
 import recommendations from '../models/Recommendations.js';
 import { triggerEvent } from './integrations.js';
 import { toErrorMessage } from '../util/helpers.js';
+import { createQueue } from '../util/serialiseQueue.js';
 
 // The one recommendations row, read deterministically. The table is a
 // singleton, but importConfig restores it wholesale and bounds it only by a
@@ -14,7 +15,7 @@ export const getCurrent = async () => {
     return await currentRow();
 }
 
-export const update = async (ping, download, upload) => {
+const applyUpdate = async (ping, download, upload) => {
     // Two decimals, the same as the speeds beside it. Math.round() here threw
     // away the fraction that is most of a latency reading on a fast line, and
     // took anything under half a millisecond down to 0 - a figure no later test
@@ -54,3 +55,14 @@ export const update = async (ping, download, upload) => {
 
     return created;
 }
+
+// One at a time. update() is fired once per round member, and the lookup above
+// is a read followed by a write across an await: two members of one round
+// finishing close together both found no row and both created one. The table
+// has no key to refuse the second, and a transaction would not help - deferred
+// on sqlite and repeatable-read on mysql, two readers both see nothing and
+// both insert. The queue is what the prometheus scrape uses for the same
+// read-then-write shape, and each caller still gets its own promise.
+const writes = createQueue();
+
+export const update = (ping, download, upload) => writes(() => applyUpdate(ping, download, upload));

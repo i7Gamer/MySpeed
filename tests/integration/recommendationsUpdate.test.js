@@ -114,6 +114,21 @@ describe("updating the recommendations", () => {
      * recommendations had changed - and told them the figures it was about to
      * fail to store. A notification is not retractable.
      */
+    /**
+     * The writer is reached once per round member, and two members finishing
+     * close together both read an empty table before either wrote. The row is
+     * a singleton by intent and the reader copes with a stray - but a first
+     * round with two targets should not leave one behind.
+     */
+    it("stores one row when two updates arrive together", async () => {
+        await Promise.all([controller.update(10, 100, 50), controller.update(9, 200, 60)]);
+
+        assert.equal(await model.count(), 1, "concurrent first writes each created a row");
+
+        const stored = await controller.getCurrent();
+        assert.equal(stored.download, 200, "the later update lost to the earlier one");
+    });
+
     it("does not announce a set it failed to store", async () => {
         const create = model.create;
         model.create = async () => {

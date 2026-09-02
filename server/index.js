@@ -19,6 +19,7 @@ import { load as loadCli } from './util/loadCli.js';
 import { removeOld } from './tasks/speedtest.js';
 import { markShutdown, terminateActiveProcess, waitForActiveProcessExit } from './util/speedtest.js';
 import { createShutdown } from './util/shutdown.js';
+import { waitForActiveRound } from './util/activeRound.js';
 import {
     clearedReport, noConfigReport, RESET_NO_CONFIG, resetPassword, wantsPasswordReset
 } from './util/resetPassword.js';
@@ -182,6 +183,7 @@ const shutdown = createShutdown({
      */
     onCleanup: async () => {
         await waitForActiveProcessExit();
+        await waitForActiveRound();
         await db.close().catch(() => undefined);
     }
 });
