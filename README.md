@@ -133,9 +133,13 @@ Requires [bun](https://bun.sh).
 git clone https://github.com/i7Gamer/MySpeed.git
 cd MySpeed
 bun install
+cd client && bun install && cd ..
 bun run build
+node scripts/move-client-build.js
 bun run server/index.js
 ```
+
+The client has its own dependencies, and the server serves the interface from `build/` at the repository root, which is where the last step moves it.
 
 MySpeed then listens on **http://localhost:5216**.
 
