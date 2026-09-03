@@ -1,6 +1,7 @@
 import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { cleanup, createElement, render, window } from "../helpers/renderHarness.js";
+import { escapeRegExp } from "../helpers/source.js";
 import { ConfigContext } from "@/common/contexts/Config";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { StatusContext } from "@/common/contexts/Status";
@@ -70,7 +71,7 @@ describe("the last-test card on an instance with several targets", () => {
         const mark = dot(container);
 
         assert.ok(mark, "the card names the target with no mark to recognise it by");
-        assert.match(mark.getAttribute("style") ?? "", new RegExp(SECOND_TARGET_COLOUR.replace(/[()]/g, "\\$&")),
+        assert.match(mark.getAttribute("style") ?? "", new RegExp(escapeRegExp(SECOND_TARGET_COLOUR)),
             "the dot is drawn in some colour other than the target's own");
     });
 
