@@ -17,6 +17,20 @@ permissions:
   contents: write
   pull-requests: read
 
+# One release at a time, and never cancelled halfway.
+#
+# Two dispatches used to run side by side: both bump package.json and push to the
+# default branch, so the second push can be rejected non-fast-forward after its
+# own tag guard has already passed, and both reach publish-docker, where the
+# later `imagetools create` decides what :latest means. The group is shared with
+# the manual dev deploy, which moves the same tag from the other side.
+#
+# cancel-in-progress is false on purpose: a cancelled release is the one shape
+# neither recovery job below can clean up.
+concurrency:
+  group: release-and-registry
+  cancel-in-progress: false
+
 jobs:
   # Gates everything below it: no tag, no release and no artefact gets cut
   # unless the suite passes first.
@@ -302,6 +316,43 @@ jobs:
             } catch (e) {
               console.log('Failed to delete tag:', e.message);
             }
+
+  # A cancelled run is neither of the two cases below.
+  #
+  # Both of them key on failure(), which a cancellation does not satisfy - and
+  # `cancelled()` at the workflow level is exactly the moment a tag has been cut,
+  # a version bumped and the assets left half-uploaded. Nothing said so: the run
+  # ended grey, and the next dispatch of that version was refused by
+  # create-release's own tag guard with no explanation anywhere.
+  #
+  # It reports rather than deletes. What survived a cancellation is not knowable
+  # from here - the upload may have been halfway through an asset - and deleting
+  # a release somebody stopped on purpose is not this job's decision to make.
+  report-cancelled-release:
+    name: "Report Cancelled Release"
+    runs-on: ubuntu-latest
+    needs: [create-release]
+    if: cancelled() && needs.create-release.result == 'success'
+    steps:
+      - name: Say what was left behind
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          {
+            echo "### Release v$VERSION was cancelled part way through"
+            echo
+            echo "The tag and the draft release exist, the version bump is on the default"
+            echo "branch, and the assets are whatever had finished uploading. Dispatching"
+            echo "v$VERSION again will be refused while the tag is there."
+            echo
+            echo "Look at the draft, then either publish it by hand or free the version up:"
+            echo
+            echo '```'
+            echo "gh release delete v$VERSION --cleanup-tag --yes"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::warning::Release v$VERSION was cancelled. Tag v$VERSION is taken - delete it before re-running this version."
 
   # The counterpart to cleanup-on-failure: the release survived, so say what is
   # sitting there and how to get rid of it, rather than leaving an unexplained

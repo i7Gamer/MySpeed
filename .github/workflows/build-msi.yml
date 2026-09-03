@@ -40,9 +40,28 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ./installer
 
+      # The wrapper this MSI installs as a LocalSystem service, so what it is
+      # matters as much as the binary beside it. Pinned by digest: dependabot
+      # watches `uses:` lines and Dockerfile bases and sees nothing at all in a
+      # URL inside a run block, so nothing but this check would notice the file
+      # at that address changing under a tag that is still an alpha.
+      #
+      # Verified against the published asset on 2026-09-03.
       - name: Download WinSW service wrapper
+        env:
+          WINSW_URL: "https://github.com/winsw/winsw/releases/download/v3.0.0-alpha.11/WinSW-x64.exe"
+          WINSW_SHA256: "a2daa6a33a9c2b791ae31d9092e7935c339d1e03e89bfb747618ce2f4e819e20"
         run: |
-          Invoke-WebRequest -Uri "https://github.com/winsw/winsw/releases/download/v3.0.0-alpha.11/WinSW-x64.exe" -OutFile "installer\MySpeedService.exe"
+          Invoke-WebRequest -Uri $env:WINSW_URL -OutFile "installer\MySpeedService.exe"
+
+          $actual = (Get-FileHash "installer\MySpeedService.exe" -Algorithm SHA256).Hash.ToLower()
+
+          if ($actual -ne $env:WINSW_SHA256) {
+            Write-Error "WinSW does not match its pinned digest: expected $($env:WINSW_SHA256), got $actual"
+            exit 1
+          }
+
+          Write-Host "WinSW verified: $actual"
 
       # The working directory is what decides where MySpeed keeps its database:
       # the server resolves data/ against the current directory, so pointing it at
@@ -70,10 +89,26 @@ jobs:
           "@
           $serviceConfig | Out-File -FilePath "installer\MySpeedService.xml" -Encoding UTF8
 
+      # The version is pinned and the directory is discovered, rather than the
+      # package being whatever the feed serves today and the path being asserted
+      # to be v3.11. The chocolatey package also ships 3.14, which installs
+      # beside a differently named directory - and the day that lands, candle is
+      # not on PATH, build-msi fails, and a release stops with the tag cut, the
+      # version bumped and no Docker tag published.
       - name: Install WiX Toolset
         run: |
-          choco install wixtoolset -y
-          echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" >> $env:GITHUB_PATH
+          choco install wixtoolset -y --version=3.11.2
+
+          $bin = Get-ChildItem "C:\Program Files (x86)\WiX Toolset v*\bin" -Directory |
+            Sort-Object Name | Select-Object -Last 1
+
+          if (-not $bin) {
+            Write-Error "WiX was installed but no 'WiX Toolset v*' bin directory was found"
+            exit 1
+          }
+
+          Write-Host "Using WiX at $($bin.FullName)"
+          echo $bin.FullName >> $env:GITHUB_PATH
 
       # Through env like the rest of the chain, so no workflow expression is
       # substituted into a script body. Both values arrive already checked -

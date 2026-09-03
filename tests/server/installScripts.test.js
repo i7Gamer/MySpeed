@@ -357,7 +357,7 @@ describe("uninstall.sh --keep-data", () => {
         assert.notEqual(made, -1, "the installation directory is no longer recreated");
         assert.notEqual(stated, -1,
             "the recreated directory's mode is left to the umask, so the next install falls back to root");
-        assert.ok(made < stated, "the mode is stated before the directory is recreated");
+        assert.ok(made < stated, "the directory is recreated after its mode is stated, which undoes it");
     });
 
     it("quotes every path it moves and removes", () => {

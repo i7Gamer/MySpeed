@@ -103,7 +103,15 @@ export default [
     {
         // .jsx too: the suite renders components now, and the fixtures it
         // renders are written as JSX like the components they stand in for.
-        files: ["server/**/*.js", "scripts/**/*.js", "tests/**/*.{js,mjs,jsx}"],
+        //
+        // The two .mjs configs are here as well. Under flat config a file that
+        // no block claims is walked and linted with no rules at all, so it
+        // passes whatever it contains - and one of the two decides whether the
+        // client builds. `--print-config client/vite.config.mjs` showed an
+        // empty rule set; no-undef, which this config's header calls the whole
+        // reason it exists, was not applied to it.
+        files: ["server/**/*.js", "scripts/**/*.js", "tests/**/*.{js,mjs,jsx}",
+            "*.mjs", "client/*.mjs"],
         ...js.configs.recommended,
         languageOptions: {
             ecmaVersion: ECMA_VERSION,

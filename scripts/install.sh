@@ -359,6 +359,55 @@ if [ ! -s "$DOWNLOAD_TMP" ]; then
     exit 1
 fi
 
+# What the release says this file should be.
+#
+# The download is about to be made executable, moved over the installed binary
+# and run as root by a unit with Restart=always, and the only check it had to
+# pass was that it was not empty - so the whole guarantee was TLS to two hosts,
+# and somebody downloading the same file by hand had nothing to compare it
+# against at all. The release publishes a SHA256SUMS over every asset it
+# carries; this refuses a binary that does not match it.
+#
+# A release cut before that file existed cannot be verified, and saying so
+# plainly is more use than refusing to install a version that was published
+# without one.
+sha256_of() {
+    if command -v sha256sum &> /dev/null; then
+        sha256sum "$1" | cut -d ' ' -f 1
+    elif command -v shasum &> /dev/null; then
+        shasum -a 256 "$1" | cut -d ' ' -f 1
+    elif command -v openssl &> /dev/null; then
+        openssl dgst -sha256 "$1" | awk '{print $NF}'
+    fi
+}
+
+CHECKSUM_URL=$(release_asset_url "SHA256SUMS")
+
+if [ -z "$CHECKSUM_URL" ]; then
+    echo -e "$YELLOW⚠ Warning:$NORMAL this release publishes no SHA256SUMS, so the download could not be verified."
+else
+    EXPECTED=$(curl -sf --max-time 15 -L "$CHECKSUM_URL" | grep -E "[[:space:]]${BINARY_NAME}$" | head -1 | cut -d ' ' -f 1)
+    ACTUAL=$(sha256_of "$DOWNLOAD_TMP")
+
+    if [ -z "$EXPECTED" ]; then
+        rm -f "$DOWNLOAD_TMP"
+        echo -e "$RED✗ The release's checksum list does not cover $BINARY_NAME."
+        echo -e "$NORMALℹ Any existing installation has been left untouched."
+        exit 1
+    elif [ -z "$ACTUAL" ]; then
+        echo -e "$YELLOW⚠ Warning:$NORMAL no sha256 tool on this host, so the download could not be verified."
+    elif [ "$EXPECTED" != "$ACTUAL" ]; then
+        rm -f "$DOWNLOAD_TMP"
+        echo -e "$RED✗ The download does not match the checksum this release published."
+        echo -e "$NORMAL expected $EXPECTED"
+        echo -e "$NORMAL received $ACTUAL"
+        echo -e "$NORMALℹ Any existing installation has been left untouched."
+        exit 1
+    else
+        echo -e "$GREEN✓ Checksum verified"
+    fi
+fi
+
 # Stated rather than added to. `chmod +x` is masked by the umask - POSIX says so
 # - and wget creates the file at 666 less that mask, so on a host where root runs
 # with 077 this left the binary at 700. That did not matter while the whole
@@ -614,6 +663,21 @@ EOF
   echo -e "$NORMALℹ MySpeed service is starting..."
   sleep 1
   systemctl restart myspeed
+
+  # The one step nothing checked. Every other failure in this script is caught
+  # and named, on the grounds that a permanent crash loop announced as a
+  # finished installation is worse than stopping - and then a unit that never
+  # came up reached the completion banner and exited 0 all the same. Settled
+  # for a moment first: restart returns as soon as systemd has taken the job,
+  # not when the service is up.
+  sleep 2
+
+  if ! systemctl is-active --quiet myspeed; then
+    echo -e "$RED✗ The MySpeed service did not start."
+    echo -e "$NORMAL The files are installed under $INSTALLATION_PATH; it is the service that failed to come up."
+    echo -e "$NORMALℹ See what it said with: journalctl -u myspeed -n 50 --no-pager"
+    exit 1
+  fi
 fi
 
 clear
@@ -638,7 +702,10 @@ if [ -z "$PUBLIC_ADDRESS" ]; then
 fi
 
 echo -e "You can access the web interface in your browser at$BLUE http://$PUBLIC_ADDRESS:5216$NORMAL."
-if [ -d "$INSTALLATION_PATH" ]; then
+# Whether there is a service to restart, not whether the directory the script
+# has been sitting in exists - it always does by here, so this hint was printed
+# even on the host that was told five lines earlier to start MySpeed by hand.
+if command -v systemctl &> /dev/null; then
   echo -e "$BLUEℹ Info:$NORMAL To restart MySpeed:$BLUE systemctl restart myspeed"
 fi
 echo -e "$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-$GREEN-$NORMAL-"

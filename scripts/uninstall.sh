@@ -245,7 +245,17 @@ if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "MySpeed"; then
 
   echo -e "$YELLOW Removing MySpeed Docker folder..."
   if [ "$KEEP_DATA" != "--keep-data" ]; then
-    docker volume rm myspeed-dockerized_myspeed
+    # The name docker-install.sh's compose file produces, and only that one.
+    # Every other shape - the README's `docker run -v myspeed:...`, a compose
+    # file in any other directory - names its volume something else, so the
+    # removal failed silently and the operator reached "MySpeed has been
+    # uninstalled" with the database, the password hash and every integration
+    # secret still on the host. Said out loud now rather than swallowed; it is
+    # not a reason to stop, since the container and the files are already gone.
+    if ! docker volume rm myspeed-dockerized_myspeed &> /dev/null; then
+      echo -e "$YELLOW⚠ Warning:$NORMAL the data volume could not be removed - this install may not have used one by that name."
+      echo -e "$NORMAL Look for it with: docker volume ls | grep -i myspeed"
+    fi
   fi
   rm -rf "$DOCKER_INSTALLATION_PATH"
 fi

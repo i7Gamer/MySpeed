@@ -13,6 +13,14 @@ name: Publish latest to DockerHub
 on:
   workflow_dispatch:
 
+# The same group the release chain takes: both ends move :latest, and a deploy
+# running beside a release decides what :latest means by whichever finishes
+# last. Queued rather than cancelled - a half-published manifest is worse than
+# a wait.
+concurrency:
+  group: release-and-registry
+  cancel-in-progress: false
+
 jobs:
   # The same two steps the release chain takes, for the same reason: the builds
   # push each architecture by digest, and the tag is a second, separate act.

@@ -16,6 +16,10 @@ RUN bun run build
 # bin/, where fileExists() finds it and the download is skipped.
 FROM rust:1.98.0-alpine AS cfspeedtest-build
 
+# Bumped by hand. Nothing watches it: dependabot's docker ecosystem reads FROM
+# tags, and there is no Cargo.toml here for its cargo ecosystem to find - so
+# this pin is only as current as the last person to look at it. It is the
+# binary the container runs for every Cloudflare test.
 ARG CFSPEEDTEST_VERSION=2.2.2
 
 # musl-dev only: cfspeedtest reaches the network through rustls, so nothing in

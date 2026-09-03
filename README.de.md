@@ -49,7 +49,7 @@ kein `avx2`-Flag enthält.
 
 ```bash
 curl -sSL -o /tmp/myspeed-install.sh \
-  https://raw.githubusercontent.com/i7Gamer/MySpeed/development/scripts/install.sh
+  https://github.com/i7Gamer/MySpeed/releases/latest/download/install.sh
 sudo bash /tmp/myspeed-install.sh
 ```
 
@@ -188,7 +188,7 @@ Das Docker-Image enthält die Laufzeitumgebung und den Servercode, aber keine
 kompilierte Binärdatei – dort wird deshalb der Einstiegspunkt direkt ausgeführt:
 
 ```bash
-docker exec <container> bun server/index.js --reset-password
+docker exec -u bun <container> bun server/index.js --reset-password
 ```
 
 Der Befehl muss im selben Verzeichnis laufen wie der Server – er löst

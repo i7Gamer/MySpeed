@@ -50,7 +50,7 @@ has no `avx2` flag.
 
 ```bash
 curl -sSL -o /tmp/myspeed-install.sh \
-  https://raw.githubusercontent.com/i7Gamer/MySpeed/development/scripts/install.sh
+  https://github.com/i7Gamer/MySpeed/releases/latest/download/install.sh
 sudo bash /tmp/myspeed-install.sh
 ```
 
@@ -186,7 +186,7 @@ The Docker image ships the runtime and the server sources rather than a compiled
 binary, so run the entry point there instead:
 
 ```bash
-docker exec <container> bun server/index.js --reset-password
+docker exec -u bun <container> bun server/index.js --reset-password
 ```
 
 Run it from the same directory the server runs in — it resolves

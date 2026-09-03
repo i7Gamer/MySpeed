@@ -5,7 +5,6 @@ BLUE='\033[1;34m'
 YELLOW='\033[1;33m'
 RED='\033[1;31m'
 NORMAL='\033[0;39m'
-PURPLE='\033[0;35m'
 
 if [ $EUID -ne 0 ]; then
   echo -e "$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-"
@@ -26,11 +25,11 @@ read -p "Enter your choice (1/2): " choice
 case $choice in
     1)
         echo -e "${BLUE}Running Docker installation script...${NORMAL}"
-        bash <(curl -sSL https://raw.githubusercontent.com/i7Gamer/MySpeed/development/scripts/docker-install.sh)
+        bash <(curl -sSL https://github.com/i7Gamer/MySpeed/releases/latest/download/docker-install.sh)
         ;;
     2)
         echo -e "${BLUE}Running normal installation script...${NORMAL}"
-        bash <(curl -sSL https://raw.githubusercontent.com/i7Gamer/MySpeed/development/scripts/install.sh)
+        bash <(curl -sSL https://github.com/i7Gamer/MySpeed/releases/latest/download/install.sh)
         ;;
     *)
         echo -e "${RED}Invalid choice. Exiting.${NORMAL}"
