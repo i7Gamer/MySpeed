@@ -8,3 +8,9 @@
 Dockerfile text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+
+# Everything else is text with the platform ending on checkout and LF in the
+# repository. Stated rather than left to autocrlf: seven of the integration
+# modules were stored with a bare trailing CR for a year, which git reads as
+# binary, and no per-file diff or blame worked on them while it did.
+* text=auto

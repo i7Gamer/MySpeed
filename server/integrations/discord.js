@@ -1,7 +1,7 @@
 import { phrase } from '../util/notificationLocale.js';
 import { postJson } from "../util/http.js";
 import { replaceVariables, truncate } from "../util/helpers.js";
-import { DISCORD_MARKDOWN, stripMarkdown } from "../util/markdown.js";
+import { DISCORD_MARKDOWN, stripMarkdown } from "../util/markdown.js";
 import { wantsDigest } from "../util/digestOptIn.js";
 
 /**

@@ -1,6 +1,6 @@
 import { plainDefaults } from '../util/notificationLocale.js';
 import { postJson } from "../util/http.js";
-import { replaceVariables, truncate } from "../util/helpers.js";
+import { replaceVariables, truncate } from "../util/helpers.js";
 import { wantsDigest } from "../util/digestOptIn.js";
 
 const URL = "https://api.pushover.net/1/messages.json";

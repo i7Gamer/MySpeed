@@ -1,4 +1,4 @@
-import { postJson } from "../util/http.js";
+import { postJson } from "../util/http.js";
 import { wantsDigest } from "../util/digestOptIn.js";
 
 const send = (url, event, data, activity) =>

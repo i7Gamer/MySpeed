@@ -2,7 +2,7 @@ import { phrase } from '../util/notificationLocale.js';
 import nodemailer from "nodemailer";
 import { replaceVariables, truncate } from "../util/helpers.js";
 import { checkOutboundHost } from "../util/safeUrl.js";
-import { OUTBOUND_TIMEOUT, noteActivity } from "../util/integrationActivity.js";
+import { OUTBOUND_TIMEOUT, noteActivity } from "../util/integrationActivity.js";
 import { wantsDigest } from "../util/digestOptIn.js";
 
 /**
